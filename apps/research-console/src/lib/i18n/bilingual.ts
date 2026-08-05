@@ -1,19 +1,45 @@
-export function bi(zh: string, en: string) {
-  return `${zh} / ${en}`;
+/**
+ * 控制台默认语言。
+ *
+ * 英文参数仍保留在调用点，便于审计术语和未来恢复语言切换；用户界面默认只展示中文，
+ * 避免同一信息中英重复造成驾驶舱噪声。
+ */
+export const CONSOLE_LANGUAGE = 'zh-CN' as const;
+
+export function bi(zh: string, _en: string) {
+  return zh;
 }
 
 const statusTranslations: Record<string, string> = {
   APPROVED: '通过',
   APPROVED_WITH_LIMITS: '有条件通过',
+  PASS: '通过',
+  PASSED: '已通过',
+  FAIL: '失败',
   PENDING: '待处理',
   BLOCKED: '受阻',
+  GATED: '门禁阻断',
+  BREACH: '违规',
+  CHECK: '待检查',
+  CLEAN: '已对账',
+  VERIFIED: '已验证',
+  CONNECTED: '已连接',
+  DISCONNECTED: '已断开',
+  ERROR: '错误',
+  WARNING: '警告',
+  WARN: '警告',
   NO_GO: '不放行',
   NOT_AUTHORIZED: '未授权',
   AUTHORIZED: '已授权',
+  SIGNED: '已签署',
+  UNSIGNED: '未签署',
+  EXPIRED: '已过期',
+  UNKNOWN: '未知',
   BACKEND_COMPUTED: '后端计算',
   API_CONNECTED: 'API已连接',
   API_LOADING: 'API加载中',
   API_ERROR: 'API错误',
+  REAL_API_UNAVAILABLE: '真实API不可用',
   MOCK_MODE: '模拟模式',
   NOT_CONNECTED: '未连接',
   READ_ONLY: '只读',
@@ -26,9 +52,18 @@ const statusTranslations: Record<string, string> = {
   BACKEND_BACKED: '后端支撑',
   PARTIAL: '部分完成',
   OPEN: '未关闭',
+  CLOSED: '已关闭',
   INTENTIONALLY_BLOCKED: '有意阻塞',
   NOT_STARTED: '未开始',
   IN_PROGRESS: '进行中',
+  NO_SNAPSHOT: '无快照',
+  NO_STATUS: '无状态',
+  NO_RUN: '无运行记录',
+  NOT_AVAILABLE: '暂无数据',
+  UNAVAILABLE: '不可用',
+  COLLECTING: '采集中',
+  MATURING: '证据积累中',
+  MATURE: '已成熟',
   NEEDS_MORE_DATA: '需要更多数据',
   REJECTED_OVERFIT: '过拟合拒绝',
   REJECTED_LEAKAGE: '泄露拒绝',
@@ -49,9 +84,17 @@ const statusTranslations: Record<string, string> = {
   PAPER_PASSED: '纸面交易通过',
   PAPER_FAILED: '纸面交易失败',
   PAPER_RUNNING: '纸面交易运行中',
+  PAPER_PENDING: '纸面待成交',
+  PAPER_MARKED: '已纸面估值',
+  PAPER_BLOCKED: '纸面交易受阻',
+  PROFIT: '盈利',
+  LOSS: '亏损',
+  FLAT: '持平',
+  NO_REALIZED_PNL: '无已实现盈亏',
   SIMULATION_PASSED: '模拟通过',
   SIMULATION_FAILED: '模拟失败',
   CREATED: '已创建',
+  REGISTERED: '已登记',
   IDLE: '空闲',
   PLANNING: '规划中',
   RUNNING: '运行中',
@@ -63,6 +106,18 @@ const statusTranslations: Record<string, string> = {
   PAUSED: '暂停',
   ACTIVE: '活跃',
   VALIDATING: '验证中',
+  EVALUATED: '已评估',
+  EXECUTION_PAPER: '工程纸面执行',
+  SIGNAL_SHADOW: '信号影子',
+  FORWARD: '前向验证',
+  RUNNING_EXPLORATORY: '探索运行中',
+  EXPLORATORY_ONLY: '仅探索',
+  ADAPTIVE_EXPLORATION_READY: '自适应探索就绪',
+  EXPLORATION_READY: '探索就绪',
+  LONGITUDINAL_READY: '纵向证据就绪',
+  GAPPED: '存在缺口',
+  SCHEDULED_ACTIVE: '自动调度中',
+  SAFE_BLOCKED: '安全阻断',
   DECAYING: '衰减中',
   RETIRED: '已退役',
   READY: '就绪',
@@ -72,6 +127,7 @@ const statusTranslations: Record<string, string> = {
 };
 
 export function statusLabel(status: string) {
-  const zh = statusTranslations[status];
-  return zh ? `${zh} / ${status}` : status;
+  const normalized = status.trim();
+  const zh = statusTranslations[normalized] ?? statusTranslations[normalized.toUpperCase()];
+  return zh ?? status;
 }

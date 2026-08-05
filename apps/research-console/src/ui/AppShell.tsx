@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation } from '@/lib/router';
-import { bi } from '@/lib/i18n/bilingual';
+import { bi, statusLabel } from '@/lib/i18n/bilingual';
 import { Chip } from './primitives';
 import { ConfirmDialogHost } from './dialog';
 import { ToastProvider } from './toast';
@@ -54,18 +54,18 @@ function RuntimeHandshake({ state }: { state: RuntimeHandshakeState }) {
   const { payload, apiState, error } = state;
 
   if (mode === 'MOCK') {
-    return <Chip label="DEMO" tone="warn" />;
+    return <Chip label="演示模式" tone="warn" />;
   }
   if (mode === 'REAL_API_UNAVAILABLE') {
-    return <Chip label="API UNAVAILABLE" tone="neg" />;
+    return <Chip label="API 不可用" tone="neg" />;
   }
   if (apiState === 'loading') {
-    return <Chip label="HANDSHAKE…" tone="info" />;
+    return <Chip label="握手中…" tone="info" />;
   }
   if (apiState === 'error' || !hasRuntimeContractShape(payload)) {
     return (
-      <span title={error ?? 'Runtime contract unavailable'}>
-        <Chip label="CONTRACT ERROR" tone="neg" />
+      <span title={error ?? '运行时契约不可用'}>
+        <Chip label="契约错误" tone="neg" />
       </span>
     );
   }
@@ -78,15 +78,15 @@ function RuntimeHandshake({ state }: { state: RuntimeHandshakeState }) {
     && payload.safety_boundary.broker_connectivity === false;
   const contractOk = versionMatches && safetyMatches;
   const label = !versionMatches
-    ? 'VERSION MISMATCH'
+    ? '版本不一致'
     : !safetyMatches
-      ? 'SAFETY MISMATCH'
-      : payload.build_sha_known ? 'CONTRACT OK' : 'CONTRACT OK · SHA UNPINNED';
+      ? '安全声明不一致'
+      : payload.build_sha_known ? '契约正常' : '契约正常 · SHA 未固定';
   const detail = [
     `api ${payload.api_version} / client ${clientApiVersion}`,
     `instance ${payload.instance_id}`,
     `schema ${payload.event_schema_catalog.sha256.slice(0, 12)}`,
-    payload.build_sha_known ? `build ${payload.build_sha}` : 'build SHA unknown',
+    payload.build_sha_known ? `构建 ${payload.build_sha}` : '构建 SHA 未知',
   ].join(' · ');
   return (
     <span title={detail}>
@@ -101,7 +101,7 @@ function RuntimeHandshakeNotice({ state }: { state: RuntimeHandshakeState }) {
   if (apiState === 'error' || !hasRuntimeContractShape(payload)) {
     return (
       <div role="alert" className="border-b border-neg/30 bg-neg/10 px-5 py-2 text-2xs text-neg sm:px-8 lg:px-10">
-        控制面握手失败 / Console runtime handshake failed：{error ?? 'no response'}。页面不会把错误响应当作可信快照。
+        控制面握手失败：{error ?? '无响应'}。页面不会把错误响应当作可信快照。
       </div>
     );
   }
@@ -115,11 +115,11 @@ function RuntimeHandshakeNotice({ state }: { state: RuntimeHandshakeState }) {
   const reason = !versionMatches
     ? `API ${payload.api_version} ≠ client ${clientApiVersion}`
     : !safetyMatches
-      ? '安全边界声明不一致 / safety boundary mismatch'
-      : '构建 SHA 未固定 / build SHA is not pinned';
+      ? '安全边界声明不一致'
+      : '构建 SHA 未固定';
   return (
     <div role="status" className="border-b border-warn/30 bg-warn/10 px-5 py-2 text-2xs text-warn sm:px-8 lg:px-10">
-      运行时握手提醒 / Runtime handshake notice：{reason}。实例 {payload.instance_id}，Schema {payload.event_schema_catalog.sha256.slice(0, 12)}。
+      运行时握手提醒：{reason}。实例 {payload.instance_id}，事件结构 {payload.event_schema_catalog.sha256.slice(0, 12)}。
     </div>
   );
 }
@@ -166,7 +166,6 @@ function SectionMenuItem({ item, onSelect }: { item: NavItem; onSelect: () => vo
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{item.zh}</span>
-            <span className="block truncate text-3xs text-faint">{item.en}</span>
           </span>
           {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
         </>
@@ -199,7 +198,7 @@ function CommandPalette({ nav, open, onClose }: {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/40 px-4 pt-[12vh]"
-      role="dialog" aria-modal="true" aria-label="global search"
+      role="dialog" aria-modal="true" aria-label="全局搜索"
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="w-full max-w-xl overflow-hidden rounded-xl border border-line bg-panel shadow-2xl">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -218,7 +217,7 @@ function CommandPalette({ nav, open, onClose }: {
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-elevated">
               <span className="grid h-7 w-7 place-items-center rounded bg-inset text-2xs font-bold text-accent">{item.icon}</span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-ink">{item.zh} <span className="text-faint">{item.en}</span></span>
+                <span className="block truncate text-sm text-ink">{item.zh}</span>
                 <span className="block truncate text-3xs text-faint">{item.group} · {item.to}</span>
               </span>
               <span className="text-faint">↵</span>
@@ -310,7 +309,7 @@ export function AppShell({ nav, tape, children }:
 
               {/* centre ticker-tape slot (provided by the host page; empty = reserved) */}
               <div className="hidden min-w-0 flex-1 items-center lg:flex">
-                {tape ?? <span className="text-3xs uppercase tracking-[0.14em] text-faint/50">TAPE</span>}
+                {tape ?? <span className="text-3xs tracking-[0.14em] text-faint/50">行情带</span>}
               </div>
               <div className="min-w-0 flex-1 lg:hidden" />
 
@@ -318,9 +317,9 @@ export function AppShell({ nav, tape, children }:
                 <span className="hidden xl:inline-flex"><SessionClock /></span>
                 <span className="hidden xl:inline-flex h-3.5 w-px bg-line-strong" />
                 <span className="sm:hidden"><Chip label="L2" tone="info" /></span>
-                <span className="hidden sm:inline-flex"><Chip label="L2_DRY_RUN_ONLY" tone="warn" /></span>
+                <span className="hidden sm:inline-flex"><Chip label="L2 仅纸面" tone="warn" /></span>
                 <span className="hidden sm:inline-flex"><Chip label={bi('实盘关闭', 'LIVE OFF')} tone="neg" /></span>
-                <span className="hidden md:inline-flex"><Chip label={mode} tone={mode === 'REAL_API' ? 'pos' : 'warn'} /></span>
+                <span className="hidden md:inline-flex"><Chip label={statusLabel(mode)} tone={mode === 'REAL_API' ? 'pos' : 'warn'} /></span>
                 <span className="hidden min-w-0 lg:inline-flex">
                   <RuntimeHandshake state={runtimeHandshake} />
                 </span>
@@ -347,7 +346,6 @@ export function AppShell({ nav, tape, children }:
                         </span>
                         <span className="text-left leading-tight">
                           <span className="block text-[12px] font-semibold">{item.zh}</span>
-                          <span className="block text-3xs text-faint">{item.en}</span>
                         </span>
                       </>
                     )}
@@ -378,7 +376,7 @@ export function AppShell({ nav, tape, children }:
               <nav className="relative flex h-11 items-center gap-2 border-t border-line/60 bg-surface/60 px-3 sm:px-5"
                 aria-label="section pages">
                 <span className="hidden shrink-0 text-3xs font-semibold uppercase tracking-[0.14em] text-faint md:inline">
-                  {activeGroup.zh} <span className="opacity-50">{activeGroup.en}</span>
+                  {activeGroup.zh}
                 </span>
                 <span className="hidden h-3.5 w-px shrink-0 bg-line-strong md:inline-block" />
                 {activeItem && (
@@ -388,7 +386,6 @@ export function AppShell({ nav, tape, children }:
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-semibold text-ink">{activeItem.zh}</span>
-                      <span className="hidden truncate text-3xs text-faint sm:block">{activeItem.en}</span>
                     </span>
                   </span>
                 )}

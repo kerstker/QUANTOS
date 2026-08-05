@@ -117,7 +117,7 @@ function StageMetric({ spec, compact }: { spec: MetricSpec; compact: boolean }) 
       <span className="mb-1 flex items-center gap-1 text-3xs" style={{ color: live ? 'var(--pos)' : 'var(--faint)' }}>
         <span className={`h-1.5 w-1.5 rounded-full ${apiState === 'loading' ? 'q-live' : ''}`}
           style={{ background: live ? 'var(--pos)' : 'var(--faint)' }} />
-        {live ? 'LIVE' : bi('离线', 'OFFLINE')}
+        {live ? '实时' : bi('离线', 'OFFLINE')}
       </span>
     </div>
   );
@@ -186,7 +186,6 @@ export function PipelineFlow({ activeGroup, compact = false, className = '' }: {
               </span>
               <span className="hidden min-w-0 flex-1 leading-tight sm:block">
                 <span className="block truncate text-[12px] font-semibold">{g.zh}</span>
-                <span className="hidden truncate text-[9px] uppercase tracking-[0.1em] text-faint 2xl:block">{g.en}</span>
               </span>
               <span className="hidden shrink-0 lg:block">
                 <StageMetric spec={STAGE_METRICS[g.id]} compact />
@@ -221,7 +220,6 @@ export function PipelineFlow({ activeGroup, compact = false, className = '' }: {
                 </span>
                 <div className="min-w-0 leading-tight">
                   <div className="truncate text-sm font-semibold text-ink">{g.zh}</div>
-                  <div className="truncate text-3xs uppercase tracking-[0.14em] text-faint">{g.en}</div>
                 </div>
                 <span className="ml-auto ticker-num text-3xs text-faint">{i + 1}/{groups.length}</span>
               </div>

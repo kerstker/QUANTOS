@@ -27,7 +27,7 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
 
   it('redirects a removed blueprint route to the honest completeness page', async () => {
     render(<MemoryRouter initialEntries={['/research/incident-response']}><App /></MemoryRouter>);
-    expect(await screen.findByText('System Completeness Audit')).toBeTruthy();
+    expect(await screen.findByText('系统完整度审查')).toBeTruthy();
   });
 
   it('redirects the bare /research route to the operator command center', async () => {
@@ -43,7 +43,7 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
     render(<MemoryRouter initialEntries={['/research/getting-started']}><App /></MemoryRouter>);
     const search = screen.getByRole('button', { name: /Global search|全局搜索/ });
     fireEvent.click(search);
-    expect(await screen.findByRole('dialog', { name: 'global search' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: '全局搜索' })).toBeTruthy();
     expect(screen.getByPlaceholderText(/Search pages|搜索页面/)).toBeTruthy();
   });
 
@@ -62,10 +62,10 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
     const section = screen.getByRole('navigation', { name: 'section pages' });
     const menu = within(section).getByRole('button', { name: /All pages|全部页面/ });
     expect(menu.getAttribute('aria-expanded')).toBe('false');
-    expect(within(section).queryByRole('link', { name: /GoNoGo Evidence/ })).toBeNull();
+    expect(within(section).queryByRole('link', { name: /GoNoGo 证据/ })).toBeNull();
 
     fireEvent.click(menu);
     expect(menu.getAttribute('aria-expanded')).toBe('true');
-    expect(within(section).getByRole('link', { name: /GoNoGo Evidence/ })).toBeTruthy();
+    expect(within(section).getByRole('link', { name: /GoNoGo 证据/ })).toBeTruthy();
   });
 });

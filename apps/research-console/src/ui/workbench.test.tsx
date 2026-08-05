@@ -29,31 +29,31 @@ describe('EquityCurveChart', () => {
 
   it('shows an honest empty state when no series has two points', () => {
     render(<EquityCurveChart series={[{ label: 'RAW', points: [{ equity: 1 }] }]} />);
-    expect(screen.getByText(/not enough curve points/)).toBeInTheDocument();
+    expect(screen.getByText(/曲线点不足/)).toBeInTheDocument();
   });
 });
 
 describe('StatusBanner', () => {
   it('degrades to an UNKNOWN / fail-closed posture when the backend is offline (mock mode)', () => {
     render(<StatusBanner />);
-    expect(screen.getByRole('status', { name: 'safety status' })).toBeInTheDocument();
-    expect(screen.getByText('KILL_UNKNOWN')).toBeInTheDocument();
-    expect(screen.getByText('LIVE_DISALLOWED')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '安全状态' })).toBeInTheDocument();
+    expect(screen.getByText('熔断器未知')).toBeInTheDocument();
+    expect(screen.getByText('实盘禁用')).toBeInTheDocument();
   });
 });
 
 describe('AsOfStamp', () => {
   it('marks recent data FRESH', () => {
     render(<AsOfStamp ts={1_700_000_000} ageHours={2} freshWithinHours={72} />);
-    expect(screen.getByText('FRESH')).toBeInTheDocument();
+    expect(screen.getByText('新鲜')).toBeInTheDocument();
   });
   it('marks old data STALE', () => {
     render(<AsOfStamp ts={1_700_000_000} ageHours={200} freshWithinHours={72} />);
-    expect(screen.getByText('STALE')).toBeInTheDocument();
+    expect(screen.getByText('陈旧')).toBeInTheDocument();
   });
   it('is honest when the timestamp is unknown', () => {
     render(<AsOfStamp ts={null} ageHours={null} />);
-    expect(screen.getByText('AS-OF ?')).toBeInTheDocument();
+    expect(screen.getByText('时点未知')).toBeInTheDocument();
   });
 });
 
@@ -102,11 +102,11 @@ describe('ConfirmActionButton', () => {
 describe('MandateGateChip', () => {
   it('renders the mandate state as a read-only chip', () => {
     const { rerender } = render(<MandateGateChip state="SIGNED" />);
-    expect(screen.getByText('MANDATE_SIGNED')).toBeInTheDocument();
+    expect(screen.getByText('授权书：已签署')).toBeInTheDocument();
     rerender(<MandateGateChip state="SIGNED" expiresAt={100} now={200} />);
-    expect(screen.getByText('MANDATE_EXPIRED')).toBeInTheDocument();
+    expect(screen.getByText('授权书：已过期')).toBeInTheDocument();
     rerender(<MandateGateChip state="UNKNOWN" />);
-    expect(screen.getByText('MANDATE_UNKNOWN')).toBeInTheDocument();
+    expect(screen.getByText('授权书：未知')).toBeInTheDocument();
   });
 });
 

@@ -54,20 +54,20 @@ vi.mock('@/ui/useConsoleSnapshot', () => ({
 describe('SystemCompleteness evidence assessment', () => {
   it('leads with a sorted pre-live blocker queue and keeps the full evidence matrix available', () => {
     render(<MemoryRouter><SystemCompleteness /></MemoryRouter>);
-    expect(screen.getByText('Pre-live blocker queue')).toBeInTheDocument();
-    expect(screen.getByText('1 work now')).toBeInTheDocument();
-    expect(screen.getByText('1 external')).toBeInTheDocument();
-    expect(screen.getByText('1 after L2')).toBeInTheDocument();
+    expect(screen.getByText('实盘前阻断队列')).toBeInTheDocument();
+    expect(screen.getByText('1 项现在处理')).toBeInTheDocument();
+    expect(screen.getByText('1 项需要外部资源')).toBeInTheDocument();
+    expect(screen.getByText('1 项在 L2 之后')).toBeInTheDocument();
     expect(screen.getAllByTestId('prelive-blocker').map(row => row.textContent)).toEqual([
       expect.stringContaining('GOV.IDENTITY.STRONG_AUTH'),
       expect.stringContaining('DATA.VENDOR.DEPTH'),
       expect.stringContaining('EXECUTION.MULTIVENUE.SOR'),
     ]);
-    expect(screen.getByText('Advanced evidence matrix')).toBeInTheDocument();
-    expect(screen.getByText('Tier A')).toBeInTheDocument();
-    expect(screen.getByText('Tier B')).toBeInTheDocument();
-    expect(screen.getByText('Red Lines')).toBeInTheDocument();
-    expect(screen.getByText(/Machine-verifiable repository evidence/i)).toBeInTheDocument();
+    expect(screen.getByText('高级证据矩阵')).toBeInTheDocument();
+    expect(screen.getByText('A 级')).toBeInTheDocument();
+    expect(screen.getByText('B 级')).toBeInTheDocument();
+    expect(screen.getByText('红线')).toBeInTheDocument();
+    expect(screen.getByText(/机器可验证的仓库证据/)).toBeInTheDocument();
     expect(screen.getAllByText('GOV.IDENTITY.STRONG_AUTH').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Completion Score/i)).not.toBeInTheDocument();
   });

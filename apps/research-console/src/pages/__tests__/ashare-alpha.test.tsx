@@ -65,11 +65,11 @@ describe('AShareAlpha workbench gating', () => {
     expect(screen.getByText(/微盘流动性/)).toBeInTheDocument();
     expect(screen.getByText(/paper-track 当前为 BACKFILL/)).toBeInTheDocument();
     // 演示数据标记(mock 模式下 ProvenanceRibbon extra chip)
-    expect(screen.getByText(/DEMO DATA/)).toBeInTheDocument();
+    expect(screen.getAllByText(/演示数据/).length).toBeGreaterThan(0);
     // runner 未配置 → 两个按钮都禁用并显示原因
     expect(screen.getByRole('button', { name: /重跑 A股Alpha 研究/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /推进 paper-track/ })).toBeDisabled();
-    expect(screen.getByText(/VITE_RUNNER_URL not configured/)).toBeInTheDocument();
+    expect(screen.getByText(/未配置 VITE_RUNNER_URL/)).toBeInTheDocument();
   });
 
   it('backend REAL snapshot: real provenance headline + factor table; runner still gated without runner config', () => {
@@ -79,7 +79,7 @@ describe('AShareAlpha workbench gating', () => {
     expect(screen.getByText(/真实研究结果/)).toBeInTheDocument();
     // 因子表 + 冠军变体渲染(rev_5d 出现在因子表与复合权重条两处)
     expect(screen.getAllByText('rev_5d').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/CHAMPION/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/冠军/).length).toBeGreaterThan(0);
     // 后端 payload 的诚实局限同样默认展开
     expect(screen.getByText(/局限甲/)).toBeInTheDocument();
     // runner 未配置 → 即使后端连接,按钮仍禁用

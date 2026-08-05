@@ -292,8 +292,7 @@ export function PageHeader({ title, titleZh, subtitle, actions }:
       <div className="min-w-0">
         <div className="flex items-center gap-2.5">
           <span className="h-7 w-1 rounded-full bg-grad" />
-          <h1 className="text-[30px] font-bold leading-none tracking-tight text-ink">{titleZh}</h1>
-          <span className="text-base font-medium tracking-tight text-faint">{title}</span>
+          <h1 title={title} className="text-[30px] font-bold leading-none tracking-tight text-ink">{titleZh}</h1>
         </div>
         {subtitle && <p className="mt-2.5 max-w-3xl pl-4 text-sm leading-relaxed text-muted">{subtitle}</p>}
       </div>

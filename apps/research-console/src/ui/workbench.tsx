@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { bi } from '@/lib/i18n/bilingual';
+import { bi, statusLabel } from '@/lib/i18n/bilingual';
 import { stamp, TONE_VAR, type Tone } from './format';
 import { Chip, Button } from './primitives';
 import { useConfirm, type ConfirmSeverity } from './dialog';
@@ -69,7 +69,7 @@ export function EquityCurveChart({ series, height = 180, yFormat, xFormat, class
   return (
     <div className={className}>
       <svg viewBox={`0 0 ${W} ${height}`} width="100%" height={height} preserveAspectRatio="none"
-        role="img" aria-label="equity curve">
+        role="img" aria-label="权益曲线">
         <line x1={padL} x2={W - padR} y1={sy(minY)} y2={sy(minY)} stroke="var(--grid)" strokeWidth={1} />
         <line x1={padL} x2={W - padR} y1={sy(maxY)} y2={sy(maxY)} stroke="var(--grid)" strokeWidth={1} />
         {usable.map(s => (
@@ -112,23 +112,23 @@ export function StatusBanner({ className = '' }: { className?: string }) {
   const tint = tripped === true ? 'var(--neg)' : tripped === false ? 'var(--pos)' : 'var(--warn)';
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-3 py-1.5 text-2xs ${className}`}
-      role="status" aria-label="safety status"
+      role="status" aria-label="安全状态"
       style={{ background: `color-mix(in srgb, ${tint} 7%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tint} 30%, transparent)` }}>
       <span className="font-semibold" style={{ color: tint }}>
-        {tripped === true ? bi('⛔ KILL-SWITCH 已跳闸 —— 全部拒绝', '⛔ KILL-SWITCH TRIPPED — all rejected')
-          : tripped === false ? bi('✓ KILL-SWITCH CLEAR', '✓ KILL-SWITCH CLEAR')
+        {tripped === true ? bi('⛔ 熔断器已跳闸 —— 全部拒绝', '⛔ KILL-SWITCH TRIPPED — all rejected')
+          : tripped === false ? bi('✓ 熔断器正常', '✓ KILL-SWITCH CLEAR')
             : bi('⚠ 安全态未知(未连后端,fail-closed 姿态)', '⚠ safety state UNKNOWN (backend offline, fail-closed posture)')}
       </span>
-      <Chip label={tripped === true ? 'KILL_TRIPPED' : tripped === false ? 'KILL_CLEAR' : 'KILL_UNKNOWN'}
+      <Chip label={tripped === true ? '熔断器已跳闸' : tripped === false ? '熔断器正常' : '熔断器未知'}
         tone={tripped === true ? 'neg' : tripped === false ? 'pos' : 'warn'} />
       {usingBackend && payload?.pre_trade_gate && (
         <Chip label={bi(`盘前门 ${payload.pre_trade_gate.checks_registered} 检查`, `gate ${payload.pre_trade_gate.checks_registered} checks`)} tone="info" />
       )}
       {usingBackend && payload?.safety_config && (
-        <Chip label={payload.safety_config.require_human_approval ? 'HUMAN_APPROVAL' : 'NO_APPROVAL'}
+        <Chip label={payload.safety_config.require_human_approval ? '需要人工批准' : '无需批准'}
           tone={payload.safety_config.require_human_approval ? 'pos' : 'neg'} />
       )}
-      <Chip label="LIVE_DISALLOWED" tone="neg" />
+      <Chip label="实盘禁用" tone="neg" />
       <span className="ml-auto text-faint">
         {usingBackend ? bi('真实安全原语(只读)', 'real safety primitives (read-only)')
           : apiState === 'loading' ? bi('加载中…', 'loading…')
@@ -156,10 +156,10 @@ export function AsOfStamp({ ts, ageHours, freshWithinHours = 72, className = '' 
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: TONE_VAR[tone] }} />
       <span className="ticker-num text-muted">{ts != null ? stamp(ts) : bi('未知时间', 'unknown time')}</span>
       {age != null && (
-        <span className="text-faint">· {age < 1 ? `${Math.max(1, Math.round(age * 60))}m` : `${age.toFixed(1)}h`}</span>
+        <span className="text-faint">· {age < 1 ? `${Math.max(1, Math.round(age * 60))}分钟` : `${age.toFixed(1)}小时`}</span>
       )}
       <span className="font-medium" style={{ color: TONE_VAR[tone] }}>
-        {age == null ? 'AS-OF ?' : fresh ? 'FRESH' : 'STALE'}
+        {age == null ? '时点未知' : fresh ? '新鲜' : '陈旧'}
       </span>
     </span>
   );
@@ -250,7 +250,7 @@ export function MandateGateChip({ state, expiresAt, now, className = '' }: {
     : derived === 'EXPIRED' ? 'neg'
       : derived === 'PENDING' ? 'info'
         : derived === 'UNSIGNED' ? 'warn' : 'muted';
-  return <Chip label={`MANDATE_${derived}`} tone={tone} className={className} />;
+  return <Chip label={`授权书：${statusLabel(derived)}`} tone={tone} className={className} />;
 }
 
 /* ---------- MarketTape: topbar tape fed by the MEXC market snapshot --------

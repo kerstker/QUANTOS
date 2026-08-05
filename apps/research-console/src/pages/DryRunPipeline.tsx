@@ -11,6 +11,7 @@ import { EquityCurveChart, type EquitySeries } from '@/ui/workbench';
 import { stamp, type Tone } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchDryRunSnapshot } from '@/lib/api/research-console-api';
+import { statusLabel } from '@/lib/i18n/bilingual';
 import type {
   AlphaPipelineCandidate,
   DryRunPipelinePayload,
@@ -50,8 +51,8 @@ function fmtPct(value?: number | null): string {
 
 function fmtAge(ageMs?: number | null): string {
   if (ageMs == null) return '—';
-  if (ageMs < 60_000) return `${Math.max(0, Math.floor(ageMs / 1000))}s`;
-  return `${Math.floor(ageMs / 60_000)}m`;
+  if (ageMs < 60_000) return `${Math.max(0, Math.floor(ageMs / 1000))}秒`;
+  return `${Math.floor(ageMs / 60_000)}分钟`;
 }
 
 function fmtBps(value?: string | null): string {
@@ -163,43 +164,43 @@ function TcaHistoryPanel({ history }: { history?: RouteTcaHistory }) {
   const venues = history?.venues ?? [];
   const range = history?.first_timestamp != null && history.last_timestamp != null
     ? `${new Date(history.first_timestamp).toLocaleDateString('zh-CN')} — ${new Date(history.last_timestamp).toLocaleDateString('zh-CN')}`
-    : 'no retained range';
+    : '暂无保留区间';
 
   return (
     <Panel
       title="纸面执行质量"
-      eyebrow="Route-level TCA · simulation only"
-      right={<Chip label={history?.status ?? 'NO_ROUTE_TCA'} tone={ready ? 'pos' : 'warn'} />}
+      eyebrow="路由级 TCA · 仅模拟"
+      right={<Chip label={history?.status ? statusLabel(history.status) : '暂无路由 TCA'} tone={ready ? 'pos' : 'warn'} />}
       bodyClass="p-4"
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Weighted shortfall" value={fmtBps(history?.weighted_shortfall_bps)} detail="notional weighted" tone={ready ? 'pos' : 'warn'} />
-        <Metric label="Routed runs" value={(history?.run_count ?? 0).toLocaleString('en-US')} detail="append-only evidence" tone="info" />
-        <Metric label="Route records" value={(history?.record_count ?? 0).toLocaleString('en-US')} detail="verified records" tone="info" />
-        <Metric label="Venues" value={history?.venue_count ?? 0} detail={range} tone="special" />
+        <Metric label="加权执行缺口" value={fmtBps(history?.weighted_shortfall_bps)} detail="按名义金额加权" tone={ready ? 'pos' : 'warn'} />
+        <Metric label="路由运行次数" value={(history?.run_count ?? 0).toLocaleString('zh-CN')} detail="仅追加证据" tone="info" />
+        <Metric label="路由记录" value={(history?.record_count ?? 0).toLocaleString('zh-CN')} detail="已验证记录" tone="info" />
+        <Metric label="交易场所" value={history?.venue_count ?? 0} detail={range} tone="special" />
       </div>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
-        <table className="w-full table-fixed text-left text-xs" aria-label="paper route TCA by venue">
+        <table className="w-full table-fixed text-left text-xs" aria-label="按交易场所统计的纸面路由 TCA">
           <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
             <tr>
-              <th className="w-[34%] px-3 py-2 font-medium">Venue</th>
-              <th className="px-3 py-2 text-right font-medium">Records</th>
-              <th className="px-3 py-2 text-right font-medium">Notional</th>
-              <th className="px-3 py-2 text-right font-medium">Shortfall</th>
+              <th className="w-[34%] px-3 py-2 font-medium">交易场所</th>
+              <th className="px-3 py-2 text-right font-medium">记录数</th>
+              <th className="px-3 py-2 text-right font-medium">名义金额</th>
+              <th className="px-3 py-2 text-right font-medium">执行缺口</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line/70">
             {venues.length ? venues.map(venue => (
               <tr key={venue.venue_id}>
                 <td className="truncate px-3 py-2 font-semibold text-ink">{venue.venue_id}</td>
-                <td className="px-3 py-2 text-right ticker-num text-muted">{venue.record_count.toLocaleString('en-US')}</td>
+                <td className="px-3 py-2 text-right ticker-num text-muted">{venue.record_count.toLocaleString('zh-CN')}</td>
                 <td className="px-3 py-2 text-right ticker-num text-muted">{fmtCompactUsd(venue.reference_notional)}</td>
                 <td className="px-3 py-2 text-right ticker-num text-ink">{fmtBps(venue.weighted_shortfall_bps)}</td>
               </tr>
             )) : (
               <tr>
-                <td colSpan={4} className="px-3 py-5 text-center text-faint">No verified route-level TCA retained.</td>
+                <td colSpan={4} className="px-3 py-5 text-center text-faint">暂无已验证并保留的路由级 TCA。</td>
               </tr>
             )}
           </tbody>
@@ -207,7 +208,7 @@ function TcaHistoryPanel({ history }: { history?: RouteTcaHistory }) {
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-3xs text-faint">
         <span>{range}</span>
-        <span>SIMULATION_ONLY · verified on read</span>
+        <span>仅模拟 · 读取时验证</span>
       </div>
     </Panel>
   );
@@ -243,7 +244,7 @@ function FlowStep({
         <span className="block text-xs font-medium text-ink">{label}</span>
         <span className="block truncate text-3xs text-faint">{detail}</span>
       </span>
-      <Chip label={ok ? 'PASS' : blocked ? 'GATED' : 'CHECK'} tone={tone} />
+      <Chip label={ok ? '通过' : blocked ? '门禁阻断' : '待检查'} tone={tone} />
     </div>
   );
 }
@@ -253,19 +254,19 @@ function PaperLoadingState() {
     <div
       className="mt-4 rounded-lg border border-line bg-panel p-5"
       aria-live="polite"
-      aria-label="paper snapshot loading"
+      aria-label="纸面快照加载中"
     >
       <div className="flex items-center gap-3">
         <span className="q-live h-2.5 w-2.5 rounded-full bg-info" />
         <div>
           <div className="text-sm font-semibold text-ink">正在建立只读纸面快照</div>
           <div className="mt-1 text-3xs text-faint">
-            Connecting to the paper ledger, scheduler, market marks and risk evidence.
+            正在连接纸面账本、调度器、市场估值和风险证据。
           </div>
         </div>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-        {['Equity', 'PnL', 'Positions', 'Reconciliation', 'Official gate'].map(label => (
+        {['权益', '盈亏', '持仓', '对账', '正式门禁'].map(label => (
           <div key={label} className="rounded-md border border-line/70 bg-inset/40 p-3">
             <div className="text-3xs uppercase tracking-wider text-faint">{label}</div>
             <div className="mt-3 h-5 w-2/3 animate-pulse rounded bg-line/60" />
@@ -280,8 +281,8 @@ function PaperLoadingState() {
 
 function fmtHorizon(horizonMs?: number | null): string {
   if (horizonMs == null) return '--';
-  if (horizonMs < 60 * 60_000) return `${Math.round(horizonMs / 60_000)}m`;
-  return `${Math.round(horizonMs / (60 * 60_000))}h`;
+  if (horizonMs < 60 * 60_000) return `${Math.round(horizonMs / 60_000)}分钟`;
+  return `${Math.round(horizonMs / (60 * 60_000))}小时`;
 }
 
 type LifecycleFilter = 'ALL' | 'LOSS' | 'PROFIT' | 'NO_PNL';
@@ -299,7 +300,7 @@ function lifecycleSeries(row: RealtimeAlphaLifecyclePayload): EquitySeries[] {
     .filter(point => Number.isFinite(point.cum_return))
     .map(point => ({ t: point.as_of_ms, equity: 100 * (1 + point.cum_return) }));
   return points.length
-    ? [{ label: `${row.candidate_id} paper index`, points, tone: effectiveLifecycleState(row) === 'LOSS' ? 'warn' : 'pos' }]
+    ? [{ label: `${row.candidate_id} 纸面指数`, points, tone: effectiveLifecycleState(row) === 'LOSS' ? 'warn' : 'pos' }]
     : [];
 }
 
@@ -323,11 +324,11 @@ function FactorLifecycleReport({
   const formalShadowState = formalShadow?.status ?? 'NOT_AVAILABLE';
   const realized = row.paper.n_realizations > 0;
   const stages = [
-    { label: 'REGISTERED', reached: true },
-    { label: 'EVALUATED', reached: row.research.evaluation_status === 'EVALUATED' },
-    { label: 'SIGNAL SHADOW', reached: row.paper.n_decisions > 0 },
-    { label: 'EXEC PAPER', reached: row.execution.n_executions > 0 },
-    { label: 'FORMAL PASS', reached: row.research.gate_pass },
+    { label: '已登记', reached: true },
+    { label: '已评估', reached: row.research.evaluation_status === 'EVALUATED' },
+    { label: '信号影子', reached: row.paper.n_decisions > 0 },
+    { label: '工程纸面', reached: row.execution.n_executions > 0 },
+    { label: '正式通过', reached: row.research.gate_pass },
   ];
   const blockers = [...(row.research.gate_reasons ?? []), ...row.errors];
 
@@ -335,31 +336,31 @@ function FactorLifecycleReport({
     <div className="border-t border-line bg-panel/70 p-4" data-testid="factor-lifecycle-report">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-3xs font-semibold uppercase tracking-[0.14em] text-faint">Factor lifecycle report · SSE live</div>
+          <div className="text-3xs font-semibold tracking-[0.14em] text-faint">因子生命周期报告 · SSE 实时</div>
           <div className="mt-1 break-all text-sm font-semibold text-ink">{row.candidate_id}</div>
           <div className="mt-1 text-3xs text-muted">
-            {row.family_id ?? '--'} / {row.mechanism ?? '--'} · {fmtHorizon(row.horizon_ms)} · last event {fmtTime(row.last_event_ms)}
+            {row.family_id ?? '--'} / {row.mechanism ?? '--'} · {fmtHorizon(row.horizon_ms)} · 最近事件 {fmtTime(row.last_event_ms)}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Chip label={row.pipeline_stage} tone="info" />
+          <Chip label={statusLabel(row.pipeline_stage)} tone="info" />
           <Chip
-            label={effectiveState}
+            label={statusLabel(effectiveState)}
             tone={effectiveState === 'LOSS' ? 'neg' : effectiveState === 'PROFIT' ? 'pos' : 'muted'}
           />
           <Chip
-            label={`SHADOW ${row.performance_state}`}
+            label={`影子 ${statusLabel(row.performance_state)}`}
             tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'}
           />
           <Chip
-            label={`EXEC ${executionState}`}
+            label={`执行 ${statusLabel(executionState)}`}
             tone={executionState === 'LOSS' ? 'neg' : executionState === 'PROFIT' ? 'pos' : 'muted'}
           />
           <Chip
-            label={`FORMAL SHADOW ${formalShadowState}`}
+            label={`正式影子 ${statusLabel(formalShadowState)}`}
             tone={formalShadowState === 'MATURE' ? 'pos' : formalShadowState === 'RUNNING' ? 'info' : 'warn'}
           />
-          <Chip label="NON-PROMOTABLE" tone="warn" />
+          <Chip label="不可晋级" tone="warn" />
         </div>
       </div>
 
@@ -367,34 +368,34 @@ function FactorLifecycleReport({
         {stages.map((stage, index) => (
           <React.Fragment key={stage.label}>
             {index ? <span className="text-line-strong">→</span> : null}
-            <Chip label={stage.label} tone={stage.reached ? (stage.label === 'FORMAL PASS' ? 'pos' : 'info') : 'muted'} />
+            <Chip label={stage.label} tone={stage.reached ? (stage.label === '正式通过' ? 'pos' : 'info') : 'muted'} />
           </React.Fragment>
         ))}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
-        <Metric label="Research return" value={fmtPct(row.research.net_return)} detail={`${row.research.n_periods ?? 0} observations`} tone={(row.research.net_return ?? 0) >= 0 ? 'pos' : 'neg'} />
-        <Metric label="Holdout SR" value={row.research.holdout_net_sharpe?.toFixed(2) ?? '—'} detail={row.research.gate_pass ? 'formal pass' : 'not passed'} tone={row.research.gate_pass ? 'pos' : 'warn'} />
-        <Metric label="Shadow return" value={fmtRealizedPct(row.paper.cum_return, realized)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
-        <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
-        <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
-        <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
+        <Metric label="研究收益" value={fmtPct(row.research.net_return)} detail={`${row.research.n_periods ?? 0} 个观测`} tone={(row.research.net_return ?? 0) >= 0 ? 'pos' : 'neg'} />
+        <Metric label="留出集夏普" value={row.research.holdout_net_sharpe?.toFixed(2) ?? '—'} detail={row.research.gate_pass ? '正式通过' : '未通过'} tone={row.research.gate_pass ? 'pos' : 'warn'} />
+        <Metric label="影子收益" value={fmtRealizedPct(row.paper.cum_return, realized)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} 已兑现`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="纸面回撤" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} 个待兑现`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
+        <Metric label="模拟执行" value={row.execution.n_executions} detail={`${row.execution.n_orders} 笔订单 / ${row.execution.n_fill_slices} 个成交片段`} tone="info" />
+        <Metric label="执行成本" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} 个错过窗口`} tone="warn" />
         <Metric
-          label="Formal shadow"
+          label="正式影子"
           value={formalShadow ? formalShadow.n_realizations : '--'}
-          detail={formalShadow ? `${formalShadowState} / independent ledger` : 'authority not available'}
+          detail={formalShadow ? `${statusLabel(formalShadowState)} / 独立账本` : '权威快照不可用'}
           tone={formalShadowState === 'MATURE' ? 'pos' : formalShadowState === 'RUNNING' ? 'info' : 'warn'}
         />
         <Metric
-          label="Execution net PnL"
+          label="执行净盈亏"
           value={fmtUsd(executionPnlAvailable ? row.execution.cumulative_net_pnl : null)}
-          detail={executionPnlAvailable ? `${executionRecent.length} recent batches / cumulative` : 'accounting not complete'}
+          detail={executionPnlAvailable ? `${executionRecent.length} 个近期批次 / 累计` : '核算尚未完成'}
           tone={!executionPnlAvailable ? 'warn' : (row.execution.cumulative_net_pnl ?? 0) < 0 ? 'neg' : 'pos'}
         />
         <Metric
-          label="Execution equity"
+          label="执行权益"
           value={fmtUsd(executionPnlAvailable ? row.execution.last_equity : null)}
-          detail={executionPnlAvailable ? 'latest valid simulated batch' : 'waiting for valid PnL'}
+          detail={executionPnlAvailable ? '最近有效模拟批次' : '等待有效盈亏'}
           tone="info"
         />
       </div>
@@ -402,23 +403,23 @@ function FactorLifecycleReport({
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
         <div className="rounded-lg border border-line bg-inset/35 p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-3xs text-faint">
-            <span className="font-semibold uppercase tracking-[0.12em]">Realized paper performance index</span>
-            <span>100 = first decision · net of modeled costs</span>
+            <span className="font-semibold tracking-[0.12em]">已兑现纸面业绩指数</span>
+            <span>100 = 首次决策 · 已扣模型成本</span>
           </div>
           {series.length ? (
             <EquityCurveChart series={series} height={190} />
           ) : (
-            <div className="grid h-[190px] place-items-center text-xs text-faint">No realized paper history yet.</div>
+            <div className="grid h-[190px] place-items-center text-xs text-faint">尚无已兑现纸面历史。</div>
           )}
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
           <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
-            Latest realized periods
+            最近已兑现周期
           </div>
-          <table className="w-full text-left text-3xs" aria-label="selected factor realized performance history">
+          <table className="w-full text-left text-3xs" aria-label="所选因子的已兑现业绩历史">
             <thead className="border-b border-line/70 text-faint">
-              <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Period</th><th className="px-3 py-2 text-right font-medium">Cumulative</th><th className="px-3 py-2 text-right font-medium">DD</th></tr>
+              <tr><th className="px-3 py-2 font-medium">时间</th><th className="px-3 py-2 text-right font-medium">本期</th><th className="px-3 py-2 text-right font-medium">累计</th><th className="px-3 py-2 text-right font-medium">回撤</th></tr>
             </thead>
             <tbody className="divide-y divide-line/60">
               {recent.length ? recent.map(point => (
@@ -428,20 +429,20 @@ function FactorLifecycleReport({
                   <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.cum_return)}`}>{fmtPct(point.cum_return)}</td>
                   <td className="px-3 py-2 text-right ticker-num text-neg">{fmtPct(-point.drawdown)}</td>
                 </tr>
-              )) : <tr><td colSpan={4} className="px-3 py-5 text-center text-faint">Collecting first realization.</td></tr>}
+              )) : <tr><td colSpan={4} className="px-3 py-5 text-center text-faint">正在收集首次兑现结果。</td></tr>}
             </tbody>
           </table>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line bg-inset/35 xl:col-span-2" data-testid="execution-paper-accounting">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2 text-3xs text-faint">
-            <span className="font-semibold uppercase tracking-[0.12em]">Execution Paper accounting · simulated SOR</span>
-            <span>{executionPnlAvailable ? `${row.execution.n_executions} valid batches` : 'collecting valid accounting'}</span>
+            <span className="font-semibold tracking-[0.12em]">工程纸面核算 · 模拟 SOR</span>
+            <span>{executionPnlAvailable ? `${row.execution.n_executions} 个有效批次` : '正在收集有效核算'}</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-3xs" aria-label="selected factor execution paper accounting history">
+            <table className="w-full text-left text-3xs" aria-label="所选因子的工程纸面核算历史">
               <thead className="border-b border-line/70 text-faint">
-                <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Batch net PnL</th><th className="px-3 py-2 text-right font-medium">Cumulative</th><th className="px-3 py-2 text-right font-medium">TCA cost</th><th className="px-3 py-2 text-right font-medium">Turnover</th></tr>
+                <tr><th className="px-3 py-2 font-medium">时间</th><th className="px-3 py-2 text-right font-medium">批次净盈亏</th><th className="px-3 py-2 text-right font-medium">累计</th><th className="px-3 py-2 text-right font-medium">TCA 成本</th><th className="px-3 py-2 text-right font-medium">换手金额</th></tr>
               </thead>
               <tbody className="divide-y divide-line/60">
                 {executionRecent.length ? executionRecent.map(point => (
@@ -452,29 +453,29 @@ function FactorLifecycleReport({
                     <td className="px-3 py-2 text-right ticker-num text-warn">{fmtUsd(point.execution_cost)}</td>
                     <td className="px-3 py-2 text-right ticker-num text-muted">{fmtUsd(point.turnover)}</td>
                   </tr>
-                )) : <tr><td colSpan={5} className="px-3 py-5 text-center text-faint">No valid execution PnL yet; execution counts are not performance.</td></tr>}
+                )) : <tr><td colSpan={5} className="px-3 py-5 text-center text-faint">尚无有效执行盈亏；执行次数不等于业绩。</td></tr>}
               </tbody>
             </table>
           </div>
           <div className="border-t border-line/70 px-3 py-2 text-3xs text-muted">
-            Positions lots {executionPositions.length ? executionPositions.map(([instrument, lots]) => `${instrument} ${lots > 0 ? '+' : ''}${lots}`).join(' · ') : 'flat / no valid snapshot'} · reconciliation residuals are required to be zero · not official account PnL
+            仓位手数 {executionPositions.length ? executionPositions.map(([instrument, lots]) => `${instrument} ${lots > 0 ? '+' : ''}${lots}`).join(' · ') : '空仓 / 无有效快照'} · 对账残差必须为零 · 非正式账户盈亏
           </div>
         </div>
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <div className="rounded-md border border-line bg-inset/35 px-3 py-2 text-3xs text-muted">
-          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Identity / lineage</div>
-          <div className="mt-1">parent {candidate?.parent_candidate_id ?? 'ROOT'} · generation {candidate?.adaptive_generation ?? 0}</div>
-          <div className="mt-1">mutation {candidate?.mutation ?? 'NONE'} · fresh OOS {candidate?.fresh_oos_required ? 'REQUIRED' : 'BASELINE'}</div>
+          <div className="font-semibold tracking-[0.1em] text-faint">身份 / 血缘</div>
+          <div className="mt-1">父代 {candidate?.parent_candidate_id ?? '根节点'} · 代数 {candidate?.adaptive_generation ?? 0}</div>
+          <div className="mt-1">变异 {candidate?.mutation ?? '无'} · 新 OOS {candidate?.fresh_oos_required ? '必需' : '基线'}</div>
         </div>
         <div className="rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
-          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Gate report</div>
-          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : 'No reported blocker; formal authority still remains human-gated.'}</div>
+          <div className="font-semibold tracking-[0.1em] text-faint">门禁报告</div>
+          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : '未报告阻断项；正式授权仍由人工门控制。'}</div>
         </div>
       </div>
       <div className="mt-2 text-3xs text-faint">
-        Source {row.paper.pnl_source} · engineering evidence only · promotion {row.promotion_eligible ? 'allowed' : 'blocked'} · live {row.live_allowed ? 'allowed' : 'off'}
+        来源 {row.paper.pnl_source} · 仅工程证据 · 晋级{row.promotion_eligible ? '允许' : '阻断'} · 实盘{row.live_allowed ? '允许' : '关闭'}
       </div>
     </div>
   );
@@ -539,49 +540,49 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
       eyebrow="实时微观结构 → 预注册试验 → 锁定验证"
       right={
         <div className="flex flex-wrap items-center gap-2">
-          <Chip label={snapshot?.autonomy.requires_developer_ai ? 'IDE COUPLED' : 'SYSTEM NATIVE'} tone="info" />
+          <Chip label={snapshot?.autonomy.requires_developer_ai ? '依赖开发 IDE' : '系统原生'} tone="info" />
           <Chip
             label={executionPaperRunning
-              ? `EXEC PAPER ${executionTrackCount}`
+              ? `执行纸面 ${executionTrackCount}`
               : engineeringPaperRunning
-                ? `SIGNAL SHADOW ${engineeringTrackCount}`
-              : snapshot?.forward_shadow.status ?? 'PAPER NO SNAPSHOT'}
+                ? `信号影子 ${engineeringTrackCount}`
+              : snapshot?.forward_shadow.status ? statusLabel(snapshot.forward_shadow.status) : '无纸面快照'}
             tone={executionPaperRunning ? 'pos' : engineeringPaperRunning ? 'info' : 'warn'}
           />
-          <Chip label={snapshot?.status ?? 'NO SNAPSHOT'} tone={statusTone} />
+          <Chip label={snapshot?.status ? statusLabel(snapshot.status) : '无快照'} tone={statusTone} />
         </div>
       }
       bodyClass="p-4"
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Metric
-          label="Autonomy"
-          value={running ? 'RUNNING' : 'GATED'}
-          detail="hourly system worker"
+          label="自治状态"
+          value={running ? '运行中' : '门禁阻断'}
+          detail="系统每小时自动运行"
           tone={statusTone}
         />
         <Metric
-          label="Realtime history"
-          value={`${spanDays.toFixed(2)}d`}
-          detail={`${snapshot?.data_admission.common_instruments?.length ?? 0} instruments`}
+          label="实时历史"
+          value={`${spanDays.toFixed(2)}天`}
+          detail={`${snapshot?.data_admission.common_instruments?.length ?? 0} 个标的`}
           tone={spanDays >= 30 ? 'pos' : 'warn'}
         />
         <Metric
-          label="Pre-registered"
+          label="预注册试验"
           value={snapshot?.funnel.pre_registered ?? 0}
-          detail={`${snapshot?.families.length ?? 0} families`}
+          detail={`${snapshot?.families.length ?? 0} 个因子族`}
           tone="special"
         />
         <Metric
-          label="Diagnostic leads"
+          label="诊断线索"
           value={snapshot?.funnel.diagnostic_leads ?? 0}
-          detail={`${snapshot?.funnel.evaluated ?? 0} evaluated · ${engineeringTrackCount} signal tracks`}
+          detail={`${snapshot?.funnel.evaluated ?? 0} 个已评估 · ${engineeringTrackCount} 条信号轨道`}
           tone={(snapshot?.funnel.diagnostic_leads ?? 0) > 0 ? 'info' : 'muted'}
         />
         <Metric
-          label="Formal passes"
+          label="正式通过"
           value={snapshot?.funnel.formal_passes ?? 0}
-          detail={`global trials ${snapshot?.global_trial_count ?? '--'}`}
+          detail={`全局试验 ${snapshot?.global_trial_count ?? '--'}`}
           tone={(snapshot?.funnel.formal_passes ?? 0) > 0 ? 'pos' : 'warn'}
         />
       </div>
@@ -589,7 +590,7 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_minmax(240px,1fr)]">
         <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
           <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
-            Leading diagnostics — not approved Alpha
+            领先诊断线索 — 尚未获批的 Alpha
           </div>
           {candidates.length ? candidates.slice(0, 4).map(candidate => (
             <div
@@ -609,38 +610,38 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
               </span>
             </div>
           )) : (
-            <div className="px-3 py-6 text-center text-xs text-faint">No evaluated candidate snapshot yet.</div>
+            <div className="px-3 py-6 text-center text-xs text-faint">尚无已评估候选快照。</div>
           )}
         </div>
 
         <div className="rounded-lg border border-line bg-inset/35 p-3">
-          <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Current hard gates</div>
+          <div className="text-3xs font-semibold tracking-[0.12em] text-faint">当前硬门禁</div>
           <div className="mt-2 space-y-1.5">
             {gates.slice(0, 4).map(gate => (
               <div key={gate} className="break-words text-3xs text-muted">• {gate}</div>
             ))}
           </div>
           <div className="mt-3 border-t border-line pt-2 text-3xs text-faint">
-            Data admission {snapshot?.data_admission.status ?? 'NO_SNAPSHOT'} · registry chain{' '}
-            {snapshot?.registry.chain_valid ? 'valid' : 'blocked'}
-            {' '}· signal ledger {snapshot?.forward_shadow.ledger.chain_valid ? 'valid' : 'waiting'}
+            数据准入 {snapshot?.data_admission.status ? statusLabel(snapshot.data_admission.status) : '无快照'} · 注册链{' '}
+            {snapshot?.registry.chain_valid ? '有效' : '受阻'}
+            {' '}· 信号账本 {snapshot?.forward_shadow.ledger.chain_valid ? '有效' : '等待中'}
           </div>
           <div className="mt-2 text-3xs text-faint">
-            Signal Shadow {engineeringPaperRunning ? 'RUNNING' : 'WAITING'} · formal graduation{' '}
-            {graduationGates.length ? graduationGates.join(' · ') : 'gates cleared'}
+            信号影子 {engineeringPaperRunning ? '运行中' : '等待中'} · 正式毕业{' '}
+            {graduationGates.length ? graduationGates.join(' · ') : '门禁已清除'}
           </div>
           <div className="mt-2 text-3xs text-faint">
-            Execution Paper {executionPaperRunning ? 'RUNNING' : snapshot?.execution_paper?.status ?? 'WAITING'} ·{' '}
-              {executionTrackCount} accounts · {executionCount} routed · {noActionDecisions} no-action ·{' '}
-              {missedExecutionWindows} audited misses · lot authority{' '}
-            {snapshot?.execution_paper?.lot_authority.instrument_count ?? 0} instruments · ledger{' '}
-            {snapshot?.execution_paper?.ledger.chain_valid ? 'valid' : 'waiting'}
+            执行纸面 {executionPaperRunning ? '运行中' : snapshot?.execution_paper?.status ? statusLabel(snapshot.execution_paper.status) : '等待中'} ·{' '}
+              {executionTrackCount} 个账户 · {executionCount} 次路由 · {noActionDecisions} 次无动作 ·{' '}
+              {missedExecutionWindows} 个已审计错过窗口 · 手数权威{' '}
+            {snapshot?.execution_paper?.lot_authority.instrument_count ?? 0} 个标的 · 账本{' '}
+            {snapshot?.execution_paper?.ledger.chain_valid ? '有效' : '等待中'}
           </div>
           <div className="mt-2 text-3xs text-faint">
-            Capacity max {fmtUsd(capacity?.max_supported_aum_usd)} · shadow sizing{' '}
+            容量上限 {fmtUsd(capacity?.max_supported_aum_usd)} · 影子规模{' '}
             {fmtUsd(capacity?.shadow_aum_usd)} · {(capacity?.history_span_ms ?? 0) / 86_400_000 >= 30
-              ? '30d evidence ready'
-              : `${((capacity?.history_span_ms ?? 0) / 86_400_000).toFixed(2)}d / 30d`}
+              ? '30 天证据就绪'
+              : `${((capacity?.history_span_ms ?? 0) / 86_400_000).toFixed(2)}天 / 30天`}
           </div>
         </div>
       </div>
@@ -648,40 +649,40 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
       <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 text-3xs text-muted">
           <Chip
-            label={feedback?.status ?? 'FEEDBACK WAITING'}
+            label={feedback?.status ? statusLabel(feedback.status) : '反馈等待中'}
             tone={(feedback?.active_adaptive_candidates ?? 0) > 0 ? 'special' : 'info'}
           />
           <span>
-            Learning feedback · {feedback?.consumed_realizations ?? 0} realized outcomes ·{' '}
-            {feedback?.active_adaptive_candidates ?? 0} adaptive challengers
+            学习反馈 · {feedback?.consumed_realizations ?? 0} 个已兑现结果 ·{' '}
+            {feedback?.active_adaptive_candidates ?? 0} 个自适应挑战者
           </span>
           <span className="ml-auto">
-            {(feedback?.families ?? []).map(row => `${row.family_id}:${row.action}`).join(' · ') || 'family budgets collecting'}
+            {(feedback?.families ?? []).map(row => `${row.family_id}:${row.action}`).join(' · ') || '正在积累因子族预算'}
           </span>
         </div>
         {(feedback?.proposal_blockers?.length ?? 0) > 0 && (
           <div className="border-b border-line px-3 py-1.5 text-3xs text-faint">
-            Adaptive allocator {'·'} {feedback?.proposal_blockers?.join(' · ')} {'·'}{' '}
-            {feedback?.candidate_budget_remaining ?? 0} proposal slots remaining
+            自适应分配器 {'·'} {feedback?.proposal_blockers?.join(' · ')} {'·'}{' '}
+            剩余 {feedback?.candidate_budget_remaining ?? 0} 个提案名额
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
           <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
             全量 Alpha 生命周期与实时业绩
           </div>
-          <Chip label={`${lifecycle.length} FACTORS`} tone="info" />
-          <Chip label={`${profitable} PROFIT`} tone={profitable ? 'pos' : 'muted'} />
-          <Chip label={`${losing} LOSS`} tone={losing ? 'neg' : 'muted'} />
-          <Chip label={`${noPnl} NO PNL`} tone="muted" />
-          <span className="text-3xs text-faint">EXEC {executionProfitable} profit / {executionLosing} loss</span>
-          <span className="ml-auto text-3xs text-faint">SSE · execution net PnL when available, shadow fallback otherwise</span>
+          <Chip label={`${lifecycle.length} 个因子`} tone="info" />
+          <Chip label={`${profitable} 个盈利`} tone={profitable ? 'pos' : 'muted'} />
+          <Chip label={`${losing} 个亏损`} tone={losing ? 'neg' : 'muted'} />
+          <Chip label={`${noPnl} 个无盈亏`} tone="muted" />
+          <span className="text-3xs text-faint">执行：{executionProfitable} 盈利 / {executionLosing} 亏损</span>
+          <span className="ml-auto text-3xs text-faint">SSE · 优先使用执行净盈亏，不可用时回退影子业绩</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2" aria-label="factor performance filters">
           {([
-            ['ALL', `ALL ${lifecycle.length}`],
-            ['LOSS', `LOSS ${losing}`],
-            ['PROFIT', `PROFIT ${profitable}`],
-            ['NO_PNL', `NO PNL ${noPnl}`],
+            ['ALL', `全部 ${lifecycle.length}`],
+            ['LOSS', `亏损 ${losing}`],
+            ['PROFIT', `盈利 ${profitable}`],
+            ['NO_PNL', `无盈亏 ${noPnl}`],
           ] as Array<[LifecycleFilter, string]>).map(([value, label]) => (
             <button
               key={value}
@@ -698,17 +699,17 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           <span className="ml-auto text-3xs text-faint">亏损优先排序 · 点击因子查看完整报告</span>
         </div>
         <div className="max-h-[420px] overflow-auto">
-          <table className="w-full min-w-[940px] text-left text-xs" aria-label="realtime alpha lifecycle performance">
+          <table className="w-full min-w-[940px] text-left text-xs" aria-label="实时 Alpha 生命周期业绩">
             <thead className="sticky top-0 border-b border-line bg-panel text-3xs uppercase tracking-[0.1em] text-faint">
               <tr>
-                <th className="px-3 py-2 font-medium">Factor</th>
-                <th className="px-3 py-2 font-medium">Family / horizon</th>
-                <th className="px-3 py-2 font-medium">Lifecycle</th>
-                <th className="px-3 py-2 text-right font-medium">Research</th>
-                <th className="px-3 py-2 text-right font-medium">Shadow PnL</th>
-                <th className="px-3 py-2 text-right font-medium">Realized</th>
-                <th className="px-3 py-2 text-right font-medium">Execution</th>
-                <th className="px-3 py-2 font-medium">State</th>
+                <th className="px-3 py-2 font-medium">因子</th>
+                <th className="px-3 py-2 font-medium">因子族 / 周期</th>
+                <th className="px-3 py-2 font-medium">生命周期</th>
+                <th className="px-3 py-2 text-right font-medium">研究收益</th>
+                <th className="px-3 py-2 text-right font-medium">影子盈亏</th>
+                <th className="px-3 py-2 text-right font-medium">已兑现</th>
+                <th className="px-3 py-2 text-right font-medium">执行</th>
+                <th className="px-3 py-2 font-medium">状态</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/70">
@@ -725,7 +726,7 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                     </button>
                   </td>
                   <td className="px-3 py-2 text-muted">{row.family_id ?? '--'} · {fmtHorizon(row.horizon_ms)}</td>
-                  <td className="px-3 py-2"><Chip label={row.pipeline_stage} tone="info" /></td>
+                  <td className="px-3 py-2"><Chip label={statusLabel(row.pipeline_stage)} tone="info" /></td>
                   <td className={`px-3 py-2 text-right ticker-num ${signedClass(row.research.net_return)}`}>
                     {fmtPct(row.research.net_return)}
                   </td>
@@ -733,32 +734,32 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                     <div>{fmtRealizedPct(row.paper.cum_return, row.paper.n_realizations > 0)}</div>
                     <div className="mt-0.5 text-3xs text-faint">
                       {row.paper.n_realizations > 0
-                        ? `last ${fmtPct(row.paper.performance_history?.[Math.max(0, (row.paper.performance_history?.length ?? 1) - 1)]?.period_return)}`
-                        : 'no realized paper PnL'}
+                        ? `最近一期 ${fmtPct(row.paper.performance_history?.[Math.max(0, (row.paper.performance_history?.length ?? 1) - 1)]?.period_return)}`
+                        : '无已兑现纸面盈亏'}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right ticker-num text-muted">
                     {row.paper.n_realizations}/{row.paper.n_decisions}
                   </td>
                   <td className="px-3 py-2 text-right ticker-num text-muted">
-                    <div>{row.execution.n_executions} runs · {row.execution.n_orders} orders</div>
+                    <div>{row.execution.n_executions} 次运行 · {row.execution.n_orders} 笔订单</div>
                     <div className="mt-0.5 text-3xs text-faint">
-                      net {row.execution.execution_pnl_available ? fmtUsd(row.execution.cumulative_net_pnl) : 'accounting pending'}
+                      净盈亏 {row.execution.execution_pnl_available ? fmtUsd(row.execution.cumulative_net_pnl) : '等待核算'}
                     </div>
                     <div className={`mt-0.5 text-3xs ${executionLifecycleState(row) === 'LOSS' ? 'text-neg' : executionLifecycleState(row) === 'PROFIT' ? 'text-pos' : 'text-faint'}`}>
-                      {executionLifecycleState(row)}
+                      {statusLabel(executionLifecycleState(row))}
                     </div>
                   </td>
                   <td className="px-3 py-2">
                     <Chip
-                      label={effectiveLifecycleState(row)}
+                      label={statusLabel(effectiveLifecycleState(row))}
                       tone={effectiveLifecycleState(row) === 'LOSS' ? 'neg' : effectiveLifecycleState(row) === 'PROFIT' ? 'pos' : 'muted'}
                     />
-                    <div className="mt-1 text-3xs text-faint">shadow {row.performance_state}</div>
+                    <div className="mt-1 text-3xs text-faint">影子 {statusLabel(row.performance_state)}</div>
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">No factors match this performance filter.</td></tr>
+                <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">没有符合当前业绩筛选条件的因子。</td></tr>
               )}
             </tbody>
           </table>
@@ -790,29 +791,29 @@ function StrategyRow({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-semibold text-ink">{alpha}</span>
-          <Chip label={value.status ?? 'PAPER'} tone="info" />
+          <Chip label={value.status ? statusLabel(value.status) : '纸面'} tone="info" />
         </div>
-        <div className="mt-1 text-3xs text-faint">{positions.length} active positions · public marks</div>
+        <div className="mt-1 text-3xs text-faint">{positions.length} 个活跃持仓 · 公共行情估值</div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Equity</div>
+        <div className="text-3xs tracking-wider text-faint">权益</div>
         <div className="ticker-num mt-1 text-sm text-ink">{fmtUsd(value.equity)}</div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
+        <div className="text-3xs tracking-wider text-faint">净盈亏</div>
         <div className={`ticker-num mt-1 text-sm ${signedClass(pnl)}`}>{fmtUsd(pnl)}</div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
+        <div className="text-3xs tracking-wider text-faint">收益率</div>
         <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>
           {fmtPct(value.return_on_aum)}
         </div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Forward gate</div>
+        <div className="text-3xs tracking-wider text-faint">前向门禁</div>
         <div className="ticker-num mt-1 text-sm text-warn">{forwardPeriods ?? 0} / {(forwardPeriods ?? 0) + (periodsToGate ?? 0)}</div>
         <div className="mt-1 truncate text-3xs text-faint">
-          {riskReasons.length ? riskReasons.join(' · ') : reconciled ? 'reconciled' : 'reconciliation check'}
+          {riskReasons.length ? riskReasons.join(' · ') : reconciled ? '已对账' : '待检查对账'}
         </div>
       </div>
     </div>
@@ -871,7 +872,7 @@ function OfficialFactorLifecycleReport({
   const paperDrawdown = officialPaperDrawdown(points);
   const series: EquitySeries[] = points.length
     ? [{
-      label: `${alpha} official paper equity`,
+      label: `${alpha} 正式纸面权益`,
       points: points.map(point => ({ t: point.observed_at, equity: point.equity })),
       tone: (value.net_pnl ?? 0) < 0 ? 'warn' : 'pos',
     }]
@@ -881,34 +882,34 @@ function OfficialFactorLifecycleReport({
     ? 'NO_REALIZED_PNL'
     : (value.net_pnl ?? 0) > 0 ? 'PROFIT' : (value.net_pnl ?? 0) < 0 ? 'LOSS' : 'FLAT';
   const stages = [
-    { label: 'RESEARCH BACKTEST', reached: (backtest?.n_periods ?? 0) > 0 },
-    { label: 'VALIDATION', reached: candidate?.independent_evaluation?.status === 'VERIFIED' },
-    { label: 'PAPER MARKED', reached: currentPaper },
-    { label: 'FORWARD MATURED', reached: Boolean(candidate?.execution_paper) },
-    { label: 'LIVE', reached: false },
+    { label: '研究回测', reached: (backtest?.n_periods ?? 0) > 0 },
+    { label: '独立验证', reached: candidate?.independent_evaluation?.status === 'VERIFIED' },
+    { label: '纸面估值', reached: currentPaper },
+    { label: '前向成熟', reached: Boolean(candidate?.execution_paper) },
+    { label: '实盘', reached: false },
   ];
   const gateRows = [
-    ['HISTORICAL_OOS', 'Historical OOS'],
-    ['SIGNAL_SHADOW', 'Signal Shadow'],
-    ['RESEARCH_RISK', 'Research Risk'],
-    ['EXECUTION_PAPER', 'Execution Paper'],
-    ['LIFECYCLE', 'Lifecycle'],
+    ['HISTORICAL_OOS', '历史样本外'],
+    ['SIGNAL_SHADOW', '信号影子'],
+    ['RESEARCH_RISK', '研究风险'],
+    ['EXECUTION_PAPER', '工程纸面'],
+    ['LIFECYCLE', '生命周期'],
   ] as const;
 
   return (
     <div className="border-t border-line bg-panel/70 p-4" data-testid="official-factor-lifecycle-report">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-3xs font-semibold uppercase tracking-[0.14em] text-faint">Official factor lifecycle report · SSE live</div>
+          <div className="text-3xs font-semibold tracking-[0.14em] text-faint">正式因子生命周期报告 · SSE 实时</div>
           <div className="mt-1 break-all text-sm font-semibold text-ink">{alpha}</div>
           <div className="mt-1 text-3xs text-muted">
-            {candidate?.family_id ?? 'UNCLASSIFIED'} / {candidate?.definition_kind ?? 'PAPER_REALTIME_MARK'} · last mark {fmtTime(value.observed_at)}
+            {candidate?.family_id ?? '未分类'} / {candidate?.definition_kind ?? '纸面实时估值'} · 最近估值 {fmtTime(value.observed_at)}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
-          <Chip label={performanceState} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
-          <Chip label="LIVE OFF" tone="neg" />
+          <Chip label={value.status ? statusLabel(value.status) : '无状态'} tone={pending ? 'warn' : 'info'} />
+          <Chip label={statusLabel(performanceState)} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+          <Chip label="实盘关闭" tone="neg" />
         </div>
       </div>
 
@@ -922,16 +923,16 @@ function OfficialFactorLifecycleReport({
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
-        <Metric label="Research return" value={fmtPct(backtest?.total_return)} detail={`${backtest?.n_periods ?? 0} backtest periods`} tone={(backtest?.total_return ?? 0) >= 0 ? 'pos' : 'neg'} />
-        <Metric label="Research SR" value={backtest?.sharpe_vt?.toFixed(2) ?? '—'} detail={backtest?.research_risk_decision ?? 'no risk verdict'} tone={backtest?.research_risk_decision === 'RISK_APPROVED' ? 'pos' : 'warn'} />
-        <Metric label="Paper net PnL" value={fmtUsd(currentPaper ? value.net_pnl : null)} detail={currentPaper ? `${value.n_fills ?? 0} fills · ${points.length} marks` : 'no realized paper PnL'} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
-        <Metric label="Paper return" value={fmtPct(currentPaper ? value.return_on_aum : null)} detail={`${Object.keys(value.positions ?? {}).filter(symbol => value.positions?.[symbol] !== 0).length} active positions`} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
-        <Metric label="Paper drawdown" value={fmtPct(paperDrawdown == null ? null : -paperDrawdown)} detail={points.length ? 'from retained marks' : 'no history'} tone={paperDrawdown ? 'neg' : 'muted'} />
-        <Metric label="Funding / costs" value={fmtUsd(currentPaper ? (value.funding_pnl ?? 0) - (value.costs ?? 0) : null)} detail={currentPaper ? `${value.funding_events ?? 0} funding events` : 'no realized paper PnL'} tone="info" />
+        <Metric label="研究收益" value={fmtPct(backtest?.total_return)} detail={`${backtest?.n_periods ?? 0} 个回测周期`} tone={(backtest?.total_return ?? 0) >= 0 ? 'pos' : 'neg'} />
+        <Metric label="研究夏普" value={backtest?.sharpe_vt?.toFixed(2) ?? '—'} detail={backtest?.research_risk_decision ? statusLabel(backtest.research_risk_decision) : '无风险裁决'} tone={backtest?.research_risk_decision === 'RISK_APPROVED' ? 'pos' : 'warn'} />
+        <Metric label="纸面净盈亏" value={fmtUsd(currentPaper ? value.net_pnl : null)} detail={currentPaper ? `${value.n_fills ?? 0} 个成交 · ${points.length} 次估值` : '无已兑现纸面盈亏'} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="纸面收益率" value={fmtPct(currentPaper ? value.return_on_aum : null)} detail={`${Object.keys(value.positions ?? {}).filter(symbol => value.positions?.[symbol] !== 0).length} 个活跃持仓`} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="纸面回撤" value={fmtPct(paperDrawdown == null ? null : -paperDrawdown)} detail={points.length ? '基于保留估值' : '无历史'} tone={paperDrawdown ? 'neg' : 'muted'} />
+        <Metric label="资金费 / 成本" value={fmtUsd(currentPaper ? (value.funding_pnl ?? 0) - (value.costs ?? 0) : null)} detail={currentPaper ? `${value.funding_events ?? 0} 个资金费事件` : '无已兑现纸面盈亏'} tone="info" />
       </div>
 
       <div className="mt-3 rounded-lg border border-line bg-inset/25 px-3 py-3" data-testid="official-factor-gate-matrix">
-        <div className="mb-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Gate evidence matrix</div>
+        <div className="mb-2 text-3xs font-semibold tracking-[0.12em] text-faint">门禁证据矩阵</div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {gateRows.map(([key, label]) => {
             const gate = candidate?.gates?.[key];
@@ -939,9 +940,9 @@ function OfficialFactorLifecycleReport({
             return (
               <div key={key} className="min-w-0 rounded-md border border-line bg-panel/60 px-2.5 py-2">
                 <div className="truncate text-3xs uppercase tracking-[0.08em] text-faint">{label}</div>
-                <Chip label={status} tone={gateStatusTone(status)} />
+                <Chip label={statusLabel(status)} tone={gateStatusTone(status)} />
                 <div className="mt-1 truncate text-3xs text-muted" title={gate?.reference ?? undefined}>
-                  {gate?.observed_at_ms != null ? fmtTime(gate.observed_at_ms) : 'no evidence timestamp'}
+                  {gate?.observed_at_ms != null ? fmtTime(gate.observed_at_ms) : '无证据时间戳'}
                 </div>
               </div>
             );
@@ -950,31 +951,31 @@ function OfficialFactorLifecycleReport({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-line bg-inset/25 px-4 py-3 md:grid-cols-5" data-testid="official-paper-pnl-breakdown">
-        <Metric label="Realized PnL" value={fmtUsd(currentPaper ? value.realized_pnl : null)} detail={currentPaper ? 'closed fills' : 'PAPER_PENDING'} tone={currentPaper && (value.realized_pnl ?? 0) < 0 ? 'neg' : 'muted'} />
-        <Metric label="Unrealized PnL" value={fmtUsd(currentPaper ? value.unrealized_pnl : null)} detail={currentPaper ? 'latest public mark' : 'PAPER_PENDING'} tone={currentPaper && (value.unrealized_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
-        <Metric label="Funding PnL" value={fmtUsd(currentPaper ? value.funding_pnl : null)} detail={currentPaper ? `${value.funding_events ?? 0} events` : 'PAPER_PENDING'} tone={currentPaper && (value.funding_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
-        <Metric label="Trading costs" value={fmtUsd(currentPaper ? value.costs : null)} detail={currentPaper ? 'modeled execution costs' : 'PAPER_PENDING'} tone={currentPaper ? 'warn' : 'muted'} />
-        <Metric label="Residual" value={fmtUsd(currentPaper ? value.reconciliation_residual : null)} detail={currentPaper ? 'must equal 0' : 'PAPER_PENDING'} tone={currentPaper && Math.abs(value.reconciliation_residual ?? Number.POSITIVE_INFINITY) > 1e-6 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+        <Metric label="已实现盈亏" value={fmtUsd(currentPaper ? value.realized_pnl : null)} detail={currentPaper ? '已平仓成交' : '纸面待成交'} tone={currentPaper && (value.realized_pnl ?? 0) < 0 ? 'neg' : 'muted'} />
+        <Metric label="未实现盈亏" value={fmtUsd(currentPaper ? value.unrealized_pnl : null)} detail={currentPaper ? '最新公共行情估值' : '纸面待成交'} tone={currentPaper && (value.unrealized_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+        <Metric label="资金费盈亏" value={fmtUsd(currentPaper ? value.funding_pnl : null)} detail={currentPaper ? `${value.funding_events ?? 0} 个事件` : '纸面待成交'} tone={currentPaper && (value.funding_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+        <Metric label="交易成本" value={fmtUsd(currentPaper ? value.costs : null)} detail={currentPaper ? '模型化执行成本' : '纸面待成交'} tone={currentPaper ? 'warn' : 'muted'} />
+        <Metric label="对账残差" value={fmtUsd(currentPaper ? value.reconciliation_residual : null)} detail={currentPaper ? '必须等于 0' : '纸面待成交'} tone={currentPaper && Math.abs(value.reconciliation_residual ?? Number.POSITIVE_INFINITY) > 1e-6 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
       </div>
 
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
         <div className="rounded-lg border border-line bg-inset/35 p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-3xs text-faint">
-            <span className="font-semibold uppercase tracking-[0.12em]">Retained paper equity</span>
-            <span>public marks · no order submission</span>
+            <span className="font-semibold tracking-[0.12em]">保留的纸面权益</span>
+            <span>公共行情估值 · 不提交订单</span>
           </div>
           {series.length ? (
             <EquityCurveChart series={series} height={190} yFormat={point => fmtUsd(point)} />
           ) : (
-            <div className="grid h-[190px] place-items-center text-xs text-faint">No retained paper history yet.</div>
+            <div className="grid h-[190px] place-items-center text-xs text-faint">尚无保留的纸面历史。</div>
           )}
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
-          <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Latest paper marks</div>
-          <table className="w-full text-left text-3xs" aria-label="official factor paper history">
+          <div className="border-b border-line px-3 py-2 text-3xs font-semibold tracking-[0.12em] text-faint">最近纸面估值</div>
+          <table className="w-full text-left text-3xs" aria-label="正式因子纸面历史">
             <thead className="border-b border-line/70 text-faint">
-              <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Net PnL</th><th className="px-3 py-2 text-right font-medium">Equity</th></tr>
+              <tr><th className="px-3 py-2 font-medium">时间</th><th className="px-3 py-2 text-right font-medium">净盈亏</th><th className="px-3 py-2 text-right font-medium">权益</th></tr>
             </thead>
             <tbody className="divide-y divide-line/60">
               {points.slice(-8).reverse().length ? points.slice(-8).reverse().map(point => (
@@ -983,7 +984,7 @@ function OfficialFactorLifecycleReport({
                   <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.net_pnl)}`}>{fmtUsd(point.net_pnl)}</td>
                   <td className="px-3 py-2 text-right ticker-num text-muted">{fmtUsd(point.equity)}</td>
                 </tr>
-              )) : <tr><td colSpan={3} className="px-3 py-5 text-center text-faint">Collecting the first paper mark.</td></tr>}
+              )) : <tr><td colSpan={3} className="px-3 py-5 text-center text-faint">正在收集首次纸面估值。</td></tr>}
             </tbody>
           </table>
         </div>
@@ -991,17 +992,17 @@ function OfficialFactorLifecycleReport({
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <div className="rounded-md border border-line bg-inset/35 px-3 py-2 text-3xs text-muted">
-          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Identity / maturity</div>
-          <div className="mt-1">family {candidate?.family_id ?? 'UNCLASSIFIED'} · definition {candidate?.definition_kind ?? 'UNKNOWN'}</div>
-          <div className="mt-1">maturity {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'} · status {value.status ?? 'UNKNOWN'}</div>
+          <div className="font-semibold tracking-[0.1em] text-faint">身份 / 成熟度</div>
+          <div className="mt-1">因子族 {candidate?.family_id ?? '未分类'} · 定义 {candidate?.definition_kind ?? '未知'}</div>
+          <div className="mt-1">成熟度 {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'} · 状态 {value.status ? statusLabel(value.status) : '未知'}</div>
         </div>
         <div className="rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
-          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Gate report</div>
-          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : 'No reported blocker; human promotion gate remains and live is structurally off.'}</div>
+          <div className="font-semibold tracking-[0.1em] text-faint">门禁报告</div>
+          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : '未报告阻断项；人工晋级门仍然有效，实盘在结构上关闭。'}</div>
         </div>
       </div>
       <div className="mt-2 text-3xs text-faint">
-        Source PAPER_REALTIME_MARK_ARTIFACT · authoritative main paper account · promotion blocked · live false · order submission false
+        来源 PAPER_REALTIME_MARK_ARTIFACT · 权威主纸面账户 · 晋级阻断 · 实盘关闭 · 订单提交关闭
       </div>
     </div>
   );
@@ -1037,38 +1038,38 @@ function OfficialPaperRow({
             >
               {alpha}
             </button>
-            <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
-            <Chip label={candidate?.stage ?? 'NO_WORKFLOW_STAGE'} tone={candidate ? 'special' : 'muted'} />
-            <Chip label={performanceState} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+            <Chip label={value.status ? statusLabel(value.status) : '无状态'} tone={pending ? 'warn' : 'info'} />
+            <Chip label={candidate?.stage ? statusLabel(candidate.stage) : '无工作流阶段'} tone={candidate ? 'special' : 'muted'} />
+            <Chip label={statusLabel(performanceState)} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
           </div>
           <div className="mt-1 truncate text-3xs text-faint">
             {candidate
               ? `${candidate.family_id ?? 'UNCLASSIFIED'} · ${candidate.definition_kind ?? 'UNKNOWN_DEFINITION'}`
-              : 'main paper account · workflow identity unavailable'}
+              : '主纸面账户 · 工作流身份不可用'}
           </div>
         </div>
         <div>
-          <div className="text-3xs uppercase tracking-wider text-faint">Equity</div>
+          <div className="text-3xs tracking-wider text-faint">权益</div>
           <div className="ticker-num mt-1 text-sm text-ink">{fmtUsd(value.equity)}</div>
         </div>
         <div>
-          <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
+          <div className="text-3xs tracking-wider text-faint">净盈亏</div>
           <div className={`ticker-num mt-1 text-sm ${signedClass(pending ? null : value.net_pnl)}`}>{fmtUsd(pending ? null : value.net_pnl)}</div>
         </div>
         <div>
-          <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
+          <div className="text-3xs tracking-wider text-faint">收益率</div>
           <div className={`ticker-num mt-1 text-sm ${signedClass(pending ? null : value.return_on_aum)}`}>{fmtRealizedPct(value.return_on_aum, !pending)}</div>
         </div>
         <div>
-          <div className="text-3xs uppercase tracking-wider text-faint">Activity / maturity</div>
-          <div className="ticker-num mt-1 text-sm text-muted">{value.n_fills ?? 0} fills · {activePositions} positions</div>
+          <div className="text-3xs tracking-wider text-faint">活动 / 成熟度</div>
+          <div className="ticker-num mt-1 text-sm text-muted">{value.n_fills ?? 0} 个成交 · {activePositions} 个持仓</div>
           <div className="mt-1 text-3xs text-faint">
-            Maturity {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'}
+            成熟度 {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'}
           </div>
         </div>
       </div>
       <div className="mt-2 truncate text-3xs text-faint" title={blockers.join(' · ')}>
-        Lifecycle blockers: {blockers.length ? blockers.join(' · ') : 'none reported; human promotion gate remains'}
+        生命周期阻断项：{blockers.length ? blockers.join(' · ') : '未报告；人工晋级门仍然有效'}
       </div>
     </div>
   );
@@ -1101,30 +1102,30 @@ function FormalRiskRow({
           <Chip label={`${gatesPassed}/${gatesRun}`} tone={approved ? 'pos' : 'warn'} />
         </div>
         <div className="mt-1 truncate text-3xs text-faint">
-          {failedEngines.length ? `blocked by ${failedEngines.join(', ')}` : risk?.status ?? 'NO RISK SNAPSHOT'}
+          {failedEngines.length ? `被 ${failedEngines.join(', ')} 阻断` : risk?.status ? statusLabel(risk.status) : '无风险快照'}
         </div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Capacity</div>
+        <div className="text-3xs tracking-wider text-faint">容量</div>
         <div className={`ticker-num mt-1 text-sm ${capacity?.passed ? 'text-pos' : 'text-warn'}`}>
           {capacity?.capacity_usage == null ? '--' : `${(capacity.capacity_usage * 100).toFixed(1)}%`}
         </div>
-        <div className="mt-1 truncate text-3xs text-faint">{capacity?.bottleneck_alpha ?? 'no bottleneck'}</div>
+        <div className="mt-1 truncate text-3xs text-faint">{capacity?.bottleneck_alpha ?? '无瓶颈'}</div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">DSR confidence</div>
+        <div className="text-3xs tracking-wider text-faint">DSR 置信度</div>
         <div className={`ticker-num mt-1 text-sm ${(validation ?? 0) >= 0.3 ? 'text-pos' : 'text-warn'}`}>
           {validation == null ? '--' : validation.toFixed(3)}
         </div>
-        <div className="mt-1 text-3xs text-faint">minimum 0.300</div>
+        <div className="mt-1 text-3xs text-faint">最低 0.300</div>
       </div>
       <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Forward confidence</div>
+        <div className="text-3xs tracking-wider text-faint">前向置信度</div>
         <div className={`ticker-num mt-1 text-sm ${(paper ?? 0) >= 0.3 ? 'text-pos' : 'text-warn'}`}>
           {paper == null ? '--' : paper.toFixed(3)}
         </div>
         <div className="mt-1 text-3xs text-faint">
-          {model?.alphas_with_decay ? `${model.alphas_with_decay} decay flag` : 'minimum 0.300'}
+          {model?.alphas_with_decay ? `${model.alphas_with_decay} 个衰减标记` : '最低 0.300'}
         </div>
       </div>
     </div>
@@ -1198,27 +1199,27 @@ export default function DryRunPipeline() {
   const flow = [
     {
       label: '实时公共行情',
-      detail: `${shadow?.provider ?? 'NO_PROVIDER'} · age ${fmtAge(observedAgeMs)}`,
+      detail: `${shadow?.provider ?? '无数据提供方'} · 距今 ${fmtAge(observedAgeMs)}`,
       ok: Boolean(shadow?.verdict.paper_mark_ready && markFresh),
     },
     {
       label: '自动调度与再平衡',
-      detail: `${schedulerChecks.length}/2 required tasks healthy`,
+      detail: `${schedulerChecks.length}/2 个必需任务健康`,
       ok: schedulerHealthy && Boolean(shadow?.verdict.auto_rebalance_ready),
     },
     {
       label: '影子纸面执行',
-      detail: `${alphaRows.length} isolated books · ${totalPositions} positions`,
+      detail: `${alphaRows.length} 个隔离账簿 · ${totalPositions} 个持仓`,
       ok: Boolean(shadow?.verdict.shadow_paper_running),
     },
     {
       label: '逐笔估值与对账',
-      detail: reconciled ? 'all residuals ≈ 0' : 'residual requires attention',
+      detail: reconciled ? '全部残差约等于 0' : '对账残差需要处理',
       ok: reconciled,
     },
     {
       label: '连续运行与故障恢复',
-      detail: `${operational?.window.accepted_cycle_count ?? 0} cycles · ${passedDrills}/${drillEntries.length} drills`,
+      detail: `${operational?.window.accepted_cycle_count ?? 0} 个周期 · ${passedDrills}/${drillEntries.length} 个演练`,
       ok: Boolean(operational?.window.engineering_smoke_ready),
       blocked: !operational?.window.engineering_smoke_ready,
     },
@@ -1236,22 +1237,22 @@ export default function DryRunPipeline() {
   ];
   const chartSeries = useMemo(() => paperSeries(shadow?.history ?? []), [shadow?.history]);
   const transportLabel = initialLoading
-    ? 'SSE CONNECTING'
+    ? 'SSE 连接中'
     : apiState === 'loading' && usingBackend
-      ? 'SSE RECONNECTING'
+      ? 'SSE 重连中'
     : apiState === 'connected' && usingBackend
-      ? 'SSE LIVE'
-      : 'API UNAVAILABLE';
+      ? 'SSE 实时'
+      : 'API 不可用';
   const transportTone: Tone = initialLoading || apiState === 'loading'
     ? 'info'
     : apiState === 'connected' && usingBackend
       ? 'pos'
       : 'neg';
   const automationLabel = initialLoading
-    ? 'CONNECTING'
+    ? '连接中'
     : shadowRunning
-      ? 'SCHEDULED_ACTIVE'
-      : 'SAFE_BLOCKED';
+      ? '自动调度中'
+      : '安全阻断';
   const automationTone: Tone = initialLoading ? 'info' : shadowRunning ? 'pos' : 'neg';
 
   return (
@@ -1262,7 +1263,7 @@ export default function DryRunPipeline() {
             <span className={`h-2.5 w-2.5 rounded-full ${
               initialLoading ? 'q-live bg-info' : shadowRunning ? 'q-live bg-pos' : 'bg-neg'
             }`} />
-            <span className="text-3xs font-semibold uppercase tracking-[0.16em] text-faint">Paper Operations</span>
+            <span className="text-3xs font-semibold tracking-[0.16em] text-faint">纸面交易运行</span>
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-[30px]">
             全自动纸面交易驾驶舱
@@ -1273,24 +1274,24 @@ export default function DryRunPipeline() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Chip label={automationLabel} tone={automationTone} />
-          <Chip label="L2 PAPER ONLY" tone="info" />
-          <Chip label="LIVE OFF" tone="neg" />
+          <Chip label="L2 仅纸面" tone="info" />
+          <Chip label="实盘关闭" tone="neg" />
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-inset/50 px-3 py-2 text-3xs text-faint">
         <Chip label={transportLabel} tone={transportTone} />
-        <span>{initialLoading ? 'AWAITING READ-ONLY SNAPSHOT' : shadow?.provider ?? 'NO REAL PROVIDER'}</span>
+        <span>{initialLoading ? '等待只读快照' : shadow?.provider ?? '无真实数据提供方'}</span>
         <span className="hidden text-line-strong sm:inline">|</span>
         <span>
           {initialLoading
-            ? 'transport handshake in progress'
-            : <>更新 {fmtTime(observedAt)} · {fmtAge(observedAgeMs)} ago</>}
+            ? '正在进行传输握手'
+            : <>更新于 {fmtTime(observedAt)} · 距今 {fmtAge(observedAgeMs)}</>}
         </span>
         <span className="ml-auto">
           {error
             ? <span className="text-neg">{error}</span>
-            : initialLoading ? 'NO DECISION DATA YET' : data.data_provenance}
+            : initialLoading ? '暂无决策数据' : data.data_provenance}
         </span>
       </div>
 
@@ -1303,28 +1304,28 @@ export default function DryRunPipeline() {
         </div>
         <div className="grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-panel px-4 py-4 md:grid-cols-5">
           <Metric
-            label="Shadow total equity"
+            label="影子总权益"
             value={fmtUsd(shadow?.totals.equity)}
-            detail={`${alphaRows.length} isolated books`}
+            detail={`${alphaRows.length} 个隔离账簿`}
             tone="accent"
           />
           <Metric
-            label="Shadow net PnL"
+            label="影子净盈亏"
             value={fmtUsd(shadow?.totals.net_pnl)}
-            detail={`funding ${fmtUsd(shadow?.totals.funding_pnl)}`}
+            detail={`资金费 ${fmtUsd(shadow?.totals.funding_pnl)}`}
             tone={(shadow?.totals.net_pnl ?? 0) >= 0 ? 'pos' : 'neg'}
           />
-          <Metric label="Positions" value={totalPositions} detail="marked instruments" tone="info" />
+          <Metric label="持仓" value={totalPositions} detail="已估值标的" tone="info" />
           <Metric
-            label="Reconciliation"
-            value={reconciled ? 'CLEAN' : 'CHECK'}
-            detail={shadow?.persistence.chain_valid ? 'hash chain valid' : 'chain invalid'}
+            label="对账"
+            value={reconciled ? '已对账' : '待检查'}
+            detail={shadow?.persistence.chain_valid ? '哈希链有效' : '哈希链无效'}
             tone={reconciled && shadow?.persistence.chain_valid ? 'pos' : 'neg'}
           />
           <Metric
-            label="Official paper"
-            value={health?.verdict.paper_ready ? 'READY' : 'GATED'}
-            detail={health?.readiness_class ?? 'no health snapshot'}
+            label="正式纸面"
+            value={health?.verdict.paper_ready ? '就绪' : '门禁阻断'}
+            detail={health?.readiness_class ?? '无健康快照'}
             tone={health?.verdict.paper_ready ? 'pos' : 'warn'}
           />
         </div>
@@ -1332,13 +1333,13 @@ export default function DryRunPipeline() {
         <div className="mt-4">
           <Panel
             title="主纸面账户实时业绩"
-            eyebrow="paper_realtime · factor lifecycle detail · authoritative main paper account · SSE live"
+            eyebrow="主纸面实时 · 因子生命周期详情 · 权威主账户 · SSE 实时"
             right={(
               <div className="flex flex-wrap items-center gap-2">
-                <Chip label={`${officialLoss} LOSS`} tone={officialLoss ? 'neg' : 'muted'} />
-                <Chip label={`${officialProfit} PROFIT`} tone={officialProfit ? 'pos' : 'muted'} />
-                <Chip label={`${officialPending} PENDING`} tone="warn" />
-                <Chip label={`${officialRows.length} ACCOUNTS`} tone="info" />
+                <Chip label={`${officialLoss} 个亏损`} tone={officialLoss ? 'neg' : 'muted'} />
+                <Chip label={`${officialProfit} 个盈利`} tone={officialProfit ? 'pos' : 'muted'} />
+                <Chip label={`${officialPending} 个待成交`} tone="warn" />
+                <Chip label={`${officialRows.length} 个账户`} tone="info" />
               </div>
             )}
             bodyClass="px-4 py-2"
@@ -1356,7 +1357,7 @@ export default function DryRunPipeline() {
                 onSelect={() => setSelectedOfficialId(alpha)}
               />
             )) : (
-              <div className="py-6 text-center text-xs text-faint">Main paper account snapshot unavailable.</div>
+              <div className="py-6 text-center text-xs text-faint">主纸面账户快照不可用。</div>
             )}
             {selectedOfficial ? (
               <OfficialFactorLifecycleReport
@@ -1372,11 +1373,11 @@ export default function DryRunPipeline() {
 
         <div className="mt-4">
           <Panel
-            title="Alpha pipeline"
-            eyebrow="Discovery -> forward challenger -> candidate paper"
+            title="Alpha 全自动流水线"
+            eyebrow="发现 → 前向挑战者 → 候选纸面"
             right={
               <Chip
-                label={alphaPipeline?.handoff.status ?? 'NO PIPELINE'}
+                label={alphaPipeline?.handoff.status ? statusLabel(alphaPipeline.handoff.status) : '无流水线'}
                 tone={alphaPipeline?.handoff.status === 'CONNECTED' ? 'pos' : 'warn'}
               />
             }
@@ -1384,52 +1385,52 @@ export default function DryRunPipeline() {
           >
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Metric
-                label="Factory"
+                label="因子工厂"
                 value={alphaPipeline?.factory.survivors ?? 0}
-                detail={`${alphaPipeline?.factory.data_dimensions ?? 0} data dimensions / ${alphaPipeline?.factory.rounds ?? 0} rounds`}
+                detail={`${alphaPipeline?.factory.data_dimensions ?? 0} 个数据维度 / ${alphaPipeline?.factory.rounds ?? 0} 轮`}
                 tone="special"
               />
               <Metric
-                label="Forward paper"
+                label="前向纸面"
                 value={alphaPipeline?.counts.forward_paper ?? 0}
-                detail={`${alphaPipeline?.counts.forward_only ?? 0} still at forward gate`}
+                detail={`${alphaPipeline?.counts.forward_only ?? 0} 个仍在前向门禁`}
                 tone="info"
               />
               <Metric
-                label="Engineering paper"
+                label="工程纸面"
                 value={shadow?.candidate_universe?.running_count ?? alphaRows.length}
-                detail={`${alphaPipeline?.counts.candidate_execution_paper ?? 0} official candidates; isolated shadow books`}
+                detail={`${alphaPipeline?.counts.candidate_execution_paper ?? 0} 个正式候选；隔离影子账簿`}
                 tone="accent"
               />
               <Metric
-                label="Legacy paper"
+                label="遗留诊断纸面"
                 value={alphaPipeline?.counts.legacy_diagnostic_paper ?? 0}
-                detail="diagnostic only; quarantined"
+                detail="仅诊断；已隔离"
                 tone={(alphaPipeline?.counts.legacy_diagnostic_paper ?? 0) > 0 ? 'warn' : 'pos'}
               />
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-line bg-inset/35 px-3 py-2 text-xs text-muted">
               <Chip
-                label={alphaPipeline?.workflow?.verified ? 'ONE WORKFLOW' : 'WORKFLOW GATED'}
+                label={alphaPipeline?.workflow?.verified ? '统一工作流' : '工作流受阻'}
                 tone={alphaPipeline?.workflow?.verified ? 'pos' : 'warn'}
               />
               <span>
-                {alphaPipeline?.workflow?.population_count ?? alphaPipeline?.counts.forward_paper ?? 0} frozen identities
-                {' / '}{alphaPipeline?.workflow?.realtime_handoff_count ?? 0} realtime handoff
-                {' / '}{alphaPipeline?.workflow?.event_count ?? 0} evidence events
-                {' / '}{alphaPipeline?.workflow?.execution_paper_eligible_count ?? 0} paper-eligible now
+                {alphaPipeline?.workflow?.population_count ?? alphaPipeline?.counts.forward_paper ?? 0} 个冻结身份
+                {' / '}{alphaPipeline?.workflow?.realtime_handoff_count ?? 0} 个实时交接
+                {' / '}{alphaPipeline?.workflow?.event_count ?? 0} 个证据事件
+                {' / '}{alphaPipeline?.workflow?.execution_paper_eligible_count ?? 0} 个当前纸面合格
               </span>
               {alphaPipeline?.workflow?.release_commit ? (
                 <span className="font-mono text-faint">
-                  release {alphaPipeline.workflow.release_commit.slice(0, 12)}
+                  发布版本 {alphaPipeline.workflow.release_commit.slice(0, 12)}
                 </span>
               ) : null}
             </div>
 
             {alphaPipeline?.exception_queue?.length ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-3xs text-muted" aria-label="alpha exception queue">
-                <span className="uppercase tracking-[0.12em] text-faint">Exception queue</span>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-3xs text-muted" aria-label="Alpha 异常队列">
+                <span className="tracking-[0.12em] text-faint">异常队列</span>
                 {alphaPipeline.exception_queue.slice(0, 4).map(item => (
                   <span
                     key={item.code}
@@ -1440,20 +1441,20 @@ export default function DryRunPipeline() {
                   </span>
                 ))}
                 {alphaPipeline.exception_queue.length > 4 ? (
-                  <span className="text-faint">+{alphaPipeline.exception_queue.length - 4} more</span>
+                  <span className="text-faint">另有 {alphaPipeline.exception_queue.length - 4} 项</span>
                 ) : null}
               </div>
             ) : null}
 
             <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
-              <table className="w-full table-fixed text-left text-xs" aria-label="alpha paper pipeline">
+              <table className="w-full table-fixed text-left text-xs" aria-label="Alpha 纸面流水线">
                 <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
               <tr>
                     <th className="w-[30%] px-3 py-2 font-medium">Alpha</th>
-                    <th className="w-[18%] px-3 py-2 font-medium">Stage</th>
+                    <th className="w-[18%] px-3 py-2 font-medium">阶段</th>
                     <th className="px-3 py-2 text-right font-medium">OOS</th>
-                    <th className="px-3 py-2 text-right font-medium">Pending</th>
-                    <th className="px-3 py-2 text-right font-medium">Return</th>
+                    <th className="px-3 py-2 text-right font-medium">待兑现</th>
+                    <th className="px-3 py-2 text-right font-medium">收益率</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/70">
@@ -1468,23 +1469,23 @@ export default function DryRunPipeline() {
                       <td className="px-3 py-2">
                         <Chip
                           label={candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER'
-                            ? 'LEGACY PAPER'
+                            ? '遗留诊断纸面'
                             : candidate.execution_paper
-                              ? 'CANDIDATE PAPER'
+                              ? '候选纸面'
                             : candidate.execution_paper_eligible
-                              ? 'PAPER ELIGIBLE'
+                              ? '纸面合格'
                             : candidate.stage === 'PARALLEL_VALIDATION'
-                              ? 'VALIDATING'
+                              ? '验证中'
                             : candidate.independent_evaluation?.status === 'VERIFIED'
-                              ? 'EVALUATED'
-                              : 'FORWARD'}
+                              ? '已评估'
+                              : '前向验证'}
                           tone={candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER'
                             ? 'warn'
                             : candidate.execution_paper ? 'pos' : 'info'}
                         />
                         {candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER' ? (
                           <div className="mt-1 text-3xs text-warn">
-                            diagnostic only · never deployment eligible
+                            仅诊断 · 永不具备部署资格
                           </div>
                         ) : !candidate.execution_paper ? (
                           <div
@@ -1494,7 +1495,7 @@ export default function DryRunPipeline() {
                               ...(candidate.risk_packet?.admission_blockers ?? []),
                             ].filter(Boolean).join(' · ') || undefined}
                           >
-                            Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Inputs {candidate.risk_packet?.input_evidence_status ?? 'PENDING'} · Admission {candidate.risk_packet?.status ?? 'PENDING'}
+                            评估 {candidate.independent_evaluation?.verdict ? statusLabel(candidate.independent_evaluation.verdict) : '待处理'} · 输入 {candidate.risk_packet?.input_evidence_status ? statusLabel(candidate.risk_packet.input_evidence_status) : '待处理'} · 准入 {candidate.risk_packet?.status ? statusLabel(candidate.risk_packet.status) : '待处理'}
                           </div>
                         ) : null}
                       </td>
@@ -1510,20 +1511,20 @@ export default function DryRunPipeline() {
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={5} className="px-3 py-5 text-center text-faint">No attested forward-paper candidates.</td>
+                      <td colSpan={5} className="px-3 py-5 text-center text-faint">暂无经证明的前向纸面候选。</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
             {alphaPipeline?.handoff.gap_codes.length ? (
-              <Callout summary="Pipeline handoff is not fully connected" tone="warn">
+              <Callout summary="流水线交接尚未完全连通" tone="warn">
                 {alphaPipeline.handoff.gap_codes.map(code => <div key={code}>- {code}</div>)}
-                {alphaPipeline.factory.verdict ? <div>- Factory: {alphaPipeline.factory.verdict}</div> : null}
+                {alphaPipeline.factory.verdict ? <div>- 因子工厂：{alphaPipeline.factory.verdict}</div> : null}
               </Callout>
             ) : null}
             {alphaPipeline?.handoff.boundary_codes?.length ? (
-              <Callout summary="Pipeline safety boundaries are active" tone="info">
+              <Callout summary="流水线安全边界已启用" tone="info">
                 {alphaPipeline.handoff.boundary_codes.map(code => <div key={code}>- {code}</div>)}
               </Callout>
             ) : null}
@@ -1533,8 +1534,8 @@ export default function DryRunPipeline() {
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.7fr)]">
           <Panel
             title="影子 Challenger 实时权益与策略账簿"
-            eyebrow="paper_shadow · isolated non-promotable books"
-            right={<Chip label="SSE STREAM" tone="info" />}
+            eyebrow="纸面影子 · 隔离且不可晋级的账簿"
+            right={<Chip label="SSE 实时流" tone="info" />}
             bodyClass="p-4"
           >
             <div className="rounded-lg border border-line bg-inset/40 p-2">
@@ -1564,14 +1565,14 @@ export default function DryRunPipeline() {
                   />
                 );
               }) : (
-                <div className="py-8 text-center text-xs text-faint">No real shadow-paper snapshot.</div>
+                <div className="py-8 text-center text-xs text-faint">暂无真实影子纸面快照。</div>
               )}
             </div>
           </Panel>
 
           <Panel
             title="自动流水线"
-            eyebrow="Automation control"
+            eyebrow="自动化控制"
             right={<StatusChip value={scheduler == null ? 'NO_SNAPSHOT' : schedulerHealthy ? 'PASS' : 'BREACH'} />}
             bodyClass="divide-y divide-line/70 px-4 py-2"
           >
@@ -1584,35 +1585,35 @@ export default function DryRunPipeline() {
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Panel
             title="正式纸面门禁"
-            eyebrow="Evidence gate"
-            right={<Chip label={health?.verdict.paper_ready ? 'PASS' : 'BLOCKED'} tone={health?.verdict.paper_ready ? 'pos' : 'warn'} />}
+            eyebrow="证据门禁"
+            right={<Chip label={health?.verdict.paper_ready ? '通过' : '受阻'} tone={health?.verdict.paper_ready ? 'pos' : 'warn'} />}
             bodyClass="p-4"
           >
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Metric
-                label="Workflow authority"
-                value={data.paper_order_preview?.verdict.workflow_admission_valid ? 'VERIFIED' : 'BLOCKED'}
-                detail={`${data.paper_order_preview?.verdict.workflow_authorized_ids?.length ?? 0} candidates authorized`}
+                label="工作流权威"
+                value={data.paper_order_preview?.verdict.workflow_admission_valid ? '已验证' : '受阻'}
+                detail={`${data.paper_order_preview?.verdict.workflow_authorized_ids?.length ?? 0} 个候选已授权`}
                 tone={data.paper_order_preview?.verdict.workflow_admission_valid ? 'pos' : 'neg'}
               />
               <Metric
-                label="Risk inputs"
+                label="风险输入"
                 value={`${precomputedRiskInputs}/${pipelineCandidates.length || 0}`}
-                detail="precomputed · admission separate"
+                detail="预计算 · 与准入分离"
                 tone={precomputedRiskInputs === pipelineCandidates.length && precomputedRiskInputs > 0 ? 'pos' : 'warn'}
               />
               <Metric
-                label="Forward"
+                label="前向证据"
                 value={Object.values(forwardByAlpha)[0]?.n_forward_periods ?? 0}
                 detail={health?.forward_evidence?.evidence_maturing
-                  ? `next ${stamp(health.forward_evidence.next_realization_eligible_at)} UTC`
-                  : `target ${health?.forward_evidence?.evidence_gate_periods ?? 8}`}
+                  ? `下次 ${stamp(health.forward_evidence.next_realization_eligible_at)} UTC`
+                  : `目标 ${health?.forward_evidence?.evidence_gate_periods ?? 8}`}
                 tone="warn"
               />
               <Metric
-                label="Promotion"
-                value="OFF"
-                detail="human-only boundary"
+                label="晋级"
+                value="关闭"
+                detail="仅人工边界"
                 tone="neg"
               />
             </div>
@@ -1623,7 +1624,7 @@ export default function DryRunPipeline() {
                 ))
                 : (
                   <div className="py-4 text-xs text-faint">
-                    No formal pre-fill risk snapshot.
+                    暂无正式预填充风险快照。
                   </div>
                 )}
             </div>
@@ -1635,39 +1636,39 @@ export default function DryRunPipeline() {
             >
               {issueLines.length
                 ? issueLines.map((issue, index) => <div key={`${issue}-${index}`}>• {issue}</div>)
-                : 'No active blocker reported.'}
+                : '未报告活动阻断项。'}
             </Callout>
           </Panel>
 
           <Panel
             title="运行完整性"
-            eyebrow="Operational integrity"
-            right={<Chip label={shadow?.persistence.chain_valid ? 'CHAIN VALID' : 'CHAIN CHECK'} tone={shadow?.persistence.chain_valid ? 'pos' : 'neg'} />}
+            eyebrow="运行完整性"
+            right={<Chip label={shadow?.persistence.chain_valid ? '链有效' : '链待检查'} tone={shadow?.persistence.chain_valid ? 'pos' : 'neg'} />}
             bodyClass="p-4"
           >
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-              <Metric label="Ledger rows" value={shadow?.paper_ledger.n_rows ?? 0} detail={`${shadow?.paper_ledger.n_decisions ?? 0} decisions`} tone="info" />
-              <Metric label="Snapshots" value={shadow?.persistence.new_snapshots ?? 0} detail="append-only cycle" tone="info" />
+              <Metric label="账本行数" value={shadow?.paper_ledger.n_rows ?? 0} detail={`${shadow?.paper_ledger.n_decisions ?? 0} 个决策`} tone="info" />
+              <Metric label="快照" value={shadow?.persistence.new_snapshots ?? 0} detail="仅追加周期" tone="info" />
               <Metric
-                label="Operating window"
+                label="运行窗口"
                 value={fmtAge(operational?.window.history_span_ms ?? null)}
-                detail={`${operational?.window.accepted_cycle_count ?? 0}/${operational?.policy?.production_minimum_successes ?? 274} accepted · release ${(operational?.window.active_release_commit ?? 'unknown').slice(0, 8)} · ${operational?.window.excluded_pre_active_release_cycle_count ?? 0} legacy retained`}
+                detail={`${operational?.window.accepted_cycle_count ?? 0}/${operational?.policy?.production_minimum_successes ?? 274} 已接受 · 发布 ${(operational?.window.active_release_commit ?? '未知').slice(0, 8)} · 保留 ${operational?.window.excluded_pre_active_release_cycle_count ?? 0} 个遗留周期`}
                 tone={operational?.window.production_window_ready ? 'pos' : 'warn'}
               />
               <Metric
-                label="Fault drills"
+                label="故障演练"
                 value={`${passedDrills}/${drillEntries.length}`}
-                detail="isolated temporary stores"
+                detail="隔离临时存储"
                 tone={drillEntries.length > 0 && passedDrills === drillEntries.length ? 'pos' : 'warn'}
               />
               <Metric
-                label="Restart recovery"
-                value={restartProven ? 'PROVEN' : 'MATURING'}
-                detail="release transition ≤15m"
+                label="重启恢复"
+                value={restartProven ? '已证明' : '证据积累中'}
+                detail="发布切换不超过 15 分钟"
                 tone={restartProven ? 'pos' : 'warn'}
               />
-              <Metric label="Data refresh" value={data.data_refresh?.outcome ?? '—'} detail={`${data.data_refresh?.failed_total ?? 0} failures`} tone={(data.data_refresh?.failed_total ?? 0) === 0 ? 'pos' : 'neg'} />
-              <Metric label="Broker path" value="OFF" detail="public data only" tone="neg" />
+              <Metric label="数据刷新" value={data.data_refresh?.outcome ? statusLabel(data.data_refresh.outcome) : '—'} detail={`${data.data_refresh?.failed_total ?? 0} 个失败`} tone={(data.data_refresh?.failed_total ?? 0) === 0 ? 'pos' : 'neg'} />
+              <Metric label="经纪商路径" value="关闭" detail="仅公共数据" tone="neg" />
             </div>
           </Panel>
         </div>

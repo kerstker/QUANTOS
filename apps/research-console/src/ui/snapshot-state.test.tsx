@@ -73,11 +73,11 @@ describe('ProvenanceRibbon workflow states', () => {
   const base = { usingBackend: true, apiState: 'connected' as const, source: 'TEST_SNAPSHOT' };
 
   it.each([
-    ['BLOCKED', 'DATA_BLOCKED', 'actions are forbidden'],
-    ['STALE', 'STALE_DATA', 'not usable evidence'],
-    ['UNAVAILABLE', 'UNAVAILABLE', 'fallback content is not decision data'],
-    ['NO_SNAPSHOT', 'NO_SNAPSHOT', 'neither approval nor tradability'],
-    ['LOADING', 'LOADING', 'no decision state yet'],
+    ['BLOCKED', 'DATA_BLOCKED', '禁止继续操作'],
+    ['STALE', 'STALE_DATA', '禁止把当前快照当作可用证据'],
+    ['UNAVAILABLE', 'UNAVAILABLE', '回退内容不可作为决策数据'],
+    ['NO_SNAPSHOT', 'NO_SNAPSHOT', '不代表通过或可交易'],
+    ['LOADING', 'LOADING', '尚未形成决策状态'],
   ] as const)('surfaces %s distinctly', (dataStatus, chip, headline) => {
     render(<ProvenanceRibbon {...base} dataStatus={dataStatus} />);
     expect(screen.getByText(chip)).toBeInTheDocument();
@@ -87,14 +87,14 @@ describe('ProvenanceRibbon workflow states', () => {
   it('does not label a disconnected page as real or connected', () => {
     render(<ProvenanceRibbon usingBackend={false} apiState="disabled" realData source="FRONTEND_MOCK" />);
     expect(screen.getByText('MOCK_MODE')).toBeInTheDocument();
-    expect(document.body.textContent).toContain('NOT_CONNECTED');
+    expect(document.body.textContent).toContain('未连接');
     expect(screen.queryByText('REAL_RESULTS')).not.toBeInTheDocument();
   });
 
   it('keeps evidence and read-only markers visible together', () => {
     render(<ProvenanceRibbon {...base} evidenceData />);
     expect(screen.getByText('VERIFIED_EVIDENCE')).toBeInTheDocument();
-    expect(document.body.textContent).toContain('READ_ONLY');
+    expect(document.body.textContent).toContain('只读');
   });
 });
 
@@ -110,7 +110,7 @@ describe('fail-closed interaction primitives', () => {
 
   it('loading veil marks the underlying workflow as unavailable for interaction', () => {
     render(<LoadingVeil active><button>Run dry-run</button></LoadingVeil>);
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByText(/加载中/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run dry-run' }).parentElement).toHaveClass('pointer-events-none');
   });
 
@@ -130,6 +130,6 @@ describe('fail-closed interaction primitives', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rejected' } });
     expect(screen.queryByText('alpha-pass')).not.toBeInTheDocument();
     expect(screen.getByText('alpha-rejected')).toBeInTheDocument();
-    expect(screen.getByText(/1 \/ 2 shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/筛出 1 \/ 2/)).toBeInTheDocument();
   });
 });
