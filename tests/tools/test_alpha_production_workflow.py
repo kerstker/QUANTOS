@@ -310,7 +310,11 @@ def test_lifecycle_gate_consumes_per_alpha_cockpit_rows_without_changing_eligibi
             {
                 "alpha_id": identity.candidate_id,
                 "derived_stage": "PAPER",
-                "stages": {"paper": {"status": "PRESENT"}},
+                "stages": {
+                    "paper": {"status": "PRESENT"},
+                    "retirement": {"status": "PRESENT", "retired": False},
+                    "decay": {"status": "PRESENT", "degraded": False},
+                },
             }
         ],
     }
@@ -325,6 +329,60 @@ def test_lifecycle_gate_consumes_per_alpha_cockpit_rows_without_changing_eligibi
     row = snapshot["candidates"][0]
     assert _gates(row)["LIFECYCLE"]["status"] == "RUNNING"
     assert snapshot["execution_paper_eligible_ids"] == [identity.candidate_id]
+
+
+def test_lifecycle_degraded_and_retired_states_fail_closed(tmp_path) -> None:
+    identity = _identity("factory_alpha")
+    shadow = _shadow_inputs(tmp_path, (identity.candidate_id,))
+    degraded = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_500,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "PAPER",
+                "stages": {
+                    "retirement": {"status": "PRESENT", "retired": False},
+                    "decay": {
+                        "status": "PRESENT",
+                        "degraded": True,
+                        "alpha_action": {"state": "DEGRADED"},
+                    },
+                },
+            }
+        ],
+    }
+    with AlphaProductionWorkflow(tmp_path / "degraded.db") as workflow:
+        blocked = _reconcile(
+            workflow, (identity,), shadow=shadow, lifecycle=degraded
+        )
+    blocked_row = blocked["candidates"][0]
+    assert _gates(blocked_row)["LIFECYCLE"]["status"] == "BLOCKED"
+    assert "LIFECYCLE_BLOCKED" in blocked_row["workflow"]["blockers"]
+    assert blocked["execution_paper_eligible_ids"] == []
+
+    retired = {
+        **degraded,
+        "alphas": [
+            {
+                **degraded["alphas"][0],
+                "stages": {
+                    "retirement": {"status": "PRESENT", "retired": True},
+                    "decay": {"status": "PRESENT", "degraded": False},
+                },
+            }
+        ],
+    }
+    with AlphaProductionWorkflow(tmp_path / "retired.db") as workflow:
+        terminal = _reconcile(
+            workflow, (identity,), shadow=shadow, lifecycle=retired
+        )
+    terminal_row = terminal["candidates"][0]
+    assert _gates(terminal_row)["LIFECYCLE"]["status"] == "RETIRED"
+    assert terminal_row["workflow"]["stage"] == "RETIRED"
+    assert "LIFECYCLE_RETIRED" in terminal_row["workflow"]["blockers"]
+    assert terminal["active_candidate_ids"] == []
+    assert terminal["execution_paper_eligible_ids"] == []
 
 
 def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(

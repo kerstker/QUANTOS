@@ -170,13 +170,20 @@ class CandidateEvidenceBundle:
     @property
     def eligible_for_execution_paper(self) -> bool:
         return bool(
-            not self.legacy_diagnostic
+            self.stage is not ProductionStage.RETIRED
+            and not self.legacy_diagnostic
             and not self.blockers
             and self.release_commit is not None
             and _RELEASE_COMMIT.fullmatch(self.release_commit)
             and self.gate(EvidenceGate.HISTORICAL_OOS).status is EvidenceStatus.PASS
             and self.gate(EvidenceGate.SIGNAL_SHADOW).status is EvidenceStatus.MATURE
             and self.gate(EvidenceGate.RESEARCH_RISK).status is EvidenceStatus.READY
+            and self.gate(EvidenceGate.LIFECYCLE).status
+            not in {
+                EvidenceStatus.FAIL,
+                EvidenceStatus.BLOCKED,
+                EvidenceStatus.RETIRED,
+            }
         )
 
     @property

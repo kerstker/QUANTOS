@@ -828,15 +828,52 @@ def _lifecycle_gate(
     path: str | Path,
 ) -> GateEvidence:
     row = _mapping_row(document, candidate_id)
-    states = " ".join(str(value) for value in row.values()).upper()
-    if "RETIRED" in states:
+    if not row:
+        return _gate(
+            EvidenceGate.LIFECYCLE,
+            EvidenceStatus.NOT_AVAILABLE,
+            path=path,
+            document={},
+            row={},
+        )
+
+    def _state(value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
+
+    retired = _state(row.get("lifecycle_state")) == "RETIRED"
+    retired = retired or _state(row.get("derived_stage")) == "RETIRED"
+    stages = row.get("stages")
+    if isinstance(stages, Mapping):
+        retirement = stages.get("retirement")
+        if isinstance(retirement, Mapping) and retirement.get("retired") is True:
+            retired = True
+    if retired:
         status = EvidenceStatus.RETIRED
-    elif any(value in states for value in ("FAILED", "DEGRADED", "BLOCKED")):
-        status = EvidenceStatus.BLOCKED
-    elif row:
-        status = EvidenceStatus.RUNNING
     else:
-        status = EvidenceStatus.NOT_AVAILABLE
+        states: list[str] = []
+        if isinstance(row.get("lifecycle_state"), str):
+            states.append(row["lifecycle_state"])
+        if isinstance(row.get("derived_stage"), str):
+            states.append(row["derived_stage"])
+        if isinstance(stages, Mapping):
+            for stage in stages.values():
+                if not isinstance(stage, Mapping):
+                    continue
+                for key in ("status", "state", "lifecycle_state"):
+                    value = stage.get(key)
+                    if isinstance(value, str):
+                        states.append(value)
+                action = stage.get("alpha_action")
+                if isinstance(action, Mapping) and isinstance(action.get("state"), str):
+                    states.append(action["state"])
+        normalized_states = {_state(value) for value in states}
+        if normalized_states & {"FAILED", "DEGRADED", "BLOCKED"}:
+            status = EvidenceStatus.BLOCKED
+        else:
+            status = EvidenceStatus.RUNNING
     return _gate(
         EvidenceGate.LIFECYCLE,
         status,
@@ -990,6 +1027,12 @@ def reconcile_workflow(
         if risk.status is not EvidenceStatus.READY:
             blockers.append("RESEARCH_RISK_NOT_READY")
         blockers.extend(risk_blockers)
+        if lifecycle.status in {
+            EvidenceStatus.FAIL,
+            EvidenceStatus.BLOCKED,
+            EvidenceStatus.RETIRED,
+        }:
+            blockers.append(f"LIFECYCLE_{lifecycle.status.value}")
         if release_commit is None:
             blockers.append("RELEASE_IDENTITY_MISSING")
         if legacy:
