@@ -27,6 +27,22 @@ def _digests():
     return digests
 
 
+def test_readiness_artifacts_bind_one_commit_and_validation_run():
+    from scripts.evidence_binding import validation_binding
+
+    binding = validation_binding(generated_at=123, run_id="run-1", source_commit="head-1")
+    payloads = [
+        {"commit": "head-1", "checks_manifest_sha256": "legacy-run", "validation": binding},
+        {"commit": "head-1", "validation": binding},
+        {"validation": binding},
+    ]
+    from scripts.evidence_binding import validation_binding_from_payload
+
+    bindings = [validation_binding_from_payload(payload) for payload in payloads]
+    assert len({binding["source_commit"] for binding in bindings}) == 1
+    assert len({binding["run_id"] for binding in bindings}) == 1
+
+
 def test_evidence_dir_is_committed_and_nonempty():
     # the whole point of Rank #19 is that these digests live IN the repo (not just gitignored cache)
     assert _digests(), "no committed evidence/*.json digests found"

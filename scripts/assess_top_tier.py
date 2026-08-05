@@ -13,6 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from scripts.evidence_binding import validation_binding  # noqa: E402
 from services.governance.top_tier_assessment import (  # noqa: E402
     RegistryError,
     assess_repository,
@@ -73,16 +74,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
+        prior_generated_at = None
+        if args.check:
+            try:
+                prior = json.loads(Path(args.json_out).read_text(encoding="utf-8"))
+                prior_generated_at = prior.get("validation", {}).get("generated_at")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                pass
         as_of_ms = (
-            time.time_ns() // 1_000_000
-            if args.as_of_ms is None
-            else args.as_of_ms
+            prior_generated_at
+            if isinstance(prior_generated_at, int)
+            else (time.time_ns() // 1_000_000 if args.as_of_ms is None else args.as_of_ms)
         )
         report = assess_repository(
             Path(args.repo_root),
             Path(args.requirements),
             as_of_ms=as_of_ms,
         )
+        report["validation"] = validation_binding(generated_at=as_of_ms)
         json_path, matrix_path = Path(args.json_out), Path(args.matrix_out)
         if args.check:
             expected_json = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

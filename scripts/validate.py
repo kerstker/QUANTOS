@@ -28,6 +28,8 @@ import sys
 import tempfile
 import time
 
+from scripts.evidence_binding import validation_binding
+
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
@@ -267,6 +269,7 @@ CHECKS = [
 DEFAULT_TIMEOUT_SECONDS = 1_800.0
 DEFAULT_REPORT = os.path.join(REPO, "evidence", "validation_report.json")
 DEFAULT_SUBSET_REPORT = os.path.join(REPO, "evidence", "validation_report_subset.json")
+_VALIDATION_ENV: dict[str, str] | None = None
 
 
 def _summary(results: list[dict]) -> dict[str, int]:
@@ -482,7 +485,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
         # inherited stdout/stderr handles are dead, fall back to captured
         # pipes — the gate must not depend on the host console at all.
         try:
-            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL)
+            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_VALIDATION_ENV)
         except OSError as exc:
             # ASCII-only, locale-independent detail: the report is hashed
             # evidence, and localized OS error text (e.g. GBK WinError text)
@@ -498,6 +501,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                env=_VALIDATION_ENV,
             )
         try:
             if process.stdout is not None:
@@ -574,6 +578,17 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
         raise ValueError("derived evidence refresh targets must be unique")
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
+    source_commit = _git_commit()
+    validation_run_id = hashlib.sha256(
+        f"{source_commit}:{started_at_ms}".encode("utf-8")
+    ).hexdigest()
+    global _VALIDATION_ENV
+    _VALIDATION_ENV = {
+        **os.environ,
+        "QUANTOS_VALIDATION_RUN_ID": validation_run_id,
+        "QUANTOS_VALIDATION_SOURCE_COMMIT": source_commit,
+        "QUANTOS_VALIDATION_STARTED_AT_MS": str(started_at_ms),
+    }
     if selection_scope == "SUBSET":
         # Subset validation is deliberately read-only and preserves the
         # operator-requested order.
@@ -657,7 +672,12 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             "generated_at_ms": int(time.time() * 1000),
             "started_at_ms": started_at_ms,
             "duration_ms": int((time.monotonic() - started) * 1000),
-            "commit": _git_commit(),
+            "commit": source_commit,
+            "validation": validation_binding(
+                generated_at=int(time.time() * 1000),
+                run_id=validation_run_id,
+                source_commit=source_commit,
+            ),
             "readiness": "L2_DRY_RUN_ONLY",
             "selection_scope": selection_scope,
             "requested_stages": list(stages or ["all"]),

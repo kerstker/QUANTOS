@@ -20,6 +20,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.hashing import source_file_sha256  # noqa: E402
+from scripts.evidence_binding import validation_binding  # noqa: E402
 from services.governance.vulnerability_evidence import (  # noqa: E402
     verify_actions_audit_evidence,
     verify_container_audit_evidence,
@@ -786,6 +787,7 @@ def build_supply_chain_artifacts(
     external_sigstore_verified = external_sigstore_report is not None
     evidence = {
         "schema_version": 1,
+        "validation": validation_binding(generated_at=0),
         "verdict": "PARTIAL",
         "mode": "OFFLINE_REPOSITORY_BASELINE",
         "sbom_format": "CycloneDX",
