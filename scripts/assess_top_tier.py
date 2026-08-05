@@ -13,7 +13,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from scripts.evidence_binding import validation_binding  # noqa: E402
+from scripts.evidence_binding import (  # noqa: E402
+    assert_current_binding,
+    validation_binding,
+)
 from services.governance.top_tier_assessment import (  # noqa: E402
     RegistryError,
     assess_repository,
@@ -64,6 +67,11 @@ def write_artifacts(report: dict[str, Any], json_path: Path, matrix_path: Path) 
     matrix_path.write_text(render_matrix(report), encoding="utf-8")
 
 
+def _git_head(root: Path) -> str:
+    import subprocess
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=str(REPO))
@@ -75,12 +83,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         prior_generated_at = None
+        prior_binding = None
         if args.check:
-            try:
-                prior = json.loads(Path(args.json_out).read_text(encoding="utf-8"))
-                prior_generated_at = prior.get("validation", {}).get("generated_at")
-            except (OSError, json.JSONDecodeError, AttributeError):
-                pass
+            prior = json.loads(Path(args.json_out).read_text(encoding="utf-8"))
+            assert_current_binding(prior, head=_git_head(Path(args.repo_root)))
+            prior_binding = prior["validation"]
+            prior_generated_at = prior_binding["generated_at"]
         as_of_ms = (
             prior_generated_at
             if isinstance(prior_generated_at, int)
@@ -91,7 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.requirements),
             as_of_ms=as_of_ms,
         )
-        report["validation"] = validation_binding(generated_at=as_of_ms)
+        report["validation"] = prior_binding or validation_binding(generated_at=as_of_ms)
         json_path, matrix_path = Path(args.json_out), Path(args.matrix_out)
         if args.check:
             expected_json = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

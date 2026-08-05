@@ -20,7 +20,10 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.hashing import source_file_sha256  # noqa: E402
-from scripts.evidence_binding import validation_binding  # noqa: E402
+from scripts.evidence_binding import (  # noqa: E402
+    assert_current_binding,
+    validation_binding,
+)
 from services.governance.vulnerability_evidence import (  # noqa: E402
     verify_actions_audit_evidence,
     verify_container_audit_evidence,
@@ -604,6 +607,8 @@ def _workflow_actions(repo_root: Path) -> list[dict[str, Any]]:
 
 def build_supply_chain_artifacts(
     repo_root: str | Path = REPO,
+    *,
+    binding: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(repo_root).resolve()
     python, python_pinned, unresolved_optional = _python_components(root)
@@ -787,7 +792,7 @@ def build_supply_chain_artifacts(
     external_sigstore_verified = external_sigstore_report is not None
     evidence = {
         "schema_version": 1,
-        "validation": validation_binding(generated_at=0),
+        "validation": binding or validation_binding(generated_at=0),
         "verdict": "PARTIAL",
         "mode": "OFFLINE_REPOSITORY_BASELINE",
         "sbom_format": "CycloneDX",
@@ -1046,6 +1051,11 @@ def _require_current(path: Path, document: dict[str, Any], *, label: str) -> Non
         raise ValueError(f"{label} artifact drift: regenerate {path}")
 
 
+def _git_head(root: Path) -> str:
+    import subprocess
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate deterministic QUANTOS supply-chain baseline evidence")
     parser.add_argument("--repo-root", default=str(REPO))
@@ -1054,7 +1064,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
-        sbom, evidence = build_supply_chain_artifacts(args.repo_root)
+        existing_binding = None
+        if args.check:
+            evidence_path = Path(args.evidence)
+            existing = load_json_without_duplicate_keys(evidence_path.read_bytes())
+            assert_current_binding(existing, head=_git_head(Path(args.repo_root)))
+            existing_binding = existing["validation"]
+        sbom, evidence = build_supply_chain_artifacts(args.repo_root, binding=existing_binding)
         if args.check:
             _require_current(Path(args.sbom), sbom, label="SBOM")
             _require_current(Path(args.evidence), evidence, label="supply-chain baseline")

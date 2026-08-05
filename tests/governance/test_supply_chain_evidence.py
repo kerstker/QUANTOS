@@ -465,3 +465,26 @@ def test_unified_gate_checks_supply_chain_baseline_before_top_tier_assessment():
     assert marker in source
     assert "generate_supply_chain_evidence.py" in source
     assert source.index(marker) < source.index("top-tier-assessment-artifacts")
+
+
+def test_supply_chain_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
+    import subprocess
+    import scripts.generate_supply_chain_evidence as module
+    from scripts.evidence_binding import validation_binding
+
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    binding = validation_binding(generated_at=123)
+    sbom = {"bomFormat": "test"}
+    evidence = {"validation": binding, "component_count": 0, "artifact_signature_status": "TEST"}
+    monkeypatch.setattr(module, "build_supply_chain_artifacts", lambda *args, **kwargs: (sbom, evidence))
+    sbom_path = tmp_path / "sbom.json"
+    evidence_path = tmp_path / "evidence.json"
+    args = ["--repo-root", str(ROOT), "--sbom", str(sbom_path), "--evidence", str(evidence_path)]
+    assert module.main(args) == 0
+    assert module.main([*args, "--check"]) == 0
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    payload["validation"]["current"] = False
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+    assert module.main([*args, "--check"]) == 1

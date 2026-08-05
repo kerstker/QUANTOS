@@ -30,10 +30,10 @@ def _digests():
 def test_readiness_artifacts_bind_one_commit_and_validation_run():
     from scripts.evidence_binding import validation_binding
 
-    binding = validation_binding(generated_at=123, run_id="run-1", source_commit="head-1")
+    binding = validation_binding(generated_at=123, run_id="a" * 64, source_commit="b" * 40)
     payloads = [
-        {"commit": "head-1", "checks_manifest_sha256": "legacy-run", "validation": binding},
-        {"commit": "head-1", "validation": binding},
+        {"commit": "b" * 40, "checks_manifest_sha256": "legacy-run", "validation": binding},
+        {"commit": "b" * 40, "validation": binding},
         {"validation": binding},
     ]
     from scripts.evidence_binding import validation_binding_from_payload
