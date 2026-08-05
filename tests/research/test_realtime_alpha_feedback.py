@@ -48,6 +48,8 @@ def test_positive_uncertain_family_gets_bounded_deterministic_mutations() -> Non
     assert {item.feedback_cutoff_ms for item in first.proposals} == {1_007}
     assert all(item.fresh_oos_required for item in first.proposals)
     assert all(item.spec.candidate_id.endswith("_fb1") for item in first.proposals)
+    assert first.proposal_blockers == ()
+    assert first.candidate_budget_remaining == 0
 
 
 def test_clearly_refuted_family_is_deprioritized_without_new_trials() -> None:
@@ -85,6 +87,35 @@ def test_existing_adaptive_identity_is_not_proposed_twice() -> None:
 
     assert existing.isdisjoint(item.spec.candidate_id for item in replay.proposals)
     assert len(replay.proposals) == 1
+    assert "CANDIDATE_ID_ALREADY_REGISTERED" in replay.proposal_blockers
+
+
+def test_adaptive_realizations_are_consumed_without_child_of_child_generation() -> None:
+    base = default_realtime_hypotheses()
+    parent = "rt_liquidation_exhaustion_5m_v1"
+    initial = build_feedback_plan(
+        base,
+        {parent: [_run(parent, 0.001, 6_000 + index) for index in range(8)]},
+        existing_candidate_ids=(),
+        max_new=2,
+    )
+    child = initial.proposals[0].spec
+
+    plan = build_feedback_plan(
+        (*base, child),
+        {child.candidate_id: [_run(child.candidate_id, 0.001, 7_000 + index) for index in range(8)]},
+        existing_candidate_ids=(child.candidate_id,),
+        proposal_parent_ids=tuple(item.candidate_id for item in base),
+        max_new=2,
+    )
+
+    child_feedback = next(
+        item for item in plan.candidates if item.candidate_id == child.candidate_id
+    )
+    assert child_feedback.n_realizations == 8
+    assert plan.consumed_realizations == 8
+    assert plan.proposals == ()
+    assert "POSITIVE_UCB_HAS_NO_ROOT_PARENT" in plan.proposal_blockers
 
 
 def test_tampered_or_authority_widened_paper_result_fails_closed() -> None:

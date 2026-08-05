@@ -943,15 +943,24 @@ def run_cycle(
         if len(adaptive) > MAX_ACTIVE_ADAPTIVE_HYPOTHESES:
             raise RealtimeAlphaWorkerError("adaptive candidate budget is exceeded")
 
+        feedback_hypotheses = tuple(base_hypotheses) + tuple(
+            sorted(adaptive, key=lambda item: item.candidate_id)
+        )
+        # Adaptive children are part of the same append-only feedback stream.
+        # They may inform family-level exploration, but the bounded selector
+        # only creates children from the frozen base population.  This keeps
+        # the current generation-1 handoff contract intact while ensuring that
+        # realized adaptive outcomes are never silently discarded.
         paper_runs = {
             item.candidate_id: registry.paper_runs(item.candidate_id)
-            for item in base_hypotheses
+            for item in feedback_hypotheses
             if item.candidate_id in existing_ids
         }
         feedback = build_feedback_plan(
-            base_hypotheses,
+            feedback_hypotheses,
             paper_runs,
             existing_candidate_ids=tuple(existing_ids),
+            proposal_parent_ids=tuple(item.candidate_id for item in base_hypotheses),
             max_new=max(0, MAX_ACTIVE_ADAPTIVE_HYPOTHESES - len(adaptive)),
             min_realizations=8,
             decision_interval_ms=policy.decision_interval_ms,

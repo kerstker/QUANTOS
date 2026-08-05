@@ -1689,11 +1689,14 @@ export interface RealtimeAlphaAutonomyPayload {
     status?: string | null;
     consumed_realizations: number;
     active_adaptive_candidates: number;
+    candidate_budget_remaining?: number;
     new_candidate_ids: string[];
+    proposal_blockers?: string[];
     families: Array<{
       family_id: string;
       action: 'COLLECT' | 'EXPAND' | 'DEPRIORITIZE' | string;
       parent_candidate_id?: string | null;
+      proposal_parent_candidate_id?: string | null;
       eligible_candidates?: number;
       best_ucb_95?: number | null;
       reason_code?: string;

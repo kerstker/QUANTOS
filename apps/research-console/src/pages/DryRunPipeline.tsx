@@ -639,6 +639,12 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
             {(feedback?.families ?? []).map(row => `${row.family_id}:${row.action}`).join(' · ') || 'family budgets collecting'}
           </span>
         </div>
+        {(feedback?.proposal_blockers?.length ?? 0) > 0 && (
+          <div className="border-b border-line px-3 py-1.5 text-3xs text-faint">
+            Adaptive allocator {'·'} {feedback?.proposal_blockers?.join(' · ')} {'·'}{' '}
+            {feedback?.candidate_budget_remaining ?? 0} proposal slots remaining
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
           <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
             全量 Alpha 生命周期与实时业绩

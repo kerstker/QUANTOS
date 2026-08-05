@@ -34,6 +34,13 @@ only**:
 6. Hash-bind the complete dynamic manifest and lineage. The forward-shadow
    handoff independently reconstructs and validates the parent, mutation,
    horizon, signal version, cutoff, generation, and safety boundary.
+7. Feed realized adaptive-child observations back into the family statistics,
+   while keeping proposal parents restricted to the frozen base population.
+   This prevents silent loss of challenger evidence and prevents recursive
+   child-of-child growth under the generation-1 handoff contract. The report
+   exposes deterministic proposal blockers (for example, an already-registered
+   identity or an unavailable fresh-data window) so ``NO_NEW_TRIAL`` is not an
+   ambiguous operational state.
 
 This policy does not select a formal winner, change lifecycle state, grant
 promotion, connect credentials, connect a broker, or submit an order.
@@ -74,4 +81,3 @@ actual sign in both tables.
 - API lifecycle projection preserves simultaneous profit and loss rows;
 - frontend tests render the main-paper loss separately from shadow accounts and
   render every lifecycle row from the SSE payload.
-

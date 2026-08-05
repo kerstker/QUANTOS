@@ -901,7 +901,11 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
                 "active_adaptive_candidates": feedback.get(
                     "active_adaptive_candidates", 0
                 ),
+                "candidate_budget_remaining": feedback.get(
+                    "candidate_budget_remaining", feedback.get("max_new", 0)
+                ),
                 "new_candidate_ids": feedback.get("new_candidate_ids", []),
+                "proposal_blockers": feedback.get("proposal_blockers", []),
                 "families": feedback.get("families", []),
                 "formal_gate_impact": False,
                 "promotion_eligible": False,
@@ -913,7 +917,9 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
                 "status": "LEGACY_NO_FEEDBACK",
                 "consumed_realizations": 0,
                 "active_adaptive_candidates": 0,
+                "candidate_budget_remaining": 0,
                 "new_candidate_ids": [],
+                "proposal_blockers": ["NO_REALIZED_FEEDBACK"],
                 "families": [],
             }
         ),

@@ -43,6 +43,7 @@ class FamilyFeedback:
     eligible_candidates: int
     best_ucb_95: float | None
     reason_code: str
+    proposal_parent_candidate_id: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -77,6 +78,8 @@ class RealtimeAlphaFeedbackPlan:
     consumed_realizations: int
     min_realizations: int
     max_new: int
+    candidate_budget_remaining: int = 0
+    proposal_blockers: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -87,6 +90,8 @@ class RealtimeAlphaFeedbackPlan:
             "consumed_realizations": self.consumed_realizations,
             "min_realizations": self.min_realizations,
             "max_new": self.max_new,
+            "candidate_budget_remaining": self.candidate_budget_remaining,
+            "proposal_blockers": list(self.proposal_blockers),
             "scope": "EXPLORATION_BUDGET_ONLY",
             "formal_gate_impact": False,
             "promotion_eligible": False,
@@ -187,6 +192,7 @@ def build_feedback_plan(
     paper_runs_by_candidate: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
     existing_candidate_ids: Sequence[str],
+    proposal_parent_ids: Sequence[str] | None = None,
     max_new: int = 4,
     min_realizations: int = 8,
     decision_interval_ms: int = 30_000,
@@ -208,6 +214,16 @@ def build_feedback_plan(
     unknown = sorted(set(paper_runs_by_candidate) - set(specs))
     if unknown:
         raise RealtimeAlphaFeedbackError(f"unknown candidate feedback: {unknown}")
+    proposal_parents = (
+        set(specs)
+        if proposal_parent_ids is None
+        else {str(item) for item in proposal_parent_ids}
+    )
+    unknown_parents = sorted(proposal_parents - set(specs))
+    if unknown_parents:
+        raise RealtimeAlphaFeedbackError(
+            f"unknown proposal parent candidates: {unknown_parents}"
+        )
 
     candidate_rows = tuple(
         _candidate_feedback(spec, paper_runs_by_candidate.get(spec.candidate_id, ()))
@@ -230,13 +246,21 @@ def build_feedback_plan(
             key=lambda item: (float(item.ucb_95), item.candidate_id),
             default=None,
         )
+        proposal_parent = max(
+            (item for item in eligible if item.candidate_id in proposal_parents),
+            key=lambda item: (float(item.ucb_95), item.candidate_id),
+            default=None,
+        )
         if parent is None:
             action = "COLLECT"
             reason = "MIN_REALIZATIONS_NOT_MET"
         elif float(parent.ucb_95) > 0:
             action = "EXPAND"
             reason = "POSITIVE_EXPLORATION_UCB"
-            expandable.append((float(parent.ucb_95), parent))
+            if proposal_parent is not None and float(proposal_parent.ucb_95) > 0:
+                expandable.append((float(proposal_parent.ucb_95), proposal_parent))
+            else:
+                reason = "POSITIVE_UCB_ADAPTIVE_PARENT_ONLY"
         else:
             action = "DEPRIORITIZE"
             reason = "NON_POSITIVE_EXPLORATION_UCB"
@@ -248,6 +272,9 @@ def build_feedback_plan(
                 eligible_candidates=len(eligible),
                 best_ucb_95=float(parent.ucb_95) if parent else None,
                 reason_code=reason,
+                proposal_parent_candidate_id=(
+                    proposal_parent.candidate_id if proposal_parent else None
+                ),
             )
         )
 
@@ -256,10 +283,15 @@ def build_feedback_plan(
     for spec in specs.values():
         horizons_by_mechanism.setdefault(spec.mechanism, set()).add(spec.horizon_ms)
     proposals: list[FeedbackProposal] = []
+    proposal_blockers: set[str] = set()
+    if max_new == 0 and expandable:
+        proposal_blockers.add("ADAPTIVE_BUDGET_EXHAUSTED")
     for _score, parent_row in sorted(
         expandable,
         key=lambda item: (-item[0], item[1].candidate_id),
     ):
+        if max_new == 0:
+            break
         parent = specs[parent_row.candidate_id]
         assert parent_row.feedback_cutoff_ms is not None
         raw_mutations = (
@@ -272,11 +304,13 @@ def build_feedback_plan(
                 round(raw_horizon / decision_interval_ms) * decision_interval_ms,
             )
             if horizon in horizons_by_mechanism.get(parent.mechanism, set()):
+                proposal_blockers.add("HORIZON_ALREADY_PRE_REGISTERED")
                 continue
             candidate_id = f"rt_{parent.mechanism}_{_horizon_label(horizon)}_fb1"
             if candidate_id in existing or any(
                 item.spec.candidate_id == candidate_id for item in proposals
             ):
+                proposal_blockers.add("CANDIDATE_ID_ALREADY_REGISTERED")
                 continue
             spec = RealtimeHypothesis(
                 candidate_id=candidate_id,
@@ -307,6 +341,20 @@ def build_feedback_plan(
         if len(proposals) >= max_new:
             break
 
+    if not proposals and not proposal_blockers:
+        if not expandable:
+            if not any(item.n_realizations for item in candidate_rows):
+                proposal_blockers.add("NO_REALIZED_FEEDBACK")
+            elif all(
+                item.ucb_95 is None or float(item.ucb_95) <= 0
+                for item in candidate_rows
+            ):
+                proposal_blockers.add("NO_POSITIVE_EXPLORATION_UCB")
+            else:
+                proposal_blockers.add("POSITIVE_UCB_HAS_NO_ROOT_PARENT")
+        else:
+            proposal_blockers.add("NO_UNREGISTERED_MUTATION")
+
     status = (
         "ADAPTIVE_EXPLORATION_READY"
         if proposals
@@ -322,6 +370,8 @@ def build_feedback_plan(
         consumed_realizations=sum(item.n_realizations for item in candidate_rows),
         min_realizations=min_realizations,
         max_new=max_new,
+        candidate_budget_remaining=max_new - len(proposals),
+        proposal_blockers=tuple(sorted(proposal_blockers)),
     )
 
 

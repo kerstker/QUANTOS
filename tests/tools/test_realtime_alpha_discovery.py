@@ -427,6 +427,45 @@ def test_cycle_turns_positive_realized_feedback_into_fresh_oos_challengers(tmp_p
     assert all(row["gate_pass"] is False for row in adaptive)
     assert report["manifest_hash"] == stable_hash(report["hypotheses"])
 
+    adaptive_id = "rt_liquidation_cascade_1m_fb1"
+    registry = AlphaFamilyRegistry(str(registry_path), create=False)
+    try:
+        registry.record_paper_run(
+            adaptive_id,
+            run_id="adaptive-realization-1",
+            status="ENGINEERING_SHADOW_REALIZED",
+            metrics={
+                "candidate_id": adaptive_id,
+                "as_of_ms": end_ms + 21_000,
+                "net_return": 0.0005,
+                "paper_only": True,
+                "promotion_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+            dataset_version="shadow-v1",
+            recorded_at=end_ms + 22_000,
+        )
+    finally:
+        registry.close()
+
+    report_after_adaptive_realization = run_cycle(
+        source_store=store_path,
+        feature_status=status_path,
+        registry_db=registry_path,
+        output_path=tmp_path / "third.json",
+        now_ms=end_ms + 30_000,
+        policy=policy,
+        persist_trials=False,
+    )
+    adaptive_feedback = next(
+        item
+        for item in report_after_adaptive_realization["feedback"]["candidates"]
+        if item["candidate_id"] == adaptive_id
+    )
+    assert adaptive_feedback["n_realizations"] == 1
+    assert report_after_adaptive_realization["feedback"]["consumed_realizations"] == 11
+
 
 def test_cycle_rejects_tampered_feedback_registry_before_allocating_trials(tmp_path) -> None:
     store_path = tmp_path / "features.db"
