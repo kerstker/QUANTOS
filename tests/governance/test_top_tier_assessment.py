@@ -3356,6 +3356,26 @@ def test_committed_alpha_trial_snapshot_has_minimal_table_surface():
     }
 
 
+def test_canonical_refresh_check_supports_new_run_and_standalone_reuse(tmp_path, monkeypatch):
+    from scripts.assess_top_tier import main
+    import subprocess
+
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    json_out = tmp_path / "assessment.json"
+    matrix_out = tmp_path / "assessment.md"
+    args = ["--repo-root", str(ROOT), "--json-out", str(json_out), "--matrix-out", str(matrix_out), "--as-of-ms", "123"]
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    for run in ("a" * 64, "b" * 64):
+        monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", run)
+        assert main(args) == 0
+        assert main([*args, "--check"]) == 0
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
+    assert main([*args, "--check"]) == 1
+    monkeypatch.delenv("QUANTOS_VALIDATION_RUN_ID")
+    monkeypatch.delenv("QUANTOS_VALIDATION_SOURCE_COMMIT")
+    assert main([*args, "--check"]) == 0
+
+
 def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
     from scripts.assess_top_tier import main
     import subprocess

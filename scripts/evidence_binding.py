@@ -49,20 +49,31 @@ def validation_binding(
     *, generated_at: int, run_id: str | None = None, source_commit: str | None = None,
     current: bool = True,
 ) -> dict[str, object]:
-    source_env = os.environ.get("QUANTOS_VALIDATION_SOURCE_COMMIT")
-    source = source_commit if source_commit is not None else (source_env if source_env is not None else _head())
-    _source(source)
-    run_env = os.environ.get("QUANTOS_VALIDATION_RUN_ID")
-    run = run_id if run_id is not None else run_env
+    if "QUANTOS_VALIDATION_SOURCE_COMMIT" in os.environ:
+        env_source = _source(os.environ["QUANTOS_VALIDATION_SOURCE_COMMIT"])
+        if source_commit is not None and source_commit != env_source:
+            raise ValueError("explicit source_commit disagrees with canonical environment")
+        source = env_source
+    else:
+        source = source_commit if source_commit is not None else _head()
+    source = _source(source)
+
+    if "QUANTOS_VALIDATION_RUN_ID" in os.environ:
+        env_run = _run(os.environ["QUANTOS_VALIDATION_RUN_ID"])
+        if run_id is not None and run_id != env_run:
+            raise ValueError("explicit run_id disagrees with canonical environment")
+        run = env_run
+    else:
+        run = run_id
     if run is None:
         run = hashlib.sha256(("diagnostic:" + source).encode("utf-8")).hexdigest()
-    _run(run)
+    run = _run(run)
     if generated_at == 0:
         raw = os.environ.get("QUANTOS_VALIDATION_STARTED_AT_MS")
         generated_at = int(raw) if raw is not None else 0
     return {
-        "run_id": _run(run),
-        "source_commit": _source(source),
+        "run_id": run,
+        "source_commit": source,
         "generated_at": _timestamp(generated_at),
         "current": _current(current),
     }
@@ -97,6 +108,11 @@ def assert_current_binding(payload: Mapping[str, Any], *, head: str) -> None:
         raise ValueError(f"validation source commit {binding['source_commit']} != HEAD {head}")
     if binding["current"] is not True:
         raise ValueError("validation binding is not current")
-    expected_run = os.environ.get("QUANTOS_VALIDATION_RUN_ID")
-    if expected_run is not None and binding["run_id"] != _run(expected_run):
-        raise ValueError(f"validation run {binding['run_id']} != expected {expected_run}")
+    if "QUANTOS_VALIDATION_SOURCE_COMMIT" in os.environ:
+        expected_source = _source(os.environ["QUANTOS_VALIDATION_SOURCE_COMMIT"])
+        if binding["source_commit"] != expected_source:
+            raise ValueError(f"validation source commit {binding['source_commit']} != canonical environment")
+    if "QUANTOS_VALIDATION_RUN_ID" in os.environ:
+        expected_run = _run(os.environ["QUANTOS_VALIDATION_RUN_ID"])
+        if binding["run_id"] != expected_run:
+            raise ValueError(f"validation run {binding['run_id']} != canonical environment")

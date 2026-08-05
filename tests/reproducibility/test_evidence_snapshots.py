@@ -99,3 +99,33 @@ def _verify_dry_run(digest, artifact):
         # the reconciliation identity must still hold for every book
         assert abs(float(pnl["residual"])) <= digest["residual_max"], (
             f"{strategy} reconciliation residual {pnl['residual']} exceeds {digest['residual_max']}")
+
+
+def test_binding_helper_rejects_malformed_values_and_environment(monkeypatch):
+    from scripts.evidence_binding import assert_current_binding, validation_binding, validation_binding_from_payload
+
+    source = "b" * 40
+    run = "a" * 64
+    valid = {"validation": {"run_id": run, "source_commit": source, "generated_at": 1, "current": True}}
+    for key, value in [("QUANTOS_VALIDATION_SOURCE_COMMIT", ""), ("QUANTOS_VALIDATION_RUN_ID", "bad")]:
+        monkeypatch.setenv(key, value)
+        with pytest.raises(ValueError):
+            validation_binding(generated_at=1, source_commit=source, run_id=run)
+        monkeypatch.delenv(key)
+    for payload in [
+        {"validation": {"run_id": "bad", "source_commit": source, "generated_at": 1, "current": True}},
+        {"validation": {"run_id": run, "source_commit": "bad", "generated_at": 1, "current": True}},
+        {"validation": {"run_id": run, "source_commit": source, "generated_at": True, "current": True}},
+        {"validation": {"run_id": run, "source_commit": source, "generated_at": 1, "current": 1}},
+    ]:
+        with pytest.raises(ValueError):
+            validation_binding_from_payload(payload)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", "c" * 40)
+    with pytest.raises(ValueError):
+        validation_binding(generated_at=1, source_commit=source, run_id=run)
+    with pytest.raises(ValueError):
+        assert_current_binding(valid, head=source)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", source)
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "c" * 64)
+    with pytest.raises(ValueError):
+        assert_current_binding(valid, head=source)
