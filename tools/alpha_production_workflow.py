@@ -65,6 +65,12 @@ DEFAULT_REGIME_MARKS = Path("data/cache/crypto_perp_mark_prices.json")
 DEFAULT_REGIME_FUNDING = Path("data/cache/crypto_funding_rates.json")
 DEFAULT_REALTIME_ALPHA_REGISTRY = Path("data/cache/realtime_alpha_registry.db")
 DEFAULT_REALTIME_ALPHA_DISCOVERY = Path("data/cache/realtime_alpha_discovery.json")
+# The engineering shadow remains diagnostic-only.  Formal realtime shadow
+# evidence is produced by a physically separate authority and is consumed by
+# this workflow through this distinct path.
+DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW = Path(
+    "data/cache/realtime_alpha_formal_shadow.json"
+)
 DEFAULT_REALTIME_ALPHA_SHADOW = Path("data/cache/realtime_alpha_forward_shadow.json")
 DEFAULT_REALTIME_ALPHA_EXECUTION = Path("data/cache/realtime_alpha_execution_paper.json")
 DEFAULT_UNBLINDING_POLICY = UnblindingPolicy()
@@ -469,6 +475,70 @@ def _realtime_engineering_shadow_gate(
     )
 
 
+def _realtime_formal_shadow_gate(
+    candidate_id: str,
+    *,
+    document: Mapping[str, Any],
+    path: str | Path,
+) -> tuple[GateEvidence, int | None]:
+    """Validate the independent formal shadow authority without unblinding it.
+
+    The authority is intentionally narrow: it proves that an immutable,
+    separate forward ledger is running and that its outcomes are not exposed
+    to the adaptive selector.  It does not turn an exploratory result into a
+    pass.  Maturity additionally requires the candidate's frozen historical
+    validation to have passed and the required forward observations to exist.
+    """
+    authority = document.get("authority")
+    safety = document.get("safety")
+    verdict = document.get("verdict")
+    ledger = document.get("ledger")
+    authority_valid = (
+        document.get("mode") == "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
+        and isinstance(authority, Mapping)
+        and authority.get("name") == "FORMAL_BLINDED_SHADOW"
+        and authority.get("formal_blinded") is True
+        and authority.get("selector_feedback_consumed") is False
+        and authority.get("outcome_feedback_feed") == "NONE"
+        and authority.get("ledger_separate_from_engineering") is True
+        and isinstance(safety, Mapping)
+        and safety.get("formal_blinded") is True
+        and safety.get("selector_feedback_consumed") is False
+        and safety.get("outcome_feedback_feed") == "NONE"
+        and isinstance(verdict, Mapping)
+        and verdict.get("promotion_eligible") is False
+        and verdict.get("live_allowed") is False
+        and verdict.get("order_submission_allowed") is False
+        and isinstance(ledger, Mapping)
+        and ledger.get("chain_valid") is True
+    )
+    row = _track_row(document, candidate_id)
+    periods = row.get("n_realizations")
+    observed = int(periods) if type(periods) is int and periods >= 0 else None
+    if not authority_valid or not row:
+        status = EvidenceStatus.NOT_AVAILABLE
+        bound_row: dict[str, Any] = {}
+    elif row.get("errors"):
+        status = EvidenceStatus.BLOCKED
+        bound_row = {"track": row, "authority_valid": True}
+    elif row.get("formal_maturity") is True:
+        status = EvidenceStatus.MATURE
+        bound_row = {"track": row, "authority_valid": True}
+    else:
+        status = EvidenceStatus.RUNNING
+        bound_row = {"track": row, "authority_valid": True}
+    return (
+        _gate(
+            EvidenceGate.SIGNAL_SHADOW,
+            status,
+            path=path,
+            document=document if authority_valid and row else {},
+            row=bound_row,
+        ),
+        observed,
+    )
+
+
 def _realtime_engineering_execution_gate(
     candidate_id: str,
     *,
@@ -752,6 +822,8 @@ def reconcile_workflow(
     release_commit: str | None,
     realtime_discovery_document: Mapping[str, Any] | None = None,
     realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_formal_shadow_document: Mapping[str, Any] | None = None,
+    realtime_formal_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW,
     realtime_shadow_document: Mapping[str, Any] | None = None,
     realtime_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_SHADOW,
     realtime_execution_document: Mapping[str, Any] | None = None,
@@ -781,6 +853,7 @@ def reconcile_workflow(
         realtime_document,
         lifecycle_document,
         realtime_discovery_document or {},
+        realtime_formal_shadow_document or {},
         realtime_shadow_document or {},
         realtime_execution_document or {},
     )
@@ -801,10 +874,10 @@ def reconcile_workflow(
                 document=realtime_discovery_document or {},
                 path=realtime_discovery_path,
             )
-            shadow, periods = _realtime_engineering_shadow_gate(
+            shadow, periods = _realtime_formal_shadow_gate(
                 identity.candidate_id,
-                document=realtime_shadow_document or {},
-                path=realtime_shadow_path,
+                document=realtime_formal_shadow_document or {},
+                path=realtime_formal_shadow_path,
             )
             unblinding: dict[str, Any] = {}
         else:
@@ -859,7 +932,7 @@ def reconcile_workflow(
             blockers.append("HISTORICAL_OOS_NOT_PASS")
         if shadow.status is not EvidenceStatus.MATURE:
             blockers.append("SIGNAL_SHADOW_NOT_MATURE")
-            if realtime_identity:
+            if realtime_identity and shadow.status is EvidenceStatus.NOT_AVAILABLE:
                 blockers.append("FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE")
             else:
                 for item in unblinding.get("blockers", ()):
@@ -923,6 +996,9 @@ def reconcile_workflow(
                 "realtime_alpha_discovery": stable_hash(
                     realtime_discovery_document or {}
                 ),
+                "realtime_alpha_formal_shadow": stable_hash(
+                    realtime_formal_shadow_document or {}
+                ),
                 "realtime_alpha_shadow": stable_hash(realtime_shadow_document or {}),
                 "realtime_alpha_execution": stable_hash(
                     realtime_execution_document or {}
@@ -940,6 +1016,7 @@ def run(
     candidate_registry_path: str | Path = DEFAULT_CANDIDATE_REGISTRY,
     realtime_registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
     realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_formal_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW,
     realtime_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_SHADOW,
     realtime_execution_path: str | Path = DEFAULT_REALTIME_ALPHA_EXECUTION,
     historical_evaluations_path: str | Path = DEFAULT_HISTORICAL_EVALUATIONS,
@@ -987,6 +1064,10 @@ def run(
             release_commit=commit,
             realtime_discovery_document=_read_optional(realtime_discovery_path),
             realtime_discovery_path=realtime_discovery_path,
+            realtime_formal_shadow_document=_read_optional(
+                realtime_formal_shadow_path
+            ),
+            realtime_formal_shadow_path=realtime_formal_shadow_path,
             realtime_shadow_document=_read_optional(realtime_shadow_path),
             realtime_shadow_path=realtime_shadow_path,
             realtime_execution_document=_read_optional(realtime_execution_path),
@@ -1009,6 +1090,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--candidate-registry", default=str(DEFAULT_CANDIDATE_REGISTRY))
     parser.add_argument("--realtime-registry", default=str(DEFAULT_REALTIME_ALPHA_REGISTRY))
     parser.add_argument("--realtime-discovery", default=str(DEFAULT_REALTIME_ALPHA_DISCOVERY))
+    parser.add_argument(
+        "--realtime-formal-shadow", default=str(DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW)
+    )
     parser.add_argument("--realtime-shadow", default=str(DEFAULT_REALTIME_ALPHA_SHADOW))
     parser.add_argument("--realtime-execution", default=str(DEFAULT_REALTIME_ALPHA_EXECUTION))
     parser.add_argument(
@@ -1032,6 +1116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidate_registry_path=args.candidate_registry,
             realtime_registry_path=args.realtime_registry,
             realtime_discovery_path=args.realtime_discovery,
+            realtime_formal_shadow_path=args.realtime_formal_shadow,
             realtime_shadow_path=args.realtime_shadow,
             realtime_execution_path=args.realtime_execution,
             historical_evaluations_path=args.historical_evaluations,
@@ -1073,6 +1158,7 @@ __all__ = [
     "DEFAULT_REGIME_MARKS",
     "DEFAULT_REALTIME_ALPHA_DISCOVERY",
     "DEFAULT_REALTIME_ALPHA_EXECUTION",
+    "DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW",
     "DEFAULT_REALTIME_ALPHA_REGISTRY",
     "DEFAULT_REALTIME_ALPHA_SHADOW",
     "DEFAULT_UNBLINDING_POLICY",

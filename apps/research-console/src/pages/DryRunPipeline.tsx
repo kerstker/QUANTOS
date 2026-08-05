@@ -311,6 +311,8 @@ function FactorLifecycleReport({
   const series = useMemo(() => lifecycleSeries(row), [row]);
   const effectiveState = effectiveLifecycleState(row);
   const executionState = executionLifecycleState(row);
+  const formalShadow = row.formal_shadow;
+  const formalShadowState = formalShadow?.status ?? 'NOT_AVAILABLE';
   const realized = row.paper.n_realizations > 0;
   const stages = [
     { label: 'REGISTERED', reached: true },
@@ -345,6 +347,10 @@ function FactorLifecycleReport({
             label={`EXEC ${executionState}`}
             tone={executionState === 'LOSS' ? 'neg' : executionState === 'PROFIT' ? 'pos' : 'muted'}
           />
+          <Chip
+            label={`FORMAL SHADOW ${formalShadowState}`}
+            tone={formalShadowState === 'MATURE' ? 'pos' : formalShadowState === 'RUNNING' ? 'info' : 'warn'}
+          />
           <Chip label="NON-PROMOTABLE" tone="warn" />
         </div>
       </div>
@@ -365,6 +371,12 @@ function FactorLifecycleReport({
         <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
         <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
         <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
+        <Metric
+          label="Formal shadow"
+          value={formalShadow ? formalShadow.n_realizations : '--'}
+          detail={formalShadow ? `${formalShadowState} / independent ledger` : 'authority not available'}
+          tone={formalShadowState === 'MATURE' ? 'pos' : formalShadowState === 'RUNNING' ? 'info' : 'warn'}
+        />
         <Metric
           label="Execution net PnL"
           value={fmtUsd(executionPnlAvailable ? row.execution.cumulative_net_pnl : null)}

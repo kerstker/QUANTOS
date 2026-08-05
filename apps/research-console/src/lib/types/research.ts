@@ -1614,6 +1614,17 @@ export interface RealtimeAlphaLifecyclePayload {
     }>;
     pnl_source?: 'ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL' | string;
   };
+  formal_shadow?: {
+    status: string;
+    formal_blinded: boolean;
+    selector_feedback_consumed: false;
+    outcome_feedback_feed: 'NONE';
+    n_decisions: number;
+    n_realizations: number;
+    cum_return?: number | null;
+    formal_maturity: boolean;
+    evidence_class?: string | null;
+  };
   last_event_ms?: number | null;
   errors: string[];
   promotion_eligible: false;
@@ -1760,6 +1771,36 @@ export interface RealtimeAlphaAutonomyPayload {
       broker_order_submission: false;
       allow_ai_direct_trading: false;
     };
+  };
+  formal_shadow?: {
+    snapshot_present: boolean;
+    boundary_valid: boolean;
+    status: string;
+    mode?: string;
+    generated_at_ms?: number | null;
+    tracks: Record<string, {
+      n_decisions?: number;
+      n_pending?: number;
+      n_realizations?: number;
+      cum_return?: number | null;
+      max_drawdown?: number | null;
+      formal_maturity?: boolean;
+      evidence_class?: string | null;
+    }>;
+    authority?: {
+      name?: string;
+      formal_blinded?: boolean;
+      selector_feedback_consumed?: false;
+      outcome_feedback_feed?: 'NONE';
+    };
+    verdict?: {
+      formal_blinded_shadow_running?: boolean;
+      formal_shadow_evidence_available?: boolean;
+      promotion_eligible: false;
+      live_allowed: false;
+      order_submission_allowed: false;
+    };
+    blockers?: string[];
   };
   execution_paper: {
     snapshot_present: boolean;

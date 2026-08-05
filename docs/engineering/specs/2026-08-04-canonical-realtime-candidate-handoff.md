@@ -3,6 +3,16 @@
 Status: implemented and runtime-verified for `FROZEN_V1` WP1/WP3  
 Boundary: `L2_DRY_RUN_ONLY`
 
+The formal-shadow authority is now implemented as a separate L2 evidence
+track. `tools/realtime_alpha_formal_shadow.py` reuses the deterministic frame
+and label primitives but writes `realtime_alpha_formal_shadow.db` and
+`realtime_alpha_formal_shadow.json`, separate from the engineering shadow.
+The canonical reconciler consumes only that formal artifact for the realtime
+`SIGNAL_SHADOW` gate; the adaptive selector consumes only
+`ENGINEERING_SHADOW_REALIZED` events. The first observed formal track is
+`RUNNING`, not `MATURE`, until its independent validation and forward-period
+requirements are actually met.
+
 ## Problem
 
 The autonomous realtime factory currently owns 26 immutable registrations and
@@ -31,6 +41,10 @@ latency, costs, quantile and maturity spans) as one content-addressed object.
 5. Map the discovery historical verdict into the canonical historical gate.
    The existing engineering shadow and simulated execution ledgers are retained
    as observable evidence but explicitly receive no formal gate credit.
+6. Run a second, independently blinded shadow authority in parallel. Its
+   append-only ledger and artifact are never fed to adaptive feedback; the
+   reconciler may report `RUNNING` evidence but cannot infer maturity from a
+   positive observation count alone.
 
 ## Safety invariants
 
@@ -47,6 +61,9 @@ latency, costs, quantile and maturity spans) as one content-addressed object.
   policy, so it is classified `MATERIAL_MULTIPLE` and restarts formal evidence.
 - Existing daily candidates retain their historical identity and definition
   hashes, avoiding an artificial evidence-clock reset.
+- The formal shadow admission attests `formal_blinded=true`,
+  `selector_feedback_consumed=false`, `outcome_feedback_feed=NONE`, and a
+  separate ledger. Any mismatch is `SAFE_BLOCKED`.
 
 ## Acceptance evidence
 
@@ -59,8 +76,17 @@ latency, costs, quantile and maturity spans) as one content-addressed object.
   blinded-shadow blocker until a separate formal shadow authority exists.
 - Scheduler, backup, API/SSE and console report one canonical population and
   retain all paper/live safety flags as false.
+- Formal shadow and engineering shadow have different SQLite paths, event
+  statuses and API projections; formal outcomes are excluded from the adaptive
+  feedback input by status filter and test.
 
 Runtime acceptance on 2026-08-04 produced `population=36`,
 `realtime_handoff_count=26`, `execution_paper_eligible=0`, with all realtime
 candidates in `PARALLEL_VALIDATION`.  The API projection returned the same 36
 rows and grouped formal blockers into the operator exception queue.
+
+The next runtime acceptance after the formal-shadow slice must show a valid
+`AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW` artifact and a canonical realtime
+row with `SIGNAL_SHADOW=RUNNING` but without
+`FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE`. It must still show
+`execution_paper_eligible=0` while historical/forward gates are incomplete.

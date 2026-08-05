@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-05 independent formal blinded shadow:** the realtime candidate
+> handoff now has a second L2-only forward authority. It reuses deterministic
+> public-frame/label primitives but writes a physically separate append-only
+> `realtime_alpha_formal_shadow.db` and JSON artifact. The canonical workflow
+> consumes this artifact for the realtime `SIGNAL_SHADOW` gate, while the
+> adaptive selector filters strictly to `ENGINEERING_SHADOW_REALIZED` events;
+> formal outcomes cannot steer candidate mutations. The console SSE exposes a
+> `formal_shadow` sub-report per factor and the detail view shows its live
+> RUNNING/MATURE state. No maturity, promotion, credential, broker or order
+> authority is inferred from the new track.
+
 > **2026-08-05 SOR freshness self-coordination:** the one-minute realtime execution-paper worker now refreshes the append-only public cross-venue order-book snapshot when the five-minute SOR artifact is missing or stale, then reloads and revalidates the full venue/timestamp/hash contract against the refresh-completion clock (so a slow public fallback is not misclassified as future). Its scheduled execution window is 5 minutes with single-instance `IgnoreNew` overlap protection. Refresh failure remains `SAFE_BLOCKED`; the refresh never runs a canary, touches credentials, or submits orders.
 
 > **2026-08-05 realtime feedback structural challenger:** when a positive-UCB

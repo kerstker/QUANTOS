@@ -6,6 +6,7 @@ import pytest
 
 from quantos.contracts.hashing import stable_hash
 from services.research.alpha_family_registry import AlphaFamilyRegistry
+from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from services.research.realtime_alpha_discovery import (
     REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
     RealtimeFrame,
@@ -13,10 +14,13 @@ from services.research.realtime_alpha_discovery import (
     default_realtime_hypotheses,
 )
 from tools.realtime_alpha_forward_shadow import (
+    FORMAL_BLINDED_SHADOW_AUTHORITY,
+    FORMAL_BLINDED_SHADOW_PAPER_CLASS,
     RealtimeAlphaForwardShadowError,
     eligible_candidates,
     run_cycle,
 )
+from tools.realtime_alpha_formal_shadow import run_cycle as run_formal_cycle
 
 
 def _discovery(
@@ -411,3 +415,74 @@ def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
         "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
         "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
     ]
+
+
+def test_formal_shadow_is_separate_and_not_feedback_authority(
+    tmp_path, monkeypatch
+) -> None:
+    base = 1_000_000
+    spec = default_realtime_hypotheses()[0]
+    discovery_path = tmp_path / "discovery.json"
+    discovery_path.write_text(
+        json.dumps(_discovery(base, evaluated=True)), encoding="utf-8"
+    )
+    feature_status_path = tmp_path / "feature-status.json"
+    feature_status_path.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "generated_at_ms": base,
+                "batch": {"chain_valid": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(registry_path), create=True) as registry:
+        registry.register_candidate(spec.as_dict(), recorded_at=base - 1)
+
+    monkeypatch.setattr(
+        "tools.realtime_alpha_forward_shadow.load_bucketed_frames",
+        lambda *_args, **_kwargs: {},
+    )
+    report = run_formal_cycle(
+        discovery_path=discovery_path,
+        feature_status_path=feature_status_path,
+        feature_store_path=tmp_path / "features.db",
+        family_registry_path=registry_path,
+        shadow_store_path=tmp_path / "formal-shadow.db",
+        output_path=tmp_path / "formal-shadow.json",
+        now_ms=base,
+    )
+
+    assert report["mode"] == "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
+    assert report["authority"] == {
+        "name": FORMAL_BLINDED_SHADOW_AUTHORITY,
+        "formal_blinded": True,
+        "selector_feedback_consumed": False,
+        "outcome_feedback_feed": "NONE",
+        "ledger_separate_from_engineering": True,
+    }
+    assert report["status"] == "RUNNING"
+    assert report["cycle"]["new_admissions"] == 1
+    assert report["verdict"]["formal_blinded_shadow_running"] is True
+    assert report["verdict"]["engineering_shadow_running"] is False
+    assert report["verdict"]["promotion_eligible"] is False
+    assert report["verdict"]["live_allowed"] is False
+    assert report["verdict"]["order_submission_allowed"] is False
+    assert report["safety"]["selector_feedback_consumed"] is False
+    assert report["tracks"][spec.candidate_id]["evidence_class"] == (
+        "FORMAL_BLINDED_SIGNAL_SHADOW"
+    )
+    assert report["tracks"][spec.candidate_id]["formal_maturity"] is False
+
+    with AlphaFamilyRegistry(str(registry_path), create=False) as registry:
+        paper_runs = registry.paper_runs(spec.candidate_id)
+    assert paper_runs == []
+    with RealtimeAlphaShadowStore(str(tmp_path / "formal-shadow.db")) as store:
+        admission = store.admission(spec.candidate_id)
+    assert admission is not None
+    assert admission["payload"]["identity"]["paper_class"] == (
+        FORMAL_BLINDED_SHADOW_PAPER_CLASS
+    )
+    assert admission["payload"]["identity"]["selector_feedback_consumed"] is False

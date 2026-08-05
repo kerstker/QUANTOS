@@ -326,6 +326,35 @@ def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
             }
         },
     }
+    formal_shadow = {
+        "generated_at_ms": 3_150,
+        "mode": "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW",
+        "authority": {
+            "name": "FORMAL_BLINDED_SHADOW",
+            "formal_blinded": True,
+            "selector_feedback_consumed": False,
+            "outcome_feedback_feed": "NONE",
+            "ledger_separate_from_engineering": True,
+        },
+        "safety": {
+            "formal_blinded": True,
+            "selector_feedback_consumed": False,
+            "outcome_feedback_feed": "NONE",
+        },
+        "verdict": {
+            "promotion_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "ledger": {"chain_valid": True},
+        "tracks": {
+            identity.candidate_id: {
+                "candidate_id": identity.candidate_id,
+                "n_realizations": 1,
+                "formal_maturity": False,
+            }
+        },
+    }
     with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
         snapshot = reconcile_workflow(
             workflow=workflow,
@@ -349,6 +378,8 @@ def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
             release_commit=COMMIT,
             realtime_discovery_document=discovery,
             realtime_discovery_path="realtime-discovery.json",
+            realtime_formal_shadow_document=formal_shadow,
+            realtime_formal_shadow_path="formal-shadow.json",
             realtime_shadow_document=engineering_shadow,
             realtime_shadow_path="engineering-shadow.json",
             realtime_execution_document=engineering_execution,
@@ -362,7 +393,7 @@ def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
     assert gates["EXECUTION_PAPER"]["status"] == "RUNNING"
     assert row["workflow"]["stage"] == "PARALLEL_VALIDATION"
     assert row["workflow"]["eligible_for_execution_paper"] is False
-    assert "FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE" in row["workflow"]["blockers"]
+    assert "FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE" not in row["workflow"]["blockers"]
     assert "ENGINEERING_EXECUTION_PAPER_NOT_FORMAL_EVIDENCE" in row["workflow"]["blockers"]
     assert snapshot["execution_paper_eligible_ids"] == []
     assert snapshot["reconciliation"]["realtime_handoff_count"] == 1

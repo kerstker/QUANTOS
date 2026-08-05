@@ -399,6 +399,30 @@ def test_cycle_turns_positive_realized_feedback_into_fresh_oos_challengers(tmp_p
     finally:
         registry.close()
 
+    # The independent formal shadow ledger may share the family registry, but
+    # its evidence must never enter the adaptive selector's engineering-only
+    # feedback stream.
+    registry = AlphaFamilyRegistry(str(registry_path), create=False)
+    try:
+        registry.record_paper_run(
+            parent_id,
+            run_id="formal-realization-1",
+            status="FORMAL_BLINDED_SHADOW_REALIZED",
+            metrics={
+                "candidate_id": parent_id,
+                "as_of_ms": end_ms + 1_500,
+                "net_return": 0.25,
+                "paper_only": True,
+                "promotion_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+            dataset_version="formal-shadow-v1",
+            recorded_at=end_ms + 1_600,
+        )
+    finally:
+        registry.close()
+
     report = run_cycle(
         source_store=store_path,
         feature_status=status_path,

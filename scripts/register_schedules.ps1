@@ -308,6 +308,12 @@ $realtimeAlphaDiscoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).A
 # the normal SAFE_BLOCKED state and creates no paper position or live authority.
 $realtimeAlphaForwardShadowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
   -RepetitionInterval (New-TimeSpan -Minutes 1)
+# Formal blinded shadow has its own append-only ledger and must run after
+# discovery, but before execution-paper consumes the engineering shadow.  Its
+# outcomes are never read by the adaptive feedback selector.
+$realtimeAlphaFormalShadowTrigger = New-ScheduledTaskTrigger -Once `
+  -At (Get-Date).AddMinutes(6).AddSeconds(15) `
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
 # Consume only post-admission Signal-Shadow decisions.  The 30-second offset
 # gives the source worker time to commit its hash-chained decision before this
 # isolated intent/fill/position/TCA paper worker reads it.
@@ -390,6 +396,8 @@ Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha
   -Trigger $realtimeAlphaDiscoveryTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 Register-L2Task -Name "QUANTOS_realtime_alpha_forward_shadow" -Module "realtime_alpha_forward_shadow" `
   -Trigger $realtimeAlphaForwardShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
+Register-L2Task -Name "QUANTOS_realtime_alpha_formal_shadow" -Module "realtime_alpha_formal_shadow" `
+  -Trigger $realtimeAlphaFormalShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
 # A full public REST fallback can take longer than one minute; the task
 # remains single-instance (IgnoreNew) and fail-closed while it refreshes.
 Register-L2Task -Name "QUANTOS_realtime_alpha_execution_paper" -Module "realtime_alpha_execution_paper" `

@@ -52,6 +52,18 @@ MAX_DISCOVERY_AGE_MS = 3 * 60 * 60_000
 MAX_FEATURE_STATUS_AGE_MS = 15 * 60_000
 RECENT_FRAME_LOOKBACK_MS = 3 * 60_000
 
+# The engineering and formal shadow authorities deliberately share the
+# deterministic signal/label implementation but never share a ledger.  The
+# formal authority is a separate evidence sink: its outcomes are not written
+# with the status consumed by ``realtime_alpha_feedback`` and therefore cannot
+# influence the adaptive selector that chose the admitted candidate.
+ENGINEERING_SHADOW_AUTHORITY = "ENGINEERING_SHADOW"
+FORMAL_BLINDED_SHADOW_AUTHORITY = "FORMAL_BLINDED_SHADOW"
+ENGINEERING_SHADOW_PAPER_CLASS = "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
+FORMAL_BLINDED_SHADOW_PAPER_CLASS = "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
+ENGINEERING_SHADOW_REALIZATION_STATUS = "ENGINEERING_SHADOW_REALIZED"
+FORMAL_BLINDED_SHADOW_REALIZATION_STATUS = "FORMAL_BLINDED_SHADOW_REALIZED"
+
 _SAFE_DISCOVERY_BOUNDARY = {
     "paper_only": True,
     "live_trading_enabled": False,
@@ -392,6 +404,8 @@ def _admission_identity(
     evaluation: Mapping[str, Any],
     discovery: Mapping[str, Any],
     policy: RealtimeAlphaPolicy,
+    *,
+    authority: str = ENGINEERING_SHADOW_AUTHORITY,
 ) -> dict[str, Any]:
     admission = discovery.get("data_admission")
     capacity = discovery.get("executable_depth_capacity")
@@ -425,13 +439,33 @@ def _admission_identity(
         "common_instruments": sorted(set(common_instruments)),
         "shadow_aum_usd": float(shadow_aum),
         "formal_validation_passed_at_admission": evaluation.get("gate_pass") is True,
+        "formal_validation_allowed_at_admission": (
+            isinstance(admission, Mapping)
+            and admission.get("formal_validation_allowed") is True
+        ),
         "ninety_day_history_mature_at_admission": (
             admission.get("shadow_admission_allowed") is True
         ),
         "policy": policy_payload,
         "policy_hash": stable_hash(policy_payload),
-        "paper_class": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
+        "paper_class": (
+            FORMAL_BLINDED_SHADOW_PAPER_CLASS
+            if authority == FORMAL_BLINDED_SHADOW_AUTHORITY
+            else ENGINEERING_SHADOW_PAPER_CLASS
+        ),
+        "authority": authority,
     }
+    if authority == FORMAL_BLINDED_SHADOW_AUTHORITY:
+        # This is an attestation about the sink, not a claim that the Alpha is
+        # good.  It is deliberately immutable and is checked again when a
+        # worker resumes from the stored admission.
+        result.update(
+            {
+                "formal_blinded": True,
+                "selector_feedback_consumed": False,
+                "outcome_feedback_feed": "NONE",
+            }
+        )
     if evaluation.get("adaptive_feedback") is True:
         for field in (
             "adaptive_feedback",
@@ -449,6 +483,7 @@ def _admitted_spec(
     admission: Mapping[str, Any],
     *,
     policy: RealtimeAlphaPolicy,
+    authority: str = ENGINEERING_SHADOW_AUTHORITY,
 ) -> tuple[RealtimeHypothesis, Mapping[str, Any]]:
     payload = admission.get("payload")
     if not isinstance(payload, Mapping) or any(
@@ -479,15 +514,29 @@ def _admitted_spec(
             raise RealtimeAlphaForwardShadowError(
                 "stored admission identity is incompatible"
             )
+    expected_paper_class = (
+        FORMAL_BLINDED_SHADOW_PAPER_CLASS
+        if authority == FORMAL_BLINDED_SHADOW_AUTHORITY
+        else ENGINEERING_SHADOW_PAPER_CLASS
+    )
     if (
         identity.get("family_id") != spec.family_id
         or identity.get("mechanism") != spec.mechanism
         or identity.get("horizon_ms") != spec.horizon_ms
         or identity.get("signal_version") != spec.signal_version
-        or identity.get("paper_class") != "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
+        or identity.get("paper_class") != expected_paper_class
+        or identity.get("authority") != authority
         or identity.get("policy_hash") != stable_hash(dict(vars(policy)))
     ):
         raise RealtimeAlphaForwardShadowError("stored admission identity is incompatible")
+    if authority == FORMAL_BLINDED_SHADOW_AUTHORITY and (
+        identity.get("formal_blinded") is not True
+        or identity.get("selector_feedback_consumed") is not False
+        or identity.get("outcome_feedback_feed") != "NONE"
+    ):
+        raise RealtimeAlphaForwardShadowError(
+            "stored formal shadow admission is not independently blinded"
+        )
     instruments = identity.get("common_instruments")
     if (
         not isinstance(instruments, list)
@@ -508,7 +557,19 @@ def run_cycle(
     output_path: str | Path = DEFAULT_OUTPUT,
     now_ms: int | None = None,
     policy: RealtimeAlphaPolicy | None = None,
+    authority: str = ENGINEERING_SHADOW_AUTHORITY,
 ) -> dict[str, Any]:
+    if authority not in {
+        ENGINEERING_SHADOW_AUTHORITY,
+        FORMAL_BLINDED_SHADOW_AUTHORITY,
+    }:
+        raise RealtimeAlphaForwardShadowError("unknown realtime shadow authority")
+    formal_blinded = authority == FORMAL_BLINDED_SHADOW_AUTHORITY
+    realization_status = (
+        FORMAL_BLINDED_SHADOW_REALIZATION_STATUS
+        if formal_blinded
+        else ENGINEERING_SHADOW_REALIZATION_STATUS
+    )
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
     decision_frame_cache_path = Path(feature_store_path).with_name(
@@ -575,7 +636,13 @@ def run_cycle(
                         continue
                     inserted = store.admit(
                         spec.candidate_id,
-                        _admission_identity(spec, row, discovery, policy),
+                        _admission_identity(
+                            spec,
+                            row,
+                            discovery,
+                            policy,
+                            authority=authority,
+                        ),
                         admitted_at_ms=now,
                     )
                     new_admissions += int(inserted)
@@ -594,7 +661,11 @@ def run_cycle(
                     try:
                         admission = store.admission(candidate_id)
                         assert admission is not None
-                        spec, identity = _admitted_spec(admission, policy=policy)
+                        spec, identity = _admitted_spec(
+                            admission,
+                            policy=policy,
+                            authority=authority,
+                        )
 
                         if feature_ready:
                             for event in store.pending(candidate_id):
@@ -687,8 +758,12 @@ def run_cycle(
                             decision_time = int(realization["decision_time_ms"])
                             family_registry.record_paper_run(
                                 candidate_id,
-                                run_id=f"realtime-engineering:{candidate_id}:{decision_time}",
-                                status="ENGINEERING_SHADOW_REALIZED",
+                                run_id=(
+                                    f"realtime-formal:{candidate_id}:{decision_time}"
+                                    if formal_blinded
+                                    else f"realtime-engineering:{candidate_id}:{decision_time}"
+                                ),
+                                status=realization_status,
                                 metrics=realization,
                                 dataset_version=str(
                                     realization.get("dataset_version")
@@ -696,7 +771,34 @@ def run_cycle(
                                 ),
                                 recorded_at=int(realization_event["recorded_at_ms"]),
                             )
-                        tracks[candidate_id] = store.summary(candidate_id)
+                        summary = store.summary(candidate_id)
+                        if formal_blinded:
+                            summary.update(
+                                {
+                                    "evidence_class": "FORMAL_BLINDED_SIGNAL_SHADOW",
+                                    "formal_blinded": True,
+                                    "selector_feedback_consumed": False,
+                                    "outcome_feedback_feed": "NONE",
+                                    # Eight observations alone are never enough
+                                    # for formal maturity.  The frozen
+                                    # discovery evaluation must also say that
+                                    # the candidate was eligible for formal
+                                    # validation at admission.
+                                    "formal_maturity": bool(
+                                        summary.get("n_realizations", 0)
+                                        >= 8
+                                        and identity.get(
+                                            "formal_validation_passed_at_admission"
+                                        )
+                                        is True
+                                        and identity.get(
+                                            "formal_validation_allowed_at_admission"
+                                        )
+                                        is True
+                                    ),
+                                }
+                            )
+                        tracks[candidate_id] = summary
                     except Exception as exc:
                         errors[candidate_id] = (
                             f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -726,7 +828,18 @@ def run_cycle(
         "schema_version": 1,
         "generated_at_ms": now,
         "status": status,
-        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
+        "mode": (
+            "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
+            if formal_blinded
+            else "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
+        ),
+        "authority": {
+            "name": authority,
+            "formal_blinded": formal_blinded,
+            "selector_feedback_consumed": False if formal_blinded else None,
+            "outcome_feedback_feed": "NONE" if formal_blinded else None,
+            "ledger_separate_from_engineering": True,
+        },
         "eligible_candidates": [spec.candidate_id for spec, _ in eligible],
         "admitted_candidates": list(admitted_candidates),
         "handoff": {
@@ -771,8 +884,13 @@ def run_cycle(
         },
         "verdict": {
             "forward_shadow_running": running,
-            "engineering_shadow_running": running,
+            "engineering_shadow_running": running and not formal_blinded,
+            "formal_blinded_shadow_running": running and formal_blinded,
+            "formal_shadow_evidence_available": bool(
+                formal_blinded and admitted_candidates and chain_valid is True
+            ),
             "paper_observation_started_without_maturity_wait": running,
+            "selector_feedback_consumed": False if formal_blinded else None,
             "promotion_eligible": False,
             "forward_evidence_credit": False,
             "deployment_eligible": False,
@@ -783,6 +901,9 @@ def run_cycle(
             "paper_only": True,
             "public_market_data_only": True,
             "separate_from_official_paper": True,
+            "formal_blinded": formal_blinded,
+            "selector_feedback_consumed": False if formal_blinded else None,
+            "outcome_feedback_feed": "NONE" if formal_blinded else None,
             "credentials_accessed": False,
             "broker_connectivity": False,
             "broker_order_submission": False,
@@ -828,6 +949,10 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "ENGINEERING_SHADOW_AUTHORITY",
+    "ENGINEERING_SHADOW_PAPER_CLASS",
+    "FORMAL_BLINDED_SHADOW_AUTHORITY",
+    "FORMAL_BLINDED_SHADOW_PAPER_CLASS",
     "DEFAULT_OUTPUT",
     "DEFAULT_SHADOW_STORE",
     "RealtimeAlphaForwardShadowError",

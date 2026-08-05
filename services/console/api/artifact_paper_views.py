@@ -89,6 +89,9 @@ _REALTIME_ALPHA_DISCOVERY = os.path.join(
 _REALTIME_ALPHA_FORWARD_SHADOW = os.path.join(
     _REPO_ROOT, "data", "cache", "realtime_alpha_forward_shadow.json"
 )
+_REALTIME_ALPHA_FORMAL_SHADOW = os.path.join(
+    _REPO_ROOT, "data", "cache", "realtime_alpha_formal_shadow.json"
+)
 _REALTIME_ALPHA_EXECUTION_PAPER = os.path.join(
     _REPO_ROOT, "data", "cache", "realtime_alpha_execution_paper.json"
 )
@@ -279,6 +282,88 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
         "blockers": [],
         "safety": dict(_REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY),
     }
+
+
+def _realtime_alpha_formal_shadow_payload(path: str | None = None) -> Dict:
+    """Project the independent formal shadow without widening its authority."""
+    artifact = _load_json_object(path or _REALTIME_ALPHA_FORMAL_SHADOW)
+    projected = _realtime_alpha_forward_shadow_payload(
+        path or _REALTIME_ALPHA_FORMAL_SHADOW
+    )
+    projected["mode"] = "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
+    projected["authority"] = {
+        "name": "FORMAL_BLINDED_SHADOW",
+        "formal_blinded": False,
+        "selector_feedback_consumed": False,
+        "outcome_feedback_feed": "NONE",
+        "ledger_separate_from_engineering": True,
+    }
+    projected["verdict"]["formal_blinded_shadow_running"] = False
+    projected["verdict"]["formal_shadow_evidence_available"] = False
+    projected["verdict"]["selector_feedback_consumed"] = False
+    projected["safety"]["formal_blinded"] = False
+    projected["safety"]["selector_feedback_consumed"] = False
+    projected["safety"]["outcome_feedback_feed"] = "NONE"
+    if artifact is None:
+        projected["blockers"] = ["REALTIME_FORMAL_SHADOW_SNAPSHOT_MISSING"]
+        return projected
+
+    authority = artifact.get("authority")
+    safety = artifact.get("safety")
+    verdict = artifact.get("verdict")
+    blockers = list(projected.get("blockers", []))
+    if not isinstance(authority, dict) or any(
+        authority.get(field) != expected
+        for field, expected in {
+            "name": "FORMAL_BLINDED_SHADOW",
+            "formal_blinded": True,
+            "selector_feedback_consumed": False,
+            "outcome_feedback_feed": "NONE",
+            "ledger_separate_from_engineering": True,
+        }.items()
+    ):
+        blockers.append("REALTIME_FORMAL_SHADOW_AUTHORITY_INVALID")
+    if not isinstance(safety, dict) or any(
+        safety.get(field) != expected
+        for field, expected in {
+            "formal_blinded": True,
+            "selector_feedback_consumed": False,
+            "outcome_feedback_feed": "NONE",
+        }.items()
+    ):
+        blockers.append("REALTIME_FORMAL_SHADOW_SAFETY_INVALID")
+    if not isinstance(verdict, dict) or any(
+        verdict.get(field) is not False
+        for field in ("promotion_eligible", "live_allowed", "order_submission_allowed")
+    ):
+        blockers.append("REALTIME_FORMAL_SHADOW_AUTHORITY_INVALID")
+    if blockers:
+        projected.update(
+            {
+                "snapshot_present": True,
+                "boundary_valid": False,
+                "status": "SAFE_BLOCKED",
+                "generated_at_ms": artifact.get("generated_at_ms"),
+                "blockers": sorted(set(blockers)),
+            }
+        )
+        return projected
+    projected["snapshot_present"] = True
+    projected["boundary_valid"] = True
+    projected["status"] = artifact.get("status", "SAFE_BLOCKED")
+    projected["generated_at_ms"] = artifact.get("generated_at_ms")
+    projected["authority"] = dict(authority)
+    projected["verdict"]["formal_blinded_shadow_running"] = bool(
+        verdict.get("formal_blinded_shadow_running", False)
+    )
+    projected["verdict"]["formal_shadow_evidence_available"] = bool(
+        verdict.get("formal_shadow_evidence_available", False)
+    )
+    projected["verdict"]["selector_feedback_consumed"] = False
+    projected["safety"]["formal_blinded"] = True
+    projected["safety"]["selector_feedback_consumed"] = False
+    projected["safety"]["outcome_feedback_feed"] = "NONE"
+    return projected
 
 
 def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
@@ -541,6 +626,7 @@ def _realtime_alpha_lifecycle_rows(
     candidates: list[Dict],
     forward_shadow: Mapping[str, Any],
     execution_paper: Mapping[str, Any],
+    formal_shadow: Mapping[str, Any] | None = None,
 ) -> list[Dict]:
     """Join research, realized shadow PnL, and simulated execution per Alpha.
 
@@ -551,6 +637,12 @@ def _realtime_alpha_lifecycle_rows(
     raw_execution = execution_paper.get("tracks")
     forward_tracks = raw_forward if isinstance(raw_forward, dict) else {}
     execution_tracks = raw_execution if isinstance(raw_execution, dict) else {}
+    raw_formal = (
+        formal_shadow.get("tracks")
+        if isinstance(formal_shadow, Mapping)
+        else {}
+    )
+    formal_tracks = raw_formal if isinstance(raw_formal, dict) else {}
     forward_errors = forward_shadow.get("errors")
     execution_errors = execution_paper.get("errors")
     forward_errors = forward_errors if isinstance(forward_errors, dict) else {}
@@ -562,6 +654,8 @@ def _realtime_alpha_lifecycle_rows(
         execution = execution_tracks.get(candidate_id)
         forward = forward if isinstance(forward, dict) else {}
         execution = execution if isinstance(execution, dict) else {}
+        formal = formal_tracks.get(candidate_id)
+        formal = formal if isinstance(formal, dict) else {}
         n_realizations = int(forward.get("n_realizations") or 0)
         cumulative = forward.get("cum_return")
         cumulative = (
@@ -683,6 +777,29 @@ def _realtime_alpha_lifecycle_rows(
                     "execution_history": execution.get("execution_history", []),
                     "pnl_source": "ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL",
                 },
+                "formal_shadow": {
+                    "status": (
+                        "MATURE"
+                        if formal.get("formal_maturity") is True
+                        else "RUNNING"
+                        if formal
+                        else str(
+                            (formal_shadow or {}).get("status", "NOT_AVAILABLE")
+                        )
+                    ),
+                    "formal_blinded": formal.get("formal_blinded") is True,
+                    "selector_feedback_consumed": False,
+                    "outcome_feedback_feed": "NONE",
+                    "n_decisions": int(formal.get("n_decisions") or 0),
+                    "n_realizations": int(formal.get("n_realizations") or 0),
+                    "cum_return": formal.get("cum_return"),
+                    "formal_maturity": formal.get("formal_maturity") is True,
+                    "evidence_class": formal.get(
+                        "evidence_class", "FORMAL_BLINDED_SIGNAL_SHADOW"
+                    )
+                    if formal
+                    else None,
+                },
                 "last_event_ms": max(event_times) if event_times else None,
                 "errors": errors,
                 "promotion_eligible": False,
@@ -762,6 +879,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         ],
         "blockers": ["AUTONOMY_SNAPSHOT_MISSING"],
         "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+        "formal_shadow": _realtime_alpha_formal_shadow_payload(),
         "execution_paper": _realtime_alpha_execution_paper_payload(),
         "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
     }
@@ -806,6 +924,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
                 "search_id": artifact.get("search_id"),
                 "blockers": blockers,
                 "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+                "formal_shadow": _realtime_alpha_formal_shadow_payload(),
                 "execution_paper": _realtime_alpha_execution_paper_payload(),
             }
         )
@@ -838,6 +957,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
     if not all_candidate_views:
         all_candidate_views = list(candidate_views)
     forward_shadow = _realtime_alpha_forward_shadow_payload()
+    formal_shadow = _realtime_alpha_formal_shadow_payload()
     execution_paper = _realtime_alpha_execution_paper_payload()
     return {
         "source": "AUTONOMOUS_REALTIME_ALPHA_DISCOVERY_ARTIFACT",
@@ -926,7 +1046,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         "candidates": all_candidate_views,
         "top_candidates": candidate_views,
         "lifecycle": _realtime_alpha_lifecycle_rows(
-            all_candidate_views, forward_shadow, execution_paper
+            all_candidate_views, forward_shadow, execution_paper, formal_shadow
         ),
         "global_trial_count": artifact.get("global_trial_count"),
         "registry": {
@@ -936,6 +1056,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         "remaining_gates": artifact.get("remaining_gates", []),
         "blockers": [],
         "forward_shadow": forward_shadow,
+        "formal_shadow": formal_shadow,
         "execution_paper": execution_paper,
         "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
     }
@@ -965,6 +1086,7 @@ def _dry_run_watch_paths() -> tuple[str, ...]:
         _PAPER_OPERATIONAL_EVIDENCE,
         _REALTIME_ALPHA_DISCOVERY,
         _REALTIME_ALPHA_FORWARD_SHADOW,
+        _REALTIME_ALPHA_FORMAL_SHADOW,
         _REALTIME_ALPHA_EXECUTION_PAPER,
     )
 

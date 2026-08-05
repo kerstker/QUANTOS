@@ -969,8 +969,16 @@ def run_cycle(
         # only creates children from the frozen base population.  This keeps
         # the current generation-1 handoff contract intact while ensuring that
         # realized adaptive outcomes are never silently discarded.
+        # Formal blinded shadow outcomes are deliberately excluded from this
+        # selector.  Passing them through would both break the engineering
+        # feedback schema and, more importantly, let a candidate-selection
+        # process observe the independent validation authority's outcomes.
         paper_runs = {
-            item.candidate_id: registry.paper_runs(item.candidate_id)
+            item.candidate_id: [
+                run
+                for run in registry.paper_runs(item.candidate_id)
+                if run.get("status") == "ENGINEERING_SHADOW_REALIZED"
+            ]
             for item in feedback_hypotheses
             if item.candidate_id in existing_ids
         }

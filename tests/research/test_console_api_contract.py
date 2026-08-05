@@ -503,6 +503,96 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
     assert all(row["live_allowed"] is False for row in rows)
 
 
+def test_formal_blinded_shadow_is_separate_and_realtime_in_lifecycle(tmp_path):
+    path = tmp_path / "formal-shadow.json"
+    safety = dict(artifact_paper_views._REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY)
+    safety.update(
+        {
+            "formal_blinded": True,
+            "selector_feedback_consumed": False,
+            "outcome_feedback_feed": "NONE",
+        }
+    )
+    path.write_text(
+        json.dumps(
+            {
+                "mode": "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW",
+                "status": "RUNNING",
+                "generated_at_ms": 123,
+                "authority": {
+                    "name": "FORMAL_BLINDED_SHADOW",
+                    "formal_blinded": True,
+                    "selector_feedback_consumed": False,
+                    "outcome_feedback_feed": "NONE",
+                    "ledger_separate_from_engineering": True,
+                },
+                "safety": safety,
+                "ledger": {
+                    "append_only": True,
+                    "chain_valid": True,
+                    "event_count": 3,
+                },
+                "verdict": {
+                    "forward_shadow_running": True,
+                    "engineering_shadow_running": False,
+                    "paper_observation_started_without_maturity_wait": True,
+                    "promotion_eligible": False,
+                    "forward_evidence_credit": False,
+                    "deployment_eligible": False,
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                    "formal_blinded_shadow_running": True,
+                    "formal_shadow_evidence_available": True,
+                    "selector_feedback_consumed": False,
+                },
+                "tracks": {
+                    "alpha": {
+                        "n_decisions": 4,
+                        "n_realizations": 3,
+                        "cum_return": -0.01,
+                        "formal_blinded": True,
+                        "formal_maturity": False,
+                        "evidence_class": "FORMAL_BLINDED_SIGNAL_SHADOW",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    formal = artifact_paper_views._realtime_alpha_formal_shadow_payload(str(path))
+    assert formal["status"] == "RUNNING"
+    assert formal["boundary_valid"] is True
+    assert formal["authority"]["name"] == "FORMAL_BLINDED_SHADOW"
+    assert formal["authority"]["selector_feedback_consumed"] is False
+    assert formal["verdict"]["formal_blinded_shadow_running"] is True
+    assert formal["safety"]["outcome_feedback_feed"] == "NONE"
+
+    rows = artifact_paper_views._realtime_alpha_lifecycle_rows(
+        [
+            {
+                "candidate_id": "alpha",
+                "family_id": "flow",
+                "mechanism": "continuation",
+                "horizon_ms": 60_000,
+                "evaluation_status": "EVALUATED",
+                "status": "EXPLORATORY_ONLY",
+            }
+        ],
+        {"tracks": {}, "errors": {}},
+        {"tracks": {}, "errors": {}},
+        formal,
+    )
+    row = rows[0]
+    assert row["performance_state"] == "NO_REALIZED_PNL"
+    assert row["formal_shadow"]["status"] == "RUNNING"
+    assert row["formal_shadow"]["formal_blinded"] is True
+    assert row["formal_shadow"]["n_realizations"] == 3
+    assert row["formal_shadow"]["selector_feedback_consumed"] is False
+    assert row["promotion_eligible"] is False
+    assert row["live_allowed"] is False
+
+
 def test_execution_paper_loss_overrides_shadow_profit_state():
     candidate = {
         "candidate_id": "shadow_profit_exec_loss",
