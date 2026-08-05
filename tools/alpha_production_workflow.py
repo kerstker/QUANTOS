@@ -539,6 +539,33 @@ def _realtime_formal_shadow_gate(
     )
 
 
+def _realtime_formal_shadow_required(
+    candidate_id: str,
+    *,
+    discovery_document: Mapping[str, Any],
+) -> bool:
+    """Require formal shadow only after discovery admits a candidate to it.
+
+    Exploratory rows are intentionally visible before the formal shadow
+    authority admits them.  Treating that normal pre-admission state as a
+    missing-artifact failure makes the lifecycle report claim a broken
+    pipeline for candidates that have not yet passed the three-day/evaluation
+    handoff.  ``gate_pass`` is the discovery handoff's explicit boundary:
+    once true, a missing formal track is a real production defect; before
+    that, ``SIGNAL_SHADOW_NOT_MATURE`` is the honest blocker.
+    """
+    rows = discovery_document.get("candidates")
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        if isinstance(row, Mapping) and row.get("candidate_id") == candidate_id:
+            return (
+                row.get("evaluation_status") == "EVALUATED"
+                and row.get("gate_pass") is True
+            )
+    return False
+
+
 def _realtime_engineering_execution_gate(
     candidate_id: str,
     *,
@@ -932,7 +959,14 @@ def reconcile_workflow(
             blockers.append("HISTORICAL_OOS_NOT_PASS")
         if shadow.status is not EvidenceStatus.MATURE:
             blockers.append("SIGNAL_SHADOW_NOT_MATURE")
-            if realtime_identity and shadow.status is EvidenceStatus.NOT_AVAILABLE:
+            if (
+                realtime_identity
+                and shadow.status is EvidenceStatus.NOT_AVAILABLE
+                and _realtime_formal_shadow_required(
+                    identity.candidate_id,
+                    discovery_document=realtime_discovery_document or {},
+                )
+            ):
                 blockers.append("FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE")
             else:
                 for item in unblinding.get("blockers", ()):

@@ -16,7 +16,10 @@ from services.research.alpha_production_workflow import (
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.portfolio_evidence import PortfolioGatePolicy
-from tools.alpha_production_workflow import reconcile_workflow
+from tools.alpha_production_workflow import (
+    _realtime_formal_shadow_required,
+    reconcile_workflow,
+)
 
 
 COMMIT = "b" * 40
@@ -397,6 +400,34 @@ def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
     assert "ENGINEERING_EXECUTION_PAPER_NOT_FORMAL_EVIDENCE" in row["workflow"]["blockers"]
     assert snapshot["execution_paper_eligible_ids"] == []
     assert snapshot["reconciliation"]["realtime_handoff_count"] == 1
+
+
+def test_exploratory_realtime_candidate_waits_before_formal_shadow_requirement():
+    discovery = {
+        "candidates": [
+            {
+                "candidate_id": "rt_exploratory",
+                "evaluation_status": "INSUFFICIENT_OBSERVATIONS",
+                "gate_pass": False,
+            }
+        ]
+    }
+    assert (
+        _realtime_formal_shadow_required(
+            "rt_exploratory", discovery_document=discovery
+        )
+        is False
+    )
+
+    discovery["candidates"][0].update(
+        {"evaluation_status": "EVALUATED", "gate_pass": True}
+    )
+    assert (
+        _realtime_formal_shadow_required(
+            "rt_exploratory", discovery_document=discovery
+        )
+        is True
+    )
 
 
 def test_current_gate_regression_blocks_eligibility_without_erasing_stage(tmp_path) -> None:
