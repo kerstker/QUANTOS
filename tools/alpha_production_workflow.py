@@ -25,6 +25,8 @@ from services.research.alpha_production_workflow import (
     EvidenceGate,
     EvidenceStatus,
     GateEvidence,
+    LIFECYCLE_FALSE_RETIREMENT_CORRECTION,
+    LIFECYCLE_FALSE_RETIREMENT_RELEASE,
     MaterialChangeClass,
     ProductionStage,
     derive_stage,
@@ -1040,6 +1042,16 @@ def reconcile_workflow(
         if realtime_identity and execution.status is EvidenceStatus.RUNNING:
             blockers.append("ENGINEERING_EXECUTION_PAPER_NOT_FORMAL_EVIDENCE")
         previous = workflow.latest_bundle(identity.candidate_id)
+        lifecycle_repair = bool(
+            previous is not None
+            and previous.stage is ProductionStage.RETIRED
+            and previous.release_commit == LIFECYCLE_FALSE_RETIREMENT_RELEASE
+            and previous.gate(EvidenceGate.LIFECYCLE).status
+            is EvidenceStatus.RETIRED
+            and lifecycle.status in {EvidenceStatus.RUNNING, EvidenceStatus.BLOCKED}
+            and lifecycle.reference
+            == previous.gate(EvidenceGate.LIFECYCLE).reference
+        )
         bundle = derive_stage(
             gates=(historical, shadow, risk, execution, lifecycle),
             identity_hash=identity.identity_hash,
@@ -1050,7 +1062,18 @@ def reconcile_workflow(
             release_commit=release_commit,
             legacy_diagnostic=legacy,
             as_of_ms=as_of_ms,
-            previous_stage=previous.stage if previous is not None else None,
+            previous_stage=(
+                None
+                if lifecycle_repair
+                else previous.stage
+                if previous is not None
+                else None
+            ),
+            transition_reason=(
+                LIFECYCLE_FALSE_RETIREMENT_CORRECTION
+                if lifecycle_repair
+                else None
+            ),
         )
         inserted_events += int(workflow.record_evidence(bundle))
     snapshot = workflow.snapshot()

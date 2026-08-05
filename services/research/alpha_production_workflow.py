@@ -24,6 +24,19 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 _RELEASE_COMMIT = re.compile(r"[0-9a-f]{40}")
 _CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}")
 
+# A narrow, one-release migration exception for the lifecycle parser bug
+# fixed in 94ec433.  The old parser searched every serialized value for the
+# substring ``RETIRED`` and therefore treated the key ``retired: false`` as a
+# retirement verdict.  Retirement remains terminal by default; only a bundle
+# carrying this exact correction reason, backed by the known bad release and
+# a fresh non-retired lifecycle gate, may move back to validation.
+LIFECYCLE_FALSE_RETIREMENT_CORRECTION = (
+    "LIFECYCLE_FALSE_RETIREMENT_CORRECTION_V1"
+)
+LIFECYCLE_FALSE_RETIREMENT_RELEASE = (
+    "28841899d5511e4b08ac6c74b5d8ce934fbee7ac"
+)
+
 
 class AlphaProductionWorkflowError(ValueError):
     """A production-workflow invariant was violated."""
@@ -160,6 +173,7 @@ class CandidateEvidenceBundle:
     release_commit: str | None
     legacy_diagnostic: bool
     as_of_ms: int
+    transition_reason: str | None = None
 
     def gate(self, name: EvidenceGate) -> GateEvidence:
         for item in self.gates:
@@ -428,6 +442,11 @@ def _bundle_payload(
         "legacy_diagnostic": bundle.legacy_diagnostic,
         "as_of_ms": bundle.as_of_ms,
     }
+    # Keep ordinary bundle hashes byte-for-byte compatible with the original
+    # schema.  The field is present only on an explicitly audited correction
+    # event.
+    if bundle.transition_reason is not None:
+        payload["transition_reason"] = bundle.transition_reason
     if include_derived:
         payload["eligible_for_execution_paper"] = (
             bundle.eligible_for_execution_paper
@@ -474,6 +493,10 @@ def _validated_bundle(bundle: CandidateEvidenceBundle) -> CandidateEvidenceBundl
         raise AlphaProductionWorkflowError("legacy_diagnostic is invalid")
     if type(bundle.as_of_ms) is not int or bundle.as_of_ms < 0:
         raise AlphaProductionWorkflowError("as_of_ms is invalid")
+    if bundle.transition_reason is not None and bundle.transition_reason not in {
+        LIFECYCLE_FALSE_RETIREMENT_CORRECTION,
+    }:
+        raise AlphaProductionWorkflowError("transition_reason is invalid")
     if (
         bundle.stage is ProductionStage.RETIRED
         and bundle.gate(EvidenceGate.LIFECYCLE).status is not EvidenceStatus.RETIRED
@@ -494,6 +517,7 @@ def derive_stage(
     legacy_diagnostic: bool,
     as_of_ms: int,
     previous_stage: ProductionStage | None = None,
+    transition_reason: str | None = None,
 ) -> CandidateEvidenceBundle:
     """Derive a monotonic stage while keeping current gate regressions visible."""
     lifecycle = next(item for item in gates if item.gate is EvidenceGate.LIFECYCLE)
@@ -508,6 +532,7 @@ def derive_stage(
         release_commit=release_commit,
         legacy_diagnostic=legacy_diagnostic,
         as_of_ms=as_of_ms,
+        transition_reason=transition_reason,
     )
     if lifecycle.status is EvidenceStatus.RETIRED:
         stage = ProductionStage.RETIRED
@@ -535,6 +560,7 @@ def derive_stage(
             release_commit=release_commit,
             legacy_diagnostic=legacy_diagnostic,
             as_of_ms=as_of_ms,
+            transition_reason=transition_reason,
         )
     )
 
@@ -596,6 +622,7 @@ def _bundle_from_payload(payload: Mapping[str, Any]) -> CandidateEvidenceBundle:
             release_commit=payload.get("release_commit"),
             legacy_diagnostic=bool(payload.get("legacy_diagnostic", False)),
             as_of_ms=int(payload["as_of_ms"]),
+            transition_reason=payload.get("transition_reason"),
         )
     )
     if "bundle_hash" in payload and payload["bundle_hash"] != bundle.bundle_hash:
@@ -787,26 +814,56 @@ class AlphaProductionWorkflow:
         try:
             previous_candidate = connection.execute(
                 """
-                SELECT stage,bundle_hash FROM alpha_workflow_events
+                SELECT stage,bundle_hash,bundle_json FROM alpha_workflow_events
                 WHERE candidate_id=? ORDER BY seq DESC LIMIT 1
                 """,
                 (item.candidate_id,),
             ).fetchone()
+            terminal_repair = False
             if previous_candidate is not None:
                 previous_stage = ProductionStage(str(previous_candidate["stage"]))
                 if str(previous_candidate["bundle_hash"]) == item.bundle_hash:
                     connection.rollback()
                     return False
+                previous_bundle = _bundle_from_payload(
+                    json.loads(str(previous_candidate["bundle_json"]))
+                )
+                terminal_repair = (
+                    previous_stage is ProductionStage.RETIRED
+                    and item.transition_reason
+                    == LIFECYCLE_FALSE_RETIREMENT_CORRECTION
+                    and previous_bundle.release_commit
+                    == LIFECYCLE_FALSE_RETIREMENT_RELEASE
+                    and previous_bundle.gate(EvidenceGate.LIFECYCLE).status
+                    is EvidenceStatus.RETIRED
+                    and item.gate(EvidenceGate.LIFECYCLE).status
+                    in {EvidenceStatus.RUNNING, EvidenceStatus.BLOCKED}
+                    and item.gate(EvidenceGate.LIFECYCLE).reference
+                    == previous_bundle.gate(EvidenceGate.LIFECYCLE).reference
+                    and item.stage is not ProductionStage.RETIRED
+                )
                 if previous_stage is ProductionStage.RETIRED:
-                    raise AlphaProductionWorkflowError(
-                        "retired candidate workflow is terminal"
-                    )
-                if _STAGE_RANK[item.stage] < _STAGE_RANK[previous_stage]:
+                    if not terminal_repair:
+                        raise AlphaProductionWorkflowError(
+                            "retired candidate workflow is terminal"
+                        )
+                if (
+                    not terminal_repair
+                    and _STAGE_RANK[item.stage] < _STAGE_RANK[previous_stage]
+                ):
                     raise AlphaProductionWorkflowError(
                         "candidate workflow stage cannot move backward"
                     )
             else:
                 previous_stage = None
+                if item.transition_reason is not None:
+                    raise AlphaProductionWorkflowError(
+                        "transition_reason requires a matching prior event"
+                    )
+            if item.transition_reason is not None and not terminal_repair:
+                raise AlphaProductionWorkflowError(
+                    "transition_reason is not authorized for this transition"
+                )
             crossing_eligibility = (
                 item.stage is ProductionStage.EXECUTION_PAPER_ELIGIBLE
                 and previous_stage not in {
@@ -978,6 +1035,8 @@ __all__ = [
     "EvidenceGate",
     "EvidenceStatus",
     "GateEvidence",
+    "LIFECYCLE_FALSE_RETIREMENT_CORRECTION",
+    "LIFECYCLE_FALSE_RETIREMENT_RELEASE",
     "MaterialChangeClass",
     "ProductionStage",
     "classify_material_change",

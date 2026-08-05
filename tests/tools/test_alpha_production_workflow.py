@@ -11,6 +11,8 @@ from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
     CandidateDefinitionKind,
     CandidateIdentity,
+    LIFECYCLE_FALSE_RETIREMENT_CORRECTION,
+    LIFECYCLE_FALSE_RETIREMENT_RELEASE,
     MaterialChangeClass,
 )
 from services.research.paper_trading.attested_store import AttestedForwardLedger
@@ -211,6 +213,7 @@ def _reconcile(
     portfolio_policy=None,
     portfolio_reference_aum: float | None = None,
     lifecycle: dict | None = None,
+    release_commit: str = COMMIT,
 ) -> dict:
     candidate_ids = [identity.candidate_id for identity in identities]
     forward_eval = {
@@ -255,7 +258,7 @@ def _reconcile(
         realtime_path="realtime.json",
         lifecycle_document=lifecycle or {},
         lifecycle_path="lifecycle.json",
-        release_commit=COMMIT,
+        release_commit=release_commit,
         paper_track_path=shadow["paper_track_path"],
         marks_document=shadow["marks_document"],
         funding_document=shadow["funding_document"],
@@ -383,6 +386,92 @@ def test_lifecycle_degraded_and_retired_states_fail_closed(tmp_path) -> None:
     assert "LIFECYCLE_RETIRED" in terminal_row["workflow"]["blockers"]
     assert terminal["active_candidate_ids"] == []
     assert terminal["execution_paper_eligible_ids"] == []
+
+
+def test_known_false_retirement_is_corrected_with_an_audited_event(tmp_path) -> None:
+    identity = _identity("crowd_contra")
+    shadow = _shadow_inputs(tmp_path, (identity.candidate_id,))
+    retired = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_500,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "RETIRED",
+                "stages": {
+                    "retirement": {"status": "PRESENT", "retired": True},
+                },
+            }
+        ],
+    }
+    running = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_600,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "PAPER",
+                "stages": {
+                    "retirement": {"status": "PRESENT", "retired": False},
+                    "decay": {"status": "PRESENT", "degraded": False},
+                },
+            }
+        ],
+    }
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        first = _reconcile(
+            workflow,
+            (identity,),
+            shadow=shadow,
+            lifecycle=retired,
+            release_commit=LIFECYCLE_FALSE_RETIREMENT_RELEASE,
+        )
+        assert first["candidates"][0]["workflow"]["stage"] == "RETIRED"
+
+        repaired = _reconcile(
+            workflow,
+            (identity,),
+            shadow=shadow,
+            lifecycle=running,
+        )
+
+    row = repaired["candidates"][0]
+    assert row["workflow"]["stage"] == "PARALLEL_VALIDATION"
+    assert row["workflow"]["transition_reason"] == LIFECYCLE_FALSE_RETIREMENT_CORRECTION
+    assert _gates(row)["LIFECYCLE"]["status"] == "RUNNING"
+    assert repaired["active_candidate_ids"] == [identity.candidate_id]
+    assert repaired["reconciliation"]["inserted_events"] == 1
+
+
+def test_real_retirement_remains_terminal(tmp_path) -> None:
+    identity = _identity("crowd_contra")
+    shadow = _shadow_inputs(tmp_path, (identity.candidate_id,))
+    retired = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_500,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "RETIRED",
+                "stages": {"retirement": {"status": "PRESENT", "retired": True}},
+            }
+        ],
+    }
+    running = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_600,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "PAPER",
+                "stages": {"retirement": {"status": "PRESENT", "retired": False}},
+            }
+        ],
+    }
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        _reconcile(workflow, (identity,), shadow=shadow, lifecycle=retired)
+        with pytest.raises(ValueError, match="retired stage requires lifecycle evidence"):
+            _reconcile(workflow, (identity,), shadow=shadow, lifecycle=running)
 
 
 def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(

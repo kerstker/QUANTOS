@@ -39,6 +39,12 @@ which immediately makes `eligible_for_execution_paper=false` and records a new e
 erasing the historical stage. That separates "this account once entered paper" from "it is safe
 to admit a new paper decision now".
 
+The only backward correction is the explicitly audited `LIFECYCLE_FALSE_RETIREMENT_CORRECTION_V1`
+migration. It is restricted to the known `2884189` parser release, where the lifecycle consumer
+matched the field name `retired` instead of its boolean value, and it requires a fresh cockpit row
+whose semantic lifecycle state is `RUNNING` or `BLOCKED`. Ordinary `RETIRED` records remain
+terminal and cannot be reopened.
+
 ## Identity and material change
 
 Every population row freezes expression, quantile, cadence, universe, required datasets,
