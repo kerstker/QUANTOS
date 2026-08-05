@@ -103,6 +103,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_paper_alpha_evaluation": ExpectedTask(
         "paper_alpha_evaluation", 9 * _DAY_MS, frozenset({2})
     ),
+    "QUANTOS_alpha_lifecycle_cockpit": ExpectedTask(
+        "alpha_lifecycle_cockpit", 15 * 60_000
+    ),
     "QUANTOS_alpha_production_workflow": ExpectedTask(
         "alpha_production_workflow", 15 * 60_000
     ),
@@ -150,6 +153,11 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     ),
     "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
         "realtime_alpha_forward_shadow",
+        5 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_realtime_alpha_formal_shadow": ExpectedTask(
+        "realtime_alpha_formal_shadow",
         5 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),

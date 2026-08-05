@@ -250,6 +250,17 @@ def test_resident_binance_stream_exit_is_stale_within_three_paper_cadences():
     assert stream.max_age_ms == 15 * 60_000
 
 
+def test_lifecycle_and_formal_shadow_workers_are_pinned_in_watchdog_contract():
+    lifecycle = EXPECTED_TASKS["QUANTOS_alpha_lifecycle_cockpit"]
+    formal_shadow = EXPECTED_TASKS["QUANTOS_realtime_alpha_formal_shadow"]
+
+    assert lifecycle.module == "alpha_lifecycle_cockpit"
+    assert lifecycle.max_age_ms == 15 * 60_000
+    assert formal_shadow.module == "realtime_alpha_formal_shadow"
+    assert formal_shadow.max_age_ms == 5 * 60_000
+    assert formal_shadow.partial_results == frozenset({2})
+
+
 def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
     state_root = tmp_path / "state"
     code_root = tmp_path / "release"

@@ -9,14 +9,18 @@ from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from services.research.realtime_alpha_discovery import (
     REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesis,
     default_realtime_hypotheses,
 )
 from tools.realtime_alpha_forward_shadow import (
+    ENGINEERING_SHADOW_AUTHORITY,
     FORMAL_BLINDED_SHADOW_AUTHORITY,
     FORMAL_BLINDED_SHADOW_PAPER_CLASS,
     RealtimeAlphaForwardShadowError,
+    _admission_identity,
+    _admitted_spec,
     eligible_candidates,
     run_cycle,
 )
@@ -415,6 +419,49 @@ def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
         "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
         "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
     ]
+
+
+def test_legacy_engineering_admission_without_authority_remains_readable() -> None:
+    base = 1_000_000
+    discovery = _discovery(base, evaluated=True)
+    spec = default_realtime_hypotheses()[0]
+    policy = RealtimeAlphaPolicy()
+    identity = _admission_identity(
+        spec,
+        discovery["candidates"][0],
+        discovery,
+        policy,
+    )
+    identity.pop("authority")
+    admission = {
+        "payload": {
+            "paper_only": True,
+            "promotion_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+            "identity": identity,
+        }
+    }
+
+    restored, stored_identity = _admitted_spec(
+        admission,
+        policy=policy,
+        authority=ENGINEERING_SHADOW_AUTHORITY,
+    )
+
+    assert restored == spec
+    assert stored_identity["paper_class"] == (
+        "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
+    )
+    with pytest.raises(
+        RealtimeAlphaForwardShadowError,
+        match="stored admission identity is incompatible",
+    ):
+        _admitted_spec(
+            admission,
+            policy=policy,
+            authority=FORMAL_BLINDED_SHADOW_AUTHORITY,
+        )
 
 
 def test_formal_shadow_is_separate_and_not_feedback_authority(

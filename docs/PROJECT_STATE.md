@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-06 Paper P0 调度契约与工程 Shadow 连续性修复：** 现场 watchdog
+> 的两个 `UNEXPECTED_ENABLED_TASK` 根因是 `QUANTOS_alpha_lifecycle_cockpit`
+> 与 `QUANTOS_realtime_alpha_formal_shadow` 已由统一注册脚本启用，但未同步进入
+> `EXPECTED_TASKS`；现已按真实 5 分钟/1 分钟 cadence、模块名和安全阻断退出码绑定，
+> 未知任务仍保持 fail-closed。另一个现场 `SAFE_BLOCKED` 根因是正式盲化 Shadow
+> 引入显式 `authority` 后，既有工程 Shadow 的不可变 admission 记录没有该新增字段。
+> 兼容边界只接受“`authority` 字段确实不存在、paper class 精确为旧工程 Shadow、且
+> 不含任何 formal-blinded 权限字段”的旧记录；正式盲化账本仍必须显式绑定独立
+> authority，不能借此兼容。真实 `H:\QUANTOS_STATE` 账本 22/22 admission 通过该边界，
+> 现场周期从 `SAFE_BLOCKED` 恢复为 `RUNNING`，新增 1 个决策和 1 个实现；全程仅公开
+> 行情、无凭据、无 broker、无下单、无晋级或 forward-evidence credit。
+
 > **2026-08-05 independent formal blinded shadow:** the realtime candidate
 > handoff now has a second L2-only forward authority. It reuses deterministic
 > public-frame/label primitives but writes a physically separate append-only

@@ -519,13 +519,29 @@ def _admitted_spec(
         if authority == FORMAL_BLINDED_SHADOW_AUTHORITY
         else ENGINEERING_SHADOW_PAPER_CLASS
     )
+    legacy_engineering_authority = (
+        authority == ENGINEERING_SHADOW_AUTHORITY
+        and "authority" not in identity
+        and identity.get("paper_class") == ENGINEERING_SHADOW_PAPER_CLASS
+        and all(
+            field not in identity
+            for field in (
+                "formal_blinded",
+                "selector_feedback_consumed",
+                "outcome_feedback_feed",
+            )
+        )
+    )
     if (
         identity.get("family_id") != spec.family_id
         or identity.get("mechanism") != spec.mechanism
         or identity.get("horizon_ms") != spec.horizon_ms
         or identity.get("signal_version") != spec.signal_version
         or identity.get("paper_class") != expected_paper_class
-        or identity.get("authority") != authority
+        or (
+            identity.get("authority") != authority
+            and not legacy_engineering_authority
+        )
         or identity.get("policy_hash") != stable_hash(dict(vars(policy)))
     ):
         raise RealtimeAlphaForwardShadowError("stored admission identity is incompatible")
