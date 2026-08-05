@@ -438,6 +438,10 @@ def _full_tmp_paths(tmp_path):
         paper_db=str(tmp_path / "paper.db"),
         maintenance_db=str(tmp_path / "maint.db"),
         live_status_glob=str(tmp_path / "live_track_status*.json"),
+        realtime_discovery=str(tmp_path / "missing_realtime_discovery.json"),
+        realtime_forward_shadow=str(tmp_path / "missing_realtime_forward.json"),
+        realtime_formal_shadow=str(tmp_path / "missing_realtime_formal.json"),
+        realtime_execution_paper=str(tmp_path / "missing_realtime_execution.json"),
     )
 
 
@@ -475,9 +479,81 @@ def test_build_report_empty_dir_all_absent(tmp_path):
         capacity=str(tmp_path / "g.json"), paper_cycle=str(tmp_path / "h.json"),
         dry_run_db=str(tmp_path / "i.db"), paper_db=str(tmp_path / "j.db"),
         maintenance_db=str(tmp_path / "k.db"),
-        live_status_glob=str(tmp_path / "live_track_status*.json"))
+        live_status_glob=str(tmp_path / "live_track_status*.json"),
+        realtime_discovery=str(tmp_path / "l.json"),
+        realtime_forward_shadow=str(tmp_path / "m.json"),
+        realtime_formal_shadow=str(tmp_path / "n.json"),
+        realtime_execution_paper=str(tmp_path / "o.json"))
     report = alc.build_report(paths=paths, now_ms=1, strategy_ids=["ghost_alpha"])
     alpha = report["alphas"][0]
     assert alpha["derived_stage"] == "UNTRACKED"
     assert all(v["status"] == "ABSENT" for v in alpha["stages"].values())
+    json.dumps(report, allow_nan=False)
+
+
+def test_build_report_merges_realtime_diagnostic_tracks(tmp_path):
+    _write_json(tmp_path / "discovery.json", {
+        "candidates": [{
+            "candidate_id": "rt_test",
+            "family_id": "order_flow",
+            "mechanism": "flow_absorption_reversal",
+            "horizon_ms": 120000,
+            "status": "EXPLORATORY_ONLY",
+            "evaluation_status": "INSUFFICIENT_OBSERVATIONS",
+            "verdict": "REQUIRES_HUMAN_REVIEW",
+            "gate_pass": False,
+            "gate_reasons": ["REALTIME_HISTORY_BELOW_30D"],
+            "n_periods": 3,
+            "net_sharpe": -1.0,
+            "net_return": -0.02,
+            "promotion_eligible": False,
+            "live_allowed": False,
+        }]
+    })
+    _write_json(tmp_path / "formal.json", {"tracks": {"rt_test": {
+        "candidate_id": "rt_test",
+        "n_decisions": 2,
+        "n_realizations": 1,
+        "cum_return": -0.01,
+        "max_drawdown": 0.01,
+        "formal_maturity": False,
+        "performance_history": [{
+            "as_of_ms": 1000, "period_return": -0.01,
+            "cum_return": -0.01, "drawdown": 0.01,
+        }],
+    }}})
+    _write_json(tmp_path / "execution.json", {"tracks": {"rt_test": {
+        "candidate_id": "rt_test",
+        "n_executions": 2,
+        "execution_pnl_available": True,
+        "cumulative_net_pnl": -1.2,
+        "execution_cost": 0.4,
+        "n_orders": 3,
+        "execution_history": [{
+            "as_of_ms": 1000, "net_pnl": -1.2,
+            "cumulative_net_pnl": -1.2, "execution_cost": 0.4,
+        }],
+    }}})
+    missing = str(tmp_path / "missing.json")
+    paths = alc.Paths(
+        ic_panel=missing, oi_verify=missing, oi_top_verify=missing,
+        scenario_tail=missing, combo_book=missing, crypto_combo=missing,
+        capacity=missing, paper_cycle=missing, dry_run_db=missing,
+        paper_db=missing, maintenance_db=missing,
+        live_status_glob=str(tmp_path / "missing_live*.json"),
+        realtime_discovery=str(tmp_path / "discovery.json"),
+        realtime_forward_shadow=missing,
+        realtime_formal_shadow=str(tmp_path / "formal.json"),
+        realtime_execution_paper=str(tmp_path / "execution.json"),
+    )
+    report = alc.build_report(paths=paths, now_ms=123, strategy_ids=[])
+    assert len(report["alphas"]) == 1
+    row = report["alphas"][0]
+    assert row["namespace"] == "REALTIME"
+    assert row["definition_kind"] == "REALTIME_MECHANISM"
+    assert row["derived_stage"] == "REALTIME_EXECUTION_PAPER"
+    assert row["stages"]["discovery"]["status"] == "PRESENT"
+    assert row["stages"]["paper"]["execution_paper"]["cumulative_net_pnl"] == -1.2
+    assert any("REALTIME_DISCOVERY_NOT_PASS" in w for w in row["warnings"])
+    assert any("ENGINEERING_EXECUTION_NET_PNL_NEGATIVE" in w for w in row["warnings"])
     json.dumps(report, allow_nan=False)

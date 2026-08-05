@@ -73,6 +73,16 @@ _DRY_RUN_DB = os.path.join("data", "cache", "dry_run.db")
 _PAPER_DB = os.path.join("data", "cache", "paper_track.db")
 _MAINTENANCE_DB = os.path.join("data", "cache", "alpha_maintenance.db")
 _LIVE_STATUS_GLOB = os.path.join("data", "cache", "live_track_status*.json")
+_REALTIME_DISCOVERY = os.path.join("data", "cache", "realtime_alpha_discovery.json")
+_REALTIME_FORWARD_SHADOW = os.path.join(
+    "data", "cache", "realtime_alpha_forward_shadow.json"
+)
+_REALTIME_FORMAL_SHADOW = os.path.join(
+    "data", "cache", "realtime_alpha_formal_shadow.json"
+)
+_REALTIME_EXECUTION_PAPER = os.path.join(
+    "data", "cache", "realtime_alpha_execution_paper.json"
+)
 
 # 静态跨仓映射(只覆盖 paper-cycle definition 给不了的键):IC 因子名 / 证伪 artifact /
 # scenario book / combo 成员键。dry_run / capacity / paper 的 id 优先取 paper-cycle
@@ -91,6 +101,15 @@ _ALPHA_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
 _STAGE_LADDER = ("CANDIDATE", "VALIDATED", "DRY_RUN", "PAPER_TRACKED", "LIVE_TRACK")
 
 _STAGE_LEGEND = {
+    "realtime": (
+        "Realtime discovery / formal blinded shadow / engineering execution paper are "
+        "a separate diagnostic namespace; they never satisfy the official historical/OOS "
+        "or Execution Paper promotion gate."
+    ),
+    "realtime_derived_stage": (
+        "REALTIME_DISCOVERY -> REALTIME_SIGNAL_SHADOW / REALTIME_FORMAL_SHADOW -> "
+        "REALTIME_EXECUTION_PAPER; presence is evidence of operation, not a promotion verdict."
+    ),
     "discovery": ("IC 初筛:data/cache/ic_panel_snapshot.json 中该因子的截面 rank IC"
                   "(mean_ic/icir/t_stat/hit_rate/逐年/分持有期)。初筛诊断,非晋级门禁。"),
     "falsification": ("证伪/研究裁决:data/cache/crypto_oi_verify.json(crowd_contra 5 项 "
@@ -156,6 +175,10 @@ class Paths:
     paper_db: str = _PAPER_DB
     maintenance_db: str = _MAINTENANCE_DB
     live_status_glob: str = _LIVE_STATUS_GLOB
+    realtime_discovery: str = _REALTIME_DISCOVERY
+    realtime_forward_shadow: str = _REALTIME_FORWARD_SHADOW
+    realtime_formal_shadow: str = _REALTIME_FORMAL_SHADOW
+    realtime_execution_paper: str = _REALTIME_EXECUTION_PAPER
 
 
 # ---------------------------------------------------------------------------
@@ -827,9 +850,225 @@ class _Sources:
         self.maintenance_snap = load_maintenance_snapshot(paths.maintenance_db)
         self.maintenance_events = load_maintenance_events(paths.maintenance_db)
         self.live_runs = load_live_status_runs(paths.live_status_glob)
+        self.realtime_discovery = _load_json_or_none(paths.realtime_discovery)
+        self.realtime_forward_shadow = _load_json_or_none(paths.realtime_forward_shadow)
+        self.realtime_formal_shadow = _load_json_or_none(paths.realtime_formal_shadow)
+        self.realtime_execution_paper = _load_json_or_none(paths.realtime_execution_paper)
+        self.realtime_rows: Dict[str, dict] = {}
+        if isinstance(self.realtime_discovery, dict):
+            candidates = self.realtime_discovery.get("candidates")
+            if isinstance(candidates, list):
+                self.realtime_rows = {
+                    row["candidate_id"]: row
+                    for row in candidates
+                    if isinstance(row, dict) and isinstance(row.get("candidate_id"), str)
+                }
+        self.realtime_forward_tracks = self._tracks(self.realtime_forward_shadow)
+        self.realtime_formal_tracks = self._tracks(self.realtime_formal_shadow)
+        self.realtime_execution_tracks = self._tracks(self.realtime_execution_paper)
+
+    @staticmethod
+    def _tracks(document: Optional[dict]) -> Dict[str, dict]:
+        tracks = document.get("tracks") if isinstance(document, dict) else None
+        if not isinstance(tracks, dict):
+            return {}
+        return {
+            candidate_id: track
+            for candidate_id, track in tracks.items()
+            if isinstance(candidate_id, str) and isinstance(track, dict)
+        }
+
+
+def _realtime_discovery_stage(row: Optional[dict], *, source: str) -> Dict[str, Any]:
+    """Expose the frozen realtime discovery verdict without relabeling it OOS."""
+    if not isinstance(row, dict):
+        return {"status": "ABSENT"}
+    fields = (
+        "family_id",
+        "mechanism",
+        "horizon_ms",
+        "candidate_status",
+        "evaluation_status",
+        "verdict",
+        "gate_pass",
+        "gate_reasons",
+        "n_periods",
+        "mean_breadth",
+        "mean_ic",
+        "ic_t_stat",
+        "gross_sharpe",
+        "net_sharpe",
+        "holdout_net_sharpe",
+        "net_return",
+        "max_drawdown",
+        "mean_turnover",
+        "total_cost",
+        "trial_count",
+        "dataset_version",
+        "promotion_eligible",
+        "live_allowed",
+    )
+    result: Dict[str, Any] = {
+        "status": "PRESENT",
+        "source": source,
+        "evidence_class": "REALTIME_DISCOVERY",
+    }
+    for field in fields:
+        if field in row:
+            result[field] = _sanitize(row[field])
+    # Keep the source field name distinct from this stage's presence status.
+    if "status" in row:
+        result["candidate_status"] = _sanitize(row["status"])
+    return result
+
+
+def _realtime_paper_stage(
+    *,
+    formal: Optional[dict],
+    forward: Optional[dict],
+    execution: Optional[dict],
+    formal_source: str,
+    forward_source: str,
+    execution_source: str,
+) -> Dict[str, Any]:
+    """Merge blinded shadow and engineering execution evidence for one realtime ID."""
+    if not any(isinstance(track, dict) for track in (formal, forward, execution)):
+        return {"status": "ABSENT"}
+
+    result: Dict[str, Any] = {
+        "status": "PRESENT",
+        "evidence_class": "REALTIME_PAPER_DIAGNOSTIC",
+        "formal_blinded": bool(formal),
+        "selector_feedback_consumed": False,
+        "promotion_eligible": False,
+        "live_allowed": False,
+    }
+    if formal is not None:
+        result["formal_shadow"] = _sanitize(formal)
+        result["formal_shadow_source"] = formal_source
+        result["formal_maturity"] = formal.get("formal_maturity") is True
+        result["n_formal_realizations"] = _sanitize(formal.get("n_realizations", 0))
+        result["formal_cum_return"] = _sanitize(formal.get("cum_return"))
+        result["formal_max_drawdown"] = _sanitize(formal.get("max_drawdown"))
+    if forward is not None:
+        result["signal_shadow"] = _sanitize(forward)
+        result["signal_shadow_source"] = forward_source
+    if execution is not None:
+        result["execution_paper"] = _sanitize(execution)
+        result["execution_paper_source"] = execution_source
+        result["execution_pnl_available"] = execution.get("execution_pnl_available") is True
+        result["cumulative_net_pnl"] = _sanitize(execution.get("cumulative_net_pnl"))
+        result["execution_cost"] = _sanitize(execution.get("execution_cost"))
+        result["n_executions"] = _sanitize(execution.get("n_executions", 0))
+        result["n_orders"] = _sanitize(execution.get("n_orders", 0))
+
+    result["source"] = (
+        execution_source if execution is not None
+        else formal_source if formal is not None
+        else forward_source
+    )
+    histories = []
+    for track in (formal, forward):
+        if isinstance(track, dict) and isinstance(track.get("performance_history"), list):
+            histories.extend(track["performance_history"])
+    if isinstance(execution, dict) and isinstance(execution.get("execution_history"), list):
+        histories.extend(execution["execution_history"])
+    if histories:
+        result["last_period"] = _sanitize(histories[-1])
+        result["performance_history"] = _sanitize(histories)
+    return result
+
+
+def derive_realtime_stage(
+    *,
+    discovery: Dict[str, Any],
+    paper: Dict[str, Any],
+) -> str:
+    """Derive a separate namespace so engineering paper is never official paper."""
+    if paper.get("execution_paper") is not None:
+        return "REALTIME_EXECUTION_PAPER"
+    if paper.get("formal_shadow") is not None:
+        return "REALTIME_FORMAL_SHADOW"
+    if paper.get("signal_shadow") is not None:
+        return "REALTIME_SIGNAL_SHADOW"
+    if discovery.get("status") == "PRESENT":
+        return "REALTIME_DISCOVERY"
+    return "REALTIME_UNTRACKED"
+
+
+def build_realtime_warnings(
+    *,
+    discovery: Dict[str, Any],
+    paper: Dict[str, Any],
+    derived: str,
+) -> List[str]:
+    warnings = [
+        "REALTIME_DIAGNOSTIC_ONLY: not an official historical/OOS Paper promotion path",
+        "REALTIME_LIFECYCLE_STATE_NOT_PERSISTED: health and retirement remain evidence-backed only",
+    ]
+    if discovery.get("gate_pass") is not True:
+        reasons = discovery.get("gate_reasons") or []
+        if not isinstance(reasons, list):
+            reasons = [reasons]
+        suffix = ":" + ",".join(str(item) for item in reasons[:4]) if reasons else ""
+        warnings.append("REALTIME_DISCOVERY_NOT_PASS" + suffix)
+    if paper.get("formal_shadow") is None:
+        warnings.append("FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE")
+    elif paper.get("formal_maturity") is not True:
+        warnings.append("FORMAL_BLINDED_SIGNAL_SHADOW_NOT_MATURE")
+    if paper.get("execution_paper") is None:
+        warnings.append("ENGINEERING_EXECUTION_PAPER_NOT_AVAILABLE")
+    elif paper.get("execution_pnl_available") is not True:
+        warnings.append("ENGINEERING_EXECUTION_PNL_NOT_COMPLETE")
+    cumulative = paper.get("cumulative_net_pnl")
+    if isinstance(cumulative, (int, float)) and not isinstance(cumulative, bool) and cumulative < 0:
+        warnings.append("ENGINEERING_EXECUTION_NET_PNL_NEGATIVE")
+    if derived == "REALTIME_EXECUTION_PAPER":
+        warnings.append("EXECUTION_PAPER_ISOLATED_REALTIME_ENGINEERING_TRACK")
+    return warnings
+
+
+def build_realtime_alpha(alpha_id: str, src: _Sources, paths: Paths) -> Dict[str, Any]:
+    discovery_row = src.realtime_rows.get(alpha_id)
+    discovery = _realtime_discovery_stage(discovery_row, source=paths.realtime_discovery)
+    paper = _realtime_paper_stage(
+        formal=src.realtime_formal_tracks.get(alpha_id),
+        forward=src.realtime_forward_tracks.get(alpha_id),
+        execution=src.realtime_execution_tracks.get(alpha_id),
+        formal_source=paths.realtime_formal_shadow,
+        forward_source=paths.realtime_forward_shadow,
+        execution_source=paths.realtime_execution_paper,
+    )
+    stages = {
+        "discovery": discovery,
+        "falsification": {"status": "ABSENT"},
+        "stress": {"status": "ABSENT"},
+        "backtest": {"status": "ABSENT"},
+        "capacity": {"status": "ABSENT"},
+        "portfolio": {"status": "ABSENT"},
+        "paper": paper,
+        "live": {"status": "ABSENT"},
+        "decay": {"status": "ABSENT"},
+        "retirement": {"status": "ABSENT"},
+    }
+    derived = derive_realtime_stage(discovery=discovery, paper=paper)
+    return {
+        "alpha_id": alpha_id,
+        "display_name": alpha_id,
+        "namespace": "REALTIME",
+        "definition_kind": "REALTIME_MECHANISM",
+        "derived_stage": derived,
+        "lifecycle_state": None,
+        "stages": stages,
+        "warnings": build_realtime_warnings(
+            discovery=discovery, paper=paper, derived=derived
+        ),
+    }
 
 
 def build_alpha(alpha_id: str, src: _Sources, paths: Paths) -> Dict[str, Any]:
+    if alpha_id in src.realtime_rows:
+        return build_realtime_alpha(alpha_id, src, paths)
     paper_entry = src.pc_alphas.get(alpha_id)
     ids = _resolve_ids(alpha_id, paper_entry)
     canonical_run_id = None
@@ -882,6 +1121,9 @@ def build_report(*, paths: Optional[Paths] = None, now_ms: Optional[int] = None,
         if aid not in alpha_ids:
             alpha_ids.append(aid)
     for aid in sorted(set(src.track_by_alpha) | set(src.periods_by_alpha)):
+        if aid not in alpha_ids:
+            alpha_ids.append(aid)
+    for aid in sorted(src.realtime_rows):
         if aid not in alpha_ids:
             alpha_ids.append(aid)
 
