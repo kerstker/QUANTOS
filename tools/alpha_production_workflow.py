@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping, Sequence
+import hashlib
 import json
 import math
 import os
@@ -99,6 +100,8 @@ PORTFOLIO_EVIDENCE_TOLERATED_MISSING = PORTFOLIO_GATE_TOLERATED_MISSING
 # capacity.low / reference_aum 才与「部署 ≤ 安全容量/3」(W7 §11.3)先例可比。
 DEFAULT_PORTFOLIO_GATE_POLICY = PortfolioGatePolicy()
 DEFAULT_PAPER_AUM = 1_000_000.0
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
+_SHA256_LENGTH = 64
 
 
 def _read_optional(path: str | Path) -> dict[str, Any]:
@@ -652,6 +655,7 @@ def _shadow_gate(
     path: str | Path,
     policy: UnblindingPolicy,
     paper_track_path: str | Path | None,
+    realization_windows: Sequence[RealizationWindow] | None,
     funding_by_ts: Mapping[int, float],
     prices_by_ts: Mapping[int, float],
 ) -> tuple[GateEvidence, int | None, dict[str, Any]]:
@@ -678,7 +682,11 @@ def _shadow_gate(
         )
     periods = row.get("n_forward_periods")
     observed = int(periods) if type(periods) is int and periods >= 0 else None
-    windows = _realization_windows(candidate_id, paper_track_path=paper_track_path)
+    windows = (
+        tuple(realization_windows)
+        if realization_windows is not None
+        else _realization_windows(candidate_id, paper_track_path=paper_track_path)
+    )
     labels = (
         window_regime_labels(
             windows, funding_by_ts=funding_by_ts, prices_by_ts=prices_by_ts
@@ -945,6 +953,7 @@ def reconcile_workflow(
         if (timestamp := _document_timestamp(document)) is not None
     ]
     as_of_ms = max(source_times, default=0)
+    realization_source: dict[str, list[dict[str, int]]] = {}
     for identity in identities:
         inserted_candidates += int(workflow.register_candidate(identity))
         realtime_identity = (
@@ -963,6 +972,17 @@ def reconcile_workflow(
             )
             unblinding: dict[str, Any] = {}
         else:
+            realization_windows = _realization_windows(
+                identity.candidate_id,
+                paper_track_path=paper_track_path,
+            )
+            realization_source[identity.candidate_id] = [
+                {
+                    "decided_ts": int(window.decided_ts),
+                    "as_of_ts": int(window.as_of_ts),
+                }
+                for window in realization_windows
+            ]
             historical = _historical_gate(
                 identity.candidate_id,
                 historical_document=historical_document,
@@ -976,6 +996,7 @@ def reconcile_workflow(
                 path=forward_status_path,
                 policy=policy,
                 paper_track_path=paper_track_path,
+                realization_windows=realization_windows,
                 funding_by_ts=funding_by_ts,
                 prices_by_ts=prices_by_ts,
             )
@@ -1100,6 +1121,19 @@ def reconcile_workflow(
                 ),
             },
             "source_hashes": {
+                "candidate_identity_set": stable_hash(
+                    [
+                        {
+                            "candidate_id": identity.candidate_id,
+                            "identity_hash": identity.identity_hash,
+                            "definition_hash": identity.definition_hash,
+                        }
+                        for identity in sorted(
+                            identities, key=lambda item: item.candidate_id
+                        )
+                    ]
+                ),
+                "attested_forward_realizations": stable_hash(realization_source),
                 "historical_evaluations": stable_hash(historical_document),
                 "forward_evaluations": stable_hash(forward_evaluations_document),
                 "forward_status": stable_hash(forward_status_document),
@@ -1123,6 +1157,107 @@ def reconcile_workflow(
         }
     )
     return snapshot
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == _SHA256_LENGTH
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _build_release_run_attestation(
+    snapshot: Mapping[str, Any],
+    *,
+    output_path: str | Path,
+) -> dict[str, Any]:
+    """Bind the logical evidence consumed by one workflow reconciliation.
+
+    Source hashes are computed from the exact parsed documents and realization
+    windows used by ``reconcile_workflow``.  The output file hash and both
+    append-only chain heads bind the resulting authority state without claiming
+    a byte-for-byte snapshot of the whole mutable state root.
+    """
+    reconciliation = snapshot.get("reconciliation")
+    source_hashes = snapshot.get("source_hashes")
+    safety = snapshot.get("safety")
+    reconciliation = reconciliation if isinstance(reconciliation, Mapping) else {}
+    source_hashes = source_hashes if isinstance(source_hashes, Mapping) else {}
+    safety = safety if isinstance(safety, Mapping) else {}
+    input_hashes = {
+        str(name): str(value)
+        for name, value in sorted(source_hashes.items())
+        if isinstance(name, str) and isinstance(value, str)
+    }
+    input_hashes.update(
+        {
+            "portfolio_gate_policy": reconciliation.get(
+                "portfolio_gate_policy_hash"
+            ),
+            "unblinding_policy": reconciliation.get("unblinding_policy_hash"),
+        }
+    )
+    output_hashes = {
+        "workflow_projection_file": _sha256_file(output_path),
+        "population_chain_head": snapshot.get("population_chain_head"),
+        "event_chain_head": snapshot.get("event_chain_head"),
+    }
+    release_commit = reconciliation.get("release_commit")
+    safety_contract = {
+        "paper_only": safety.get("paper_only"),
+        "live_allowed": safety.get("live_allowed"),
+        "order_submission_allowed": safety.get("order_submission_allowed"),
+        "credentials_accessed": safety.get("credentials_accessed"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and input_hashes
+        and all(_is_sha256(value) for value in input_hashes.values())
+        and all(_is_sha256(value) for value in output_hashes.values())
+        and safety_contract
+        == {
+            "paper_only": True,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+        }
+    )
+    return {
+        "schema_version": 1,
+        "module": "alpha_production_workflow",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": input_hashes,
+        "output_hashes": output_hashes,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy for the immutable L2 launcher."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+    )
 
 
 def run(
@@ -1150,6 +1285,8 @@ def run(
     portfolio_reference_aum: float | None = None,
     release_commit: str | None = None,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     commit = release_commit or os.environ.get("QUANTOS_RELEASE_COMMIT")
     if commit is not None:
         commit = commit.strip().lower()
@@ -1196,6 +1333,10 @@ def run(
             portfolio_reference_aum=portfolio_reference_aum,
         )
     atomic_write_json(str(output_path), snapshot, indent=2)
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        snapshot,
+        output_path=output_path,
+    )
     return snapshot
 
 
@@ -1264,6 +1405,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "_build_release_run_attestation",
     "DEFAULT_DB",
     "DEFAULT_OUTPUT",
     "DEFAULT_PAPER_AUM",
@@ -1283,5 +1425,6 @@ __all__ = [
     "REQUIRED_FORWARD_PERIODS",
     "build_candidate_identities",
     "reconcile_workflow",
+    "release_run_attestation",
     "run",
 ]

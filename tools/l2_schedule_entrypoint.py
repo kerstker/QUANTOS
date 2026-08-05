@@ -74,6 +74,16 @@ _GIT_COMMIT = re.compile(r"[0-9a-f]{40}")
 _RELEASE_COMMIT_ENV = "QUANTOS_RELEASE_COMMIT"
 _RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
 _STATE_ROOT_ENV = "QUANTOS_STATE_ROOT"
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+_ATTESTABLE_EXIT_CODES = frozenset({0, 2})
+REQUIRED_INPUT_ATTESTATION_MODULES = frozenset({"alpha_production_workflow"})
+_ATTESTATION_SAFETY = {
+    "paper_only": True,
+    "live_allowed": False,
+    "order_submission_allowed": False,
+    "credentials_accessed": False,
+    "broker_connectivity": False,
+}
 
 
 def _configure_headless_logging(module_name: str) -> None:
@@ -241,6 +251,67 @@ def _write_release_run_receipt(path: Path, payload: dict[str, object]) -> None:
     os.replace(temporary, path)
 
 
+def _validate_worker_attestation(
+    module_name: str,
+    payload: object,
+    *,
+    expected_release_commit: str,
+) -> tuple[dict[str, object], str]:
+    expected_keys = {
+        "schema_version",
+        "module",
+        "release_commit",
+        "complete",
+        "input_hashes",
+        "output_hashes",
+        "safety",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        raise ScheduleEntrypointError("worker input/evidence attestation is malformed")
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("module") != module_name
+        or payload.get("release_commit") != expected_release_commit
+        or payload.get("complete") is not True
+    ):
+        raise ScheduleEntrypointError("worker input/evidence attestation is invalid")
+    for field in ("input_hashes", "output_hashes"):
+        values = payload.get(field)
+        if (
+            not isinstance(values, dict)
+            or not values
+            or any(
+                not isinstance(name, str)
+                or not name
+                or not isinstance(value, str)
+                or _SHA256.fullmatch(value) is None
+                for name, value in values.items()
+            )
+        ):
+            raise ScheduleEntrypointError(
+                "worker input/evidence attestation contains an invalid digest set"
+            )
+    if payload.get("safety") != _ATTESTATION_SAFETY:
+        raise ScheduleEntrypointError(
+            "worker input/evidence attestation violates the L2 safety contract"
+        )
+    document = json.loads(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+    )
+    canonical = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return document, hashlib.sha256(canonical).hexdigest()
+
+
 def run_scheduled_module(
     module_name: str,
     *,
@@ -248,6 +319,7 @@ def run_scheduled_module(
     expected_release_commit: str,
     release_verifier: Callable[[Path, str], str] = _verify_release_identity,
     on_release_verified: Callable[[Path, str], None] | None = None,
+    on_worker_attested: Callable[[dict[str, object], str], None] | None = None,
     importer: Callable[[str], ModuleType] = importlib.import_module,
 ) -> int:
     """Run one fixed L2 module while preserving the caller's state directory."""
@@ -306,6 +378,29 @@ def run_scheduled_module(
             raise ScheduleEntrypointError(
                 "scheduled module produced an ambiguous exit code"
             )
+        attestation_fn = getattr(module, "release_run_attestation", None)
+        if callable(attestation_fn):
+            try:
+                attestation, attestation_sha256 = _validate_worker_attestation(
+                    module_name,
+                    attestation_fn(),
+                    expected_release_commit=verified_commit,
+                )
+            except ScheduleEntrypointError:
+                raise
+            except Exception as exc:
+                raise ScheduleEntrypointError(
+                    "worker input/evidence attestation failed"
+                ) from exc
+            if on_worker_attested is not None:
+                on_worker_attested(attestation, attestation_sha256)
+        elif (
+            module_name in REQUIRED_INPUT_ATTESTATION_MODULES
+            and result in _ATTESTABLE_EXIT_CODES
+        ):
+            raise ScheduleEntrypointError(
+                "required worker input/evidence attestation is unavailable"
+            )
         return result
     finally:
         sys.path[:] = original_path
@@ -342,13 +437,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         / f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{os.getpid()}-{args.module}.json"
     )
     receipt: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "module": args.module,
         "status": "STARTED",
         "release_commit": args.release_commit,
         "release_root": str(release_root),
         "state_root": str(state_root),
         "release_verified": False,
+        "worker_attestation_required": (
+            args.module in REQUIRED_INPUT_ATTESTATION_MODULES
+        ),
+        "worker_attested": False,
+        "worker_attestation_sha256": None,
+        "worker_attestation": None,
         "verified_at": None,
         "started_at": started_at,
         "finished_at": None,
@@ -373,11 +474,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         _write_release_run_receipt(receipt_path, receipt)
 
+    def record_worker_attestation(
+        document: dict[str, object], digest: str
+    ) -> None:
+        receipt.update(
+            {
+                "worker_attested": True,
+                "worker_attestation_sha256": digest,
+                "worker_attestation": document,
+            }
+        )
+        _write_release_run_receipt(receipt_path, receipt)
+
     try:
         result = run_scheduled_module(
             args.module,
             expected_release_commit=args.release_commit,
             on_release_verified=record_release_verification,
+            on_worker_attested=record_worker_attestation,
         )
     except Exception as exc:
         receipt.update(
@@ -416,6 +530,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "ALLOWED_L2_MODULES",
+    "REQUIRED_INPUT_ATTESTATION_MODULES",
     "ScheduleEntrypointError",
     "_configure_headless_logging",
     "_install_headless_subprocess_guard",

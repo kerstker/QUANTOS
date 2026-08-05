@@ -21,6 +21,31 @@ from tools.l2_schedule_entrypoint import (
 COMMIT = "a" * 40
 
 
+def _worker_attestation() -> dict:
+    return {
+        "schema_version": 1,
+        "module": "alpha_production_workflow",
+        "release_commit": COMMIT,
+        "complete": True,
+        "input_hashes": {
+            "candidate_identity_set": "b" * 64,
+            "historical_evaluations": "c" * 64,
+        },
+        "output_hashes": {
+            "workflow_projection_file": "d" * 64,
+            "population_chain_head": "e" * 64,
+            "event_chain_head": "f" * 64,
+        },
+        "safety": {
+            "paper_only": True,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+        },
+    }
+
+
 def _accept_release(root: Path, expected_commit: str) -> str:
     assert root.is_absolute()
     assert expected_commit == COMMIT
@@ -250,6 +275,56 @@ def test_entrypoint_reports_release_verification_before_worker_runs(
     ) == 0
 
     assert observed == [(code_root.resolve(), COMMIT)]
+
+
+def test_required_worker_fails_closed_without_input_attestation(tmp_path: Path) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root, result=0)
+
+    with pytest.raises(ScheduleEntrypointError, match="input/evidence attestation"):
+        run_scheduled_module(
+            "alpha_production_workflow",
+            code_root=code_root,
+            expected_release_commit=COMMIT,
+            release_verifier=_accept_release,
+            importer=lambda _name: module,
+        )
+
+
+def test_required_worker_attestation_is_validated_and_hash_bound(tmp_path: Path) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root, result=0)
+    module.release_run_attestation = _worker_attestation
+    observed = []
+
+    assert run_scheduled_module(
+        "alpha_production_workflow",
+        code_root=code_root,
+        expected_release_commit=COMMIT,
+        release_verifier=_accept_release,
+        importer=lambda _name: module,
+        on_worker_attested=lambda document, digest: observed.append((document, digest)),
+    ) == 0
+
+    assert observed[0][0] == _worker_attestation()
+    assert re.fullmatch(r"[0-9a-f]{64}", observed[0][1])
+
+
+def test_required_worker_rejects_malformed_input_hash(tmp_path: Path) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root, result=0)
+    malformed = _worker_attestation()
+    malformed["input_hashes"]["historical_evaluations"] = "not-a-digest"
+    module.release_run_attestation = lambda: malformed
+
+    with pytest.raises(ScheduleEntrypointError, match="input/evidence attestation"):
+        run_scheduled_module(
+            "alpha_production_workflow",
+            code_root=code_root,
+            expected_release_commit=COMMIT,
+            release_verifier=_accept_release,
+            importer=lambda _name: module,
+        )
 
 
 def test_release_identity_verifies_clean_head_without_optional_git_locks(
@@ -500,6 +575,87 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     assert receipt["release_commit"] == commit
     assert receipt["release_verified"] is True
     assert receipt["verified_at"] is not None
+
+
+def test_script_receipt_embeds_required_worker_input_attestation(
+    tmp_path: Path,
+) -> None:
+    source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
+    release = tmp_path / "release"
+    state = tmp_path / "state"
+    tools = release / "tools"
+    tools.mkdir(parents=True)
+    state.mkdir()
+    (tools / "__init__.py").write_text("", encoding="utf-8")
+    (tools / "alpha_production_workflow.py").write_text(
+        "import os\n"
+        "def main():\n"
+        "    return 0\n"
+        "def release_run_attestation():\n"
+        "    return {\n"
+        "        'schema_version': 1,\n"
+        "        'module': 'alpha_production_workflow',\n"
+        "        'release_commit': os.environ['QUANTOS_RELEASE_COMMIT'],\n"
+        "        'complete': True,\n"
+        "        'input_hashes': {'candidate_identity_set': 'b' * 64},\n"
+        "        'output_hashes': {'workflow_projection_file': 'c' * 64},\n"
+        "        'safety': {\n"
+        "            'paper_only': True,\n"
+        "            'live_allowed': False,\n"
+        "            'order_submission_allowed': False,\n"
+        "            'credentials_accessed': False,\n"
+        "            'broker_connectivity': False,\n"
+        "        },\n"
+        "    }\n",
+        encoding="utf-8",
+    )
+    launcher = tools / "l2_schedule_entrypoint.py"
+    launcher.write_bytes(source_launcher.read_bytes())
+    subprocess.run(["git", "init", "-q"], cwd=release, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "quantos-tests@example.invalid"],
+        cwd=release,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "QUANTOS Tests"],
+        cwd=release,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=release, check=True)
+    subprocess.run(["git", "commit", "-qm", "release"], cwd=release, check=True)
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=release,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(launcher),
+            "alpha_production_workflow",
+            "--release-commit",
+            commit,
+        ],
+        cwd=state,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    receipts = list((state / ".runtime" / "l2-release-runs").glob("*.json"))
+    assert len(receipts) == 1
+    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    assert receipt["schema_version"] == 2
+    assert receipt["worker_attestation_required"] is True
+    assert receipt["worker_attested"] is True
+    assert re.fullmatch(r"[0-9a-f]{64}", receipt["worker_attestation_sha256"])
+    assert receipt["worker_attestation"]["release_commit"] == commit
 
 
 def test_script_receipt_distinguishes_verified_system_exit_failure(

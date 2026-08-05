@@ -996,12 +996,24 @@ class AlphaProductionWorkflow:
                 "SELECT COUNT(*) FROM alpha_workflow_events"
             ).fetchone()[0]
         )
+        population_head_row = self._connection.execute(
+            "SELECT record_hash FROM alpha_population ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        event_head_row = self._connection.execute(
+            "SELECT record_hash FROM alpha_workflow_events ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
         return {
             "schema_version": 1,
             "authority": "ALPHA_PRODUCTION_WORKFLOW",
             "status": "VERIFIED" if self.chain_valid() else "INVALID",
             "population_count": len(rows),
             "event_count": event_count,
+            "population_chain_head": (
+                str(population_head_row[0]) if population_head_row else "0" * 64
+            ),
+            "event_chain_head": (
+                str(event_head_row[0]) if event_head_row else "0" * 64
+            ),
             "active_candidate_ids": active_ids,
             "execution_paper_eligible_ids": eligible_ids,
             "execution_paper_ids": execution_ids,

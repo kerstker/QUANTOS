@@ -19,6 +19,7 @@ from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.portfolio_evidence import PortfolioGatePolicy
 from tools.alpha_production_workflow import (
+    _build_release_run_attestation,
     _realtime_formal_shadow_required,
     reconcile_workflow,
 )
@@ -137,6 +138,46 @@ def _weekly_windows(n: int = 8, *, spacing: int = 7, base_day: int = 100) -> lis
         ((base_day + i * spacing) * DAY, (base_day + i * spacing + 7) * DAY)
         for i in range(n)
     ]
+
+
+def test_release_run_attestation_binds_sources_policies_chains_and_projection(
+    tmp_path,
+) -> None:
+    output = tmp_path / "alpha_production_workflow.json"
+    output.write_text('{"status":"VERIFIED"}\n', encoding="utf-8")
+    snapshot = {
+        "status": "VERIFIED",
+        "source_hashes": {
+            "candidate_identity_set": "1" * 64,
+            "attested_forward_realizations": "2" * 64,
+            "historical_evaluations": "3" * 64,
+        },
+        "reconciliation": {
+            "release_commit": COMMIT,
+            "unblinding_policy_hash": "4" * 64,
+            "portfolio_gate_policy_hash": "5" * 64,
+        },
+        "population_chain_head": "6" * 64,
+        "event_chain_head": "7" * 64,
+        "safety": {
+            "paper_only": True,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+        },
+    }
+
+    attestation = _build_release_run_attestation(snapshot, output_path=output)
+
+    assert attestation["complete"] is True
+    assert attestation["release_commit"] == COMMIT
+    assert attestation["input_hashes"]["candidate_identity_set"] == "1" * 64
+    assert attestation["input_hashes"]["unblinding_policy"] == "4" * 64
+    assert attestation["input_hashes"]["portfolio_gate_policy"] == "5" * 64
+    assert attestation["output_hashes"]["population_chain_head"] == "6" * 64
+    assert attestation["output_hashes"]["event_chain_head"] == "7" * 64
+    assert len(attestation["output_hashes"]["workflow_projection_file"]) == 64
 
 
 def _cyclic_funding_document(n: int = 200) -> dict:
@@ -285,6 +326,25 @@ def test_reconciler_creates_one_authoritative_candidate_state(tmp_path) -> None:
         assert snapshot["execution_paper_ids"] == [identity.candidate_id]
         assert snapshot["reconciliation"]["inserted_candidates"] == 1
         assert snapshot["reconciliation"]["inserted_events"] == 1
+        assert snapshot["source_hashes"]["candidate_identity_set"] == stable_hash(
+            [
+                {
+                    "candidate_id": identity.candidate_id,
+                    "identity_hash": identity.identity_hash,
+                    "definition_hash": identity.definition_hash,
+                }
+            ]
+        )
+        assert snapshot["source_hashes"][
+            "attested_forward_realizations"
+        ] == stable_hash(
+            {
+                identity.candidate_id: [
+                    {"decided_ts": decided_ts, "as_of_ts": as_of_ts}
+                    for decided_ts, as_of_ts in _weekly_windows()
+                ]
+            }
+        )
         row = snapshot["candidates"][0]
         assert row["workflow"]["stage"] == "EXECUTION_PAPER"
         assert row["workflow"]["eligible_for_execution_paper"] is True

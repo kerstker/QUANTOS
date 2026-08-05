@@ -192,6 +192,8 @@ def test_registry_is_idempotent_hash_chained_and_append_only(tmp_path) -> None:
         assert workflow.chain_valid() is True
         snapshot = workflow.snapshot()
         assert snapshot["status"] == "VERIFIED"
+        assert snapshot["population_chain_head"] != "0" * 64
+        assert snapshot["event_chain_head"] != "0" * 64
         assert snapshot["active_candidate_ids"] == [identity.candidate_id]
         assert snapshot["execution_paper_ids"] == [identity.candidate_id]
         assert snapshot["safety"]["live_allowed"] is False

@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-06 WP0 每轮输入/证据原子性第一增量：** 不可变 L2 launcher 的
+> release-run receipt 从 schema v1 升为 v2，新增可强制的 worker attestation
+> 协议；`alpha_production_workflow` 作为唯一候选权威成为首个强制模块。每次成功或
+> 安全阻断的调和运行现在必须同时绑定 15 个实际消费的逻辑来源哈希（候选身份集、
+> attested 前向兑现窗口及 13 类证据文档）、2 个预注册政策哈希、工作流 Population/Event
+> 双链头和最终 projection 文件 SHA-256；缺失、畸形、release commit 不一致或 L2 safety
+> 声明漂移均由 launcher fail-closed，不能留下“代码已验证但输入不明”的成功回执。对
+> `H:\QUANTOS_STATE` 的只读输入/临时输出冒烟得到 37 个候选、`VERIFIED`、17 个输入哈希、
+> 3 个输出哈希且 attestation complete；`paper_only=true`、`live_allowed=false`。本切片不
+> 宣称 WP0 闭合：其余 worker 仍明确记录 `worker_attestation_required=false`，需按实际消费
+> 合同逐个接入；外部签名、WORM 和独立见证仍属后续外部边界。
+
 > **2026-08-06 Paper P0 调度契约与工程 Shadow 连续性修复：** 现场 watchdog
 > 的两个 `UNEXPECTED_ENABLED_TASK` 根因是 `QUANTOS_alpha_lifecycle_cockpit`
 > 与 `QUANTOS_realtime_alpha_formal_shadow` 已由统一注册脚本启用，但未同步进入
