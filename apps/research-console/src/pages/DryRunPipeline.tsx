@@ -915,6 +915,14 @@ function OfficialFactorLifecycleReport({
         <Metric label="Funding / costs" value={fmtUsd(currentPaper ? (value.funding_pnl ?? 0) - (value.costs ?? 0) : null)} detail={currentPaper ? `${value.funding_events ?? 0} funding events` : 'no realized paper PnL'} tone="info" />
       </div>
 
+      <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-line bg-inset/25 px-4 py-3 md:grid-cols-5" data-testid="official-paper-pnl-breakdown">
+        <Metric label="Realized PnL" value={fmtUsd(currentPaper ? value.realized_pnl : null)} detail={currentPaper ? 'closed fills' : 'PAPER_PENDING'} tone={currentPaper && (value.realized_pnl ?? 0) < 0 ? 'neg' : 'muted'} />
+        <Metric label="Unrealized PnL" value={fmtUsd(currentPaper ? value.unrealized_pnl : null)} detail={currentPaper ? 'latest public mark' : 'PAPER_PENDING'} tone={currentPaper && (value.unrealized_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+        <Metric label="Funding PnL" value={fmtUsd(currentPaper ? value.funding_pnl : null)} detail={currentPaper ? `${value.funding_events ?? 0} events` : 'PAPER_PENDING'} tone={currentPaper && (value.funding_pnl ?? 0) < 0 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+        <Metric label="Trading costs" value={fmtUsd(currentPaper ? value.costs : null)} detail={currentPaper ? 'modeled execution costs' : 'PAPER_PENDING'} tone={currentPaper ? 'warn' : 'muted'} />
+        <Metric label="Residual" value={fmtUsd(currentPaper ? value.reconciliation_residual : null)} detail={currentPaper ? 'must equal 0' : 'PAPER_PENDING'} tone={currentPaper && Math.abs(value.reconciliation_residual ?? Number.POSITIVE_INFINITY) > 1e-6 ? 'neg' : currentPaper ? 'pos' : 'muted'} />
+      </div>
+
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
         <div className="rounded-lg border border-line bg-inset/35 p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-3xs text-faint">
