@@ -499,6 +499,7 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
     assert by_id["profit_alpha"]["execution_performance_state"] == "NO_REALIZED_PNL"
     assert by_id["profit_alpha"]["effective_performance_state"] == "PROFIT"
     assert by_id["profit_alpha"]["pipeline_stage"] == "FORWARD_SHADOW"
+    assert by_id["loss_alpha"]["formal_shadow"]["status"] == "NOT_AVAILABLE"
     assert all(row["promotion_eligible"] is False for row in rows)
     assert all(row["live_allowed"] is False for row in rows)
 

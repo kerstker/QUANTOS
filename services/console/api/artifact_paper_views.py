@@ -783,9 +783,7 @@ def _realtime_alpha_lifecycle_rows(
                         if formal.get("formal_maturity") is True
                         else "RUNNING"
                         if formal
-                        else str(
-                            (formal_shadow or {}).get("status", "NOT_AVAILABLE")
-                        )
+                        else "NOT_AVAILABLE"
                     ),
                     "formal_blinded": formal.get("formal_blinded") is True,
                     "selector_feedback_consumed": False,
