@@ -13,7 +13,11 @@ import math
 import statistics
 from typing import Any, Mapping, Sequence
 
-from services.research.realtime_alpha_discovery import RealtimeHypothesis
+from services.research.realtime_alpha_discovery import (
+    REALTIME_FEEDBACK_SIGNAL_VERSION,
+    REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    RealtimeHypothesis,
+)
 
 
 class RealtimeAlphaFeedbackError(ValueError):
@@ -294,6 +298,7 @@ def build_feedback_plan(
             break
         parent = specs[parent_row.candidate_id]
         assert parent_row.feedback_cutoff_ms is not None
+        horizon_mutation_blocked = True
         raw_mutations = (
             ("HALF_HORIZON", max(decision_interval_ms, parent.horizon_ms // 2)),
             ("DOUBLE_HORIZON", parent.horizon_ms * 2),
@@ -304,7 +309,6 @@ def build_feedback_plan(
                 round(raw_horizon / decision_interval_ms) * decision_interval_ms,
             )
             if horizon in horizons_by_mechanism.get(parent.mechanism, set()):
-                proposal_blockers.add("HORIZON_ALREADY_PRE_REGISTERED")
                 continue
             candidate_id = f"rt_{parent.mechanism}_{_horizon_label(horizon)}_fb1"
             if candidate_id in existing or any(
@@ -312,6 +316,7 @@ def build_feedback_plan(
             ):
                 proposal_blockers.add("CANDIDATE_ID_ALREADY_REGISTERED")
                 continue
+            horizon_mutation_blocked = False
             spec = RealtimeHypothesis(
                 candidate_id=candidate_id,
                 family_id=parent.family_id,
@@ -326,7 +331,7 @@ def build_feedback_plan(
                     "Must accumulate a new locked post-feedback window and pass all ordinary "
                     "cost, holdout, PBO, DSR, regime, capacity, and drawdown gates."
                 ),
-                signal_version="realtime-microstructure.feedback.v1",
+                signal_version=REALTIME_FEEDBACK_SIGNAL_VERSION,
             )
             proposals.append(
                 FeedbackProposal(
@@ -338,6 +343,48 @@ def build_feedback_plan(
             )
             if len(proposals) >= max_new:
                 break
+
+        # Once every horizon for a positive root is already registered, keep
+        # exploring the mechanism itself instead of silently stopping.  This
+        # is a direction challenger, not a child-of-child path: it keeps the
+        # frozen root's family/mechanism/features and receives a fresh OOS
+        # cutoff just like horizon mutations.
+        if horizon_mutation_blocked and len(proposals) < max_new:
+            candidate_id = (
+                f"rt_{parent.mechanism}_{_horizon_label(parent.horizon_ms)}"
+                "_signflip_fb1"
+            )
+            if candidate_id in existing or any(
+                item.spec.candidate_id == candidate_id for item in proposals
+            ):
+                proposal_blockers.add("STRUCTURAL_MUTATION_ALREADY_REGISTERED")
+                proposal_blockers.add("HORIZON_ALREADY_PRE_REGISTERED")
+            else:
+                spec = RealtimeHypothesis(
+                    candidate_id=candidate_id,
+                    family_id=parent.family_id,
+                    mechanism=parent.mechanism,
+                    horizon_ms=parent.horizon_ms,
+                    required_features=parent.required_features,
+                    economic_hypothesis=(
+                        f"Direction-flip challenger of {parent.candidate_id}; "
+                        "test whether the observed mechanism is anti-predictive "
+                        "on fresh post-feedback OOS data."
+                    ),
+                    falsification_standard=(
+                        "Must accumulate a new locked post-feedback window and pass all ordinary "
+                        "cost, holdout, PBO, DSR, regime, capacity, and drawdown gates."
+                    ),
+                    signal_version=REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+                )
+                proposals.append(
+                    FeedbackProposal(
+                        spec=spec,
+                        parent_candidate_id=parent.candidate_id,
+                        feedback_cutoff_ms=parent_row.feedback_cutoff_ms,
+                        mutation="SIGN_FLIP",
+                    )
+                )
         if len(proposals) >= max_new:
             break
 

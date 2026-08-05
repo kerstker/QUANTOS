@@ -24,9 +24,12 @@ only**:
    and a 95% exploration UCB. Families with insufficient observations collect;
    families whose best UCB is non-positive are deprioritized; only a positive
    UCB may allocate bounded new trials.
-3. Generate at most eight active adaptive hypotheses globally. A proposal is a
-   half- or double-horizon challenger of a frozen default mechanism; it cannot
-   rewrite an existing candidate.
+3. Generate at most eight active adaptive hypotheses globally. A proposal is
+   first a half- or double-horizon challenger of a frozen default mechanism.
+   When all such horizons are already registered, the bounded allocator may
+   generate one deterministic `SIGN_FLIP` structural challenger at the same
+   horizon. It keeps the frozen root family/mechanism/features, cannot rewrite
+   an existing candidate, and remains generation-1 only.
 4. Freeze `feedback_cutoff_ms` at the latest consumed realization. Adaptive
    candidates are evaluated only on frames strictly after that cutoff.
 5. Require a new validation-length OOS span after the cutoff. Before it
@@ -76,6 +79,8 @@ actual sign in both tables.
 - refuted families receive no new trials;
 - repeated cycles do not duplicate candidate identities;
 - adaptive trials cannot pass before fresh post-feedback OOS maturity;
+- a fully registered horizon set produces a hash-bound `SIGN_FLIP` challenger
+  and the forward handoff rejects a mismatched mutation/version pair;
 - forward handoff accepts a valid dynamic manifest and rejects lineage
   tampering;
 - API lifecycle projection preserves simultaneous profit and loss rows;

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 
 from services.features.binance_realtime_projection import FEATURE_IDS
 from services.research.realtime_alpha_discovery import (
     FeatureCoverage,
+    REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     assess_data_admission,
@@ -244,6 +246,22 @@ def test_signal_directions_encode_continuation_absorption_and_liquidation() -> N
     assert signal_score(by_mechanism["flow_absorption_reversal"], absorbed_flow) < 0
     assert signal_score(by_mechanism["liquidation_cascade"], long_liquidation) < 0
     assert signal_score(by_mechanism["liquidation_exhaustion"], long_liquidation) > 0
+
+
+def test_sign_flip_challenger_is_exact_directional_inverse() -> None:
+    base = next(
+        item
+        for item in default_realtime_hypotheses()
+        if item.mechanism == "basis_convergence" and item.horizon_ms == 3_600_000
+    )
+    challenger = replace(
+        base,
+        candidate_id="rt_basis_convergence_1h_signflip_fb1",
+        signal_version=REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    )
+    frame = _frame("BTCUSDT", 60_000, basis=7.0, funding=0.0002, spread=1.5)
+
+    assert signal_score(challenger, frame) == -signal_score(base, frame)
 
 
 def test_evaluator_uses_only_post_latency_labels_and_finds_designed_edge() -> None:

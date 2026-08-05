@@ -27,6 +27,8 @@ from quantos.contracts.scheduled_worker import (
 from quantos.runtime_paths import runtime_state_root
 from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.realtime_alpha_discovery import (
+    REALTIME_FEEDBACK_SIGNAL_VERSION,
+    REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesis,
@@ -109,18 +111,24 @@ def _manifest_spec(
         or spec.family_id != parent.family_id
         or spec.mechanism != parent.mechanism
         or spec.required_features != parent.required_features
-        or spec.signal_version != "realtime-microstructure.feedback.v1"
+        or spec.signal_version
+        not in {
+            REALTIME_FEEDBACK_SIGNAL_VERSION,
+            REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+        }
         or type(cutoff) is not int
         or cutoff < 0
         or row.get("fresh_oos_required") is not True
         or row.get("adaptive_generation") != 1
-        or mutation not in {"HALF_HORIZON", "DOUBLE_HORIZON"}
+        or mutation not in {"HALF_HORIZON", "DOUBLE_HORIZON", "SIGN_FLIP"}
     ):
         raise RealtimeAlphaForwardShadowError("adaptive discovery lineage is invalid")
     expected_horizon = (
         max(30_000, round((parent.horizon_ms // 2) / 30_000) * 30_000)
         if mutation == "HALF_HORIZON"
         else parent.horizon_ms * 2
+        if mutation == "DOUBLE_HORIZON"
+        else parent.horizon_ms
     )
     if expected_horizon % 3_600_000 == 0:
         horizon_label = f"{expected_horizon // 3_600_000}h"
@@ -128,8 +136,21 @@ def _manifest_spec(
         horizon_label = f"{expected_horizon // 60_000}m"
     else:
         horizon_label = f"{expected_horizon // 1_000}s"
-    expected_id = f"rt_{parent.mechanism}_{horizon_label}_fb1"
-    if spec.horizon_ms != expected_horizon or spec.candidate_id != expected_id:
+    expected_id = (
+        f"rt_{parent.mechanism}_{horizon_label}_fb1"
+        if mutation != "SIGN_FLIP"
+        else f"rt_{parent.mechanism}_{horizon_label}_signflip_fb1"
+    )
+    expected_signal_version = (
+        REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION
+        if mutation == "SIGN_FLIP"
+        else REALTIME_FEEDBACK_SIGNAL_VERSION
+    )
+    if (
+        spec.horizon_ms != expected_horizon
+        or spec.candidate_id != expected_id
+        or spec.signal_version != expected_signal_version
+    ):
         raise RealtimeAlphaForwardShadowError("adaptive discovery mutation is invalid")
     lineage = {
         "adaptive_feedback": True,

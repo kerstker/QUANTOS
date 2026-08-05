@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
-from services.research.realtime_alpha_discovery import default_realtime_hypotheses
+from services.research.realtime_alpha_discovery import (
+    REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    default_realtime_hypotheses,
+)
 from services.research.realtime_alpha_feedback import (
     RealtimeAlphaFeedbackError,
     build_feedback_plan,
@@ -88,6 +93,45 @@ def test_existing_adaptive_identity_is_not_proposed_twice() -> None:
     assert existing.isdisjoint(item.spec.candidate_id for item in replay.proposals)
     assert len(replay.proposals) == 1
     assert "CANDIDATE_ID_ALREADY_REGISTERED" in replay.proposal_blockers
+
+
+def test_all_registered_horizons_open_a_structural_direction_challenger() -> None:
+    base = default_realtime_hypotheses()
+    parent = "rt_basis_convergence_1h_v1"
+    parent_spec = next(item for item in base if item.candidate_id == parent)
+    registered_horizon_children = (
+        replace(
+            parent_spec,
+            candidate_id="rt_basis_convergence_30m_fb1",
+            horizon_ms=1_800_000,
+        ),
+        replace(
+            parent_spec,
+            candidate_id="rt_basis_convergence_2h_fb1",
+            horizon_ms=7_200_000,
+        ),
+    )
+    existing = tuple(item.candidate_id for item in base) + tuple(
+        item.candidate_id for item in registered_horizon_children
+    )
+    runs = {parent: [_run(parent, 0.001, 8_000 + index) for index in range(8)]}
+
+    plan = build_feedback_plan(
+        (*base, *registered_horizon_children),
+        runs,
+        existing_candidate_ids=existing,
+        proposal_parent_ids=tuple(item.candidate_id for item in base),
+        max_new=1,
+    )
+
+    assert len(plan.proposals) == 1
+    proposal = plan.proposals[0]
+    assert proposal.parent_candidate_id == parent
+    assert proposal.mutation == "SIGN_FLIP"
+    assert proposal.spec.candidate_id == "rt_basis_convergence_1h_signflip_fb1"
+    assert proposal.spec.horizon_ms == 3_600_000
+    assert proposal.spec.signal_version == REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION
+    assert plan.proposal_blockers == ()
 
 
 def test_adaptive_realizations_are_consumed_without_child_of_child_generation() -> None:

@@ -34,6 +34,13 @@ FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1_000
 LABEL_POLICY = (
     "FIRST_KNOWN_MID_AT_OR_AFTER_DECISION_PLUS_LATENCY_PLUS_HORIZON"
 )
+# These versions are part of candidate identity.  The base version is kept
+# deliberately separate from feedback variants so an adaptive challenger can
+# change signal semantics without rewriting a frozen base definition.
+REALTIME_FEEDBACK_SIGNAL_VERSION = "realtime-microstructure.feedback.v1"
+REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION = (
+    "realtime-microstructure.feedback.signflip.v1"
+)
 
 
 class RealtimeAlphaDiscoveryError(ValueError):
@@ -525,8 +532,8 @@ def assess_executable_depth_capacity(
     )
 
 
-def signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
-    """Evaluate one pre-registered causal signal on one known frame."""
+def _base_signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
+    """Evaluate the frozen direction of one realtime mechanism."""
     spread_scale = 1.0 + frame.spread_bps / 10.0
     if spec.mechanism == "flow_continuation":
         alignment = max(0.0, frame.taker_imbalance_5s * frame.depth_imbalance_5)
@@ -551,6 +558,19 @@ def signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
     if spec.mechanism == "funding_crowding_unwind":
         return -frame.funding_rate * (1.0 + abs(frame.mark_basis_bps))
     raise RealtimeAlphaDiscoveryError(f"unknown realtime mechanism: {spec.mechanism}")
+
+
+def signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
+    """Evaluate one causal signal, including registered adaptive variants.
+
+    ``SIGN_FLIP`` is the only structural adaptive variant currently allowed.
+    It is a deterministic direction challenger of a frozen base mechanism;
+    it changes no data, horizon, cost, or execution authority.
+    """
+    score = _base_signal_score(spec, frame)
+    if spec.signal_version == REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION:
+        return -score
+    return score
 
 
 def build_forward_paper_decision(
@@ -978,6 +998,8 @@ __all__ = [
     "DataAdmissionReport",
     "FeatureCoverage",
     "LABEL_POLICY",
+    "REALTIME_FEEDBACK_SIGNAL_VERSION",
+    "REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION",
     "RealtimeAlphaDiscoveryError",
     "RealtimeAlphaPolicy",
     "RealtimeFrame",

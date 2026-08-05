@@ -51,6 +51,8 @@ from services.research.realtime_alpha_discovery import (
     DAY_MS,
     DataAdmissionReport,
     FeatureCoverage,
+    REALTIME_FEEDBACK_SIGNAL_VERSION,
+    REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesis,
@@ -445,7 +447,13 @@ def _adaptive_hypothesis(
         or row.get("adaptive_generation") != 1
         or not isinstance(row.get("parent_candidate_id"), str)
         or not isinstance(row.get("mutation"), str)
-        or row.get("signal_version") != "realtime-microstructure.feedback.v1"
+        or (
+            str(row.get("signal_version"))
+            not in {
+                REALTIME_FEEDBACK_SIGNAL_VERSION,
+                REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+            }
+        )
     ):
         raise RealtimeAlphaWorkerError("adaptive candidate registration is invalid")
     try:
@@ -461,11 +469,21 @@ def _adaptive_hypothesis(
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise RealtimeAlphaWorkerError("adaptive candidate definition is invalid") from exc
+    mutation = str(row["mutation"])
+    signal_version = str(row["signal_version"])
+    if (
+        (mutation in {"HALF_HORIZON", "DOUBLE_HORIZON"}
+         and signal_version != REALTIME_FEEDBACK_SIGNAL_VERSION)
+        or (mutation == "SIGN_FLIP"
+            and signal_version != REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION)
+        or mutation not in {"HALF_HORIZON", "DOUBLE_HORIZON", "SIGN_FLIP"}
+    ):
+        raise RealtimeAlphaWorkerError("adaptive mutation/version pair is invalid")
     lineage = {
         "adaptive_feedback": True,
         "parent_candidate_id": str(row["parent_candidate_id"]),
         "feedback_cutoff_ms": cutoff,
-        "mutation": str(row["mutation"]),
+        "mutation": mutation,
         "fresh_oos_required": True,
         "adaptive_generation": 1,
     }
