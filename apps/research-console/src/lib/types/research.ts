@@ -1559,6 +1559,9 @@ export interface RealtimeAlphaLifecyclePayload {
   horizon_ms?: number | null;
   pipeline_stage: 'COLLECTING' | 'EVALUATED' | 'FORWARD_SHADOW' | 'EXECUTION_PAPER' | string;
   performance_state: 'NO_REALIZED_PNL' | 'FLAT' | 'PROFIT' | 'LOSS' | string;
+  execution_performance_state?: 'NO_REALIZED_PNL' | 'FLAT' | 'PROFIT' | 'LOSS' | string;
+  effective_performance_state?: 'NO_REALIZED_PNL' | 'FLAT' | 'PROFIT' | 'LOSS' | string;
+  performance_basis?: 'ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL' | 'ENGINEERING_SHADOW_REALIZED_NET_RETURN' | string;
   research: {
     status?: string | null;
     evaluation_status?: string | null;

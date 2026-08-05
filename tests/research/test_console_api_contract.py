@@ -485,6 +485,9 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
 
     by_id = {row["candidate_id"]: row for row in rows}
     assert by_id["loss_alpha"]["performance_state"] == "LOSS"
+    assert by_id["loss_alpha"]["execution_performance_state"] == "LOSS"
+    assert by_id["loss_alpha"]["effective_performance_state"] == "LOSS"
+    assert by_id["loss_alpha"]["performance_basis"] == "ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL"
     assert by_id["loss_alpha"]["paper"]["cum_return"] == -0.04
     assert by_id["loss_alpha"]["pipeline_stage"] == "EXECUTION_PAPER"
     assert by_id["loss_alpha"]["execution"]["n_orders"] == 12
@@ -493,9 +496,53 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
     assert by_id["loss_alpha"]["execution"]["positions_lots"] == {"BTC": -2}
     assert len(by_id["loss_alpha"]["execution"]["execution_history"]) == 1
     assert by_id["profit_alpha"]["performance_state"] == "PROFIT"
+    assert by_id["profit_alpha"]["execution_performance_state"] == "NO_REALIZED_PNL"
+    assert by_id["profit_alpha"]["effective_performance_state"] == "PROFIT"
     assert by_id["profit_alpha"]["pipeline_stage"] == "FORWARD_SHADOW"
     assert all(row["promotion_eligible"] is False for row in rows)
     assert all(row["live_allowed"] is False for row in rows)
+
+
+def test_execution_paper_loss_overrides_shadow_profit_state():
+    candidate = {
+        "candidate_id": "shadow_profit_exec_loss",
+        "family_id": "flow",
+        "mechanism": "continuation",
+        "horizon_ms": 60_000,
+        "evaluation_status": "EVALUATED",
+        "status": "EXPLORATORY_ONLY",
+        "gate_pass": False,
+        "gate_reasons": ["OOS_REQUIRED"],
+    }
+    rows = artifact_paper_views._realtime_alpha_lifecycle_rows(
+        [candidate],
+        {
+            "tracks": {
+                "shadow_profit_exec_loss": {
+                    "n_decisions": 2,
+                    "n_realizations": 2,
+                    "cum_return": 0.04,
+                }
+            },
+            "errors": {},
+        },
+        {
+            "tracks": {
+                "shadow_profit_exec_loss": {
+                    "n_executions": 1,
+                    "execution_pnl_available": True,
+                    "cumulative_net_pnl": -0.25,
+                }
+            },
+            "errors": {},
+        },
+    )
+
+    row = rows[0]
+    assert row["performance_state"] == "PROFIT"
+    assert row["execution_performance_state"] == "LOSS"
+    assert row["effective_performance_state"] == "LOSS"
+    assert row["performance_basis"] == "ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL"
 
 
 def test_realtime_alpha_console_projection_blocks_tampered_authority(tmp_path):

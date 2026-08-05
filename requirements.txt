@@ -18,7 +18,12 @@ scikit-learn==1.8.0
 # in this machine's conda env via unrelated tools) — the fail-closed passphrase gate makes
 # every scheduled backup depend on it being real/importable, so it must be a real declared
 # dependency, not a happy accident of this one machine's environment.
-cryptography==49.0.0
+cryptography==50.0.0
+
+# The read-only console exposes the top-tier/supply-chain assessment surface;
+# its retained Sigstore evidence verifier is therefore a runtime dependency,
+# not only a development-time scanner dependency.
+sigstore==4.4.0
 
 # Fully resolved runtime dependency pins for deterministic container builds.
 annotated-doc==0.0.4

@@ -278,12 +278,20 @@ function fmtHorizon(horizonMs?: number | null): string {
 
 type LifecycleFilter = 'ALL' | 'LOSS' | 'PROFIT' | 'NO_PNL';
 
+function effectiveLifecycleState(row: RealtimeAlphaLifecyclePayload): string {
+  return row.effective_performance_state ?? row.performance_state;
+}
+
+function executionLifecycleState(row: RealtimeAlphaLifecyclePayload): string {
+  return row.execution_performance_state ?? 'NO_REALIZED_PNL';
+}
+
 function lifecycleSeries(row: RealtimeAlphaLifecyclePayload): EquitySeries[] {
   const points = (row.paper.performance_history ?? [])
     .filter(point => Number.isFinite(point.cum_return))
     .map(point => ({ t: point.as_of_ms, equity: 100 * (1 + point.cum_return) }));
   return points.length
-    ? [{ label: `${row.candidate_id} paper index`, points, tone: row.performance_state === 'LOSS' ? 'warn' : 'pos' }]
+    ? [{ label: `${row.candidate_id} paper index`, points, tone: effectiveLifecycleState(row) === 'LOSS' ? 'warn' : 'pos' }]
     : [];
 }
 
@@ -301,6 +309,8 @@ function FactorLifecycleReport({
   const executionPositions = Object.entries(row.execution.positions_lots ?? {})
     .filter(([, lots]) => lots !== 0);
   const series = useMemo(() => lifecycleSeries(row), [row]);
+  const effectiveState = effectiveLifecycleState(row);
+  const executionState = executionLifecycleState(row);
   const realized = row.paper.n_realizations > 0;
   const stages = [
     { label: 'REGISTERED', reached: true },
@@ -324,8 +334,16 @@ function FactorLifecycleReport({
         <div className="flex flex-wrap gap-2">
           <Chip label={row.pipeline_stage} tone="info" />
           <Chip
-            label={row.performance_state}
+            label={effectiveState}
+            tone={effectiveState === 'LOSS' ? 'neg' : effectiveState === 'PROFIT' ? 'pos' : 'muted'}
+          />
+          <Chip
+            label={`SHADOW ${row.performance_state}`}
             tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'}
+          />
+          <Chip
+            label={`EXEC ${executionState}`}
+            tone={executionState === 'LOSS' ? 'neg' : executionState === 'PROFIT' ? 'pos' : 'muted'}
           />
           <Chip label="NON-PROMOTABLE" tone="warn" />
         </div>
@@ -343,7 +361,7 @@ function FactorLifecycleReport({
       <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
         <Metric label="Research return" value={fmtPct(row.research.net_return)} detail={`${row.research.n_periods ?? 0} observations`} tone={(row.research.net_return ?? 0) >= 0 ? 'pos' : 'neg'} />
         <Metric label="Holdout SR" value={row.research.holdout_net_sharpe?.toFixed(2) ?? '—'} detail={row.research.gate_pass ? 'formal pass' : 'not passed'} tone={row.research.gate_pass ? 'pos' : 'warn'} />
-        <Metric label="Paper return" value={fmtRealizedPct(row.paper.cum_return, realized)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="Shadow return" value={fmtRealizedPct(row.paper.cum_return, realized)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
         <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
         <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
         <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
@@ -452,20 +470,22 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
   const candidates = snapshot?.top_candidates ?? [];
   const lifecycle = snapshot?.lifecycle ?? [];
   const feedback = snapshot?.feedback;
-  const profitable = lifecycle.filter(row => row.performance_state === 'PROFIT').length;
-  const losing = lifecycle.filter(row => row.performance_state === 'LOSS').length;
-  const noPnl = lifecycle.filter(row => row.performance_state !== 'LOSS' && row.performance_state !== 'PROFIT').length;
+  const profitable = lifecycle.filter(row => effectiveLifecycleState(row) === 'PROFIT').length;
+  const losing = lifecycle.filter(row => effectiveLifecycleState(row) === 'LOSS').length;
+  const noPnl = lifecycle.filter(row => !['LOSS', 'PROFIT'].includes(effectiveLifecycleState(row))).length;
+  const executionProfitable = lifecycle.filter(row => executionLifecycleState(row) === 'PROFIT').length;
+  const executionLosing = lifecycle.filter(row => executionLifecycleState(row) === 'LOSS').length;
   const performanceRank: Record<string, number> = { LOSS: 0, PROFIT: 1, FLAT: 2, NO_REALIZED_PNL: 3 };
   const filteredLifecycle = lifecycle
     .filter(row => filter === 'ALL'
       || (filter === 'NO_PNL'
-        ? row.performance_state !== 'LOSS' && row.performance_state !== 'PROFIT'
-        : row.performance_state === filter))
+        ? !['LOSS', 'PROFIT'].includes(effectiveLifecycleState(row))
+        : effectiveLifecycleState(row) === filter))
     .slice()
-    .sort((a, b) => (performanceRank[a.performance_state] ?? 9) - (performanceRank[b.performance_state] ?? 9)
-      || (a.paper.cum_return ?? 0) - (b.paper.cum_return ?? 0));
+    .sort((a, b) => (performanceRank[effectiveLifecycleState(a)] ?? 9) - (performanceRank[effectiveLifecycleState(b)] ?? 9)
+      || (a.execution.cumulative_net_pnl ?? a.paper.cum_return ?? 0) - (b.execution.cumulative_net_pnl ?? b.paper.cum_return ?? 0));
   const effectiveSelectedId = selectedCandidateId
-    ?? lifecycle.find(row => row.performance_state === 'LOSS')?.candidate_id
+    ?? lifecycle.find(row => effectiveLifecycleState(row) === 'LOSS')?.candidate_id
     ?? lifecycle[0]?.candidate_id
     ?? null;
   const selectedLifecycle = lifecycle.find(row => row.candidate_id === effectiveSelectedId);
@@ -627,7 +647,8 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           <Chip label={`${profitable} PROFIT`} tone={profitable ? 'pos' : 'muted'} />
           <Chip label={`${losing} LOSS`} tone={losing ? 'neg' : 'muted'} />
           <Chip label={`${noPnl} NO PNL`} tone="muted" />
-          <span className="ml-auto text-3xs text-faint">SSE · realized engineering-shadow net return</span>
+          <span className="text-3xs text-faint">EXEC {executionProfitable} profit / {executionLosing} loss</span>
+          <span className="ml-auto text-3xs text-faint">SSE · execution net PnL when available, shadow fallback otherwise</span>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2" aria-label="factor performance filters">
           {([
@@ -658,7 +679,7 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                 <th className="px-3 py-2 font-medium">Family / horizon</th>
                 <th className="px-3 py-2 font-medium">Lifecycle</th>
                 <th className="px-3 py-2 text-right font-medium">Research</th>
-                <th className="px-3 py-2 text-right font-medium">Paper PnL</th>
+                <th className="px-3 py-2 text-right font-medium">Shadow PnL</th>
                 <th className="px-3 py-2 text-right font-medium">Realized</th>
                 <th className="px-3 py-2 text-right font-medium">Execution</th>
                 <th className="px-3 py-2 font-medium">State</th>
@@ -698,12 +719,16 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                     <div className="mt-0.5 text-3xs text-faint">
                       net {row.execution.execution_pnl_available ? fmtUsd(row.execution.cumulative_net_pnl) : 'accounting pending'}
                     </div>
+                    <div className={`mt-0.5 text-3xs ${executionLifecycleState(row) === 'LOSS' ? 'text-neg' : executionLifecycleState(row) === 'PROFIT' ? 'text-pos' : 'text-faint'}`}>
+                      {executionLifecycleState(row)}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     <Chip
-                      label={row.performance_state}
-                      tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'}
+                      label={effectiveLifecycleState(row)}
+                      tone={effectiveLifecycleState(row) === 'LOSS' ? 'neg' : effectiveLifecycleState(row) === 'PROFIT' ? 'pos' : 'muted'}
                     />
+                    <div className="mt-1 text-3xs text-faint">shadow {row.performance_state}</div>
                   </td>
                 </tr>
               )) : (

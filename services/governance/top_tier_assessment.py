@@ -4946,11 +4946,11 @@ def _strong_identity_baseline_evidence(
                 failures.append(f"verification_path:{verification_path}")
 
     dependency_versions = document.get("dependency_versions")
-    if dependency_versions != {"PyJWT": "2.13.0", "cryptography": "49.0.0"}:
+    if dependency_versions != {"PyJWT": "2.13.0", "cryptography": "50.0.0"}:
         failures.append("dependency_versions")
     for manifest_path, needles in {
-        "requirements.txt": ("PyJWT==2.13.0", "cryptography==49.0.0"),
-        "pyproject.toml": ("PyJWT==2.13.0", "cryptography==49.0.0"),
+        "requirements.txt": ("PyJWT==2.13.0", "cryptography==50.0.0"),
+        "pyproject.toml": ("PyJWT==2.13.0", "cryptography==50.0.0"),
     }.items():
         try:
             manifest = (repo_root / manifest_path).read_text(encoding="utf-8")

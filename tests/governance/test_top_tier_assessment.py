@@ -2242,9 +2242,9 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-    (tmp_path / "requirements.txt").write_text("PyJWT==2.13.0\ncryptography==49.0.0\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("PyJWT==2.13.0\ncryptography==50.0.0\n", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text(
-        'dependencies = ["PyJWT==2.13.0", "cryptography==49.0.0"]\n',
+        'dependencies = ["PyJWT==2.13.0", "cryptography==50.0.0"]\n',
         encoding="utf-8",
     )
     evidence = build_strong_identity_evidence(tmp_path, recorded_at=1)

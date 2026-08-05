@@ -304,6 +304,37 @@ def test_claim_and_aggregate_reject_changed_container_source(tmp_path: Path) -> 
         verify_cross_host_container_evidence(evidence, tmp_path)
 
 
+def test_aggregate_marks_changed_recipe_inputs_as_stale_not_corrupt(
+    tmp_path: Path,
+) -> None:
+    _write_recipe(tmp_path)
+    first = tmp_path / "first.oci.tar"
+    second = tmp_path / "second.oci.tar"
+    _write_oci(first)
+    _write_oci(second)
+    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
+    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    evidence = build_cross_host_container_evidence(
+        tmp_path,
+        claims=[claim_22, claim_24],
+        observed_at=EPOCH,
+        workflow_ref="kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@x",
+        workflow_run="https://github.com/kerstker/QUANTOS/actions/runs/123",
+    )
+
+    tampered_evidence = copy.deepcopy(evidence)
+    tampered_evidence["recipe"]["requirements"]["sha256"] = "f" * 64
+
+    with pytest.raises(
+        CrossHostContainerInputMismatchError,
+        match="recipe input binding",
+    ):
+        verify_cross_host_container_evidence(
+            tampered_evidence,
+            tmp_path,
+        )
+
+
 def test_verifier_ignores_files_excluded_from_docker_context(
     tmp_path: Path,
 ) -> None:

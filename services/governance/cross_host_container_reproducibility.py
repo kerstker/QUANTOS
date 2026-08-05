@@ -325,17 +325,61 @@ def _validated_build_tool(value: Any) -> dict[str, str]:
     return tool
 
 
-def _verify_recipe(value: Any, root: Path) -> dict[str, Any]:
+def _verify_historical_file_binding(
+    value: Any, label: str, expected_path: str
+) -> None:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"path", "sha256", "size"}
+        or value.get("path") != expected_path
+        or not isinstance(value.get("sha256"), str)
+        or _HEX.fullmatch(value["sha256"]) is None
+        or type(value.get("size")) is not int
+        or value["size"] <= 0
+    ):
+        raise CrossHostContainerEvidenceError(
+            f"{label} historical recipe input binding is invalid"
+        )
+
+
+def _verify_recipe(
+    value: Any, root: Path, *, require_current_input: bool = True
+) -> dict[str, Any]:
     recipe = _object(value, "recipe")
-    expected = _recipe_document(root)
     if set(recipe) != _RECIPE_FIELDS:
         raise CrossHostContainerEvidenceError("recipe shape is invalid")
+    if type(recipe.get("source_date_epoch")) is not int or recipe["source_date_epoch"] < 0:
+        raise CrossHostContainerEvidenceError(
+            "recipe source date epoch is invalid"
+        )
+    if recipe.get("target_platform") != TARGET_PLATFORM or (
+        not isinstance(recipe.get("base_image_ref"), str)
+        or re.fullmatch(
+            r"[^@\s]+@sha256:[0-9a-f]{64}", recipe["base_image_ref"]
+        )
+        is None
+    ):
+        raise CrossHostContainerEvidenceError("recipe identity is invalid")
+    _verify_historical_file_binding(
+        recipe.get("dockerfile"), "Dockerfile", DOCKERFILE_REF
+    )
+    _verify_historical_file_binding(
+        recipe.get("requirements"), "requirements", REQUIREMENTS_REF
+    )
+    _verify_historical_file_binding(
+        recipe.get("dockerignore"), "dockerignore", DOCKERIGNORE_REF
+    )
+    if not require_current_input:
+        return recipe
+
+    expected = _recipe_document(root)
     if (
         recipe.get("source_date_epoch") != expected["source_date_epoch"]
-        or recipe.get("target_platform") != TARGET_PLATFORM
         or recipe.get("base_image_ref") != expected["base_image_ref"]
     ):
-        raise CrossHostContainerEvidenceError("recipe identity is inconsistent")
+        raise CrossHostContainerInputMismatchError(
+            "container recipe input identity is inconsistent"
+        )
     try:
         _verify_file_binding(
             recipe.get("dockerfile"), expected["dockerfile"], DOCKERFILE_REF
@@ -347,7 +391,7 @@ def _verify_recipe(value: Any, root: Path) -> dict[str, Any]:
             recipe.get("dockerignore"), expected["dockerignore"], DOCKERIGNORE_REF
         )
     except ContainerReproducibilityEvidenceError as exc:
-        raise CrossHostContainerEvidenceError(str(exc)) from exc
+        raise CrossHostContainerInputMismatchError(str(exc)) from exc
     return recipe
 
 
@@ -601,7 +645,11 @@ def verify_cross_host_container_evidence(
         raise CrossHostContainerInputMismatchError(
             "container input content root is inconsistent"
         )
-    recipe = _verify_recipe(evidence.get("recipe"), root)
+    recipe = _verify_recipe(
+        evidence.get("recipe"),
+        root,
+        require_current_input=require_current_input,
+    )
     _validated_build_tool(evidence.get("build_tool"))
     try:
         image = _verify_image_summary(

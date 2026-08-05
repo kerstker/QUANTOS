@@ -577,6 +577,26 @@ def _realtime_alpha_lifecycle_rows(
             performance_state = "LOSS"
         else:
             performance_state = "FLAT"
+        execution_net_pnl = execution.get("cumulative_net_pnl")
+        execution_pnl_available = execution.get("execution_pnl_available") is True
+        if (
+            not execution_pnl_available
+            or isinstance(execution_net_pnl, bool)
+            or not isinstance(execution_net_pnl, (int, float))
+            or not math.isfinite(float(execution_net_pnl))
+        ):
+            execution_performance_state = "NO_REALIZED_PNL"
+        elif execution_net_pnl > 0:
+            execution_performance_state = "PROFIT"
+        elif execution_net_pnl < 0:
+            execution_performance_state = "LOSS"
+        else:
+            execution_performance_state = "FLAT"
+        effective_performance_state = (
+            execution_performance_state
+            if execution_performance_state != "NO_REALIZED_PNL"
+            else performance_state
+        )
         if execution:
             pipeline_stage = "EXECUTION_PAPER"
         elif forward:
@@ -612,6 +632,13 @@ def _realtime_alpha_lifecycle_rows(
                 "horizon_ms": candidate.get("horizon_ms"),
                 "pipeline_stage": pipeline_stage,
                 "performance_state": performance_state,
+                "execution_performance_state": execution_performance_state,
+                "effective_performance_state": effective_performance_state,
+                "performance_basis": (
+                    "ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL"
+                    if execution_performance_state != "NO_REALIZED_PNL"
+                    else "ENGINEERING_SHADOW_REALIZED_NET_RETURN"
+                ),
                 "research": {
                     "status": candidate.get("status"),
                     "evaluation_status": candidate.get("evaluation_status"),

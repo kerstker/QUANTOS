@@ -48,7 +48,7 @@ research-ml-gpu = [
 # undeclared (only "happened to be installed" via unrelated tools) even though the
 # fail-closed passphrase gate makes every scheduled backup depend on it being real.
 live-backup = [
-    "cryptography==49.0.0",
+    "cryptography==50.0.0",
 ]
 supply-chain = [
     "pip-audit==2.10.1",
