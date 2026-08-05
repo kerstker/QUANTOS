@@ -7,6 +7,7 @@
 export const CONSOLE_LANGUAGE = 'zh-CN' as const;
 
 export function bi(zh: string, _en: string) {
+  void _en;
   return zh;
 }
 
