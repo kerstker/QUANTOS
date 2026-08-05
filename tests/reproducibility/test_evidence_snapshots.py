@@ -104,6 +104,11 @@ def _verify_dry_run(digest, artifact):
 def test_binding_helper_rejects_malformed_values_and_environment(monkeypatch):
     from scripts.evidence_binding import assert_current_binding, validation_binding, validation_binding_from_payload
 
+    with pytest.raises(ValueError):
+        validation_binding(generated_at=False)
+    with pytest.raises(ValueError):
+        validation_binding(generated_at=True)
+
     source = "b" * 40
     run = "a" * 64
     valid = {"validation": {"run_id": run, "source_commit": source, "generated_at": 1, "current": True}}

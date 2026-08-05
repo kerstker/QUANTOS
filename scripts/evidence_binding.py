@@ -68,9 +68,11 @@ def validation_binding(
     if run is None:
         run = hashlib.sha256(("diagnostic:" + source).encode("utf-8")).hexdigest()
     run = _run(run)
+    generated_at = _timestamp(generated_at)
     if generated_at == 0:
         raw = os.environ.get("QUANTOS_VALIDATION_STARTED_AT_MS")
         generated_at = int(raw) if raw is not None else 0
+        generated_at = _timestamp(generated_at)
     return {
         "run_id": run,
         "source_commit": source,

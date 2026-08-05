@@ -488,3 +488,28 @@ def test_supply_chain_generator_standalone_check_validates_binding(tmp_path, mon
     payload["validation"]["current"] = False
     evidence_path.write_text(json.dumps(payload), encoding="utf-8")
     assert module.main([*args, "--check"]) == 1
+
+
+def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, monkeypatch):
+    import subprocess
+    import scripts.generate_supply_chain_evidence as module
+    from scripts.evidence_binding import validation_binding
+
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    sbom_path = tmp_path / "sbom.json"
+    evidence_path = tmp_path / "evidence.json"
+    args = ["--repo-root", str(ROOT), "--sbom", str(sbom_path), "--evidence", str(evidence_path)]
+
+    def fake_build(*args, binding=None, **kwargs):
+        active = binding or validation_binding(generated_at=123)
+        return {"bomFormat": "test"}, {"validation": active, "component_count": 0, "artifact_signature_status": "TEST"}
+
+    monkeypatch.setattr(module, "build_supply_chain_artifacts", fake_build)
+    for run in ("a" * 64, "b" * 64):
+        monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", run)
+        assert module.main(args) == 0
+        assert module.main([*args, "--check"]) == 0
+    assert module.main([*args, "--check"]) == 0
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
+    assert module.main([*args, "--check"]) == 1
