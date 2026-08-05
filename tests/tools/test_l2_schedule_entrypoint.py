@@ -385,6 +385,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
     assert ALLOWED_L2_MODULES == frozenset(
         {
             "alpha_paper_cycle",
+            "alpha_lifecycle_cockpit",
             "alpha_production_workflow",
             "alpha_maintenance_sweep",
             "artifact_admission_seal",

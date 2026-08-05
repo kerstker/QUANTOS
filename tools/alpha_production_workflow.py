@@ -59,7 +59,12 @@ DEFAULT_FORWARD_STATUS = Path("data/cache/forward_track_status.json")
 DEFAULT_RISK_BUNDLE = Path("data/cache/paper_research_risk_inputs.json")
 DEFAULT_PORTFOLIO_EVIDENCE = Path("data/cache/candidate_portfolio_evidence.json")
 DEFAULT_PAPER_REALTIME = Path("data/cache/paper_realtime_status.json")
-DEFAULT_LIFECYCLE = Path("evidence/alpha_lifecycle_status.json")
+# The production workflow needs a per-candidate lifecycle row.  The older
+# ``alpha_lifecycle_status.json`` is a global readiness/audit artifact and has
+# no candidate map, so consuming it here silently made every lifecycle gate
+# ``NOT_AVAILABLE``.  The cockpit is the read-only per-alpha evidence source;
+# its scheduled refresh remains independent from this reconciliation worker.
+DEFAULT_LIFECYCLE = Path("evidence/alpha_lifecycle_cockpit.json")
 DEFAULT_PAPER_TRACK = Path("data/cache/paper_track.db")
 DEFAULT_REGIME_MARKS = Path("data/cache/crypto_perp_mark_prices.json")
 DEFAULT_REGIME_FUNDING = Path("data/cache/crypto_funding_rates.json")
@@ -388,8 +393,19 @@ def build_candidate_identities(
 
 def _mapping_row(document: Mapping[str, Any], candidate_id: str) -> dict[str, Any]:
     rows = document.get("alphas")
-    row = rows.get(candidate_id) if isinstance(rows, Mapping) else None
-    return dict(row) if isinstance(row, Mapping) else {}
+    if isinstance(rows, Mapping):
+        row = rows.get(candidate_id)
+        return dict(row) if isinstance(row, Mapping) else {}
+    if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes, bytearray)):
+        matches = [
+            row
+            for row in rows
+            if isinstance(row, Mapping) and row.get("alpha_id") == candidate_id
+        ]
+        if len(matches) > 1:
+            raise RuntimeError(f"workflow evidence duplicates candidate: {candidate_id}")
+        return dict(matches[0]) if matches else {}
+    return {}
 
 
 def _sequence_row(

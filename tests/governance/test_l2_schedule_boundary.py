@@ -30,6 +30,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     )
     assert registered_modules
     assert registered_modules <= {
+        "alpha_lifecycle_cockpit",
         "alpha_maintenance_sweep",
         "alpha_production_workflow",
         "crypto_factory_loop",
@@ -45,6 +46,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "candidate_portfolio_evidence",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
+        "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
         "external_heartbeat",
         "dry_run_candidate_multi",
@@ -70,6 +72,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_domain_event_ops" in source
     assert "QUANTOS_scheduler_watchdog" in source
     assert "QUANTOS_candidate_dry_run" in source
+    assert "QUANTOS_alpha_lifecycle_cockpit" in source
     assert "QUANTOS_candidate_portfolio_evidence" in source
     assert "QUANTOS_paper_operational_evidence" in source
     assert "QUANTOS_realtime_alpha_execution_paper" in source

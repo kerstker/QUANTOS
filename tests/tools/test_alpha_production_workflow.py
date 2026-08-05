@@ -210,6 +210,7 @@ def _reconcile(
     portfolio: dict | None = None,
     portfolio_policy=None,
     portfolio_reference_aum: float | None = None,
+    lifecycle: dict | None = None,
 ) -> dict:
     candidate_ids = [identity.candidate_id for identity in identities]
     forward_eval = {
@@ -252,7 +253,7 @@ def _reconcile(
             },
         },
         realtime_path="realtime.json",
-        lifecycle_document={},
+        lifecycle_document=lifecycle or {},
         lifecycle_path="lifecycle.json",
         release_commit=COMMIT,
         paper_track_path=shadow["paper_track_path"],
@@ -290,6 +291,40 @@ def test_reconciler_creates_one_authoritative_candidate_state(tmp_path) -> None:
         replay = _reconcile(workflow, (identity,), shadow=shadow)
         assert replay["reconciliation"]["inserted_candidates"] == 0
         assert replay["reconciliation"]["inserted_events"] == 0
+
+
+def test_lifecycle_gate_consumes_per_alpha_cockpit_rows_without_changing_eligibility(
+    tmp_path,
+) -> None:
+    """The cockpit stores ``alphas`` as a list, unlike older map artifacts.
+
+    Lifecycle evidence must become visible to the workflow, but its presence
+    must not alter the existing eligibility predicate by itself.
+    """
+    identity = _identity("factory_alpha")
+    shadow = _shadow_inputs(tmp_path, (identity.candidate_id,))
+    lifecycle = {
+        "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+        "generated_at_ms": 2_500,
+        "alphas": [
+            {
+                "alpha_id": identity.candidate_id,
+                "derived_stage": "PAPER",
+                "stages": {"paper": {"status": "PRESENT"}},
+            }
+        ],
+    }
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        snapshot = _reconcile(
+            workflow,
+            (identity,),
+            shadow=shadow,
+            lifecycle=lifecycle,
+        )
+
+    row = snapshot["candidates"][0]
+    assert _gates(row)["LIFECYCLE"]["status"] == "RUNNING"
+    assert snapshot["execution_paper_eligible_ids"] == [identity.candidate_id]
 
 
 def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(

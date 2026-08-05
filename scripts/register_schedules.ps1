@@ -245,6 +245,11 @@ $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
 $paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:45"
+# Refresh the read-only per-alpha lifecycle cockpit before the five-minute
+# production-workflow reconciliation consumes its candidate rows.  The
+# cockpit has no network, credential, or promotion capability.
+$alphaLifecycleCockpitTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Reconcile candidate identity and every evidence stage before the next
 # five-minute paper worker. The job is read-mostly, idempotent, and L2-only.
 $alphaProductionWorkflowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
@@ -357,6 +362,8 @@ Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
   -Trigger $icTrigger
 Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_evaluation" `
   -Trigger $paperAlphaEvaluationTrigger
+Register-L2Task -Name "QUANTOS_alpha_lifecycle_cockpit" -Module "alpha_lifecycle_cockpit" `
+  -Trigger $alphaLifecycleCockpitTrigger
 Register-L2Task -Name "QUANTOS_alpha_production_workflow" -Module "alpha_production_workflow" `
   -Trigger $alphaProductionWorkflowTrigger
 Register-L2Task -Name "QUANTOS_candidate_dry_run" -Module "dry_run_candidate_multi" `
