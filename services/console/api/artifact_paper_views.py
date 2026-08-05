@@ -1271,6 +1271,15 @@ def _alpha_pipeline_payload(
         evaluation_ref = evaluation_ref if isinstance(evaluation_ref, dict) else {}
         risk_row = risk_rows.get(alpha_id)
         risk_row = risk_row if isinstance(risk_row, dict) else {}
+        gate_payload = {
+            gate_name: {
+                "status": gate_row.get("status"),
+                "reference": gate_row.get("reference"),
+                "content_hash": gate_row.get("content_hash"),
+                "observed_at_ms": gate_row.get("observed_at_ms"),
+            }
+            for gate_name, gate_row in workflow_gates.items()
+        } if workflow_verified else {}
         maturity = (
             workflow_bundle.get("observed_forward_periods")
             if workflow_verified
@@ -1324,6 +1333,7 @@ def _alpha_pipeline_payload(
                     else None
                 ),
                 "workflow_bundle_hash": workflow_bundle.get("bundle_hash"),
+                "gates": gate_payload,
                 "definition_kind": workflow_identity.get(
                     "definition_kind", "ALPHA_EXPRESSION"
                 ),

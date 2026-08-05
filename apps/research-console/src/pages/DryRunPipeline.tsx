@@ -103,6 +103,14 @@ function fmtRealizedPct(value: number | null | undefined, realized: boolean): st
   return realized ? fmtPct(value) : '—';
 }
 
+function gateStatusTone(status?: string | null): Tone {
+  const normalized = (status ?? 'NOT_AVAILABLE').toUpperCase();
+  if (normalized === 'PASS' || normalized === 'READY' || normalized === 'PAPER_MARKED') return 'pos';
+  if (normalized.includes('FAIL') || normalized.includes('BLOCK') || normalized.includes('REJECT')) return 'neg';
+  if (normalized.includes('RUNNING') || normalized.includes('VALID')) return 'info';
+  return 'warn';
+}
+
 function paperSeries(history: PaperRealtimeHistoryPoint[]): EquitySeries[] {
   const byAlpha = new Map<string, { t: number; equity: number }[]>();
   for (const point of history) {
@@ -879,6 +887,13 @@ function OfficialFactorLifecycleReport({
     { label: 'FORWARD MATURED', reached: Boolean(candidate?.execution_paper) },
     { label: 'LIVE', reached: false },
   ];
+  const gateRows = [
+    ['HISTORICAL_OOS', 'Historical OOS'],
+    ['SIGNAL_SHADOW', 'Signal Shadow'],
+    ['RESEARCH_RISK', 'Research Risk'],
+    ['EXECUTION_PAPER', 'Execution Paper'],
+    ['LIFECYCLE', 'Lifecycle'],
+  ] as const;
 
   return (
     <div className="border-t border-line bg-panel/70 p-4" data-testid="official-factor-lifecycle-report">
@@ -913,6 +928,25 @@ function OfficialFactorLifecycleReport({
         <Metric label="Paper return" value={fmtPct(currentPaper ? value.return_on_aum : null)} detail={`${Object.keys(value.positions ?? {}).filter(symbol => value.positions?.[symbol] !== 0).length} active positions`} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
         <Metric label="Paper drawdown" value={fmtPct(paperDrawdown == null ? null : -paperDrawdown)} detail={points.length ? 'from retained marks' : 'no history'} tone={paperDrawdown ? 'neg' : 'muted'} />
         <Metric label="Funding / costs" value={fmtUsd(currentPaper ? (value.funding_pnl ?? 0) - (value.costs ?? 0) : null)} detail={currentPaper ? `${value.funding_events ?? 0} funding events` : 'no realized paper PnL'} tone="info" />
+      </div>
+
+      <div className="mt-3 rounded-lg border border-line bg-inset/25 px-3 py-3" data-testid="official-factor-gate-matrix">
+        <div className="mb-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Gate evidence matrix</div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {gateRows.map(([key, label]) => {
+            const gate = candidate?.gates?.[key];
+            const status = gate?.status ?? 'NOT_AVAILABLE';
+            return (
+              <div key={key} className="min-w-0 rounded-md border border-line bg-panel/60 px-2.5 py-2">
+                <div className="truncate text-3xs uppercase tracking-[0.08em] text-faint">{label}</div>
+                <Chip label={status} tone={gateStatusTone(status)} />
+                <div className="mt-1 truncate text-3xs text-muted" title={gate?.reference ?? undefined}>
+                  {gate?.observed_at_ms != null ? fmtTime(gate.observed_at_ms) : 'no evidence timestamp'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-line bg-inset/25 px-4 py-3 md:grid-cols-5" data-testid="official-paper-pnl-breakdown">

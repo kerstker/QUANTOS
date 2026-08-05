@@ -912,6 +912,14 @@ def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
     }
     assert payload["candidates"][-1]["stage"] == "EXECUTION_PAPER_ELIGIBLE"
     assert payload["candidates"][-1]["execution_paper_eligible"] is True
+    assert payload["candidates"][-1]["gates"] == {
+        "EXECUTION_PAPER": {
+            "status": "PENDING",
+            "reference": None,
+            "content_hash": None,
+            "observed_at_ms": None,
+        }
+    }
     assert payload["exception_queue"][0] == {
         "code": "LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE",
         "candidate_count": 3,

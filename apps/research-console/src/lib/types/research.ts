@@ -1395,6 +1395,12 @@ export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
   execution_paper_eligible?: boolean;
   workflow_identity_hash?: string | null;
   workflow_bundle_hash?: string | null;
+  gates?: Record<string, {
+    status?: string | null;
+    reference?: string | null;
+    content_hash?: string | null;
+    observed_at_ms?: number | null;
+  }>;
   definition_kind?: 'ALPHA_EXPRESSION' | 'REALTIME_MECHANISM' | string;
   family_id?: string | null;
   source_kind?: string | null;
