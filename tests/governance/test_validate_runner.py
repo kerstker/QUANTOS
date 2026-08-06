@@ -77,6 +77,7 @@ def test_pytest_child_does_not_inherit_canonical_identity(tmp_path):
         "def test_explicit_binding_is_local():\n"
         "    assert 'QUANTOS_VALIDATION_RUN_ID' not in os.environ\n"
         "    assert 'QUANTOS_VALIDATION_SOURCE_COMMIT' not in os.environ\n"
+        "    assert 'QUANTOS_VALIDATION_STARTED_AT_MS' not in os.environ\n"
         "    from scripts.evidence_binding import validation_binding\n"
         "    validation_binding(generated_at=1, run_id='a' * 64, source_commit='b' * 40)\n",
         encoding="utf-8",
