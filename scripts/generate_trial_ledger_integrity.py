@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from services.research.experiment_registry.store import _SEARCH_SCHEMA_VERSION
 
 SCHEMA_VERSION = 2
 ARTIFACT_MODE = "TRIAL_LEDGER_INTEGRITY_READ_ONLY"
@@ -135,10 +136,11 @@ def _input_key(root: Path, path: Path) -> str:
 def _file_snapshot(path: Path) -> dict[str, Any]:
     exists = path.is_file()
     try:
-        size_bytes = path.stat().st_size if exists else 0
+        size_bytes = path.stat().st_size if exists else None
         sha256 = _sha256(path)
     except OSError:
-        size_bytes = 0
+        exists = False
+        size_bytes = None
         sha256 = None
     return {
         "kind": "file",
@@ -257,6 +259,32 @@ def _provenance_state(
             chain_valid = False
             failure = f"CORRUPT_RECORD_JSON:{row['trial_id']}"
             break
+        if not isinstance(record, dict):
+            chain_valid = False
+            failure = f"CORRUPT_RECORD_JSON:{row['trial_id']}"
+            break
+        duplicated = {
+            "trial_id": row["trial_id"],
+            "config_hash": row["config_hash"],
+            "actor_type": row["actor_type"],
+            "status": row["status"],
+        }
+        if any(record.get(field) != value for field, value in duplicated.items()):
+            chain_valid = False
+            failure = f"RECORD_COLUMN_MISMATCH:{row['trial_id']}"
+            break
+        boundaries = record.get("viewed_oos_boundaries")
+        if (
+            isinstance(row["oos_peek_count"], bool)
+            or not isinstance(row["oos_peek_count"], int)
+            or row["oos_peek_count"] < 0
+            or not isinstance(boundaries, list)
+            or any(not isinstance(boundary, str) for boundary in boundaries)
+            or len(set(boundaries)) != row["oos_peek_count"]
+        ):
+            chain_valid = False
+            failure = f"OOS_PEEK_COUNT_MISMATCH:{row['trial_id']}"
+            break
         if row["prev_entry_hash"] != previous:
             chain_valid = False
             failure = f"CHAIN_BREAK:{row['trial_id']}"
@@ -272,7 +300,7 @@ def _provenance_state(
             break
         previous = expected
         covered.add(str(row["config_hash"]))
-        max_peeks = max(max_peeks, int(row["oos_peek_count"]))
+        max_peeks = max(max_peeks, row["oos_peek_count"])
         actor = str(row["actor_type"])
         status = str(row["status"])
         actor_counts[actor] = actor_counts.get(actor, 0) + 1
@@ -606,6 +634,10 @@ def _build_report_from_snapshot(
     block_reasons: list[str] = []
     if report["ledger"]["sqlite_integrity"] != "ok":
         block_reasons.append("SQLITE_INTEGRITY_FAILED")
+    if report["ledger"]["user_version"] != _SEARCH_SCHEMA_VERSION:
+        block_reasons.append(
+            f"UNSUPPORTED_LEDGER_SCHEMA:{report['ledger']['user_version']}"
+        )
     for table, state in sorted(guards.items()):
         if state == "UNGUARDED":
             block_reasons.append(f"APPEND_ONLY_GUARD_MISSING:{table}")

@@ -56,7 +56,7 @@ def test_phase13_current_artifacts_match_read_only_generator() -> None:
     assert "READY_FOR_LIVE" not in markdown
 
 
-def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> None:
+def test_phase13_paper_snapshot_rejects_unverifiable_dynamic_input_drift() -> None:
     reports, _ = build_phase13(root=ROOT, now_ms=1_800_000_000_000)
     path = "evidence/paper_shadow_status.json"
     expected = reports[path]
@@ -68,26 +68,49 @@ def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> N
     actual["paper"]["forward_evidence"] = {"present": True, "n_forward_periods": 2}
     actual["input_hash"] = _canonical_hash(actual["inputs"])
 
-    assert phase13_artifact_matches(path, actual, expected)
+    assert not phase13_artifact_matches(path, actual, expected)
 
-    actual["safety_flags"]["ALLOW_ORDER_SUBMISSION"] = True
+
+def test_phase13_paper_snapshot_rejects_forged_readiness() -> None:
+    reports, _ = build_phase13(root=ROOT, now_ms=1_800_000_000_000)
+    path = "evidence/paper_shadow_status.json"
+    expected = reports[path]
+    actual = json.loads(json.dumps(expected))
+    actual["paper"].update(
+        {
+            "paper_ready": True,
+            "status": "READY_FOR_FORWARD_PAPER",
+            "forward_evidence": {},
+            "blockers": [],
+        }
+    )
+
     assert not phase13_artifact_matches(path, actual, expected)
 
 
 def test_phase13_absent_trial_snapshot_remains_strictly_verifiable(tmp_path: Path) -> None:
     path = "evidence/trial_ledger_integrity.json"
-    expected = build_trial_report(root=tmp_path, ledger=tmp_path / "absent.db")
+    ledger = tmp_path / "data" / "cache" / "experiment_registry.db"
+    expected = build_trial_report(root=tmp_path, ledger=ledger)
     actual = json.loads(json.dumps(expected))
     actual["generated_at_ms"] -= 1
     actual["commit"] = "a" * 40
 
     assert phase13_artifact_matches(path, actual, expected)
 
-    actual["ledger"]["append_only_guards"]["trials"] = "GUARDED"
+    actual["ledger"]["row_counts"]["trials"] = False
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["ledger"]["path"] = "other.db"
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["open_gaps"] = []
     assert not phase13_artifact_matches(path, actual, expected)
 
 
-def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsistent_counts(
+def test_phase13_trial_snapshot_rejects_unverifiable_ledger_drift(
     tmp_path: Path,
 ) -> None:
     ledger = tmp_path / "data" / "cache" / "experiment_registry.db"
@@ -123,13 +146,21 @@ def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsiste
         6,
     )
 
-    assert phase13_artifact_matches(path, actual, expected)
+    assert not phase13_artifact_matches(path, actual, expected)
 
     actual["provenance"]["bare_trials"] += 1
     assert not phase13_artifact_matches(path, actual, expected)
 
     actual = json.loads(json.dumps(expected))
     actual["family_multiple_testing"]["wired_into_promotion_gate"] = False
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["ledger"]["append_only_guards"].pop("trials")
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["open_gaps"] = []
     assert not phase13_artifact_matches(path, actual, expected)
 
     actual = json.loads(json.dumps(expected))

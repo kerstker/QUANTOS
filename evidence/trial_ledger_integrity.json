@@ -2,7 +2,7 @@
   "block_reasons": [
     "LEDGER_ABSENT"
   ],
-  "commit": "820d5141b5672a257038352f85519a050b42d253",
+  "commit": "9440c64bcaef7a15085f0e730413b4bb6701b30b",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -16,15 +16,15 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1786010850502,
-  "generator_sha256": "e869b1eae1c96985705eb598f0f374cb800212df93ad67efafcb75168362ec5e",
-  "input_hash": "2fc56ac82ff01aa7ee7dcc2ad65c377ba558cf395bcc6f5f0bdfb215ce636e28",
+  "generated_at_ms": 1786014706517,
+  "generator_sha256": "ed05a3e0000aa3ef05f2807acfac3344d3af4e5381447d5893b1e12c923e8310",
+  "input_hash": "4d609f2ae9a6b35b0e2d5d03a8e3c6930c3acbae875a901194aa013d98f3ea37",
   "inputs": {
     "data/cache/experiment_registry.db": {
       "exists": false,
       "kind": "file",
       "sha256": null,
-      "size_bytes": 0
+      "size_bytes": null
     },
     "services/research/experiment_registry/store.py": {
       "exists": true,

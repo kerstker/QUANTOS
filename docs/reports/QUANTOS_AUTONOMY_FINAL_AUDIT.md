@@ -2,8 +2,8 @@
 
 > 本报告由 `scripts/generate_727_final_audit.py` 只读生成。它不授予任何订单、资金或部署权限。
 
-- 生成时间（Unix ms）：`1786010850502`
-- commit：`820d5141b5672a257038352f85519a050b42d253`
+- 生成时间（Unix ms）：`1786014706517`
+- commit：`9440c64bcaef7a15085f0e730413b4bb6701b30b`
 - 当前 readiness：`L2_DRY_RUN_ONLY`
 - 当前总状态：`NOT_READY`
 - 不生成任何开放真实实盘的状态或权限
@@ -26,17 +26,17 @@
 |---:|---|---|---|
 | 0 | 基线与安全冻结 | `PASS` | evidence/autonomy_baseline.json；evidence/validation_report.json |
 | 1 | 数据血缘与统一门禁 | `PASS` | evidence/data_quality_admission.json；evidence/raw_data_lineage_backfill.json |
-| 2 | Autonomy Kernel | `PASS` | evidence/autonomy_readiness.json |
-| 3 | 全局 Trial Ledger | `PARTIAL` | evidence/trial_ledger_integrity.json（历史 bare trials 不可回填） |
-| 4 | Factor Garden | `PASS` | evidence/factor_garden_status.json |
-| 5 | Alpha Factory 与 Challenge Council | `PASS` | evidence/autonomy_readiness.json；Trial Ledger |
-| 6 | 三状态生命周期 | `PASS` | evidence/alpha_lifecycle_status.json |
-| 7 | Paper 与 Shadow | `PARTIAL` | evidence/paper_shadow_status.json（Shadow ready，Forward Paper 未满） |
-| 8 | MEXC 行情/只读/Test Order | `PARTIAL` | evidence/mexc_integration_status.json（代码完成，真实账户未验证） |
+| 2 | Autonomy Kernel | `BLOCKED` | evidence/autonomy_readiness.json |
+| 3 | 全局 Trial Ledger | `BLOCKED` | evidence/trial_ledger_integrity.json |
+| 4 | Factor Garden | `BLOCKED` | evidence/factor_garden_status.json |
+| 5 | Alpha Factory 与 Challenge Council | `BLOCKED` | evidence/autonomy_readiness.json；Trial Ledger |
+| 6 | 三状态生命周期 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
+| 7 | Paper 与 Shadow | `PARTIAL` | evidence/paper_shadow_status.json |
+| 8 | MEXC 行情/只读/Test Order | `BLOCKED` | evidence/mexc_integration_status.json |
 | 9 | Micro-Live Broker Adapter | `BLOCKED` | 默认禁用；缺外部 Deployment Grant、真实 broker 与人工审查 |
-| 10 | Alpha Health、衰减与退役 | `PASS` | evidence/alpha_lifecycle_status.json |
-| 11 | 前端重构 | `PASS` | validation_report frontend typecheck/eslint/tests/build |
-| 12 | Chaos、恢复与运维 | `BLOCKED` | evidence/chaos_recovery_status.json（外部故障矩阵未完成） |
+| 10 | Alpha Health、衰减与退役 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
+| 11 | 前端重构 | `BLOCKED` | validation_report frontend typecheck/eslint/tests/build |
+| 12 | Chaos、恢复与运维 | `BLOCKED` | evidence/chaos_recovery_status.json |
 | 13 | 最终审计 | `PASS` | 本报告与 7 个机器状态制品；总体状态仍 NOT_READY |
 
 > `PASS` 只表示该阶段在当前 L2 范围内的仓库验收通过；不授予 Micro-Live/Live 权限。
@@ -49,7 +49,7 @@
 | 2 | 重试不产生重复订单 | `PASS` | 幂等 client id、unknown-order ledger、禁止盲重试 |
 | 3 | 数据中断自动停止新增风险 | `PASS` | data admission/lineage 与 fail-closed risk gates |
 | 4 | Paper/Shadow/Micro-Live 共用信号核心 | `PASS` | 统一 intent/dry-run/live pipeline 接缝 |
-| 5 | 所有研究尝试进入 Trial Ledger | `PARTIAL` | canonical entries 已接线；历史 2533 bare trials 不可回填 |
+| 5 | 所有研究尝试进入 Trial Ledger | `BLOCKED` | 以 trial_ledger_integrity.json 的当前覆盖率和阻断原因为准 |
 | 6 | AI 不触碰 Secret/资本审批/真实订单 | `PASS` | non-human guardrails、无凭证边界、人工 mandate |
 | 7 | 订单/成交/余额/仓位/PnL 可对账 | `PARTIAL` | 本地与 REST 对账已测；真实 MEXC 账户未验证 |
 | 8 | 部署期间 Alpha 版本不可修改 | `PASS` | version pin 与 deployment gate |
@@ -59,7 +59,7 @@
 | 12 | 前端展示研究/部署/健康/证据 | `PASS` | 只读 console + provenance ribbons + frontend gate |
 | 13 | 运行结果分层标识 | `PASS` | Historical/Paper/Shadow/Micro-Live/Live 契约与状态 |
 | 14 | 外部未完成条件显示 BLOCKED | `PASS` | Phase 3/7/8/9/12 与 top-tier blockers |
-| 15 | 长期自治且资本权力在人类 | `PARTIAL` | 研究自治 READY；长期 Paper/外部运维时长尚未满足 |
+| 15 | 长期自治且资本权力在人类 | `BLOCKED` | 研究自治证据必须全部通过；资本权限仍由真人门控 |
 
 ## 已完成且可由仓库证明的部分
 

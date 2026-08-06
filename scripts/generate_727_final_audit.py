@@ -47,7 +47,6 @@ SAFETY_FLAG_NAMES = (
     "ALLOW_AI_DIRECT_TRADING",
     "REQUIRE_HUMAN_APPROVAL",
 )
-_CURRENT_TRIAL_LEDGER_SCHEMA_VERSION = 4
 _DYNAMIC_REPORT_INPUTS = {
     "evidence/trial_ledger_integrity.json": frozenset(
         {
@@ -67,7 +66,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
-from scripts.generate_trial_ledger_integrity import build_report as build_trial_report
+from scripts.generate_trial_ledger_integrity import (
+    _APPEND_ONLY_TABLES,
+    build_report as build_trial_report,
+)
+from services.research.experiment_registry.store import _SEARCH_SCHEMA_VERSION
+
+_CURRENT_TRIAL_LEDGER_SCHEMA_VERSION = _SEARCH_SCHEMA_VERSION
 
 
 def _sha256(path: Path) -> str | None:
@@ -469,23 +474,37 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
     paper = _load_json(root, "data/cache/paper_health_10k.json")
     shadow = _load_json(root, "evidence/shadow_status.json")
     paper_verdict = paper.get("verdict") if isinstance(paper.get("verdict"), dict) else {}
-    paper_ready = paper_verdict.get("paper_ready") is True
+    paper_blockers = paper.get("blockers")
+    if not isinstance(paper_blockers, list):
+        paper_blockers = ["PAPER_EVIDENCE_MALFORMED"]
+    paper_forward = paper.get("forward_evidence")
+    if not isinstance(paper_forward, dict):
+        paper_forward = {}
+    paper_ready = (
+        paper_verdict.get("paper_ready") is True
+        and bool(paper_forward)
+        and not paper_blockers
+    )
     shadow_readiness = shadow.get("readiness") if isinstance(shadow.get("readiness"), dict) else {}
+    shadow_blockers = shadow_readiness.get("blockers")
+    if not isinstance(shadow_blockers, list):
+        shadow_blockers = ["SHADOW_EVIDENCE_MALFORMED"]
+    shadow_safety = shadow.get("safety") if isinstance(shadow.get("safety"), dict) else {}
     shadow_ready = (
         shadow_readiness.get("shadow_ready") is True
         and shadow_readiness.get("chain_valid") is True
         and shadow_readiness.get("outbox_chain_valid") is True
-        and not shadow_readiness.get("blockers")
-        and shadow.get("safety", {}).get("order_path_touched") is False
+        and not shadow_blockers
+        and shadow_safety.get("order_path_touched") is False
     )
     blockers: list[str] = []
     if not paper_ready:
-        blockers.extend(str(item) for item in paper.get("blockers", [])[:20])
+        blockers.extend(str(item) for item in paper_blockers[:20])
         if not blockers:
             blockers.append("PAPER_NOT_READY")
     if not shadow_ready:
-        blockers.extend(str(item) for item in shadow_readiness.get("blockers", []))
-        if not shadow_readiness.get("blockers"):
+        blockers.extend(str(item) for item in shadow_blockers)
+        if not shadow_blockers:
             blockers.append("SHADOW_NOT_READY")
     if not _safety_ok(flags):
         blockers.append("SAFETY_FLAGS_NOT_RESEARCH_SAFE")
@@ -507,8 +526,8 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
                 "paper_ready": paper_ready,
                 "paper_mark_ready": paper_verdict.get("paper_mark_ready"),
                 "paper_preview_ready": paper_verdict.get("paper_preview_ready"),
-                "forward_evidence": paper.get("forward_evidence", {}),
-                "blockers": paper.get("blockers", []),
+                "forward_evidence": paper_forward,
+                "blockers": paper_blockers,
             },
             "shadow": {
                 "status": "READY_FOR_SHADOW" if shadow_ready else "NOT_READY",
@@ -516,7 +535,7 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
                 "observation_count": shadow_readiness.get("observation_count"),
                 "chain_valid": shadow_readiness.get("chain_valid"),
                 "outbox_chain_valid": shadow_readiness.get("outbox_chain_valid"),
-                "safety": shadow.get("safety", {}),
+                "safety": shadow_safety,
             },
             "honesty_note": (
                 "Shadow readiness is not fill or paper proof. Paper remains separate "
@@ -747,7 +766,9 @@ def _valid_chain_head(value: Any, *, count: int) -> bool:
     return isinstance(value, str) and _SHA256_PATTERN.fullmatch(value) is not None
 
 
-def _absent_trial_snapshot_matches(actual: dict[str, Any]) -> bool:
+def _absent_trial_snapshot_matches(
+    actual: dict[str, Any], expected: dict[str, Any]
+) -> bool:
     ledger = actual.get("ledger")
     provenance = actual.get("provenance")
     oos = actual.get("oos_access")
@@ -756,17 +777,21 @@ def _absent_trial_snapshot_matches(actual: dict[str, Any]) -> bool:
     guards = ledger.get("append_only_guards")
     counts = ledger.get("row_counts")
     ledger_path = ledger.get("path")
+    expected_ledger = expected.get("ledger")
     inputs = actual.get("inputs")
+    required_tables = set(_APPEND_ONLY_TABLES)
     return (
-        ledger.get("exists") is False
+        isinstance(expected_ledger, dict)
+        and ledger_path == expected_ledger.get("path")
+        and ledger.get("exists") is False
         and ledger.get("sha256") is None
         and ledger.get("sqlite_integrity") is None
         and ledger.get("user_version") is None
         and isinstance(counts, dict)
-        and bool(counts)
-        and all(value == 0 for value in counts.values())
+        and set(counts) == required_tables
+        and all(_non_negative_int(value) and value == 0 for value in counts.values())
         and isinstance(guards, dict)
-        and set(guards) == set(counts)
+        and set(guards) == required_tables
         and all(value == "UNKNOWN" for value in guards.values())
         and isinstance(inputs, dict)
         and isinstance(ledger_path, str)
@@ -780,6 +805,7 @@ def _absent_trial_snapshot_matches(actual: dict[str, Any]) -> bool:
         and oos.get("reason") == "LEDGER_ABSENT"
         and actual.get("verdict") == "BLOCKED"
         and actual.get("block_reasons") == ["LEDGER_ABSENT"]
+        and actual.get("open_gaps") == expected.get("open_gaps")
     )
 
 
@@ -802,7 +828,7 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
     expected_common = {key: value for key, value in expected.items() if key not in dynamic_fields}
     if actual_common != expected_common or not _safety_ok(actual.get("safety_flags", {})):
         return False
-    if actual.get("safety_verdict") != "PASS" or actual.get("block_reasons") != []:
+    if actual.get("safety_verdict") != "PASS":
         return False
 
     ledger = actual.get("ledger")
@@ -810,7 +836,9 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
     if not isinstance(ledger, dict) or not isinstance(expected_ledger, dict):
         return False
     if ledger.get("exists") is False:
-        return _absent_trial_snapshot_matches(actual)
+        return _absent_trial_snapshot_matches(actual, expected)
+    if actual.get("block_reasons") != []:
+        return False
     static_ledger_fields = {"path", "exists", "sqlite_integrity", "user_version", "append_only_guards"}
     if ledger.get("path") != expected_ledger.get("path"):
         return False
@@ -821,7 +849,12 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
     ):
         return False
     guards = ledger.get("append_only_guards")
-    if not isinstance(guards, dict) or not guards or any(value != "GUARDED" for value in guards.values()):
+    required_tables = set(_APPEND_ONLY_TABLES)
+    if (
+        not isinstance(guards, dict)
+        or set(guards) != required_tables
+        or any(value != "GUARDED" for value in guards.values())
+    ):
         return False
     ledger_hash = ledger.get("sha256")
     if not isinstance(ledger_hash, str) or _SHA256_PATTERN.fullmatch(ledger_hash) is None:
@@ -838,7 +871,7 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
     expected_counts = expected_ledger.get("row_counts")
     if not isinstance(row_counts, dict) or not isinstance(expected_counts, dict):
         return False
-    if set(row_counts) != set(expected_counts):
+    if set(row_counts) != required_tables or set(expected_counts) != required_tables:
         return False
     if any(not _non_negative_int(value) for value in row_counts.values()):
         return False
@@ -898,7 +931,10 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
         return False
 
     expected_verdict = "PARTIAL" if bare > 0 else "PASS"
-    return actual.get("verdict") == expected_verdict
+    return (
+        actual.get("verdict") == expected_verdict
+        and actual.get("open_gaps") == expected.get("open_gaps")
+    )
 
 
 def phase13_artifact_matches(
@@ -915,11 +951,16 @@ def phase13_artifact_matches(
     append-only invariants are re-evaluated from the retained snapshot.
     """
 
-    if _strip_json_volatile(actual) == _strip_json_volatile(expected):
-        return True
     dynamic_inputs = _DYNAMIC_REPORT_INPUTS.get(relative_path)
-    if dynamic_inputs is None or not isinstance(actual, dict) or not isinstance(expected, dict):
+    if dynamic_inputs is None:
+        return _strip_json_volatile(actual) == _strip_json_volatile(expected)
+    if not isinstance(actual, dict) or not isinstance(expected, dict):
         return False
+    semantically_current = _strip_json_volatile(actual) == _strip_json_volatile(expected)
+    if relative_path == "evidence/trial_ledger_integrity.json":
+        return semantically_current and _trial_snapshot_matches(actual, expected)
+    if semantically_current:
+        return True
     actual_inputs = actual.get("inputs")
     expected_inputs = expected.get("inputs")
     if not isinstance(actual_inputs, dict) or not isinstance(expected_inputs, dict):
@@ -934,42 +975,40 @@ def phase13_artifact_matches(
         if actual_inputs[path] != expected_inputs[path]:
             return False
 
-    if relative_path == "evidence/trial_ledger_integrity.json":
-        return _trial_snapshot_matches(actual, expected)
+    # Paper/shadow source files are mutable caches without an independently
+    # signed historical authority. A changed manifest therefore cannot prove
+    # that a retained readiness claim was true at that older point in time.
+    return False
 
-    ignored = {
-        "generated_at_ms",
-        "commit",
-        "status",
-        "blockers",
-        "paper",
-        "shadow",
-        "inputs",
-        "input_hash",
-    }
-    actual_common = {key: value for key, value in actual.items() if key not in ignored}
-    expected_common = {key: value for key, value in expected.items() if key not in ignored}
-    if actual_common != expected_common or not _safety_ok(actual.get("safety_flags", {})):
-        return False
-    if actual.get("safety_verdict") != "PASS":
-        return False
 
-    paper = actual.get("paper")
-    shadow = actual.get("shadow")
-    if not isinstance(paper, dict) or not isinstance(shadow, dict):
-        return False
-    paper_ready = paper.get("paper_ready")
-    shadow_ready = shadow.get("shadow_ready")
-    if type(paper_ready) is not bool or type(shadow_ready) is not bool:
-        return False
-    if paper.get("status") != ("READY_FOR_FORWARD_PAPER" if paper_ready else "NOT_READY"):
-        return False
-    if shadow.get("status") != ("READY_FOR_SHADOW" if shadow_ready else "NOT_READY"):
-        return False
-    return actual.get("status") == ("READY_FOR_SHADOW" if shadow_ready else "NOT_READY")
+def _phase_verdict(payload: dict[str, Any]) -> str:
+    native = payload.get("verdict")
+    if native in {"PASS", "PARTIAL", "BLOCKED"}:
+        return native
+    status = payload.get("status")
+    if status == "READY_FOR_RESEARCH_AUTONOMY":
+        return "PASS"
+    if status in {"READY_FOR_FORWARD_PAPER", "READY_FOR_SHADOW", "READY_FOR_MICRO_LIVE_REVIEW"}:
+        return "PARTIAL"
+    return "BLOCKED"
 
 
 def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> str:
+    autonomy_verdict = _phase_verdict(reports["evidence/autonomy_readiness.json"])
+    trial_verdict = _phase_verdict(reports["evidence/trial_ledger_integrity.json"])
+    garden_verdict = _phase_verdict(reports["evidence/factor_garden_status.json"])
+    lifecycle_verdict = _phase_verdict(reports["evidence/alpha_lifecycle_status.json"])
+    paper_verdict = _phase_verdict(reports["evidence/paper_shadow_status.json"])
+    mexc_verdict = _phase_verdict(reports["evidence/mexc_integration_status.json"])
+    chaos_verdict = _phase_verdict(reports["evidence/chaos_recovery_status.json"])
+    research_verdicts = (autonomy_verdict, trial_verdict)
+    phase5_verdict = (
+        "BLOCKED"
+        if "BLOCKED" in research_verdicts
+        else "PARTIAL"
+        if "PARTIAL" in research_verdicts
+        else "PASS"
+    )
     rows = [
         ("Autonomy Kernel", reports["evidence/autonomy_readiness.json"]["status"]),
         ("Trial Ledger", "NOT_READY" if reports["evidence/trial_ledger_integrity.json"].get("verdict") != "PASS" else "READY_FOR_RESEARCH_AUTONOMY"),
@@ -982,17 +1021,17 @@ def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> st
     phase_rows = [
         (0, "基线与安全冻结", "PASS", "evidence/autonomy_baseline.json；evidence/validation_report.json"),
         (1, "数据血缘与统一门禁", "PASS", "evidence/data_quality_admission.json；evidence/raw_data_lineage_backfill.json"),
-        (2, "Autonomy Kernel", "PASS", "evidence/autonomy_readiness.json"),
-        (3, "全局 Trial Ledger", "PARTIAL", "evidence/trial_ledger_integrity.json（历史 bare trials 不可回填）"),
-        (4, "Factor Garden", "PASS", "evidence/factor_garden_status.json"),
-        (5, "Alpha Factory 与 Challenge Council", "PASS", "evidence/autonomy_readiness.json；Trial Ledger"),
-        (6, "三状态生命周期", "PASS", "evidence/alpha_lifecycle_status.json"),
-        (7, "Paper 与 Shadow", "PARTIAL", "evidence/paper_shadow_status.json（Shadow ready，Forward Paper 未满）"),
-        (8, "MEXC 行情/只读/Test Order", "PARTIAL", "evidence/mexc_integration_status.json（代码完成，真实账户未验证）"),
+        (2, "Autonomy Kernel", autonomy_verdict, "evidence/autonomy_readiness.json"),
+        (3, "全局 Trial Ledger", trial_verdict, "evidence/trial_ledger_integrity.json"),
+        (4, "Factor Garden", garden_verdict, "evidence/factor_garden_status.json"),
+        (5, "Alpha Factory 与 Challenge Council", phase5_verdict, "evidence/autonomy_readiness.json；Trial Ledger"),
+        (6, "三状态生命周期", lifecycle_verdict, "evidence/alpha_lifecycle_status.json"),
+        (7, "Paper 与 Shadow", paper_verdict, "evidence/paper_shadow_status.json"),
+        (8, "MEXC 行情/只读/Test Order", mexc_verdict, "evidence/mexc_integration_status.json"),
         (9, "Micro-Live Broker Adapter", "BLOCKED", "默认禁用；缺外部 Deployment Grant、真实 broker 与人工审查"),
-        (10, "Alpha Health、衰减与退役", "PASS", "evidence/alpha_lifecycle_status.json"),
-        (11, "前端重构", "PASS", "validation_report frontend typecheck/eslint/tests/build"),
-        (12, "Chaos、恢复与运维", "BLOCKED", "evidence/chaos_recovery_status.json（外部故障矩阵未完成）"),
+        (10, "Alpha Health、衰减与退役", lifecycle_verdict, "evidence/alpha_lifecycle_status.json"),
+        (11, "前端重构", autonomy_verdict, "validation_report frontend typecheck/eslint/tests/build"),
+        (12, "Chaos、恢复与运维", chaos_verdict, "evidence/chaos_recovery_status.json"),
         (13, "最终审计", "PASS", "本报告与 7 个机器状态制品；总体状态仍 NOT_READY"),
     ]
     delivery_rows = [
@@ -1000,7 +1039,7 @@ def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> st
         (2, "重试不产生重复订单", "PASS", "幂等 client id、unknown-order ledger、禁止盲重试"),
         (3, "数据中断自动停止新增风险", "PASS", "data admission/lineage 与 fail-closed risk gates"),
         (4, "Paper/Shadow/Micro-Live 共用信号核心", "PASS", "统一 intent/dry-run/live pipeline 接缝"),
-        (5, "所有研究尝试进入 Trial Ledger", "PARTIAL", "canonical entries 已接线；历史 2533 bare trials 不可回填"),
+        (5, "所有研究尝试进入 Trial Ledger", trial_verdict, "以 trial_ledger_integrity.json 的当前覆盖率和阻断原因为准"),
         (6, "AI 不触碰 Secret/资本审批/真实订单", "PASS", "non-human guardrails、无凭证边界、人工 mandate"),
         (7, "订单/成交/余额/仓位/PnL 可对账", "PARTIAL", "本地与 REST 对账已测；真实 MEXC 账户未验证"),
         (8, "部署期间 Alpha 版本不可修改", "PASS", "version pin 与 deployment gate"),
@@ -1010,7 +1049,7 @@ def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> st
         (12, "前端展示研究/部署/健康/证据", "PASS", "只读 console + provenance ribbons + frontend gate"),
         (13, "运行结果分层标识", "PASS", "Historical/Paper/Shadow/Micro-Live/Live 契约与状态"),
         (14, "外部未完成条件显示 BLOCKED", "PASS", "Phase 3/7/8/9/12 与 top-tier blockers"),
-        (15, "长期自治且资本权力在人类", "PARTIAL", "研究自治 READY；长期 Paper/外部运维时长尚未满足"),
+        (15, "长期自治且资本权力在人类", "PASS" if all(verdict == "PASS" for verdict in (autonomy_verdict, trial_verdict, garden_verdict, lifecycle_verdict)) else "BLOCKED", "研究自治证据必须全部通过；资本权限仍由真人门控"),
     ]
     lines = [
         "# QUANTOS 自治系统 Phase 13 最终审计",

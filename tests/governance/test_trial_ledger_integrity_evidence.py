@@ -53,6 +53,8 @@ def _ledger(tmp_path: Path, *, with_provenance: bool = True) -> Path:
     store.add_trials(["legacy-cfg"], first_seen_ts=1)
     if with_provenance:
         store.record_trial_provenance(_record())
+    else:
+        store._ensure_search_schema(require_provenance=True)
     store._conn.close()
     return path
 
@@ -209,12 +211,25 @@ def test_legacy_schema_without_provenance_or_oos_is_blocked(tmp_path) -> None:
 
 
 def test_bare_population_forces_partial(tmp_path) -> None:
-    """A guarded ledger with historical bare trials is PARTIAL, never PASS."""
-    ledger = _ledger(tmp_path)
+    """A current guarded ledger with zero provenance rows is PARTIAL."""
+    ledger = _ledger(tmp_path, with_provenance=False)
     report = build_report(root=tmp_path, ledger=ledger)
     assert report["verdict"] == "PARTIAL"
-    assert report["provenance"]["bare_trials"] >= 1
-    assert report["provenance"]["coverage_ratio"] < 1.0
+    assert report["provenance"]["bare_trials"] == 1
+    assert report["provenance"]["coverage_ratio"] == 0.0
+
+
+def test_legacy_schema_version_is_blocked(tmp_path) -> None:
+    ledger = _ledger(tmp_path)
+    raw = sqlite3.connect(ledger)
+    raw.execute("PRAGMA user_version = 3")
+    raw.commit()
+    raw.close()
+
+    report = build_report(root=tmp_path, ledger=ledger)
+
+    assert report["verdict"] == "BLOCKED"
+    assert "UNSUPPORTED_LEDGER_SCHEMA:3" in report["block_reasons"]
 
 
 def test_fully_covered_ledger_can_reach_pass(tmp_path) -> None:

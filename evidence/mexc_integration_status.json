@@ -9,7 +9,7 @@
     "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
     "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
   ],
-  "commit": "820d5141b5672a257038352f85519a050b42d253",
+  "commit": "9440c64bcaef7a15085f0e730413b4bb6701b30b",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "external_verification": {
     "account_smoke": false,
@@ -19,8 +19,8 @@
     "test_order_executed": false,
     "user_stream_verified": false
   },
-  "generated_at_ms": 1786010850502,
-  "generator_sha256": "8039a1590f2053c02f6aa4919b8234602ad96b6d746340a0687339ad23394ab2",
+  "generated_at_ms": 1786014706517,
+  "generator_sha256": "4bd2a2cdbfd7cccdef481f437397ef2b22bfe055087bbeda9a37447fde18eb60",
   "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
   "implementation": {
     "account_read_only": true,
@@ -138,7 +138,7 @@
   "status": "NOT_READY",
   "validation": {
     "current": false,
-    "head_commit": "820d5141b5672a257038352f85519a050b42d253",
+    "head_commit": "9440c64bcaef7a15085f0e730413b4bb6701b30b",
     "overall_status": "FAIL",
     "reported_commit": "9d290ae3809dac053e071e06c6b38a5802747ede",
     "reported_validate_script_sha256": "74e898f5c29435674ca0b9e9a07295864e8f171937144b96b67692d001bdbce9",
