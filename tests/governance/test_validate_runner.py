@@ -68,6 +68,38 @@ def test_selected_stage_writes_machine_report(tmp_path):
     assert report["results"][0]["status"] == "PASS"
 
 
+def test_pytest_child_does_not_inherit_canonical_identity(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    test_file = tmp_path / "test_binding.py"
+    test_file.write_text(
+        "import os\n"
+        "def test_explicit_binding_is_local():\n"
+        "    assert 'QUANTOS_VALIDATION_RUN_ID' not in os.environ\n"
+        "    assert 'QUANTOS_VALIDATION_SOURCE_COMMIT' not in os.environ\n"
+        "    from scripts.evidence_binding import validation_binding\n"
+        "    validation_binding(generated_at=1, run_id='a' * 64, source_commit='b' * 40)\n",
+        encoding="utf-8",
+    )
+    checks = [
+        (
+            "pytest: synthetic canonical environment isolation",
+            [sys.executable, "-m", "pytest", "-q", str(test_file)],
+            str(ROOT),
+        )
+    ]
+
+    result = validate.run(
+        stages=["pytest: synthetic canonical environment isolation"],
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=checks,
+    )
+
+    assert result == 0
+    assert json.loads(report_path.read_text(encoding="utf-8"))["overall_status"] == "PASS"
+
+
 def test_default_subset_report_does_not_overwrite_full_validation_report(
     tmp_path, monkeypatch
 ):

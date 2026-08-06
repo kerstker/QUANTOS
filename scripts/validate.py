@@ -276,6 +276,36 @@ DEFAULT_TIMEOUT_SECONDS = 1_800.0
 DEFAULT_REPORT = os.path.join(REPO, "evidence", "validation_report.json")
 DEFAULT_SUBSET_REPORT = os.path.join(REPO, "evidence", "validation_report_subset.json")
 _VALIDATION_ENV: dict[str, str] | None = None
+_CANONICAL_ENV_KEYS = (
+    "QUANTOS_VALIDATION_RUN_ID",
+    "QUANTOS_VALIDATION_SOURCE_COMMIT",
+    "QUANTOS_VALIDATION_STARTED_AT_MS",
+)
+
+
+def _is_pytest_command(command) -> bool:
+    """Identify pytest self-test subprocesses by their executable arguments."""
+    items = [str(item).lower() for item in command]
+    return any(
+        item == "pytest"
+        or item.endswith("\\pytest.exe")
+        or item.endswith("/pytest")
+        or (
+            item == "-m"
+            and index + 1 < len(items)
+            and items[index + 1] == "pytest"
+        )
+        for index, item in enumerate(items)
+    )
+
+
+def _child_env(command) -> dict[str, str]:
+    """Keep canonical identity for evidence, but not pytest's own checks."""
+    env = dict(_VALIDATION_ENV or os.environ)
+    if _is_pytest_command(command):
+        for key in _CANONICAL_ENV_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def _summary(results: list[dict]) -> dict[str, int]:
@@ -491,7 +521,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
         # inherited stdout/stderr handles are dead, fall back to captured
         # pipes — the gate must not depend on the host console at all.
         try:
-            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_VALIDATION_ENV)
+            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command))
         except OSError as exc:
             # ASCII-only, locale-independent detail: the report is hashed
             # evidence, and localized OS error text (e.g. GBK WinError text)
@@ -507,7 +537,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                env=_VALIDATION_ENV,
+                env=_child_env(command),
             )
         try:
             if process.stdout is not None:
