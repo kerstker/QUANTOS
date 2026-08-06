@@ -1,5 +1,7 @@
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -555,3 +557,19 @@ def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, mon
     monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", anchor)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
     assert module.main([*args, "--check"]) == 1
+
+
+def test_supply_chain_builder_binds_temp_repo_head_when_binding_absent(tmp_path):
+    from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
+
+    temp_repo = tmp_path / "repo"
+    shutil.copytree(ROOT, temp_repo, ignore=shutil.ignore_patterns(".git"))
+    subprocess.run(["git", "init", "-q"], cwd=temp_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=temp_repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=temp_repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=temp_repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=temp_repo, check=True)
+
+    _, evidence = build_supply_chain_artifacts(temp_repo, binding=None)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_repo, text=True).strip()
+    assert evidence["validation"]["source_commit"] == head

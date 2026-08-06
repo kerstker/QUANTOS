@@ -793,7 +793,10 @@ def build_supply_chain_artifacts(
     external_sigstore_verified = external_sigstore_report is not None
     evidence = {
         "schema_version": 1,
-        "validation": binding or validation_binding(generated_at=0),
+        "validation": binding or validation_binding(
+            generated_at=0,
+            source_commit=resolve_canonical_source_anchor(root),
+        ),
         "verdict": "PARTIAL",
         "mode": "OFFLINE_REPOSITORY_BASELINE",
         "sbom_format": "CycloneDX",
