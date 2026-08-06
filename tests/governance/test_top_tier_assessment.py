@@ -21,6 +21,7 @@ from services.governance.model_risk_history import (
 from services.governance.reproducibility_evidence import (
     build_container_reproducibility_evidence,
 )
+from scripts.evidence_binding import resolve_canonical_source_anchor
 from services.governance.top_tier_assessment import RegistryError, assess_repository, load_requirements
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.governance.vulnerability_evidence import (
@@ -3360,11 +3361,11 @@ def test_canonical_refresh_check_supports_new_run_and_standalone_reuse(tmp_path,
     from scripts.assess_top_tier import main
     import subprocess
 
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    canonical_source = resolve_canonical_source_anchor(ROOT)
     json_out = tmp_path / "assessment.json"
     matrix_out = tmp_path / "assessment.md"
     args = ["--repo-root", str(ROOT), "--json-out", str(json_out), "--matrix-out", str(matrix_out), "--as-of-ms", "123"]
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", canonical_source)
     for run in ("a" * 64, "b" * 64):
         monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", run)
         assert main(args) == 0
@@ -3380,9 +3381,9 @@ def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeyp
     from scripts.assess_top_tier import main
     import subprocess
 
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    canonical_source = resolve_canonical_source_anchor(ROOT)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", canonical_source)
     json_out = tmp_path / "assessment.json"
     matrix_out = tmp_path / "assessment.md"
     args = ["--repo-root", str(ROOT), "--json-out", str(json_out), "--matrix-out", str(matrix_out), "--as-of-ms", "123"]
@@ -3392,3 +3393,23 @@ def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeyp
     payload["validation"]["current"] = False
     json_out.write_text(json.dumps(payload), encoding="utf-8")
     assert main([*args, "--check"]) == 1
+
+
+def test_top_tier_generator_rejects_environment_source_not_stable_anchor(
+    tmp_path, monkeypatch
+):
+    from scripts.assess_top_tier import main
+    import subprocess
+
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    canonical_source = resolve_canonical_source_anchor(ROOT)
+    assert head != canonical_source
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "c" * 64)
+    args = [
+        "--repo-root", str(ROOT),
+        "--json-out", str(tmp_path / "assessment.json"),
+        "--matrix-out", str(tmp_path / "assessment.md"),
+        "--as-of-ms", "123",
+    ]
+    assert main(args) == 1
