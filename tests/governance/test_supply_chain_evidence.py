@@ -455,7 +455,7 @@ def test_supply_chain_check_accepts_current_and_rejects_tampering(tmp_path):
 def test_tracked_supply_chain_artifacts_are_current():
     from scripts.generate_supply_chain_evidence import main
 
-    assert main(["--repo-root", str(ROOT), "--check"]) == 1
+    assert main(["--repo-root", str(ROOT), "--check"]) == 0
 
 
 def test_supply_chain_canonical_anchor_accepts_artifact_only_head(tmp_path, monkeypatch):
