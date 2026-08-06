@@ -40,7 +40,15 @@ def _init_binding_repo(tmp_path: Path) -> tuple[Path, str]:
     return repo, subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
 
-def test_phase13_artifact_only_head_accepts_stable_anchor(tmp_path: Path) -> None:
+def test_phase13_artifact_only_head_accepts_stable_anchor(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for key in (
+        "QUANTOS_VALIDATION_RUN_ID",
+        "QUANTOS_VALIDATION_SOURCE_COMMIT",
+        "QUANTOS_VALIDATION_STARTED_AT_MS",
+    ):
+        monkeypatch.delenv(key, raising=False)
     repo, source = _init_binding_repo(tmp_path)
     report = repo / "evidence" / "validation_report.json"
     report.write_text('{"marker": "artifact"}\n', encoding="utf-8")
