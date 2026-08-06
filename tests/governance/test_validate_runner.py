@@ -2,11 +2,25 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_validate_script_starts_from_outside_repo():
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "validate.py"), "--help"],
+        cwd=ROOT.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "validation_report.json" in result.stdout
 
 
 def _load_validate_module():
