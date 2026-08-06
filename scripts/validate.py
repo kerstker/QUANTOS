@@ -29,10 +29,13 @@ import tempfile
 import time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
+try:
+    sys.path.remove(REPO)
+except ValueError:
+    pass
+sys.path.insert(0, REPO)
 
-from scripts.evidence_binding import validation_binding
+from scripts.evidence_binding import validation_binding  # noqa: E402
 
 APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")

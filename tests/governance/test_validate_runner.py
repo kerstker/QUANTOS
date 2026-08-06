@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,9 +12,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_validate_script_starts_from_outside_repo():
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "validate.py"), "--help"],
         cwd=ROOT.parent,
+        env=env,
         capture_output=True,
         text=True,
         check=False,
