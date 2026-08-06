@@ -66,6 +66,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from scripts.evidence_binding import (
+    assert_current_binding,
+    resolve_canonical_source_anchor,
+)
 from scripts.generate_trial_ledger_integrity import (
     _APPEND_ONLY_TABLES,
     build_report as build_trial_report,
@@ -104,18 +108,9 @@ def _load_json(root: Path, relative_path: str) -> dict[str, Any]:
 
 def _commit(root: Path) -> str:
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+        return resolve_canonical_source_anchor(root)
+    except (OSError, ValueError, subprocess.SubprocessError):
         return "UNKNOWN"
-    value = proc.stdout.strip()
-    return value if proc.returncode == 0 and value else "UNKNOWN"
 
 
 def _working_tree_dirty(root: Path) -> bool | None:
@@ -214,12 +209,31 @@ def _safety_ok(flags: dict[str, bool]) -> bool:
 
 def _validation(root: Path) -> dict[str, Any]:
     report = _load_json(root, "evidence/validation_report.json")
-    head = _commit(root)
+    try:
+        canonical_source = resolve_canonical_source_anchor(root)
+        # The full validation report predates the explicit binding envelope;
+        # adapt its immutable legacy fields only at this read-only boundary.
+        assert_current_binding(
+            {
+                "validation": {
+                    "run_id": report.get("checks_manifest_sha256"),
+                    "source_commit": report.get("commit"),
+                    "generated_at": report.get("generated_at_ms"),
+                    "current": True,
+                }
+            },
+            head=canonical_source,
+            repo_root=root,
+        )
+        binding_current = True
+    except (OSError, ValueError, subprocess.SubprocessError):
+        canonical_source = _commit(root)
+        binding_current = False
     validate_hash = _sha256(root / "scripts" / "validate.py")
     current = (
         report.get("selection_scope") == "ALL"
         and report.get("overall_status") == "PASS"
-        and report.get("commit") == head
+        and binding_current
         and report.get("validate_script_sha256") == validate_hash
     )
     return {
@@ -227,7 +241,7 @@ def _validation(root: Path) -> dict[str, Any]:
         "selection_scope": report.get("selection_scope"),
         "overall_status": report.get("overall_status"),
         "reported_commit": report.get("commit"),
-        "head_commit": head,
+        "head_commit": canonical_source,
         "validate_script_sha256": validate_hash,
         "reported_validate_script_sha256": report.get("validate_script_sha256"),
     }

@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
+from scripts.evidence_binding import assert_current_binding, resolve_canonical_source_anchor
 from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
@@ -17,6 +19,63 @@ from services.research.trial_provenance import ActorType, TrialProvenance, Trial
 
 ROOT = Path(__file__).resolve().parents[2]
 JSON_OUTPUTS = OUTPUTS[:-1]
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def _init_binding_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "tests")
+    evidence = repo / "evidence"
+    evidence.mkdir()
+    (evidence / "validation_report.json").write_text("{}\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "initial")
+    return repo, subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+
+
+def test_phase13_artifact_only_head_accepts_stable_anchor(tmp_path: Path) -> None:
+    repo, source = _init_binding_repo(tmp_path)
+    report = repo / "evidence" / "validation_report.json"
+    report.write_text('{"marker": "artifact"}\n', encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "refresh artifact")
+    anchor = resolve_canonical_source_anchor(repo)
+    assert anchor == source
+    assert_current_binding(
+        {"validation": {"run_id": "a" * 64, "source_commit": source, "generated_at": 1, "current": True}},
+        head=anchor,
+        repo_root=repo,
+    )
+
+
+def test_phase13_mixed_source_and_environment_mismatch_fail_closed(tmp_path: Path, monkeypatch) -> None:
+    repo, source = _init_binding_repo(tmp_path)
+    (repo / "evidence" / "validation_report.json").write_text('{"marker": "mixed"}\n', encoding="utf-8")
+    (repo / "notes.txt").write_text("unallowlisted\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "mixed refresh")
+    anchor = resolve_canonical_source_anchor(repo)
+    assert anchor != source
+    payload = {"validation": {"run_id": "a" * 64, "source_commit": source, "generated_at": 1, "current": True}}
+    try:
+        assert_current_binding(payload, head=anchor, repo_root=repo)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mixed source must fail closed")
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", "b" * 40)
+    try:
+        assert_current_binding(payload, head=source, repo_root=repo)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("environment source mismatch must fail closed")
 
 
 def test_phase13_outputs_exist_and_are_fail_closed() -> None:
