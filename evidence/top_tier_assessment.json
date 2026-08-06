@@ -36,7 +36,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "domain": "governance_security",
       "passed": 1,
       "red_lines_failed": 1,
@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "reliability_operations",
-      "passed": 0,
+      "passed": 1,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -583,9 +583,9 @@
         "path": "evidence/strong_identity_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "description": "OIDC mTLS RBAC and separation of duties are enforced",
-      "detail": "asymmetric OIDC verification, MFA, RFC 8705 mTLS binding, immutable subject identity, application-owned lifecycle authorization, durable authorization decisions, and three-party separation are load-bearing; browser Authorization Code + PKCE S256 is implemented with one-time state/nonce and memory-only access tokens; external OIDC, trusted TLS deployment, managed key custody, external identity lifecycle operations, and independent AI identity-exclusion evidence remain open; evidence does not meet target maturity",
+      "detail": "strong-identity baseline failed: dependency_versions",
       "domain": "governance_security",
       "evidence": [
         "evidence/strong_identity_baseline.json",
@@ -622,7 +622,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -752,9 +752,9 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
+      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -770,7 +770,7 @@
         "evidence/l2_backup_latest.json"
       ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -780,7 +780,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PASS",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -921,7 +921,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: SOURCE_CONTRACT_MISMATCH, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history health failed: LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -1536,11 +1536,17 @@
   "summary": {
     "failed": 2,
     "manual_evidence_required": 0,
-    "partial": 6,
-    "passed": 14,
+    "partial": 5,
+    "passed": 15,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
+  },
+  "validation": {
+    "current": true,
+    "generated_at": 1786028663022,
+    "run_id": "b9251133f1570d686fd7c6fca8d6e36bd0d0289698c6b7e8b774833a92215fe4",
+    "source_commit": "38efcf93781a1a825174ba3394cb3517b708e0d1"
   },
   "verdict": "NOT_TOP_TIER"
 }

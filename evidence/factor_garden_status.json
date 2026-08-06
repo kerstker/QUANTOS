@@ -1,15 +1,13 @@
 {
   "acceptance": {
-    "factor_garden_research_plane": false,
+    "factor_garden_research_plane": true,
     "live_order_authority": false
   },
   "artifact": "QUANTOS_727_FACTOR_GARDEN_STATUS",
-  "blockers": [
-    "FULL_VALIDATION_NOT_CURRENT_PASS"
-  ],
-  "commit": "9440c64bcaef7a15085f0e730413b4bb6701b30b",
+  "blockers": [],
+  "commit": "38efcf93781a1a825174ba3394cb3517b708e0d1",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786014706517,
+  "generated_at_ms": 1786029270978,
   "generator_sha256": "4bd2a2cdbfd7cccdef481f437397ef2b22bfe055087bbeda9a37447fde18eb60",
   "honesty_note": "Factor Garden is a tested research-plane capability; it is not a promotion grant and does not permit real trading.",
   "implementation": {
@@ -62,13 +60,13 @@
   },
   "safety_verdict": "PASS",
   "schema_version": 1,
-  "status": "NOT_READY",
+  "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
-    "current": false,
-    "head_commit": "9440c64bcaef7a15085f0e730413b4bb6701b30b",
-    "overall_status": "FAIL",
-    "reported_commit": "9d290ae3809dac053e071e06c6b38a5802747ede",
-    "reported_validate_script_sha256": "74e898f5c29435674ca0b9e9a07295864e8f171937144b96b67692d001bdbce9",
+    "current": true,
+    "head_commit": "38efcf93781a1a825174ba3394cb3517b708e0d1",
+    "overall_status": "PASS",
+    "reported_commit": "38efcf93781a1a825174ba3394cb3517b708e0d1",
+    "reported_validate_script_sha256": "b0ef39c861df2327cd63a9222f8070366332e7ce3c6e79e7009bd4bdd7a44934",
     "selection_scope": "ALL",
     "validate_script_sha256": "b0ef39c861df2327cd63a9222f8070366332e7ce3c6e79e7009bd4bdd7a44934"
   },

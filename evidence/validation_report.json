@@ -1,9 +1,9 @@
 {
-  "checks_manifest_sha256": "60ec7f3e9ab69d85d400de82cadd4454a51a1b79d7db31bff901569ff9061e6f",
-  "commit": "7825c6b8eacd815839f94a91947088711b1337b7",
-  "derived_refresh_manifest_sha256": "f2cce7d16f4b99b52a5a1e96c9abccb727677e783ecbcf38e33ca59e9bd47998",
-  "duration_ms": 1847180,
-  "generated_at_ms": 1785773856564,
+  "checks_manifest_sha256": "85f4344223d9eab2b178254c86c5ec5b8bd70e15758e5b864631af4aef5c7472",
+  "commit": "38efcf93781a1a825174ba3394cb3517b708e0d1",
+  "derived_refresh_manifest_sha256": "dd14bec2e63dc2a9988a3c9a602a5c4d15adef887927ec30995363b4279dc892",
+  "duration_ms": 637527,
+  "generated_at_ms": 1786029286827,
   "overall_status": "PASS",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -14,118 +14,118 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_python_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 110,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 81,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_npm_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 104,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 74,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_actions_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 120,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 93,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_container_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 90,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 75,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_container_reproducibility_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 103,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 74,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_event_schema_catalog.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 392,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 306,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_service_import_graph.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1190,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 1077,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\tools\\provision_artifact_admission_authority.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\tools\\provision_artifact_admission_authority.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 226,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 174,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\update_model_risk_history.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 449,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 333,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -134,12 +134,12 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 9888,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 514,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -148,99 +148,99 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 6397,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 4989,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\check_backup_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 93,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 61,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\run_risk_recovery_gate.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 575,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 376,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 3443,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 2741,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_supply_chain_evidence.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_supply_chain_evidence.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1290,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 992,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_supply_chain_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1424,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 1097,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\assess_top_tier.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\assess_top_tier.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 11372,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 8832,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\assess_top_tier.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\assess_top_tier.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 11626,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 8865,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -271,12 +271,12 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1469491,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 494424,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -288,12 +288,12 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 88468,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 68928,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -301,12 +301,12 @@
         "run",
         "typecheck"
       ],
-      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4631,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
+      "duration_ms": 2679,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -314,12 +314,12 @@
         "run",
         "eslint"
       ],
-      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 7986,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
+      "duration_ms": 3937,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -329,12 +329,12 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 27863,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
+      "duration_ms": 15966,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -342,41 +342,41 @@
         "run",
         "build"
       ],
-      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 6342,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
+      "duration_ms": 4477,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 17168,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 2077,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 16863,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 1901,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     },
     {
       "command": [
@@ -384,14 +384,14 @@
         "-m",
         "pytest",
         "-q",
-        "H:\\code\\QUANTOS\\tests\\governance\\test_727_final_audit.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\tests\\governance\\test_727_final_audit.py"
       ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 159401,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+      "duration_ms": 12321,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
-      "timeout_seconds": 2400.0
+      "timeout_seconds": 1800.0
     }
   ],
   "schema_version": 1,
@@ -425,7 +425,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1785772009383,
+  "started_at_ms": 1786028649300,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -433,6 +433,12 @@
     "selected": 27,
     "timed_out": 0
   },
-  "timeout_seconds": 2400.0,
-  "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"
+  "timeout_seconds": 1800.0,
+  "validate_script_sha256": "b0ef39c861df2327cd63a9222f8070366332e7ce3c6e79e7009bd4bdd7a44934",
+  "validation": {
+    "current": true,
+    "generated_at": 1786029286827,
+    "run_id": "b9251133f1570d686fd7c6fca8d6e36bd0d0289698c6b7e8b774833a92215fe4",
+    "source_commit": "38efcf93781a1a825174ba3394cb3517b708e0d1"
+  }
 }
