@@ -3401,10 +3401,9 @@ def test_top_tier_generator_rejects_environment_source_not_stable_anchor(
     from scripts.assess_top_tier import main
     import subprocess
 
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     canonical_source = resolve_canonical_source_anchor(ROOT)
-    assert head != canonical_source
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    assert len(canonical_source) == 40
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", "d" * 40)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "c" * 64)
     args = [
         "--repo-root", str(ROOT),
