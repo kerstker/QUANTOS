@@ -35,7 +35,10 @@ except ValueError:
     pass
 sys.path.insert(0, REPO)
 
-from scripts.evidence_binding import validation_binding  # noqa: E402
+from scripts.evidence_binding import (  # noqa: E402
+    resolve_canonical_source_anchor,
+    validation_binding,
+)
 
 APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
@@ -281,6 +284,27 @@ _CANONICAL_ENV_KEYS = (
     "QUANTOS_VALIDATION_SOURCE_COMMIT",
     "QUANTOS_VALIDATION_STARTED_AT_MS",
 )
+_VALIDATION_RUN_ID_DOMAIN = "quantos-validation-run:v2"
+_VALIDATION_TIMING_KEYS = frozenset({"generated_at_ms", "started_at_ms", "duration_ms"})
+
+
+def _deterministic_validation_run_id(
+    source_commit: str,
+    checks_manifest_sha256: str,
+    derived_refresh_manifest_sha256: str,
+) -> str:
+    """Derive canonical full-run identity without wall-clock input."""
+    payload = json.dumps(
+        {
+            "domain": _VALIDATION_RUN_ID_DOMAIN,
+            "source_commit": source_commit,
+            "checks_manifest_sha256": checks_manifest_sha256,
+            "derived_refresh_manifest_sha256": derived_refresh_manifest_sha256,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _is_pytest_command(command) -> bool:
@@ -481,8 +505,46 @@ def _select_checks(stages, checks):
     return [check for check in checks if check in selected]
 
 
+def _without_timing(report: dict) -> dict:
+    value = json.loads(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    for key in _VALIDATION_TIMING_KEYS:
+        value.pop(key, None)
+    validation = value.get("validation")
+    if isinstance(validation, dict):
+        validation.pop("generated_at", None)
+    for result in value.get("results", []):
+        if isinstance(result, dict):
+            result.pop("duration_ms", None)
+    return value
+
+
+def _preserve_existing_timing(report: dict, existing: dict) -> dict:
+    if _without_timing(report) != _without_timing(existing):
+        return report
+    preserved = json.loads(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    for key in _VALIDATION_TIMING_KEYS:
+        if key in existing:
+            preserved[key] = existing[key]
+    if isinstance(existing.get("validation"), dict) and isinstance(
+        preserved.get("validation"), dict
+    ) and "generated_at" in existing["validation"]:
+        preserved["validation"]["generated_at"] = existing["validation"]["generated_at"]
+    for current, previous in zip(preserved.get("results", []), existing.get("results", [])):
+        if isinstance(current, dict) and isinstance(previous, dict) and "duration_ms" in previous:
+            current["duration_ms"] = previous["duration_ms"]
+    return preserved
+
+
 def _write_report(path: str, report: dict) -> None:
     path = os.path.abspath(path)
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = json.load(handle)
+            if isinstance(existing, dict):
+                report = _preserve_existing_timing(report, existing)
+        except (OSError, ValueError, TypeError):
+            pass
     parent = os.path.dirname(path)
     os.makedirs(parent, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(prefix=".validation-report-", suffix=".tmp", dir=parent)
@@ -614,10 +676,22 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
         raise ValueError("derived evidence refresh targets must be unique")
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
-    source_commit = _git_commit()
-    validation_run_id = hashlib.sha256(
-        f"{source_commit}:{started_at_ms}".encode("utf-8")
-    ).hexdigest()
+    if selection_scope == "ALL":
+        source_commit = resolve_canonical_source_anchor(REPO)
+        checks_manifest_sha256 = _checks_manifest_hash(checks)
+        derived_refresh_manifest_sha256 = _checks_manifest_hash(
+            [refresh_check for _, refresh_check in derived_specs]
+        )
+        validation_run_id = _deterministic_validation_run_id(
+            source_commit,
+            checks_manifest_sha256,
+            derived_refresh_manifest_sha256,
+        )
+    else:
+        source_commit = _git_commit()
+        validation_run_id = hashlib.sha256(
+            f"{source_commit}:{started_at_ms}".encode("utf-8")
+        ).hexdigest()
     global _VALIDATION_ENV
     _VALIDATION_ENV = {
         **os.environ,

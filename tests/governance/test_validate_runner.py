@@ -547,6 +547,79 @@ def test_governance_alias_selects_only_governance_scanner():
     assert [name for name, _, _ in selected] == ["governance-scanner"]
 
 
+
+
+def test_full_run_id_is_deterministic_and_domain_bound():
+    validate = _load_validate_module()
+    first = validate._deterministic_validation_run_id("a" * 40, "b" * 64, "c" * 64)
+    second = validate._deterministic_validation_run_id("a" * 40, "b" * 64, "c" * 64)
+    assert first == second
+    assert len(first) == 64
+    assert first == first.lower()
+    assert first != validate._deterministic_validation_run_id("d" * 40, "b" * 64, "c" * 64)
+
+
+def test_full_run_uses_stable_anchor_after_artifact_only_head(tmp_path, monkeypatch):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    anchor = "a" * 40
+    monkeypatch.setattr(validate, "resolve_canonical_source_anchor", lambda _repo: anchor)
+    monkeypatch.setattr(validate, "_git_commit", lambda: "b" * 40)
+    checks = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+
+    assert validate.run(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=checks,
+        derived_refresh_checks=[],
+        phase13_refresh_checks=[],
+    ) == 0
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["commit"] == anchor
+    assert report["validation"]["source_commit"] == anchor
+
+
+def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    checks = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    kwargs = dict(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=checks,
+        derived_refresh_checks=[],
+        phase13_refresh_checks=[],
+    )
+
+    assert validate.run(**kwargs) == 0
+    first = report_path.read_bytes()
+    assert validate.run(**kwargs) == 0
+    assert report_path.read_bytes() == first
+
+
+def test_nonvolatile_report_change_rewrites_report(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    passing = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    failing = [("fake-pass", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
+    common = dict(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        derived_refresh_checks=[],
+        phase13_refresh_checks=[],
+    )
+
+    assert validate.run(checks=passing, **common) == 0
+    first = report_path.read_bytes()
+    assert validate.run(checks=failing, **common) == 1
+    second = report_path.read_bytes()
+    assert second != first
+    assert json.loads(second)["results"][0]["status"] == "FAIL"
+
+
 def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():
     validate = _load_validate_module()
     argv = next(
