@@ -369,8 +369,8 @@ def _validated_build_tool(value: Mapping[str, Any]) -> dict[str, str]:
         raise ContainerReproducibilityEvidenceError("build tool identity is invalid")
     result = dict(value)
     if (
-        result.get("builder_name") != "quantos-cross-host"
-        or result.get("builder_driver") != "docker-container"
+        result.get("builder_name") != "desktop-linux"
+        or result.get("builder_driver") != "docker"
         or not isinstance(result.get("buildx_version"), str)
         or _BUILDX_VERSION.fullmatch(result["buildx_version"]) is None
         or not isinstance(result.get("buildkit_version"), str)
