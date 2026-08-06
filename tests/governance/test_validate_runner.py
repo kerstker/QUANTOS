@@ -101,6 +101,24 @@ def test_pytest_child_does_not_inherit_canonical_identity(tmp_path):
     assert json.loads(report_path.read_text(encoding="utf-8"))["overall_status"] == "PASS"
 
 
+def test_pytest_phase13_child_inherits_canonical_identity():
+    validate = _load_validate_module()
+    validate._VALIDATION_ENV = {
+        "QUANTOS_VALIDATION_RUN_ID": "a" * 64,
+        "QUANTOS_VALIDATION_SOURCE_COMMIT": "b" * 40,
+        "QUANTOS_VALIDATION_STARTED_AT_MS": "1",
+    }
+
+    env = validate._child_env(
+        [sys.executable, "-m", "pytest", "tests/governance/test_727_final_audit.py"],
+        preserve_canonical=True,
+    )
+
+    assert env["QUANTOS_VALIDATION_RUN_ID"] == "a" * 64
+    assert env["QUANTOS_VALIDATION_SOURCE_COMMIT"] == "b" * 40
+    assert env["QUANTOS_VALIDATION_STARTED_AT_MS"] == "1"
+
+
 def test_default_subset_report_does_not_overwrite_full_validation_report(
     tmp_path, monkeypatch
 ):

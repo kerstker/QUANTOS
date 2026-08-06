@@ -69,6 +69,7 @@ from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
 from scripts.evidence_binding import (
     assert_current_binding,
     resolve_canonical_source_anchor,
+    validation_binding_from_payload,
 )
 from scripts.generate_trial_ledger_integrity import (
     _APPEND_ONLY_TABLES,
@@ -211,17 +212,12 @@ def _validation(root: Path) -> dict[str, Any]:
     report = _load_json(root, "evidence/validation_report.json")
     try:
         canonical_source = resolve_canonical_source_anchor(root)
-        # The full validation report predates the explicit binding envelope;
-        # adapt its immutable legacy fields only at this read-only boundary.
+        # Validate the report's explicit binding as-is.  In particular, retain
+        # current=false after a failed Phase 13 tail rather than manufacturing
+        # a fresh current claim from legacy fields.
+        binding = validation_binding_from_payload(report)
         assert_current_binding(
-            {
-                "validation": {
-                    "run_id": report.get("checks_manifest_sha256"),
-                    "source_commit": report.get("commit"),
-                    "generated_at": report.get("generated_at_ms"),
-                    "current": True,
-                }
-            },
+            {"validation": binding},
             head=canonical_source,
             repo_root=root,
         )
@@ -230,9 +226,15 @@ def _validation(root: Path) -> dict[str, Any]:
         canonical_source = _commit(root)
         binding_current = False
     validate_hash = _sha256(root / "scripts" / "validate.py")
+    report_binding = report.get("validation")
+    report_current = (
+        isinstance(report_binding, dict)
+        and report_binding.get("current") is True
+    )
     current = (
         report.get("selection_scope") == "ALL"
         and report.get("overall_status") == "PASS"
+        and report_current
         and binding_current
         and report.get("validate_script_sha256") == validate_hash
     )

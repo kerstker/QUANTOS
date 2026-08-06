@@ -323,10 +323,10 @@ def _is_pytest_command(command) -> bool:
     )
 
 
-def _child_env(command) -> dict[str, str]:
-    """Keep canonical identity for evidence, but not pytest's own checks."""
+def _child_env(command, *, preserve_canonical: bool = False) -> dict[str, str]:
+    """Keep canonical identity for evidence and Phase 13's pytest assertion."""
     env = dict(_VALIDATION_ENV or os.environ)
-    if _is_pytest_command(command):
+    if _is_pytest_command(command) and not preserve_canonical:
         for key in _CANONICAL_ENV_KEYS:
             env.pop(key, None)
     return env
@@ -618,8 +618,9 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
         # non-interactive, so a NUL stdin is the honest contract.  If even the
         # inherited stdout/stderr handles are dead, fall back to captured
         # pipes — the gate must not depend on the host console at all.
+        preserve_canonical = name.startswith("phase13-readiness:")
         try:
-            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command))
+            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command, preserve_canonical=preserve_canonical))
         except OSError as exc:
             # ASCII-only, locale-independent detail: the report is hashed
             # evidence, and localized OS error text (e.g. GBK WinError text)
@@ -635,7 +636,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                env=_child_env(command),
+                env=_child_env(command, preserve_canonical=preserve_canonical),
             )
         try:
             if process.stdout is not None:
