@@ -7,10 +7,10 @@
   "blockers": [
     "FULL_VALIDATION_NOT_CURRENT_PASS"
   ],
-  "commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
+  "commit": "820d5141b5672a257038352f85519a050b42d253",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785780073603,
-  "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
+  "generated_at_ms": 1786010850502,
+  "generator_sha256": "8039a1590f2053c02f6aa4919b8234602ad96b6d746340a0687339ad23394ab2",
   "honesty_note": "Factor Garden is a tested research-plane capability; it is not a promotion grant and does not permit real trading.",
   "implementation": {
     "dependency_graph": true,
@@ -19,7 +19,7 @@
     "offline_online_parity": true,
     "registry": true
   },
-  "input_hash": "fdbcff0a3f4b1ad2d052c81cba119c05fa0ea8df6183c7e40aa5aab280f57e2d",
+  "input_hash": "441295c22daa007143e54fbb3b6d6e33a44406b088a4b85ecc8cf29fd51d9f87",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -42,7 +42,7 @@
     "services/research/factor_engine": {
       "exists": true,
       "file_count": 3,
-      "files_sha256": "eaca85f7cfc1f26e7687612e93c9a675cd7de7cd2f10e66eac4404d4e674ed17",
+      "files_sha256": "abd8a5f73004c47e1224a8c1721ef4d5d85e14db8424974be38c5dd964fe5dcb",
       "kind": "python_directory"
     },
     "tests/factor_garden": {
@@ -65,12 +65,12 @@
   "status": "NOT_READY",
   "validation": {
     "current": false,
-    "head_commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
+    "head_commit": "820d5141b5672a257038352f85519a050b42d253",
     "overall_status": "FAIL",
-    "reported_commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
-    "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
+    "reported_commit": "9d290ae3809dac053e071e06c6b38a5802747ede",
+    "reported_validate_script_sha256": "74e898f5c29435674ca0b9e9a07295864e8f171937144b96b67692d001bdbce9",
     "selection_scope": "ALL",
-    "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"
+    "validate_script_sha256": "b0ef39c861df2327cd63a9222f8070366332e7ce3c6e79e7009bd4bdd7a44934"
   },
   "working_tree_dirty": true
 }

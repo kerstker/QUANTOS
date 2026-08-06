@@ -9,7 +9,7 @@
     "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
     "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
   ],
-  "commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
+  "commit": "820d5141b5672a257038352f85519a050b42d253",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "external_verification": {
     "account_smoke": false,
@@ -19,8 +19,8 @@
     "test_order_executed": false,
     "user_stream_verified": false
   },
-  "generated_at_ms": 1785780073603,
-  "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
+  "generated_at_ms": 1786010850502,
+  "generator_sha256": "8039a1590f2053c02f6aa4919b8234602ad96b6d746340a0687339ad23394ab2",
   "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
   "implementation": {
     "account_read_only": true,
@@ -32,7 +32,7 @@
     "unknown_order_persistence": true,
     "user_stream": true
   },
-  "input_hash": "08a293de3f4641ea142c092cb9c54b24ce1488aa3464b385f430b7504792ab95",
+  "input_hash": "824418e231889d06b71355936a6b038e882a513f57b9770a67996f08506992f0",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -49,8 +49,8 @@
     "evidence/binance_testnet_smoke.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "9d53f43be0f994958741a1923da9589a7072eaeba49343b4187f62bf13bf296c",
-      "size_bytes": 2721
+      "sha256": "7c254f07f48dd956699ecf65ba999fb04120246be22e7c327749b11eaf2f8728",
+      "size_bytes": 2611
     },
     "live/exchange/mexc_spot.py": {
       "exists": true,
@@ -73,8 +73,8 @@
     "live/pipeline.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "965e106a8f3a98e7379105f07e97f85666f8603b8b770986b8c38d50c36d5d4a",
-      "size_bytes": 44185
+      "sha256": "a06b0f9be9fa409ef23261b85d091dbe464136307e3bc3dbdeb38ffd338183c7",
+      "size_bytes": 43703
     },
     "tests/live/test_mexc_pipeline_integration.py": {
       "exists": true,
@@ -85,8 +85,8 @@
     "tests/live/test_mexc_spot.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "01e67328e9e491fbe0d38caae5bad862c626848777b10ca7825791940b7eb2df",
-      "size_bytes": 33256
+      "sha256": "27439485045a26ca2dcc7d1d48b7e1fc011e9da1af10e7f557db0663d74d56a5",
+      "size_bytes": 32748
     },
     "tests/live/test_order_recovery.py": {
       "exists": true,
@@ -138,12 +138,12 @@
   "status": "NOT_READY",
   "validation": {
     "current": false,
-    "head_commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
+    "head_commit": "820d5141b5672a257038352f85519a050b42d253",
     "overall_status": "FAIL",
-    "reported_commit": "51411f8c308ccaf0289d1ef87783cb8ad23ac598",
-    "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
+    "reported_commit": "9d290ae3809dac053e071e06c6b38a5802747ede",
+    "reported_validate_script_sha256": "74e898f5c29435674ca0b9e9a07295864e8f171937144b96b67692d001bdbce9",
     "selection_scope": "ALL",
-    "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"
+    "validate_script_sha256": "b0ef39c861df2327cd63a9222f8070366332e7ce3c6e79e7009bd4bdd7a44934"
   },
   "working_tree_dirty": true
 }
