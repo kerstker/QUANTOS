@@ -21,8 +21,8 @@ from services.governance.reproducibility_evidence import (
 EPOCH = 1_000_000
 BASE_REF = "public.ecr.aws/docker/library/python@sha256:" + "a" * 64
 BUILD_TOOL = {
-    "builder_name": "desktop-linux",
-    "builder_driver": "docker",
+    "builder_name": "quantos-cross-host",
+    "builder_driver": "docker-container",
     "buildx_version": (
         "github.com/docker/buildx v0.30.1-desktop.1 " + "b" * 40
     ),
@@ -169,6 +169,32 @@ def test_two_cold_oci_archives_are_inspected_and_recipe_bound(tmp_path: Path) ->
         "observed_at": EPOCH,
         "verdict": "PASS",
     }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("builder_name", "desktop-linux"), ("builder_driver", "docker")),
+)
+def test_generation_rejects_noncanonical_builder_identity(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    _write_recipe(tmp_path)
+    first = tmp_path / "first.oci.tar"
+    second = tmp_path / "second.oci.tar"
+    _write_oci(first)
+    _write_oci(second)
+    build_tool = {**BUILD_TOOL, field: value}
+
+    with pytest.raises(
+        ContainerReproducibilityEvidenceError, match="build tool versions are invalid"
+    ):
+        build_container_reproducibility_evidence(
+            tmp_path,
+            archive_a=first,
+            archive_b=second,
+            observed_at=EPOCH,
+            build_tool=build_tool,
+        )
 
 
 def test_generation_rejects_nonidentical_cold_builds(tmp_path: Path) -> None:

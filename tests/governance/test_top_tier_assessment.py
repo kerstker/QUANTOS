@@ -1135,8 +1135,8 @@ def _write_valid_supply_chain_evidence(tmp_path):
         archive_b=second_oci,
         observed_at=1,
         build_tool={
-            "builder_name": "desktop-linux",
-            "builder_driver": "docker",
+            "builder_name": "quantos-cross-host",
+            "builder_driver": "docker-container",
             "buildx_version": ("github.com/docker/buildx v0.30.1-desktop.1 " + "d" * 40),
             "buildkit_version": "v0.26.2",
             "docker_client_version": "29.1.3",
