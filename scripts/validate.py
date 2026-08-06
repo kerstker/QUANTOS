@@ -535,27 +535,63 @@ def _preserve_existing_timing(report: dict, existing: dict) -> dict:
     return preserved
 
 
+def _serialize_report(report: dict) -> bytes:
+    return (
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        + b"\n"
+    )
+
+
 def _write_report(path: str, report: dict) -> None:
     path = os.path.abspath(path)
+    existing_bytes = None
     if os.path.isfile(path):
         try:
-            with open(path, "r", encoding="utf-8") as handle:
-                existing = json.load(handle)
+            with open(path, "rb") as handle:
+                existing_bytes = handle.read()
+            existing = json.loads(existing_bytes.decode("utf-8"))
             if isinstance(existing, dict):
                 report = _preserve_existing_timing(report, existing)
-        except (OSError, ValueError, TypeError):
+        except (OSError, UnicodeError, ValueError, TypeError):
             pass
+    serialized = _serialize_report(report)
+    if existing_bytes == serialized:
+        return
     parent = os.path.dirname(path)
     os.makedirs(parent, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(prefix=".validation-report-", suffix=".tmp", dir=parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(serialized)
         os.replace(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
+
+
+def _completed_canonical_report_matches(path: str, report: dict) -> bool:
+    """Return whether *path* already holds this run's completed PASS evidence."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            existing = json.load(handle)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return False
+    if not isinstance(existing, dict):
+        return False
+    validation = existing.get("validation")
+    return (
+        existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
+        and existing.get("selection_scope") == "ALL"
+        and existing.get("overall_status") == "PASS"
+        and isinstance(validation, dict)
+        and validation.get("current") is True
+        and "phase13-readiness:tests" in existing.get("selected_stages", [])
+        and existing.get("commit") == report.get("commit")
+        and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
+        and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
+        and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
+        and existing.get("validation", {}).get("run_id") == report.get("validation", {}).get("run_id")
+    )
 
 
 def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
@@ -810,8 +846,19 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     # one failed attempt can poison every later attempt after the defect is fixed.
     report = build_report()
     report_written = True
+    skip_preliminary = (
+        selection_scope == "ALL"
+        and overall_status == "PASS"
+        and _completed_canonical_report_matches(effective_report, report)
+    )
     try:
-        _write_report(effective_report, report)
+        if not skip_preliminary:
+            _write_report(effective_report, report)
+        else:
+            print(
+                "[validate] retaining completed canonical report until Phase 13 finishes",
+                flush=True,
+            )
     except OSError as exc:
         report_written = False
         overall_status = "FAIL"

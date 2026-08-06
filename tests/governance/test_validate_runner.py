@@ -590,13 +590,67 @@ def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path):
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=[],
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=[
+            ("phase13-readiness:tests", [sys.executable, "-c", "pass"], str(tmp_path))
+        ],
     )
 
     assert validate.run(**kwargs) == 0
     first = report_path.read_bytes()
+    first_stat = report_path.stat()
     assert validate.run(**kwargs) == 0
+    second_stat = report_path.stat()
     assert report_path.read_bytes() == first
+    assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
+    if first_stat.st_ino:
+        assert second_stat.st_ino == first_stat.st_ino
+
+
+def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    passing = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    failing = [("fake-pass", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
+    common = dict(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        derived_refresh_checks=[],
+        phase13_refresh_checks=[],
+    )
+
+    assert validate.run(checks=passing, **common) == 0
+    before = report_path.stat()
+    assert validate.run(checks=failing, **common) == 1
+    after = report_path.stat()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["overall_status"] == "FAIL"
+    assert report["validation"]["current"] is False
+    assert after.st_mtime_ns != before.st_mtime_ns
+
+
+def test_phase13_failure_rewrites_fail_closed_report(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    primary = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    passing_phase13 = [("phase13-readiness:tests", [sys.executable, "-c", "pass"], str(tmp_path))]
+    failing_phase13 = [("phase13-readiness:tests", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
+    common = dict(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=primary,
+        derived_refresh_checks=[],
+    )
+
+    assert validate.run(phase13_refresh_checks=passing_phase13, **common) == 0
+    before = report_path.stat()
+    assert validate.run(phase13_refresh_checks=failing_phase13, **common) == 1
+    after = report_path.stat()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["overall_status"] == "FAIL"
+    assert report["validation"]["current"] is False
+    assert after.st_mtime_ns != before.st_mtime_ns
 
 
 def test_nonvolatile_report_change_rewrites_report(tmp_path):
