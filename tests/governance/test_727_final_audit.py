@@ -10,6 +10,9 @@ from scripts.generate_727_final_audit import (
     build_phase13,
     phase13_artifact_matches,
 )
+from scripts.generate_trial_ledger_integrity import build_report as build_trial_report
+from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.trial_provenance import ActorType, TrialProvenance, TrialStatus
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,7 +61,10 @@ def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> N
     path = "evidence/paper_shadow_status.json"
     expected = reports[path]
     actual = json.loads(json.dumps(expected))
-    actual["inputs"]["data/cache/paper_health_10k.json"]["sha256"] = "f" * 64
+    paper_input = actual["inputs"]["data/cache/paper_health_10k.json"]
+    paper_input.update({"exists": True, "size_bytes": 128, "sha256": "f" * 64})
+    shadow_input = actual["inputs"]["evidence/shadow_status.json"]
+    assert shadow_input["exists"] is True
     actual["paper"]["forward_evidence"] = {"present": True, "n_forward_periods": 2}
     actual["input_hash"] = _canonical_hash(actual["inputs"])
 
@@ -68,10 +74,28 @@ def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> N
     assert not phase13_artifact_matches(path, actual, expected)
 
 
-def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsistent_counts() -> None:
-    reports, _ = build_phase13(root=ROOT, now_ms=1_800_000_000_000)
+def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsistent_counts(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "data" / "cache" / "experiment_registry.db"
+    ledger.parent.mkdir(parents=True)
+    store = SqliteExperimentStore(str(ledger), create=True)
+    store.add_trials(["trial-a", "trial-b", "trial-c"], first_seen_ts=1)
+    store.record_trial_provenance(
+        TrialProvenance(
+            trial_id="trial-provenance-a",
+            research_session_id="session-a",
+            config_hash="trial-a",
+            actor_id="tests.governance",
+            actor_type=ActorType.AUTOMATED_SEARCH,
+            status=TrialStatus.RECORDED,
+            started_at=1,
+            completed_at=2,
+        )
+    )
+    store._conn.close()
     path = "evidence/trial_ledger_integrity.json"
-    expected = reports[path]
+    expected = build_trial_report(root=tmp_path, ledger=ledger)
     actual = json.loads(json.dumps(expected))
     ledger_input = actual["inputs"]["data/cache/experiment_registry.db"]
     ledger_input["sha256"] = "f" * 64

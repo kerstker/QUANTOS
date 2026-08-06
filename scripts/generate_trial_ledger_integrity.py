@@ -482,8 +482,53 @@ def _build_report_from_snapshot(
     }
 
     if not ledger.is_file():
+        report["ledger"].update(
+            {
+                "sqlite_integrity": None,
+                "user_version": None,
+                "row_counts": {table: 0 for table in _APPEND_ONLY_TABLES},
+                "append_only_guards": {
+                    table: "UNKNOWN" for table in _APPEND_ONLY_TABLES
+                },
+            }
+        )
+        report["provenance"] = {
+            "table_present": False,
+            "chain_valid": False,
+            "chain_head": None,
+            "attempts_recorded": 0,
+            "configs_with_provenance": 0,
+            "bare_trials": 0,
+            "coverage_ratio": 0.0,
+            "max_oos_peek_count": None,
+            "actor_type_counts": {},
+            "status_counts": {},
+            "reason": "LEDGER_ABSENT",
+        }
+        report["oos_access"] = {
+            "table_present": False,
+            "chain_valid": False,
+            "chain_head": None,
+            "accesses_recorded": 0,
+            "trials_with_access": 0,
+            "reason": "LEDGER_ABSENT",
+        }
+        report["family_multiple_testing"] = _family_testing_available()
+        report["provenance_wiring"] = _provenance_wiring()
+        report["trial_record_fields_required"] = list(_TRIAL_RECORD_FIELDS)
         report["verdict"] = "BLOCKED"
         report["block_reasons"] = ["LEDGER_ABSENT"]
+        report["open_gaps"] = [
+            {
+                "id": "TRIAL_LEDGER_ABSENT",
+                "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
+                "state": "BLOCKED",
+                "detail": (
+                    "The authority ledger is absent in this checkout. Integrity, "
+                    "append-only guards, provenance, and OOS access cannot be verified."
+                ),
+            }
+        ]
         return report
 
     connection: sqlite3.Connection | None = None

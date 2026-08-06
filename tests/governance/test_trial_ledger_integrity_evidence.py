@@ -65,9 +65,24 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
 
     assert payload["mode"] == "TRIAL_LEDGER_INTEGRITY_READ_ONLY"
     assert payload["input_hash"] == _canonical_hash(payload["inputs"])
-    assert payload["inputs"]["data/cache/experiment_registry.db"]["exists"] is True
+    ledger_input = payload["inputs"]["data/cache/experiment_registry.db"]
+    assert ledger_input["exists"] is (ROOT / "data/cache/experiment_registry.db").is_file()
     assert payload["readiness"] == "L2_DRY_RUN_ONLY"
     assert payload["verdict"] in {"PASS", "PARTIAL", "BLOCKED"}
+    if not ledger_input["exists"]:
+        assert payload["verdict"] == "BLOCKED"
+        assert payload["block_reasons"] == ["LEDGER_ABSENT"]
+        assert payload["ledger"]["row_counts"] == {
+            table: 0 for table in (
+                "trials",
+                "evaluations",
+                "search_attempt_events",
+                "search_candidates",
+                "search_evaluations",
+                "trial_provenance",
+                "trial_oos_access",
+            )
+        }
     # §22.13 — an unfinished subsystem must never be dressed up as PASS.
     if payload["provenance"].get("bare_trials", 0) > 0:
         assert payload["verdict"] != "PASS"
@@ -122,6 +137,29 @@ def test_absent_ledger_is_blocked_not_an_empty_pass(tmp_path) -> None:
     report = build_report(root=tmp_path, ledger=tmp_path / "nope.db")
     assert report["verdict"] == "BLOCKED"
     assert report["block_reasons"] == ["LEDGER_ABSENT"]
+    assert report["ledger"]["exists"] is False
+    assert report["ledger"]["sqlite_integrity"] is None
+    assert report["ledger"]["user_version"] is None
+    assert report["ledger"]["row_counts"] == {
+        "evaluations": 0,
+        "search_attempt_events": 0,
+        "search_candidates": 0,
+        "search_evaluations": 0,
+        "trial_oos_access": 0,
+        "trial_provenance": 0,
+        "trials": 0,
+    }
+    assert set(report["ledger"]["append_only_guards"].values()) == {"UNKNOWN"}
+    assert report["provenance"]["table_present"] is False
+    assert report["provenance"]["chain_valid"] is False
+    assert report["provenance"]["reason"] == "LEDGER_ABSENT"
+    assert report["oos_access"]["table_present"] is False
+    assert report["oos_access"]["chain_valid"] is False
+    assert report["oos_access"]["reason"] == "LEDGER_ABSENT"
+    assert report["family_multiple_testing"]
+    assert report["provenance_wiring"]
+    assert report["trial_record_fields_required"]
+    assert report["open_gaps"][0]["id"] == "TRIAL_LEDGER_ABSENT"
 
 
 def test_unreadable_ledger_is_blocked(tmp_path) -> None:
