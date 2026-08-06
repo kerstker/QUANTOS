@@ -9,6 +9,7 @@ from scripts.evidence_binding import assert_current_binding, resolve_canonical_s
 from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
+    _validation,
     build_phase13,
     phase13_artifact_matches,
 )
@@ -76,6 +77,30 @@ def test_phase13_mixed_source_and_environment_mismatch_fail_closed(tmp_path: Pat
         pass
     else:
         raise AssertionError("environment source mismatch must fail closed")
+
+
+def test_validation_evidence_rejects_malformed_legacy_and_stale_reports(tmp_path: Path) -> None:
+    repo, source = _init_binding_repo(tmp_path)
+    report = repo / "evidence" / "validation_report.json"
+    base = {
+        "selection_scope": "ALL",
+        "overall_status": "PASS",
+        "validate_script_sha256": None,
+        "validation": {
+            "run_id": "a" * 64,
+            "source_commit": source,
+            "generated_at": 1,
+            "current": True,
+        },
+    }
+
+    for payload in (
+        {},
+        {"commit": source, "checks_manifest_sha256": "b" * 64},
+        {**base, "validation": {**base["validation"], "current": False}},
+    ):
+        report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        assert _validation(repo)["current"] is False
 
 
 def test_phase13_outputs_exist_and_are_fail_closed() -> None:

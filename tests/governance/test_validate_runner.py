@@ -119,6 +119,26 @@ def test_pytest_phase13_child_inherits_canonical_identity():
     assert env["QUANTOS_VALIDATION_STARTED_AT_MS"] == "1"
 
 
+def test_run_check_preserves_canonical_identity_only_for_exact_phase13_stages(monkeypatch, tmp_path):
+    validate = _load_validate_module()
+    calls = []
+
+    def capture(command, *, preserve_canonical=False):
+        calls.append(preserve_canonical)
+        return dict(os.environ)
+
+    monkeypatch.setattr(validate, "_child_env", capture)
+    for stage in (
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+        "phase13-readiness:custom",
+    ):
+        validate._run_check(stage, [sys.executable, "-c", "pass"], str(tmp_path), 2)
+
+    assert calls == [True, True, True, False]
+
+
 def test_default_subset_report_does_not_overwrite_full_validation_report(
     tmp_path, monkeypatch
 ):

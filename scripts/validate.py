@@ -323,6 +323,13 @@ def _is_pytest_command(command) -> bool:
     )
 
 
+_PHASE13_CANONICAL_ENV_STAGES = frozenset({
+    "phase13-readiness:refresh",
+    "phase13-readiness:current",
+    "phase13-readiness:tests",
+})
+
+
 def _child_env(command, *, preserve_canonical: bool = False) -> dict[str, str]:
     """Keep canonical identity for evidence and Phase 13's pytest assertion."""
     env = dict(_VALIDATION_ENV or os.environ)
@@ -618,7 +625,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
         # non-interactive, so a NUL stdin is the honest contract.  If even the
         # inherited stdout/stderr handles are dead, fall back to captured
         # pipes — the gate must not depend on the host console at all.
-        preserve_canonical = name.startswith("phase13-readiness:")
+        preserve_canonical = name in _PHASE13_CANONICAL_ENV_STAGES
         try:
             process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command, preserve_canonical=preserve_canonical))
         except OSError as exc:
