@@ -6,6 +6,8 @@ the repo catches silent drift in the numbers it cites. Regenerate digests via
 tools.build_evidence_digests after a driver refresh."""
 import json
 import os
+from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -79,6 +81,111 @@ def _verify_json_numbers(digest, artifact):
         assert abs(got - want) <= tol + 1e-9, (
             f"{key} drifted: live {got} vs digest {want} (tol {tol}) — "
             f"regenerate evidence via tools.build_evidence_digests if the change is intended")
+
+
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+
+def _temp_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "test")
+    (repo / "source.txt").write_text("source\n", encoding="utf-8")
+    _git(repo, "add", "source.txt")
+    _git(repo, "commit", "-qm", "source")
+    return repo, _git(repo, "rev-parse", "HEAD")
+
+
+def _commit_artifact(repo: Path, name: str = "evidence/validation_report.json") -> str:
+    path = repo / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{}\n", encoding="utf-8")
+    _git(repo, "add", name)
+    _git(repo, "commit", "-qm", "artifact")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_source_anchor_resolver_skips_only_consecutive_allowlisted_artifacts(tmp_path):
+    from scripts.evidence_binding import resolve_canonical_source_anchor
+
+    repo, source = _temp_repo(tmp_path)
+    assert resolve_canonical_source_anchor(repo) == source
+    _commit_artifact(repo)
+    _commit_artifact(repo, "evidence/sbom.cdx.json")
+    assert resolve_canonical_source_anchor(repo) == source
+
+
+def test_source_anchor_resolver_rejects_dirty_non_allowlisted_paths(tmp_path):
+    from scripts.evidence_binding import resolve_canonical_source_anchor
+
+    repo, _ = _temp_repo(tmp_path)
+    (repo / "source.txt").write_text("changed\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="allowlist"):
+        resolve_canonical_source_anchor(repo)
+    (repo / "source.txt").write_text("source\n", encoding="utf-8")
+    (repo / "evidence").mkdir()
+    (repo / "evidence/validation_report.json").write_text("{}\n", encoding="utf-8")
+    assert resolve_canonical_source_anchor(repo)
+
+
+@pytest.mark.parametrize("status", ["rename", "delete", "copy", "merge"])
+def test_source_anchor_resolver_never_skips_non_add_modify_commits(tmp_path, status):
+    from scripts.evidence_binding import resolve_canonical_source_anchor
+
+    repo, source = _temp_repo(tmp_path)
+    if status == "rename":
+        _git(repo, "mv", "source.txt", "renamed.txt")
+        _git(repo, "commit", "-qm", status)
+    elif status == "delete":
+        _git(repo, "rm", "source.txt")
+        _git(repo, "commit", "-qm", status)
+    elif status == "copy":
+        (repo / "copy.txt").write_text("source\n", encoding="utf-8")
+        _git(repo, "add", "copy.txt")
+        _git(repo, "commit", "-qm", status)
+    else:
+        branch = _git(repo, "branch", "--show-current")
+        _git(repo, "checkout", "-qb", "side")
+        (repo / "side.txt").write_text("side\n", encoding="utf-8")
+        _git(repo, "add", "side.txt")
+        _git(repo, "commit", "-qm", "side")
+        _git(repo, "checkout", "-q", branch)
+        (repo / "main.txt").write_text("main\n", encoding="utf-8")
+        _git(repo, "add", "main.txt")
+        _git(repo, "commit", "-qm", "main")
+        _git(repo, "merge", "--no-ff", "side", "-m", "merge", "-q")
+    assert resolve_canonical_source_anchor(repo) != source
+
+
+def test_source_anchor_resolver_stops_at_mixed_commit(tmp_path):
+    from scripts.evidence_binding import resolve_canonical_source_anchor
+
+    repo, source = _temp_repo(tmp_path)
+    (repo / "evidence").mkdir()
+    (repo / "evidence/validation_report.json").write_text("{}\n", encoding="utf-8")
+    (repo / "new-source.txt").write_text("new\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "mixed")
+    assert resolve_canonical_source_anchor(repo) != source
+
+
+def test_assert_current_binding_uses_resolved_anchor_and_exact_shape(tmp_path):
+    from scripts.evidence_binding import assert_current_binding, resolve_canonical_source_anchor
+
+    repo, source = _temp_repo(tmp_path)
+    artifact = _commit_artifact(repo)
+    anchor = resolve_canonical_source_anchor(repo)
+    payload = {"validation": {"run_id": "a" * 64, "source_commit": anchor, "generated_at": 1, "current": True}}
+    assert anchor == source
+    assert_current_binding(payload, head=artifact, repo_root=repo)
+    payload["validation"]["source_commit"] = artifact
+    with pytest.raises(ValueError):
+        assert_current_binding(payload, head=artifact, repo_root=repo)
 
 
 def _verify_dry_run(digest, artifact):

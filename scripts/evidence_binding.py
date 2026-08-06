@@ -12,13 +12,41 @@ from typing import Any
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
 
+# This is deliberately a finite, versioned list.  Widening it changes the
+# identity domain and must be reviewed as a new boundary policy.
+CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v1"
+CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
+    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md",
+    "evidence/alpha_lifecycle_status.json",
+    "evidence/autonomy_readiness.json",
+    "evidence/chaos_recovery_status.json",
+    "evidence/factor_garden_status.json",
+    "evidence/l2_backup_latest.json",
+    "evidence/mexc_integration_status.json",
+    "evidence/paper_shadow_status.json",
+    "evidence/reproducibility/container_build_latest.json",
+    "evidence/sbom.cdx.json",
+    "evidence/supply_chain_baseline.json",
+    "evidence/top_tier_assessment.json",
+    "evidence/trial_ledger_integrity.json",
+    "evidence/validation_report.json",
+    "evidence/vulnerability/container_trivy_latest.json",
+    "evidence/vulnerability/python_audit_latest.json",
+})
 
-def _head() -> str:
-    return subprocess.check_output(
-        ["git", "rev-parse", "HEAD"],
-        cwd=Path(__file__).resolve().parents[1],
-        text=True,
-    ).strip()
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _git(repo: Path, *args: str, text: bool = True) -> str | bytes:
+    return subprocess.check_output(["git", *args], cwd=repo, text=text)
+
+
+def _head(repo: Path | None = None) -> str:
+    root = repo or _repo_root()
+    return str(_git(root, "rev-parse", "HEAD")).strip()
 
 
 def _source(value: object) -> str:
@@ -45,17 +73,83 @@ def _current(value: object) -> bool:
     return value
 
 
-def validation_binding(
-    *, generated_at: int, run_id: str | None = None, source_commit: str | None = None,
-    current: bool = True,
-) -> dict[str, object]:
+def _allowlisted(path: str) -> bool:
+    return path in CANONICAL_GENERATED_ARTIFACT_ALLOWLIST
+
+
+def _check_clean_boundary(repo: Path) -> None:
+    raw = _git(repo, "status", "--porcelain=v2", "--untracked-files=all", "-z", text=False)
+    assert isinstance(raw, bytes)
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        try:
+            line = record.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("git status contains an undecodable path") from exc
+        kind = line[:1]
+        if kind == "?":
+            path = line[2:] if line.startswith("? ") else ""
+            if not _allowlisted(path):
+                raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
+            continue
+        # Ignored, unmerged, rename/copy, and any future porcelain record are
+        # intentionally rejected rather than guessed at.
+        if kind != "1":
+            raise ValueError("git status contains unsupported or non-allowlisted change")
+        fields = line.split(" ", 8)
+        if len(fields) != 9:
+            raise ValueError("git status ordinary record is malformed")
+        xy, path = fields[1], fields[8]
+        if len(xy) != 2 or any(flag not in ".AM" for flag in xy) or not _allowlisted(path):
+            raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
+
+
+def _artifact_commit(repo: Path, commit: str) -> bool:
+    parents = str(_git(repo, "rev-list", "--parents", "-n", "1", commit)).split()
+    if len(parents) != 2:
+        return False
+    raw = _git(repo, "diff-tree", "--no-commit-id", "--name-status", "-z", "-r", commit, text=False)
+    assert isinstance(raw, bytes)
+    records = [record for record in raw.split(b"\0") if record]
+    if not records:
+        return False
+    # With --name-status -z, Git emits status and path as separate NUL
+    # records (and emits two paths for rename/copy).  Never infer missing
+    # records as a valid add/modify operation.
+    if len(records) % 2:
+        return False
+    for index in range(0, len(records), 2):
+        try:
+            status = records[index].decode("utf-8")
+            path = records[index + 1].decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("commit diff contains an undecodable path") from exc
+        if status not in {"A", "M"} or not _allowlisted(path):
+            return False
+    return True
+
+
+def resolve_canonical_source_anchor(repo_root: Path | str | None = None) -> str:
+    """Return HEAD's stable source anchor, rejecting unsafe dirty state."""
+    repo = Path(repo_root) if repo_root is not None else _repo_root()
+    _check_clean_boundary(repo)
+    current = _head(repo)
+    while _artifact_commit(repo, current):
+        parents = str(_git(repo, "rev-list", "--parents", "-n", "1", current)).split()
+        current = parents[1]
+    return _source(current)
+
+
+def validation_binding(*, generated_at: int, run_id: str | None = None, source_commit: str | None = None,
+                       current: bool = True) -> dict[str, object]:
     if "QUANTOS_VALIDATION_SOURCE_COMMIT" in os.environ:
         env_source = _source(os.environ["QUANTOS_VALIDATION_SOURCE_COMMIT"])
         if source_commit is not None and source_commit != env_source:
             raise ValueError("explicit source_commit disagrees with canonical environment")
         source = env_source
     else:
-        source = source_commit if source_commit is not None else _head()
+        source = source_commit if source_commit is not None else resolve_canonical_source_anchor()
     source = _source(source)
 
     if "QUANTOS_VALIDATION_RUN_ID" in os.environ:
@@ -66,19 +160,14 @@ def validation_binding(
     else:
         run = run_id
     if run is None:
-        run = hashlib.sha256(("diagnostic:" + source).encode("utf-8")).hexdigest()
+        run = hashlib.sha256(("diagnostic:" + CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION + ":" + source).encode("utf-8")).hexdigest()
     run = _run(run)
     generated_at = _timestamp(generated_at)
     if generated_at == 0:
         raw = os.environ.get("QUANTOS_VALIDATION_STARTED_AT_MS")
         generated_at = int(raw) if raw is not None else 0
         generated_at = _timestamp(generated_at)
-    return {
-        "run_id": run,
-        "source_commit": source,
-        "generated_at": _timestamp(generated_at),
-        "current": _current(current),
-    }
+    return {"run_id": run, "source_commit": source, "generated_at": _timestamp(generated_at), "current": _current(current)}
 
 
 def validation_binding_from_payload(payload: Mapping[str, Any]) -> dict[str, object]:
@@ -88,12 +177,7 @@ def validation_binding_from_payload(payload: Mapping[str, Any]) -> dict[str, obj
     required = {"run_id", "source_commit", "generated_at", "current"}
     if set(value) != required:
         raise ValueError("canonical validation binding has an invalid shape")
-    return {
-        "run_id": _run(value["run_id"]),
-        "source_commit": _source(value["source_commit"]),
-        "generated_at": _timestamp(value["generated_at"]),
-        "current": _current(value["current"]),
-    }
+    return {"run_id": _run(value["run_id"]), "source_commit": _source(value["source_commit"]), "generated_at": _timestamp(value["generated_at"]), "current": _current(value["current"])}
 
 
 def validation_report_legacy_binding(payload: Mapping[str, Any]) -> dict[str, object]:
@@ -103,11 +187,12 @@ def validation_report_legacy_binding(payload: Mapping[str, Any]) -> dict[str, ob
     return {"source_commit": _source(payload["commit"]), "run_id": _run(payload["checks_manifest_sha256"])}
 
 
-def assert_current_binding(payload: Mapping[str, Any], *, head: str) -> None:
+def assert_current_binding(payload: Mapping[str, Any], *, head: str, repo_root: Path | str | None = None) -> None:
     binding = validation_binding_from_payload(payload)
     _source(head)
-    if binding["source_commit"] != head:
-        raise ValueError(f"validation source commit {binding['source_commit']} != HEAD {head}")
+    anchor = resolve_canonical_source_anchor(repo_root)
+    if binding["source_commit"] != anchor:
+        raise ValueError(f"validation source commit {binding['source_commit']} != canonical source anchor {anchor}")
     if binding["current"] is not True:
         raise ValueError("validation binding is not current")
     if "QUANTOS_VALIDATION_SOURCE_COMMIT" in os.environ:
