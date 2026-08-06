@@ -586,19 +586,48 @@ def _completed_canonical_report_matches(path: str, report: dict) -> bool:
     if not isinstance(existing, dict):
         return False
     validation = existing.get("validation")
+    selected_stages = existing.get("selected_stages")
+    results = existing.get("results")
+    phase13_stages = {
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    }
+    result_statuses = {
+        result.get("stage"): result.get("status")
+        for result in results
+        if isinstance(result, dict)
+    } if isinstance(results, list) else {}
     return (
         existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
         and existing.get("selection_scope") == "ALL"
         and existing.get("overall_status") == "PASS"
         and isinstance(validation, dict)
         and validation.get("current") is True
-        and "phase13-readiness:tests" in existing.get("selected_stages", [])
+        and isinstance(selected_stages, list)
+        and phase13_stages.issubset(selected_stages)
+        and all(result_statuses.get(stage) == "PASS" for stage in phase13_stages)
         and existing.get("commit") == report.get("commit")
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
         and existing.get("validation", {}).get("run_id") == report.get("validation", {}).get("run_id")
     )
+
+
+def _canonical_started_at_ms(path: str, report: dict) -> int | None:
+    """Reuse the completed canonical run's stable time anchor, if valid."""
+    if not _completed_canonical_report_matches(path, report):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            existing = json.load(handle)
+        started_at_ms = existing.get("started_at_ms")
+        if isinstance(started_at_ms, bool) or not isinstance(started_at_ms, int):
+            return None
+        return started_at_ms if started_at_ms >= 0 else None
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
 
 
 def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
@@ -731,6 +760,18 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             checks_manifest_sha256,
             derived_refresh_manifest_sha256,
         )
+        identity_report = {
+            "commit": source_commit,
+            "checks_manifest_sha256": checks_manifest_sha256,
+            "derived_refresh_manifest_sha256": derived_refresh_manifest_sha256,
+            "validate_script_sha256": _sha256_file(__file__),
+            "validation": {"run_id": validation_run_id},
+        }
+        previous_started_at_ms = _canonical_started_at_ms(
+            json_report, identity_report
+        )
+        if previous_started_at_ms is not None:
+            started_at_ms = previous_started_at_ms
     else:
         source_commit = _git_commit()
         validation_run_id = hashlib.sha256(

@@ -629,7 +629,12 @@ def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path):
         checks=checks,
         derived_refresh_checks=[],
         phase13_refresh_checks=[
-            ("phase13-readiness:tests", [sys.executable, "-c", "pass"], str(tmp_path))
+            (name, [sys.executable, "-c", "pass"], str(tmp_path))
+            for name in (
+                "phase13-readiness:refresh",
+                "phase13-readiness:current",
+                "phase13-readiness:tests",
+            )
         ],
     )
 
@@ -710,6 +715,88 @@ def test_nonvolatile_report_change_rewrites_report(tmp_path):
     second = report_path.read_bytes()
     assert second != first
     assert json.loads(second)["results"][0]["status"] == "FAIL"
+
+
+
+
+def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    marker = tmp_path / "started.txt"
+    capture = (
+        "import os,pathlib;"
+        "pathlib.Path(r'%s').open('a').write(os.environ['QUANTOS_VALIDATION_STARTED_AT_MS']+'\\n')"
+    ) % marker
+    checks = [("primary-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    phase13 = [
+        (name, [sys.executable, "-c", capture], str(tmp_path))
+        for name in (
+            "phase13-readiness:refresh",
+            "phase13-readiness:current",
+            "phase13-readiness:tests",
+        )
+    ]
+    kwargs = dict(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=checks,
+        derived_refresh_checks=[],
+        phase13_refresh_checks=phase13,
+    )
+
+    assert validate.run(**kwargs) == 0
+    first_started = json.loads(report_path.read_text(encoding="utf-8"))["started_at_ms"]
+    assert validate.run(**kwargs) == 0
+    second_started = json.loads(report_path.read_text(encoding="utf-8"))["started_at_ms"]
+
+    assert second_started == first_started
+    assert marker.read_text(encoding="utf-8").splitlines()[-3:] == [
+        str(first_started), str(first_started), str(first_started)
+    ]
+
+
+def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    report = {
+        "report_kind": "FAIL_CLOSED_VALIDATION",
+        "selection_scope": "ALL",
+        "overall_status": "PASS",
+        "selected_stages": [
+            "phase13-readiness:refresh",
+            "phase13-readiness:current",
+            "phase13-readiness:tests",
+        ],
+        "results": [
+            {"stage": stage, "status": "PASS"}
+            for stage in (
+                "phase13-readiness:refresh",
+                "phase13-readiness:current",
+                "phase13-readiness:tests",
+            )
+        ],
+        "commit": "a",
+        "checks_manifest_sha256": "b",
+        "derived_refresh_manifest_sha256": "c",
+        "validate_script_sha256": "d",
+        "started_at_ms": 123,
+        "validation": {"current": True, "run_id": "e"},
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    identity = {key: report[key] for key in (
+        "commit", "checks_manifest_sha256", "derived_refresh_manifest_sha256",
+        "validate_script_sha256",
+    )}
+    identity["validation"] = {"run_id": "e"}
+    assert validate._canonical_started_at_ms(str(report_path), identity) == 123
+
+    identity["commit"] = "different"
+    assert validate._canonical_started_at_ms(str(report_path), identity) is None
+    report["overall_status"] = "FAIL"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    identity["commit"] = "a"
+    assert validate._canonical_started_at_ms(str(report_path), identity) is None
 
 
 def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():
