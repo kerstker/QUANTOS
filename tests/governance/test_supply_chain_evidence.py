@@ -510,6 +510,10 @@ def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, mon
         monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", run)
         assert module.main(args) == 0
         assert module.main([*args, "--check"]) == 0
+    monkeypatch.delenv("QUANTOS_VALIDATION_SOURCE_COMMIT")
+    monkeypatch.delenv("QUANTOS_VALIDATION_RUN_ID")
+    monkeypatch.delenv("QUANTOS_VALIDATION_STARTED_AT_MS", raising=False)
     assert module.main([*args, "--check"]) == 0
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
     assert module.main([*args, "--check"]) == 1
