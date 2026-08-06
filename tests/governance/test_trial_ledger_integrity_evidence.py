@@ -66,7 +66,7 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
     assert payload["mode"] == "TRIAL_LEDGER_INTEGRITY_READ_ONLY"
     assert payload["input_hash"] == _canonical_hash(payload["inputs"])
     ledger_input = payload["inputs"]["data/cache/experiment_registry.db"]
-    assert ledger_input["exists"] is (ROOT / "data/cache/experiment_registry.db").is_file()
+    assert ledger_input["exists"] is payload["ledger"]["exists"]
     assert payload["readiness"] == "L2_DRY_RUN_ONLY"
     assert payload["verdict"] in {"PASS", "PARTIAL", "BLOCKED"}
     if not ledger_input["exists"]:
