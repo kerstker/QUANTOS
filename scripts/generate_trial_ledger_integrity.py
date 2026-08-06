@@ -213,10 +213,14 @@ def _provenance_state(
     connection: sqlite3.Connection, tables: set[str]
 ) -> dict[str, Any]:
     """Recompute the provenance chain and measure coverage against `trials`."""
-    trial_hashes = {
-        str(row["config_hash"])
-        for row in connection.execute("SELECT config_hash FROM trials")
-    }
+    trial_hashes = (
+        {
+            str(row["config_hash"])
+            for row in connection.execute("SELECT config_hash FROM trials")
+        }
+        if "trials" in tables
+        else set()
+    )
     if "trial_provenance" not in tables:
         return {
             "table_present": False,
@@ -337,10 +341,14 @@ def _oos_access_state(
             "trials_with_access": 0,
             "reason": "OOS_ACCESS_SCHEMA_NOT_YET_MIGRATED",
         }
-    trial_ids = {
-        str(row["trial_id"])
-        for row in connection.execute("SELECT trial_id FROM trial_provenance")
-    }
+    trial_ids = (
+        {
+            str(row["trial_id"])
+            for row in connection.execute("SELECT trial_id FROM trial_provenance")
+        }
+        if "trial_provenance" in tables
+        else set()
+    )
     previous = ""
     count = 0
     accessed: set[str] = set()
@@ -451,6 +459,54 @@ def _provenance_wiring() -> dict[str, Any]:
     }
 
 
+def _blocked_unverified_sections(
+    report: dict[str, Any], *, reason: str, gap_id: str, detail: str
+) -> None:
+    report["ledger"].update(
+        {
+            "sqlite_integrity": None,
+            "user_version": None,
+            "row_counts": {table: 0 for table in _APPEND_ONLY_TABLES},
+            "append_only_guards": {
+                table: "UNKNOWN" for table in _APPEND_ONLY_TABLES
+            },
+        }
+    )
+    report["provenance"] = {
+        "table_present": False,
+        "chain_valid": False,
+        "chain_head": None,
+        "attempts_recorded": 0,
+        "configs_with_provenance": 0,
+        "bare_trials": 0,
+        "coverage_ratio": 0.0,
+        "max_oos_peek_count": None,
+        "actor_type_counts": {},
+        "status_counts": {},
+        "reason": reason,
+    }
+    report["oos_access"] = {
+        "table_present": False,
+        "chain_valid": False,
+        "chain_head": None,
+        "accesses_recorded": 0,
+        "trials_with_access": 0,
+        "reason": reason,
+    }
+    report["family_multiple_testing"] = _family_testing_available()
+    report["provenance_wiring"] = _provenance_wiring()
+    report["trial_record_fields_required"] = list(_TRIAL_RECORD_FIELDS)
+    report["verdict"] = "BLOCKED"
+    report["open_gaps"] = [
+        {
+            "id": gap_id,
+            "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
+            "state": "BLOCKED",
+            "detail": detail,
+        }
+    ]
+
+
 def _build_report_from_snapshot(
     *,
     root: Path,
@@ -482,53 +538,16 @@ def _build_report_from_snapshot(
     }
 
     if not ledger.is_file():
-        report["ledger"].update(
-            {
-                "sqlite_integrity": None,
-                "user_version": None,
-                "row_counts": {table: 0 for table in _APPEND_ONLY_TABLES},
-                "append_only_guards": {
-                    table: "UNKNOWN" for table in _APPEND_ONLY_TABLES
-                },
-            }
+        _blocked_unverified_sections(
+            report,
+            reason="LEDGER_ABSENT",
+            gap_id="TRIAL_LEDGER_ABSENT",
+            detail=(
+                "The authority ledger is absent in this checkout. Integrity, "
+                "append-only guards, provenance, and OOS access cannot be verified."
+            ),
         )
-        report["provenance"] = {
-            "table_present": False,
-            "chain_valid": False,
-            "chain_head": None,
-            "attempts_recorded": 0,
-            "configs_with_provenance": 0,
-            "bare_trials": 0,
-            "coverage_ratio": 0.0,
-            "max_oos_peek_count": None,
-            "actor_type_counts": {},
-            "status_counts": {},
-            "reason": "LEDGER_ABSENT",
-        }
-        report["oos_access"] = {
-            "table_present": False,
-            "chain_valid": False,
-            "chain_head": None,
-            "accesses_recorded": 0,
-            "trials_with_access": 0,
-            "reason": "LEDGER_ABSENT",
-        }
-        report["family_multiple_testing"] = _family_testing_available()
-        report["provenance_wiring"] = _provenance_wiring()
-        report["trial_record_fields_required"] = list(_TRIAL_RECORD_FIELDS)
-        report["verdict"] = "BLOCKED"
         report["block_reasons"] = ["LEDGER_ABSENT"]
-        report["open_gaps"] = [
-            {
-                "id": "TRIAL_LEDGER_ABSENT",
-                "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
-                "state": "BLOCKED",
-                "detail": (
-                    "The authority ledger is absent in this checkout. Integrity, "
-                    "append-only guards, provenance, and OOS access cannot be verified."
-                ),
-            }
-        ]
         return report
 
     connection: sqlite3.Connection | None = None
@@ -543,9 +562,12 @@ def _build_report_from_snapshot(
             )
         }
         counts = {
-            table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            table: (
+                int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                if table in tables
+                else 0
+            )
             for table in sorted(_APPEND_ONLY_TABLES)
-            if table in tables
         }
         report["ledger"].update(
             {
@@ -558,8 +580,17 @@ def _build_report_from_snapshot(
         report["provenance"] = _provenance_state(connection, tables)
         report["oos_access"] = _oos_access_state(connection, tables)
     except sqlite3.DatabaseError as exc:
-        report["verdict"] = "BLOCKED"
-        report["block_reasons"] = [f"LEDGER_UNREADABLE:{exc}"]
+        reason = f"LEDGER_UNREADABLE:{exc}"
+        _blocked_unverified_sections(
+            report,
+            reason=reason,
+            gap_id="TRIAL_LEDGER_UNREADABLE",
+            detail=(
+                "The authority ledger cannot be read as a valid SQLite snapshot. "
+                "Integrity, append-only guards, provenance, and OOS access cannot be verified."
+            ),
+        )
+        report["block_reasons"] = [reason]
         return report
     finally:
         if connection is not None:
@@ -578,11 +609,13 @@ def _build_report_from_snapshot(
     for table, state in sorted(guards.items()):
         if state == "UNGUARDED":
             block_reasons.append(f"APPEND_ONLY_GUARD_MISSING:{table}")
-    if provenance.get("chain_valid") is False:
+        elif state == "TABLE_ABSENT":
+            block_reasons.append(f"REQUIRED_TABLE_ABSENT:{table}")
+    if provenance.get("chain_valid") is not True:
         block_reasons.append(
             f"PROVENANCE_CHAIN_INVALID:{provenance.get('reason') or 'UNKNOWN'}"
         )
-    if oos_access.get("chain_valid") is False:
+    if oos_access.get("chain_valid") is not True:
         block_reasons.append(
             f"OOS_ACCESS_CHAIN_INVALID:{oos_access.get('reason') or 'UNKNOWN'}"
         )

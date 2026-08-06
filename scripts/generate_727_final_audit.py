@@ -47,6 +47,7 @@ SAFETY_FLAG_NAMES = (
     "ALLOW_AI_DIRECT_TRADING",
     "REQUIRE_HUMAN_APPROVAL",
 )
+_CURRENT_TRIAL_LEDGER_SCHEMA_VERSION = 4
 _DYNAMIC_REPORT_INPUTS = {
     "evidence/trial_ledger_integrity.json": frozenset(
         {
@@ -717,11 +718,17 @@ def _strip_markdown_volatile(text: str) -> str:
 
 
 def _valid_snapshot_file_bundle(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+        "kind",
+        "exists",
+        "size_bytes",
+        "sha256",
+    } or value.get("kind") != "file":
+        return False
+    if value.get("exists") is False:
+        return value.get("size_bytes") is None and value.get("sha256") is None
     return (
-        isinstance(value, dict)
-        and set(value) == {"kind", "exists", "size_bytes", "sha256"}
-        and value.get("kind") == "file"
-        and value.get("exists") is True
+        value.get("exists") is True
         and isinstance(value.get("size_bytes"), int)
         and not isinstance(value.get("size_bytes"), bool)
         and value["size_bytes"] >= 0
@@ -740,6 +747,42 @@ def _valid_chain_head(value: Any, *, count: int) -> bool:
     return isinstance(value, str) and _SHA256_PATTERN.fullmatch(value) is not None
 
 
+def _absent_trial_snapshot_matches(actual: dict[str, Any]) -> bool:
+    ledger = actual.get("ledger")
+    provenance = actual.get("provenance")
+    oos = actual.get("oos_access")
+    if not all(isinstance(value, dict) for value in (ledger, provenance, oos)):
+        return False
+    guards = ledger.get("append_only_guards")
+    counts = ledger.get("row_counts")
+    ledger_path = ledger.get("path")
+    inputs = actual.get("inputs")
+    return (
+        ledger.get("exists") is False
+        and ledger.get("sha256") is None
+        and ledger.get("sqlite_integrity") is None
+        and ledger.get("user_version") is None
+        and isinstance(counts, dict)
+        and bool(counts)
+        and all(value == 0 for value in counts.values())
+        and isinstance(guards, dict)
+        and set(guards) == set(counts)
+        and all(value == "UNKNOWN" for value in guards.values())
+        and isinstance(inputs, dict)
+        and isinstance(ledger_path, str)
+        and _valid_snapshot_file_bundle(inputs.get(ledger_path))
+        and inputs[ledger_path].get("exists") is False
+        and provenance.get("table_present") is False
+        and provenance.get("chain_valid") is False
+        and provenance.get("reason") == "LEDGER_ABSENT"
+        and oos.get("table_present") is False
+        and oos.get("chain_valid") is False
+        and oos.get("reason") == "LEDGER_ABSENT"
+        and actual.get("verdict") == "BLOCKED"
+        and actual.get("block_reasons") == ["LEDGER_ABSENT"]
+    )
+
+
 def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
     """Accept only a self-consistent, append-only prior trial-ledger snapshot."""
 
@@ -753,6 +796,7 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
         "oos_access",
         "verdict",
         "block_reasons",
+        "open_gaps",
     }
     actual_common = {key: value for key, value in actual.items() if key not in dynamic_fields}
     expected_common = {key: value for key, value in expected.items() if key not in dynamic_fields}
@@ -765,10 +809,16 @@ def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) ->
     expected_ledger = expected.get("ledger")
     if not isinstance(ledger, dict) or not isinstance(expected_ledger, dict):
         return False
+    if ledger.get("exists") is False:
+        return _absent_trial_snapshot_matches(actual)
     static_ledger_fields = {"path", "exists", "sqlite_integrity", "user_version", "append_only_guards"}
-    if any(ledger.get(key) != expected_ledger.get(key) for key in static_ledger_fields):
+    if ledger.get("path") != expected_ledger.get("path"):
         return False
-    if ledger.get("exists") is not True or ledger.get("sqlite_integrity") != "ok":
+    if (
+        ledger.get("exists") is not True
+        or ledger.get("sqlite_integrity") != "ok"
+        or ledger.get("user_version") != _CURRENT_TRIAL_LEDGER_SCHEMA_VERSION
+    ):
         return False
     guards = ledger.get("append_only_guards")
     if not isinstance(guards, dict) or not guards or any(value != "GUARDED" for value in guards.values()):

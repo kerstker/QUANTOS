@@ -168,11 +168,49 @@ def test_unreadable_ledger_is_blocked(tmp_path) -> None:
     report = build_report(root=tmp_path, ledger=corrupt)
     assert report["verdict"] == "BLOCKED"
     assert any(r.startswith("LEDGER_UNREADABLE") for r in report["block_reasons"])
+    assert report["ledger"]["row_counts"] == {
+        table: 0 for table in (
+            "trials",
+            "evaluations",
+            "search_attempt_events",
+            "search_candidates",
+            "search_evaluations",
+            "trial_provenance",
+            "trial_oos_access",
+        )
+    }
+    assert set(report["ledger"]["append_only_guards"].values()) == {"UNKNOWN"}
+    assert report["provenance"]["chain_valid"] is False
+    assert report["oos_access"]["chain_valid"] is False
+    assert report["open_gaps"][0]["id"] == "TRIAL_LEDGER_UNREADABLE"
+
+
+def test_legacy_schema_without_provenance_or_oos_is_blocked(tmp_path) -> None:
+    legacy = tmp_path / "legacy.db"
+    connection = sqlite3.connect(legacy)
+    connection.execute("CREATE TABLE trials (config_hash TEXT PRIMARY KEY)")
+    connection.commit()
+    connection.close()
+
+    report = build_report(root=tmp_path, ledger=legacy)
+
+    assert report["verdict"] == "BLOCKED"
+    assert "REQUIRED_TABLE_ABSENT:trial_provenance" in report["block_reasons"]
+    assert "REQUIRED_TABLE_ABSENT:trial_oos_access" in report["block_reasons"]
+    assert set(report["ledger"]["row_counts"]) == {
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+        "trial_provenance",
+        "trial_oos_access",
+    }
 
 
 def test_bare_population_forces_partial(tmp_path) -> None:
-    """A ledger whose trials have no TrialRecord is PARTIAL, never PASS."""
-    ledger = _ledger(tmp_path, with_provenance=False)
+    """A guarded ledger with historical bare trials is PARTIAL, never PASS."""
+    ledger = _ledger(tmp_path)
     report = build_report(root=tmp_path, ledger=ledger)
     assert report["verdict"] == "PARTIAL"
     assert report["provenance"]["bare_trials"] >= 1

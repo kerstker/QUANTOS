@@ -17,10 +17,6 @@ from services.research.trial_provenance import ActorType, TrialProvenance, Trial
 
 ROOT = Path(__file__).resolve().parents[2]
 JSON_OUTPUTS = OUTPUTS[:-1]
-_DYNAMIC_OUTPUTS = {
-    "evidence/paper_shadow_status.json",
-    "evidence/trial_ledger_integrity.json",
-}
 
 
 def test_phase13_outputs_exist_and_are_fail_closed() -> None:
@@ -45,8 +41,6 @@ def test_phase13_outputs_exist_and_are_fail_closed() -> None:
 def test_phase13_current_artifacts_match_read_only_generator() -> None:
     reports, markdown = build_phase13(root=ROOT)
     for relative_path, expected in reports.items():
-        if relative_path in _DYNAMIC_OUTPUTS:
-            continue
         actual = json.loads((ROOT / relative_path).read_text(encoding="utf-8-sig"))
         assert phase13_artifact_matches(
             relative_path,
@@ -77,6 +71,19 @@ def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> N
     assert phase13_artifact_matches(path, actual, expected)
 
     actual["safety_flags"]["ALLOW_ORDER_SUBMISSION"] = True
+    assert not phase13_artifact_matches(path, actual, expected)
+
+
+def test_phase13_absent_trial_snapshot_remains_strictly_verifiable(tmp_path: Path) -> None:
+    path = "evidence/trial_ledger_integrity.json"
+    expected = build_trial_report(root=tmp_path, ledger=tmp_path / "absent.db")
+    actual = json.loads(json.dumps(expected))
+    actual["generated_at_ms"] -= 1
+    actual["commit"] = "a" * 40
+
+    assert phase13_artifact_matches(path, actual, expected)
+
+    actual["ledger"]["append_only_guards"]["trials"] = "GUARDED"
     assert not phase13_artifact_matches(path, actual, expected)
 
 
@@ -123,6 +130,10 @@ def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsiste
 
     actual = json.loads(json.dumps(expected))
     actual["family_multiple_testing"]["wired_into_promotion_gate"] = False
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["ledger"]["user_version"] = 3
     assert not phase13_artifact_matches(path, actual, expected)
 
 
