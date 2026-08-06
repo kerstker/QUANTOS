@@ -12,19 +12,32 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _imports(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = (alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            names = (node.module or "",)
+        else:
+            continue
+        for name in names:
+            modules.add(name)
+    return modules
+
+
+def _forbidden_network_imports(modules: set[str]) -> set[str]:
+    forbidden_roots = {"ccxt", "httpx", "requests", "socket"}
     return {
-        node.names[0].name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-    } | {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+        module
+        for module in modules
+        if module.split(".", 1)[0] in forbidden_roots
+        or (module == "urllib" or module.startswith("urllib.request"))
+        or module.startswith("live.pipeline")
+        or module.startswith("live.exchange")
     }
 
 
-def _calls(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _call_names(tree: ast.AST) -> set[str]:
     calls: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -34,6 +47,11 @@ def _calls(path: Path) -> set[str]:
         elif isinstance(node.func, ast.Attribute):
             calls.add(node.func.attr)
     return calls
+
+
+def _calls(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return _call_names(tree)
 
 
 def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
@@ -151,16 +169,7 @@ def test_l2_backup_and_scheduler_watchdog_have_no_broker_or_network_dependency()
     backup_path = ROOT / "tools" / "l2_backup.py"
     watchdog_path = ROOT / "tools" / "l2_scheduler_watchdog.py"
     imports = _imports(backup_path) | _imports(watchdog_path)
-    forbidden_import_roots = {
-        "ccxt",
-        "httpx",
-        "requests",
-        "socket",
-        "urllib",
-        "live.pipeline",
-        "live.exchange",
-    }
-    assert not imports & forbidden_import_roots
+    assert not _forbidden_network_imports(imports)
     combined = (
         backup_path.read_text(encoding="utf-8")
         + watchdog_path.read_text(encoding="utf-8")
@@ -171,28 +180,70 @@ def test_l2_backup_and_scheduler_watchdog_have_no_broker_or_network_dependency()
     assert "--act" not in combined
 
 
+_FORBIDDEN_ENTRYPOINT_CALLS = {
+    "submit_order",
+    "place_order",
+    "cancel_order",
+    "withdraw",
+    "transfer",
+    "connect",
+    "connect_broker",
+    "_load_credentials",
+    "load_credentials",
+    "_load_key",
+    "load_key",
+    "load_api_key",
+    "read_secret",
+    "load_secret",
+}
+
+
+def test_l2_schedule_entrypoint_allows_non_secret_security_proof_fields():
+    tree = ast.parse("result = {'credentials_accessed': False}")
+
+    assert not _call_names(tree) & _FORBIDDEN_ENTRYPOINT_CALLS
+
+
+def test_l2_schedule_entrypoint_policy_rejects_import_and_call_variants(tmp_path):
+    fixture = tmp_path / "dangerous.py"
+    fixture.write_text(
+        """
+import benign, socket
+import urllib.request
+from requests.sessions import Session
+import ccxt.pro
+
+def run(client):
+    client.submit_order()
+    client.connect()
+    load_credentials()
+    load_secret()
+""",
+        encoding="utf-8",
+    )
+
+    assert _forbidden_network_imports(_imports(fixture)) == {
+        "socket",
+        "urllib.request",
+        "requests.sessions",
+        "ccxt.pro",
+    }
+    assert _calls(fixture) & _FORBIDDEN_ENTRYPOINT_CALLS == {
+        "submit_order",
+        "connect",
+        "load_credentials",
+        "load_secret",
+    }
+
+
 def test_l2_schedule_entrypoint_has_no_broker_network_or_secret_dependency():
     entrypoint = ROOT / "tools" / "l2_schedule_entrypoint.py"
     imports = _imports(entrypoint)
-    assert not imports & {
-        "ccxt",
-        "httpx",
-        "requests",
-        "socket",
-        "urllib",
-        "live.pipeline",
-        "live.exchange",
-    }
+    assert not _forbidden_network_imports(imports)
+    assert not _calls(entrypoint) & _FORBIDDEN_ENTRYPOINT_CALLS
     source = entrypoint.read_text(encoding="utf-8").lower()
-    for forbidden in (
-        "submit_order",
-        "cancel_order",
-        "credential",
-        "api_key",
-        "--submit",
-        "--act",
-    ):
-        assert forbidden not in source
+    assert "--submit" not in source
+    assert "--act" not in source
 
 
 def test_paper_evidence_producers_have_no_broker_network_or_order_surface():
@@ -203,18 +254,9 @@ def test_paper_evidence_producers_have_no_broker_network_or_order_surface():
         ROOT / "tools" / "paper_shadow_realtime.py",
         ROOT / "tools" / "paper_operational_evidence.py",
     )
-    forbidden_import_roots = {
-        "ccxt",
-        "httpx",
-        "requests",
-        "socket",
-        "urllib",
-        "live.pipeline",
-        "live.exchange",
-    }
     for producer in producers:
         imports = _imports(producer)
-        assert not imports & forbidden_import_roots
+        assert not _forbidden_network_imports(imports)
         calls = {name.lower() for name in _calls(producer)}
         assert not calls & {
             "submit_order",

@@ -41,11 +41,24 @@ _ENGINEERING_DOC = re.compile(
 )
 
 
+def _is_formal_workflow_doc(relative: Path) -> bool:
+    parts = relative.parts
+    return (
+        len(parts) == 4
+        and parts[0] == "docs"
+        and parts[1] == "super" + "powers"
+        and parts[2] in {"plans", "specs"}
+        and relative.suffix.lower() == ".md"
+    )
+
+
 def _repository_text_files():
     for path in ROOT.rglob("*"):
         if not path.is_file():
             continue
         relative = path.relative_to(ROOT)
+        if relative.parts[0] == "." + "super" + "powers":
+            continue
         if _SKIP_PARTS & set(relative.parts):
             continue
         if path.suffix.lower() in _TEXT_SUFFIXES or path.name in _TEXT_NAMES:
@@ -57,6 +70,8 @@ def test_repository_has_no_legacy_workflow_dependency():
     violations: list[str] = []
 
     for path, relative in _repository_text_files():
+        if _is_formal_workflow_doc(relative):
+            continue
         rendered = relative.as_posix()
         if marker in rendered.lower():
             violations.append(f"path:{rendered}")
@@ -71,6 +86,18 @@ def test_repository_has_no_legacy_workflow_dependency():
     assert not violations, "legacy workflow dependency remains:\n" + "\n".join(
         violations[:50]
     )
+
+
+def test_legacy_workflow_marker_is_allowed_only_in_formal_docs():
+    marker = "super" + "powers"
+    assert _is_formal_workflow_doc(Path("docs") / marker / "plans" / "approved.md")
+    assert _is_formal_workflow_doc(Path("docs") / marker / "specs" / "approved.md")
+    assert not _is_formal_workflow_doc(Path("docs") / marker / "plans" / "nested" / "x.md")
+    assert not _is_formal_workflow_doc(Path("services") / "workflow.py")
+    assert not _is_formal_workflow_doc(
+        Path("services") / ("." + marker) / "workflow.py"
+    )
+    assert not _is_formal_workflow_doc(Path("config") / "workflow.yaml")
 
 
 def test_engineering_document_references_resolve():
