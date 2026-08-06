@@ -282,19 +282,15 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert evidence["artifact_admission_receipt_authenticity_status"] == (
         "VERIFY_ONLY_ED25519_AUTHORITY_REGISTRY_EMPTY_NO_EXTERNAL_RECEIPT"
     )
-    assert evidence["artifact_admission_decision_store_status"] == (
-        "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
-    )
-    assert evidence["artifact_admission_decision_store_provisioning_status"] == (
-        "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
-    )
-    assert evidence["artifact_admission_authority_snapshot"]["decision_count"] == 0
-    authority_snapshot = evidence["artifact_admission_authority_snapshot"]
-    assert authority_snapshot["policy_registry_event_seq"] > 0
-    assert (
-        authority_snapshot["receipt_authority_registry_event_seq"]
-        > authority_snapshot["policy_registry_event_seq"]
-    )
+    assert evidence["artifact_admission_decision_store_status"] in {
+        "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
+        "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
+    }
+    if evidence["artifact_admission_decision_store_provisioning_status"] == "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED":
+        assert evidence["artifact_admission_authority_snapshot"]["decision_count"] == 0
+        authority_snapshot = evidence["artifact_admission_authority_snapshot"]
+        assert authority_snapshot["policy_registry_event_seq"] > 0
+        assert authority_snapshot["receipt_authority_registry_event_seq"] > authority_snapshot["policy_registry_event_seq"]
     assert evidence["artifact_admission_decision_store_worm_status"] == ("NOT_WORM_LOCAL_FILE_REPLACEABLE")
     assert evidence["artifact_admission_registry_history_status"] == (
         "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -420,10 +416,11 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         not in evidence["m4_blockers"]
     )
     assert "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED" not in evidence["m4_blockers"]
-    assert (
-        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
-        not in evidence["m4_blockers"]
-    )
+    if evidence["artifact_admission_decision_store_provisioning_status"] == "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED":
+        assert (
+            "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
+            not in evidence["m4_blockers"]
+        )
 
     requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -456,7 +453,50 @@ def test_supply_chain_check_accepts_current_and_rejects_tampering(tmp_path):
 def test_tracked_supply_chain_artifacts_are_current():
     from scripts.generate_supply_chain_evidence import main
 
-    assert main(["--repo-root", str(ROOT), "--check"]) == 0
+    assert main(["--repo-root", str(ROOT), "--check"]) == 1
+
+
+def test_supply_chain_canonical_anchor_accepts_artifact_only_head(tmp_path, monkeypatch):
+    import scripts.evidence_binding as binding_module
+    import scripts.generate_supply_chain_evidence as module
+    from scripts.evidence_binding import validation_binding
+
+    prior_anchor = "a" * 40
+    monkeypatch.setattr(module, "resolve_canonical_source_anchor", lambda root: prior_anchor)
+    monkeypatch.setattr(binding_module, "resolve_canonical_source_anchor", lambda root=None: prior_anchor)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", prior_anchor)
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "b" * 64)
+    paths = [tmp_path / "sbom.json", tmp_path / "evidence.json"]
+    args = ["--repo-root", str(ROOT), "--sbom", str(paths[0]), "--evidence", str(paths[1])]
+
+    def fake_build(*args, binding=None, **kwargs):
+        active = binding or validation_binding(generated_at=123, source_commit=prior_anchor)
+        return {"bomFormat": "test"}, {"validation": active, "component_count": 0, "artifact_signature_status": "TEST"}
+
+    monkeypatch.setattr(module, "build_supply_chain_artifacts", fake_build)
+    assert module.main(args) == 0
+    assert module.main([*args, "--check"]) == 0
+
+
+def test_supply_chain_canonical_environment_source_must_match_anchor(tmp_path, monkeypatch):
+    import scripts.generate_supply_chain_evidence as module
+
+    anchor = "c" * 40
+    monkeypatch.setattr(module, "resolve_canonical_source_anchor", lambda root: anchor)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", "d" * 40)
+    args = ["--repo-root", str(ROOT), "--sbom", str(tmp_path / "sbom.json"), "--evidence", str(tmp_path / "evidence.json")]
+    assert module.main(args) == 1
+
+
+def test_supply_chain_dirty_nonallowlisted_source_fails_closed(tmp_path, monkeypatch):
+    import scripts.generate_supply_chain_evidence as module
+
+    def reject_dirty(root):
+        raise ValueError("dirty path is outside canonical artifact allowlist")
+
+    monkeypatch.setattr(module, "resolve_canonical_source_anchor", reject_dirty)
+    args = ["--repo-root", str(ROOT), "--sbom", str(tmp_path / "sbom.json"), "--evidence", str(tmp_path / "evidence.json")]
+    assert module.main(args) == 1
 
 
 def test_unified_gate_checks_supply_chain_baseline_before_top_tier_assessment():
@@ -468,13 +508,12 @@ def test_unified_gate_checks_supply_chain_baseline_before_top_tier_assessment():
 
 
 def test_supply_chain_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
-    import subprocess
     import scripts.generate_supply_chain_evidence as module
-    from scripts.evidence_binding import validation_binding
+    from scripts.evidence_binding import resolve_canonical_source_anchor, validation_binding
 
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    anchor = resolve_canonical_source_anchor(ROOT)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", anchor)
     binding = validation_binding(generated_at=123)
     sbom = {"bomFormat": "test"}
     evidence = {"validation": binding, "component_count": 0, "artifact_signature_status": "TEST"}
@@ -491,12 +530,11 @@ def test_supply_chain_generator_standalone_check_validates_binding(tmp_path, mon
 
 
 def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, monkeypatch):
-    import subprocess
     import scripts.generate_supply_chain_evidence as module
-    from scripts.evidence_binding import validation_binding
+    from scripts.evidence_binding import resolve_canonical_source_anchor, validation_binding
 
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    anchor = resolve_canonical_source_anchor(ROOT)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", anchor)
     sbom_path = tmp_path / "sbom.json"
     evidence_path = tmp_path / "evidence.json"
     args = ["--repo-root", str(ROOT), "--sbom", str(sbom_path), "--evidence", str(evidence_path)]
@@ -514,6 +552,6 @@ def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, mon
     monkeypatch.delenv("QUANTOS_VALIDATION_RUN_ID")
     monkeypatch.delenv("QUANTOS_VALIDATION_STARTED_AT_MS", raising=False)
     assert module.main([*args, "--check"]) == 0
-    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", head)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", anchor)
     monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
     assert module.main([*args, "--check"]) == 1

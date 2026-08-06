@@ -22,6 +22,7 @@ if str(REPO) not in sys.path:
 from quantos.contracts.hashing import source_file_sha256  # noqa: E402
 from scripts.evidence_binding import (  # noqa: E402
     assert_current_binding,
+    resolve_canonical_source_anchor,
     validation_binding,
 )
 from services.governance.vulnerability_evidence import (  # noqa: E402
@@ -1051,11 +1052,6 @@ def _require_current(path: Path, document: dict[str, Any], *, label: str) -> Non
         raise ValueError(f"{label} artifact drift: regenerate {path}")
 
 
-def _git_head(root: Path) -> str:
-    import subprocess
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate deterministic QUANTOS supply-chain baseline evidence")
     parser.add_argument("--repo-root", default=str(REPO))
@@ -1065,11 +1061,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         existing_binding = None
+        root = Path(args.repo_root).resolve()
+        canonical_source = resolve_canonical_source_anchor(root)
         if args.check:
             evidence_path = Path(args.evidence)
             existing = load_json_without_duplicate_keys(evidence_path.read_bytes())
-            assert_current_binding(existing, head=_git_head(Path(args.repo_root)))
+            assert_current_binding(
+                existing,
+                head=canonical_source,
+                repo_root=root,
+            )
             existing_binding = existing["validation"]
+        else:
+            existing_binding = validation_binding(
+                generated_at=0,
+                source_commit=canonical_source,
+            )
         sbom, evidence = build_supply_chain_artifacts(args.repo_root, binding=existing_binding)
         if args.check:
             _require_current(Path(args.sbom), sbom, label="SBOM")
