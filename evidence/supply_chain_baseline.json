@@ -450,7 +450,7 @@
     "tests/governance/test_strong_identity.py": "899582108139294de82b9971f61df9bd46e984ac3937e5228a35dd0ec526601f",
     "tests/governance/test_strong_identity_evidence.py": "a75f107a78468007962b66ff014c8db6a576570a30672d39bff46b94f9eae1a1",
     "tests/governance/test_supply_chain_evidence.py": "464faa951108cccc411d9f72fa1d49fc5f33efc9d3861bf61265e4dc376c6ee8",
-    "tests/governance/test_top_tier_assessment.py": "772c61b162137b76467a64c522964224278197fa3f7872f3e3621b2f59ef3968",
+    "tests/governance/test_top_tier_assessment.py": "eec3a07b1c9f03fa8107e5b957db18a197964c9e678cc415784bedbaa19629ac",
     "tests/intelligence/test_external_provider_runtime.py": "b2772ee1538b0703ca8e8fbc2c915ad1c8de856b89eb246799355d73c64933a8",
     "tests/live/test_kill_switch_reset_cli.py": "199ec67f07f1869fb59a9b5d85503d5f9a8d8e6d67cb1b698ec9b4b79e941518",
     "tests/live/test_live_risk_sentinel.py": "5b57d943e9c34028dff4f0b85c0fcb25139f67082b93fed318d6fb29b97c4c23",
@@ -555,9 +555,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786064057625,
-    "run_id": "614cbf83bd207adf34dc55f520cab4b23bee860bf7fe138882adde652d69e79d",
-    "source_commit": "cd41cfae171d185e23fc415431b00844fe8da0ee"
+    "generated_at": 1786082699471,
+    "run_id": "53dce1e30e40d70dc0f0184e7aaaf52caf9ef5c2ad424b17b94e3bb509351213",
+    "source_commit": "9a904ab83389ae1863360dd3cc17aa484b5efc94"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
