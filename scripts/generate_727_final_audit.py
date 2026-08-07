@@ -244,9 +244,6 @@ def _validation(root: Path) -> dict[str, Any]:
         "overall_status": report.get("overall_status"),
         "reported_commit": report.get("commit"),
         "head_commit": canonical_source,
-        "generated_at_ms": (
-            binding.get("generated_at") if binding_current else None
-        ),
         "validate_script_sha256": validate_hash,
         "reported_validate_script_sha256": report.get("validate_script_sha256"),
     }
@@ -1141,17 +1138,10 @@ def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> st
 
 def build_phase13(*, root: Path = ROOT, now_ms: int | None = None) -> tuple[dict[str, dict[str, Any]], str]:
     root = root.resolve()
+    if now_ms is None:
+        now_ms = int(time.time_ns() // 1_000_000)
     flags = _safety_flags()
     validation = _validation(root)
-    if now_ms is None:
-        canonical_generated_at = validation.get("generated_at_ms")
-        now_ms = (
-            canonical_generated_at
-            if isinstance(canonical_generated_at, int)
-            and not isinstance(canonical_generated_at, bool)
-            and canonical_generated_at >= 0
-            else int(time.time_ns() // 1_000_000)
-        )
     reports = {
         "evidence/autonomy_readiness.json": _autonomy(root, now_ms, flags, validation),
         "evidence/trial_ledger_integrity.json": _trial_ledger(root, now_ms),
@@ -1165,7 +1155,16 @@ def build_phase13(*, root: Path = ROOT, now_ms: int | None = None) -> tuple[dict
     return reports, markdown
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
+def _write_json(
+    path: Path, payload: dict[str, Any], *, relative_path: str | None = None
+) -> None:
+    if relative_path is not None and path.is_file():
+        try:
+            actual = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            actual = None
+        if phase13_artifact_matches(relative_path, actual, payload):
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
@@ -1186,6 +1185,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _write_text(path: Path, text: str) -> None:
+    if path.is_file():
+        try:
+            actual = path.read_text(encoding="utf-8")
+        except OSError:
+            actual = None
+        if actual is not None and _strip_markdown_volatile(actual) == _strip_markdown_volatile(text):
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
@@ -1233,7 +1239,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for relative_path, payload in reports.items():
-        _write_json(root / relative_path, payload)
+        _write_json(root / relative_path, payload, relative_path=relative_path)
     _write_text(markdown_path, markdown)
     statuses = ", ".join(
         f"{Path(path).stem}={payload.get('status', payload.get('phase13_status', payload.get('verdict')))}"

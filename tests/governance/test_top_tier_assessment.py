@@ -3409,6 +3409,10 @@ def test_top_tier_refresh_reuses_current_canonical_time(tmp_path, monkeypatch):
     assert first["validation"]["generated_at"] == 123
     assert second["validation"] == first["validation"]
 
+    assert main([*args, "--as-of-ms", "456"]) == 0
+    overridden = json.loads(json_out.read_text(encoding="utf-8"))
+    assert overridden["validation"]["generated_at"] == 456
+
 
 def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
     from scripts.assess_top_tier import main

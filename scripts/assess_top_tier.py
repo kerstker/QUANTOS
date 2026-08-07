@@ -99,18 +99,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.check:
             raise ValueError("assessment artifact is missing")
         as_of_ms = (
-            prior_generated_at
+            args.as_of_ms
+            if args.as_of_ms is not None
+            else prior_generated_at
             if isinstance(prior_generated_at, int)
-            else (time.time_ns() // 1_000_000 if args.as_of_ms is None else args.as_of_ms)
+            else time.time_ns() // 1_000_000
         )
         report = assess_repository(
             repo_root,
             Path(args.requirements),
             as_of_ms=as_of_ms,
         )
-        report["validation"] = prior_binding or validation_binding(
-            generated_at=as_of_ms,
-            source_commit=canonical_source,
+        report["validation"] = (
+            prior_binding
+            if args.as_of_ms is None and prior_binding is not None
+            else validation_binding(
+                generated_at=as_of_ms,
+                source_commit=canonical_source,
+            )
         )
         json_path, matrix_path = Path(args.json_out), Path(args.matrix_out)
         if args.check:

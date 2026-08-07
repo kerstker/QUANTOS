@@ -10,6 +10,8 @@ from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
     _validation,
+    _write_json,
+    _write_text,
     build_phase13,
     phase13_artifact_matches,
 )
@@ -130,36 +132,28 @@ def test_phase13_outputs_exist_and_are_fail_closed() -> None:
         assert payload["safety_flags"]["REQUIRE_HUMAN_APPROVAL"] is True
 
 
-def test_phase13_defaults_to_canonical_validation_time_and_source(
-    tmp_path: Path, monkeypatch
+def test_phase13_write_boundary_preserves_semantically_current_artifacts(
+    tmp_path: Path
 ) -> None:
-    canonical_time = 1_800_000_000_123
-    canonical_source = "a" * 40
-    monkeypatch.setattr(
-        "scripts.generate_727_final_audit._validation",
-        lambda _root: {
-            "current": True,
-            "selection_scope": "ALL",
-            "overall_status": "PASS",
-            "reported_commit": canonical_source,
-            "head_commit": canonical_source,
-            "generated_at_ms": canonical_time,
-            "validate_script_sha256": "b" * 64,
-            "reported_validate_script_sha256": "b" * 64,
-        },
-    )
-    monkeypatch.setattr(
-        "scripts.generate_727_final_audit._commit", lambda _root: canonical_source
-    )
+    relative_path = "evidence/autonomy_readiness.json"
+    json_path = tmp_path / relative_path
+    text_path = tmp_path / "audit.md"
+    first = {"generated_at_ms": 100, "commit": "a" * 40, "status": "NOT_READY"}
+    second = {"generated_at_ms": 200, "commit": "b" * 40, "status": "NOT_READY"}
+    _write_json(json_path, first, relative_path=relative_path)
+    _write_text(text_path, "- 生成时间（Unix ms）：`100`\n- commit：`a`\nstatus\n")
+    json_before = (json_path.read_bytes(), json_path.stat().st_mtime_ns)
+    text_before = (text_path.read_bytes(), text_path.stat().st_mtime_ns)
 
-    reports, markdown = build_phase13(root=tmp_path)
+    _write_json(json_path, second, relative_path=relative_path)
+    _write_text(text_path, "- 生成时间（Unix ms）：`200`\n- commit：`b`\nstatus\n")
 
-    assert all(
-        payload["generated_at_ms"] == canonical_time
-        for payload in reports.values()
-    )
-    assert reports["evidence/trial_ledger_integrity.json"]["commit"] == canonical_source
-    assert f"生成时间（Unix ms）：`{canonical_time}`" in markdown
+    assert (json_path.read_bytes(), json_path.stat().st_mtime_ns) == json_before
+    assert (text_path.read_bytes(), text_path.stat().st_mtime_ns) == text_before
+
+    changed = {**second, "status": "READY_FOR_RESEARCH_AUTONOMY"}
+    _write_json(json_path, changed, relative_path=relative_path)
+    assert json.loads(json_path.read_text(encoding="utf-8"))["status"] == changed["status"]
 
 
 def test_phase13_current_artifacts_match_read_only_generator() -> None:
