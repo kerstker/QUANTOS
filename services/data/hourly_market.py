@@ -145,6 +145,13 @@ def _validate_panel_core(schema_version: str, as_of: int, bars: tuple[HourlyBar,
                          open_interest: tuple[HourlyOpenInterest, ...]) -> None:
     if schema_version != _SCHEMA_VERSION:
         raise ValueError("unsupported schema_version")
+    for name, rows, expected in (
+        ("bars", bars, HourlyBar),
+        ("funding", funding, HourlyFunding),
+        ("open_interest", open_interest, HourlyOpenInterest),
+    ):
+        if any(not isinstance(row, expected) for row in rows):
+            raise ValueError(f"{name} must contain {expected.__name__} records")
     series = (bars, funding, open_interest)
     for rows in series:
         _validate_order(rows)

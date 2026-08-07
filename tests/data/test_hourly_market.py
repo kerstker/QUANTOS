@@ -82,7 +82,21 @@ def test_invalid_order_and_interval_rejected():
         aggregate_bars((rows[0],), interval_seconds=True)
 
 
-def test_panel_direct_construction_enforces_all_invariants():
+def test_panel_direct_construction_rejects_invalid_bar_element():
+    with pytest.raises(ValueError, match="bars must contain HourlyBar records"):
+        HourlyMarketPanel("hourly-market-v1", 0, (object(),), (), (), "digest")
+
+
+def test_panel_direct_construction_rejects_invalid_funding_element():
+    with pytest.raises(ValueError, match="funding must contain HourlyFunding records"):
+        HourlyMarketPanel("hourly-market-v1", 0, (), (object(),), (), "digest")
+
+
+def test_panel_direct_construction_rejects_invalid_open_interest_element():
+    with pytest.raises(ValueError, match="open_interest must contain HourlyOpenInterest records"):
+        HourlyMarketPanel("hourly-market-v1", 0, (), (), (object(),), "digest")
+
+
     bar = HourlyBar("B", 10, 10, 1, 1, 1, 1, 1)
     with pytest.raises(ValueError, match="schema_version"):
         HourlyMarketPanel("wrong", 10, (bar,), (), (), "digest")
