@@ -259,20 +259,20 @@ def test_receipt_reclaims_stale_claim(tmp_path):
     path = str(tmp_path / "stale.db")
     ledger = TrialLedger(path)
     ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
-    assert ledger.claim_validation_stage(h(1), "cheap", owner="old", now=100, lease_seconds=5) == "CLAIMED"
-    assert ledger.claim_validation_stage(h(1), "cheap", owner="new", now=106, lease_seconds=5) == "CLAIMED"
+    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="old", now=100, lease_seconds=5) == "CLAIMED"
+    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="new", now=106, lease_seconds=5) == "CLAIMED"
     assert ledger.validation_receipt(h(1))["cheap"]["owner"] == "new"
 
 
 def test_receipt_rejects_phantom_trial(tmp_path):
     with pytest.raises(TrialLedgerError):
-        TrialLedger(str(tmp_path / "phantom.db")).claim_validation_stage(h(901), "cheap")
+        TrialLedger(str(tmp_path / "phantom.db")).claim_validation_stage(h(901), "cheap", panel_digest="a"*64, policy_digest="b"*64)
 
 
 def test_receipt_prefix_hole_is_rejected(tmp_path):
     path = str(tmp_path / "hole.db")
     ledger = TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
-    ledger.claim_validation_stage(h(1), "cheap")
+    ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64)
     with pytest.raises(TrialLedgerError): ledger.complete_validation_stage(h(1), "cheap", "DONE", {"evidence_hash": h(902)}, owner="legacy", now=0)
     ledger.verify()
     path = str(tmp_path / "receipt-tamper.db")
@@ -280,7 +280,7 @@ def test_receipt_prefix_hole_is_rejected(tmp_path):
     ledger.append(rec(801)); ledger.append(rec(801, status="RUNNING", index=1, at=2))
     with pytest.raises(TrialLedgerError):
         ledger.save_validation_artifact(tid, {"nested": {1: "bad"}})
-    ledger.claim_validation_stage(tid, "cheap")
+    ledger.claim_validation_stage(tid, "cheap", panel_digest="a"*64, policy_digest="b"*64)
     with pytest.raises(TrialLedgerError):
         ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
     ledger.verify()

@@ -137,7 +137,14 @@ class TrialLedger:
             # Validate legacy/current core objects before additive schema creation.
             with self._lock:
                 _preflight_existing_schema(self._c)
-                self._c.executescript(_SCHEMA)
+                try:
+                    self._c.executescript("BEGIN;" + chr(10) + _SCHEMA + chr(10) + "COMMIT;")
+
+
+                except Exception:
+                    try: self._c.execute("ROLLBACK")
+                    except sqlite3.Error: pass
+                    raise
             self._require_schema()
         except TrialLedgerError:
             if self._c is not None:
@@ -303,9 +310,9 @@ class TrialLedger:
         self._c.execute("INSERT INTO validation_receipt_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(trial_id,stage,attempt-1,state,encoded,payload_hash,seq,prev,row_hash,owner,lease_until,attempt))
         self._c.execute("UPDATE validation_receipt_heads SET event_count=?,head_hash=? WHERE id=1",(seq,row_hash))
 
-    def claim_validation_stage(self, trial_id: str, stage: str, *, owner: str = "legacy", now: int = 0, lease_seconds: int = 60, panel_digest: str|None = None, policy_digest: str|None = None) -> str:
+    def claim_validation_stage(self, trial_id: str, stage: str, *, owner: str = "legacy", now: int = 0, lease_seconds: int = 60, panel_digest: str, policy_digest: str) -> str:
         self._validate_receipt_identity(trial_id,stage)
-        if not isinstance(owner,str) or not owner or not isinstance(now,int) or isinstance(now,bool) or not isinstance(lease_seconds,int) or lease_seconds <= 0: raise TrialLedgerError("invalid receipt lease")
+        if not isinstance(owner,str) or not owner or not isinstance(now,int) or isinstance(now,bool) or not isinstance(lease_seconds,int) or lease_seconds <= 0 or type(panel_digest) is not str or not _HEX64.fullmatch(panel_digest) or type(policy_digest) is not str or not _HEX64.fullmatch(policy_digest): raise TrialLedgerError("invalid receipt lease or execution binding")
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked()

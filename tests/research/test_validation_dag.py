@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import sqlite3
 import threading
 
 import pytest
@@ -272,7 +273,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     monkeypatch.setattr(CostModel, "trade_cost", lambda self, *a, **k: (calls.__setitem__("cost", calls["cost"] + 1) or original_trade_cost(self, *a, **k)))
     monkeypatch.setattr(CostModel, "impact_bps", lambda self, *a, **k: (calls.__setitem__("impact", calls["impact"] + 1) or original_impact_bps(self, *a, **k)))
     from services.research.validation_dag import ValidationContext, ValidationPolicy
-    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 20, "n_trials": 2, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "family_pvalues": {"family-a": .001}, "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": ("a" * 64, "b" * 64)}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),),), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": (.1, .2), "regime_labels": (0, 1), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": (.1, .2), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
+    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 20, "n_trials": 2, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "family_pvalues": {"family-a": .001}, "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": ("a" * 64, "b" * 64)}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),),), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": (.1, .2), "regime_labels": (0, 1), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": (.1, .2), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
     policy = ValidationPolicy()
     assert all(stage.evaluate(ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)).outcome == "PASS" for stage in production_adapters())
     candidate=make_candidate(policy)
@@ -293,3 +294,43 @@ def test_production_cheap_block_short_circuits_oos_realism(tmp_path):
     assert receipt["cheap"]["payload"]["outcome"] == "BLOCK"
     assert receipt["oos"]["payload"]["evidence"].get("short_circuit") is True
     assert receipt["realism"]["payload"]["evidence"].get("short_circuit") is True
+
+
+def test_production_rejects_class_monkeypatch(tmp_path, monkeypatch):
+    policy=ValidationPolicy(); candidate=make_candidate(policy)
+    from services.research.validation_dag import CheapValidationAdapter
+    original=CheapValidationAdapter.evaluate
+    monkeypatch.setattr(CheapValidationAdapter, "evaluate", lambda self, context: StageEvidence("cheap", "1", "PASS", {"forged": True}, implementation_id=self.implementation_id))
+    with TrialLedger(str(tmp_path / "sealed.db")) as ledger:
+        with pytest.raises(ValueError, match="sealed"):
+            run_validation_dag(candidate, {}, policy, ledger, event_at=1, production=True)
+    assert CheapValidationAdapter.evaluate is not original
+
+
+def test_event_at_change_never_reuses_artifact(tmp_path):
+    policy=make_policy(Stage("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy)
+    with TrialLedger(str(tmp_path / "events.db")) as ledger:
+        first=run_validation_dag(candidate, {}, policy, ledger, event_at=10)
+        second=run_validation_dag(candidate, {}, policy, ledger, event_at=20)
+    assert first.trial_id != second.trial_id
+
+
+def test_concurrent_cheap_block_returns_same_artifact(tmp_path):
+    calls=[]; stages=tuple(Stage(name, "BLOCK" if name == "cheap" else "PASS", calls=calls) for name in ("cheap", "oos", "realism")); policy=make_policy(*stages); candidate=make_candidate(policy)
+    with TrialLedger(str(tmp_path / "concurrent-block.db")) as ledger:
+        results=[]; errors=[]
+        def worker():
+            try: results.append(run_validation_dag(candidate, {}, policy, ledger, event_at=1))
+            except Exception as exc: errors.append(exc)
+        threads=[threading.Thread(target=worker) for _ in range(4)]
+        [x.start() for x in threads]; [x.join() for x in threads]
+    assert not errors and len(results) == 4 and len({x.trial_id for x in results}) == 1 and all(x.verdict == "BLOCK" for x in results)
+
+
+def test_terminal_receipts_rebuild_artifact_without_provider_rerun(tmp_path):
+    calls=[]; stages=tuple(Stage(name, calls=calls) for name in ("cheap", "oos", "realism")); policy=make_policy(*stages); candidate=make_candidate(policy); path=str(tmp_path / "crash.db")
+    with TrialLedger(path) as ledger:
+        first=run_validation_dag(candidate, {}, policy, ledger, event_at=1)
+        con=sqlite3.connect(path); con.execute("DROP TRIGGER validation_receipts_no_delete"); con.execute("DELETE FROM validation_receipt_events WHERE stage='__artifact__'"); con.execute("UPDATE validation_receipt_heads SET event_count=(SELECT count(*) FROM validation_receipt_events), head_hash=(SELECT coalesce((SELECT row_hash FROM validation_receipt_events ORDER BY global_seq DESC LIMIT 1),'') FROM validation_receipt_events LIMIT 1)"); con.commit(); con.close()
+        before=list(calls); second=run_validation_dag(candidate, {}, policy, ledger, event_at=1)
+    assert second == first and calls == before
