@@ -97,6 +97,7 @@ def test_panel_direct_construction_rejects_invalid_open_interest_element():
         HourlyMarketPanel("hourly-market-v1", 0, (), (), (object(),), "digest")
 
 
+def test_panel_direct_construction_enforces_core_invariants():
     bar = HourlyBar("B", 10, 10, 1, 1, 1, 1, 1)
     with pytest.raises(ValueError, match="schema_version"):
         HourlyMarketPanel("wrong", 10, (bar,), (), (), "digest")
@@ -105,16 +106,24 @@ def test_panel_direct_construction_rejects_invalid_open_interest_element():
     duplicate = (bar, bar)
     with pytest.raises(ValueError, match="strictly"):
         HourlyMarketPanel("hourly-market-v1", 10, duplicate, (), (), "digest")
-    with pytest.raises(ValueError, match="instrument"):
-        HourlyMarketPanel("hourly-market-v1", 10, (bar,), (HourlyFunding("C", 10, 10, 0),), (), "digest")
 
 
-def test_panel_rejects_future_and_mismatched_series():
+def test_panel_allows_sparse_auxiliary_series():
+    bars = (
+        HourlyBar("BTC", 0, 0, 10, 11, 9, 10, 1),
+        HourlyBar("BTC", 3600, 3600, 10, 11, 9, 10, 1),
+        HourlyBar("ETH", 0, 0, 2, 3, 1, 2, 1),
+    )
+    funding = (HourlyFunding("BTC", 3600, 3600, 0.001),)
+    open_interest = (HourlyOpenInterest("ETH", 7200, 7200, 100),)
+    panel = HourlyMarketPanel("hourly-market-v1", 7200, bars, funding, open_interest, "digest")
+    validate_panel(panel)
+
+
+def test_panel_rejects_future_records():
     bar = HourlyBar("B", 0, 1, 1, 1, 1, 1, 1)
     with pytest.raises(ValueError, match="as_of"):
         HourlyMarketPanel("hourly-market-v1", 0, (bar,), (), (), "d")
-    with pytest.raises(ValueError, match="instrument"):
-        HourlyMarketPanel("hourly-market-v1", 2, (bar,), (HourlyFunding("C", 0, 1, 0),), (), "d")
 
 
 def test_panel_schema_and_digest_bound():

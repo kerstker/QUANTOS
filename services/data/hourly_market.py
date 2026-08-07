@@ -158,11 +158,6 @@ def _validate_panel_core(schema_version: str, as_of: int, bars: tuple[HourlyBar,
         for row in rows:
             if row.event_time > as_of or row.knowledge_time > as_of:
                 raise ValueError("panel record is after as_of")
-    bar_keys = {(row.instrument, row.event_time) for row in bars}
-    for rows in series[1:]:
-        keys = {(row.instrument, row.event_time) for row in rows}
-        if keys and keys != bar_keys:
-            raise ValueError("panel series instrument/time keys must match bars")
 
 
 def validate_panel(panel: HourlyMarketPanel) -> None:
