@@ -24,8 +24,17 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SUCCESS,
 )
-from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.binance_realtime_store import (
+    MAX_FUTURE_SKEW_MS,
+    BinanceRealtimeStore,
+)
+from services.data.binance_stream_cursor import (
+    StreamCursorRecord,
+    StreamCursorState,
+    StreamCursorStore,
+)
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
+from tools.binance_rest_gap_fill import RestGapFillError, fetch_depth_snapshot
 from tools.cache_io import atomic_write_json
 
 
@@ -111,10 +120,113 @@ def _depth_levels(
     return output
 
 
+def _cursor_fields(record: StreamCursorRecord) -> dict[str, object]:
+    return {
+        "cursor_state": record.state.value,
+        "cursor_update_id": record.cursor_update_id,
+        "cursor_event_time_ms": record.event_time_ms,
+        "cursor_reason_code": record.reason_code,
+        "cursor_row_hash": record.row_hash,
+    }
+
+
+def _recovery_error_code(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "REST_TIMEOUT"
+    if getattr(exc, "code", None) == 429 or "429" in str(exc):
+        return "HTTP_429"
+    if "empty" in str(exc).lower():
+        return "EMPTY_REST_RESULT"
+    if isinstance(exc, (RestGapFillError, ValueError, TypeError, KeyError)):
+        return "REST_GAP_FILL_INVALID"
+    return "REST_GAP_FILL_ERROR"
+
+
+def _recover_depth_cursor(
+    cursor_store: StreamCursorStore,
+    symbol: str,
+    *,
+    observed_at_ms: int,
+    rest_depth_fetch=fetch_depth_snapshot,
+) -> StreamCursorRecord:
+    """Attempt one explicit public-REST recovery; every error stays BLOCKED."""
+    cursor_store.begin_recovery(
+        "depth20",
+        symbol,
+        observed_at_ms=int(observed_at_ms),
+    )
+    try:
+        snapshot = rest_depth_fetch(symbol, observed_at_ms=int(observed_at_ms))
+        if not isinstance(snapshot, Mapping) or not snapshot:
+            raise ValueError("empty result")
+        return cursor_store.complete_recovery(
+            "depth20",
+            symbol,
+            snapshot_update_id=int(snapshot["last_update_id"]),
+            event_time_ms=int(snapshot["event_time_ms"]),
+            observed_at_ms=int(observed_at_ms),
+        )
+    except Exception as exc:  # noqa: BLE001 - fail-closed recovery boundary
+        current = cursor_store.latest("depth20", symbol)
+        if current is not None and current.state is StreamCursorState.RECOVERING:
+            return cursor_store.fail_recovery(
+                "depth20",
+                symbol,
+                observed_at_ms=int(observed_at_ms),
+                error_code=_recovery_error_code(exc),
+            )
+        raise
+
+
+async def _recover_depth_cursor_async(
+    cursor_store: StreamCursorStore,
+    symbol: str,
+    *,
+    observed_at_ms: int,
+    rest_depth_fetch=fetch_depth_snapshot,
+) -> StreamCursorRecord:
+    """Keep SQLite ownership on the event loop while REST runs off-thread."""
+    cursor_store.begin_recovery(
+        "depth20",
+        symbol,
+        observed_at_ms=int(observed_at_ms),
+    )
+    try:
+        snapshot = await asyncio.to_thread(
+            rest_depth_fetch,
+            symbol,
+            observed_at_ms=observed_at_ms,
+        )
+        if not isinstance(snapshot, Mapping) or not snapshot:
+            raise ValueError("empty result")
+        return cursor_store.complete_recovery(
+            "depth20",
+            symbol,
+            snapshot_update_id=int(snapshot["last_update_id"]),
+            event_time_ms=int(snapshot["event_time_ms"]),
+            observed_at_ms=int(observed_at_ms),
+        )
+    except Exception as exc:  # noqa: BLE001 - fail-closed recovery boundary
+        current = cursor_store.latest("depth20", symbol)
+        if current is not None and current.state is StreamCursorState.RECOVERING:
+            return cursor_store.fail_recovery(
+                "depth20",
+                symbol,
+                observed_at_ms=int(observed_at_ms),
+                error_code=_recovery_error_code(exc),
+            )
+        raise
+
+
 class StreamState:
     """In-memory reduction of documented frames into bounded snapshots."""
 
-    def __init__(self, tickers: Sequence[str]) -> None:
+    def __init__(
+        self,
+        tickers: Sequence[str],
+        *,
+        cursor_store: StreamCursorStore | None = None,
+    ) -> None:
         self.symbols = {f"{str(ticker).upper()}USDT" for ticker in tickers}
         self.latest: dict[str, dict[str, Any]] = {
             symbol: {} for symbol in sorted(self.symbols)
@@ -129,6 +241,7 @@ class StreamState:
         self.connections = {"public": False, "market": False}
         self.reconnects = {"public": 0, "market": 0}
         self.last_errors: dict[str, str] = {}
+        self.cursor_store = cursor_store
 
     def _count(self, channel: str) -> None:
         self.event_counts[channel] = self.event_counts.get(channel, 0) + 1
@@ -158,7 +271,7 @@ class StreamState:
             return
         slot = self.latest[symbol]
         if "@rpiDepth" in stream:
-            self._handle_rpi_depth(symbol, data)
+            self._handle_rpi_depth(symbol, data, received_at_ms=received_at_ms)
             self._count("rpiDepth")
         elif "@bookTicker" in stream:
             event_time = _integer(data.get("E", data.get("T")), "book.event_time")
@@ -182,16 +295,37 @@ class StreamState:
             }
             self._count("bookTicker")
         elif "@depth20" in stream:
+            event_time = _integer(data.get("E"), "depth.event_time")
+            transaction_time = _integer(data.get("T"), "depth.transaction_time")
+            first_update_id = _integer(data.get("U"), "depth.first_update_id")
+            final_update_id = _integer(data.get("u"), "depth.final_update_id")
+            previous_final_update_id = _integer(
+                data.get("pu"), "depth.previous_final_update_id"
+            )
+            bids = _depth_levels(data.get("b"), "depth.bids")
+            asks = _depth_levels(data.get("a"), "depth.asks")
+            cursor = (
+                None
+                if self.cursor_store is None
+                else self.cursor_store.observe(
+                    channel="depth20",
+                    instrument_id=symbol,
+                    first_update_id=first_update_id,
+                    final_update_id=final_update_id,
+                    previous_final_update_id=previous_final_update_id,
+                    event_time_ms=event_time,
+                    observed_at_ms=received_at_ms,
+                )
+            )
             slot["depth20"] = {
-                "event_time_ms": _integer(data.get("E"), "depth.event_time"),
-                "transaction_time_ms": _integer(data.get("T"), "depth.transaction_time"),
-                "first_update_id": _integer(data.get("U"), "depth.first_update_id"),
-                "final_update_id": _integer(data.get("u"), "depth.final_update_id"),
-                "previous_final_update_id": _integer(
-                    data.get("pu"), "depth.previous_final_update_id"
-                ),
-                "bids": _depth_levels(data.get("b"), "depth.bids"),
-                "asks": _depth_levels(data.get("a"), "depth.asks"),
+                "event_time_ms": event_time,
+                "transaction_time_ms": transaction_time,
+                "first_update_id": first_update_id,
+                "final_update_id": final_update_id,
+                "previous_final_update_id": previous_final_update_id,
+                "bids": bids,
+                "asks": asks,
+                **({} if cursor is None else _cursor_fields(cursor)),
             }
             self._count("depth20")
         elif "@markPrice" in stream or event == "markPriceUpdate":
@@ -264,6 +398,8 @@ class StreamState:
         self,
         symbol: str,
         data: Mapping[str, Any],
+        *,
+        received_at_ms: int,
     ) -> None:
         event_time = _integer(data.get("E"), "rpi_depth.event_time")
         transaction_time = _integer(
@@ -287,7 +423,24 @@ class StreamState:
             data.get("a"), "rpi_depth.asks", allow_empty=True
         )
         previous = self.rpi_last_update_ids.get(symbol)
-        continuity_break = previous is not None and previous_final_update_id != previous
+        cursor = (
+            None
+            if self.cursor_store is None
+            else self.cursor_store.observe(
+                channel="rpiDepth",
+                instrument_id=symbol,
+                first_update_id=first_update_id,
+                final_update_id=final_update_id,
+                previous_final_update_id=previous_final_update_id,
+                event_time_ms=event_time,
+                observed_at_ms=received_at_ms,
+            )
+        )
+        continuity_break = (
+            not cursor.publishable
+            if cursor is not None
+            else previous is not None and previous_final_update_id != previous
+        )
         bucket = self.rpi_delta_buckets.setdefault(
             symbol,
             {
@@ -333,6 +486,7 @@ class StreamState:
             "rpi_orders_included": True,
             "book_reconstruction": False,
             "paper_fill_eligible": False,
+            **({} if cursor is None else _cursor_fields(cursor)),
         }
 
     def _handle_contract_info(self, data: Mapping[str, Any]) -> None:
@@ -443,13 +597,30 @@ class StreamState:
             ]
             if not times:
                 continue
+            source_event_time_ms = max(times)
+            future_skew_ms = max(0, source_event_time_ms - int(observed_at_ms))
+            if future_skew_ms > MAX_FUTURE_SKEW_MS:
+                raise BinanceStreamDataError(
+                    "exchange event time exceeds bounded future skew"
+                )
+            knowledge_time_ms = max(int(observed_at_ms), source_event_time_ms)
+            depth = latest.get("depth20", {})
+            sequence_contiguous = (
+                not isinstance(depth, Mapping)
+                or "cursor_state" not in depth
+                or depth.get("cursor_state")
+                in {
+                    StreamCursorState.CONTIGUOUS.value,
+                    StreamCursorState.RECOVERED.value,
+                }
+            )
             output[symbol] = {
                 "schema_version": 1,
                 "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
                 "venue": "binance_usdm",
                 "instrument_id": symbol,
-                "event_time_ms": max(times),
-                "knowledge_time_ms": int(observed_at_ms),
+                "event_time_ms": source_event_time_ms,
+                "knowledge_time_ms": knowledge_time_ms,
                 "observed_at_ms": int(observed_at_ms),
                 **latest,
                 "trade_window": dict(self.trade_buckets.get(symbol, {})),
@@ -462,6 +633,9 @@ class StreamState:
                 "quality": {
                     "complete_core": not missing,
                     "missing_channels": missing,
+                    "sequence_contiguous": sequence_contiguous,
+                    "exchange_clock_skew_ms": future_skew_ms,
+                    "future_skew_bound_ms": MAX_FUTURE_SKEW_MS,
                     "rpi_diagnostic_only": True,
                     "private_access": False,
                     "broker_connectivity": False,
@@ -529,6 +703,7 @@ def _status(
     row_count: int,
     chain_valid: bool | None,
     chain_verified_at_ms: int | None,
+    cursor_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     complete = sum(
         1
@@ -547,11 +722,17 @@ def _status(
         and lag_ms <= MAX_STREAM_LAG_MS
         and chain_valid is True
     )
+    if chain_valid is False:
+        verdict = "BLOCKED_STORE_CHAIN"
+    elif cursor_status is not None and cursor_status.get("publishable") is not True:
+        verdict = "BLOCKED_SEQUENCE_GAP"
+    else:
+        verdict = "PASS" if healthy else "WARMING_OR_RECONNECTING"
     return {
         "schema_version": 1,
         "generated_at_ms": observed_at_ms,
         "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
-        "verdict": "PASS" if healthy else "WARMING_OR_RECONNECTING",
+        "verdict": verdict,
         "streaming": any(state.connections.values()),
         "connections": dict(state.connections),
         "reconnects": dict(state.reconnects),
@@ -572,6 +753,7 @@ def _status(
             "chain_valid": chain_valid,
             "chain_verified_at_ms": chain_verified_at_ms,
         },
+        "cursor": None if cursor_status is None else dict(cursor_status),
         "routes": {
             "public": f"{BASE_WSS}/public",
             "market": f"{BASE_WSS}/market",
@@ -603,6 +785,7 @@ async def run_stream(
     flush_seconds: float = FLUSH_SECONDS,
     store_path: str = DEFAULT_STORE,
     status_path: str = DEFAULT_STATUS,
+    rest_depth_fetch=fetch_depth_snapshot,
 ) -> dict[str, Any]:
     if duration_seconds <= 0 or flush_seconds <= 0:
         raise ValueError("duration and flush interval must be positive")
@@ -611,7 +794,8 @@ async def run_stream(
     if PathLike:
         os.makedirs(PathLike, exist_ok=True)
     store = BinanceRealtimeStore(store_path, create=True)
-    state = StreamState(selected)
+    cursor_store = StreamCursorStore(store_path, create=True)
+    state = StreamState(selected, cursor_store=cursor_store)
     urls = stream_urls(selected)
     stop = asyncio.Event()
     deadline = time.monotonic() + duration_seconds
@@ -625,6 +809,21 @@ async def run_stream(
             while time.monotonic() < deadline:
                 await asyncio.sleep(min(flush_seconds, max(0.0, deadline - time.monotonic())))
                 observed_at_ms = int(time.time() * 1000)
+                for symbol in sorted(state.symbols):
+                    cursor = cursor_store.latest("depth20", symbol)
+                    if cursor is not None and cursor.state in {
+                        StreamCursorState.GAP_DETECTED,
+                        StreamCursorState.BLOCKED,
+                    }:
+                        recovered = await _recover_depth_cursor_async(
+                            cursor_store,
+                            symbol,
+                            observed_at_ms=observed_at_ms,
+                            rest_depth_fetch=rest_depth_fetch,
+                        )
+                        depth = state.latest[symbol].get("depth20")
+                        if isinstance(depth, dict):
+                            depth.update(_cursor_fields(recovered))
                 snapshots = state.snapshots(observed_at_ms)
                 for snapshot in snapshots.values():
                     store.append_snapshot(snapshot)
@@ -636,6 +835,9 @@ async def run_stream(
                     row_count=store.row_count(),
                     chain_valid=chain_valid,
                     chain_verified_at_ms=chain_verified_at_ms,
+                    cursor_status=cursor_store.trading_watermark(
+                        (("depth20", symbol) for symbol in sorted(state.symbols))
+                    ),
                 )
                 atomic_write_json(status_path, latest_status, indent=2)
         finally:
@@ -663,6 +865,7 @@ async def run_stream(
             verify_chain_loop(),
         )
     finally:
+        cursor_store.close()
         store.close()
     return latest_status
 
@@ -689,7 +892,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("binance realtime stream: stopped by operator")
         return SCHEDULE_EXIT_SUCCESS
     except Exception as exc:
-        print(f"binance realtime stream: BLOCK ({type(exc).__name__})")
+        detail = str(exc).replace("\n", " ")[:160]
+        print(
+            f"binance realtime stream: BLOCK ({type(exc).__name__})"
+            f" {detail}"
+        )
         return SCHEDULE_EXIT_FAILURE
     coverage = status.get("coverage", {})
     print(
@@ -700,7 +907,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     return (
         SCHEDULE_EXIT_SUCCESS
-        if coverage.get("complete_core") == coverage.get("requested")
+        if (
+            status.get("verdict") == "PASS"
+            and coverage.get("complete_core") == coverage.get("requested")
+        )
         else SCHEDULE_EXIT_FAILURE
     )
 

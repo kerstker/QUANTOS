@@ -208,3 +208,61 @@ def test_fetch_oi_days_rest_skips_day_with_missing_endpoint_row():
     assert out == {}
     assert failures[0]["kind"] == "NOT_FOUND"
     assert "takerlongshortRatio" in failures[0]["message"]
+
+
+# --- realtime depth snapshot recovery ---
+
+
+def test_parse_depth_snapshot_requires_nonempty_valid_book_and_watermark():
+    payload = {
+        "lastUpdateId": 42,
+        "E": 9_900,
+        "T": 9_899,
+        "bids": [["99.0", "2.0"]],
+        "asks": [["101.0", "3.0"]],
+    }
+    assert gf.parse_depth_snapshot(payload, observed_at_ms=10_000) == {
+        "last_update_id": 42,
+        "event_time_ms": 9_900,
+        "transaction_time_ms": 9_899,
+        "bids": [[99.0, 2.0]],
+        "asks": [[101.0, 3.0]],
+    }
+
+    for bad in (
+        {},
+        {**payload, "lastUpdateId": -1},
+        {**payload, "bids": []},
+        {**payload, "asks": [["nan", "3.0"]]},
+        {**payload, "E": 40_001},
+    ):
+        with pytest.raises(gf.RestGapFillError):
+            gf.parse_depth_snapshot(bad, observed_at_ms=10_000)
+
+
+def test_fetch_depth_snapshot_uses_public_usdm_endpoint_without_credentials():
+    calls = []
+
+    def http_get(url, headers):
+        calls.append((url, headers))
+        return {
+            "lastUpdateId": 42,
+            "E": 9_900,
+            "T": 9_899,
+            "bids": [["99.0", "2.0"]],
+            "asks": [["101.0", "3.0"]],
+        }
+
+    result = gf.fetch_depth_snapshot(
+        "BTCUSDT", observed_at_ms=10_000, http_get=http_get
+    )
+    assert result["last_update_id"] == 42
+    assert calls == [
+        (
+            "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000",
+            {"accept": "application/json"},
+        )
+    ]
+
+    with pytest.raises(gf.RestGapFillError):
+        gf.fetch_depth_snapshot("../BTC", observed_at_ms=10_000, http_get=http_get)

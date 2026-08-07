@@ -49,6 +49,17 @@ def test_store_rejects_conflicting_identity_and_future_event_time(tmp_path):
         future["event_time_ms"] = 4_001
         with pytest.raises(BinanceRealtimeStoreError, match="identity"):
             store.append_snapshot(future)
+
+        bounded = _snapshot(5_000)
+        bounded["event_time_ms"] = 5_010
+        bounded["knowledge_time_ms"] = 5_010
+        assert store.append_snapshot(bounded) is True
+
+        excessive = _snapshot(6_000)
+        excessive["event_time_ms"] = 36_001
+        excessive["knowledge_time_ms"] = 36_001
+        with pytest.raises(BinanceRealtimeStoreError, match="identity"):
+            store.append_snapshot(excessive)
     finally:
         store.close()
 

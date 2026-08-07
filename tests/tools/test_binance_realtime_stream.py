@@ -1,6 +1,15 @@
+import asyncio
+import threading
+
+import pytest
+
 from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.binance_stream_cursor import StreamCursorStore
 from tools.binance_realtime_stream import (
+    BinanceStreamDataError,
     StreamState,
+    _recover_depth_cursor,
+    _recover_depth_cursor_async,
     _status,
     _verify_store_chain,
     stream_urls,
@@ -243,6 +252,269 @@ def test_rpi_depth_detects_sequence_break_without_claiming_reconstructed_book():
     assert snapshot["rpi_depth"]["continuity_ok"] is False
     assert snapshot["rpi_depth"]["book_reconstruction"] is False
     assert snapshot["rpi_depth_window"]["continuity_breaks"] == 1
+
+
+def test_durable_cursor_gap_blocks_snapshot_and_status(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        state = StreamState(("BTC",), cursor_store=cursor)
+        base = {
+            "e": "depthUpdate",
+            "E": 9_900,
+            "T": 9_899,
+            "s": "BTCUSDT",
+            "U": 10,
+            "u": 11,
+            "pu": 9,
+            "b": [["99", "2"]],
+            "a": [["101", "3"]],
+            "st": 1,
+        }
+        state.handle(_frame("btcusdt@depth20@500ms", base), received_at_ms=_NOW)
+        gap = dict(base)
+        gap.update({"E": 9_901, "T": 9_900, "U": 20, "u": 21, "pu": 19})
+        state.handle(_frame("btcusdt@depth20@500ms", gap), received_at_ms=_NOW)
+
+        snapshot = state.snapshots(_NOW)["BTCUSDT"]
+        assert snapshot["depth20"]["cursor_state"] == "GAP_DETECTED"
+        assert snapshot["quality"]["sequence_contiguous"] is False
+
+        state.connections = {"public": True, "market": True}
+        cursor_status = cursor.trading_watermark((("depth20", "BTCUSDT"),))
+        status = _status(
+            state,
+            observed_at_ms=_NOW,
+            snapshots={
+                "BTCUSDT": {
+                    "quality": {"complete_core": True, "sequence_contiguous": False}
+                }
+            },
+            store_path=str(tmp_path / "stream.db"),
+            row_count=1,
+            chain_valid=True,
+            chain_verified_at_ms=_NOW,
+            cursor_status=cursor_status,
+        )
+        assert status["verdict"] == "BLOCKED_SEQUENCE_GAP"
+        assert status["cursor"]["publishable"] is False
+    finally:
+        cursor.close()
+
+
+def test_malformed_depth_frame_does_not_advance_durable_cursor(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        state = StreamState(("BTC",), cursor_store=cursor)
+        base = {
+            "e": "depthUpdate",
+            "E": 9_900,
+            "T": 9_899,
+            "s": "BTCUSDT",
+            "U": 10,
+            "u": 11,
+            "pu": 9,
+            "b": [["99", "2"]],
+            "a": [["101", "3"]],
+            "st": 1,
+        }
+        state.handle(_frame("btcusdt@depth20@500ms", base), received_at_ms=_NOW)
+        malformed = dict(base)
+        malformed.update({"E": 9_901, "T": 9_900, "U": 12, "u": 13, "pu": 11})
+        malformed["b"] = [["nan", "2"]]
+        with pytest.raises(BinanceStreamDataError):
+            state.handle(
+                _frame("btcusdt@depth20@500ms", malformed),
+                received_at_ms=_NOW,
+            )
+        assert cursor.latest("depth20", "BTCUSDT").cursor_update_id == 11
+        assert cursor.event_count() == 1
+    finally:
+        cursor.close()
+
+
+def test_snapshot_retains_bounded_exchange_clock_skew_without_breaking_pit(tmp_path):
+    state = StreamState(("BTC",))
+    state.handle(
+        _frame(
+            "btcusdt@depth20@500ms",
+            {
+                "e": "depthUpdate",
+                "E": _NOW + 10,
+                "T": _NOW + 9,
+                "s": "BTCUSDT",
+                "U": 10,
+                "u": 11,
+                "pu": 9,
+                "b": [["99", "2"]],
+                "a": [["101", "3"]],
+                "st": 1,
+            },
+        ),
+        received_at_ms=_NOW,
+    )
+    snapshot = state.snapshots(_NOW)["BTCUSDT"]
+    assert snapshot["event_time_ms"] == _NOW + 10
+    assert snapshot["observed_at_ms"] == _NOW
+    assert snapshot["knowledge_time_ms"] == _NOW + 10
+    assert snapshot["quality"]["exchange_clock_skew_ms"] == 10
+
+    store = BinanceRealtimeStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        assert store.append_snapshot(snapshot) is True
+    finally:
+        store.close()
+
+
+def test_depth_cursor_recovery_requires_snapshot_to_cover_gap(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=9_900,
+            observed_at_ms=10_000,
+        )
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=20,
+            final_update_id=21,
+            previous_final_update_id=19,
+            event_time_ms=9_901,
+            observed_at_ms=10_000,
+        )
+
+        blocked = _recover_depth_cursor(
+            cursor,
+            "BTCUSDT",
+            observed_at_ms=10_001,
+            rest_depth_fetch=lambda *_args, **_kwargs: {
+                "last_update_id": 20,
+                "event_time_ms": 9_902,
+            },
+        )
+        assert blocked.state.value == "BLOCKED"
+        assert blocked.reason_code == "REST_COVERAGE_INCOMPLETE"
+
+        recovered = _recover_depth_cursor(
+            cursor,
+            "BTCUSDT",
+            observed_at_ms=10_002,
+            rest_depth_fetch=lambda *_args, **_kwargs: {
+                "last_update_id": 21,
+                "event_time_ms": 9_903,
+            },
+        )
+        assert recovered.state.value == "RECOVERED"
+        assert recovered.publishable is True
+    finally:
+        cursor.close()
+
+
+@pytest.mark.asyncio
+async def test_async_recovery_keeps_cursor_writes_on_event_loop(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    release = threading.Event()
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=9_900,
+            observed_at_ms=10_000,
+        )
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=20,
+            final_update_id=21,
+            previous_final_update_id=19,
+            event_time_ms=9_901,
+            observed_at_ms=10_000,
+        )
+
+        def fetch(*_args, **_kwargs):
+            assert release.wait(timeout=2)
+            return {"last_update_id": 30, "event_time_ms": 9_903}
+
+        task = asyncio.create_task(
+            _recover_depth_cursor_async(
+                cursor,
+                "BTCUSDT",
+                observed_at_ms=10_002,
+                rest_depth_fetch=fetch,
+            )
+        )
+        while cursor.latest("depth20", "BTCUSDT").state.value != "RECOVERING":
+            await asyncio.sleep(0)
+        pending = cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=22,
+            final_update_id=30,
+            previous_final_update_id=21,
+            event_time_ms=9_902,
+            observed_at_ms=10_001,
+        )
+        assert pending.pending_through_update_id == 30
+        release.set()
+        recovered = await task
+        assert recovered.state.value == "RECOVERED"
+        assert recovered.cursor_update_id == 30
+    finally:
+        release.set()
+        cursor.close()
+
+
+@pytest.mark.parametrize(
+    ("failure", "reason"),
+    [
+        (TimeoutError("slow"), "REST_TIMEOUT"),
+        (RuntimeError("HTTP 429"), "HTTP_429"),
+        (ValueError("empty result"), "EMPTY_REST_RESULT"),
+    ],
+)
+def test_depth_cursor_recovery_failures_remain_blocked(tmp_path, failure, reason):
+    cursor = StreamCursorStore(str(tmp_path / f"{reason}.db"), create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=9_900,
+            observed_at_ms=10_000,
+        )
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=20,
+            final_update_id=21,
+            previous_final_update_id=19,
+            event_time_ms=9_901,
+            observed_at_ms=10_000,
+        )
+
+        def fail(*_args, **_kwargs):
+            raise failure
+
+        result = _recover_depth_cursor(
+            cursor,
+            "BTCUSDT",
+            observed_at_ms=10_001,
+            rest_depth_fetch=fail,
+        )
+        assert result.state.value == "BLOCKED"
+        assert result.reason_code == reason
+        assert result.publishable is False
+    finally:
+        cursor.close()
 
 
 def test_contract_info_retains_status_and_bracket_changes_for_selected_symbol():

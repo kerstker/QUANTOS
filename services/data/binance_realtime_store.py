@@ -12,6 +12,7 @@ class BinanceRealtimeStoreError(RuntimeError):
     """The Binance public-market store is missing, corrupt, or conflicting."""
 
 
+MAX_FUTURE_SKEW_MS = 30_000
 _GENESIS = ""
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS binance_market_snapshots (
@@ -90,13 +91,18 @@ class BinanceRealtimeStore:
         try:
             observed_at_ms = int(snapshot["observed_at_ms"])
             event_time_ms = int(snapshot["event_time_ms"])
+            knowledge_time_ms = int(
+                snapshot.get("knowledge_time_ms", observed_at_ms)
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise BinanceRealtimeStoreError("snapshot timestamps are invalid") from exc
         if (
             not instrument_id.endswith("USDT")
             or observed_at_ms < 0
             or event_time_ms < 0
-            or event_time_ms > observed_at_ms
+            or knowledge_time_ms < 0
+            or event_time_ms > knowledge_time_ms
+            or event_time_ms > observed_at_ms + MAX_FUTURE_SKEW_MS
         ):
             raise BinanceRealtimeStoreError("snapshot identity is invalid")
         return instrument_id, observed_at_ms, event_time_ms

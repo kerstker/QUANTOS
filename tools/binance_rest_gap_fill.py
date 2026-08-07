@@ -47,6 +47,7 @@ import math
 import time
 
 from services.data.raw_archive import archive_json_response
+from services.data.binance_realtime_store import MAX_FUTURE_SKEW_MS
 from tools.coingecko_fetch import _http_get_json
 from tools.source_failures import source_failure_detail
 
@@ -90,6 +91,84 @@ def _get(path: str, http_get=_http_get_json):
     return http_get(
         _HOST + path if path.startswith("/") else path,
         {"accept": "application/json"},
+    )
+
+
+def depth_snapshot_path(symbol: str, *, limit: int = 1000) -> str:
+    """Return the public USD-M depth snapshot path for one canonical symbol."""
+    normalized = str(symbol).upper()
+    if (
+        not normalized.endswith("USDT")
+        or not normalized.isalnum()
+        or normalized != str(symbol).upper()
+        or not 1 <= int(limit) <= 1000
+    ):
+        raise RestGapFillError("depth snapshot symbol or limit is invalid")
+    return f"/fapi/v1/depth?symbol={normalized}&limit={int(limit)}"
+
+
+def _depth_levels(value, field: str) -> list[list[float]]:
+    if not isinstance(value, list) or not value:
+        raise RestGapFillError(f"depth snapshot {field} has no levels")
+    output = []
+    for row in value:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            raise RestGapFillError(f"depth snapshot {field} level is malformed")
+        try:
+            price = float(row[0])
+            quantity = float(row[1])
+        except (TypeError, ValueError) as exc:
+            raise RestGapFillError(
+                f"depth snapshot {field} level is not numeric"
+            ) from exc
+        if (
+            not math.isfinite(price)
+            or not math.isfinite(quantity)
+            or price <= 0
+            or quantity < 0
+        ):
+            raise RestGapFillError(f"depth snapshot {field} level is invalid")
+        output.append([price, quantity])
+    return output
+
+
+def parse_depth_snapshot(payload, *, observed_at_ms: int) -> dict:
+    """Validate a public depth snapshot used to recover a stream sequence gap."""
+    if not isinstance(payload, dict) or not payload:
+        raise RestGapFillError("empty depth snapshot result")
+    try:
+        update_id = int(payload["lastUpdateId"])
+        event_time_ms = int(payload.get("E", observed_at_ms))
+        transaction_time_ms = int(payload.get("T", event_time_ms))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RestGapFillError("depth snapshot identity is invalid") from exc
+    if (
+        update_id < 0
+        or event_time_ms < 0
+        or transaction_time_ms < 0
+        or event_time_ms > int(observed_at_ms) + MAX_FUTURE_SKEW_MS
+    ):
+        raise RestGapFillError("depth snapshot identity is invalid")
+    return {
+        "last_update_id": update_id,
+        "event_time_ms": event_time_ms,
+        "transaction_time_ms": transaction_time_ms,
+        "bids": _depth_levels(payload.get("bids"), "bids"),
+        "asks": _depth_levels(payload.get("asks"), "asks"),
+    }
+
+
+def fetch_depth_snapshot(
+    symbol: str,
+    *,
+    observed_at_ms: int,
+    http_get=_http_get_json,
+) -> dict:
+    """Fetch one credential-free USD-M depth snapshot for gap recovery."""
+    path = depth_snapshot_path(symbol)
+    return parse_depth_snapshot(
+        _get(path, http_get),
+        observed_at_ms=int(observed_at_ms),
     )
 
 
