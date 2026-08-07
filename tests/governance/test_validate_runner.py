@@ -346,6 +346,9 @@ def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path
         "supply-chain-baseline:current",
         "top-tier-assessment:refresh",
         "top-tier-assessment-artifacts",
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
     ]
     assert report["summary"]["passed"] == 5
 
@@ -409,6 +412,9 @@ def test_evidence_consumers_run_after_derived_refresh(tmp_path):
         "supply-chain-baseline:refresh",
         "supply-chain-baseline:current",
         "pytest: synthetic evidence consumer",
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
     ]
 
 
@@ -459,6 +465,9 @@ def test_failed_primary_check_never_rewrites_derived_evidence(tmp_path):
     assert report["selected_stages"] == [
         "primary-fail",
         "supply-chain-baseline:current",
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
     ]
 
 
@@ -520,6 +529,9 @@ def test_failed_derived_refresh_blocks_downstream_rewrite(tmp_path):
         "supply-chain-baseline:refresh",
         "supply-chain-baseline:current",
         "top-tier-assessment-artifacts",
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
     ]
 
 
