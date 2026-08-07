@@ -173,23 +173,18 @@ class OOSValidationAdapter(_TypedAdapter):
     name="oos"; implementation_id="services.validation.walk_forward;services.validation.deflated_sharpe;services.alpha.multiple_testing:1"
     def evaluate(self, context):
         from services.validation.walk_forward import purged_kfold, walk_forward_splits
-        from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
+        from services.validation.catalog_evidence import create_catalog_evidence, verify_catalog_evidence
         from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        required={"n","train_size","test_size","returns","return_series_by_definition","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
         threshold_names={"fdr_q","dsr_floor","pbo_max"}
         if isinstance(x,Mapping) and threshold_names.intersection(x):
             return self._block("panel cannot define validation thresholds")
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
-            if context.effective_trial_count is not None and x["n_trials"] != context.effective_trial_count:
-                raise ValueError("n_trials does not match ledger effective trial count")
-            if len(x["returns"]) != x["n_obs"] or x["n_obs"] < 2:
-                raise ValueError("n_obs does not match canonical returns")
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
-            dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0))
             ids=tuple(x["candidate_ids"])
             if not ids or len(set(ids)) != len(ids) or any(type(v) is not str or not v for v in ids): raise ValueError("invalid candidate ids")
             raw_p=x["pvalues"]
@@ -211,8 +206,17 @@ class OOSValidationAdapter(_TypedAdapter):
                 definition_ids.append(item["candidate_id"]); definition_hashes.append(_digest({"canonical_definition":_canonical(item["definition"])}))
             if tuple(definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]): raise ValueError("PBO definition hash mismatch")
             candidate_id=x.get("candidate_id",ids[x.get("candidate_index",0)] if type(x.get("candidate_index",0)) is int and 0 <= x.get("candidate_index",0) < len(ids) else None)
-            candidate_exact=getattr(context.candidate,"exact_definition_id",None)
             candidate_index=x.get("candidate_index",0)
+            if type(candidate_index) is not int or not 0 <= candidate_index < len(ids): raise ValueError("invalid candidate index")
+            subject_definition_hash=definition_hashes[candidate_index]
+            return_population=x["return_series_by_definition"]
+            if not isinstance(return_population,Mapping): raise ValueError("catalog return population is required")
+            if tuple(x["returns"]) != tuple(return_population.get(subject_definition_hash, ())): raise ValueError("subject returns do not match catalog population")
+            catalog_evidence=create_catalog_evidence(subject_id=candidate_id,subject_definition_hash=subject_definition_hash,trial_definition_hashes=definition_hashes,return_series_by_definition=return_population)
+            if not verify_catalog_evidence(catalog_evidence): raise ValueError("catalog evidence verification failed")
+            if context.effective_trial_count is not None and catalog_evidence.effective_trial_count < context.effective_trial_count: raise ValueError("catalog effective trial count understates ledger")
+            dsr=catalog_evidence.deflated_sharpe
+            candidate_exact=getattr(context.candidate,"exact_definition_id",None)
             if candidate_id != ids[candidate_index] or (candidate_exact is not None and candidate_exact != definition_hashes[candidate_index]): raise ValueError("PBO candidate identity mismatch")
             pbo_evidence=create_batch_pbo_evidence(candidate_definition_hashes=definition_hashes,performance_matrix=x["perf_matrix"],alignment=x["pbo_alignment"],aligned_period_count=x["pbo_periods"],aligned_event_times=x.get("pbo_event_times",()))
             if tuple(pbo_evidence.candidate_definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]) or tuple(tuple(r) for r in pbo_evidence.performance_matrix) != tuple(tuple(r) for r in x["perf_matrix"]) or pbo_evidence.alignment != x["pbo_alignment"] or pbo_evidence.aligned_period_count != x["pbo_periods"] or tuple(pbo_evidence.aligned_event_times) != tuple(x.get("pbo_event_times",())): raise ValueError("PBO evidence binding mismatch")
@@ -225,7 +229,7 @@ class OOSValidationAdapter(_TypedAdapter):
             if not hasattr(x["families"], "family_of") or x["families"].family_of.get(candidate_id) != candidate_family or candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
         if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
-        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,catalog_evidence=catalog_evidence.model_dump(mode="json"),pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
 
 class RealismValidationAdapter(_TypedAdapter):
     name="realism"; implementation_id="services.research.realism.capacity_curve;tail_risk;validation.regime;CostModel:1"

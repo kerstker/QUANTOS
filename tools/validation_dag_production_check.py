@@ -100,6 +100,11 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
             "k": 4,
             "embargo": 2,
             "returns": returns,
+            "return_series_by_definition": {
+                definition_hashes[0]: returns,
+                definition_hashes[1]: tuple(value * 0.5 + (0.001 if index % 2 else -0.001) for index, value in enumerate(returns)),
+                definition_hashes[2]: tuple(-value + (0.002 if index % 3 else -0.002) for index, value in enumerate(returns)),
+            },
             "observed_sr": 2.0,
             "n_obs": len(returns),
             "n_trials": 1,
@@ -176,10 +181,16 @@ def run_production_validation_check(root: str | Path) -> dict[str, Any]:
     root.mkdir(parents=True, exist_ok=True)
     panel, exact_definition_id = _valid_panel()
 
-    malformed_oos = {**panel, "oos": {**panel["oos"], "n_obs": len(panel["oos"]["returns"]) - 1}}
+    malformed_oos = {**panel, "oos": {**panel["oos"], "returns": panel["oos"]["returns"][:-1]}}
     malformed_realism = {**panel, "realism": {**panel["realism"], "cost_model": {"fee_bps": 1.0}}}
+    subject_hash=panel["oos"]["pbo_candidate_definition_hashes"][0]
+    negative_returns=tuple(-abs(value) for value in panel["oos"]["returns"])
+    negative_population=dict(panel["oos"]["return_series_by_definition"])
+    negative_population[subject_hash]=negative_returns
+    self_reported_positive={**panel,"oos":{**panel["oos"],"returns":negative_returns,"return_series_by_definition":negative_population,"observed_sr":99.0}}
     return {
         "pass": _run_case(root, "pass", panel, exact_definition_id),
+        "self_reported_positive": _run_case(root, "self-reported-positive", self_reported_positive, exact_definition_id),
         "missing": _run_case(root, "missing", {}, exact_definition_id),
         "malformed": _run_case(root, "malformed-oos", malformed_oos, exact_definition_id),
         "malformed_realism": _run_case(root, "malformed-realism", malformed_realism, exact_definition_id),

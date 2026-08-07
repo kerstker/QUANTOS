@@ -241,6 +241,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     import services.features.leakage as leakage
     import services.validation.walk_forward as wfmod
     import services.validation.deflated_sharpe as dsrmod
+    import services.validation.catalog_evidence as catalogmod
     import services.validation.pbo_evidence as pbomod
     import services.alpha.multiple_testing as mtmod
     import services.alpha.family_testing as fammod
@@ -278,11 +279,17 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
         {"candidate_id": "alpha-1", "definition": {"name": "candidate-1", "version": 1}},
     )
     definition_hashes=tuple(_digest({"canonical_definition": _canonical(item["definition"])}) for item in definitions)
-    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 2, "n_trials": 1, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": definition_hashes, "pbo_candidate_definitions": definitions}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),), ((.2, 10.0),)), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": tuple(.01 for _ in range(25)), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": tuple(.01 for _ in range(25)), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
+    subject_returns=tuple(.02 if i % 2 else .01 for i in range(100))
+    peer_returns=tuple(.001 if i % 2 else -.001 for i in range(100))
+    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 100, "train_size": 30, "test_size": 20, "returns": subject_returns, "return_series_by_definition": {definition_hashes[0]: subject_returns, definition_hashes[1]: peer_returns}, "observed_sr": 99.0, "n_obs": 999, "n_trials": 1, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": definition_hashes, "pbo_candidate_definitions": definitions}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),), ((.2, 10.0),)), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": tuple(.01 for _ in range(25)), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": tuple(.01 for _ in range(25)), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
     policy = ValidationPolicy()
     panel["oos"]["candidate_id"] = "alpha-0"
     panel["oos"]["candidate_index"] = 0
-    assert all(stage.evaluate(ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)).outcome == "PASS" for stage in production_adapters())
+    context=ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)
+    stage_results=[stage.evaluate(context) for stage in production_adapters()]
+    oos_result=next(result for result in stage_results if result.stage == "oos")
+    assert oos_result.outcome == "PASS", (oos_result.reason, dict(oos_result.evidence))
+    assert all(result.outcome == "PASS" for result in stage_results)
     candidate=Candidate("a" * 64, "f" * 64, definition_hashes[0], policy.digest)
     with TrialLedger(str(tmp_path / "production.db")) as ledger:
         artifact=run_validation_dag(candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True)
@@ -291,7 +298,29 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
         receipts=ledger.validation_receipt(artifact.trial_id)
         assert set(receipts) >= {"cheap", "oos", "realism", "__artifact__"}
         assert BatchPboEvidence.model_validate(receipts["oos"]["payload"]["evidence"]["pbo_evidence"])
-    assert all(v >= 1 for v in calls.values()), calls
+        from quantos.contracts.validation import CatalogEvidence
+        catalog=CatalogEvidence.model_validate(receipts["oos"]["payload"]["evidence"]["catalog_evidence"])
+        assert catalog.observed_sr != 99.0 and catalog.n_obs == 100
+    assert all(value >= 1 for name,value in calls.items() if name != "dsr"), calls
+
+
+
+def test_catalog_evidence_recomputes_negative_subject_sharpe():
+    from services.validation.catalog_evidence import create_catalog_evidence
+
+    subject="a"*64
+    peer="b"*64
+    evidence=create_catalog_evidence(
+        subject_id="alpha-negative",
+        subject_definition_hash=subject,
+        trial_definition_hashes=(subject,peer),
+        return_series_by_definition={
+            subject:(-0.1,-0.2,-0.1,-0.2),
+            peer:(0.1,0.2,0.1,0.2),
+        },
+    )
+    assert evidence.observed_sr < 0.0
+    assert evidence.deflated_sharpe < 0.95
 
 
 def test_oos_thresholds_are_policy_owned_and_panel_cannot_weaken_them():
