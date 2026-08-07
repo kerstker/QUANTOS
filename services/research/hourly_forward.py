@@ -22,6 +22,7 @@ from services.research.validation_dag import (
 
 
 _HORIZON_SECONDS = {"1h": 3_600, "4h": 14_400}
+_MAX_DECISION_PRICE_AGE_SECONDS = 3_600
 _SCHEMA_VERSION = 1
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_MIN_COVERAGE = 0.8
@@ -243,10 +244,21 @@ def record_hourly_decision(
     panel_digest = _verify_validation_binding(
         artifact, workflow_receipt, panel, hourly_panel, decided_ts
     )
+    latest_bars = {}
+    for bar in hourly_panel.bars:
+        if (
+            bar.event_time <= decided_ts
+            and bar.knowledge_time <= decided_ts
+            and decided_ts - bar.event_time <= _MAX_DECISION_PRICE_AGE_SECONDS
+        ):
+            prior = latest_bars.get(bar.instrument)
+            if prior is None or (bar.event_time, bar.knowledge_time) > (
+                prior.event_time,
+                prior.knowledge_time,
+            ):
+                latest_bars[bar.instrument] = bar
     entry_prices = {
-        bar.instrument: float(bar.close)
-        for bar in hourly_panel.bars
-        if bar.event_time == decided_ts and bar.knowledge_time <= decided_ts
+        instrument: float(bar.close) for instrument, bar in sorted(latest_bars.items())
     }
     if not set(weights).issubset(entry_prices):
         raise ForwardLedgerError("weighted instruments need causal decision-time prices")

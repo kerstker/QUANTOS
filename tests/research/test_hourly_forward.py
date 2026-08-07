@@ -236,6 +236,51 @@ def test_composite_validation_panel_retains_hourly_market_binding(tmp_path):
     assert decision.panel_digest == artifact.panel_digest == receipt.panel_digest
 
 
+def test_complete_hour_bucket_uses_latest_causal_close_at_decision_as_of(tmp_path):
+    bars = tuple(
+        HourlyBar(name, event_time, knowledge_time, price, price, price, price, 1_000.0)
+        for name, prices in (("BTC", (99.0, 101.0)), ("ETH", (101.0, 99.0)))
+        for event_time, knowledge_time, price in (
+            (T0 - 2 * HOUR, T0 - HOUR, prices[0]),
+            (T0 - HOUR, T0, prices[1]),
+        )
+    )
+    panel = HourlyMarketPanel(
+        "hourly-market-v1",
+        T0,
+        bars,
+        (),
+        (),
+        stable_hash({"fixture": "complete-hour-bucket"}),
+    )
+    artifact, receipt = _validated(tmp_path, panel)
+    ledger = ForwardLedger(str(tmp_path / "forward.db"), create=True)
+
+    decision = _record(ledger, artifact, receipt, panel)
+
+    assert decision.entry_prices == {"BTC": 101.0, "ETH": 99.0}
+
+
+def test_hour_bucket_older_than_one_hour_is_rejected_for_decision_prices(tmp_path):
+    bars = tuple(
+        HourlyBar(name, T0 - HOUR - 1, T0 - 1, price, price, price, price, 1_000.0)
+        for name, price in (("BTC", 101.0), ("ETH", 99.0))
+    )
+    panel = HourlyMarketPanel(
+        "hourly-market-v1",
+        T0,
+        bars,
+        (),
+        (),
+        stable_hash({"fixture": "stale-hour-bucket"}),
+    )
+    artifact, receipt = _validated(tmp_path, panel)
+    ledger = ForwardLedger(str(tmp_path / "forward.db"), create=True)
+
+    with pytest.raises(ForwardLedgerError, match="causal decision-time prices"):
+        _record(ledger, artifact, receipt, panel)
+
+
 def test_insufficient_coverage_stays_pending(tmp_path):
     panel = _panel(T0, {"BTC": 100.0, "ETH": 100.0})
     artifact, receipt = _validated(tmp_path, panel)

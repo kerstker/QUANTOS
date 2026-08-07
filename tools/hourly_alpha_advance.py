@@ -313,7 +313,7 @@ def _momentum_decision(alpha_id: str, panel: HourlyMarketPanel) -> ForwardDecisi
     signals = {
         instrument: rows[-1].close / rows[-2].close - 1.0
         for instrument, rows in histories.items()
-        if len(rows) >= 2 and rows[-1].event_time == panel.as_of
+        if len(rows) >= 2 and panel.as_of - rows[-1].event_time <= 3_600
     }
     if len(signals) < 2:
         return None
