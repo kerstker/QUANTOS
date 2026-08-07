@@ -108,6 +108,19 @@ def _strict_json(raw: str) -> Any:
     return value
 
 
+
+def _preflight_existing_schema(c: sqlite3.Connection) -> None:
+    names={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not ({"trial_events","trial_heads"} & names): return
+    expected={"trial_events": ["trial_id","event_index","alpha_id","family_id","exact_definition_id","validation_policy_digest","status","at","global_seq","prev_hash","event_hash"], "trial_heads": ["trial_id","event_count","head_hash","global_count","global_head_hash"]}
+    for table, cols in expected.items():
+        if table not in names: raise TrialLedgerError("legacy ledger schema incomplete")
+        actual=[r[1] for r in c.execute(f"PRAGMA table_info({table})")]
+        if actual != cols: raise TrialLedgerError("legacy ledger schema malformed")
+    triggers={r[0]: (r[1] or "").lower() for r in c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
+    for name in ("trial_events_no_update","trial_events_no_delete"):
+        if name in triggers and "append-only" not in triggers[name]: raise TrialLedgerError("legacy ledger trigger malformed")
+
 class TrialLedger:
     def __init__(self, db_path: str, create: bool = True):
         if not isinstance(db_path, str): raise TrialLedgerError("db_path must be a string")
@@ -121,8 +134,10 @@ class TrialLedger:
             self._c.isolation_level = None
             self._c.execute("PRAGMA busy_timeout=30000")
             self._lock = threading.RLock()
-            # Receipt schema is a forward-only additive migration for Task 7 databases.
-            with self._lock: self._c.executescript(_SCHEMA)
+            # Validate legacy/current core objects before additive schema creation.
+            with self._lock:
+                _preflight_existing_schema(self._c)
+                self._c.executescript(_SCHEMA)
             self._require_schema()
         except TrialLedgerError:
             if self._c is not None:
@@ -259,6 +274,7 @@ class TrialLedger:
                 if set(payload) != required or payload.get("trial_id") != trial_id or payload.get("stage") != stage or payload.get("outcome") not in {"PASS","BLOCK"} or any(type(payload.get(k)) is not str or not payload.get(k) for k in ("version","implementation_id")) or (payload.get("reason") is not None and type(payload.get("reason")) is not str) or any(type(payload.get(k)) is not str or not _HEX64.fullmatch(payload.get(k)) for k in ("trial_id","panel_digest","policy_digest","evidence_hash")): raise TrialLedgerError("terminal receipt schema invalid")
                 expected_evidence=_hash(_canonical({"stage":payload["stage"],"version":payload["version"],"implementation_id":payload["implementation_id"],"outcome":payload["outcome"],"evidence":payload["evidence"],"reason":payload["reason"]}).encode())
                 if payload["evidence_hash"] != expected_evidence: raise TrialLedgerError("terminal receipt evidence hash invalid")
+                if (state == "DONE" and payload["outcome"] != "PASS") or (state in {"BLOCKED","FAILED"} and payload["outcome"] != "BLOCK"): raise TrialLedgerError("receipt state/outcome mismatch")
             expected=_hash(_canonical({"trial_id":trial_id,"stage":stage,"event_index":index,"state":state,"payload_hash":payload_hash,"global_seq":seq,"prev_hash":prev,"owner":owner,"lease_until":lease_until,"attempt":attempt}).encode())
             if expected != row_hash: raise TrialLedgerError("validation receipt row hash mismatch")
             out[stage]={"event_index":index,"state":state,"payload":payload,"payload_hash":payload_hash,"owner":owner,"lease_until":lease_until,"attempt":attempt,"global_seq":seq,"row_hash":row_hash}
@@ -294,9 +310,9 @@ class TrialLedger:
             try:
                 self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked()
                 if not self._trial_exists_locked(trial_id): raise TrialLedgerError("validation receipt requires trial")
-                if self._aggregate_locked(trial_id).status != "RUNNING": raise TrialLedgerError("validation receipt requires RUNNING trial")
                 current=self._receipt_rows_locked(trial_id).get(stage)
                 if current and current["state"] in {"DONE", "BLOCKED", "FAILED"}: self._c.execute("COMMIT"); return current["state"]
+                if self._aggregate_locked(trial_id).status != "RUNNING": raise TrialLedgerError("validation receipt requires RUNNING trial")
                 if current and current["state"] == "CLAIMED" and current["lease_until"] > now: self._c.execute("COMMIT"); return "IN_PROGRESS"
                 attempt=(current["attempt"]+1) if current else 1
                 self._receipt_insert_locked(trial_id,stage,"CLAIMED",{"stage":stage,"attempt":attempt,"panel_digest":panel_digest,"policy_digest":policy_digest},owner,now+lease_seconds,attempt); self._c.execute("COMMIT"); return "CLAIMED"
@@ -322,6 +338,7 @@ class TrialLedger:
                 if current["payload"].get("panel_digest") != payload["panel_digest"] or current["payload"].get("policy_digest") != payload["policy_digest"]: raise TrialLedgerError("terminal receipt execution binding mismatch")
                 expected=_hash(_canonical({"stage":payload["stage"],"version":payload["version"],"implementation_id":payload["implementation_id"],"outcome":payload["outcome"],"evidence":payload["evidence"],"reason":payload["reason"]}).encode())
                 if payload["evidence_hash"] != expected: raise TrialLedgerError("terminal receipt evidence hash invalid")
+                if (state == "DONE" and payload["outcome"] != "PASS") or (state in {"BLOCKED","FAILED"} and payload["outcome"] != "BLOCK"): raise TrialLedgerError("receipt state/outcome mismatch")
                 self._receipt_insert_locked(trial_id,stage,state,payload,owner,current["lease_until"],current["attempt"]+1); self._c.execute("COMMIT")
             except (TrialLedgerError,sqlite3.Error) as exc:
                 try:self._c.execute("ROLLBACK")

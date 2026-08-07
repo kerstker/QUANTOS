@@ -16,6 +16,7 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 def _freeze(value: Any) -> Any:
     if isinstance(value, RegisteredLeakageCompute): return value
     if callable(getattr(value, "trade_cost", None)) and callable(getattr(value, "impact_bps", None)): return value
+    if hasattr(value, "family_of") and hasattr(value, "basis"): return value
     if isinstance(value, Enum): return value.value
     if hasattr(value, "model_dump") and callable(value.model_dump): return _freeze(value.model_dump())
     if is_dataclass(value): return MappingProxyType({f.name: _freeze(getattr(value,f.name)) for f in fields(value)})
@@ -148,8 +149,8 @@ class OOSValidationAdapter(_TypedAdapter):
             raw_p=x["pvalues"]
             pmap=dict(raw_p) if isinstance(raw_p,Mapping) else dict(zip(ids,raw_p))
             if set(pmap) != set(ids) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in pmap.values()): raise ValueError("invalid candidate p-values")
-            q=x.get("fdr_q",.1)
-            if type(q) not in (int,float) or not math.isfinite(float(q)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid FDR q")
+            q=x.get("fdr_q",.1); dsr_floor=x.get("dsr_floor",.95); pbo_max=x.get("pbo_max",.5)
+            if any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
             pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
             family_pvalues=x["family_pvalues"]
             if not isinstance(family_pvalues,Mapping) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in family_pvalues.values()): raise ValueError("invalid family p-values")
@@ -160,9 +161,9 @@ class OOSValidationAdapter(_TypedAdapter):
             candidate_index=x.get("candidate_index",0); candidate_id=x.get("candidate_id",ids[candidate_index] if type(candidate_index) is int and 0 <= candidate_index < len(ids) else None); candidate_family=x.get("candidate_family")
             if type(candidate_index) is not int or not 0 <= candidate_index < len(ids) or candidate_index not in bh or candidate_index not in bhy or candidate_id != ids[candidate_index]: raise ValueError("candidate failed BH/BHY")
             if candidate_family is None: candidate_family=fam.selected_families.intersection({x["families"].family_of.get(candidate_id)}).pop() if hasattr(x["families"],"family_of") else None
-            if candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
+            if not hasattr(x["families"], "family_of") or x["families"].family_of.get(candidate_id) != candidate_family or candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
-        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < x.get("dsr_floor",.95) or pbo > x.get("pbo_max",.5) or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
+        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
         return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
 
 class RealismValidationAdapter(_TypedAdapter):
@@ -173,11 +174,11 @@ class RealismValidationAdapter(_TypedAdapter):
         from services.validation.regime import regime_conditional_stats, label_regimes_by_vol, regime_profitable_frac
         from quantos.contracts.cost import CostModel
         x=context.panel.get("realism") if isinstance(context.panel,Mapping) else None
-        required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
+        required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing realism inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         cost=x["cost_model"]
         if not isinstance(cost,CostModel) or not all(type(getattr(cost,k)) in (int,float) and math.isfinite(float(getattr(cost,k))) and float(getattr(cost,k)) >= 0.0 for k in ("fee_bps","slippage_bps","impact_coef")): return self._block("typed finite CostModel required")
-        if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","market_closes","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
+        if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","market_closes","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
         try:
             band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); regime_labels=label_regimes_by_vol(x["market_closes"]); regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
@@ -232,7 +233,10 @@ def _receipt_evidence(stage, receipt):
 
 def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
-    if production and tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
+    if production:
+        if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
+        for stage in policy.stages:
+            if getattr(stage.evaluate, "__func__", None) is not getattr(type(stage), "evaluate", None): raise ValueError("production adapter implementation is not sealed")
     if type(event_at) is not int or isinstance(event_at,bool) or (lease_now is not None and (type(lease_now) is not int or isinstance(lease_now,bool))): raise ValueError("event_at and lease_now must be deterministic ints")
     if lease_now is None: lease_now=event_at
     declared=getattr(candidate,"validation_policy_digest",None)
