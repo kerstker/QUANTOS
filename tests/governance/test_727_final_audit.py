@@ -130,6 +130,38 @@ def test_phase13_outputs_exist_and_are_fail_closed() -> None:
         assert payload["safety_flags"]["REQUIRE_HUMAN_APPROVAL"] is True
 
 
+def test_phase13_defaults_to_canonical_validation_time_and_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    canonical_time = 1_800_000_000_123
+    canonical_source = "a" * 40
+    monkeypatch.setattr(
+        "scripts.generate_727_final_audit._validation",
+        lambda _root: {
+            "current": True,
+            "selection_scope": "ALL",
+            "overall_status": "PASS",
+            "reported_commit": canonical_source,
+            "head_commit": canonical_source,
+            "generated_at_ms": canonical_time,
+            "validate_script_sha256": "b" * 64,
+            "reported_validate_script_sha256": "b" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.generate_727_final_audit._commit", lambda _root: canonical_source
+    )
+
+    reports, markdown = build_phase13(root=tmp_path)
+
+    assert all(
+        payload["generated_at_ms"] == canonical_time
+        for payload in reports.values()
+    )
+    assert reports["evidence/trial_ledger_integrity.json"]["commit"] == canonical_source
+    assert f"生成时间（Unix ms）：`{canonical_time}`" in markdown
+
+
 def test_phase13_current_artifacts_match_read_only_generator() -> None:
     reports, markdown = build_phase13(root=ROOT)
     for relative_path, expected in reports.items():

@@ -244,6 +244,9 @@ def _validation(root: Path) -> dict[str, Any]:
         "overall_status": report.get("overall_status"),
         "reported_commit": report.get("commit"),
         "head_commit": canonical_source,
+        "generated_at_ms": (
+            binding.get("generated_at") if binding_current else None
+        ),
         "validate_script_sha256": validate_hash,
         "reported_validate_script_sha256": report.get("validate_script_sha256"),
     }
@@ -351,8 +354,9 @@ def _autonomy(root: Path, now_ms: int, flags: dict[str, bool], validation: dict[
 def _trial_ledger(root: Path, now_ms: int) -> dict[str, Any]:
     ledger = root / "data" / "cache" / "experiment_registry.db"
     report = build_trial_report(root=root, ledger=ledger)
-    # Keep this requested artifact on the same snapshot timestamp as the other
-    # Phase 13 products while retaining the existing generator's full details.
+    # Keep this requested artifact on the same canonical source and snapshot
+    # timestamp as the other Phase 13 products.
+    report["commit"] = _commit(root)
     report["generated_at_ms"] = int(now_ms)
     return report
 
@@ -1137,10 +1141,17 @@ def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> st
 
 def build_phase13(*, root: Path = ROOT, now_ms: int | None = None) -> tuple[dict[str, dict[str, Any]], str]:
     root = root.resolve()
-    if now_ms is None:
-        now_ms = int(time.time_ns() // 1_000_000)
     flags = _safety_flags()
     validation = _validation(root)
+    if now_ms is None:
+        canonical_generated_at = validation.get("generated_at_ms")
+        now_ms = (
+            canonical_generated_at
+            if isinstance(canonical_generated_at, int)
+            and not isinstance(canonical_generated_at, bool)
+            and canonical_generated_at >= 0
+            else int(time.time_ns() // 1_000_000)
+        )
     reports = {
         "evidence/autonomy_readiness.json": _autonomy(root, now_ms, flags, validation),
         "evidence/trial_ledger_integrity.json": _trial_ledger(root, now_ms),

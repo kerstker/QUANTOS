@@ -3377,6 +3377,39 @@ def test_canonical_refresh_check_supports_new_run_and_standalone_reuse(tmp_path,
     assert main([*args, "--check"]) == 0
 
 
+def test_top_tier_refresh_reuses_current_canonical_time(tmp_path, monkeypatch):
+    from scripts.assess_top_tier import main
+
+    canonical_source = "a" * 40
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.resolve_canonical_source_anchor",
+        lambda _root: canonical_source,
+    )
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", canonical_source)
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.assert_current_binding", lambda *args, **kwargs: None
+    )
+    json_out = tmp_path / "assessment.json"
+    matrix_out = tmp_path / "assessment.md"
+    args = [
+        "--repo-root",
+        str(ROOT),
+        "--json-out",
+        str(json_out),
+        "--matrix-out",
+        str(matrix_out),
+    ]
+
+    assert main([*args, "--as-of-ms", "123"]) == 0
+    first = json.loads(json_out.read_text(encoding="utf-8"))
+    assert main(args) == 0
+    second = json.loads(json_out.read_text(encoding="utf-8"))
+
+    assert first["validation"]["generated_at"] == 123
+    assert second["validation"] == first["validation"]
+
+
 def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
     from scripts.assess_top_tier import main
     import subprocess

@@ -82,15 +82,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         canonical_source = resolve_canonical_source_anchor(repo_root)
         prior_generated_at = None
         prior_binding = None
-        if args.check:
-            prior = json.loads(Path(args.json_out).read_text(encoding="utf-8"))
-            assert_current_binding(
-                prior,
-                head=canonical_source,
-                repo_root=repo_root,
-            )
-            prior_binding = prior["validation"]
-            prior_generated_at = prior_binding["generated_at"]
+        json_path = Path(args.json_out)
+        if json_path.is_file():
+            try:
+                prior = json.loads(json_path.read_text(encoding="utf-8"))
+                assert_current_binding(
+                    prior,
+                    head=canonical_source,
+                    repo_root=repo_root,
+                )
+                prior_binding = prior["validation"]
+                prior_generated_at = prior_binding["generated_at"]
+            except (OSError, ValueError, TypeError, json.JSONDecodeError, KeyError):
+                if args.check:
+                    raise ValueError("existing assessment binding is not current")
+        elif args.check:
+            raise ValueError("assessment artifact is missing")
         as_of_ms = (
             prior_generated_at
             if isinstance(prior_generated_at, int)
