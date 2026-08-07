@@ -201,6 +201,23 @@ class CheapValidationAdapter(_TypedAdapter):
             if not target_values:
                 return self._block("missing target feature evidence")
             if any(
+                type(value.value) not in (int, float)
+                or isinstance(value.value, bool)
+                or not math.isfinite(float(value.value))
+                for value in target_values
+            ):
+                return self._block("missing target feature evidence")
+            target_instruments = {value.instrument_id for value in target_values}
+            if any(
+                not any(
+                    bar.instrument_id == instrument_id
+                    and bar.event_time > target_event_time
+                    for bar in bars
+                )
+                for instrument_id in target_instruments
+            ):
+                return self._block("insufficient future leakage horizon")
+            if any(
                 type(value.event_time) is not int
                 or type(value.knowledge_time) is not int
                 or value.knowledge_time < value.event_time

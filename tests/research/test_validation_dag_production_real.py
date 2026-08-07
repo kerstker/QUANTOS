@@ -248,6 +248,77 @@ def test_production_blocks_future_known_leakage_bar(tmp_path):
     assert receipt["reason"] == "leakage inputs exceed validation as-of"
 
 
+def test_production_blocks_leakage_check_without_future_perturbation_bar(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    target_event_time = panel["cheap"]["target_event_time"]
+    target_instrument = panel["cheap"]["instrument_id"]
+    panel["cheap"]["bars"] = tuple(
+        bar
+        for bar in panel["cheap"]["bars"]
+        if bar.instrument_id != target_instrument
+        or bar.event_time <= target_event_time
+    )
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "missing-future-perturbation.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["cheap"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["outcome"] == "BLOCK"
+    assert receipt["reason"] == "insufficient future leakage horizon"
+
+
+def test_production_blocks_missing_numeric_target_feature_evidence(tmp_path):
+    from quantos.contracts.feature import FeatureValue
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import (
+        ValidationPolicy,
+        register_leakage_compute,
+        run_validation_dag,
+    )
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+
+    def missing_value_compute(rows):
+        return [
+            FeatureValue(
+                feature_id="past_close",
+                instrument_id=row.instrument_id,
+                event_time=row.event_time,
+                knowledge_time=row.knowledge_time,
+                value=None,
+            )
+            for row in rows
+        ]
+
+    panel["cheap"]["compute"] = register_leakage_compute(
+        "tests.missing_numeric_target_evidence:1",
+        missing_value_compute,
+        exact_definition_id=exact_definition_id,
+    )
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "missing-target-value.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["cheap"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["outcome"] == "BLOCK"
+    assert receipt["reason"] == "missing target feature evidence"
+
+
 def test_production_blocks_future_oos_observation(tmp_path):
     from services.research.trial_ledger import TrialLedger
     from services.research.validation_dag import ValidationPolicy, run_validation_dag
