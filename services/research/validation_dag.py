@@ -13,6 +13,7 @@ _TERMINAL = {"PASS", "BLOCK"}
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 def _freeze(value: Any) -> Any:
+    if isinstance(value, RegisteredLeakageCompute): return value
     if is_dataclass(value): return MappingProxyType({f.name: _freeze(getattr(value,f.name)) for f in fields(value)})
     if isinstance(value, Mapping):
         if any(type(k) is not str for k in value): raise TypeError("mapping keys must be strings")
@@ -23,6 +24,7 @@ def _freeze(value: Any) -> Any:
     raise TypeError(f"value is not canonical JSON: {type(value).__name__}")
 
 def _jsonable(value: Any) -> Any:
+    if isinstance(value, RegisteredLeakageCompute): return {"registered_compute":value.implementation_id}
     if isinstance(value, Mapping): return {k:_jsonable(value[k]) for k in sorted(value)}
     if isinstance(value,(tuple,list)): return [_jsonable(v) for v in value]
     if is_dataclass(value): return {"__type__":f"{type(value).__module__}.{type(value).__qualname__}", **{f.name:_jsonable(getattr(value,f.name)) for f in fields(value)}}
@@ -34,6 +36,42 @@ def _canonical(value: Any) -> str:
     return json.dumps(_jsonable(value), sort_keys=True, separators=(",",":"), ensure_ascii=True, allow_nan=False)
 
 def _digest(value: Any) -> str: return hashlib.sha256(_canonical(value).encode()).hexdigest()
+
+
+_LEAKAGE_REGISTRY: dict[str, Any] = {}
+
+@dataclass(frozen=True, slots=True)
+class RegisteredLeakageCompute:
+    implementation_id: str
+    compute: Any
+    def __post_init__(self):
+        if type(self.implementation_id) is not str or not self.implementation_id or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", self.implementation_id): raise ValueError("invalid leakage implementation identity")
+        if not callable(self.compute) or getattr(self.compute, "__name__", "") == "<lambda>": raise ValueError("registered named leakage compute required")
+        if _LEAKAGE_REGISTRY.get(self.implementation_id) is not self.compute: raise ValueError("compute must be registered by trusted constructor")
+
+def register_leakage_compute(implementation_id: str, compute: Any) -> RegisteredLeakageCompute:
+    if type(implementation_id) is not str or not implementation_id or not callable(compute) or getattr(compute, "__name__", "") == "<lambda>": raise ValueError("named leakage compute required")
+    prior=_LEAKAGE_REGISTRY.get(implementation_id)
+    if prior is not None and prior is not compute: raise ValueError("leakage implementation identity collision")
+    _LEAKAGE_REGISTRY[implementation_id]=compute
+    return RegisteredLeakageCompute(implementation_id,compute)
+
+def _panel_digest(panel: Any) -> str:
+    def scrub(v):
+        if isinstance(v, RegisteredLeakageCompute): return {"registered_compute":v.implementation_id}
+        if isinstance(v, Mapping): return {k:scrub(v[k]) for k in v}
+        if isinstance(v,(tuple,list)): return [scrub(x) for x in v]
+        if callable(v): raise TypeError("unregistered callable in panel")
+        return v
+    return _digest(scrub(panel))
+
+
+def _finite_tree(value: Any, *, allow_none: bool=False) -> bool:
+    if value is None: return allow_none
+    if type(value) in (int,float): return math.isfinite(float(value))
+    if isinstance(value, Mapping): return all(_finite_tree(v,allow_none=allow_none) for v in value.values())
+    if isinstance(value,(tuple,list)): return all(_finite_tree(v,allow_none=allow_none) for v in value)
+    return isinstance(value,str) or isinstance(value,bool)
 
 def _strict_result(value: Any, required: tuple[str,...]) -> Mapping[str,Any]:
     if not isinstance(value, Mapping) or any(k not in value for k in required): raise ValueError("malformed engine result")
@@ -78,8 +116,8 @@ class CheapValidationAdapter(_TypedAdapter):
         required=("feature_id","compute","bars","target_event_time")
         if not isinstance(x,Mapping) or any(k not in x for k in required): return self._block("missing leakage inputs", missing_input=list(required))
         compute=x["compute"]
-        if not callable(compute) or not getattr(compute,"__quantos_typed__",False): return self._block("unregistered leakage compute")
-        try: result=detect_leakage(x["feature_id"],compute,x["bars"],x["target_event_time"],x.get("instrument_id"))
+        if not isinstance(compute,RegisteredLeakageCompute): return self._block("unregistered leakage compute")
+        try: result=detect_leakage(x["feature_id"],compute.compute,x["bars"],x["target_event_time"],x.get("instrument_id"))
         except Exception as exc: return self._block("leakage engine unavailable", exception_type=type(exc).__name__)
         if not hasattr(result,"passed") or type(result.passed) is not bool: return self._block("malformed leakage result")
         return self._pass(leakage_passed=result.passed, detail=getattr(result,"detail","")) if result.passed else self._block("leakage gate blocked", leakage_passed=False)
@@ -92,21 +130,29 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","pvalues","family_pvalues","families"}
+        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","family_pvalues","families"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
             dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0)); pbo=pbo_cscv(x["perf_matrix"])
-            pvals=x["pvalues"]; bh=benjamini_hochberg(pvals,x.get("fdr_q",.1)); bhy=benjamini_hochberg_yekutieli(pvals,x.get("fdr_q",.1)); fam=hierarchical_fdr(pvalues=x["family_pvalues"],families=x["families"],q=x.get("fdr_q",.1))
-            if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)): raise ValueError("malformed family FDR result")
-            candidate_index=x.get("candidate_index",0); candidate_family=x.get("candidate_family")
-            if type(candidate_index) is not int or candidate_index not in bh or candidate_index not in bhy: raise ValueError("candidate failed BH/BHY")
-            if candidate_family is None:
-                candidate_family=x.get("candidate_family")
-            if candidate_family is None: raise ValueError("candidate family is required")
-            if candidate_family not in fam.selected_families: raise ValueError("candidate failed family FDR")
+            ids=tuple(x["candidate_ids"])
+            if not ids or len(set(ids)) != len(ids) or any(type(v) is not str or not v for v in ids): raise ValueError("invalid candidate ids")
+            raw_p=x["pvalues"]
+            pmap=dict(raw_p) if isinstance(raw_p,Mapping) else dict(zip(ids,raw_p))
+            if set(pmap) != set(ids) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in pmap.values()): raise ValueError("invalid candidate p-values")
+            q=x.get("fdr_q",.1)
+            if type(q) not in (int,float) or not math.isfinite(float(q)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid FDR q")
+            pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
+            family_pvalues=x["family_pvalues"]
+            if not isinstance(family_pvalues,Mapping) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in family_pvalues.values()): raise ValueError("invalid family p-values")
+            fam=hierarchical_fdr(pvalues=family_pvalues,families=x["families"],q=q)
+            if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)) or not hasattr(fam,"survivors") or not isinstance(fam.survivors,(set,frozenset)): raise ValueError("malformed family FDR result")
+            candidate_index=x.get("candidate_index",0); candidate_id=x.get("candidate_id",ids[candidate_index] if type(candidate_index) is int and 0 <= candidate_index < len(ids) else None); candidate_family=x.get("candidate_family")
+            if type(candidate_index) is not int or not 0 <= candidate_index < len(ids) or candidate_index not in bh or candidate_index not in bhy or candidate_id != ids[candidate_index]: raise ValueError("candidate failed BH/BHY")
+            if candidate_family is None: candidate_family=fam.selected_families.intersection({x["families"].family_of.get(candidate_id)}).pop() if hasattr(x["families"],"family_of") else None
+            if candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
-        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in (dsr,pbo)) or dsr < x.get("dsr_floor",.95) or pbo > x.get("pbo_max",.5) or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
+        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < x.get("dsr_floor",.95) or pbo > x.get("pbo_max",.5) or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
         return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
 
 class RealismValidationAdapter(_TypedAdapter):
@@ -120,11 +166,12 @@ class RealismValidationAdapter(_TypedAdapter):
         required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing realism inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         cost=x["cost_model"]
-        if not isinstance(cost,CostModel): return self._block("typed CostModel required")
+        if not isinstance(cost,CostModel) or not all(type(getattr(cost,k)) in (int,float) and math.isfinite(float(getattr(cost,k))) and float(getattr(cost,k)) >= 0.0 for k in ("fee_bps","slippage_bps","impact_coef")): return self._block("typed finite CostModel required")
+        if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
         try:
             band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],x["regime_labels"]); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
-        if not isinstance(band,Mapping) or band.get("aum_low") is None or not isinstance(tail,Mapping) or tail.get("cvar") is None or hill is None or ltd is None or not isinstance(regime,Mapping) or not math.isfinite(cost_value): return self._block("realism gate blocked")
+        if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not math.isfinite(cost_value): return self._block("realism gate blocked")
         return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime=regime,cost=cost_value)
 
 def production_adapters() -> tuple[ValidationStage,...]: return (CheapValidationAdapter(),OOSValidationAdapter(),RealismValidationAdapter())
@@ -143,12 +190,17 @@ class ValidationPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ValidationArtifact:
-    trial_id:str; alpha_id:str; family_id:str; exact_definition_id:str; panel_digest:str; policy_digest:str; stage_evidence_hashes:Mapping[str,str]; effective_trial_count:int; verdict:str; reason:str|None=None; stage_metadata:Mapping[str,Mapping[str,str]]=field(default_factory=dict); artifact_commitment:str|None=None
+    trial_id:str; alpha_id:str; family_id:str; exact_definition_id:str; panel_digest:str; policy_digest:str; stage_evidence_hashes:Mapping[str,str]; stage_receipt_bindings:Mapping[str,Mapping[str,Any]]; effective_trial_count:int; verdict:str; reason:str|None=None; stage_metadata:Mapping[str,Mapping[str,str]]=field(default_factory=dict); artifact_commitment:str|None=None
     def __post_init__(self):
         if any(type(v) is not str or not _HEX64.fullmatch(v) for v in (self.trial_id,self.alpha_id,self.family_id,self.exact_definition_id,self.panel_digest,self.policy_digest)): raise ValueError("invalid validation artifact identity")
         if self.verdict not in _TERMINAL or type(self.effective_trial_count) is not int or self.effective_trial_count<0: raise ValueError("invalid validation artifact")
         if set(self.stage_evidence_hashes)!=set(_STAGE_ORDER) or any(type(v) is not str or not _HEX64.fullmatch(v) for v in self.stage_evidence_hashes.values()): raise ValueError("complete lowercase stage hashes required")
-        object.__setattr__(self,"stage_evidence_hashes",_freeze(self.stage_evidence_hashes)); object.__setattr__(self,"stage_metadata",_freeze(self.stage_metadata))
+        if not isinstance(self.stage_receipt_bindings,Mapping) or set(self.stage_receipt_bindings)!=set(_STAGE_ORDER) or any(set(v)!={"global_seq","row_hash"} or type(v["global_seq"]) is not int or not _HEX64.fullmatch(str(v["row_hash"])) for v in self.stage_receipt_bindings.values()): raise ValueError("complete receipt bindings required")
+        if not isinstance(self.stage_metadata,Mapping) or set(self.stage_metadata)!=set(_STAGE_ORDER) or any(set(v)!={"stage","version","implementation_id"} for v in self.stage_metadata.values()): raise ValueError("complete stage metadata required")
+        if type(self.artifact_commitment) is not str or not _HEX64.fullmatch(self.artifact_commitment): raise ValueError("artifact commitment required")
+        body={"trial_id":self.trial_id,"alpha_id":self.alpha_id,"family_id":self.family_id,"exact_definition_id":self.exact_definition_id,"panel_digest":self.panel_digest,"policy_digest":self.policy_digest,"stage_evidence_hashes":self.stage_evidence_hashes,"stage_receipt_bindings":self.stage_receipt_bindings,"effective_trial_count":self.effective_trial_count,"verdict":self.verdict,"reason":self.reason,"stage_metadata":self.stage_metadata}
+        if _digest(body) != self.artifact_commitment: raise ValueError("artifact commitment mismatch")
+        object.__setattr__(self,"stage_evidence_hashes",_freeze(self.stage_evidence_hashes)); object.__setattr__(self,"stage_receipt_bindings",_freeze(self.stage_receipt_bindings)); object.__setattr__(self,"stage_metadata",_freeze(self.stage_metadata))
 
 def _identity(candidate):
     definition=getattr(candidate,"definition",None)
@@ -175,7 +227,7 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
     if lease_now is None: lease_now=event_at
     declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
-    alpha,family,exact=_identity(candidate); panel_digest=_digest(panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest})
+    alpha,family,exact=_identity(candidate); panel_digest=_panel_digest(panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest})
     try: ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"PLANNED",0,event_at))
     except TrialLedgerConflict:
         existing=ledger.load(trial_id)
@@ -187,7 +239,7 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
     if aggregate.status=="PLANNED": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"RUNNING",1,event_at))
     context=ValidationContext(candidate,_freeze(panel),policy,trial_id,panel_digest,policy.digest,event_at); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
-        claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds)
+        claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
         if claim == "IN_PROGRESS":
             claim = "IN_PROGRESS"
             for _ in range(256):
@@ -207,16 +259,16 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
             if not isinstance(evidence,StageEvidence) or evidence.stage!=stage.name or evidence.version!=stage.version or evidence.implementation_id!=stage.implementation_id: raise ValueError("stage evidence identity mismatch")
         except Exception as exc: evidence=_exception_evidence(stage.name,stage.version,stage.implementation_id,exc); reason=f"provider exception: {type(exc).__name__}"
         hashes[stage.name]=evidence.evidence_hash; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id}
-        ledger.complete_validation_stage(trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=event_at)
+        ledger.complete_validation_stage(trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
         if evidence.outcome=="BLOCK": verdict="BLOCK"; reason=reason or evidence.reason; break
     blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     while blocked_stage:
-        evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id}; claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds); ledger.complete_validation_stage(trial_id,blocked_stage.name,"BLOCKED",{"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=event_at); blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
+        evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id}; claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest); ledger.complete_validation_stage(trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now); blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     status="PASSED" if verdict=="PASS" else "FAILED"
     current=ledger.load(trial_id)
     if current.status=="RUNNING": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at))
     count=ledger.effective_trial_count(family).count
-    base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"stage_evidence_hashes":dict(hashes),"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
+    base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"stage_evidence_hashes":dict(hashes),"stage_receipt_bindings":{k:{"global_seq":v["global_seq"],"row_hash":v["row_hash"]} for k,v in ledger.validation_receipt(trial_id).items() if k in _STAGE_ORDER},"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
     base["artifact_commitment"]=_digest(base); artifact=ValidationArtifact(**base); ledger.save_validation_artifact(trial_id,base); return artifact
 
-__all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","run_validation_dag"]
+__all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","run_validation_dag"]

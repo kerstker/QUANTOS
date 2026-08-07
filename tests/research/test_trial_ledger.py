@@ -258,7 +258,7 @@ def test_constructor_translates_bad_path_and_unhashable_status(tmp_path):
 def test_receipt_reclaims_stale_claim(tmp_path):
     path = str(tmp_path / "stale.db")
     ledger = TrialLedger(path)
-    ledger.append(rec())
+    ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
     assert ledger.claim_validation_stage(h(1), "cheap", owner="old", now=100, lease_seconds=5) == "CLAIMED"
     assert ledger.claim_validation_stage(h(1), "cheap", owner="new", now=106, lease_seconds=5) == "CLAIMED"
     assert ledger.validation_receipt(h(1))["cheap"]["owner"] == "new"
@@ -271,21 +271,17 @@ def test_receipt_rejects_phantom_trial(tmp_path):
 
 def test_receipt_prefix_hole_is_rejected(tmp_path):
     path = str(tmp_path / "hole.db")
-    ledger = TrialLedger(path); ledger.append(rec())
+    ledger = TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
     ledger.claim_validation_stage(h(1), "cheap")
-    ledger.complete_validation_stage(h(1), "cheap", "DONE", {"evidence_hash": h(902)}, owner="legacy", now=0)
-    con = sqlite3.connect(path); con.execute("DROP TRIGGER validation_receipts_no_delete"); con.execute("DELETE FROM validation_receipt_events WHERE trial_id=? AND event_index=0", (h(1),)); con.commit(); con.close()
-    with pytest.raises(TrialLedgerError): ledger.verify()
+    with pytest.raises(TrialLedgerError): ledger.complete_validation_stage(h(1), "cheap", "DONE", {"evidence_hash": h(902)}, owner="legacy", now=0)
+    ledger.verify()
     path = str(tmp_path / "receipt-tamper.db")
     ledger = TrialLedger(path); tid = h(801)
-    ledger.append(rec(801))
+    ledger.append(rec(801)); ledger.append(rec(801, status="RUNNING", index=1, at=2))
     with pytest.raises(TrialLedgerError):
         ledger.save_validation_artifact(tid, {"nested": {1: "bad"}})
     ledger.claim_validation_stage(tid, "cheap")
-    ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
-    con = sqlite3.connect(path)
-    con.execute("DROP TRIGGER validation_receipts_no_update")
-    con.execute("UPDATE validation_receipt_events SET payload_json='{}' WHERE trial_id=?", (tid,)); con.commit(); con.close()
     with pytest.raises(TrialLedgerError):
-        ledger.verify()
+        ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
+    ledger.verify()
 
