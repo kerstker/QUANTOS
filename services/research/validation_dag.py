@@ -136,7 +136,7 @@ class StageEvidence:
 
 @dataclass(frozen=True, slots=True)
 class ValidationContext:
-    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int; effective_trial_count: int|None = None; effective_trial_ids: tuple[str,...] = (); trial_set_digest: str = ""
+    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int; effective_trial_count: int|None = None; effective_trial_ids: tuple[str,...] = (); trial_set_digest: str = ""; effective_definition_ids: tuple[str,...] = ()
     @property
     def execution_id(self): return _digest({"trial_id":self.trial_id,"stage":"validation","attempt_independent":True})
 
@@ -238,8 +238,10 @@ class OOSValidationAdapter(_TypedAdapter):
                 if not isinstance(item,Mapping) or set(item) != {"candidate_id","definition"} or item["candidate_id"] != ids[pos]: raise ValueError("PBO definition ordering mismatch")
                 definition_hashes.append(_digest({"canonical_definition":_canonical(item["definition"])}))
             if tuple(definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]): raise ValueError("PBO definition hash mismatch")
+            frozen_definitions=set(context.effective_definition_ids)
+            if not frozen_definitions or frozen_definitions != set(definition_hashes): raise ValueError("OOS population does not match frozen trial set")
             return_population=x["return_series_by_definition"]
-            if not isinstance(return_population,Mapping) or set(return_population) != set(definition_hashes): raise ValueError("catalog return population mismatch")
+            if not isinstance(return_population,Mapping) or set(return_population) != frozen_definitions: raise ValueError("catalog return population mismatch")
             oos_indices=tuple(sorted({index for _, test in wf for index in test}))
             if len(oos_indices) < 2: raise ValueError("insufficient OOS observations for FDR")
             pmap={}; fdr_statistics={}
@@ -272,12 +274,12 @@ class OOSValidationAdapter(_TypedAdapter):
             if tuple(x["returns"]) != tuple(return_population.get(subject_definition_hash, ())): raise ValueError("subject returns do not match catalog population")
             catalog_evidence=create_catalog_evidence(subject_id=candidate_id,subject_definition_hash=subject_definition_hash,trial_definition_hashes=definition_hashes,return_series_by_definition=return_population)
             if not verify_catalog_evidence(catalog_evidence): raise ValueError("catalog evidence verification failed")
-            if context.effective_trial_count is not None and catalog_evidence.effective_trial_count < context.effective_trial_count: raise ValueError("catalog effective trial count understates ledger")
+            if context.effective_trial_count is not None and catalog_evidence.trial_count != context.effective_trial_count: raise ValueError("catalog trial count does not match frozen ledger")
             dsr=catalog_evidence.deflated_sharpe
             candidate_exact=getattr(context.candidate,"exact_definition_id",None)
             if candidate_id != ids[candidate_index] or (candidate_exact is not None and candidate_exact != definition_hashes[candidate_index]): raise ValueError("PBO candidate identity mismatch")
             pbo_returns=x["pbo_return_series_by_definition"]
-            if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != set(definition_hashes): raise ValueError("PBO return population mismatch")
+            if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != frozen_definitions: raise ValueError("PBO return population mismatch")
             pbo_evidence=create_batch_pbo_evidence(return_series_by_definition=pbo_returns)
             if tuple(pbo_evidence.candidate_definition_hashes) != tuple(sorted(definition_hashes)): raise ValueError("PBO evidence binding mismatch")
             if not verify_batch_pbo_evidence(pbo_evidence): raise ValueError("PBO evidence verification failed")
@@ -445,7 +447,8 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             raise
     trial_snapshot=_frozen_trial_snapshot(ledger,trial_id,family)
     trial_set_digest=_digest(list(trial_snapshot.trial_ids))
-    context=ValidationContext(candidate,execution_panel,policy,trial_id,panel_digest,policy.digest,event_at,max(1,trial_snapshot.count),trial_snapshot.trial_ids,trial_set_digest); hashes={}; metadata={}; verdict="PASS"; reason=None
+    frozen_definitions=tuple(ledger.load(item).exact_definition_id for item in trial_snapshot.trial_ids)
+    context=ValidationContext(candidate,execution_panel,policy,trial_id,panel_digest,policy.digest,event_at,effective_trial_count=max(1,trial_snapshot.count),effective_trial_ids=trial_snapshot.trial_ids,trial_set_digest=trial_set_digest,effective_definition_ids=frozen_definitions); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
         try:
             claim_result=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)

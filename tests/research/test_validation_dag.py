@@ -298,13 +298,17 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     policy = ValidationPolicy()
     panel["oos"]["candidate_id"] = "alpha-0"
     panel["oos"]["candidate_index"] = 0
-    context=ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)
+    context=ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1, effective_definition_ids=definition_hashes)
     stage_results=[stage.evaluate(context) for stage in production_adapters()]
     oos_result=next(result for result in stage_results if result.stage == "oos")
     assert oos_result.outcome == "PASS", (oos_result.reason, dict(oos_result.evidence))
     assert all(result.outcome == "PASS" for result in stage_results)
     candidate=Candidate("a" * 64, "f" * 64, definition_hashes[0], policy.digest)
     with TrialLedger(str(tmp_path / "production.db")) as ledger:
+        peer_trial_id = _digest({"fixture_peer": definition_hashes[1]})
+        peer_alpha_id = _digest({"fixture_peer_alpha": definition_hashes[1]})
+        ledger.append(TrialRecord(peer_trial_id, peer_alpha_id, candidate.family_id, definition_hashes[1], policy.digest, "PLANNED", 0, 0))
+        ledger.append(TrialRecord(peer_trial_id, peer_alpha_id, candidate.family_id, definition_hashes[1], policy.digest, "RUNNING", 1, 0))
         artifact=run_validation_dag(candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True)
         assert artifact.verdict == "PASS"
         assert set(artifact.stage_metadata) == {"cheap", "oos", "realism"}

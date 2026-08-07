@@ -9,7 +9,7 @@ from quantos.contracts.cost import CostModel
 from quantos.contracts.data import Bar
 from quantos.contracts.feature import FeatureValue
 from services.alpha.family_testing import FamilyAssignment
-from services.research.trial_ledger import TrialLedger
+from services.research.trial_ledger import TrialLedger, TrialRecord
 from services.research.validation_dag import (
     ValidationPolicy,
     _canonical,
@@ -149,6 +149,12 @@ def _run_case(root: Path, name: str, panel: Mapping[str, Any], exact_definition_
     policy = ValidationPolicy()
     candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
     with TrialLedger(str(root / f"{name}.db")) as ledger:
+        peer_definitions = tuple(panel.get("oos", {}).get("pbo_candidate_definition_hashes", ()))[1:]
+        for index, definition_hash in enumerate(peer_definitions, start=1):
+            peer_trial_id = _digest({"case": name, "peer": index})
+            peer_alpha_id = _digest({"case": name, "peer_alpha": index})
+            ledger.append(TrialRecord(peer_trial_id, peer_alpha_id, candidate.family_id, definition_hash, policy.digest, "PLANNED", 0, 0))
+            ledger.append(TrialRecord(peer_trial_id, peer_alpha_id, candidate.family_id, definition_hash, policy.digest, "RUNNING", 1, 0))
         artifact = run_validation_dag(
             candidate,
             panel,
