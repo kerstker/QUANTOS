@@ -111,7 +111,6 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
             "candidate_ids": candidate_ids,
             "candidate_id": candidate_ids[0],
             "candidate_index": 0,
-            "pvalues": {"alpha-0": 0.001, "alpha-1": 0.02, "alpha-2": 0.8},
             "families": FamilyAssignment(
                 {"alpha-0": "family-a", "alpha-1": "family-a", "alpha-2": "family-b"},
                 {"alpha-0": "DECLARED", "alpha-1": "DECLARED", "alpha-2": "DECLARED"},

@@ -1,7 +1,8 @@
 """确定性、分层、失败关闭的验证 DAG。生产 adapter 只调用已登记的 typed 引擎。"""
 from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
-import hashlib, json, math, re, time
+import hashlib, json, math, re, statistics, time
+from statistics import NormalDist
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, runtime_checkable
@@ -191,7 +192,7 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","return_series_by_definition","candidate_ids","pvalues","families","pbo_return_series_by_definition","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        required={"n","train_size","test_size","returns","return_series_by_definition","candidate_ids","families","pbo_return_series_by_definition","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
         threshold_names={"fdr_q","dsr_floor","pbo_max","min_oos_fold_mean"}
         if isinstance(x,Mapping) and threshold_names.intersection(x):
             return self._block("panel cannot define validation thresholds")
@@ -229,31 +230,45 @@ class OOSValidationAdapter(_TypedAdapter):
             purged_test_means=validate_splits(pk,sequential=False)
             ids=tuple(x["candidate_ids"])
             if not ids or len(set(ids)) != len(ids) or any(type(v) is not str or not v for v in ids): raise ValueError("invalid candidate ids")
-            raw_p=x["pvalues"]
-            pmap=dict(raw_p) if isinstance(raw_p,Mapping) else dict(zip(ids,raw_p))
-            if set(pmap) != set(ids) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in pmap.values()): raise ValueError("invalid candidate p-values")
+            if "pvalues" in x or "family_pvalues" in x: raise ValueError("external p-values are not accepted")
+            definitions=x["pbo_candidate_definitions"]
+            if not isinstance(definitions,(tuple,list)) or len(definitions) != len(ids): raise ValueError("PBO definitions must align with candidates")
+            definition_hashes=[]
+            for pos, item in enumerate(definitions):
+                if not isinstance(item,Mapping) or set(item) != {"candidate_id","definition"} or item["candidate_id"] != ids[pos]: raise ValueError("PBO definition ordering mismatch")
+                definition_hashes.append(_digest({"canonical_definition":_canonical(item["definition"])}))
+            if tuple(definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]): raise ValueError("PBO definition hash mismatch")
+            return_population=x["return_series_by_definition"]
+            if not isinstance(return_population,Mapping) or set(return_population) != set(definition_hashes): raise ValueError("catalog return population mismatch")
+            oos_indices=tuple(sorted({index for _, test in wf for index in test}))
+            if len(oos_indices) < 2: raise ValueError("insufficient OOS observations for FDR")
+            pmap={}; fdr_statistics={}
+            for candidate_id_value, definition_hash in zip(ids,definition_hashes):
+                values=tuple(return_population[definition_hash])
+                if len(values) != n or any(type(value) is not float or not math.isfinite(value) for value in values): raise ValueError("FDR return population must contain aligned exact floats")
+                oos_values=tuple(values[index] for index in oos_indices)
+                mean=math.fsum(oos_values)/len(oos_values)
+                variance=statistics.variance(oos_values)
+                if variance == 0.0:
+                    statistic=None
+                    pvalue=0.0 if mean > 0.0 else 1.0
+                else:
+                    statistic=mean/math.sqrt(variance/len(oos_values))
+                    pvalue=1.0-NormalDist().cdf(statistic)
+                pmap[candidate_id_value]=pvalue
+                fdr_statistics[candidate_id_value]={"definition_hash":definition_hash,"n_oos":len(oos_values),"mean":mean,"variance":variance,"statistic":statistic,"zero_variance":variance == 0.0,"pvalue":pvalue}
             oos_settings=context.policy.settings.get("oos",{}) if isinstance(context.policy.settings,Mapping) else {}
             if not isinstance(oos_settings,Mapping) or set(oos_settings)-threshold_names: raise ValueError("invalid OOS policy settings")
             q=oos_settings.get("fdr_q",.1); dsr_floor=oos_settings.get("dsr_floor",.95); pbo_max=oos_settings.get("pbo_max",.5); min_oos_fold_mean=oos_settings.get("min_oos_fold_mean",0.0)
             if any(type(v) not in (int,float) or isinstance(v,bool) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
             if type(min_oos_fold_mean) not in (int,float) or isinstance(min_oos_fold_mean,bool) or not math.isfinite(float(min_oos_fold_mean)): raise ValueError("invalid OOS fold threshold")
             pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
-            if "family_pvalues" in x: raise ValueError("external family p-values are not accepted")
             if not hasattr(x["families"],"family_of") or set(x["families"].family_of) != set(ids): raise ValueError("family assignment coverage mismatch")
             fam=hierarchical_fdr(pvalues=pmap,families=x["families"],q=q)
-            definitions=x["pbo_candidate_definitions"]
-            if not isinstance(definitions,(tuple,list)) or len(definitions) != len(ids): raise ValueError("PBO definitions must align with candidates")
-            definition_ids=[]; definition_hashes=[]
-            for pos, item in enumerate(definitions):
-                if not isinstance(item,Mapping) or set(item) != {"candidate_id","definition"} or item["candidate_id"] != ids[pos]: raise ValueError("PBO definition ordering mismatch")
-                definition_ids.append(item["candidate_id"]); definition_hashes.append(_digest({"canonical_definition":_canonical(item["definition"])}))
-            if tuple(definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]): raise ValueError("PBO definition hash mismatch")
             candidate_id=x.get("candidate_id",ids[x.get("candidate_index",0)] if type(x.get("candidate_index",0)) is int and 0 <= x.get("candidate_index",0) < len(ids) else None)
             candidate_index=x.get("candidate_index",0)
             if type(candidate_index) is not int or not 0 <= candidate_index < len(ids): raise ValueError("invalid candidate index")
             subject_definition_hash=definition_hashes[candidate_index]
-            return_population=x["return_series_by_definition"]
-            if not isinstance(return_population,Mapping): raise ValueError("catalog return population is required")
             if tuple(x["returns"]) != tuple(return_population.get(subject_definition_hash, ())): raise ValueError("subject returns do not match catalog population")
             catalog_evidence=create_catalog_evidence(subject_id=candidate_id,subject_definition_hash=subject_definition_hash,trial_definition_hashes=definition_hashes,return_series_by_definition=return_population)
             if not verify_catalog_evidence(catalog_evidence): raise ValueError("catalog evidence verification failed")
@@ -275,8 +290,8 @@ class OOSValidationAdapter(_TypedAdapter):
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
         split_evidence={"walk_forward_test_means":walk_forward_test_means,"purged_test_means":purged_test_means,"min_oos_fold_mean":float(min_oos_fold_mean)}
         split_passed=all(value >= float(min_oos_fold_mean) for value in (*walk_forward_test_means,*purged_test_means))
-        if not wf or not pk or not split_passed or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
-        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,dsr=dsr,catalog_evidence=catalog_evidence.model_dump(mode="json"),pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        if not wf or not pk or not split_passed or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,fdr_pvalues=pmap,fdr_statistics=fdr_statistics,dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,fdr_pvalues=pmap,fdr_statistics=fdr_statistics,dsr=dsr,catalog_evidence=catalog_evidence.model_dump(mode="json"),pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
 
 class RealismValidationAdapter(_TypedAdapter):
     name="realism"; implementation_id="services.research.realism.capacity_curve;tail_risk;validation.regime;CostModel:1"
