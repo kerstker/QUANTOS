@@ -270,3 +270,16 @@ def test_pbo_evidence_commitment_rejects_identity_and_column_mutation():
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"candidate_definition_hashes": ("c"*64,"b"*64)}))
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"performance_matrix": tuple(tuple(reversed(row)) for row in evidence.performance_matrix)}))
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"pbo": min(1.0,evidence.pbo+.1)}))
+
+
+def test_pbo_evidence_v2_and_legacy_v1_rejected():
+    from pydantic import ValidationError
+    from quantos.contracts.validation import BatchPboEvidence, PboAlignment
+    from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
+    evidence=create_batch_pbo_evidence(candidate_definition_hashes=("a"*64,"b"*64),performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)),alignment=PboAlignment.POSITIONAL_LEGACY,aligned_period_count=4)
+    assert evidence.schema_version == 2 and verify_batch_pbo_evidence(evidence)
+    legacy=evidence.model_dump(mode="python"); legacy["schema_version"]=1; legacy.pop("identity_commitment")
+    with pytest.raises(ValidationError, match="unsupported PBO evidence schema_version"):
+        BatchPboEvidence.model_validate(legacy)
+    missing=evidence.model_dump(mode="python"); missing.pop("identity_commitment")
+    with pytest.raises(ValidationError): BatchPboEvidence.model_validate(missing)

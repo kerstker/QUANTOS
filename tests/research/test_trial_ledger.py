@@ -303,3 +303,12 @@ def test_named_recovery_forwards_bindings_and_reclaims_expired_lease(tmp_path):
     assert ledger.recover_validation_stage(h(1),"cheap",owner="recovery",now=161,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)) == "CLAIMED"
     receipt=ledger.validation_receipt(h(1))["cheap"]
     assert receipt["owner"] == "recovery" and receipt["attempt"] == 2
+
+
+def test_wrong_table_append_only_trigger_preflight_is_atomic(tmp_path):
+    path=str(tmp_path / "wrong-trigger.db"); ledger=TrialLedger(path); ledger.close()
+    con=sqlite3.connect(path); con.execute("DROP TRIGGER validation_receipts_no_update"); con.execute("CREATE TRIGGER validation_receipts_no_update BEFORE UPDATE ON trial_heads BEGIN SELECT RAISE(ABORT,'validation receipts are append-only'); END"); con.commit()
+    before=con.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path)
+    con=sqlite3.connect(path); after=con.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall(); con.close()
+    assert before == after

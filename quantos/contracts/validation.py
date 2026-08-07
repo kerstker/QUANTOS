@@ -32,7 +32,7 @@ class BatchPboEvidence(BaseModel):
     """Replayable CSCV input retained with each evaluated candidate."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     algorithm: Literal["CSCV_V1"] = "CSCV_V1"
     candidate_definition_hashes: tuple[str, ...]
     performance_matrix: tuple[tuple[float, ...], ...]
@@ -41,7 +41,14 @@ class BatchPboEvidence(BaseModel):
     aligned_event_times: tuple[int, ...] = ()
     aligned_event_times_sha256: str = Field(min_length=64, max_length=64)
     pbo: float = Field(ge=0.0, le=1.0)
-    identity_commitment: str = ""
+    identity_commitment: str = Field(min_length=64, max_length=64)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_schema(cls, value):
+        if isinstance(value, dict) and value.get("schema_version", 2) != 2:
+            raise ValueError("unsupported PBO evidence schema_version; expected 2")
+        return value
 
     @model_validator(mode="after")
     def _validate_evidence_shape(self) -> "BatchPboEvidence":
@@ -94,7 +101,7 @@ class BatchPboEvidence(BaseModel):
             )
         if self.aligned_event_times_sha256 != expected_calendar_hash:
             raise ValueError("aligned event-time digest mismatch")
-        if self.identity_commitment and self.identity_commitment != stable_hash({
+        if self.identity_commitment != stable_hash({
             "candidate_definition_hashes": list(self.candidate_definition_hashes),
             "performance_matrix": [list(row) for row in self.performance_matrix],
             "alignment": self.alignment.value,

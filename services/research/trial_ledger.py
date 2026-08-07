@@ -59,6 +59,17 @@ INSERT OR IGNORE INTO validation_receipt_heads(id,event_count,head_hash) VALUES(
 CREATE TRIGGER IF NOT EXISTS validation_receipts_no_update BEFORE UPDATE ON validation_receipt_events BEGIN SELECT RAISE(ABORT,'validation receipts are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS validation_receipts_no_delete BEFORE DELETE ON validation_receipt_events BEGIN SELECT RAISE(ABORT,'validation receipts are append-only'); END;
 """
+_SCHEMA_STATEMENTS = (
+    "CREATE TABLE IF NOT EXISTS trial_events (trial_id TEXT NOT NULL,event_index INTEGER NOT NULL,alpha_id TEXT NOT NULL,family_id TEXT NOT NULL,exact_definition_id TEXT NOT NULL,validation_policy_digest TEXT NOT NULL,status TEXT NOT NULL,at INTEGER NOT NULL,global_seq INTEGER NOT NULL UNIQUE,prev_hash TEXT NOT NULL,event_hash TEXT NOT NULL,PRIMARY KEY(trial_id,event_index))",
+    "CREATE TABLE IF NOT EXISTS trial_heads (trial_id TEXT PRIMARY KEY,event_count INTEGER NOT NULL,head_hash TEXT NOT NULL,global_count INTEGER NOT NULL,global_head_hash TEXT NOT NULL)",
+    "CREATE TRIGGER IF NOT EXISTS trial_events_no_update BEFORE UPDATE ON trial_events BEGIN SELECT RAISE(ABORT,'trial_events is append-only'); END",
+    "CREATE TRIGGER IF NOT EXISTS trial_events_no_delete BEFORE DELETE ON trial_events BEGIN SELECT RAISE(ABORT,'trial_events is append-only'); END",
+    "CREATE TABLE IF NOT EXISTS validation_receipt_events (trial_id TEXT NOT NULL,stage TEXT NOT NULL,event_index INTEGER NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,payload_hash TEXT NOT NULL,global_seq INTEGER NOT NULL UNIQUE,prev_hash TEXT NOT NULL,row_hash TEXT NOT NULL,owner TEXT NOT NULL,lease_until INTEGER NOT NULL,attempt INTEGER NOT NULL,PRIMARY KEY(trial_id,stage,event_index))",
+    "CREATE TABLE IF NOT EXISTS validation_receipt_heads (id INTEGER PRIMARY KEY CHECK(id=1),event_count INTEGER NOT NULL,head_hash TEXT NOT NULL)",
+    "INSERT OR IGNORE INTO validation_receipt_heads(id,event_count,head_hash) VALUES(1,0,'')",
+    "CREATE TRIGGER IF NOT EXISTS validation_receipts_no_update BEFORE UPDATE ON validation_receipt_events BEGIN SELECT RAISE(ABORT,'validation receipts are append-only'); END",
+    "CREATE TRIGGER IF NOT EXISTS validation_receipts_no_delete BEFORE DELETE ON validation_receipt_events BEGIN SELECT RAISE(ABORT,'validation receipts are append-only'); END",
+)
 _SELECT = "SELECT trial_id,event_index,alpha_id,family_id,exact_definition_id,validation_policy_digest,status,at,global_seq,prev_hash,event_hash FROM trial_events"
 
 
@@ -125,9 +136,15 @@ def _preflight_existing_schema(c: sqlite3.Connection) -> None:
     if receipt_present and receipt_present != set(receipt_expected): raise TrialLedgerError("receipt ledger schema incomplete")
     for table, cols in receipt_expected.items():
         if table in names and [r[1] for r in c.execute(f"PRAGMA table_info({table})")] != cols: raise TrialLedgerError("receipt ledger schema malformed")
-    triggers={r[0]: (r[1] or "").lower() for r in c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
-    for name in ("trial_events_no_update","trial_events_no_delete","validation_receipts_no_update","validation_receipts_no_delete"):
-        if name in triggers and "append-only" not in triggers[name]: raise TrialLedgerError("legacy ledger trigger malformed")
+    triggers={r[0]: " ".join((r[1] or "").lower().split()) for r in c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
+    expected_triggers={
+        "trial_events_no_update": "create trigger trial_events_no_update before update on trial_events begin select raise(abort,'trial_events is append-only'); end",
+        "trial_events_no_delete": "create trigger trial_events_no_delete before delete on trial_events begin select raise(abort,'trial_events is append-only'); end",
+        "validation_receipts_no_update": "create trigger validation_receipts_no_update before update on validation_receipt_events begin select raise(abort,'validation receipts are append-only'); end",
+        "validation_receipts_no_delete": "create trigger validation_receipts_no_delete before delete on validation_receipt_events begin select raise(abort,'validation receipts are append-only'); end",
+    }
+    for name, expected in expected_triggers.items():
+        if name in triggers and triggers[name] != expected: raise TrialLedgerError("legacy ledger trigger malformed")
 
 class TrialLedger:
     def __init__(self, db_path: str, create: bool = True):
@@ -146,14 +163,15 @@ class TrialLedger:
             with self._lock:
                 _preflight_existing_schema(self._c)
                 try:
-                    self._c.executescript("BEGIN;" + chr(10) + _SCHEMA + chr(10) + "COMMIT;")
-
-
+                    self._c.execute("BEGIN IMMEDIATE")
+                    for statement in _SCHEMA_STATEMENTS:
+                        self._c.execute(statement)
+                    self._require_schema()
+                    self._c.execute("COMMIT")
                 except Exception:
                     try: self._c.execute("ROLLBACK")
                     except sqlite3.Error: pass
                     raise
-            self._require_schema()
         except TrialLedgerError:
             if self._c is not None:
                 try: self._c.close()
@@ -285,8 +303,8 @@ class TrialLedger:
             if state == "CLAIMED":
                 if set(payload) != {"stage","attempt","panel_digest","policy_digest"} or payload.get("stage") != stage or type(payload.get("attempt")) is not int or payload.get("attempt") < 1: raise TrialLedgerError("claimed receipt schema invalid")
             elif stage in _RECEIPT_STAGES:
-                required={"trial_id","panel_digest","policy_digest","event_at","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}
-                if set(payload) != required or payload.get("trial_id") != trial_id or type(payload.get("event_at")) is not int or payload.get("event_at") != self._aggregate_locked(trial_id).events[0].at or payload.get("stage") != stage or payload.get("outcome") not in {"PASS","BLOCK"} or any(type(payload.get(k)) is not str or not payload.get(k) for k in ("version","implementation_id")) or (payload.get("reason") is not None and type(payload.get("reason")) is not str) or any(type(payload.get(k)) is not str or not _HEX64.fullmatch(payload.get(k)) for k in ("trial_id","panel_digest","policy_digest","evidence_hash")): raise TrialLedgerError("terminal receipt schema invalid")
+                required={"trial_id","panel_digest","policy_digest","event_at","effective_trial_count","trial_set_digest","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}
+                if set(payload) != required or payload.get("trial_id") != trial_id or type(payload.get("event_at")) is not int or payload.get("event_at") != self._aggregate_locked(trial_id).events[0].at or type(payload.get("effective_trial_count")) is not int or payload.get("effective_trial_count") < 0 or type(payload.get("trial_set_digest")) is not str or not _HEX64.fullmatch(payload.get("trial_set_digest")) or payload.get("stage") != stage or payload.get("outcome") not in {"PASS","BLOCK"} or any(type(payload.get(k)) is not str or not payload.get(k) for k in ("version","implementation_id")) or (payload.get("reason") is not None and type(payload.get("reason")) is not str) or any(type(payload.get(k)) is not str or not _HEX64.fullmatch(payload.get(k)) for k in ("trial_id","panel_digest","policy_digest","evidence_hash")): raise TrialLedgerError("terminal receipt schema invalid")
                 expected_evidence=_hash(_canonical({"stage":payload["stage"],"version":payload["version"],"implementation_id":payload["implementation_id"],"outcome":payload["outcome"],"evidence":payload["evidence"],"reason":payload["reason"]}).encode())
                 if payload["evidence_hash"] != expected_evidence: raise TrialLedgerError("terminal receipt evidence hash invalid")
                 if (state == "DONE" and payload["outcome"] != "PASS") or (state in {"BLOCKED","FAILED"} and payload["outcome"] != "BLOCK"): raise TrialLedgerError("receipt state/outcome mismatch")
@@ -346,8 +364,8 @@ class TrialLedger:
                 if self._aggregate_locked(trial_id).status != "RUNNING": raise TrialLedgerError("validation receipt requires RUNNING trial")
                 current=self._receipt_rows_locked(trial_id).get(stage)
                 if not current or current["state"] != "CLAIMED" or current["owner"] != owner or current["lease_until"] <= now: raise TrialLedgerConflict("receipt claim ownership lost")
-                if not isinstance(payload,Mapping) or set(payload) != {"trial_id","panel_digest","policy_digest","event_at","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("terminal receipt payload schema invalid")
-                if payload["trial_id"] != trial_id or type(payload["event_at"]) is not int or payload["event_at"] != self._aggregate_locked(trial_id).events[0].at or payload["stage"] != stage or payload["outcome"] not in {"PASS","BLOCK"}: raise TrialLedgerError("terminal receipt binding invalid")
+                if not isinstance(payload,Mapping) or set(payload) != {"trial_id","panel_digest","policy_digest","event_at","effective_trial_count","trial_set_digest","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("terminal receipt payload schema invalid")
+                if payload["trial_id"] != trial_id or type(payload["event_at"]) is not int or payload["event_at"] != self._aggregate_locked(trial_id).events[0].at or type(payload["effective_trial_count"]) is not int or payload["effective_trial_count"] < 0 or type(payload["trial_set_digest"]) is not str or not _HEX64.fullmatch(payload["trial_set_digest"]) or payload["stage"] != stage or payload["outcome"] not in {"PASS","BLOCK"}: raise TrialLedgerError("terminal receipt binding invalid")
                 if not all(type(payload[k]) is str and _HEX64.fullmatch(payload[k]) for k in ("trial_id","panel_digest","policy_digest","evidence_hash")): raise TrialLedgerError("terminal receipt identity invalid")
                 if not all(type(payload[k]) is str and payload[k] for k in ("version","implementation_id")): raise TrialLedgerError("terminal receipt stage identity invalid")
                 if current["payload"].get("panel_digest") != payload["panel_digest"] or current["payload"].get("policy_digest") != payload["policy_digest"]: raise TrialLedgerError("terminal receipt execution binding mismatch")
@@ -369,11 +387,13 @@ class TrialLedger:
     def _validate_artifact_payload(self, trial_id: str, payload: Mapping[str, Any]) -> None:
         if not isinstance(payload, Mapping): raise TrialLedgerError("artifact must be mapping")
         aggregate=self._aggregate_locked(trial_id)
-        required={"trial_id","alpha_id","family_id","exact_definition_id","panel_digest","policy_digest","event_at","stage_evidence_hashes","stage_receipt_bindings","effective_trial_count","verdict","reason","stage_metadata","artifact_commitment"}
+        required={"trial_id","alpha_id","family_id","exact_definition_id","panel_digest","policy_digest","event_at","effective_trial_ids","trial_set_digest","stage_evidence_hashes","stage_receipt_bindings","effective_trial_count","verdict","reason","stage_metadata","artifact_commitment"}
         if set(payload) != required or payload["trial_id"] != trial_id: raise TrialLedgerError("artifact identity mismatch")
         if any(payload[k] != getattr(aggregate, k if k != "policy_digest" else "validation_policy_digest") for k in ("alpha_id","family_id","exact_definition_id")): raise TrialLedgerError("artifact identity mismatch")
         if payload["policy_digest"] != aggregate.validation_policy_digest or type(payload["event_at"]) is not int or payload["event_at"] != aggregate.events[0].at or payload["verdict"] not in {"PASS","BLOCK"}: raise TrialLedgerError("artifact identity mismatch")
         if type(payload["effective_trial_count"]) is not int or payload["effective_trial_count"] < 0: raise TrialLedgerError("invalid artifact trial count")
+        trial_ids=payload["effective_trial_ids"]
+        if not isinstance(trial_ids,(tuple,list)) or len(trial_ids) != payload["effective_trial_count"] or any(type(v) is not str or not _HEX64.fullmatch(v) for v in trial_ids) or payload["trial_set_digest"] != _hash(_canonical(list(trial_ids)).encode()): raise TrialLedgerError("artifact trial-set commitment mismatch")
         metadata=payload["stage_metadata"]
         if not isinstance(metadata,Mapping) or set(metadata) != set(_RECEIPT_STAGES): raise TrialLedgerError("artifact stage metadata incomplete")
         hashes=payload["stage_evidence_hashes"]; bindings=payload["stage_receipt_bindings"]
@@ -386,12 +406,10 @@ class TrialLedger:
             if not isinstance(rp,Mapping) or receipts[stage]["state"] not in {"DONE","BLOCKED","FAILED"}: raise TrialLedgerError("artifact receipt binding mismatch")
             b=bindings[stage]
             if not isinstance(b,Mapping) or set(b) != {"global_seq","row_hash"} or type(b["global_seq"]) is not int or not _HEX64.fullmatch(str(b["row_hash"])) or b["global_seq"] != receipts[stage]["global_seq"] or b["row_hash"] != self._c.execute("SELECT row_hash FROM validation_receipt_events WHERE trial_id=? AND stage=? AND global_seq=?",(trial_id,stage,b["global_seq"])).fetchone()[0]: raise TrialLedgerError("artifact receipt row binding mismatch")
-            if rp.get("trial_id") != trial_id or type(rp.get("event_at")) is not int or rp.get("event_at") != aggregate.events[0].at or rp.get("panel_digest") != payload["panel_digest"] or rp.get("policy_digest") != payload["policy_digest"] or not _HEX64.fullmatch(str(rp.get("panel_digest",""))) or not _HEX64.fullmatch(str(rp.get("policy_digest",""))) or any(m[k] != rp.get(k) for k in ("stage","version","implementation_id")) or rp.get("evidence_hash") != hashes[stage]: raise TrialLedgerError("artifact stage identity mismatch")
-            if set(rp) != {"trial_id","panel_digest","policy_digest","event_at","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("artifact receipt evidence malformed")
+            if rp.get("trial_id") != trial_id or type(rp.get("event_at")) is not int or rp.get("event_at") != aggregate.events[0].at or rp.get("effective_trial_count") != payload["effective_trial_count"] or rp.get("trial_set_digest") != payload["trial_set_digest"] or rp.get("panel_digest") != payload["panel_digest"] or rp.get("policy_digest") != payload["policy_digest"] or not _HEX64.fullmatch(str(rp.get("panel_digest",""))) or not _HEX64.fullmatch(str(rp.get("policy_digest",""))) or any(m[k] != rp.get(k) for k in ("stage","version","implementation_id")) or rp.get("evidence_hash") != hashes[stage]: raise TrialLedgerError("artifact stage identity mismatch")
+            if set(rp) != {"trial_id","panel_digest","policy_digest","event_at","effective_trial_count","trial_set_digest","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("artifact receipt evidence malformed")
             expected_evidence=_hash(_canonical({"stage":rp["stage"],"version":rp["version"],"implementation_id":rp["implementation_id"],"outcome":rp["outcome"],"evidence":rp["evidence"],"reason":rp["reason"]}).encode())
             if rp["evidence_hash"] != expected_evidence: raise TrialLedgerError("artifact evidence self-hash mismatch")
-        expected_count=self._effective_trial_count_locked(aggregate.family_id).count
-        if payload["effective_trial_count"] != expected_count: raise TrialLedgerError("artifact effective trial count mismatch")
         expected_verdict="PASS" if aggregate.status == "PASSED" and all(receipts[x]["payload"].get("outcome") == "PASS" for x in _RECEIPT_STAGES) else "BLOCK"
         if payload["verdict"] != expected_verdict: raise TrialLedgerError("artifact final verdict mismatch")
         commitment=dict(payload); supplied=commitment.pop("artifact_commitment",None)
@@ -434,7 +452,15 @@ class TrialLedger:
     def validation_receipt(self, trial_id):
         if not isinstance(trial_id,str) or not _HEX64.fullmatch(trial_id): raise TrialLedgerError("invalid trial_id")
         with self._lock:
-            self._verify_receipts_locked(); return self._receipt_rows_locked(trial_id)
+            try:
+                self._c.execute("BEGIN")
+                self._verify_receipts_locked(); result=self._receipt_rows_locked(trial_id)
+                self._c.execute("COMMIT"); return result
+            except (TrialLedgerError,sqlite3.Error) as exc:
+                try:self._c.execute("ROLLBACK")
+                except sqlite3.Error:pass
+                if isinstance(exc,TrialLedgerError): raise
+                raise TrialLedgerError("ledger database failure") from exc
 
     def verify(self):
         with self._lock:

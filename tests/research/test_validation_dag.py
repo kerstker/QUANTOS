@@ -256,7 +256,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     monkeypatch.setattr(wfmod, "purged_kfold", lambda *a, **k: (calls.__setitem__("purged", calls["purged"] + 1) or [([0], [1])]))
     monkeypatch.setattr(dsrmod, "deflated_sharpe_ratio", lambda *a, **k: (calls.__setitem__("dsr", calls["dsr"] + 1) or .99))
     monkeypatch.setattr(dsrmod, "pbo_cscv", lambda *a, **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or .1))
-    evidence = BatchPboEvidence(candidate_definition_hashes=("8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e", "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08"), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4, aligned_event_times=(), aligned_event_times_sha256=stable_hash({"alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4}), pbo=.1)
+    evidence = BatchPboEvidence(candidate_definition_hashes=("8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e", "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08"), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4, aligned_event_times=(), aligned_event_times_sha256=stable_hash({"alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4}), pbo=.1, identity_commitment=stable_hash({"candidate_definition_hashes": ["8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e", "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08"], "performance_matrix": [[.1,.2],[.2,.3],[.3,.4],[.4,.5]], "alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4, "aligned_event_times": [], "pbo": .1}))
     monkeypatch.setattr(pbomod, "create_batch_pbo_evidence", lambda **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or evidence))
     monkeypatch.setattr(pbomod, "verify_batch_pbo_evidence", lambda x: (calls.__setitem__("pbo_verify", calls["pbo_verify"] + 1) or True))
     monkeypatch.setattr(mtmod, "benjamini_hochberg", lambda *a, **k: (calls.__setitem__("bh", calls["bh"] + 1) or {0}))
@@ -394,3 +394,45 @@ def test_terminal_receipts_rebuild_artifact_without_provider_rerun(tmp_path):
         con=sqlite3.connect(path); con.execute("DROP TRIGGER validation_receipts_no_delete"); con.execute("DELETE FROM validation_receipt_events WHERE stage='__artifact__'"); con.execute("UPDATE validation_receipt_heads SET event_count=(SELECT count(*) FROM validation_receipt_events), head_hash=(SELECT coalesce((SELECT row_hash FROM validation_receipt_events ORDER BY global_seq DESC LIMIT 1),'') FROM validation_receipt_events LIMIT 1)"); con.commit(); con.close()
         before=list(calls); second=run_validation_dag(candidate, {}, policy, ledger, event_at=1, lease_now=1)
     assert second == first and calls == before
+
+
+def test_execution_snapshot_isolated_from_concurrent_family_mutation(tmp_path):
+    from services.alpha.family_testing import FamilyAssignment
+    entered=threading.Event(); release=threading.Event(); observed=[]
+    class ReadFamily(Stage):
+        def evaluate(self, context):
+            entered.set(); release.wait(2)
+            observed.append(dict(context.panel["families"].family_of))
+            return super().evaluate(context)
+    source={"alpha-0":"family-a"}; assignment=FamilyAssignment(source,{"alpha-0":"DECLARED"})
+    policy=make_policy(ReadFamily("cheap"),Stage("oos"),Stage("realism")); candidate=make_candidate(policy); results=[]
+    with TrialLedger(str(tmp_path / "snapshot.db")) as ledger:
+        worker=threading.Thread(target=lambda: results.append(run_validation_dag(candidate,{"families":assignment},policy,ledger,event_at=1,lease_now=1)))
+        worker.start(); assert entered.wait(1); source["alpha-0"]="mutated"; release.set(); worker.join()
+    assert results[0].verdict == "PASS" and observed == [{"alpha-0":"family-a"}]
+
+
+def test_historical_artifact_survives_later_family_trial(tmp_path):
+    policy=make_policy(Stage("cheap"),Stage("oos"),Stage("realism")); first_candidate=make_candidate(policy)
+    second_candidate=Candidate("b"*64,"f"*64,"d"*64,policy.digest)
+    with TrialLedger(str(tmp_path / "historical.db")) as ledger:
+        first=run_validation_dag(first_candidate,{},policy,ledger,event_at=1,lease_now=1)
+        second=run_validation_dag(second_candidate,{},policy,ledger,event_at=2,lease_now=2)
+        restored=run_validation_dag(first_candidate,{},policy,ledger,event_at=1,lease_now=3)
+    assert first == restored and first.effective_trial_count == 1 and second.effective_trial_count == 2
+
+
+def test_cross_connection_stage_longer_than_five_seconds_uses_wait_budget(tmp_path):
+    import time
+    calls=[]
+    class Slow(Stage):
+        def evaluate(self, context):
+            calls.append(self.name); time.sleep(5.2); return super().evaluate(context)
+    policy=make_policy(Slow("cheap"),Stage("oos"),Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "long-wait.db")
+    ledgers=(TrialLedger(path),TrialLedger(path)); results=[]; errors=[]
+    def worker(ledger):
+        try: results.append(run_validation_dag(candidate,{},policy,ledger,event_at=1,lease_now=1,lease_seconds=60,wait_timeout_seconds=7))
+        except Exception as exc: errors.append(exc)
+    threads=[threading.Thread(target=worker,args=(ledger,)) for ledger in ledgers]
+    [thread.start() for thread in threads]; [thread.join() for thread in threads]; [ledger.close() for ledger in ledgers]
+    assert not errors and len(results)==2 and results[0] == results[1] and calls == ["cheap"]

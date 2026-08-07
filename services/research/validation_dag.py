@@ -30,15 +30,24 @@ def _freeze(value: Any) -> Any:
     raise TypeError(f"value is not canonical JSON: {type(value).__name__}")
 
 def _execution_snapshot(value: Any) -> Any:
-    """Freeze containers while preserving trusted typed engine inputs."""
-    if isinstance(value, (RegisteredLeakageCompute, Enum)):
+    """Deep-freeze containers and copy only exact trusted engine input types."""
+    from quantos.contracts.cost import CostModel
+    from quantos.contracts.data import Bar
+    from quantos.contracts.validation import PboAlignment
+    from services.alpha.family_testing import FamilyAssignment
+    if type(value) is RegisteredLeakageCompute:
         return value
-    if callable(getattr(value, "trade_cost", None)) and callable(getattr(value, "impact_bps", None)):
+    if type(value) is PboAlignment:
         return value
-    if hasattr(value, "family_of") and hasattr(value, "basis"):
-        return value
-    if is_dataclass(value) or callable(getattr(value, "model_dump", None)):
-        return value
+    if type(value) is Bar:
+        return value.model_copy(deep=True)
+    if type(value) is CostModel:
+        return CostModel(fee_bps=value.fee_bps, slippage_bps=value.slippage_bps, impact_coef=value.impact_coef)
+    if type(value) is FamilyAssignment:
+        return FamilyAssignment(
+            MappingProxyType(dict(value.family_of)),
+            MappingProxyType(dict(value.basis)),
+        )
     if isinstance(value, Mapping):
         if any(type(k) is not str for k in value):
             raise TypeError("mapping keys must be strings")
@@ -126,7 +135,7 @@ class StageEvidence:
 
 @dataclass(frozen=True, slots=True)
 class ValidationContext:
-    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int; effective_trial_count: int|None = None
+    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int; effective_trial_count: int|None = None; effective_trial_ids: tuple[str,...] = (); trial_set_digest: str = ""
     @property
     def execution_id(self): return _digest({"trial_id":self.trial_id,"stage":"validation","attempt_independent":True})
 
@@ -237,7 +246,7 @@ class RealismValidationAdapter(_TypedAdapter):
             regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
         if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not math.isfinite(cost_value): return self._block("realism gate blocked")
-        return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime=regime,regime_profitable_frac=regime_profitable,cost=cost_value)
+        return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime={str(k): v for k, v in regime.items()},regime_profitable_frac=regime_profitable,cost=cost_value)
 
 def production_adapters() -> tuple[ValidationStage,...]: return (CheapValidationAdapter(),OOSValidationAdapter(),RealismValidationAdapter())
 _DEFAULT_ADAPTERS=production_adapters()
@@ -256,16 +265,19 @@ class ValidationPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ValidationArtifact:
-    trial_id:str; alpha_id:str; family_id:str; exact_definition_id:str; panel_digest:str; policy_digest:str; event_at:int; stage_evidence_hashes:Mapping[str,str]; stage_receipt_bindings:Mapping[str,Mapping[str,Any]]; effective_trial_count:int; verdict:str; reason:str|None=None; stage_metadata:Mapping[str,Mapping[str,str]]=field(default_factory=dict); artifact_commitment:str|None=None
+    trial_id:str; alpha_id:str; family_id:str; exact_definition_id:str; panel_digest:str; policy_digest:str; event_at:int; effective_trial_ids:tuple[str,...]; trial_set_digest:str; stage_evidence_hashes:Mapping[str,str]; stage_receipt_bindings:Mapping[str,Mapping[str,Any]]; effective_trial_count:int; verdict:str; reason:str|None=None; stage_metadata:Mapping[str,Mapping[str,str]]=field(default_factory=dict); artifact_commitment:str|None=None
     def __post_init__(self):
         if any(type(v) is not str or not _HEX64.fullmatch(v) for v in (self.trial_id,self.alpha_id,self.family_id,self.exact_definition_id,self.panel_digest,self.policy_digest)): raise ValueError("invalid validation artifact identity")
         if type(self.event_at) is not int or isinstance(self.event_at,bool): raise ValueError("event_at must be deterministic integer event time")
+        trial_ids=tuple(self.effective_trial_ids)
+        if len(trial_ids) != self.effective_trial_count or any(type(v) is not str or not _HEX64.fullmatch(v) for v in trial_ids) or self.trial_set_digest != _digest(list(trial_ids)): raise ValueError("invalid frozen trial-set commitment")
+        object.__setattr__(self,"effective_trial_ids",trial_ids)
         if self.verdict not in _TERMINAL or type(self.effective_trial_count) is not int or self.effective_trial_count<0: raise ValueError("invalid validation artifact")
         if set(self.stage_evidence_hashes)!=set(_STAGE_ORDER) or any(type(v) is not str or not _HEX64.fullmatch(v) for v in self.stage_evidence_hashes.values()): raise ValueError("complete lowercase stage hashes required")
         if not isinstance(self.stage_receipt_bindings,Mapping) or set(self.stage_receipt_bindings)!=set(_STAGE_ORDER) or any(set(v)!={"global_seq","row_hash"} or type(v["global_seq"]) is not int or not _HEX64.fullmatch(str(v["row_hash"])) for v in self.stage_receipt_bindings.values()): raise ValueError("complete receipt bindings required")
         if not isinstance(self.stage_metadata,Mapping) or set(self.stage_metadata)!=set(_STAGE_ORDER) or any(set(v)!={"stage","version","implementation_id"} for v in self.stage_metadata.values()): raise ValueError("complete stage metadata required")
         if type(self.artifact_commitment) is not str or not _HEX64.fullmatch(self.artifact_commitment): raise ValueError("artifact commitment required")
-        body={"trial_id":self.trial_id,"alpha_id":self.alpha_id,"family_id":self.family_id,"exact_definition_id":self.exact_definition_id,"panel_digest":self.panel_digest,"policy_digest":self.policy_digest,"event_at":self.event_at,"stage_evidence_hashes":self.stage_evidence_hashes,"stage_receipt_bindings":self.stage_receipt_bindings,"effective_trial_count":self.effective_trial_count,"verdict":self.verdict,"reason":self.reason,"stage_metadata":self.stage_metadata}
+        body={"trial_id":self.trial_id,"alpha_id":self.alpha_id,"family_id":self.family_id,"exact_definition_id":self.exact_definition_id,"panel_digest":self.panel_digest,"policy_digest":self.policy_digest,"event_at":self.event_at,"effective_trial_ids":self.effective_trial_ids,"trial_set_digest":self.trial_set_digest,"stage_evidence_hashes":self.stage_evidence_hashes,"stage_receipt_bindings":self.stage_receipt_bindings,"effective_trial_count":self.effective_trial_count,"verdict":self.verdict,"reason":self.reason,"stage_metadata":self.stage_metadata}
         if _digest(body) != self.artifact_commitment: raise ValueError("artifact commitment mismatch")
         object.__setattr__(self,"stage_evidence_hashes",_freeze(self.stage_evidence_hashes)); object.__setattr__(self,"stage_receipt_bindings",_freeze(self.stage_receipt_bindings)); object.__setattr__(self,"stage_metadata",_freeze(self.stage_metadata))
 
@@ -294,7 +306,7 @@ def _complete_or_recover(ledger, trial_id, stage, state, payload, *, owner, now)
         current=ledger.validation_receipt(trial_id).get(stage)
         if not current or current["state"] not in {"DONE","BLOCKED","FAILED"}: raise
 
-def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
+def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
     if production:
         if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
@@ -302,9 +314,11 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             if (type(stage), stage.name, stage.version, stage.implementation_id) != (type(canonical), canonical.name, canonical.version, canonical.implementation_id): raise ValueError("production adapter identity is not canonical")
             if getattr(stage.evaluate, "__func__", None) is not _PRODUCTION_EVALUATORS.get(type(stage)): raise ValueError("production adapter implementation is not sealed")
     if type(event_at) is not int or isinstance(event_at,bool) or type(lease_now) is not int or isinstance(lease_now,bool): raise ValueError("event_at and lease_now must be deterministic ints")
+    if wait_timeout_seconds is None: wait_timeout_seconds=float(lease_seconds)
+    if type(wait_timeout_seconds) not in (int,float) or not math.isfinite(float(wait_timeout_seconds)) or wait_timeout_seconds <= 0: raise ValueError("wait_timeout_seconds must be finite positive")
     declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
-    alpha,family,exact=_identity(candidate); panel_digest=_panel_digest(panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at})
+    alpha,family,exact=_identity(candidate); execution_panel=_execution_snapshot(panel); panel_digest=_panel_digest(execution_panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at})
     try: ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"PLANNED",0,event_at))
     except TrialLedgerConflict:
         existing=ledger.load(trial_id)
@@ -324,12 +338,14 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 if ar:
                     return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
             raise
-    context=ValidationContext(candidate,_execution_snapshot(panel),policy,trial_id,panel_digest,policy.digest,event_at,ledger.effective_trial_count(family).count); hashes={}; metadata={}; verdict="PASS"; reason=None
+    trial_snapshot=ledger.effective_trial_count(family)
+    trial_set_digest=_digest(list(trial_snapshot.trial_ids))
+    context=ValidationContext(candidate,execution_panel,policy,trial_id,panel_digest,policy.digest,event_at,max(1,trial_snapshot.count),trial_snapshot.trial_ids,trial_set_digest); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
         try:
             claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
         except TrialLedgerError:
-            deadline=time.monotonic()+5.0
+            deadline=time.monotonic()+float(wait_timeout_seconds)
             for attempt in range(10000):
                 current_receipts=ledger.validation_receipt(trial_id)
                 if current_receipts.get("__artifact__"):
@@ -344,7 +360,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 raise TrialLedgerConflict("validation stage wait timeout")
         if claim == "IN_PROGRESS":
             claim = "IN_PROGRESS"
-            deadline=time.monotonic()+5.0
+            deadline=time.monotonic()+float(wait_timeout_seconds)
             for attempt in range(10000):
                 current=ledger.validation_receipt(trial_id).get(stage.name)
                 if current and current["state"] in {"DONE","BLOCKED","FAILED"}:
@@ -364,14 +380,14 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             if not isinstance(evidence,StageEvidence) or evidence.stage!=stage.name or evidence.version!=stage.version or evidence.implementation_id!=stage.implementation_id: raise ValueError("stage evidence identity mismatch")
         except Exception as exc: evidence=_exception_evidence(stage.name,stage.version,stage.implementation_id,exc); reason=f"provider exception: {type(exc).__name__}"
         hashes[stage.name]=evidence.evidence_hash; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id}
-        _complete_or_recover(ledger,trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
+        _complete_or_recover(ledger,trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
         if evidence.outcome=="BLOCK": verdict="BLOCK"; reason=reason or evidence.reason; break
     blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     while blocked_stage:
         evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id};
         try: claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
         except TrialLedgerError:
-            deadline=time.monotonic()+5.0
+            deadline=time.monotonic()+float(wait_timeout_seconds)
             for attempt in range(10000):
                 ar=ledger.validation_receipt(trial_id).get("__artifact__")
                 if ar: return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
@@ -379,9 +395,9 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
             raise TrialLedgerConflict("validation artifact wait timeout")
         if claim == "CLAIMED":
-            _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
+            _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
         elif claim == "IN_PROGRESS":
-            deadline=time.monotonic()+5.0
+            deadline=time.monotonic()+float(wait_timeout_seconds)
             while time.monotonic() < deadline:
                 current=ledger.validation_receipt(trial_id).get(blocked_stage.name)
                 if current and current["state"] in {"DONE","BLOCKED","FAILED"}: break
@@ -391,15 +407,15 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     status="PASSED" if verdict=="PASS" else "FAILED"
     current=ledger.load(trial_id)
     if current.status=="RUNNING": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at))
-    count=ledger.effective_trial_count(family).count
-    base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"stage_evidence_hashes":dict(hashes),"stage_receipt_bindings":{k:{"global_seq":v["global_seq"],"row_hash":v["row_hash"]} for k,v in ledger.validation_receipt(trial_id).items() if k in _STAGE_ORDER},"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
+    count=trial_snapshot.count
+    base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_ids":trial_snapshot.trial_ids,"trial_set_digest":trial_set_digest,"stage_evidence_hashes":dict(hashes),"stage_receipt_bindings":{k:{"global_seq":v["global_seq"],"row_hash":v["row_hash"]} for k,v in ledger.validation_receipt(trial_id).items() if k in _STAGE_ORDER},"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
     base["artifact_commitment"]=_digest(base); artifact=ValidationArtifact(**base); ledger.save_validation_artifact(trial_id,base); return artifact
 
-def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
+def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(ledger, TrialLedger):
         raise TypeError("policy and ledger types required")
     # Serialize orchestration for a shared ledger object; SQLite remains the durable cross-process authority.
     with ledger._lock:
-        return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,production=production)
+        return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,wait_timeout_seconds=wait_timeout_seconds,production=production)
 
 __all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","run_validation_dag"]
