@@ -6,6 +6,9 @@ from math import isfinite
 from typing import Iterable
 
 
+MAX_FINITE_BINARY64 = float.fromhex("0x1.fffffffffffffp+1023")
+
+
 class UniverseAdmissionError(ValueError):
     """Raised when too few instruments satisfy a universe policy."""
 
@@ -17,7 +20,13 @@ def _time(value: object, name: str) -> int:
 
 
 def _finite(value: object, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+    try:
+        valid = (not isinstance(value, bool)
+                 and isinstance(value, (int, float))
+                 and isfinite(value))
+    except OverflowError:
+        raise ValueError(f"{name} must be finite") from None
+    if not valid:
         raise ValueError(f"{name} must be finite")
     return value
 
@@ -63,7 +72,7 @@ class UniversePolicy:
     min_size: int = 30
     max_size: int = 80
     min_listing_age_seconds: int = 0
-    max_spread_bps: float = float("inf")
+    max_spread_bps: float = MAX_FINITE_BINARY64
     min_data_coverage: float = 0.0
 
     def __post_init__(self) -> None:

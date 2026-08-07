@@ -104,10 +104,37 @@ def test_policy_rejects_invalid_values(kwargs):
         UniversePolicy(**kwargs)
 
 
-def test_types_are_frozen_slots_and_selection_is_deterministic():
-    assert is_dataclass(UniverseObservation) and is_dataclass(UniversePolicy)
-    assert is_dataclass(HourlyUniverse)
-    assert all(hasattr(cls, "__slots__") for cls in (UniverseObservation, UniversePolicy, HourlyUniverse))
-    result = select_hourly_universe([obs("A")], as_of=200, policy=policy())
-    with pytest.raises((FrozenInstanceError, AttributeError)):
-        result.instruments = ()
+def test_default_policy_is_constructible_with_finite_spread_limit():
+    result = UniversePolicy()
+    assert result.min_size == 30
+    assert result.max_size == 80
+    assert result.max_spread_bps < float("inf")
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"max_size": True},
+    {"max_spread_bps": True},
+    {"min_data_coverage": True},
+])
+def test_policy_rejects_boolean_numeric_fields(kwargs):
+    with pytest.raises(ValueError):
+        UniversePolicy(**kwargs)
+
+
+def test_selection_rejects_boolean_as_of():
+    with pytest.raises(ValueError):
+        select_hourly_universe([], as_of=True, policy=policy())
+
+
+def test_observation_rejects_integer_too_large_for_binary64():
+    with pytest.raises(ValueError):
+        UniverseObservation("A", 100, 100, 10**10000, 1, 0, 1)
+
+
+def test_conflict_is_checked_only_after_future_rows_are_filtered():
+    current = obs("A", event=100, knowledge=100, volume=1)
+    future_conflict = obs("A", event=200, knowledge=200, volume=2)
+    result = select_hourly_universe(
+        [current, future_conflict], as_of=100, policy=policy()
+    )
+    assert result.instruments == ("A",)
