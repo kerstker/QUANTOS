@@ -46,8 +46,16 @@ class BatchPboEvidence(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_schema(cls, value):
-        if isinstance(value, dict) and value.get("schema_version", 2) != 2:
+        if not isinstance(value, dict) or "schema_version" not in value:
+            raise ValueError("PBO evidence schema_version is required")
+        if value["schema_version"] != 2:
             raise ValueError("unsupported PBO evidence schema_version; expected 2")
+        matrix = value.get("performance_matrix", ())
+        if any(type(item) is not float for row in matrix for item in row):
+            raise TypeError("PBO performance values must be exact float64 values")
+        times = value.get("aligned_event_times", ())
+        if any(type(item) is not int for item in times):
+            raise TypeError("PBO event times must be exact integers")
         return value
 
     @model_validator(mode="after")
@@ -66,6 +74,8 @@ class BatchPboEvidence(BaseModel):
             raise ValueError(
                 "PBO performance matrix must contain between 2 and 8 blocks"
             )
+        if len(rows) % 2:
+            raise ValueError("PBO performance matrix requires an even block count")
         if any(len(row) != len(hashes) for row in rows):
             raise ValueError(
                 "PBO performance matrix must be rectangular and candidate-bound"
@@ -101,7 +111,9 @@ class BatchPboEvidence(BaseModel):
             )
         if self.aligned_event_times_sha256 != expected_calendar_hash:
             raise ValueError("aligned event-time digest mismatch")
-        if self.identity_commitment != stable_hash({
+        if self.identity_commitment != canonical_sha256({
+            "schema_version": self.schema_version,
+            "algorithm": self.algorithm,
             "candidate_definition_hashes": list(self.candidate_definition_hashes),
             "performance_matrix": [list(row) for row in self.performance_matrix],
             "alignment": self.alignment.value,
@@ -114,7 +126,7 @@ class BatchPboEvidence(BaseModel):
 
     @property
     def evidence_hash(self) -> str:
-        return stable_hash(self.model_dump(mode="json"))
+        return canonical_sha256(self)
 
 
 class CatalogSharpeObservation(BaseModel):

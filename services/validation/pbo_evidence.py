@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
+from quantos.contracts.canonical import canonical_sha256
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.validation import BatchPboEvidence, PboAlignment
 from services.validation.deflated_sharpe import pbo_cscv
@@ -26,8 +27,14 @@ def create_batch_pbo_evidence(
     """Build evidence from the exact matrix consumed by ``pbo_cscv``."""
 
     hashes = tuple(candidate_definition_hashes)
-    matrix = tuple(tuple(float(value) for value in row) for row in performance_matrix)
-    times = tuple(int(value) for value in aligned_event_times)
+    if any(type(value) is not float for row in performance_matrix for value in row):
+        raise TypeError("PBO performance values must be exact float64 values")
+    if any(type(value) is not int for value in aligned_event_times):
+        raise TypeError("PBO event times must be exact integers")
+    matrix = tuple(tuple(value for value in row) for row in performance_matrix)
+    if len(matrix) % 2:
+        raise ValueError("PBO performance matrix requires an even block count")
+    times = tuple(aligned_event_times)
     if alignment == PboAlignment.EVENT_TIME_INTERSECTION:
         calendar_hash = stable_hash(list(times))
     else:
@@ -38,7 +45,9 @@ def create_batch_pbo_evidence(
             }
         )
     pbo_value=pbo_cscv(matrix)
-    commitment=stable_hash({
+    commitment=canonical_sha256({
+        "schema_version": 2,
+        "algorithm": "CSCV_V1",
         "candidate_definition_hashes": list(hashes),
         "performance_matrix": [list(row) for row in matrix],
         "alignment": alignment.value,
@@ -47,6 +56,8 @@ def create_batch_pbo_evidence(
         "pbo": pbo_value,
     })
     evidence = BatchPboEvidence(
+        schema_version=2,
+        algorithm="CSCV_V1",
         candidate_definition_hashes=hashes,
         performance_matrix=matrix,
         alignment=alignment,
@@ -68,9 +79,11 @@ def verify_batch_pbo_evidence(evidence: object) -> bool:
         if not isinstance(evidence, BatchPboEvidence):
             return False
         validated = BatchPboEvidence.model_validate(evidence.model_dump(mode="python"))
-        if not validated.identity_commitment:
+        if validated.schema_version != 2 or validated.algorithm != "CSCV_V1" or not validated.identity_commitment:
             return False
-        expected=stable_hash({
+        expected=canonical_sha256({
+            "schema_version": validated.schema_version,
+            "algorithm": validated.algorithm,
             "candidate_definition_hashes": list(validated.candidate_definition_hashes),
             "performance_matrix": [list(row) for row in validated.performance_matrix],
             "alignment": validated.alignment.value,

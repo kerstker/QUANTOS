@@ -283,3 +283,47 @@ def test_pbo_evidence_v2_and_legacy_v1_rejected():
         BatchPboEvidence.model_validate(legacy)
     missing=evidence.model_dump(mode="python"); missing.pop("identity_commitment")
     with pytest.raises(ValidationError): BatchPboEvidence.model_validate(missing)
+    missing_schema=evidence.model_dump(mode="python"); missing_schema.pop("schema_version")
+    with pytest.raises(ValidationError, match="schema_version"):
+        BatchPboEvidence.model_validate(missing_schema)
+
+
+def test_pbo_evidence_rejects_coerced_numbers_and_odd_cscv_blocks():
+    from pydantic import ValidationError
+    from quantos.contracts.validation import PboAlignment
+    from services.validation.pbo_evidence import create_batch_pbo_evidence
+
+    kwargs={
+        "candidate_definition_hashes": ("a"*64, "b"*64),
+        "alignment": PboAlignment.EVENT_TIME_INTERSECTION,
+        "aligned_period_count": 4,
+        "aligned_event_times": (0, 1, 2, 3),
+    }
+    with pytest.raises((TypeError, ValueError, ValidationError)):
+        create_batch_pbo_evidence(performance_matrix=((True, .2), (.2, .3), (.3, .4), (.4, .5)), **kwargs)
+    with pytest.raises((TypeError, ValueError, ValidationError)):
+        create_batch_pbo_evidence(performance_matrix=(("0.1", .2), (.2, .3), (.3, .4), (.4, .5)), **kwargs)
+    with pytest.raises((TypeError, ValueError, ValidationError)):
+        create_batch_pbo_evidence(performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), aligned_event_times=(0, 1, 2, 3.9), **{k:v for k,v in kwargs.items() if k != "aligned_event_times"})
+    with pytest.raises((TypeError, ValueError, ValidationError), match="even"):
+        create_batch_pbo_evidence(
+            candidate_definition_hashes=("a"*64, "b"*64),
+            performance_matrix=((.1, .2), (.2, .3), (.3, .4)),
+            alignment=PboAlignment.POSITIONAL_LEGACY,
+            aligned_period_count=4,
+        )
+
+
+def test_pbo_commitment_binds_schema_and_exact_float64():
+    from quantos.contracts.validation import PboAlignment
+    from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
+
+    common={
+        "candidate_definition_hashes": ("a"*64, "b"*64),
+        "alignment": PboAlignment.POSITIONAL_LEGACY,
+        "aligned_period_count": 4,
+    }
+    first=create_batch_pbo_evidence(performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)), **common)
+    second=create_batch_pbo_evidence(performance_matrix=((.100000000001,.2),(.2,.3),(.3,.4),(.4,.5)), **common)
+    assert first.identity_commitment != second.identity_commitment
+    assert not verify_batch_pbo_evidence(first.model_copy(update={"schema_version": 1}))
