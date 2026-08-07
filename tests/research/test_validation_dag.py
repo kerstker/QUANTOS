@@ -163,6 +163,26 @@ def test_exception_artifact_is_stable_across_ledgers(tmp_path):
     assert first.reason == second.reason
 
 
+def test_execution_snapshot_reuses_frozen_bar_instances():
+    from quantos.contracts.data import Bar
+    from services.research.validation_dag import _execution_snapshot
+
+    bar = Bar(
+        instrument_id="BTC-USD",
+        event_time=1,
+        knowledge_time=1,
+        open=100.0,
+        high=101.0,
+        low=99.0,
+        close=100.5,
+        volume=1_000.0,
+    )
+
+    snapshot = _execution_snapshot({"bars": (bar,)})
+
+    assert snapshot["bars"][0] is bar
+
+
 def test_non_string_mapping_keys_are_rejected(tmp_path):
     policy = make_policy(Stage("cheap"), Stage("oos"), Stage("realism"))
     with pytest.raises(TypeError, match="string"):

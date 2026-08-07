@@ -341,6 +341,32 @@ def test_receipt_prefix_hole_is_rejected(tmp_path):
 
 
 
+def test_receipt_verification_groups_rows_by_trial(tmp_path, monkeypatch):
+    ledger = TrialLedger(str(tmp_path / "grouped-receipts.db"))
+    for trial in (1, 2):
+        ledger.append(rec(trial))
+        ledger.append(rec(trial, status="RUNNING", index=1, at=2))
+        for stage in ("cheap", "oos"):
+            ledger.claim_validation_stage(
+                h(trial),
+                stage,
+                panel_digest="a" * 64,
+                policy_digest="b" * 64,
+            )
+
+    calls = []
+    original = ledger._receipt_rows_locked
+
+    def counted(trial_id):
+        calls.append(trial_id)
+        return original(trial_id)
+
+    monkeypatch.setattr(ledger, "_receipt_rows_locked", counted)
+    ledger.verify()
+
+    assert calls == [h(1), h(2)]
+
+
 def test_named_recovery_forwards_bindings_and_reclaims_expired_lease(tmp_path):
     path=str(tmp_path / "named-recovery.db"); ledger=TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1))
     assert ledger.claim_validation_stage(h(1),"cheap",owner="crashed",now=100,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)).state == "CLAIMED"

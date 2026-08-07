@@ -41,7 +41,7 @@ def _execution_snapshot(value: Any) -> Any:
     if type(value) is PboAlignment:
         return value
     if type(value) is Bar:
-        return value.model_copy(deep=True)
+        return value
     if type(value) is CostModel:
         return CostModel(fee_bps=value.fee_bps, slippage_bps=value.slippage_bps, impact_coef=value.impact_coef)
     if type(value) is FamilyAssignment:

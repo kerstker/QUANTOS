@@ -329,12 +329,13 @@ class TrialLedger:
         trial_ids={r[0] for r in self._c.execute("SELECT DISTINCT trial_id FROM validation_receipt_events")}
         valid_trials={r[0] for r in self._c.execute("SELECT trial_id FROM trial_heads WHERE trial_id!=''")}
         if not trial_ids <= valid_trials: raise TrialLedgerError("phantom validation receipt")
-        rows=self._c.execute("SELECT trial_id,stage,event_index,state,payload_json,payload_hash,global_seq,prev_hash,row_hash,owner,lease_until,attempt FROM validation_receipt_events ORDER BY global_seq").fetchall(); previous=""; heads=self._c.execute("SELECT event_count,head_hash FROM validation_receipt_heads WHERE id=1").fetchone()
+        rows=self._c.execute("SELECT trial_id,stage,event_index,state,payload_json,payload_hash,global_seq,prev_hash,row_hash,owner,lease_until,attempt FROM validation_receipt_events ORDER BY global_seq").fetchall(); previous=""; heads=self._c.execute("SELECT event_count,head_hash FROM validation_receipt_heads WHERE id=1").fetchone(); ordered_trials=[]; seen_trials=set()
         for pos,row in enumerate(rows,1):
             tid,stage,index,state,payload_json,payload_hash,seq,prev,row_hash,owner,lease_until,attempt=row
             if seq != pos or prev != previous: raise TrialLedgerError("receipt global chain corruption")
-            self._receipt_rows_locked(tid)
+            if tid not in seen_trials: seen_trials.add(tid); ordered_trials.append(tid)
             previous=row_hash
+        for tid in ordered_trials: self._receipt_rows_locked(tid)
         if heads != (len(rows),previous): raise TrialLedgerError("receipt head commitment mismatch")
 
     def _validate_receipt_identity(self, trial_id, stage):
