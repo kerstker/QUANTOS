@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Collection, Mapping
 
-from services.data.hourly_market import HourlyMarketPanel, validate_panel
+from quantos.contracts.hourly_market import HourlyMarketPanel, validate_panel
 from services.research.alpha_workflow import BatchReceipt
 from services.research.paper_trading.forward import compute_forward_metrics
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef

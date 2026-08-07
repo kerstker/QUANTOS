@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 45,
+  "edge_count": 44,
   "edges": [
     {
       "references": [
@@ -1031,22 +1031,6 @@
     {
       "references": [
         {
-          "line": 12,
-          "module": "services.data.hourly_market",
-          "path": "services/research/hourly_forward.py"
-        },
-        {
-          "line": 39,
-          "module": "services.data.hourly_market",
-          "path": "services/research/validation_dag.py"
-        }
-      ],
-      "source": "research",
-      "target": "data"
-    },
-    {
-      "references": [
-        {
           "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
@@ -1315,7 +1299,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c23d70e3344f19718b8d0539cd23ee7cf6e54cd74ad2089d902eadebde50925a",
+  "graph_sha256": "fd42e7fda9435b41898abc892694a502aab432a9ebc2cbc48235e58fd2e10bdb",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

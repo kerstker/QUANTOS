@@ -36,7 +36,7 @@ def _execution_snapshot(value: Any) -> Any:
     from quantos.contracts.data import Bar
     from quantos.contracts.validation import PboAlignment
     from services.alpha.family_testing import FamilyAssignment
-    from services.data.hourly_market import (
+    from quantos.contracts.hourly_market import (
         HourlyBar,
         HourlyFunding,
         HourlyMarketPanel,
