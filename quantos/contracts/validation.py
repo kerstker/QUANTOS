@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import statistics
 from enum import Enum
-from typing import Literal
+from typing import Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -46,7 +46,7 @@ class BatchPboEvidence(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_schema(cls, value):
-        if not isinstance(value, dict) or "schema_version" not in value:
+        if not isinstance(value, Mapping) or "schema_version" not in value:
             raise ValueError("PBO evidence schema_version is required")
         if value["schema_version"] != 2:
             raise ValueError("unsupported PBO evidence schema_version; expected 2")

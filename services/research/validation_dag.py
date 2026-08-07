@@ -179,6 +179,9 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
         required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        threshold_names={"fdr_q","dsr_floor","pbo_max"}
+        if isinstance(x,Mapping) and threshold_names.intersection(x):
+            return self._block("panel cannot define validation thresholds")
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
             if context.effective_trial_count is not None and x["n_trials"] != context.effective_trial_count:
@@ -186,13 +189,15 @@ class OOSValidationAdapter(_TypedAdapter):
             if len(x["returns"]) != x["n_obs"] or x["n_obs"] < 2:
                 raise ValueError("n_obs does not match canonical returns")
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
-            dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0)); pbo=pbo_cscv(x["perf_matrix"])
+            dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0))
             ids=tuple(x["candidate_ids"])
             if not ids or len(set(ids)) != len(ids) or any(type(v) is not str or not v for v in ids): raise ValueError("invalid candidate ids")
             raw_p=x["pvalues"]
             pmap=dict(raw_p) if isinstance(raw_p,Mapping) else dict(zip(ids,raw_p))
             if set(pmap) != set(ids) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in pmap.values()): raise ValueError("invalid candidate p-values")
-            q=x.get("fdr_q",.1); dsr_floor=x.get("dsr_floor",.95); pbo_max=x.get("pbo_max",.5)
+            oos_settings=context.policy.settings.get("oos",{}) if isinstance(context.policy.settings,Mapping) else {}
+            if not isinstance(oos_settings,Mapping) or set(oos_settings)-threshold_names: raise ValueError("invalid OOS policy settings")
+            q=oos_settings.get("fdr_q",.1); dsr_floor=oos_settings.get("dsr_floor",.95); pbo_max=oos_settings.get("pbo_max",.5)
             if any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
             pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
             if "family_pvalues" in x: raise ValueError("external family p-values are not accepted")
@@ -212,6 +217,7 @@ class OOSValidationAdapter(_TypedAdapter):
             pbo_evidence=create_batch_pbo_evidence(candidate_definition_hashes=definition_hashes,performance_matrix=x["perf_matrix"],alignment=x["pbo_alignment"],aligned_period_count=x["pbo_periods"],aligned_event_times=x.get("pbo_event_times",()))
             if tuple(pbo_evidence.candidate_definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]) or tuple(tuple(r) for r in pbo_evidence.performance_matrix) != tuple(tuple(r) for r in x["perf_matrix"]) or pbo_evidence.alignment != x["pbo_alignment"] or pbo_evidence.aligned_period_count != x["pbo_periods"] or tuple(pbo_evidence.aligned_event_times) != tuple(x.get("pbo_event_times",())): raise ValueError("PBO evidence binding mismatch")
             if not verify_batch_pbo_evidence(pbo_evidence): raise ValueError("PBO evidence verification failed")
+            pbo=pbo_evidence.pbo
             if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)) or not hasattr(fam,"survivors") or not isinstance(fam.survivors,(set,frozenset)): raise ValueError("malformed family FDR result")
             candidate_family=x.get("candidate_family")
             if type(candidate_index) is not int or not 0 <= candidate_index < len(ids) or candidate_index not in bh or candidate_index not in bhy or candidate_id != ids[candidate_index]: raise ValueError("candidate failed BH/BHY")
@@ -219,7 +225,7 @@ class OOSValidationAdapter(_TypedAdapter):
             if not hasattr(x["families"], "family_of") or x["families"].family_of.get(candidate_id) != candidate_family or candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
         if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
-        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
 
 class RealismValidationAdapter(_TypedAdapter):
     name="realism"; implementation_id="services.research.realism.capacity_curve;tail_risk;validation.regime;CostModel:1"
@@ -318,7 +324,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     if type(wait_timeout_seconds) not in (int,float) or not math.isfinite(float(wait_timeout_seconds)) or wait_timeout_seconds <= 0: raise ValueError("wait_timeout_seconds must be finite positive")
     declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
-    alpha,family,exact=_identity(candidate); execution_panel=_execution_snapshot(panel); panel_digest=_panel_digest(execution_panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at})
+    alpha,family,exact=_identity(candidate); execution_panel=_execution_snapshot(panel); panel_digest=_panel_digest(execution_panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"trust_mode":"PRODUCTION" if production else "TEST"})
     try: ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"PLANNED",0,event_at))
     except TrialLedgerConflict:
         existing=ledger.load(trial_id)

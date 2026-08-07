@@ -288,8 +288,38 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
         artifact=run_validation_dag(candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True)
         assert artifact.verdict == "PASS"
         assert set(artifact.stage_metadata) == {"cheap", "oos", "realism"}
-        assert set(ledger.validation_receipt(artifact.trial_id)) >= {"cheap", "oos", "realism", "__artifact__"}
+        receipts=ledger.validation_receipt(artifact.trial_id)
+        assert set(receipts) >= {"cheap", "oos", "realism", "__artifact__"}
+        assert BatchPboEvidence.model_validate(receipts["oos"]["payload"]["evidence"]["pbo_evidence"])
     assert all(v >= 1 for v in calls.values()), calls
+
+
+def test_oos_thresholds_are_policy_owned_and_panel_cannot_weaken_them():
+    from services.research.validation_dag import OOSValidationAdapter, ValidationContext
+
+    policy = ValidationPolicy(settings={"oos": {"fdr_q": 0.1, "dsr_floor": 0.95, "pbo_max": 0.5}})
+    panel = {"oos": {"fdr_q": 1.0, "dsr_floor": 0.0, "pbo_max": 1.0}}
+    result = OOSValidationAdapter().evaluate(
+        ValidationContext(None, panel, policy, "a"*64, "b"*64, policy.digest, 1)
+    )
+    assert result.outcome == "BLOCK"
+    assert result.reason == "panel cannot define validation thresholds"
+
+
+def test_production_and_test_runs_have_distinct_cache_identity(tmp_path):
+    stages = tuple(Stage(name) for name in ("cheap", "oos", "realism"))
+    test_policy = make_policy(*stages)
+    candidate = make_candidate(test_policy)
+    with TrialLedger(str(tmp_path / "trust-mode.db")) as ledger:
+        test_artifact = run_validation_dag(candidate, {}, test_policy, ledger, event_at=1, lease_now=1)
+        production_policy = ValidationPolicy()
+        production_candidate = make_candidate(production_policy)
+        production_artifact = run_validation_dag(
+            production_candidate, {}, production_policy, ledger,
+            event_at=1, lease_now=1, production=True,
+        )
+    assert test_artifact.trial_id != production_artifact.trial_id
+    assert production_artifact.verdict == "BLOCK"
 
 
 def test_production_cheap_block_short_circuits_oos_realism(tmp_path):
