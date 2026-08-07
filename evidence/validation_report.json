@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "85f4344223d9eab2b178254c86c5ec5b8bd70e15758e5b864631af4aef5c7472",
-  "commit": "4659f3f886e37423a9447c0695cc584920f3332f",
-  "derived_refresh_manifest_sha256": "dd14bec2e63dc2a9988a3c9a602a5c4d15adef887927ec30995363b4279dc892",
-  "duration_ms": 765856,
-  "generated_at_ms": 1786089898561,
+  "checks_manifest_sha256": "f633e58825bd6d6cb8c6079d3d853c12db7c39a012995a5f27a513c04e748c05",
+  "commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+  "derived_refresh_manifest_sha256": "a89e68560008b91e94d1ad8c0b5facf304c9441b221a6e0c8611dad29dab8e6e",
+  "duration_ms": 803982,
+  "generated_at_ms": 1786142235993,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "255c26fdc7f5a23874af79a3c4a89bb00253b1094e50818824639871caa9e98a",
+  "phase13_manifest_sha256": "a3e35a1f1d927e465296ba4a66eff0d011cd07bade2084f4880476e8fc5c079d",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -15,11 +15,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_python_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 86,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 88,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -28,11 +28,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_npm_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 80,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 86,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -41,11 +41,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_actions_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 99,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 104,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -54,11 +54,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_container_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 79,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 95,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -67,11 +67,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_container_reproducibility_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 79,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 82,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -80,11 +80,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_event_schema_catalog.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 322,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 314,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -93,11 +93,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_service_import_graph.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 1013,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 1021,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -106,10 +106,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\tools\\provision_artifact_admission_authority.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\tools\\provision_artifact_admission_authority.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 176,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 175,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -118,11 +118,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\update_model_risk_history.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 318,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 322,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -135,8 +135,8 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 464,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 485,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -149,8 +149,8 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 4965,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 4927,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -159,11 +159,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\check_backup_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 63,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 68,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -172,10 +172,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\run_risk_recovery_gate.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\run_risk_recovery_gate.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 385,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 416,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -184,10 +184,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 2727,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 2774,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -196,10 +196,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_supply_chain_evidence.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_supply_chain_evidence.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 1207,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 1368,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -208,11 +208,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_supply_chain_evidence.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 1502,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 1679,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -221,10 +221,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\assess_top_tier.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\assess_top_tier.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 9210,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 9244,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -233,11 +233,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\assess_top_tier.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\assess_top_tier.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 9175,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 9220,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -272,8 +272,8 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 584241,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 612948,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -289,8 +289,8 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 68779,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 73084,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -302,8 +302,8 @@
         "run",
         "typecheck"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
-      "duration_ms": 2654,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
+      "duration_ms": 2745,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -315,8 +315,8 @@
         "run",
         "eslint"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
-      "duration_ms": 3991,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
+      "duration_ms": 3593,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -330,8 +330,8 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
-      "duration_ms": 21216,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
+      "duration_ms": 16070,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -343,8 +343,8 @@
         "run",
         "build"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\apps\\research-console",
-      "duration_ms": 4763,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
+      "duration_ms": 4652,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -353,12 +353,12 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 3877,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 4865,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -367,13 +367,13 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 3857,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 4628,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -385,10 +385,10 @@
         "-m",
         "pytest",
         "-q",
-        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline\\tests\\governance\\test_727_final_audit.py"
+        "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\tests\\governance\\test_727_final_audit.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave0-trusted-baseline",
-      "duration_ms": 40253,
+      "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
+      "duration_ms": 48610,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -426,7 +426,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1786089132704,
+  "started_at_ms": 1786141432010,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -438,8 +438,8 @@
   "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
   "validation": {
     "current": true,
-    "generated_at": 1786089898561,
-    "run_id": "913ffc78b1f4a600339b6406816356701914ddc9dbb9603a2b1ab57fa79c167b",
-    "source_commit": "4659f3f886e37423a9447c0695cc584920f3332f"
+    "generated_at": 1786142235993,
+    "run_id": "609724967bc6bd7f472568f64273314b0bdc99013a7ddedf2f5a9ac60ae82d79",
+    "source_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d"
   }
 }

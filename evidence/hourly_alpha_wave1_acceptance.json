@@ -1,0 +1,69 @@
+{
+  "acceptance": {
+    "canonical_validation": true,
+    "functional_implementation": true,
+    "live_order_authority": false,
+    "runtime_replay": true,
+    "seven_day_soak": false
+  },
+  "artifact": "QUANTOS_HOURLY_ALPHA_WAVE1_ACCEPTANCE",
+  "blockers": [
+    "SEVEN_DAY_SOAK_REQUIRES_INDEPENDENT_L2_OPERATIONS"
+  ],
+  "canonical_validation": {
+    "duration_ms": 803982,
+    "failed": 0,
+    "overall_status": "PASS",
+    "passed": 27,
+    "run_id": "609724967bc6bd7f472568f64273314b0bdc99013a7ddedf2f5a9ac60ae82d79",
+    "selected": 27,
+    "timed_out": 0,
+    "validation_report_sha256": "4155d5aecd3377505ec49b3be47a433a014e69b06d6daf88b951c6a987b291d5"
+  },
+  "commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+  "generated_at_ms": 1786142235993,
+  "honesty_note": "Wave 1 deterministic implementation and fail-closed validation are accepted at L2. The real CLI replay produced zero admitted candidates and a valid BLOCKED workflow because production validation evidence was absent; no PASS was fabricated. The required seven-day soak is an independent operational acceptance and has not been run in this development session.",
+  "implementation_commits": [
+    "ad97e136",
+    "710342ff",
+    "6eb2718d",
+    "c06f2e8",
+    "018a5fc",
+    "8b2253d",
+    "d24821c",
+    "6c904e7",
+    "bd08373"
+  ],
+  "input_hash": "f1371554ae7ab76d08c7f658d526c1daca6abc025308d97fa488e2889967e025",
+  "inputs": {
+    "docs/runbooks/hourly-alpha-operations.md": "354f6f2c2f682aa89f314a3823eec2d336175e1d4bb940c4f9b8d6bd80b3126f",
+    "docs/superpowers/plans/2026-08-06-wave1-hourly-alpha-garden-paper.md": "f3c26fabae5bfb07076c2b81c54c90ae7e00dd1ff661ed7ac0777ccc620668b3",
+    "evidence/validation_report.json": "4155d5aecd3377505ec49b3be47a433a014e69b06d6daf88b951c6a987b291d5",
+    "tests/integration/test_hourly_alpha_to_paper.py": "b13203d40074aca78bcbe5a45ac9d62976679d1d02075e4115458ee77aa2b5fb"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "runtime_replay": {
+    "admitted_candidates": 0,
+    "batch_id": "00228b4343aea591c5c70eec546f2b54ed04c0ba5d90180a216b21041a5ef977",
+    "blocked_candidates": 1,
+    "network_used": false,
+    "order_submission_attempted": false,
+    "receipt_digest": "ff80db07f35f623a08f2a4d8d14189af998faab6bda7c6d83e5ad9b9658196a1",
+    "rerun_idempotent": true,
+    "workflow_status": "BLOCKED"
+  },
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "schema_version": 1,
+  "status": "IMPLEMENTATION_ACCEPTED_SOAK_PENDING",
+  "targeted_validation": {
+    "integration_and_wave1_passed": 235,
+    "integration_and_wave1_deselected": 2,
+    "slow_smoke_passed": 2
+  }
+}
