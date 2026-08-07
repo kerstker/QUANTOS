@@ -128,29 +128,75 @@ def adapt_alpha_definition(value: Any) -> AlphaDefinition:
     raise TypeError("generator output is not a registered AlphaDefinition")
 
 
-# Named thin adapters make provenance explicit while sharing the canonical Task 4/5 checks.
-def _adapt_named_output(value: Any, source: str) -> AlphaDefinition:
-    """Adapt a legacy output only when it already carries complete identity."""
-    try:
-        return adapt_alpha_definition(value)
-    except TypeError as exc:
-        raise TypeError(f"{source} output lacks complete alpha identity context") from exc
+# Legacy engines do not all emit canonical definitions.  These bridges require
+# the caller to provide both the complete identity and an explicit expression
+# extractor/parser; no name, score, metric, or string is guessed as an alpha.
+def _legacy_adapter(value: Any, source: str, identity: Mapping[str, Any],
+                    expression_extractor: Callable[[Any], Any]) -> AlphaDefinition:
+    if isinstance(value, AlphaDefinition):
+        return value
+    if not isinstance(identity, Mapping) or not callable(expression_extractor):
+        raise TypeError(f"{source} adapter requires identity and expression_extractor")
+    expression = expression_extractor(value)
+    if isinstance(expression, str):
+        raise TypeError(f"{source} extractor must return canonical expression, not text")
+    return make_identity_adapter(identity)({"expression": expression})
 
 
-def adapt_alpha_factory_output(value: Any) -> AlphaDefinition:
-    return _adapt_named_output(value, "alpha_factory")
+def _make_legacy_adapter(source: str, identity: Mapping[str, Any],
+                         expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    # Validate metadata and extractor when wiring the registry, not on first item.
+    snapshot = make_identity_adapter(identity)
+    if not callable(expression_extractor):
+        raise TypeError(f"{source} expression_extractor must be callable")
+    def adapt(value: Any) -> AlphaDefinition:
+        if isinstance(value, AlphaDefinition):
+            return value
+        expression = expression_extractor(value)
+        if isinstance(expression, str):
+            raise TypeError(f"{source} extractor must return canonical expression, not text")
+        return snapshot({"expression": expression})
+    return adapt
 
 
-def adapt_gp_output(value: Any) -> AlphaDefinition:
-    return _adapt_named_output(value, "gp")
+def adapt_alpha_factory_output(value: Any, *, identity: Mapping[str, Any] | None = None,
+                               expression_extractor: Callable[[Any], Any] | None = None) -> AlphaDefinition:
+    return _legacy_adapter(value, "alpha_factory", identity, expression_extractor)
 
 
-def adapt_mcts_output(value: Any) -> AlphaDefinition:
-    return _adapt_named_output(value, "mcts")
+def adapt_gp_output(value: Any, *, identity: Mapping[str, Any] | None = None,
+                    expression_extractor: Callable[[Any], Any] | None = None) -> AlphaDefinition:
+    return _legacy_adapter(value, "gp", identity, expression_extractor)
 
 
-def adapt_ml_template_output(value: Any) -> AlphaDefinition:
-    return _adapt_named_output(value, "ml_template")
+def adapt_mcts_output(value: Any, *, identity: Mapping[str, Any] | None = None,
+                      expression_extractor: Callable[[Any], Any] | None = None) -> AlphaDefinition:
+    return _legacy_adapter(value, "mcts", identity, expression_extractor)
+
+
+def adapt_ml_template_output(value: Any, *, identity: Mapping[str, Any] | None = None,
+                             expression_extractor: Callable[[Any], Any] | None = None) -> AlphaDefinition:
+    return _legacy_adapter(value, "ml_template", identity, expression_extractor)
+
+
+def make_alpha_factory_adapter(identity: Mapping[str, Any], expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    return _make_legacy_adapter("alpha_factory", identity, expression_extractor)
+
+
+def make_gp_adapter(identity: Mapping[str, Any], expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    return _make_legacy_adapter("gp", identity, expression_extractor)
+
+
+def make_mcts_adapter(identity: Mapping[str, Any], expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    return _make_legacy_adapter("mcts", identity, expression_extractor)
+
+
+def make_evolutionary_adapter(identity: Mapping[str, Any], expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    return _make_legacy_adapter("evolutionary", identity, expression_extractor)
+
+
+def make_ml_template_adapter(identity: Mapping[str, Any], expression_extractor: Callable[[Any], Any]) -> AdaptFn:
+    return _make_legacy_adapter("ml_template", identity, expression_extractor)
 
 
 def _snapshot_metadata(value: Any, path: str = "identity") -> Any:
@@ -219,15 +265,9 @@ def adapt_existing_generator(generate: Callable[..., Iterable[Any] | Any], adapt
     return wrapped
 
 
-# Independent, deterministic work bound: no generator can force unbounded
-# rejection storage or CPU.  It is intentionally separate from admission caps.
-ATTEMPT_CAP_MULTIPLIER = 1
-
-
-def _entry_attempt_cap(entry_cap: int, budget: GenerationBudget) -> int:
-    # Admission and attempt limits are separate policies, even though the
-    # default bound tracks the global candidate budget for predictable work.
-    return max(1, max(entry_cap, budget.max_candidates) * ATTEMPT_CAP_MULTIPLIER)
+def _entry_attempt_cap(budget: GenerationBudget) -> int:
+    """Bound each entry's pulls; total work is entries times this budget."""
+    return max(1, budget.max_candidates)
 
 
 def generate_batch(registry: GeneratorRegistry, budget: GenerationBudget, context: Any) -> CandidateBatch:
@@ -259,12 +299,13 @@ def generate_batch(registry: GeneratorRegistry, budget: GenerationBudget, contex
         if family_counts[entry.family] >= budget.max_family_candidates:
             rejections.append(Rejection("family_cap", entry_id, family_id=entry.family))
             continue
-        attempt_limit = _entry_attempt_cap(cap, budget)
+        attempt_limit = _entry_attempt_cap(budget)
         attempts = 0
         exhausted = False
         try:
             produced = entry.generate(context, rng)
-            if _is_singleton_output(produced):
+            singleton = _is_singleton_output(produced)
+            if singleton:
                 iterator = iter((produced,))
             else:
                 try:
@@ -288,6 +329,8 @@ def generate_batch(registry: GeneratorRegistry, budget: GenerationBudget, contex
                 rejections.append(Rejection("generator_error", entry_id))
                 break
             attempts += 1
+            if singleton:
+                exhausted = True
             try:
                 definition = entry.adapter(raw)
                 candidate = AlphaCandidate(definition)
