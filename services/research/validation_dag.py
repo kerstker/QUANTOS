@@ -192,12 +192,41 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
         required={"n","train_size","test_size","returns","return_series_by_definition","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
-        threshold_names={"fdr_q","dsr_floor","pbo_max"}
+        threshold_names={"fdr_q","dsr_floor","pbo_max","min_oos_fold_mean"}
         if isinstance(x,Mapping) and threshold_names.intersection(x):
             return self._block("panel cannot define validation thresholds")
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
-            wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
+            subject_returns=tuple(x["returns"])
+            n=x["n"]; train_size=x["train_size"]; test_size=x["test_size"]
+            step=x.get("step",test_size); k=x.get("k",2); embargo=x.get("embargo",0)
+            if any(type(value) is not int for value in (n,train_size,test_size,step,k,embargo)):
+                raise ValueError("split parameters must be exact integers")
+            if n != len(subject_returns) or n < 2 or train_size < 1 or test_size < 1 or step < 1 or k < 2 or k > n or embargo < 0:
+                raise ValueError("invalid OOS split parameters")
+            if any(type(value) is not float or not math.isfinite(value) for value in subject_returns):
+                raise ValueError("subject returns must be exact finite floats")
+            wf=walk_forward_splits(n,train_size,test_size,step); pk=purged_kfold(n,k,embargo)
+            def validate_splits(splits, *, sequential):
+                if not isinstance(splits,(tuple,list)) or not splits:
+                    raise ValueError("OOS splits are required")
+                means=[]
+                for split in splits:
+                    if not isinstance(split,(tuple,list)) or len(split) != 2:
+                        raise ValueError("malformed OOS split")
+                    train,test=split
+                    if not isinstance(train,(tuple,list)) or not isinstance(test,(tuple,list)) or not train or not test:
+                        raise ValueError("empty OOS split")
+                    if any(type(index) is not int or not 0 <= index < n for index in (*train,*test)):
+                        raise ValueError("invalid OOS split index")
+                    if len(set(train)) != len(train) or len(set(test)) != len(test) or set(train).intersection(test):
+                        raise ValueError("overlapping OOS split")
+                    if sequential and max(train) >= min(test):
+                        raise ValueError("walk-forward test must follow training")
+                    means.append(math.fsum(subject_returns[index] for index in test) / len(test))
+                return tuple(means)
+            walk_forward_test_means=validate_splits(wf,sequential=True)
+            purged_test_means=validate_splits(pk,sequential=False)
             ids=tuple(x["candidate_ids"])
             if not ids or len(set(ids)) != len(ids) or any(type(v) is not str or not v for v in ids): raise ValueError("invalid candidate ids")
             raw_p=x["pvalues"]
@@ -205,8 +234,9 @@ class OOSValidationAdapter(_TypedAdapter):
             if set(pmap) != set(ids) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in pmap.values()): raise ValueError("invalid candidate p-values")
             oos_settings=context.policy.settings.get("oos",{}) if isinstance(context.policy.settings,Mapping) else {}
             if not isinstance(oos_settings,Mapping) or set(oos_settings)-threshold_names: raise ValueError("invalid OOS policy settings")
-            q=oos_settings.get("fdr_q",.1); dsr_floor=oos_settings.get("dsr_floor",.95); pbo_max=oos_settings.get("pbo_max",.5)
-            if any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
+            q=oos_settings.get("fdr_q",.1); dsr_floor=oos_settings.get("dsr_floor",.95); pbo_max=oos_settings.get("pbo_max",.5); min_oos_fold_mean=oos_settings.get("min_oos_fold_mean",0.0)
+            if any(type(v) not in (int,float) or isinstance(v,bool) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
+            if type(min_oos_fold_mean) not in (int,float) or isinstance(min_oos_fold_mean,bool) or not math.isfinite(float(min_oos_fold_mean)): raise ValueError("invalid OOS fold threshold")
             pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
             if "family_pvalues" in x: raise ValueError("external family p-values are not accepted")
             if not hasattr(x["families"],"family_of") or set(x["families"].family_of) != set(ids): raise ValueError("family assignment coverage mismatch")
@@ -241,8 +271,10 @@ class OOSValidationAdapter(_TypedAdapter):
             if candidate_family is None: candidate_family=fam.selected_families.intersection({x["families"].family_of.get(candidate_id)}).pop() if hasattr(x["families"],"family_of") else None
             if not hasattr(x["families"], "family_of") or x["families"].family_of.get(candidate_id) != candidate_family or candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
-        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
-        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,catalog_evidence=catalog_evidence.model_dump(mode="json"),pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        split_evidence={"walk_forward_test_means":walk_forward_test_means,"purged_test_means":purged_test_means,"min_oos_fold_mean":float(min_oos_fold_mean)}
+        split_passed=all(value >= float(min_oos_fold_mean) for value in (*walk_forward_test_means,*purged_test_means))
+        if not wf or not pk or not split_passed or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),split_evidence=split_evidence,dsr=dsr,catalog_evidence=catalog_evidence.model_dump(mode="json"),pbo=pbo,pbo_evidence=pbo_evidence.model_dump(mode="json"),bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
 
 class RealismValidationAdapter(_TypedAdapter):
     name="realism"; implementation_id="services.research.realism.capacity_curve;tail_risk;validation.regime;CostModel:1"

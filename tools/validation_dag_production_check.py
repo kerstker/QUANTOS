@@ -182,6 +182,20 @@ def run_production_validation_check(root: str | Path) -> dict[str, Any]:
     panel, exact_definition_id = _valid_panel()
 
     malformed_oos = {**panel, "oos": {**panel["oos"], "returns": panel["oos"]["returns"][:-1]}}
+    n_mismatch = {**panel, "oos": {**panel["oos"], "n": len(panel["oos"]["returns"]) - 1}}
+    ordered_decay_returns = tuple(sorted(panel["oos"]["returns"], reverse=True))
+    ordered_decay_population = {
+        definition_hash: tuple(sorted(values, reverse=True))
+        for definition_hash, values in panel["oos"]["return_series_by_definition"].items()
+    }
+    ordered_decay = {
+        **panel,
+        "oos": {
+            **panel["oos"],
+            "returns": ordered_decay_returns,
+            "return_series_by_definition": ordered_decay_population,
+        },
+    }
     malformed_realism = {**panel, "realism": {**panel["realism"], "cost_model": {"fee_bps": 1.0}}}
     subject_hash=panel["oos"]["pbo_candidate_definition_hashes"][0]
     negative_returns=tuple(-abs(value) for value in panel["oos"]["returns"])
@@ -193,6 +207,8 @@ def run_production_validation_check(root: str | Path) -> dict[str, Any]:
         "self_reported_positive": _run_case(root, "self-reported-positive", self_reported_positive, exact_definition_id),
         "missing": _run_case(root, "missing", {}, exact_definition_id),
         "malformed": _run_case(root, "malformed-oos", malformed_oos, exact_definition_id),
+        "n_mismatch": _run_case(root, "n-mismatch", n_mismatch, exact_definition_id),
+        "ordered_decay": _run_case(root, "ordered-decay", ordered_decay, exact_definition_id),
         "malformed_realism": _run_case(root, "malformed-realism", malformed_realism, exact_definition_id),
     }
 
