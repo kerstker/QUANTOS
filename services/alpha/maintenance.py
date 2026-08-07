@@ -35,6 +35,13 @@ from services.lifecycle import DeploymentState, HealthState
 from .config import AlphaFactoryConfig
 from .degradation_monitor import health_verdict_for, monitor_alpha_health
 from .retirement import AlphaRetirementSystem
+from .hourly_maintenance import (
+    DEFAULT_HOURLY_MAINTENANCE_POLICY,
+    HourlyMaintenanceEvidence,
+    HourlyMaintenancePolicy,
+    MaintenanceAction,
+    apply_hourly_maintenance,
+)
 
 # 727 C3: the sweep set, expressed in deployment states (where the alpha RUNS).
 _LIVE_DEPLOYMENT_STATES = (
@@ -119,4 +126,53 @@ def run_maintenance(
     for aid, (decision, transition) in swept.items():
         if transition is not None:
             report[aid] = {"action": "RETIRED", "reasons": list(decision.reasons)}
+    return report
+
+
+def run_hourly_maintenance(
+    manager,
+    actor: Actor,
+    *,
+    alpha_ids: tuple[str, ...],
+    evidence_by_alpha: dict,
+    timestamp: int,
+    policy: HourlyMaintenancePolicy = DEFAULT_HOURLY_MAINTENANCE_POLICY,
+) -> dict[str, dict]:
+    """Apply the typed hourly evaluator to an explicit scheduler-owned alpha set.
+
+    Missing evidence for an explicitly scheduled alpha fails closed to PAUSE.
+    No recovery or promotion action exists on this surface.
+    """
+    report: dict[str, dict] = {}
+    for alpha_id in sorted(set(alpha_ids)):
+        evidence = evidence_by_alpha.get(alpha_id)
+        if evidence is None:
+            evidence = HourlyMaintenanceEvidence(
+                alpha_id=alpha_id,
+                observed_at=timestamp,
+                forward_chain_valid=None,
+                forward_realizations=None,
+                feature_drift_score=None,
+                return_drift_z=None,
+                expected_cost_bps=None,
+                realized_cost_bps=None,
+                reality_gap=None,
+                consecutive_coverage_failures=None,
+                consecutive_failed_periods=None,
+            )
+        recommendation = apply_hourly_maintenance(
+            manager,
+            alpha_id,
+            actor,
+            evidence=evidence,
+            policy=policy,
+            timestamp=timestamp,
+        )
+        if recommendation.action is not MaintenanceAction.HOLD:
+            report[alpha_id] = {
+                "action": recommendation.action.value,
+                "reasons": list(recommendation.reason_codes),
+                "evidence_digest": recommendation.evidence_digest,
+                "policy_digest": recommendation.policy_digest,
+            }
     return report
