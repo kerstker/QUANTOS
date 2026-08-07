@@ -232,7 +232,7 @@ def test_exception_hash_ignores_message(tmp_path):
 
 def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch):
     from quantos.contracts.data import Bar
-    from quantos.contracts.feature import LeakageCheckResult
+    from quantos.contracts.feature import FeatureValue, LeakageCheckResult
     from quantos.contracts.cost import CostModel
     from quantos.contracts.validation import BatchPboEvidence, PboAlignment
     from quantos.contracts.hashing import stable_hash
@@ -249,7 +249,17 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     import services.research.realism.tail_risk as tailmod
     import services.validation.regime as regmod
     calls = {k: 0 for k in ("leakage", "walk", "purged", "dsr", "pbo", "pbo_verify", "bh", "bhy", "family", "cost", "impact", "capacity", "regime_labels", "regime_stats", "regime_prof", "var", "hill", "lower")}
-    def compute(rows): return []
+    def compute(rows):
+        return [
+            FeatureValue(
+                feature_id="x",
+                instrument_id=row.instrument_id,
+                event_time=row.event_time,
+                knowledge_time=row.knowledge_time,
+                value=row.close,
+            )
+            for row in rows
+        ]
     compute.__name__ = "registered_compute"
     registered = register_leakage_compute("tests.registered_compute:1", compute)
     monkeypatch.setattr(leakage, "detect_leakage", lambda *a, **k: (calls.__setitem__("leakage", calls["leakage"] + 1) or LeakageCheckResult(feature_id="x", passed=True)))
@@ -304,6 +314,48 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     assert all(value >= 1 for name,value in calls.items() if name != "dsr"), calls
 
 
+
+def test_production_cheap_requires_target_feature_evidence():
+    from quantos.contracts.data import Bar
+    from services.research.validation_dag import (
+        CheapValidationAdapter,
+        ValidationContext,
+        ValidationPolicy,
+        register_leakage_compute,
+    )
+
+    def no_evidence(rows):
+        return []
+
+    registered = register_leakage_compute(
+        "tests.no_target_feature_evidence:1", no_evidence
+    )
+    policy = ValidationPolicy()
+    panel = {
+        "cheap": {
+            "feature_id": "missing",
+            "compute": registered,
+            "bars": (
+                Bar(
+                    event_time=1,
+                    knowledge_time=1,
+                    instrument_id="BTC",
+                    open=1.0,
+                    high=1.0,
+                    low=1.0,
+                    close=1.0,
+                ),
+            ),
+            "target_event_time": 1,
+            "instrument_id": "BTC",
+        }
+    }
+    result = CheapValidationAdapter().evaluate(
+        ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)
+    )
+
+    assert result.outcome == "BLOCK"
+    assert result.reason == "missing target feature evidence"
 
 def test_catalog_evidence_recomputes_negative_subject_sharpe():
     from services.validation.catalog_evidence import create_catalog_evidence

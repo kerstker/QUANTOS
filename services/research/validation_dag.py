@@ -164,7 +164,20 @@ class CheapValidationAdapter(_TypedAdapter):
         if not isinstance(x,Mapping) or any(k not in x for k in required): return self._block("missing leakage inputs", missing_input=list(required))
         compute=x["compute"]
         if not isinstance(compute,RegisteredLeakageCompute): return self._block("unregistered leakage compute")
-        try: result=detect_leakage(x["feature_id"],compute.compute,x["bars"],x["target_event_time"],x.get("instrument_id"))
+        try:
+            from quantos.contracts.feature import FeatureValue
+            baseline=compute.compute(x["bars"])
+            if not isinstance(baseline,(tuple,list)) or not baseline or any(not isinstance(value,FeatureValue) for value in baseline):
+                return self._block("missing target feature evidence")
+            target_values=tuple(
+                value for value in baseline
+                if value.feature_id == x["feature_id"]
+                and value.event_time == x["target_event_time"]
+                and (x.get("instrument_id") is None or value.instrument_id == x["instrument_id"])
+            )
+            if not target_values:
+                return self._block("missing target feature evidence")
+            result=detect_leakage(x["feature_id"],compute.compute,x["bars"],x["target_event_time"],x.get("instrument_id"))
         except Exception as exc: return self._block("leakage engine unavailable", exception_type=type(exc).__name__)
         if not hasattr(result,"passed") or type(result.passed) is not bool: return self._block("malformed leakage result")
         return self._pass(leakage_passed=result.passed, detail=getattr(result,"detail","")) if result.passed else self._block("leakage gate blocked", leakage_passed=False)
