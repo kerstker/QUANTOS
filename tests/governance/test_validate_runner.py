@@ -719,10 +719,12 @@ def test_nonvolatile_report_change_rewrites_report(tmp_path):
 
 
 
-def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path):
+def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path, monkeypatch):
     validate = _load_validate_module()
     report_path = tmp_path / "validation.json"
     marker = tmp_path / "started.txt"
+    clock = iter((1000.0, 2000.0))
+    monkeypatch.setattr(validate.time, "time", lambda: next(clock))
     capture = (
         "import os,pathlib;"
         "pathlib.Path(r'%s').open('a').write(os.environ['QUANTOS_VALIDATION_STARTED_AT_MS']+'\\n')"
@@ -742,8 +744,8 @@ def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path):
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=[],
-        phase13_refresh_checks=phase13,
     )
+    monkeypatch.setattr(validate, "_phase13_refresh_checks", lambda: phase13)
 
     assert validate.run(**kwargs) == 0
     first_started = json.loads(report_path.read_text(encoding="utf-8"))["started_at_ms"]
@@ -789,14 +791,62 @@ def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
         "validate_script_sha256",
     )}
     identity["validation"] = {"run_id": "e"}
-    assert validate._canonical_started_at_ms(str(report_path), identity) == 123
+    assert validate._canonical_started_at_ms(
+        str(report_path), identity, fresh_started_at_ms=123
+    ) == 123
 
     identity["commit"] = "different"
-    assert validate._canonical_started_at_ms(str(report_path), identity) is None
+    assert validate._canonical_started_at_ms(
+        str(report_path), identity, fresh_started_at_ms=123
+    ) is None
     report["overall_status"] = "FAIL"
     report_path.write_text(json.dumps(report), encoding="utf-8")
     identity["commit"] = "a"
-    assert validate._canonical_started_at_ms(str(report_path), identity) is None
+    assert validate._canonical_started_at_ms(
+        str(report_path), identity, fresh_started_at_ms=123
+    ) is None
+
+
+def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
+    validate = _load_validate_module()
+    path = tmp_path / "validation.json"
+    stages = [
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    ]
+    base = {
+        "report_kind": "FAIL_CLOSED_VALIDATION", "selection_scope": "ALL",
+        "overall_status": "PASS", "selected_stages": stages,
+        "results": [{"stage": stage, "status": "PASS"} for stage in stages],
+        "commit": "a", "checks_manifest_sha256": "b",
+        "derived_refresh_manifest_sha256": "c", "validate_script_sha256": "d",
+        "started_at_ms": 123, "validation": {"current": True, "run_id": "e"},
+    }
+    identity = {key: base[key] for key in (
+        "commit", "checks_manifest_sha256", "derived_refresh_manifest_sha256",
+        "validate_script_sha256",
+    )}
+    identity["validation"] = {"run_id": "e"}
+    for mutate in (
+        lambda report: report.update(selected_stages=[]),
+        lambda report: report.update(selected_stages={}),
+        lambda report: report.update(results=[None]),
+        lambda report: report.update(results=report["results"] + [report["results"][0]]),
+        lambda report: report.update(selected_stages=stages + ["garbage"]),
+        lambda report: report["results"].__setitem__(0, {"stage": stages[0], "status": "FAIL"}),
+    ):
+        candidate = json.loads(json.dumps(base))
+        mutate(candidate)
+        path.write_text(json.dumps(candidate), encoding="utf-8")
+        assert validate._completed_canonical_report_matches(str(path), identity) is False
+
+    future = json.loads(json.dumps(base))
+    future["started_at_ms"] = 124
+    path.write_text(json.dumps(future), encoding="utf-8")
+    assert validate._canonical_started_at_ms(
+        str(path), identity, fresh_started_at_ms=123
+    ) is None
 
 
 def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():

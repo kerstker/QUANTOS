@@ -576,14 +576,19 @@ def _write_report(path: str, report: dict) -> None:
             os.unlink(temp_path)
 
 
-def _completed_canonical_report_matches(path: str, report: dict) -> bool:
-    """Return whether *path* already holds this run's completed PASS evidence."""
+def _load_completed_canonical_report(path: str) -> dict | None:
     try:
         with open(path, "r", encoding="utf-8") as handle:
             existing = json.load(handle)
     except (OSError, UnicodeError, ValueError, TypeError):
-        return False
-    if not isinstance(existing, dict):
+        return None
+    return existing if isinstance(existing, dict) else None
+
+
+def _completed_canonical_report_matches(path: str, report: dict) -> bool:
+    """Return whether *path* already holds this run's complete PASS evidence."""
+    existing = _load_completed_canonical_report(path)
+    if existing is None or not isinstance(report, dict):
         return False
     validation = existing.get("validation")
     selected_stages = existing.get("selected_stages")
@@ -593,41 +598,106 @@ def _completed_canonical_report_matches(path: str, report: dict) -> bool:
         "phase13-readiness:current",
         "phase13-readiness:tests",
     }
-    result_statuses = {
-        result.get("stage"): result.get("status")
-        for result in results
-        if isinstance(result, dict)
-    } if isinstance(results, list) else {}
+    if (
+        not isinstance(selected_stages, list)
+        or any(not isinstance(stage, str) for stage in selected_stages)
+        or len(selected_stages) != len(set(selected_stages))
+        or not isinstance(results, list)
+        or any(
+            not isinstance(result, dict)
+            or not isinstance(result.get("stage"), str)
+            or not isinstance(result.get("status"), str)
+            for result in results
+        )
+    ):
+        return False
+    result_stages = [result["stage"] for result in results]
+    if len(result_stages) != len(set(result_stages)):
+        return False
+    if set(result_stages) != set(selected_stages):
+        return False
     return (
         existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
         and existing.get("selection_scope") == "ALL"
         and existing.get("overall_status") == "PASS"
         and isinstance(validation, dict)
         and validation.get("current") is True
-        and isinstance(selected_stages, list)
-        and phase13_stages.issubset(selected_stages)
-        and all(result_statuses.get(stage) == "PASS" for stage in phase13_stages)
+        and phase13_stages.issubset(set(selected_stages))
+        and all(result["status"] == "PASS" for result in results)
+        and all(
+            next(result for result in results if result["stage"] == stage)["status"]
+            == "PASS"
+            for stage in phase13_stages
+        )
         and existing.get("commit") == report.get("commit")
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
-        and existing.get("validation", {}).get("run_id") == report.get("validation", {}).get("run_id")
+        and validation.get("run_id") == report.get("validation", {}).get("run_id")
     )
 
 
-def _canonical_started_at_ms(path: str, report: dict) -> int | None:
-    """Reuse the completed canonical run's stable time anchor, if valid."""
-    if not _completed_canonical_report_matches(path, report):
+def _canonical_started_at_ms(
+    path: str, report: dict, *, fresh_started_at_ms: int
+) -> int | None:
+    """Reuse a completed canonical time anchor only when it is not from the future."""
+    existing = _load_completed_canonical_report(path)
+    if existing is None or not isinstance(report, dict):
         return None
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            existing = json.load(handle)
-        started_at_ms = existing.get("started_at_ms")
-        if isinstance(started_at_ms, bool) or not isinstance(started_at_ms, int):
-            return None
-        return started_at_ms if started_at_ms >= 0 else None
-    except (OSError, UnicodeError, ValueError, TypeError):
+    # Validate the already parsed object, avoiding a second read/TOCTOU window.
+    validation = existing.get("validation")
+    selected_stages = existing.get("selected_stages")
+    results = existing.get("results")
+    phase13_stages = {
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    }
+    if (
+        not isinstance(selected_stages, list)
+        or any(not isinstance(stage, str) for stage in selected_stages)
+        or len(selected_stages) != len(set(selected_stages))
+        or not isinstance(results, list)
+        or any(
+            not isinstance(result, dict)
+            or not isinstance(result.get("stage"), str)
+            or not isinstance(result.get("status"), str)
+            for result in results
+        )
+    ):
         return None
+    result_stages = [result["stage"] for result in results]
+    if (
+        len(result_stages) != len(set(result_stages))
+        or set(result_stages) != set(selected_stages)
+    ):
+        return None
+    if not (
+        existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
+        and existing.get("selection_scope") == "ALL"
+        and existing.get("overall_status") == "PASS"
+        and isinstance(validation, dict)
+        and validation.get("current") is True
+        and phase13_stages.issubset(set(selected_stages))
+        and all(result["status"] == "PASS" for result in results)
+        and existing.get("commit") == report.get("commit")
+        and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
+        and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
+        and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
+        and validation.get("run_id") == report.get("validation", {}).get("run_id")
+    ):
+        return None
+    if isinstance(fresh_started_at_ms, bool) or not isinstance(fresh_started_at_ms, int):
+        return None
+    started_at_ms = existing.get("started_at_ms")
+    if (
+        isinstance(started_at_ms, bool)
+        or not isinstance(started_at_ms, int)
+        or started_at_ms < 0
+        or started_at_ms > fresh_started_at_ms
+    ):
+        return None
+    return started_at_ms
 
 
 def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
@@ -747,6 +817,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     }
     if len(derived_by_current) != len(derived_specs):
         raise ValueError("derived evidence refresh targets must be unique")
+    allow_canonical_reuse = selection_scope == "ALL" and phase13_refresh_checks is None
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
     if selection_scope == "ALL":
@@ -767,8 +838,12 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             "validate_script_sha256": _sha256_file(__file__),
             "validation": {"run_id": validation_run_id},
         }
-        previous_started_at_ms = _canonical_started_at_ms(
-            json_report, identity_report
+        previous_started_at_ms = (
+            _canonical_started_at_ms(
+                json_report, identity_report, fresh_started_at_ms=started_at_ms
+            )
+            if allow_canonical_reuse
+            else None
         )
         if previous_started_at_ms is not None:
             started_at_ms = previous_started_at_ms
@@ -896,7 +971,8 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     report = build_report()
     report_written = True
     skip_preliminary = (
-        selection_scope == "ALL"
+        allow_canonical_reuse
+        and selection_scope == "ALL"
         and overall_status == "PASS"
         and _completed_canonical_report_matches(effective_report, report)
     )
