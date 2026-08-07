@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from services.research.trial_ledger import TrialLedger
+from services.research.trial_ledger import TrialLedger, TrialRecord
 from services.research.validation_dag import (
     StageEvidence,
     ValidationPolicy,
@@ -521,6 +521,28 @@ def test_execution_snapshot_isolated_from_concurrent_family_mutation(tmp_path):
         worker=threading.Thread(target=lambda: results.append(run_validation_dag(candidate,{"families":assignment},policy,ledger,event_at=1,lease_now=1)))
         worker.start(); assert entered.wait(1); source["alpha-0"]="mutated"; release.set(); worker.join()
     assert results[0].verdict == "PASS" and observed == [{"alpha-0":"family-a"}]
+
+
+def test_crash_recovery_reuses_first_frozen_trial_set(tmp_path):
+    path=str(tmp_path / "frozen-recovery.db")
+    calls=[]
+    class CrashOnce(Stage):
+        def evaluate(self, context):
+            calls.append((self.name, context.effective_trial_ids))
+            if len(calls) == 1:
+                raise KeyboardInterrupt("simulated process death")
+            return super().evaluate(context)
+    policy=make_policy(Stage("cheap",calls=[]),CrashOnce("oos"),Stage("realism"))
+    first_candidate=make_candidate(policy)
+    second_candidate=Candidate("b"*64,"f"*64,"d"*64,policy.digest)
+    with TrialLedger(path) as ledger:
+        with pytest.raises(KeyboardInterrupt):
+            run_validation_dag(first_candidate,{},policy,ledger,event_at=1,lease_now=1)
+        ledger.append(TrialRecord("9"*64,second_candidate.alpha_id,second_candidate.family_id,second_candidate.exact_definition_id,policy.digest,"PLANNED",0,2))
+        ledger.append(TrialRecord("9"*64,second_candidate.alpha_id,second_candidate.family_id,second_candidate.exact_definition_id,policy.digest,"RUNNING",1,2))
+        recovered=run_validation_dag(first_candidate,{},policy,ledger,event_at=1,lease_now=62)
+    assert recovered.effective_trial_ids == (recovered.trial_id,)
+    assert recovered.effective_trial_count == 1
 
 
 def test_historical_artifact_survives_later_family_trial(tmp_path):

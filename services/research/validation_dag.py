@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Protocol, runtime_checkable
 from services.research.alpha_identity import AlphaDefinition, alpha_id as canonical_alpha_id, canonical_alpha_json
 from services.research.alpha_family import family_id as canonical_family_id
-from services.research.trial_ledger import TrialLedger, TrialLedgerConflict, TrialLedgerError, TrialRecord
+from services.research.trial_ledger import EffectiveTrialCount, TrialLedger, TrialLedgerConflict, TrialLedgerError, TrialRecord
 
 _STAGE_ORDER = ("cheap", "oos", "realism")
 _TERMINAL = {"PASS", "BLOCK"}
@@ -361,6 +361,39 @@ def _complete_or_recover(ledger, trial_id, stage, state, payload, *, owner, now,
         current=ledger.validation_receipt(trial_id).get(stage)
         if not current or current["state"] not in {"DONE","BLOCKED","FAILED"}: raise
 
+
+def _frozen_trial_snapshot(ledger: TrialLedger, trial_id: str, family_id: str) -> EffectiveTrialCount:
+    receipts = ledger.validation_receipt(trial_id)
+    terminal = [
+        receipts[stage]["payload"]
+        for stage in _STAGE_ORDER
+        if stage in receipts
+        and receipts[stage]["state"] in {"DONE", "BLOCKED", "FAILED"}
+    ]
+    current = ledger.effective_trial_count(family_id)
+    if not terminal:
+        return current
+    identities = {
+        (payload.get("effective_trial_count"), payload.get("trial_set_digest"))
+        for payload in terminal
+    }
+    if len(identities) != 1:
+        raise TrialLedgerError("validation receipts disagree on frozen trial set")
+    saved_count, saved_digest = identities.pop()
+    if (
+        type(saved_count) is not int
+        or saved_count < 1
+        or saved_count > current.count
+        or type(saved_digest) is not str
+        or not _HEX64.fullmatch(saved_digest)
+    ):
+        raise TrialLedgerError("invalid frozen trial set receipt")
+    frozen_ids = current.trial_ids[:saved_count]
+    if _digest(list(frozen_ids)) != saved_digest:
+        raise TrialLedgerError("frozen trial set cannot be reconstructed")
+    return EffectiveTrialCount(saved_count, frozen_ids)
+
+
 def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
     if production:
@@ -393,7 +426,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 if ar:
                     return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
             raise
-    trial_snapshot=ledger.effective_trial_count(family)
+    trial_snapshot=_frozen_trial_snapshot(ledger,trial_id,family)
     trial_set_digest=_digest(list(trial_snapshot.trial_ids))
     context=ValidationContext(candidate,execution_panel,policy,trial_id,panel_digest,policy.digest,event_at,max(1,trial_snapshot.count),trial_snapshot.trial_ids,trial_set_digest); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
