@@ -37,6 +37,15 @@ def create_batch_pbo_evidence(
                 "aligned_period_count": aligned_period_count,
             }
         )
+    pbo_value=pbo_cscv(matrix)
+    commitment=stable_hash({
+        "candidate_definition_hashes": list(hashes),
+        "performance_matrix": [list(row) for row in matrix],
+        "alignment": alignment.value,
+        "aligned_period_count": aligned_period_count,
+        "aligned_event_times": list(times),
+        "pbo": pbo_value,
+    })
     evidence = BatchPboEvidence(
         candidate_definition_hashes=hashes,
         performance_matrix=matrix,
@@ -44,7 +53,8 @@ def create_batch_pbo_evidence(
         aligned_period_count=aligned_period_count,
         aligned_event_times=times,
         aligned_event_times_sha256=calendar_hash,
-        pbo=pbo_cscv(matrix),
+        pbo=pbo_value,
+        identity_commitment=commitment,
     )
     if not verify_batch_pbo_evidence(evidence):
         raise ValueError("constructed PBO evidence did not replay")
@@ -58,6 +68,18 @@ def verify_batch_pbo_evidence(evidence: object) -> bool:
         if not isinstance(evidence, BatchPboEvidence):
             return False
         validated = BatchPboEvidence.model_validate(evidence.model_dump(mode="python"))
+        if not validated.identity_commitment:
+            return False
+        expected=stable_hash({
+            "candidate_definition_hashes": list(validated.candidate_definition_hashes),
+            "performance_matrix": [list(row) for row in validated.performance_matrix],
+            "alignment": validated.alignment.value,
+            "aligned_period_count": validated.aligned_period_count,
+            "aligned_event_times": list(validated.aligned_event_times),
+            "pbo": validated.pbo,
+        })
+        if validated.identity_commitment != expected:
+            return False
         recomputed = pbo_cscv(validated.performance_matrix)
         return math.isclose(recomputed, validated.pbo, rel_tol=0.0, abs_tol=1e-12)
     except (TypeError, ValueError, ArithmeticError):

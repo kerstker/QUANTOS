@@ -260,3 +260,13 @@ def test_low_capacity_combined_with_another_soft_failure_is_a_hard_fail():
         ),
     )
     assert res.verdict == ValidationVerdict.FAIL and not res.promotable
+
+
+def test_pbo_evidence_commitment_rejects_identity_and_column_mutation():
+    from quantos.contracts.validation import PboAlignment
+    from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
+    evidence=create_batch_pbo_evidence(candidate_definition_hashes=("a"*64,"b"*64),performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)),alignment=PboAlignment.POSITIONAL_LEGACY,aligned_period_count=4)
+    assert verify_batch_pbo_evidence(evidence)
+    assert not verify_batch_pbo_evidence(evidence.model_copy(update={"candidate_definition_hashes": ("c"*64,"b"*64)}))
+    assert not verify_batch_pbo_evidence(evidence.model_copy(update={"performance_matrix": tuple(tuple(reversed(row)) for row in evidence.performance_matrix)}))
+    assert not verify_batch_pbo_evidence(evidence.model_copy(update={"pbo": min(1.0,evidence.pbo+.1)}))

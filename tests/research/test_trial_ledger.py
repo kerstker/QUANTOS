@@ -295,3 +295,11 @@ def test_receipt_prefix_hole_is_rejected(tmp_path):
         ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
     ledger.verify()
 
+
+
+def test_named_recovery_forwards_bindings_and_reclaims_expired_lease(tmp_path):
+    path=str(tmp_path / "named-recovery.db"); ledger=TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1))
+    assert ledger.claim_validation_stage(h(1),"cheap",owner="crashed",now=100,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)) == "CLAIMED"
+    assert ledger.recover_validation_stage(h(1),"cheap",owner="recovery",now=161,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)) == "CLAIMED"
+    receipt=ledger.validation_receipt(h(1))["cheap"]
+    assert receipt["owner"] == "recovery" and receipt["attempt"] == 2

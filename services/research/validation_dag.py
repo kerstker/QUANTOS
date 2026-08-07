@@ -29,6 +29,30 @@ def _freeze(value: Any) -> Any:
     if type(value) is float and math.isfinite(value): return value
     raise TypeError(f"value is not canonical JSON: {type(value).__name__}")
 
+def _execution_snapshot(value: Any) -> Any:
+    """Freeze containers while preserving trusted typed engine inputs."""
+    if isinstance(value, (RegisteredLeakageCompute, Enum)):
+        return value
+    if callable(getattr(value, "trade_cost", None)) and callable(getattr(value, "impact_bps", None)):
+        return value
+    if hasattr(value, "family_of") and hasattr(value, "basis"):
+        return value
+    if is_dataclass(value) or callable(getattr(value, "model_dump", None)):
+        return value
+    if isinstance(value, Mapping):
+        if any(type(k) is not str for k in value):
+            raise TypeError("mapping keys must be strings")
+        return MappingProxyType({k: _execution_snapshot(value[k]) for k in sorted(value)})
+    if isinstance(value, (tuple, list)):
+        return tuple(_execution_snapshot(v) for v in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_execution_snapshot(v) for v in value)
+    if type(value) in (str, int, bool) or value is None:
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise TypeError(f"unsupported execution input: {type(value).__name__}")
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, RegisteredLeakageCompute): return {"registered_compute":value.implementation_id}
     if isinstance(value, Enum): return value.value
@@ -102,7 +126,7 @@ class StageEvidence:
 
 @dataclass(frozen=True, slots=True)
 class ValidationContext:
-    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int
+    candidate: Any; panel: Any; policy: "ValidationPolicy"; trial_id: str; panel_digest: str; policy_digest: str; event_at: int; effective_trial_count: int|None = None
     @property
     def execution_id(self): return _digest({"trial_id":self.trial_id,"stage":"validation","attempt_independent":True})
 
@@ -145,9 +169,13 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","family_pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
+            if context.effective_trial_count is not None and x["n_trials"] != context.effective_trial_count:
+                raise ValueError("n_trials does not match ledger effective trial count")
+            if len(x["returns"]) != x["n_obs"] or x["n_obs"] < 2:
+                raise ValueError("n_obs does not match canonical returns")
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
             dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0)); pbo=pbo_cscv(x["perf_matrix"])
             ids=tuple(x["candidate_ids"])
@@ -158,9 +186,9 @@ class OOSValidationAdapter(_TypedAdapter):
             q=x.get("fdr_q",.1); dsr_floor=x.get("dsr_floor",.95); pbo_max=x.get("pbo_max",.5)
             if any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in (q,dsr_floor,pbo_max)) or not 0.0 < float(q) <= 1.0: raise ValueError("invalid OOS thresholds")
             pvals=tuple(pmap[c] for c in ids); bh=benjamini_hochberg(pvals,q); bhy=benjamini_hochberg_yekutieli(pvals,q)
-            family_pvalues=x["family_pvalues"]
-            if not isinstance(family_pvalues,Mapping) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in family_pvalues.values()): raise ValueError("invalid family p-values")
-            fam=hierarchical_fdr(pvalues=family_pvalues,families=x["families"],q=q)
+            if "family_pvalues" in x: raise ValueError("external family p-values are not accepted")
+            if not hasattr(x["families"],"family_of") or set(x["families"].family_of) != set(ids): raise ValueError("family assignment coverage mismatch")
+            fam=hierarchical_fdr(pvalues=pmap,families=x["families"],q=q)
             definitions=x["pbo_candidate_definitions"]
             if not isinstance(definitions,(tuple,list)) or len(definitions) != len(ids): raise ValueError("PBO definitions must align with candidates")
             definition_ids=[]; definition_hashes=[]
@@ -181,8 +209,8 @@ class OOSValidationAdapter(_TypedAdapter):
             if candidate_family is None: candidate_family=fam.selected_families.intersection({x["families"].family_of.get(candidate_id)}).pop() if hasattr(x["families"],"family_of") else None
             if not hasattr(x["families"], "family_of") or x["families"].family_of.get(candidate_id) != candidate_family or candidate_family is None or candidate_family not in fam.selected_families or candidate_id not in fam.survivors: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
-        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
-        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
+        if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in (dsr,pbo)) or dsr < dsr_floor or pbo > pbo_max or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
+        return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr={"selected_families":sorted(fam.selected_families),"family_pvalues":dict(fam.family_pvalues),"within_family_level":dict(fam.within_family_level),"n_families":fam.n_families,"reasons":dict(fam.reasons)})
 
 class RealismValidationAdapter(_TypedAdapter):
     name="realism"; implementation_id="services.research.realism.capacity_curve;tail_risk;validation.regime;CostModel:1"
@@ -197,8 +225,16 @@ class RealismValidationAdapter(_TypedAdapter):
         cost=x["cost_model"]
         if not isinstance(cost,CostModel) or not all(type(getattr(cost,k)) in (int,float) and math.isfinite(float(getattr(cost,k))) and float(getattr(cost,k)) >= 0.0 for k in ("fee_bps","slippage_bps","impact_coef")): return self._block("typed finite CostModel required")
         if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","market_closes","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
+        if not x["gross_returns"] or len(x["gross_returns"]) != len(x["turnover_by_period"]): return self._block("turnover periods must align with returns")
+        if not x["returns"] or len(x["returns"]) != len(x["benchmark_returns"]) or len(x["returns"]) != len(x["market_closes"]): return self._block("realism series must align")
+        for period in x["turnover_by_period"]:
+            if not isinstance(period,(tuple,list)) or not period: return self._block("turnover period malformed")
+            for leg in period:
+                if not isinstance(leg,(tuple,list)) or len(leg) != 2 or any(type(v) not in (int,float) or not math.isfinite(float(v)) for v in leg): return self._block("turnover leg malformed")
         try:
-            band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); regime_labels=label_regimes_by_vol(x["market_closes"]); regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
+            band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); regime_labels=label_regimes_by_vol(x["market_closes"])
+            if len(regime_labels) != len(x["returns"]) or sum(v is not None for v in regime_labels) < 2: raise ValueError("regime labels do not align")
+            regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
         if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not math.isfinite(cost_value): return self._block("realism gate blocked")
         return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime=regime,regime_profitable_frac=regime_profitable,cost=cost_value)
@@ -258,15 +294,14 @@ def _complete_or_recover(ledger, trial_id, stage, state, payload, *, owner, now)
         current=ledger.validation_receipt(trial_id).get(stage)
         if not current or current["state"] not in {"DONE","BLOCKED","FAILED"}: raise
 
-def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int|None=None,production:bool=False)->ValidationArtifact:
+def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
     if production:
         if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
         for stage, canonical in zip(policy.stages, _DEFAULT_ADAPTERS):
             if (type(stage), stage.name, stage.version, stage.implementation_id) != (type(canonical), canonical.name, canonical.version, canonical.implementation_id): raise ValueError("production adapter identity is not canonical")
             if getattr(stage.evaluate, "__func__", None) is not _PRODUCTION_EVALUATORS.get(type(stage)): raise ValueError("production adapter implementation is not sealed")
-    if type(event_at) is not int or isinstance(event_at,bool) or (lease_now is not None and (type(lease_now) is not int or isinstance(lease_now,bool))): raise ValueError("event_at and lease_now must be deterministic ints")
-    if lease_now is None: lease_now=event_at
+    if type(event_at) is not int or isinstance(event_at,bool) or type(lease_now) is not int or isinstance(lease_now,bool): raise ValueError("event_at and lease_now must be deterministic ints")
     declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
     alpha,family,exact=_identity(candidate); panel_digest=_panel_digest(panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at})
@@ -289,7 +324,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 if ar:
                     return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
             raise
-    context=ValidationContext(candidate,_freeze(panel),policy,trial_id,panel_digest,policy.digest,event_at); hashes={}; metadata={}; verdict="PASS"; reason=None
+    context=ValidationContext(candidate,_execution_snapshot(panel),policy,trial_id,panel_digest,policy.digest,event_at,ledger.effective_trial_count(family).count); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
         try:
             claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
@@ -336,11 +371,23 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
         evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id};
         try: claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
         except TrialLedgerError:
-            for _ in range(10000):
+            deadline=time.monotonic()+5.0
+            for attempt in range(10000):
                 ar=ledger.validation_receipt(trial_id).get("__artifact__")
                 if ar: return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-            raise
-        _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now); blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
+                if time.monotonic() >= deadline: raise TrialLedgerConflict("validation artifact wait timeout")
+                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
+            raise TrialLedgerConflict("validation artifact wait timeout")
+        if claim == "CLAIMED":
+            _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
+        elif claim == "IN_PROGRESS":
+            deadline=time.monotonic()+5.0
+            while time.monotonic() < deadline:
+                current=ledger.validation_receipt(trial_id).get(blocked_stage.name)
+                if current and current["state"] in {"DONE","BLOCKED","FAILED"}: break
+                time.sleep(0.01)
+            else: raise TrialLedgerConflict("validation stage wait timeout")
+        blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     status="PASSED" if verdict=="PASS" else "FAILED"
     current=ledger.load(trial_id)
     if current.status=="RUNNING": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at))
@@ -348,7 +395,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"stage_evidence_hashes":dict(hashes),"stage_receipt_bindings":{k:{"global_seq":v["global_seq"],"row_hash":v["row_hash"]} for k,v in ledger.validation_receipt(trial_id).items() if k in _STAGE_ORDER},"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
     base["artifact_commitment"]=_digest(base); artifact=ValidationArtifact(**base); ledger.save_validation_artifact(trial_id,base); return artifact
 
-def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int|None=None,production:bool=False)->ValidationArtifact:
+def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
     if not isinstance(ledger, TrialLedger):
         raise TypeError("policy and ledger types required")
     # Serialize orchestration for a shared ledger object; SQLite remains the durable cross-process authority.

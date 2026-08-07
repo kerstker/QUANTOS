@@ -117,8 +117,16 @@ def _preflight_existing_schema(c: sqlite3.Connection) -> None:
         if table not in names: raise TrialLedgerError("legacy ledger schema incomplete")
         actual=[r[1] for r in c.execute(f"PRAGMA table_info({table})")]
         if actual != cols: raise TrialLedgerError("legacy ledger schema malformed")
+    receipt_expected={
+        "validation_receipt_events": ["trial_id","stage","event_index","state","payload_json","payload_hash","global_seq","prev_hash","row_hash","owner","lease_until","attempt"],
+        "validation_receipt_heads": ["id","event_count","head_hash"],
+    }
+    receipt_present=set(receipt_expected) & names
+    if receipt_present and receipt_present != set(receipt_expected): raise TrialLedgerError("receipt ledger schema incomplete")
+    for table, cols in receipt_expected.items():
+        if table in names and [r[1] for r in c.execute(f"PRAGMA table_info({table})")] != cols: raise TrialLedgerError("receipt ledger schema malformed")
     triggers={r[0]: (r[1] or "").lower() for r in c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
-    for name in ("trial_events_no_update","trial_events_no_delete"):
+    for name in ("trial_events_no_update","trial_events_no_delete","validation_receipts_no_update","validation_receipts_no_delete"):
         if name in triggers and "append-only" not in triggers[name]: raise TrialLedgerError("legacy ledger trigger malformed")
 
 class TrialLedger:
@@ -353,10 +361,10 @@ class TrialLedger:
                 if isinstance(exc,TrialLedgerError): raise
                 raise TrialLedgerError("ledger database failure") from exc
 
-    def reopen_validation_stage(self, trial_id, stage, *, owner="legacy", now=0, lease_seconds=60):
-        return self.claim_validation_stage(trial_id,stage,owner=owner,now=now,lease_seconds=lease_seconds)
-    def recover_validation_stage(self, trial_id, stage, *, owner="recovery", now=0, lease_seconds=60):
-        return self.claim_validation_stage(trial_id,stage,owner=owner,now=now,lease_seconds=lease_seconds)
+    def reopen_validation_stage(self, trial_id, stage, *, owner="legacy", now=0, lease_seconds=60, panel_digest, policy_digest):
+        return self.claim_validation_stage(trial_id,stage,owner=owner,now=now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy_digest)
+    def recover_validation_stage(self, trial_id, stage, *, owner="recovery", now=0, lease_seconds=60, panel_digest, policy_digest):
+        return self.claim_validation_stage(trial_id,stage,owner=owner,now=now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy_digest)
 
     def _validate_artifact_payload(self, trial_id: str, payload: Mapping[str, Any]) -> None:
         if not isinstance(payload, Mapping): raise TrialLedgerError("artifact must be mapping")

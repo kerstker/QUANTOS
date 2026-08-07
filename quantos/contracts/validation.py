@@ -41,6 +41,7 @@ class BatchPboEvidence(BaseModel):
     aligned_event_times: tuple[int, ...] = ()
     aligned_event_times_sha256: str = Field(min_length=64, max_length=64)
     pbo: float = Field(ge=0.0, le=1.0)
+    identity_commitment: str = ""
 
     @model_validator(mode="after")
     def _validate_evidence_shape(self) -> "BatchPboEvidence":
@@ -93,6 +94,15 @@ class BatchPboEvidence(BaseModel):
             )
         if self.aligned_event_times_sha256 != expected_calendar_hash:
             raise ValueError("aligned event-time digest mismatch")
+        if self.identity_commitment and self.identity_commitment != stable_hash({
+            "candidate_definition_hashes": list(self.candidate_definition_hashes),
+            "performance_matrix": [list(row) for row in self.performance_matrix],
+            "alignment": self.alignment.value,
+            "aligned_period_count": self.aligned_period_count,
+            "aligned_event_times": list(self.aligned_event_times),
+            "pbo": self.pbo,
+        }):
+            raise ValueError("PBO identity commitment mismatch")
         return self
 
     @property
