@@ -243,7 +243,11 @@ def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_p
         json_report=str(report_path),
         timeout_seconds=2,
         checks=[primary],
-        phase13_refresh_checks=[refresh],
+        phase13_refresh_checks=[
+            refresh,
+            ("phase13-readiness:current", [sys.executable, "-c", "pass"], str(tmp_path)),
+            ("phase13-readiness:tests", [sys.executable, "-c", "pass"], str(tmp_path)),
+        ],
     )
 
     assert result == 0
@@ -254,10 +258,12 @@ def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_p
     assert report["selected_stages"] == [
         "primary-pass",
         "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
     ]
     assert report["summary"] == {
-        "selected": 2,
-        "passed": 2,
+        "selected": 4,
+        "passed": 4,
         "failed": 0,
         "timed_out": 0,
         "errored": 0,
@@ -701,8 +707,11 @@ def test_phase13_failure_rewrites_fail_closed_report(tmp_path):
     validate = _load_validate_module()
     report_path = tmp_path / "validation.json"
     primary = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
-    passing_phase13 = [("phase13-readiness:tests", [sys.executable, "-c", "pass"], str(tmp_path))]
-    failing_phase13 = [("phase13-readiness:tests", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
+    passing_phase13 = _fake_phase13(tmp_path)
+    failing_phase13 = _fake_phase13(tmp_path)
+    failing_phase13[-1] = (
+        "phase13-readiness:tests", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path)
+    )
     common = dict(
         stages=None,
         json_report=str(report_path),
@@ -805,8 +814,10 @@ def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
         "commit": "a",
         "checks_manifest_sha256": "b",
         "derived_refresh_manifest_sha256": "c",
+        "phase13_manifest_sha256": "p",
         "validate_script_sha256": "d",
         "started_at_ms": 123,
+        "summary": {"selected": 3, "passed": 3, "failed": 0, "timed_out": 0, "errored": 0},
         "validation": {"current": True, "run_id": "e", "source_commit": "a", "generated_at": 123},
     }
     report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -814,6 +825,7 @@ def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
         "commit", "checks_manifest_sha256", "derived_refresh_manifest_sha256",
         "validate_script_sha256",
     )}
+    identity["phase13_manifest_sha256"] = "p"
     identity["validation"] = {"run_id": "e"}
     assert validate._canonical_started_at_ms(
         str(report_path), identity, fresh_started_at_ms=123
@@ -844,13 +856,14 @@ def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
         "overall_status": "PASS", "selected_stages": stages,
         "results": [{"stage": stage, "status": "PASS"} for stage in stages],
         "commit": "a", "checks_manifest_sha256": "b",
-        "derived_refresh_manifest_sha256": "c", "validate_script_sha256": "d",
+        "derived_refresh_manifest_sha256": "c", "phase13_manifest_sha256": "p", "validate_script_sha256": "d",
         "started_at_ms": 123, "validation": {"current": True, "run_id": "e"},
     }
     identity = {key: base[key] for key in (
         "commit", "checks_manifest_sha256", "derived_refresh_manifest_sha256",
         "validate_script_sha256",
     )}
+    identity["phase13_manifest_sha256"] = "p"
     identity["validation"] = {"run_id": "e"}
     for mutate in (
         lambda report: report.update(selected_stages=[]),
@@ -870,6 +883,9 @@ def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
     future = json.loads(json.dumps(base))
     future["started_at_ms"] = 124
     path.write_text(json.dumps(future), encoding="utf-8")
+    assert validate._canonical_started_at_ms(
+        str(path), identity, fresh_started_at_ms=123
+    ) is None
 
 
 def test_future_canonical_timing_is_not_reused_by_default_dag(tmp_path, monkeypatch):

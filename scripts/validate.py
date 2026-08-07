@@ -417,6 +417,23 @@ def _derived_evidence_refresh_checks() -> list[
 
 
 def _is_derived_evidence_consumer(stage_name: str) -> bool:
+    return stage_name.startswith(("pytest:", "frontend:"))
+
+
+def _expected_full_stage_names(selected, derived_specs, phase13_specs) -> list[str]:
+    derived_by_current = {name: refresh for name, refresh in derived_specs}
+    selected_derived = [check for check in selected if check[0] in derived_by_current]
+    selected_non_derived = [check for check in selected if check[0] not in derived_by_current]
+    names = [check[0] for check in selected_non_derived if not _is_derived_evidence_consumer(check[0])]
+    for current_name, refresh_check in derived_specs:
+        if any(check[0] == current_name for check in selected_derived):
+            names.extend([refresh_check[0], current_name])
+    names.extend(check[0] for check in selected_non_derived if _is_derived_evidence_consumer(check[0]))
+    names.extend(name for name, _, _ in phase13_specs)
+    return names
+
+
+
     """Return whether a stage can assert against refreshed derived artifacts."""
     return stage_name.startswith(("pytest:", "frontend:"))
 
@@ -560,6 +577,8 @@ def _write_report(
 ) -> None:
     path = os.path.abspath(path)
     existing_bytes = _serialize_report(existing) if isinstance(existing, dict) else None
+    if preserve_timing and isinstance(existing, dict):
+        report = _preserve_existing_timing(report, existing)
     if preserve_timing and existing is None and os.path.isfile(path):
         try:
             with open(path, "rb") as handle:
@@ -593,7 +612,9 @@ def _load_completed_canonical_report(path: str) -> dict | None:
     return existing if isinstance(existing, dict) else None
 
 
-def _completed_canonical_report_matches(path_or_report, report: dict) -> bool:
+def _completed_canonical_report_matches(
+    path_or_report, report: dict, *, expected_selected_stages=None
+) -> bool:
     """Return whether a parsed report holds this run's complete PASS evidence."""
     existing = (
         path_or_report
@@ -631,6 +652,14 @@ def _completed_canonical_report_matches(path_or_report, report: dict) -> bool:
         return False
     if set(result_stages) != set(selected_stages):
         return False
+    if expected_selected_stages is not None and (
+        selected_stages != list(expected_selected_stages)
+        or result_stages != list(expected_selected_stages)
+    ):
+        return False
+    summary = existing.get("summary")
+    if not isinstance(summary, dict) or summary != _summary(results):
+        return False
     return (
         existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
         and existing.get("selection_scope") == "ALL"
@@ -651,13 +680,15 @@ def _completed_canonical_report_matches(path_or_report, report: dict) -> bool:
         and existing.get("commit") == report.get("commit")
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
+        and existing.get("phase13_manifest_sha256") == report.get("phase13_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
         and validation.get("run_id") == report_validation.get("run_id")
     )
 
 
 def _canonical_started_at_ms(
-    path_or_report, report: dict, *, fresh_started_at_ms: int
+    path_or_report, report: dict, *, fresh_started_at_ms: int,
+    expected_selected_stages=None,
 ) -> int | None:
     """Reuse a completed canonical time anchor only when it is not from the future."""
     existing = (
@@ -698,6 +729,14 @@ def _canonical_started_at_ms(
         or set(result_stages) != set(selected_stages)
     ):
         return None
+    if expected_selected_stages is not None and (
+        selected_stages != list(expected_selected_stages)
+        or result_stages != list(expected_selected_stages)
+    ):
+        return None
+    summary = existing.get("summary")
+    if not isinstance(summary, dict) or summary != _summary(results):
+        return None
     if not (
         existing.get("report_kind") == "FAIL_CLOSED_VALIDATION"
         and existing.get("selection_scope") == "ALL"
@@ -713,18 +752,24 @@ def _canonical_started_at_ms(
         and existing.get("commit") == report.get("commit")
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
+        and existing.get("phase13_manifest_sha256") == report.get("phase13_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
         and validation.get("run_id") == report_validation.get("run_id")
     ):
         return None
-    if isinstance(fresh_started_at_ms, bool) or not isinstance(fresh_started_at_ms, int):
-        return None
+    validation_generated_at = validation.get("generated_at")
     started_at_ms = existing.get("started_at_ms")
     if (
-        isinstance(started_at_ms, bool)
+        isinstance(fresh_started_at_ms, bool)
+        or not isinstance(fresh_started_at_ms, int)
+        or isinstance(started_at_ms, bool)
         or not isinstance(started_at_ms, int)
         or started_at_ms < 0
         or started_at_ms > fresh_started_at_ms
+        or isinstance(validation_generated_at, bool)
+        or not isinstance(validation_generated_at, int)
+        or validation_generated_at < started_at_ms
+        or validation_generated_at > fresh_started_at_ms
     ):
         return None
     return started_at_ms
@@ -855,15 +900,21 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
         if phase13_refresh_checks is None
         else list(phase13_refresh_checks)
     )
-    if selection_scope == "ALL" and phase13_refresh_checks is None:
-        phase13_names = [name for name, _, _ in phase13_specs]
-        if phase13_names != [
+    phase13_names = [name for name, _, _ in phase13_specs]
+    if selection_scope == "ALL" and (
+        phase13_names != [
             "phase13-readiness:refresh",
             "phase13-readiness:current",
             "phase13-readiness:tests",
-        ]:
-            raise ValueError("canonical Phase 13 check set is invalid")
+        ]
+        or len(phase13_names) != len(set(phase13_names))
+        or any(not isinstance(name, str) for name in phase13_names)
+    ):
+        raise ValueError("ALL validation requires exactly the canonical Phase 13 checks")
     phase13_manifest_sha256 = _checks_manifest_hash(phase13_specs)
+    expected_selected_stages = _expected_full_stage_names(
+        selected, derived_specs, phase13_specs
+    )
     canonical_report_existing = (
         _load_completed_canonical_report(json_report)
         if allow_canonical_reuse
@@ -897,6 +948,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
                 canonical_report_existing,
                 identity_report,
                 fresh_started_at_ms=started_at_ms,
+                expected_selected_stages=expected_selected_stages,
             )
             if allow_canonical_reuse
             else None
@@ -1015,6 +1067,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             "derived_refresh_manifest_sha256": _checks_manifest_hash(
                 [refresh_check for _, refresh_check in derived_specs]
             ),
+            "phase13_manifest_sha256": phase13_manifest_sha256,
             "validate_script_sha256": _sha256_file(__file__),
             "summary": summary,
             "overall_status": overall_status,
