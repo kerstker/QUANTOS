@@ -112,7 +112,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         report["validation"] = (
             prior_binding
-            if args.as_of_ms is None and prior_binding is not None
+            if prior_binding is not None and (args.check or args.as_of_ms is None)
             else validation_binding(
                 generated_at=as_of_ms,
                 source_commit=canonical_source,
