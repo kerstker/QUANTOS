@@ -222,6 +222,11 @@ def test_close_and_context_manager_are_deterministic(tmp_path):
     ledger.close()
     ledger.close()
     with pytest.raises(TrialLedgerError): ledger.verify()
+    path_obj = tmp_path / "close.db"
+    path_obj.unlink()
+    reopened = TrialLedger(str(path_obj), create=True)
+    assert reopened.verify() is True
+    reopened.close()
 
 
 @pytest.mark.parametrize("action", ["UPDATE", "DELETE"])
@@ -239,6 +244,7 @@ def test_inert_when_zero_trigger_rejected(tmp_path, action):
     with pytest.raises(TrialLedgerError): TrialLedger(path, create=False)
 
 
+def test_constructor_translates_bad_path_and_unhashable_status(tmp_path):
     missing = tmp_path / "missing.db"
     with pytest.raises(TrialLedgerError): TrialLedger(str(missing), create=False)
     assert not missing.exists()
@@ -247,3 +253,4 @@ def test_inert_when_zero_trigger_rejected(tmp_path, action):
     with pytest.raises(TrialLedgerError): TrialLedger(str(parent / "db"))
     ledger = TrialLedger(":memory:")
     with pytest.raises(TrialLedgerError): ledger.append(TrialRecord(h(1), h(2), h(3), h(4), h(5), [], 0, 1))
+
