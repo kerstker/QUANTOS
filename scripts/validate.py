@@ -292,6 +292,7 @@ def _deterministic_validation_run_id(
     source_commit: str,
     checks_manifest_sha256: str,
     derived_refresh_manifest_sha256: str,
+    phase13_manifest_sha256: str = "",
 ) -> str:
     """Derive canonical full-run identity without wall-clock input."""
     payload = json.dumps(
@@ -300,6 +301,7 @@ def _deterministic_validation_run_id(
             "source_commit": source_commit,
             "checks_manifest_sha256": checks_manifest_sha256,
             "derived_refresh_manifest_sha256": derived_refresh_manifest_sha256,
+            "phase13_manifest_sha256": phase13_manifest_sha256,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -549,15 +551,21 @@ def _serialize_report(report: dict) -> bytes:
     )
 
 
-def _write_report(path: str, report: dict) -> None:
+def _write_report(
+    path: str,
+    report: dict,
+    *,
+    preserve_timing: bool = True,
+    existing: dict | None = None,
+) -> None:
     path = os.path.abspath(path)
-    existing_bytes = None
-    if os.path.isfile(path):
+    existing_bytes = _serialize_report(existing) if isinstance(existing, dict) else None
+    if preserve_timing and existing is None and os.path.isfile(path):
         try:
             with open(path, "rb") as handle:
                 existing_bytes = handle.read()
             existing = json.loads(existing_bytes.decode("utf-8"))
-            if isinstance(existing, dict):
+            if preserve_timing and isinstance(existing, dict):
                 report = _preserve_existing_timing(report, existing)
         except (OSError, UnicodeError, ValueError, TypeError):
             pass
@@ -585,10 +593,17 @@ def _load_completed_canonical_report(path: str) -> dict | None:
     return existing if isinstance(existing, dict) else None
 
 
-def _completed_canonical_report_matches(path: str, report: dict) -> bool:
-    """Return whether *path* already holds this run's complete PASS evidence."""
-    existing = _load_completed_canonical_report(path)
+def _completed_canonical_report_matches(path_or_report, report: dict) -> bool:
+    """Return whether a parsed report holds this run's complete PASS evidence."""
+    existing = (
+        path_or_report
+        if isinstance(path_or_report, dict)
+        else _load_completed_canonical_report(path_or_report)
+    )
     if existing is None or not isinstance(report, dict):
+        return False
+    report_validation = report.get("validation")
+    if not isinstance(report_validation, dict):
         return False
     validation = existing.get("validation")
     selected_stages = existing.get("selected_stages")
@@ -637,16 +652,23 @@ def _completed_canonical_report_matches(path: str, report: dict) -> bool:
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
-        and validation.get("run_id") == report.get("validation", {}).get("run_id")
+        and validation.get("run_id") == report_validation.get("run_id")
     )
 
 
 def _canonical_started_at_ms(
-    path: str, report: dict, *, fresh_started_at_ms: int
+    path_or_report, report: dict, *, fresh_started_at_ms: int
 ) -> int | None:
     """Reuse a completed canonical time anchor only when it is not from the future."""
-    existing = _load_completed_canonical_report(path)
+    existing = (
+        path_or_report
+        if isinstance(path_or_report, dict)
+        else _load_completed_canonical_report(path_or_report)
+    )
     if existing is None or not isinstance(report, dict):
+        return None
+    report_validation = report.get("validation")
+    if not isinstance(report_validation, dict):
         return None
     # Validate the already parsed object, avoiding a second read/TOCTOU window.
     validation = existing.get("validation")
@@ -692,7 +714,7 @@ def _canonical_started_at_ms(
         and existing.get("checks_manifest_sha256") == report.get("checks_manifest_sha256")
         and existing.get("derived_refresh_manifest_sha256") == report.get("derived_refresh_manifest_sha256")
         and existing.get("validate_script_sha256") == report.get("validate_script_sha256")
-        and validation.get("run_id") == report.get("validation", {}).get("run_id")
+        and validation.get("run_id") == report_validation.get("run_id")
     ):
         return None
     if isinstance(fresh_started_at_ms, bool) or not isinstance(fresh_started_at_ms, int):
@@ -826,6 +848,27 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     if len(derived_by_current) != len(derived_specs):
         raise ValueError("derived evidence refresh targets must be unique")
     allow_canonical_reuse = selection_scope == "ALL" and phase13_refresh_checks is None
+    if selection_scope == "ALL" and phase13_refresh_checks == []:
+        raise ValueError("canonical ALL validation requires Phase 13 checks")
+    phase13_specs = (
+        _phase13_refresh_checks()
+        if phase13_refresh_checks is None
+        else list(phase13_refresh_checks)
+    )
+    if selection_scope == "ALL" and phase13_refresh_checks is None:
+        phase13_names = [name for name, _, _ in phase13_specs]
+        if phase13_names != [
+            "phase13-readiness:refresh",
+            "phase13-readiness:current",
+            "phase13-readiness:tests",
+        ]:
+            raise ValueError("canonical Phase 13 check set is invalid")
+    phase13_manifest_sha256 = _checks_manifest_hash(phase13_specs)
+    canonical_report_existing = (
+        _load_completed_canonical_report(json_report)
+        if allow_canonical_reuse
+        else None
+    )
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
     canonical_report_reused = False
@@ -839,17 +882,21 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             source_commit,
             checks_manifest_sha256,
             derived_refresh_manifest_sha256,
+            phase13_manifest_sha256,
         )
         identity_report = {
             "commit": source_commit,
             "checks_manifest_sha256": checks_manifest_sha256,
             "derived_refresh_manifest_sha256": derived_refresh_manifest_sha256,
+            "phase13_manifest_sha256": phase13_manifest_sha256,
             "validate_script_sha256": _sha256_file(__file__),
             "validation": {"run_id": validation_run_id},
         }
         previous_started_at_ms = (
             _canonical_started_at_ms(
-                json_report, identity_report, fresh_started_at_ms=started_at_ms
+                canonical_report_existing,
+                identity_report,
+                fresh_started_at_ms=started_at_ms,
             )
             if allow_canonical_reuse
             else None
@@ -983,7 +1030,12 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     skip_preliminary = canonical_report_reused and overall_status == "PASS"
     try:
         if not skip_preliminary:
-            _write_report(effective_report, report)
+            _write_report(
+                effective_report,
+                report,
+                preserve_timing=canonical_report_reused,
+                existing=canonical_report_existing,
+            )
         else:
             print(
                 "[validate] retaining completed canonical report until Phase 13 finishes",
@@ -999,11 +1051,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
         )
 
     if selection_scope == "ALL" and report_written:
-        refresh_checks = (
-            list(phase13_refresh_checks)
-            if phase13_refresh_checks is not None
-            else _phase13_refresh_checks()
-        )
+        refresh_checks = phase13_specs
         for name, argv, cwd in refresh_checks:
             results.append(_run_check(name, argv, cwd, timeout_seconds))
             selected_names.append(name)
@@ -1012,7 +1060,12 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
 
     report = build_report()
     try:
-        _write_report(effective_report, report)
+        _write_report(
+            effective_report,
+            report,
+            preserve_timing=canonical_report_reused,
+            existing=canonical_report_existing,
+        )
         print(f"[validate] report: {os.path.abspath(effective_report)}", flush=True)
     except OSError as exc:
         print(

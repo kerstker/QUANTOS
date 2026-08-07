@@ -36,6 +36,17 @@ def _load_validate_module():
     return module
 
 
+def _fake_phase13(tmp_path):
+    return [
+        (name, [sys.executable, "-c", "pass"], str(tmp_path))
+        for name in (
+            "phase13-readiness:refresh",
+            "phase13-readiness:current",
+            "phase13-readiness:tests",
+        )
+    ]
+
+
 def test_selected_stage_writes_machine_report(tmp_path):
     validate = _load_validate_module()
     report_path = tmp_path / "validation.json"
@@ -324,7 +335,7 @@ def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=derived,
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert result == 0
@@ -388,7 +399,7 @@ def test_evidence_consumers_run_after_derived_refresh(tmp_path):
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=derived,
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert result == 0
@@ -439,7 +450,7 @@ def test_failed_primary_check_never_rewrites_derived_evidence(tmp_path):
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=derived,
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert result == 1
@@ -498,7 +509,7 @@ def test_failed_derived_refresh_blocks_downstream_rewrite(tmp_path):
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=derived,
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert result == 1
@@ -611,7 +622,7 @@ def test_full_run_uses_stable_anchor_after_artifact_only_head(tmp_path, monkeypa
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=[],
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     ) == 0
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["commit"] == anchor
@@ -660,7 +671,7 @@ def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path):
         json_report=str(report_path),
         timeout_seconds=2,
         derived_refresh_checks=[],
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert validate.run(checks=passing, **common) == 0
@@ -707,7 +718,7 @@ def test_nonvolatile_report_change_rewrites_report(tmp_path):
         json_report=str(report_path),
         timeout_seconds=2,
         derived_refresh_checks=[],
-        phase13_refresh_checks=[],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
     )
 
     assert validate.run(checks=passing, **common) == 0
