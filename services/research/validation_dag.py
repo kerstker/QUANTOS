@@ -200,6 +200,14 @@ class CheapValidationAdapter(_TypedAdapter):
             )
             if not target_values:
                 return self._block("missing target feature evidence")
+            if any(
+                type(value.event_time) is not int
+                or type(value.knowledge_time) is not int
+                or value.knowledge_time < value.event_time
+                or value.knowledge_time > context.event_at
+                for value in target_values
+            ):
+                return self._block("leakage outputs exceed validation as-of")
             result=detect_leakage(x["feature_id"],compute.compute,x["bars"],x["target_event_time"],x.get("instrument_id"))
         except Exception as exc: return self._block("leakage engine unavailable", exception_type=type(exc).__name__)
         if not hasattr(result,"passed") or type(result.passed) is not bool: return self._block("malformed leakage result")

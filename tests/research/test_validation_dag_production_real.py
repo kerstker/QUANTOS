@@ -181,6 +181,49 @@ def test_production_blocks_leakage_compute_for_other_definition(tmp_path):
     assert receipts["oos"]["payload"]["evidence"]["short_circuit"] is True
 
 
+def test_production_blocks_future_known_leakage_feature(tmp_path):
+    from quantos.contracts.feature import FeatureValue
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import (
+        ValidationPolicy,
+        register_leakage_compute,
+        run_validation_dag,
+    )
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+
+    def future_known_compute(rows):
+        return [
+            FeatureValue(
+                feature_id="past_close",
+                instrument_id=row.instrument_id,
+                event_time=row.event_time,
+                knowledge_time=101,
+                value=row.close,
+            )
+            for row in rows
+        ]
+
+    panel["cheap"]["compute"] = register_leakage_compute(
+        "tests.future_known_compute:1",
+        future_known_compute,
+        exact_definition_id=exact_definition_id,
+    )
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-known-feature.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipts = ledger.validation_receipt(artifact.trial_id)
+
+    assert artifact.verdict == "BLOCK"
+    assert receipts["cheap"]["payload"]["reason"] == "leakage outputs exceed validation as-of"
+    assert receipts["oos"]["payload"]["evidence"]["short_circuit"] is True
+
+
 def test_production_blocks_future_known_leakage_bar(tmp_path):
     from services.research.trial_ledger import TrialLedger
     from services.research.validation_dag import ValidationPolicy, run_validation_dag
