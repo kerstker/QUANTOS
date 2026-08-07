@@ -139,21 +139,23 @@ def test_phase13_write_boundary_preserves_semantically_current_artifacts(
     json_path = tmp_path / relative_path
     text_path = tmp_path / "audit.md"
     first = {"generated_at_ms": 100, "commit": "a" * 40, "status": "NOT_READY"}
-    second = {"generated_at_ms": 200, "commit": "b" * 40, "status": "NOT_READY"}
+    second = {"generated_at_ms": 200, "commit": "a" * 40, "status": "NOT_READY"}
     _write_json(json_path, first, relative_path=relative_path)
     _write_text(text_path, "- 生成时间（Unix ms）：`100`\n- commit：`a`\nstatus\n")
     json_before = (json_path.read_bytes(), json_path.stat().st_mtime_ns)
     text_before = (text_path.read_bytes(), text_path.stat().st_mtime_ns)
 
     _write_json(json_path, second, relative_path=relative_path)
-    _write_text(text_path, "- 生成时间（Unix ms）：`200`\n- commit：`b`\nstatus\n")
+    _write_text(text_path, "- 生成时间（Unix ms）：`200`\n- commit：`a`\nstatus\n")
 
     assert (json_path.read_bytes(), json_path.stat().st_mtime_ns) == json_before
     assert (text_path.read_bytes(), text_path.stat().st_mtime_ns) == text_before
 
-    changed = {**second, "status": "READY_FOR_RESEARCH_AUTONOMY"}
+    changed = {**second, "commit": "b" * 40}
     _write_json(json_path, changed, relative_path=relative_path)
-    assert json.loads(json_path.read_text(encoding="utf-8"))["status"] == changed["status"]
+    _write_text(text_path, "- 生成时间（Unix ms）：`300`\n- commit：`b`\nstatus\n")
+    assert json.loads(json_path.read_text(encoding="utf-8"))["commit"] == changed["commit"]
+    assert "- commit：`b`" in text_path.read_text(encoding="utf-8")
 
 
 def test_phase13_current_artifacts_match_read_only_generator() -> None:

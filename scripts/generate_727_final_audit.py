@@ -746,6 +746,12 @@ def _strip_json_volatile(payload: Any) -> Any:
     return payload
 
 
+def _strip_markdown_time(text: str) -> str:
+    return "\n".join(
+        line for line in text.splitlines() if not line.startswith("- 生成时间")
+    )
+
+
 def _strip_markdown_volatile(text: str) -> str:
     return "\n".join(
         line for line in text.splitlines()
@@ -1163,7 +1169,11 @@ def _write_json(
             actual = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             actual = None
-        if phase13_artifact_matches(relative_path, actual, payload):
+        if (
+            isinstance(actual, dict)
+            and actual.get("commit") == payload.get("commit")
+            and phase13_artifact_matches(relative_path, actual, payload)
+        ):
             return
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
@@ -1190,7 +1200,7 @@ def _write_text(path: Path, text: str) -> None:
             actual = path.read_text(encoding="utf-8")
         except OSError:
             actual = None
-        if actual is not None and _strip_markdown_volatile(actual) == _strip_markdown_volatile(text):
+        if actual is not None and _strip_markdown_time(actual) == _strip_markdown_time(text):
             return
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
