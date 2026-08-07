@@ -49,6 +49,45 @@ def _spearman(pairs: Sequence[tuple]) -> Optional[float]:
     return (num / (da * db)) if da > 0 and db > 0 else None
 
 
+def compute_forward_metrics(
+    *,
+    weights: Mapping[str, float],
+    entry_prices: Mapping[str, float],
+    exit_prices: Mapping[str, float],
+    signals: Optional[Mapping[str, float]] = None,
+    funding_by_instrument: Optional[Mapping[str, float]] = None,
+) -> tuple[float, Optional[float], dict[str, dict[str, float]]]:
+    """Compute one retained forward decision without cadence-specific policy."""
+    funding = {} if funding_by_instrument is None else funding_by_instrument
+    names = [
+        name
+        for name in weights
+        if (entry_prices.get(name) or 0) > 0 and (exit_prices.get(name) or 0) > 0
+    ]
+    price_returns = {
+        name: float(exit_prices[name]) / float(entry_prices[name]) - 1.0
+        for name in names
+    }
+    inputs = {
+        name: {
+            "weight": float(weights[name]),
+            "price_return": float(price_returns[name]),
+            "funding": float(funding.get(name, 0.0)),
+        }
+        for name in sorted(names)
+    }
+    realized_return = sum(
+        item["weight"] * item["price_return"] - item["weight"] * item["funding"]
+        for item in inputs.values()
+    )
+    realized_ic = None
+    if signals is not None:
+        realized_ic = _spearman(
+            [(float(signals[name]), price_returns[name]) for name in names if name in signals]
+        )
+    return realized_return, realized_ic, inputs
+
+
 def realize_due(
     ledger: ForwardLedgerPort,
     store: PaperTrackStorePort,
@@ -102,21 +141,17 @@ def realize_due(
                 f"({len(names)}/{len(weights)} priced) — left pending"
             )
             continue
-        per_name = {n: p1[n] / p0[n] - 1.0 for n in names}
-        inputs = {
-            name: {
-                "weight": float(weights[name]),
-                "price_return": float(per_name[name]),
-                "funding": 0.0 if funding_sum is None else float(funding_sum(name, t0, t1)),
-            }
-            for name in sorted(names)
+        funding = {
+            name: 0.0 if funding_sum is None else float(funding_sum(name, t0, t1))
+            for name in names
         }
-        ret = sum(weights[n] * per_name[n] for n in names)
-        ret += sum(-inputs[n]["weight"] * inputs[n]["funding"] for n in names)
-        ic = None
-        if dec["signals_json"]:
-            sig = json.loads(dec["signals_json"])
-            ic = _spearman([(float(sig[n]), per_name[n]) for n in names if n in sig])
+        ret, ic, inputs = compute_forward_metrics(
+            weights=weights,
+            entry_prices=p0,
+            exit_prices=p1,
+            signals=None if dec["signals_json"] is None else json.loads(dec["signals_json"]),
+            funding_by_instrument=funding,
+        )
         if abs(ret) > extreme_abs_return:
             alerts.append(f"{alpha_id}@{t1}: extreme weekly return {ret:+.4f} (recorded, review)")
         if ledger.commit_realization(

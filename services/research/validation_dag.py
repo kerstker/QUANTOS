@@ -36,11 +36,19 @@ def _execution_snapshot(value: Any) -> Any:
     from quantos.contracts.data import Bar
     from quantos.contracts.validation import PboAlignment
     from services.alpha.family_testing import FamilyAssignment
+    from services.data.hourly_market import (
+        HourlyBar,
+        HourlyFunding,
+        HourlyMarketPanel,
+        HourlyOpenInterest,
+    )
     if type(value) is RegisteredLeakageCompute:
         return value
     if type(value) is PboAlignment:
         return value
     if type(value) is Bar:
+        return value
+    if type(value) in (HourlyBar, HourlyFunding, HourlyOpenInterest, HourlyMarketPanel):
         return value
     if type(value) is CostModel:
         return CostModel(fee_bps=value.fee_bps, slippage_bps=value.slippage_bps, impact_coef=value.impact_coef)

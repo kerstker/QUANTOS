@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import math
+import re
 import sqlite3
 from typing import Mapping, Optional
 
@@ -98,7 +99,74 @@ BEFORE DELETE ON forward_local_events
 BEGIN SELECT RAISE(ABORT, 'forward_local_events is append-only'); END;
 """
 
+_HOURLY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS hourly_forward_decisions (
+  decision_seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+  schema_version            INTEGER NOT NULL,
+  alpha_id                  TEXT    NOT NULL,
+  decided_ts                INTEGER NOT NULL,
+  horizon                   TEXT    NOT NULL,
+  horizon_seconds           INTEGER NOT NULL,
+  due_ts                    INTEGER NOT NULL,
+  recorded_at               INTEGER NOT NULL,
+  workflow_receipt_hash     TEXT    NOT NULL,
+  panel_digest              TEXT    NOT NULL,
+  weights_json              TEXT    NOT NULL,
+  signals_json              TEXT,
+  entry_prices_json         TEXT    NOT NULL,
+  source                    TEXT    NOT NULL,
+  admission_id              TEXT    NOT NULL,
+  admission_evidence_sha256 TEXT    NOT NULL,
+  admission_decision_hash   TEXT    NOT NULL,
+  admission_recorded_at_ms  INTEGER NOT NULL,
+  price_basis               TEXT    NOT NULL,
+  instrument_scope_json     TEXT    NOT NULL,
+  prev_hash                 TEXT    NOT NULL,
+  row_hash                  TEXT    NOT NULL UNIQUE,
+  UNIQUE(alpha_id, decided_ts, horizon)
+);
+CREATE TABLE IF NOT EXISTS hourly_forward_realizations (
+  realization_seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+  schema_version            INTEGER NOT NULL,
+  alpha_id                  TEXT    NOT NULL,
+  decided_ts                INTEGER NOT NULL,
+  horizon                   TEXT    NOT NULL,
+  as_of_ts                  INTEGER NOT NULL,
+  workflow_receipt_hash     TEXT    NOT NULL,
+  panel_digest              TEXT    NOT NULL,
+  decision_row_hash         TEXT    NOT NULL,
+  realized_return           REAL    NOT NULL,
+  realized_ic               REAL,
+  source                    TEXT    NOT NULL,
+  inputs_json               TEXT    NOT NULL,
+  inputs_sha256             TEXT    NOT NULL,
+  admission_id              TEXT    NOT NULL,
+  admission_evidence_sha256 TEXT    NOT NULL,
+  admission_decision_hash   TEXT    NOT NULL,
+  committed_at              INTEGER NOT NULL,
+  prev_hash                 TEXT    NOT NULL,
+  row_hash                  TEXT    NOT NULL UNIQUE,
+  UNIQUE(alpha_id, decided_ts, horizon),
+  UNIQUE(alpha_id, as_of_ts, horizon)
+);
+CREATE TRIGGER IF NOT EXISTS hourly_forward_decisions_no_update
+BEFORE UPDATE ON hourly_forward_decisions
+BEGIN SELECT RAISE(ABORT, 'hourly_forward_decisions is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS hourly_forward_decisions_no_delete
+BEFORE DELETE ON hourly_forward_decisions
+BEGIN SELECT RAISE(ABORT, 'hourly_forward_decisions is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS hourly_forward_realizations_no_update
+BEFORE UPDATE ON hourly_forward_realizations
+BEGIN SELECT RAISE(ABORT, 'hourly_forward_realizations is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS hourly_forward_realizations_no_delete
+BEFORE DELETE ON hourly_forward_realizations
+BEGIN SELECT RAISE(ABORT, 'hourly_forward_realizations is append-only'); END;
+"""
+
 _GENESIS_HASH = "0" * 64
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_HOURLY_SCHEMA_VERSION = 1
+_HOURLY_HORIZONS = {"1h": 3_600, "4h": 14_400}
 
 
 def _canonical(value: object) -> str:
@@ -120,6 +188,10 @@ def _strict_canonical(value: object) -> str:
 
 
 def _all_numbers_finite(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
     if isinstance(value, float):
         return math.isfinite(value)
     if isinstance(value, Mapping):
@@ -129,6 +201,38 @@ def _all_numbers_finite(value: object) -> bool:
     return True
 
 
+def _valid_admission_ref(value: object) -> bool:
+    return (
+        isinstance(value, ForwardAdmissionRef)
+        and type(value.admission_id) is str
+        and bool(value.admission_id)
+        and type(value.evidence_sha256) is str
+        and _HEX64.fullmatch(value.evidence_sha256) is not None
+        and type(value.decision_hash) is str
+        and _HEX64.fullmatch(value.decision_hash) is not None
+        and type(value.recorded_at_ms) is int
+        and value.price_basis == "PERP_MARK_PRICE"
+        and isinstance(value.instrument_scope, tuple)
+        and bool(value.instrument_scope)
+        and len(set(value.instrument_scope)) == len(value.instrument_scope)
+        and all(type(item) is str and bool(item) for item in value.instrument_scope)
+    )
+
+
+def _numeric_mapping(value: Mapping[str, float], *, positive: bool = False) -> dict[str, float]:
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError
+    normalized: dict[str, float] = {}
+    for key, item in value.items():
+        if type(key) is not str or not key or isinstance(item, bool):
+            raise ValueError
+        number = float(item)
+        if not math.isfinite(number) or (positive and number <= 0):
+            raise ValueError
+        normalized[key] = number
+    return dict(sorted(normalized.items()))
+
+
 class ForwardLedger:
     """Append-only forward decisions co-located with paper-track tables."""
 
@@ -136,7 +240,7 @@ class ForwardLedger:
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
         if create:
-            self._conn.executescript(_SCHEMA)
+            self._conn.executescript(_SCHEMA + _HOURLY_SCHEMA)
             self._conn.commit()
         self._require_schema()
 
@@ -154,6 +258,521 @@ class ForwardLedger:
         } - names
         if missing:
             raise ForwardLedgerError(f"forward ledger missing table: {sorted(missing)[0]}")
+
+    def _require_hourly_schema(self) -> None:
+        names = {
+            row["name"]
+            for row in self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if not {"hourly_forward_decisions", "hourly_forward_realizations"}.issubset(names):
+            raise ForwardLedgerError("hourly schema unavailable; legacy weekly ledger is read-only")
+
+    @staticmethod
+    def _hourly_decision_columns() -> tuple[str, ...]:
+        return (
+            "schema_version",
+            "alpha_id",
+            "decided_ts",
+            "horizon",
+            "horizon_seconds",
+            "due_ts",
+            "recorded_at",
+            "workflow_receipt_hash",
+            "panel_digest",
+            "weights_json",
+            "signals_json",
+            "entry_prices_json",
+            "source",
+            "admission_id",
+            "admission_evidence_sha256",
+            "admission_decision_hash",
+            "admission_recorded_at_ms",
+            "price_basis",
+            "instrument_scope_json",
+            "prev_hash",
+            "row_hash",
+        )
+
+    @staticmethod
+    def _hourly_realization_columns() -> tuple[str, ...]:
+        return (
+            "schema_version",
+            "alpha_id",
+            "decided_ts",
+            "horizon",
+            "as_of_ts",
+            "workflow_receipt_hash",
+            "panel_digest",
+            "decision_row_hash",
+            "realized_return",
+            "realized_ic",
+            "source",
+            "inputs_json",
+            "inputs_sha256",
+            "admission_id",
+            "admission_evidence_sha256",
+            "admission_decision_hash",
+            "committed_at",
+            "prev_hash",
+            "row_hash",
+        )
+
+    @classmethod
+    def _hourly_decision_values(
+        cls,
+        *,
+        alpha_id: str,
+        decided_ts: int,
+        horizon: str,
+        recorded_at: int,
+        workflow_receipt_hash: str,
+        panel_digest: str,
+        weights: Mapping[str, float],
+        signals: Mapping[str, float] | None,
+        entry_prices: Mapping[str, float],
+        source: str,
+        admission_ref: ForwardAdmissionRef,
+        prev_hash: str,
+    ) -> dict[str, object]:
+        horizon_seconds = _HOURLY_HORIZONS[horizon]
+        values: dict[str, object] = {
+            "schema_version": _HOURLY_SCHEMA_VERSION,
+            "alpha_id": alpha_id,
+            "decided_ts": decided_ts,
+            "horizon": horizon,
+            "horizon_seconds": horizon_seconds,
+            "due_ts": decided_ts + horizon_seconds,
+            "recorded_at": recorded_at,
+            "workflow_receipt_hash": workflow_receipt_hash,
+            "panel_digest": panel_digest,
+            "weights_json": _strict_canonical(weights),
+            "signals_json": None if signals is None else _strict_canonical(signals),
+            "entry_prices_json": _strict_canonical(entry_prices),
+            "source": source,
+            "admission_id": admission_ref.admission_id,
+            "admission_evidence_sha256": admission_ref.evidence_sha256,
+            "admission_decision_hash": admission_ref.decision_hash,
+            "admission_recorded_at_ms": int(admission_ref.recorded_at_ms),
+            "price_basis": admission_ref.price_basis,
+            "instrument_scope_json": _canonical(sorted(admission_ref.instrument_scope)),
+            "prev_hash": prev_hash,
+        }
+        values["row_hash"] = _sha256(values)
+        return values
+
+    @classmethod
+    def _hourly_realization_values(
+        cls,
+        *,
+        decision: sqlite3.Row,
+        as_of_ts: int,
+        realized_return: float,
+        realized_ic: float | None,
+        source: str,
+        inputs: Mapping[str, object],
+        admission_ref: ForwardAdmissionRef,
+        committed_at: int,
+        prev_hash: str,
+    ) -> dict[str, object]:
+        values: dict[str, object] = {
+            "schema_version": _HOURLY_SCHEMA_VERSION,
+            "alpha_id": decision["alpha_id"],
+            "decided_ts": int(decision["decided_ts"]),
+            "horizon": decision["horizon"],
+            "as_of_ts": as_of_ts,
+            "workflow_receipt_hash": decision["workflow_receipt_hash"],
+            "panel_digest": decision["panel_digest"],
+            "decision_row_hash": decision["row_hash"],
+            "realized_return": realized_return,
+            "realized_ic": realized_ic,
+            "source": source,
+            "inputs_json": _strict_canonical(inputs),
+            "inputs_sha256": _sha256(inputs),
+            "admission_id": admission_ref.admission_id,
+            "admission_evidence_sha256": admission_ref.evidence_sha256,
+            "admission_decision_hash": admission_ref.decision_hash,
+            "committed_at": committed_at,
+            "prev_hash": prev_hash,
+        }
+        values["row_hash"] = _sha256(values)
+        return values
+
+    def record_hourly_decision(
+        self,
+        alpha_id: str,
+        decided_ts: int,
+        horizon: str,
+        *,
+        recorded_at: int,
+        workflow_receipt_hash: str,
+        panel_digest: str,
+        weights: Mapping[str, float],
+        entry_prices: Mapping[str, float],
+        admission_ref: ForwardAdmissionRef,
+        signals: Mapping[str, float] | None = None,
+        source: str = "HOURLY_FORWARD_L2_ATTESTED_DECISION",
+    ) -> dict:
+        self._require_hourly_schema()
+        if (
+            type(alpha_id) is not str
+            or _HEX64.fullmatch(alpha_id) is None
+            or type(workflow_receipt_hash) is not str
+            or _HEX64.fullmatch(workflow_receipt_hash) is None
+            or type(panel_digest) is not str
+            or _HEX64.fullmatch(panel_digest) is None
+            or horizon not in _HOURLY_HORIZONS
+            or type(decided_ts) is not int
+            or type(recorded_at) is not int
+            or type(source) is not str
+            or not source
+            or not _valid_admission_ref(admission_ref)
+        ):
+            raise ForwardLedgerError("invalid hourly decision identity")
+        due_ts = decided_ts + _HOURLY_HORIZONS[horizon]
+        if not decided_ts <= recorded_at < due_ts:
+            raise ForwardLedgerError("hourly decision must be recorded before horizon expiry")
+        try:
+            normalized_weights = _numeric_mapping(weights)
+            normalized_prices = _numeric_mapping(entry_prices, positive=True)
+            normalized_signals = None if signals is None else _numeric_mapping(signals)
+        except (TypeError, ValueError, OverflowError):
+            raise ForwardLedgerError("invalid hourly decision evidence") from None
+        scope = set(admission_ref.instrument_scope)
+        if (
+            admission_ref.price_basis != "PERP_MARK_PRICE"
+            or not set(normalized_weights).issubset(scope)
+            or not set(normalized_weights).issubset(normalized_prices)
+            or (normalized_signals is not None and not set(normalized_signals).issubset(normalized_prices))
+        ):
+            raise ForwardLedgerError("hourly decision exceeds admitted or priced scope")
+        with self._immediate_transaction():
+            if not self._hourly_decision_chain_valid():
+                raise ForwardLedgerError("invalid hourly decision chain")
+            existing = self._conn.execute(
+                "SELECT * FROM hourly_forward_decisions WHERE alpha_id=? AND decided_ts=? AND horizon=?",
+                (alpha_id, decided_ts, horizon),
+            ).fetchone()
+            previous = self._conn.execute(
+                "SELECT row_hash FROM hourly_forward_decisions ORDER BY decision_seq DESC LIMIT 1"
+            ).fetchone()
+            prev_hash = _GENESIS_HASH if previous is None else str(previous["row_hash"])
+            if existing is not None:
+                expected = self._hourly_decision_values(
+                    alpha_id=alpha_id,
+                    decided_ts=decided_ts,
+                    horizon=horizon,
+                    recorded_at=recorded_at,
+                    workflow_receipt_hash=workflow_receipt_hash,
+                    panel_digest=panel_digest,
+                    weights=normalized_weights,
+                    signals=normalized_signals,
+                    entry_prices=normalized_prices,
+                    source=source,
+                    admission_ref=admission_ref,
+                    prev_hash=str(existing["prev_hash"]),
+                )
+                if all(existing[name] == expected[name] for name in self._hourly_decision_columns()):
+                    return dict(existing)
+                raise ForwardLedgerError("hourly decision identity reused with different content")
+            values = self._hourly_decision_values(
+                alpha_id=alpha_id,
+                decided_ts=decided_ts,
+                horizon=horizon,
+                recorded_at=recorded_at,
+                workflow_receipt_hash=workflow_receipt_hash,
+                panel_digest=panel_digest,
+                weights=normalized_weights,
+                signals=normalized_signals,
+                entry_prices=normalized_prices,
+                source=source,
+                admission_ref=admission_ref,
+                prev_hash=prev_hash,
+            )
+            columns = self._hourly_decision_columns()
+            self._conn.execute(
+                f"INSERT INTO hourly_forward_decisions({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                tuple(values[name] for name in columns),
+            )
+            return dict(
+                self._conn.execute(
+                    "SELECT * FROM hourly_forward_decisions WHERE alpha_id=? AND decided_ts=? AND horizon=?",
+                    (alpha_id, decided_ts, horizon),
+                ).fetchone()
+            )
+
+    def commit_hourly_realization(
+        self,
+        alpha_id: str,
+        decided_ts: int,
+        horizon: str,
+        *,
+        as_of_ts: int,
+        realized_return: float,
+        realized_ic: float | None,
+        inputs: Mapping[str, object],
+        admission_ref: ForwardAdmissionRef,
+        committed_at: int,
+        source: str = "HOURLY_FORWARD_L2_ATTESTED_REALIZATION",
+    ) -> dict:
+        self._require_hourly_schema()
+        try:
+            normalized_return = float(realized_return)
+            normalized_ic = None if realized_ic is None else float(realized_ic)
+            normalized_inputs = dict(sorted((str(key), value) for key, value in inputs.items()))
+            if (
+                type(alpha_id) is not str
+                or _HEX64.fullmatch(alpha_id) is None
+                or horizon not in _HOURLY_HORIZONS
+                or type(decided_ts) is not int
+                or type(as_of_ts) is not int
+                or type(committed_at) is not int
+                or type(source) is not str
+                or not source
+                or not normalized_inputs
+                or len(normalized_inputs) != len(inputs)
+                or not math.isfinite(normalized_return)
+                or (normalized_ic is not None and not math.isfinite(normalized_ic))
+                or not _all_numbers_finite(normalized_inputs)
+                or not _valid_admission_ref(admission_ref)
+                or any(
+                    not isinstance(item, Mapping)
+                    or set(item) != {"weight", "price_return", "funding"}
+                    or any(
+                        isinstance(value, bool)
+                        or type(value) not in (int, float)
+                        or not math.isfinite(value)
+                        for value in item.values()
+                    )
+                    for item in normalized_inputs.values()
+                )
+            ):
+                raise ValueError
+            _strict_canonical(normalized_inputs)
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            raise ForwardLedgerError("invalid hourly realization evidence") from None
+        with self._immediate_transaction():
+            if not self._hourly_decision_chain_valid():
+                raise ForwardLedgerError("invalid hourly decision chain")
+            if not self._hourly_realization_chain_valid():
+                raise ForwardLedgerError("invalid hourly realization chain")
+            decision = self._conn.execute(
+                "SELECT * FROM hourly_forward_decisions WHERE alpha_id=? AND decided_ts=? AND horizon=?",
+                (alpha_id, decided_ts, horizon),
+            ).fetchone()
+            if decision is None:
+                raise ForwardLedgerError("hourly decision not found before realization")
+            if as_of_ts < int(decision["due_ts"]) or committed_at < as_of_ts:
+                raise ForwardLedgerError("hourly realization is before horizon expiry")
+            input_scope = set(normalized_inputs)
+            if (
+                admission_ref.price_basis != "PERP_MARK_PRICE"
+                or not input_scope.issubset(set(json.loads(decision["instrument_scope_json"])))
+                or not input_scope.issubset(set(admission_ref.instrument_scope))
+            ):
+                raise ForwardLedgerError("hourly realization exceeds admitted scope")
+            existing = self._conn.execute(
+                "SELECT * FROM hourly_forward_realizations WHERE alpha_id=? AND decided_ts=? AND horizon=?",
+                (alpha_id, decided_ts, horizon),
+            ).fetchone()
+            previous = self._conn.execute(
+                "SELECT row_hash FROM hourly_forward_realizations ORDER BY realization_seq DESC LIMIT 1"
+            ).fetchone()
+            prev_hash = _GENESIS_HASH if previous is None else str(previous["row_hash"])
+            if existing is not None:
+                expected = self._hourly_realization_values(
+                    decision=decision,
+                    as_of_ts=as_of_ts,
+                    realized_return=normalized_return,
+                    realized_ic=normalized_ic,
+                    source=source,
+                    inputs=normalized_inputs,
+                    admission_ref=admission_ref,
+                    committed_at=committed_at,
+                    prev_hash=str(existing["prev_hash"]),
+                )
+                if all(existing[name] == expected[name] for name in self._hourly_realization_columns()):
+                    return dict(existing)
+                raise ForwardLedgerError("hourly realization identity reused with different content")
+            values = self._hourly_realization_values(
+                decision=decision,
+                as_of_ts=as_of_ts,
+                realized_return=normalized_return,
+                realized_ic=normalized_ic,
+                source=source,
+                inputs=normalized_inputs,
+                admission_ref=admission_ref,
+                committed_at=committed_at,
+                prev_hash=prev_hash,
+            )
+            columns = self._hourly_realization_columns()
+            self._conn.execute(
+                f"INSERT INTO hourly_forward_realizations({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                tuple(values[name] for name in columns),
+            )
+            return dict(
+                self._conn.execute(
+                    "SELECT * FROM hourly_forward_realizations WHERE alpha_id=? AND decided_ts=? AND horizon=?",
+                    (alpha_id, decided_ts, horizon),
+                ).fetchone()
+            )
+
+    def hourly_decisions(self, alpha_id: str) -> list[dict]:
+        self._require_hourly_schema()
+        with self._read_snapshot():
+            if not self._hourly_decision_chain_valid():
+                raise ForwardLedgerError("invalid hourly decision chain")
+            rows = self._conn.execute(
+                "SELECT * FROM hourly_forward_decisions WHERE alpha_id=? ORDER BY decided_ts,horizon_seconds",
+                (str(alpha_id),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def hourly_pending(self, alpha_id: str) -> list[dict]:
+        self._require_hourly_schema()
+        with self._read_snapshot():
+            if not self._hourly_decision_chain_valid() or not self._hourly_realization_chain_valid():
+                raise ForwardLedgerError("invalid hourly forward chain")
+            rows = self._conn.execute(
+                """SELECT d.* FROM hourly_forward_decisions AS d
+                   LEFT JOIN hourly_forward_realizations AS r
+                   ON r.alpha_id=d.alpha_id AND r.decided_ts=d.decided_ts AND r.horizon=d.horizon
+                   WHERE d.alpha_id=? AND r.realization_seq IS NULL
+                   ORDER BY d.decided_ts,d.horizon_seconds""",
+                (str(alpha_id),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def hourly_realizations(self, alpha_id: str | None = None) -> list[dict]:
+        self._require_hourly_schema()
+        with self._read_snapshot():
+            if not self._hourly_realization_chain_valid():
+                raise ForwardLedgerError("invalid hourly realization chain")
+            if alpha_id is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM hourly_forward_realizations ORDER BY realization_seq"
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM hourly_forward_realizations WHERE alpha_id=? ORDER BY realization_seq",
+                    (str(alpha_id),),
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+    def _hourly_decision_chain_valid(self) -> bool:
+        try:
+            self._require_hourly_schema()
+            rows = self._conn.execute(
+                "SELECT * FROM hourly_forward_decisions ORDER BY decision_seq"
+            ).fetchall()
+            previous = _GENESIS_HASH
+            for row in rows:
+                if (
+                    row["schema_version"] != _HOURLY_SCHEMA_VERSION
+                    or row["horizon"] not in _HOURLY_HORIZONS
+                    or row["horizon_seconds"] != _HOURLY_HORIZONS[row["horizon"]]
+                    or row["due_ts"] != row["decided_ts"] + row["horizon_seconds"]
+                    or not row["decided_ts"] <= row["recorded_at"] < row["due_ts"]
+                    or _HEX64.fullmatch(str(row["alpha_id"])) is None
+                    or _HEX64.fullmatch(str(row["workflow_receipt_hash"])) is None
+                    or _HEX64.fullmatch(str(row["panel_digest"])) is None
+                    or row["prev_hash"] != previous
+                ):
+                    return False
+                weights = json.loads(row["weights_json"])
+                signals = None if row["signals_json"] is None else json.loads(row["signals_json"])
+                prices = json.loads(row["entry_prices_json"])
+                scope = json.loads(row["instrument_scope_json"])
+                if (
+                    not isinstance(weights, Mapping)
+                    or not isinstance(prices, Mapping)
+                    or (signals is not None and not isinstance(signals, Mapping))
+                    or not isinstance(scope, list)
+                    or not weights
+                    or not prices
+                    or row["weights_json"] != _strict_canonical(weights)
+                    or row["entry_prices_json"] != _strict_canonical(prices)
+                    or (signals is not None and row["signals_json"] != _strict_canonical(signals))
+                    or not _all_numbers_finite((weights, signals, prices))
+                    or not set(weights).issubset(prices)
+                    or not set(weights).issubset(scope)
+                    or (signals is not None and not set(signals).issubset(prices))
+                    or row["price_basis"] != "PERP_MARK_PRICE"
+                    or row["instrument_scope_json"] != _canonical(sorted(scope))
+                    or any(float(value) <= 0 for value in prices.values())
+                ):
+                    return False
+                values = {
+                    name: row[name]
+                    for name in self._hourly_decision_columns()
+                    if name != "row_hash"
+                }
+                if row["row_hash"] != _sha256(values):
+                    return False
+                previous = str(row["row_hash"])
+            return True
+        except (ForwardLedgerError, KeyError, TypeError, ValueError, json.JSONDecodeError, sqlite3.DatabaseError):
+            return False
+
+    def _hourly_realization_chain_valid(self) -> bool:
+        try:
+            self._require_hourly_schema()
+            if not self._hourly_decision_chain_valid():
+                return False
+            rows = self._conn.execute(
+                """SELECT r.*,d.row_hash AS bound_decision_hash,d.due_ts,
+                          d.workflow_receipt_hash AS bound_workflow_hash,
+                          d.panel_digest AS bound_panel_digest,d.instrument_scope_json
+                   FROM hourly_forward_realizations AS r
+                   LEFT JOIN hourly_forward_decisions AS d
+                   ON d.alpha_id=r.alpha_id AND d.decided_ts=r.decided_ts AND d.horizon=r.horizon
+                   ORDER BY r.realization_seq"""
+            ).fetchall()
+            previous = _GENESIS_HASH
+            for row in rows:
+                inputs = json.loads(row["inputs_json"])
+                if (
+                    row["schema_version"] != _HOURLY_SCHEMA_VERSION
+                    or row["bound_decision_hash"] is None
+                    or row["decision_row_hash"] != row["bound_decision_hash"]
+                    or row["workflow_receipt_hash"] != row["bound_workflow_hash"]
+                    or row["panel_digest"] != row["bound_panel_digest"]
+                    or row["as_of_ts"] < row["due_ts"]
+                    or row["committed_at"] < row["as_of_ts"]
+                    or row["prev_hash"] != previous
+                    or not math.isfinite(float(row["realized_return"]))
+                    or (row["realized_ic"] is not None and not math.isfinite(float(row["realized_ic"])))
+                    or not inputs
+                    or not isinstance(inputs, Mapping)
+                    or any(
+                        not isinstance(item, Mapping)
+                        or set(item) != {"weight", "price_return", "funding"}
+                        or any(
+                            isinstance(value, bool)
+                            or type(value) not in (int, float)
+                            or not math.isfinite(value)
+                            for value in item.values()
+                        )
+                        for item in inputs.values()
+                    )
+                    or not set(inputs).issubset(json.loads(row["instrument_scope_json"]))
+                    or not _all_numbers_finite(inputs)
+                    or row["inputs_json"] != _strict_canonical(inputs)
+                    or row["inputs_sha256"] != _sha256(inputs)
+                ):
+                    return False
+                values = {
+                    name: row[name]
+                    for name in self._hourly_realization_columns()
+                    if name != "row_hash"
+                }
+                if row["row_hash"] != _sha256(values):
+                    return False
+                previous = str(row["row_hash"])
+            return True
+        except (ForwardLedgerError, KeyError, TypeError, ValueError, json.JSONDecodeError, sqlite3.DatabaseError):
+            return False
 
     def record_decision(
         self,
