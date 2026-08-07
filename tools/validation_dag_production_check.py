@@ -41,9 +41,6 @@ def _past_close(rows: Sequence[Bar]) -> list[FeatureValue]:
     ]
 
 
-_REGISTERED_COMPUTE = register_leakage_compute(
-    "tools.validation_dag_production_check.past_close:1", _past_close
-)
 
 
 def _valid_panel() -> tuple[dict[str, Any], str]:
@@ -55,6 +52,11 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
     definition_hashes = tuple(
         _digest({"canonical_definition": _canonical(item["definition"])})
         for item in definitions
+    )
+    registered_compute = register_leakage_compute(
+        "tools.validation_dag_production_check.past_close:1",
+        _past_close,
+        exact_definition_id=definition_hashes[0],
     )
     returns = tuple(
         (-(0.010 + 0.001 * (i % 11)) if i % 7 == 0 else 0.004 + (i % 5) * 0.001)
@@ -86,7 +88,7 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
     panel = {
         "cheap": {
             "feature_id": "past_close",
-            "compute": _REGISTERED_COMPUTE,
+            "compute": registered_compute,
             "bars": bars,
             "target_event_time": 3,
             "instrument_id": "BTC-USD",

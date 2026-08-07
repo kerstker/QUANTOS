@@ -134,3 +134,46 @@ def test_production_blocks_population_outside_frozen_trial_set(tmp_path):
 
     assert artifact.verdict == "BLOCK"
     assert receipt["reason"] == "oos engine unavailable"
+
+
+def test_production_blocks_leakage_compute_for_other_definition(tmp_path):
+    from quantos.contracts.feature import FeatureValue
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import (
+        ValidationPolicy,
+        register_leakage_compute,
+        run_validation_dag,
+    )
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+
+    def other_definition_compute(rows):
+        return [
+            FeatureValue(
+                feature_id="past_close",
+                instrument_id=row.instrument_id,
+                event_time=row.event_time,
+                knowledge_time=row.knowledge_time,
+                value=row.close,
+            )
+            for row in rows
+        ]
+
+    panel["cheap"]["compute"] = register_leakage_compute(
+        "tests.other_definition_compute:1",
+        other_definition_compute,
+        exact_definition_id="0" * 64,
+    )
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "wrong-leakage-definition.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True
+        )
+        receipts = ledger.validation_receipt(artifact.trial_id)
+
+    assert artifact.verdict == "BLOCK"
+    assert receipts["cheap"]["payload"]["reason"] == "leakage compute definition mismatch"
+    assert receipts["oos"]["payload"]["evidence"]["short_circuit"] is True

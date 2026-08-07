@@ -80,27 +80,30 @@ def _canonical(value: Any) -> str:
 def _digest(value: Any) -> str: return hashlib.sha256(_canonical(value).encode()).hexdigest()
 
 
-_LEAKAGE_REGISTRY: dict[str, Any] = {}
+_LEAKAGE_REGISTRY: dict[str, tuple[Any, str | None]] = {}
 
 @dataclass(frozen=True, slots=True)
 class RegisteredLeakageCompute:
     implementation_id: str
     compute: Any
+    exact_definition_id: str | None = None
     def __post_init__(self):
         if type(self.implementation_id) is not str or not self.implementation_id or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", self.implementation_id): raise ValueError("invalid leakage implementation identity")
         if not callable(self.compute) or getattr(self.compute, "__name__", "") == "<lambda>": raise ValueError("registered named leakage compute required")
-        if _LEAKAGE_REGISTRY.get(self.implementation_id) is not self.compute: raise ValueError("compute must be registered by trusted constructor")
+        if self.exact_definition_id is not None and (type(self.exact_definition_id) is not str or not _HEX64.fullmatch(self.exact_definition_id)): raise ValueError("invalid leakage definition identity")
+        if _LEAKAGE_REGISTRY.get(self.implementation_id) != (self.compute,self.exact_definition_id): raise ValueError("compute must be registered by trusted constructor")
 
-def register_leakage_compute(implementation_id: str, compute: Any) -> RegisteredLeakageCompute:
+def register_leakage_compute(implementation_id: str, compute: Any, *, exact_definition_id: str | None = None) -> RegisteredLeakageCompute:
     if type(implementation_id) is not str or not implementation_id or not callable(compute) or getattr(compute, "__name__", "") == "<lambda>": raise ValueError("named leakage compute required")
+    registration=(compute,exact_definition_id)
     prior=_LEAKAGE_REGISTRY.get(implementation_id)
-    if prior is not None and prior is not compute: raise ValueError("leakage implementation identity collision")
-    _LEAKAGE_REGISTRY[implementation_id]=compute
-    return RegisteredLeakageCompute(implementation_id,compute)
+    if prior is not None and prior != registration: raise ValueError("leakage implementation identity collision")
+    _LEAKAGE_REGISTRY[implementation_id]=registration
+    return RegisteredLeakageCompute(implementation_id,compute,exact_definition_id)
 
 def _panel_digest(panel: Any) -> str:
     def scrub(v):
-        if isinstance(v, RegisteredLeakageCompute): return {"registered_compute":v.implementation_id}
+        if isinstance(v, RegisteredLeakageCompute): return {"registered_compute":v.implementation_id,"exact_definition_id":v.exact_definition_id}
         if isinstance(v, Mapping): return {k:scrub(v[k]) for k in v}
         if isinstance(v,(tuple,list)): return [scrub(x) for x in v]
         if callable(v): raise TypeError("unregistered callable in panel")
@@ -165,6 +168,13 @@ class CheapValidationAdapter(_TypedAdapter):
         if not isinstance(x,Mapping) or any(k not in x for k in required): return self._block("missing leakage inputs", missing_input=list(required))
         compute=x["compute"]
         if not isinstance(compute,RegisteredLeakageCompute): return self._block("unregistered leakage compute")
+        candidate_definition=getattr(context.candidate,"definition",None)
+        if isinstance(candidate_definition,AlphaDefinition):
+            candidate_exact=_digest({"canonical_definition":canonical_alpha_json(candidate_definition)})
+        else:
+            candidate_exact=getattr(context.candidate,"exact_definition_id",None)
+        if candidate_exact is not None and compute.exact_definition_id != candidate_exact:
+            return self._block("leakage compute definition mismatch")
         try:
             from quantos.contracts.feature import FeatureValue
             baseline=compute.compute(x["bars"])
