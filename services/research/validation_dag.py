@@ -92,13 +92,19 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","pvalues","families"}
+        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","pvalues","family_pvalues","families"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
             dsr=deflated_sharpe_ratio(x["observed_sr"],x["n_obs"],x["n_trials"],x["var_sr"],x.get("skew",0.0),x.get("kurt",3.0)); pbo=pbo_cscv(x["perf_matrix"])
-            pvals=x["pvalues"]; bh=benjamini_hochberg(pvals,x.get("fdr_q",.1)); bhy=benjamini_hochberg_yekutieli(pvals,x.get("fdr_q",.1)); fam=hierarchical_fdr(pvalues=pvals,families=x["families"],q=x.get("fdr_q",.1))
+            pvals=x["pvalues"]; bh=benjamini_hochberg(pvals,x.get("fdr_q",.1)); bhy=benjamini_hochberg_yekutieli(pvals,x.get("fdr_q",.1)); fam=hierarchical_fdr(pvalues=x["family_pvalues"],families=x["families"],q=x.get("fdr_q",.1))
             if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)): raise ValueError("malformed family FDR result")
+            candidate_index=x.get("candidate_index",0); candidate_family=x.get("candidate_family")
+            if type(candidate_index) is not int or candidate_index not in bh or candidate_index not in bhy: raise ValueError("candidate failed BH/BHY")
+            if candidate_family is None:
+                candidate_family=x.get("candidate_family")
+            if candidate_family is None: raise ValueError("candidate family is required")
+            if candidate_family not in fam.selected_families: raise ValueError("candidate failed family FDR")
         except Exception as exc: return self._block("oos engine unavailable",exception_type=type(exc).__name__)
         if not wf or not pk or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in (dsr,pbo)) or dsr < x.get("dsr_floor",.95) or pbo > x.get("pbo_max",.5) or not bh or not bhy or not fam: return self._block("oos gate blocked",walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
         return self._pass(walk_forward_splits=len(wf),purged_splits=len(pk),dsr=dsr,pbo=pbo,bh=sorted(bh),bhy=sorted(bhy),family_fdr=sorted(fam.selected_families) if hasattr(fam,"__iter__") else fam)
@@ -162,9 +168,11 @@ def _exception_evidence(stage,version,implementation,exc): return StageEvidence(
 def _receipt_evidence(stage, receipt):
     payload=receipt[stage]["payload"]; return payload["evidence_hash"]
 
-def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60)->ValidationArtifact:
+def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
-    if type(event_at) is not int or isinstance(event_at,bool): raise ValueError("event_at must be deterministic int")
+    if production and tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
+    if type(event_at) is not int or isinstance(event_at,bool) or (lease_now is not None and (type(lease_now) is not int or isinstance(lease_now,bool))): raise ValueError("event_at and lease_now must be deterministic ints")
+    if lease_now is None: lease_now=event_at
     declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
     alpha,family,exact=_identity(candidate); panel_digest=_digest(panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest})
@@ -173,16 +181,21 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
         existing=ledger.load(trial_id)
         if any((e.alpha_id,e.family_id,e.exact_definition_id,e.validation_policy_digest)!=(alpha,family,exact,policy.digest) for e in existing.events): raise
     aggregate=ledger.load(trial_id); receipts=ledger.validation_receipt(trial_id); ar=receipts.get("__artifact__")
-    if ar: return ValidationArtifact(**ar["payload"])
+    if ar:
+        restored=ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest)
+        return ValidationArtifact(**restored)
     if aggregate.status=="PLANNED": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"RUNNING",1,event_at))
     context=ValidationContext(candidate,_freeze(panel),policy,trial_id,panel_digest,policy.digest,event_at); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
-        while True:
-            claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=event_at,lease_seconds=lease_seconds)
-            if claim!="IN_PROGRESS": break
-            current=ledger.validation_receipt(trial_id).get(stage.name)
-            if current and current["state"] in {"DONE","BLOCKED","FAILED"}: claim="DONE"; break
-        if claim=="DONE":
+        claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds)
+        if claim == "IN_PROGRESS":
+            claim = "IN_PROGRESS"
+            for _ in range(256):
+                current=ledger.validation_receipt(trial_id).get(stage.name)
+                if current and current["state"] in {"DONE","BLOCKED","FAILED"}:
+                    claim=current["state"]; break
+            if claim == "IN_PROGRESS": raise TrialLedgerConflict("validation stage owned by another live lease")
+        if claim in {"DONE","BLOCKED","FAILED"}:
             current=ledger.validation_receipt(trial_id)[stage.name]; hashes[stage.name]=current["payload"]["evidence_hash"]; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id};
             if current["payload"].get("outcome")=="BLOCK": verdict="BLOCK"; reason=reason or current["payload"].get("reason")
             if verdict=="BLOCK":
@@ -198,7 +211,7 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
         if evidence.outcome=="BLOCK": verdict="BLOCK"; reason=reason or evidence.reason; break
     blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     while blocked_stage:
-        evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id}; claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=event_at,lease_seconds=lease_seconds); ledger.complete_validation_stage(trial_id,blocked_stage.name,"BLOCKED",{"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=event_at); blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
+        evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id}; claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds); ledger.complete_validation_stage(trial_id,blocked_stage.name,"BLOCKED",{"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=event_at); blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     status="PASSED" if verdict=="PASS" else "FAILED"
     current=ledger.load(trial_id)
     if current.status=="RUNNING": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at))

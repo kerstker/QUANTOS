@@ -288,7 +288,7 @@ class TrialLedger:
                 self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked()
                 if not self._trial_exists_locked(trial_id): raise TrialLedgerError("validation receipt requires trial")
                 current=self._receipt_rows_locked(trial_id).get(stage)
-                if current and current["state"] == "DONE": self._c.execute("COMMIT"); return "DONE"
+                if current and current["state"] in {"DONE", "BLOCKED", "FAILED"}: self._c.execute("COMMIT"); return current["state"]
                 if current and current["state"] == "CLAIMED" and current["lease_until"] > now: self._c.execute("COMMIT"); return "IN_PROGRESS"
                 attempt=(current["attempt"]+1) if current else 1
                 self._receipt_insert_locked(trial_id,stage,"CLAIMED",{"stage":stage,"attempt":attempt},owner,now+lease_seconds,attempt); self._c.execute("COMMIT"); return "CLAIMED"
@@ -317,43 +317,67 @@ class TrialLedger:
     def recover_validation_stage(self, trial_id, stage, *, owner="recovery", now=0, lease_seconds=60):
         return self.claim_validation_stage(trial_id,stage,owner=owner,now=now,lease_seconds=lease_seconds)
 
+    def _validate_artifact_payload(self, trial_id: str, payload: Mapping[str, Any]) -> None:
+        if not isinstance(payload, Mapping): raise TrialLedgerError("artifact must be mapping")
+        aggregate=self._aggregate_locked(trial_id)
+        required={"trial_id","alpha_id","family_id","exact_definition_id","panel_digest","policy_digest","stage_evidence_hashes","effective_trial_count","verdict","reason","stage_metadata","artifact_commitment"}
+        if set(payload) != required or payload["trial_id"] != trial_id: raise TrialLedgerError("artifact identity mismatch")
+        if any(payload[k] != getattr(aggregate, k if k != "policy_digest" else "validation_policy_digest") for k in ("alpha_id","family_id","exact_definition_id")): raise TrialLedgerError("artifact identity mismatch")
+        if payload["policy_digest"] != aggregate.validation_policy_digest or payload["verdict"] not in {"PASS","BLOCK"}: raise TrialLedgerError("artifact identity mismatch")
+        if type(payload["effective_trial_count"]) is not int or payload["effective_trial_count"] < 0: raise TrialLedgerError("invalid artifact trial count")
+        metadata=payload["stage_metadata"]
+        if not isinstance(metadata,Mapping) or set(metadata) != set(_RECEIPT_STAGES): raise TrialLedgerError("artifact stage metadata incomplete")
+        hashes=payload["stage_evidence_hashes"]
+        if not isinstance(hashes,Mapping) or set(hashes) != set(_RECEIPT_STAGES) or any(type(v) is not str or not _HEX64.fullmatch(v) for v in hashes.values()): raise TrialLedgerError("artifact stage hashes incomplete")
+        receipts=self._receipt_rows_locked(trial_id)
+        for stage in _RECEIPT_STAGES:
+            m=metadata[stage]; rp=receipts.get(stage,{}).get("payload")
+            if not isinstance(m,Mapping) or set(m) != {"stage","version","implementation_id"}: raise TrialLedgerError("artifact stage identity mismatch")
+            if not isinstance(rp,Mapping) or receipts[stage]["state"] not in {"DONE","BLOCKED","FAILED"}: raise TrialLedgerError("artifact receipt binding mismatch")
+            if any(m[k] != rp.get(k) for k in ("stage","version","implementation_id")) or rp.get("evidence_hash") != hashes[stage]: raise TrialLedgerError("artifact stage identity mismatch")
+            if set(rp) != {"evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("artifact receipt evidence malformed")
+            expected_evidence=_hash(_canonical({"stage":rp["stage"],"version":rp["version"],"implementation_id":rp["implementation_id"],"outcome":rp["outcome"],"evidence":rp["evidence"],"reason":rp["reason"]}).encode())
+            if rp["evidence_hash"] != expected_evidence: raise TrialLedgerError("artifact evidence self-hash mismatch")
+        expected_count=self._effective_trial_count_locked(aggregate.family_id).count
+        if payload["effective_trial_count"] != expected_count: raise TrialLedgerError("artifact effective trial count mismatch")
+        expected_verdict="PASS" if aggregate.status == "PASSED" and all(receipts[x]["payload"].get("outcome") == "PASS" for x in _RECEIPT_STAGES) else "BLOCK"
+        if payload["verdict"] != expected_verdict: raise TrialLedgerError("artifact final verdict mismatch")
+        commitment=dict(payload); supplied=commitment.pop("artifact_commitment",None)
+        if type(supplied) is not str or not _HEX64.fullmatch(supplied) or supplied != _hash(_canonical(commitment).encode()): raise TrialLedgerError("artifact commitment mismatch")
+
     def save_validation_artifact(self, trial_id: str, payload: Mapping[str, Any]) -> None:
-        if not isinstance(payload,Mapping): raise TrialLedgerError("artifact must be mapping")
         with self._lock:
             try:
-                self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked(); aggregate=self._aggregate_locked(trial_id)
-                required={"trial_id","alpha_id","family_id","exact_definition_id","panel_digest","policy_digest","stage_evidence_hashes","effective_trial_count","verdict","reason","stage_metadata","artifact_commitment"}
-                if set(payload) != required or payload["trial_id"] != trial_id or payload["alpha_id"] != aggregate.alpha_id or payload["family_id"] != aggregate.family_id or payload["exact_definition_id"] != aggregate.exact_definition_id or payload["policy_digest"] != aggregate.validation_policy_digest or payload["verdict"] not in {"PASS","BLOCK"}: raise TrialLedgerError("artifact identity mismatch")
-                if type(payload["effective_trial_count"]) is not int or payload["effective_trial_count"] < 0: raise TrialLedgerError("invalid artifact trial count")
-                metadata=payload["stage_metadata"]
-                if not isinstance(metadata,Mapping) or set(metadata) != set(_RECEIPT_STAGES): raise TrialLedgerError("artifact stage metadata incomplete")
-                for stage in _RECEIPT_STAGES:
-                    m=metadata[stage]
-                    if not isinstance(m,Mapping) or set(m) != {"stage","version","implementation_id"} or m["stage"] != stage or not all(type(m[k]) is str and m[k] for k in ("version","implementation_id")): raise TrialLedgerError("artifact stage identity mismatch")
-                hashes=payload["stage_evidence_hashes"]
-                if set(hashes) != set(_RECEIPT_STAGES) or any(type(v) is not str or not re.fullmatch(r"[0-9a-f]{64}",v) for v in hashes.values()): raise TrialLedgerError("artifact stage hashes incomplete")
-                receipts=self._receipt_rows_locked(trial_id)
-                for stage in _RECEIPT_STAGES:
-                    if stage not in receipts or receipts[stage]["state"] not in {"DONE","BLOCKED"} or receipts[stage]["payload"].get("evidence_hash") != hashes[stage]: raise TrialLedgerError("artifact receipt binding mismatch")
-                    receipt_payload=receipts[stage]["payload"]
-                    if not isinstance(receipt_payload,Mapping) or set(receipt_payload) != {"evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("artifact receipt evidence malformed")
-                    expected_evidence=_hash(_canonical({"stage":receipt_payload["stage"],"version":receipt_payload["version"],"implementation_id":receipt_payload["implementation_id"],"outcome":receipt_payload["outcome"],"evidence":receipt_payload["evidence"],"reason":receipt_payload["reason"]}).encode())
-                    if receipt_payload["evidence_hash"] != expected_evidence: raise TrialLedgerError("artifact evidence self-hash mismatch")
-                existing=receipts.get(_ARTIFACT_STAGE)
-                commitment=dict(payload)
-                supplied=commitment.pop("artifact_commitment",None)
-                if type(supplied) is not str or not _HEX64.fullmatch(supplied) or supplied != _hash(_canonical(commitment).encode()): raise TrialLedgerError("artifact commitment mismatch")
-                encoded=_canonical(payload); digest=_hash(encoded.encode())
+                self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked(); self._validate_artifact_payload(trial_id,payload)
+                existing=self._receipt_rows_locked(trial_id).get(_ARTIFACT_STAGE); encoded=_canonical(payload); digest=_hash(encoded.encode())
                 if existing:
                     if existing["payload_hash"] != digest: raise TrialLedgerConflict("validation artifact conflict")
-                else:
-                    self._receipt_insert_locked(trial_id,_ARTIFACT_STAGE,"DONE",payload,"artifact",0,1)
+                else: self._receipt_insert_locked(trial_id,_ARTIFACT_STAGE,"DONE",payload,"artifact",0,1)
                 self._c.execute("COMMIT")
-            except (TrialLedgerError,sqlite3.Error) as exc:
+            except TrialLedgerConflict:
                 try:self._c.execute("ROLLBACK")
-                except sqlite3.Error:pass
+                except sqlite3.Error: pass
+                raise
+            except (TrialLedgerError,sqlite3.Error,TypeError,ValueError,AttributeError) as exc:
+                try:self._c.execute("ROLLBACK")
+                except sqlite3.Error: pass
                 if isinstance(exc,TrialLedgerError): raise
-                raise TrialLedgerError("ledger database failure") from exc
+                raise TrialLedgerError("invalid validation artifact") from exc
+
+    def load_validation_artifact(self, trial_id: str, *, panel_digest: str|None=None, policy_digest: str|None=None) -> Mapping[str,Any]:
+        with self._lock:
+            try:
+                self._c.execute("BEGIN"); self._verify_locked(); self._verify_receipts_locked(); row=self._receipt_rows_locked(trial_id).get(_ARTIFACT_STAGE)
+                if not row: raise TrialLedgerError("validation artifact missing")
+                payload=row["payload"]; self._validate_artifact_payload(trial_id,payload)
+                if panel_digest is not None and payload["panel_digest"] != panel_digest: raise TrialLedgerError("artifact panel mismatch")
+                if policy_digest is not None and payload["policy_digest"] != policy_digest: raise TrialLedgerError("artifact policy mismatch")
+                self._c.execute("COMMIT"); return payload
+            except (TrialLedgerError,sqlite3.Error,TypeError,ValueError,AttributeError) as exc:
+                try:self._c.execute("ROLLBACK")
+                except sqlite3.Error: pass
+                if isinstance(exc,TrialLedgerError): raise
+                raise TrialLedgerError("invalid validation artifact") from exc
 
     def validation_receipt(self, trial_id):
         if not isinstance(trial_id,str) or not _HEX64.fullmatch(trial_id): raise TrialLedgerError("invalid trial_id")
@@ -378,6 +402,16 @@ class TrialLedger:
                 except (sqlite3.Error,AttributeError):pass
                 if isinstance(exc,TrialLedgerError): raise
                 raise TrialLedgerError("ledger database failure") from exc
+
+    def _effective_trial_count_locked(self, family_id):
+        rows=self._c.execute(_SELECT+" WHERE event_index=0 ORDER BY global_seq").fetchall(); seen=set(); selected=[]
+        for row in rows:
+            if row[3] != family_id: continue
+            aggregate=self._aggregate_locked(row[0])
+            if aggregate.status == "PLANNED": continue
+            key=(aggregate.exact_definition_id,aggregate.validation_policy_digest)
+            if key not in seen: seen.add(key); selected.append(row[0])
+        return EffectiveTrialCount(len(selected),tuple(selected))
 
     def effective_trial_count(self, family_id):
         if not isinstance(family_id,str) or not _HEX64.fullmatch(family_id): raise TrialLedgerError("invalid family_id")
