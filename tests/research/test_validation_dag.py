@@ -256,7 +256,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     monkeypatch.setattr(wfmod, "purged_kfold", lambda *a, **k: (calls.__setitem__("purged", calls["purged"] + 1) or [([0], [1])]))
     monkeypatch.setattr(dsrmod, "deflated_sharpe_ratio", lambda *a, **k: (calls.__setitem__("dsr", calls["dsr"] + 1) or .99))
     monkeypatch.setattr(dsrmod, "pbo_cscv", lambda *a, **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or .1))
-    evidence = BatchPboEvidence(candidate_definition_hashes=("a" * 64, "b" * 64), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4, aligned_event_times=(), aligned_event_times_sha256=stable_hash({"alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4}), pbo=.1)
+    evidence = BatchPboEvidence(candidate_definition_hashes=("8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e", "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08"), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4, aligned_event_times=(), aligned_event_times_sha256=stable_hash({"alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4}), pbo=.1)
     monkeypatch.setattr(pbomod, "create_batch_pbo_evidence", lambda **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or evidence))
     monkeypatch.setattr(pbomod, "verify_batch_pbo_evidence", lambda x: (calls.__setitem__("pbo_verify", calls["pbo_verify"] + 1) or True))
     monkeypatch.setattr(mtmod, "benjamini_hochberg", lambda *a, **k: (calls.__setitem__("bh", calls["bh"] + 1) or {0}))
@@ -272,11 +272,18 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     original_trade_cost=CostModel.trade_cost; original_impact_bps=CostModel.impact_bps
     monkeypatch.setattr(CostModel, "trade_cost", lambda self, *a, **k: (calls.__setitem__("cost", calls["cost"] + 1) or original_trade_cost(self, *a, **k)))
     monkeypatch.setattr(CostModel, "impact_bps", lambda self, *a, **k: (calls.__setitem__("impact", calls["impact"] + 1) or original_impact_bps(self, *a, **k)))
-    from services.research.validation_dag import ValidationContext, ValidationPolicy
-    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 20, "n_trials": 2, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "family_pvalues": {"family-a": .001}, "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": ("a" * 64, "b" * 64)}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),),), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": (.1, .2), "regime_labels": (0, 1), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": (.1, .2), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
+    from services.research.validation_dag import ValidationContext, ValidationPolicy, _digest, _canonical
+    definitions=(
+        {"candidate_id": "alpha-0", "definition": {"name": "candidate-0", "version": 1}},
+        {"candidate_id": "alpha-1", "definition": {"name": "candidate-1", "version": 1}},
+    )
+    definition_hashes=tuple(_digest({"canonical_definition": _canonical(item["definition"])}) for item in definitions)
+    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 20, "n_trials": 2, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "family_pvalues": {"family-a": .001}, "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": definition_hashes, "pbo_candidate_definitions": definitions}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),),), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": (.1, .2), "regime_labels": (0, 1), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": (.1, .2), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
     policy = ValidationPolicy()
+    panel["oos"]["candidate_id"] = "alpha-0"
+    panel["oos"]["candidate_index"] = 0
     assert all(stage.evaluate(ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)).outcome == "PASS" for stage in production_adapters())
-    candidate=make_candidate(policy)
+    candidate=Candidate("a" * 64, "f" * 64, definition_hashes[0], policy.digest)
     with TrialLedger(str(tmp_path / "production.db")) as ledger:
         artifact=run_validation_dag(candidate, panel, policy, ledger, event_at=1, production=True)
         assert artifact.verdict == "PASS"
@@ -307,6 +314,25 @@ def test_production_rejects_class_monkeypatch(tmp_path, monkeypatch):
     assert CheapValidationAdapter.evaluate is not original
 
 
+
+def test_production_rejects_forged_implementation_id(tmp_path):
+    from services.research.validation_dag import CheapValidationAdapter
+    with pytest.raises(ValueError, match="canonical"):
+        CheapValidationAdapter("forged")
+
+
+def test_artifact_event_at_tamper_fails_closed(tmp_path):
+    policy=make_policy(Stage("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "event-tamper.db")
+    with TrialLedger(path) as ledger:
+        artifact=run_validation_dag(candidate, {}, policy, ledger, event_at=10)
+        con=sqlite3.connect(path); con.execute("DROP TRIGGER validation_receipts_no_update")
+        row=con.execute("SELECT payload_json FROM validation_receipt_events WHERE trial_id=? AND stage='__artifact__'", (artifact.trial_id,)).fetchone()
+        payload=json.loads(row[0]); payload["event_at"]=11
+        raw=json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=True)
+        con.execute("UPDATE validation_receipt_events SET payload_json=?, payload_hash=? WHERE trial_id=? AND stage='__artifact__'", (raw, __import__('hashlib').sha256(raw.encode()).hexdigest(), artifact.trial_id))
+        con.commit(); con.close()
+        with pytest.raises(Exception): ledger.load_validation_artifact(artifact.trial_id)
+
 def test_event_at_change_never_reuses_artifact(tmp_path):
     policy=make_policy(Stage("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy)
     with TrialLedger(str(tmp_path / "events.db")) as ledger:
@@ -326,6 +352,24 @@ def test_concurrent_cheap_block_returns_same_artifact(tmp_path):
         [x.start() for x in threads]; [x.join() for x in threads]
     assert not errors and len(results) == 4 and len({x.trial_id for x in results}) == 1 and all(x.verdict == "BLOCK" for x in results)
 
+
+
+def test_cross_connection_slow_stage_single_side_effect(tmp_path):
+    import time
+    calls=[]
+    class Slow(Stage):
+        def evaluate(self, context):
+            calls.append(self.name)
+            time.sleep(0.35)
+            return super().evaluate(context)
+    policy=make_policy(Slow("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "cross.db")
+    l1=TrialLedger(path); l2=TrialLedger(path); results=[]; errors=[]
+    def worker(ledger):
+        try: results.append(run_validation_dag(candidate, {}, policy, ledger, event_at=1))
+        except Exception as exc: errors.append(exc)
+    import threading
+    t1=threading.Thread(target=worker,args=(l1,)); t2=threading.Thread(target=worker,args=(l2,)); t1.start(); t2.start(); t1.join(); t2.join(); l1.close(); l2.close()
+    assert not errors and len(results)==2 and results[0] == results[1] and calls.count("cheap") == 1
 
 def test_terminal_receipts_rebuild_artifact_without_provider_rerun(tmp_path):
     calls=[]; stages=tuple(Stage(name, calls=calls) for name in ("cheap", "oos", "realism")); policy=make_policy(*stages); candidate=make_candidate(policy); path=str(tmp_path / "crash.db")
