@@ -783,7 +783,7 @@ def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
         "derived_refresh_manifest_sha256": "c",
         "validate_script_sha256": "d",
         "started_at_ms": 123,
-        "validation": {"current": True, "run_id": "e"},
+        "validation": {"current": True, "run_id": "e", "source_commit": "a", "generated_at": 123},
     }
     report_path.write_text(json.dumps(report), encoding="utf-8")
     identity = {key: report[key] for key in (
@@ -835,6 +835,8 @@ def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
         lambda report: report.update(results=report["results"] + [report["results"][0]]),
         lambda report: report.update(selected_stages=stages + ["garbage"]),
         lambda report: report["results"].__setitem__(0, {"stage": stages[0], "status": "FAIL"}),
+        lambda report: report["validation"].update(generated_at=True),
+        lambda report: report["validation"].update(source_commit="wrong"),
     ):
         candidate = json.loads(json.dumps(base))
         mutate(candidate)
@@ -844,9 +846,41 @@ def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
     future = json.loads(json.dumps(base))
     future["started_at_ms"] = 124
     path.write_text(json.dumps(future), encoding="utf-8")
-    assert validate._canonical_started_at_ms(
-        str(path), identity, fresh_started_at_ms=123
-    ) is None
+
+
+def test_future_canonical_timing_is_not_reused_by_default_dag(tmp_path, monkeypatch):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    marker = tmp_path / "started.txt"
+    monkeypatch.setattr(validate.time, "time", lambda: 1000.0)
+    capture = (
+        "import os,pathlib;"
+        "pathlib.Path(r'%s').open('a').write(os.environ['QUANTOS_VALIDATION_STARTED_AT_MS']+'\\n')"
+    ) % marker
+    checks = [("primary-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    phase13 = [
+        (name, [sys.executable, "-c", capture], str(tmp_path))
+        for name in (
+            "phase13-readiness:refresh",
+            "phase13-readiness:current",
+            "phase13-readiness:tests",
+        )
+    ]
+    monkeypatch.setattr(validate, "_phase13_refresh_checks", lambda: phase13)
+    kwargs = dict(
+        stages=None, json_report=str(report_path), timeout_seconds=2,
+        checks=checks, derived_refresh_checks=[],
+    )
+    assert validate.run(**kwargs) == 0
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["started_at_ms"] = 9999999
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    assert validate.run(**kwargs) == 0
+    final = json.loads(report_path.read_text(encoding="utf-8"))
+    assert final["started_at_ms"] == 1000000
+    assert marker.read_text(encoding="utf-8").splitlines()[-3:] == [
+        "1000000", "1000000", "1000000"
+    ]
 
 
 def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():

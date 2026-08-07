@@ -622,6 +622,10 @@ def _completed_canonical_report_matches(path: str, report: dict) -> bool:
         and existing.get("overall_status") == "PASS"
         and isinstance(validation, dict)
         and validation.get("current") is True
+        and validation.get("source_commit") == existing.get("commit")
+        and isinstance(validation.get("generated_at"), int)
+        and not isinstance(validation.get("generated_at"), bool)
+        and validation.get("generated_at") >= 0
         and phase13_stages.issubset(set(selected_stages))
         and all(result["status"] == "PASS" for result in results)
         and all(
@@ -678,6 +682,10 @@ def _canonical_started_at_ms(
         and existing.get("overall_status") == "PASS"
         and isinstance(validation, dict)
         and validation.get("current") is True
+        and validation.get("source_commit") == existing.get("commit")
+        and isinstance(validation.get("generated_at"), int)
+        and not isinstance(validation.get("generated_at"), bool)
+        and validation.get("generated_at") >= 0
         and phase13_stages.issubset(set(selected_stages))
         and all(result["status"] == "PASS" for result in results)
         and existing.get("commit") == report.get("commit")
@@ -820,6 +828,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     allow_canonical_reuse = selection_scope == "ALL" and phase13_refresh_checks is None
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
+    canonical_report_reused = False
     if selection_scope == "ALL":
         source_commit = resolve_canonical_source_anchor(REPO)
         checks_manifest_sha256 = _checks_manifest_hash(checks)
@@ -845,7 +854,8 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             if allow_canonical_reuse
             else None
         )
-        if previous_started_at_ms is not None:
+        canonical_report_reused = previous_started_at_ms is not None
+        if canonical_report_reused:
             started_at_ms = previous_started_at_ms
     else:
         source_commit = _git_commit()
@@ -970,12 +980,7 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
     # one failed attempt can poison every later attempt after the defect is fixed.
     report = build_report()
     report_written = True
-    skip_preliminary = (
-        allow_canonical_reuse
-        and selection_scope == "ALL"
-        and overall_status == "PASS"
-        and _completed_canonical_report_matches(effective_report, report)
-    )
+    skip_preliminary = canonical_report_reused and overall_status == "PASS"
     try:
         if not skip_preliminary:
             _write_report(effective_report, report)
