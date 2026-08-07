@@ -209,6 +209,16 @@ def test_malformed_existing_schema_fails_closed(tmp_path, kind):
     with pytest.raises(TrialLedgerError): TrialLedger(path, create=False)
 
 
+
+def test_schema_additive_conflict_leaves_objects_unchanged(tmp_path):
+    path=str(tmp_path / "schema-conflict.db")
+    con=sqlite3.connect(path)
+    con.executescript("CREATE TABLE trial_events (trial_id TEXT); CREATE TABLE trial_heads (trial_id TEXT); CREATE TABLE validation_receipt_events (bad TEXT);")
+    con.commit(); before=con.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path)
+    con=sqlite3.connect(path); after=con.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall(); con.close()
+    assert after == before
+
 def test_valid_existing_schema_is_accepted(tmp_path):
     path = str(tmp_path / "valid.db"); TrialLedger(path).append(rec())
     assert TrialLedger(path, create=True).verify() is True
