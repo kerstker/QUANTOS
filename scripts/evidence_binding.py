@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 from collections.abc import Mapping
 from typing import Any
@@ -83,6 +84,15 @@ def _allowlisted(path: str) -> bool:
     return path in CANONICAL_GENERATED_ARTIFACT_ALLOWLIST
 
 
+def _assert_regular_artifact(repo: Path, path: str) -> None:
+    try:
+        mode = os.lstat(repo / path).st_mode
+    except OSError as exc:
+        raise ValueError(f"canonical artifact path is not a readable regular file: {path!r}") from exc
+    if not stat.S_ISREG(mode):
+        raise ValueError(f"canonical artifact path is not a regular file: {path!r}")
+
+
 def _check_clean_boundary(repo: Path) -> None:
     raw = _git(repo, "status", "--porcelain=v2", "--untracked-files=all", "-z", text=False)
     assert isinstance(raw, bytes)
@@ -98,6 +108,7 @@ def _check_clean_boundary(repo: Path) -> None:
             path = line[2:] if line.startswith("? ") else ""
             if not _allowlisted(path):
                 raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
+            _assert_regular_artifact(repo, path)
             continue
         # Unmerged, rename/copy, and any future porcelain record are
         # intentionally rejected rather than guessed at. Ignored paths are not
@@ -110,6 +121,7 @@ def _check_clean_boundary(repo: Path) -> None:
         xy, path = fields[1], fields[8]
         if len(xy) != 2 or any(flag not in ".AM" for flag in xy) or not _allowlisted(path):
             raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
+        _assert_regular_artifact(repo, path)
 
 
 def assert_canonical_working_tree(repo_root: Path | str | None = None) -> None:
@@ -128,23 +140,37 @@ def _artifact_commit(repo: Path, commit: str) -> bool:
     parents = str(_git(repo, "rev-list", "--parents", "-n", "1", commit)).split()
     if len(parents) != 2:
         return False
-    raw = _git(repo, "diff-tree", "--no-commit-id", "--name-status", "-z", "-r", commit, text=False)
+    raw = _git(repo, "diff-tree", "--no-commit-id", "--raw", "-z", "-r", commit, text=False)
     assert isinstance(raw, bytes)
     records = [record for record in raw.split(b"\0") if record]
     if not records:
         return False
-    # With --name-status -z, Git emits status and path as separate NUL
-    # records (and emits two paths for rename/copy).  Never infer missing
-    # records as a valid add/modify operation.
-    if len(records) % 2:
+    entries: list[tuple[bytes, bytes]] = []
+    if all(b"\t" in record for record in records):
+        for record in records:
+            metadata, path_bytes = record.split(b"\t", 1)
+            entries.append((metadata, path_bytes))
+    elif len(records) % 2 == 0:
+        entries = list(zip(records[0::2], records[1::2]))
+    else:
         return False
-    for index in range(0, len(records), 2):
+    for metadata, path_bytes in entries:
         try:
-            status = records[index].decode("utf-8")
-            path = records[index + 1].decode("utf-8")
+            fields = metadata.decode("utf-8").split()
+            path = path_bytes.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("commit diff contains an undecodable path") from exc
+        if len(fields) != 5:
+            return False
+        old_mode, new_mode, _old_sha, _new_sha, status = fields
+        old_mode = old_mode.lstrip(":")
+        if new_mode not in {"100644", "100755"}:
+            return False
         if status not in {"A", "M"} or not _allowlisted(path):
+            return False
+        if status == "M" and old_mode not in {"100644", "100755"}:
+            return False
+        if status == "A" and old_mode != "000000":
             return False
     return True
 

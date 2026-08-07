@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
+from types import SimpleNamespace
 
 import scripts.evidence_binding as evidence_binding
-from scripts.evidence_binding import assert_current_binding, resolve_canonical_source_anchor
+from scripts.evidence_binding import (
+    _artifact_commit,
+    assert_current_binding,
+    resolve_canonical_source_anchor,
+)
 from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
@@ -96,6 +103,49 @@ def test_phase13_dirty_state_timeout_is_unknown(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr(evidence_binding.subprocess, "check_output", timeout)
 
     assert _working_tree_dirty(repo) is None
+
+
+def test_phase13_dirty_state_allowlisted_symlink_is_unsafe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    report = repo / "evidence" / "validation_report.json"
+    report.write_text('{"marker": "symlink"}\n', encoding="utf-8")
+    real_lstat = os.lstat
+
+    def symlink_lstat(path):
+        result = real_lstat(path)
+        if Path(path).resolve() == report.resolve():
+            return SimpleNamespace(st_mode=stat.S_IFLNK | 0o777)
+        return result
+
+    monkeypatch.setattr(evidence_binding.os, "lstat", symlink_lstat)
+
+    assert _working_tree_dirty(repo) is True
+
+
+def test_phase13_artifact_commit_symlink_mode_is_not_artifact_only(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    target = repo / "target.json"
+    target.write_text("{}\n", encoding="utf-8")
+    blob = subprocess.check_output(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=repo,
+        input=b"target.json\n",
+    ).decode().strip()
+    _git(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},evidence/validation_report.json")
+    _git(repo, "commit", "-m", "symlink artifact")
+    commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+
+    assert _artifact_commit(repo, commit) is False
+    try:
+        resolve_canonical_source_anchor(repo)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("symlink artifact commit must not be skipped")
 
 
 def test_phase13_artifact_only_head_accepts_stable_anchor(
