@@ -482,6 +482,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "ic_panel_research",
             "l2_backup",
             "l2_scheduler_watchdog",
+            "mft_l2_runtime",
             "paper_health",
             "paper_alpha_evaluation",
             "paper_multivenue_sor",
