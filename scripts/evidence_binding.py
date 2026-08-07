@@ -149,7 +149,18 @@ def _artifact_commit(repo: Path, commit: str) -> bool:
     parents = str(_git(repo, "rev-list", "--parents", "-n", "1", commit)).split()
     if len(parents) != 2:
         return False
-    raw = _git(repo, "diff-tree", "--no-commit-id", "--raw", "-z", "-r", commit, text=False)
+    raw = _git(
+        repo,
+        "diff-tree",
+        "--no-commit-id",
+        "--raw",
+        "-z",
+        "-r",
+        "--find-copies-harder",
+        "-C100%",
+        commit,
+        text=False,
+    )
     assert isinstance(raw, bytes)
     records = [record for record in raw.split(b"\0") if record]
     if not records:

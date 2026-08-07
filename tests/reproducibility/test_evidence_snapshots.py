@@ -104,7 +104,7 @@ def _temp_repo(tmp_path: Path) -> tuple[Path, str]:
 def _commit_artifact(repo: Path, name: str = "evidence/validation_report.json") -> str:
     path = repo / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{}\n", encoding="utf-8")
+    path.write_text(json.dumps({"artifact": name}) + "\n", encoding="utf-8")
     _git(repo, "add", name)
     _git(repo, "commit", "-qm", "artifact")
     return _git(repo, "rev-parse", "HEAD")

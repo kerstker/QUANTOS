@@ -148,6 +148,27 @@ def test_phase13_artifact_commit_symlink_mode_is_not_artifact_only(tmp_path: Pat
         raise AssertionError("symlink artifact commit must not be skipped")
 
 
+def test_phase13_copy_of_source_is_not_artifact_only(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    source = repo / "source.py"
+    source.write_text("source = 1\n", encoding="utf-8")
+    _git(repo, "add", "source.py")
+    _git(repo, "commit", "-m", "source")
+    report = repo / "evidence" / "validation_report.json"
+    report.unlink()
+    _git(repo, "add", "evidence/validation_report.json")
+    _git(repo, "commit", "-m", "remove placeholder")
+    report.write_bytes(source.read_bytes())
+    _git(repo, "add", "evidence/validation_report.json")
+    _git(repo, "commit", "-m", "copied artifact")
+    copy_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+
+    assert _artifact_commit(repo, copy_commit) is False
+    assert resolve_canonical_source_anchor(repo) == copy_commit
+
+
 def test_phase13_artifact_only_head_accepts_stable_anchor(
     tmp_path: Path, monkeypatch
 ) -> None:
