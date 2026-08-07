@@ -219,6 +219,32 @@ def test_schema_additive_conflict_leaves_objects_unchanged(tmp_path):
     con=sqlite3.connect(path); after=con.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall(); con.close()
     assert after == before
 
+def test_create_false_does_not_migrate_legacy_core_schema(tmp_path):
+    path = str(tmp_path / "legacy-read-only.db")
+    con = sqlite3.connect(path)
+    con.executescript("""
+    CREATE TABLE trial_events (trial_id TEXT NOT NULL,event_index INTEGER NOT NULL,alpha_id TEXT NOT NULL,family_id TEXT NOT NULL,exact_definition_id TEXT NOT NULL,validation_policy_digest TEXT NOT NULL,status TEXT NOT NULL,at INTEGER NOT NULL,global_seq INTEGER NOT NULL UNIQUE,prev_hash TEXT NOT NULL,event_hash TEXT NOT NULL,PRIMARY KEY(trial_id,event_index));
+    CREATE TABLE trial_heads (trial_id TEXT PRIMARY KEY,event_count INTEGER NOT NULL,head_hash TEXT NOT NULL,global_count INTEGER NOT NULL,global_head_hash TEXT NOT NULL);
+    CREATE TRIGGER trial_events_no_update BEFORE UPDATE ON trial_events BEGIN SELECT RAISE(ABORT,'trial_events is append-only'); END;
+    CREATE TRIGGER trial_events_no_delete BEFORE DELETE ON trial_events BEGIN SELECT RAISE(ABORT,'trial_events is append-only'); END;
+    """)
+    con.commit()
+    before = con.execute(
+        "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+    ).fetchall()
+    con.close()
+
+    with pytest.raises(TrialLedgerError, match="schema missing"):
+        TrialLedger(path, create=False)
+
+    con = sqlite3.connect(path)
+    after = con.execute(
+        "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+    ).fetchall()
+    con.close()
+    assert after == before
+
+
 def test_valid_existing_schema_is_accepted(tmp_path):
     path = str(tmp_path / "valid.db"); TrialLedger(path).append(rec())
     assert TrialLedger(path, create=True).verify() is True

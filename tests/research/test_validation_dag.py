@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from services.research.trial_ledger import TrialLedger, TrialRecord
+from services.research.trial_ledger import TrialLedger, TrialLedgerError, TrialRecord
 from services.research.validation_dag import (
     StageEvidence,
     ValidationPolicy,
@@ -199,6 +199,40 @@ def test_concurrent_calls_only_execute_each_stage_once(tmp_path):
     assert not errors
     assert len({result.trial_id for result in results}) == 1
     assert calls == ["cheap", "oos", "realism"]
+
+
+def test_terminal_status_and_artifact_publish_roll_back_together(tmp_path, monkeypatch):
+    calls = []
+    policy = make_policy(*(Stage(name, calls=calls) for name in ("cheap", "oos", "realism")))
+    candidate = make_candidate(policy)
+    with TrialLedger(str(tmp_path / "ledger.db")) as ledger:
+        original_insert = ledger._receipt_insert_locked
+
+        def fail_artifact_insert(trial_id, stage, *args, **kwargs):
+            if stage == "__artifact__":
+                raise sqlite3.OperationalError("injected artifact write failure")
+            return original_insert(trial_id, stage, *args, **kwargs)
+
+        monkeypatch.setattr(ledger, "_receipt_insert_locked", fail_artifact_insert)
+        with pytest.raises(TrialLedgerError, match="validation artifact"):
+            run_validation_dag(
+                candidate, {}, policy, ledger, event_at=1, lease_now=1
+            )
+
+        trial_ids = {row[0] for row in ledger._rows()}
+        assert len(trial_ids) == 1
+        aggregate = ledger.load(trial_ids.pop())
+        assert aggregate.status == "RUNNING"
+        assert "__artifact__" not in ledger.validation_receipt(aggregate.trial_id)
+        assert calls == ["cheap", "oos", "realism"]
+
+        monkeypatch.setattr(ledger, "_receipt_insert_locked", original_insert)
+        artifact = run_validation_dag(
+            candidate, {}, policy, ledger, event_at=1, lease_now=2
+        )
+        assert artifact.verdict == "PASS"
+        assert ledger.load(artifact.trial_id).status == "PASSED"
+        assert calls == ["cheap", "oos", "realism"]
 
 
 def test_settings_and_evidence_are_deeply_immutable(tmp_path):

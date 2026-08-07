@@ -616,11 +616,11 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             else: raise TrialLedgerConflict("validation stage wait timeout")
         blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     status="PASSED" if verdict=="PASS" else "FAILED"
-    current=ledger.load(trial_id)
-    if current.status=="RUNNING": ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at))
     count=trial_snapshot.count
     base={"trial_id":trial_id,"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_ids":trial_snapshot.trial_ids,"trial_set_digest":trial_set_digest,"stage_evidence_hashes":dict(hashes),"stage_receipt_bindings":{k:{"global_seq":v["global_seq"],"row_hash":v["row_hash"]} for k,v in ledger.validation_receipt(trial_id).items() if k in _STAGE_ORDER},"effective_trial_count":count,"verdict":verdict,"reason":reason,"stage_metadata":metadata}
-    base["artifact_commitment"]=_digest(base); artifact=ValidationArtifact(**base); ledger.save_validation_artifact(trial_id,base); return artifact
+    base["artifact_commitment"]=_digest(base); artifact=ValidationArtifact(**base)
+    ledger.publish_validation_terminal(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at),base)
+    return artifact
 
 def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(ledger, TrialLedger):

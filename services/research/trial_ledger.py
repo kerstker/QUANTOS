@@ -168,16 +168,19 @@ class TrialLedger:
             # Validate legacy/current core objects before additive schema creation.
             with self._lock:
                 _preflight_existing_schema(self._c)
-                try:
-                    self._c.execute("BEGIN IMMEDIATE")
-                    for statement in _SCHEMA_STATEMENTS:
-                        self._c.execute(statement)
+                if not create:
                     self._require_schema()
-                    self._c.execute("COMMIT")
-                except Exception:
-                    try: self._c.execute("ROLLBACK")
-                    except sqlite3.Error: pass
-                    raise
+                else:
+                    try:
+                        self._c.execute("BEGIN IMMEDIATE")
+                        for statement in _SCHEMA_STATEMENTS:
+                            self._c.execute(statement)
+                        self._require_schema()
+                        self._c.execute("COMMIT")
+                    except Exception:
+                        try: self._c.execute("ROLLBACK")
+                        except sqlite3.Error: pass
+                        raise
         except TrialLedgerError:
             if self._c is not None:
                 try: self._c.close()
@@ -264,26 +267,29 @@ class TrialLedger:
         events = tuple(TrialEvent(tid, alpha, family, exact, policy, status, idx, at, seq, prev, event_hash) for tid, idx, alpha, family, exact, policy, status, at, seq, prev, event_hash in rows)
         return TrialAggregate(trial_id, events[0].alpha_id, events[0].family_id, events[0].exact_definition_id, events[0].validation_policy_digest, events)
 
+    def _append_locked(self, record: TrialRecord) -> TrialAggregate:
+        prior=self._rows(record.trial_id)
+        if prior:
+            identity=tuple(prior[0][i] for i in (2,3,4,5))
+            if tuple(getattr(record,n) for n in _IDENTITY) != identity: raise TrialLedgerConflict("trial identity drift")
+        existing=self._c.execute(_SELECT+" WHERE trial_id=? AND event_index=?",(record.trial_id,record.event_index)).fetchone()
+        if existing:
+            stored=TrialRecord(existing[0],existing[2],existing[3],existing[4],existing[5],existing[6],existing[1],existing[7])
+            if stored != record: raise TrialLedgerConflict("same trial/event key has different content")
+            return self._aggregate_locked(record.trial_id)
+        if record.event_index != len(prior): raise TrialLedgerError("event_index is not next")
+        if (not prior and record.status != "PLANNED") or (prior and record.status not in _TRANSITIONS[prior[-1][6]]): raise TrialLedgerError("illegal state transition")
+        count,head=self._global_head(); seq=count+1; prev=prior[-1][10] if prior else ""; digest=_hash((prev+head).encode()+_record_bytes(record,seq))
+        self._c.execute("INSERT INTO trial_events VALUES (?,?,?,?,?,?,?,?,?,?,?)",(record.trial_id,record.event_index,record.alpha_id,record.family_id,record.exact_definition_id,record.validation_policy_digest,record.status,record.at,seq,prev,digest))
+        self._c.execute("INSERT INTO trial_heads VALUES (?,?,?,?,?) ON CONFLICT(trial_id) DO UPDATE SET event_count=excluded.event_count,head_hash=excluded.head_hash,global_count=excluded.global_count,global_head_hash=excluded.global_head_hash",(record.trial_id,len(prior)+1,digest,seq,digest))
+        self._c.execute("INSERT INTO trial_heads VALUES ('',0,'',?,?) ON CONFLICT(trial_id) DO UPDATE SET global_count=excluded.global_count,global_head_hash=excluded.global_head_hash",(seq,digest))
+        return self._aggregate_locked(record.trial_id)
+
     def append(self, record: TrialRecord):
         self._validate_record(record)
         with self._lock:
             try:
-                self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); prior=self._rows(record.trial_id)
-                if prior:
-                    identity=tuple(prior[0][i] for i in (2,3,4,5))
-                    if tuple(getattr(record,n) for n in _IDENTITY) != identity: raise TrialLedgerConflict("trial identity drift")
-                existing=self._c.execute(_SELECT+" WHERE trial_id=? AND event_index=?",(record.trial_id,record.event_index)).fetchone()
-                if existing:
-                    stored=TrialRecord(existing[0],existing[2],existing[3],existing[4],existing[5],existing[6],existing[1],existing[7])
-                    if stored != record: raise TrialLedgerConflict("same trial/event key has different content")
-                    result=self._aggregate_locked(record.trial_id); self._c.execute("COMMIT"); return result
-                if record.event_index != len(prior): raise TrialLedgerError("event_index is not next")
-                if (not prior and record.status != "PLANNED") or (prior and record.status not in _TRANSITIONS[prior[-1][6]]): raise TrialLedgerError("illegal state transition")
-                count,head=self._global_head(); seq=count+1; prev=prior[-1][10] if prior else ""; digest=_hash((prev+head).encode()+_record_bytes(record,seq))
-                self._c.execute("INSERT INTO trial_events VALUES (?,?,?,?,?,?,?,?,?,?,?)",(record.trial_id,record.event_index,record.alpha_id,record.family_id,record.exact_definition_id,record.validation_policy_digest,record.status,record.at,seq,prev,digest))
-                self._c.execute("INSERT INTO trial_heads VALUES (?,?,?,?,?) ON CONFLICT(trial_id) DO UPDATE SET event_count=excluded.event_count,head_hash=excluded.head_hash,global_count=excluded.global_count,global_head_hash=excluded.global_head_hash",(record.trial_id,len(prior)+1,digest,seq,digest))
-                self._c.execute("INSERT INTO trial_heads VALUES ('',0,'',?,?) ON CONFLICT(trial_id) DO UPDATE SET global_count=excluded.global_count,global_head_hash=excluded.global_head_hash",(seq,digest))
-                result=self._aggregate_locked(record.trial_id); self._c.execute("COMMIT"); return result
+                self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); result=self._append_locked(record); self._c.execute("COMMIT"); return result
             except TrialLedgerError:
                 try:self._c.execute("ROLLBACK")
                 except sqlite3.Error:pass
@@ -422,6 +428,38 @@ class TrialLedger:
         if payload["verdict"] != expected_verdict: raise TrialLedgerError("artifact final verdict mismatch")
         commitment=dict(payload); supplied=commitment.pop("artifact_commitment",None)
         if type(supplied) is not str or not _HEX64.fullmatch(supplied) or supplied != _hash(_canonical(commitment).encode()): raise TrialLedgerError("artifact commitment mismatch")
+
+    def publish_validation_terminal(self, record: TrialRecord, payload: Mapping[str, Any]) -> None:
+        self._validate_record(record)
+        if record.status not in {"PASSED", "FAILED"}:
+            raise TrialLedgerError("validation terminal status required")
+        with self._lock:
+            try:
+                self._c.execute("BEGIN IMMEDIATE")
+                self._verify_locked()
+                self._verify_receipts_locked()
+                current=self._aggregate_locked(record.trial_id)
+                if current.status == "RUNNING":
+                    self._append_locked(record)
+                elif current.status != record.status:
+                    raise TrialLedgerConflict("validation terminal status conflict")
+                self._validate_artifact_payload(record.trial_id,payload)
+                existing=self._receipt_rows_locked(record.trial_id).get(_ARTIFACT_STAGE)
+                encoded=_canonical(payload); digest=_hash(encoded.encode())
+                if existing:
+                    if existing["payload_hash"] != digest: raise TrialLedgerConflict("validation artifact conflict")
+                else:
+                    self._receipt_insert_locked(record.trial_id,_ARTIFACT_STAGE,"DONE",payload,"artifact",0,1)
+                self._c.execute("COMMIT")
+            except TrialLedgerConflict:
+                try:self._c.execute("ROLLBACK")
+                except sqlite3.Error: pass
+                raise
+            except (TrialLedgerError,sqlite3.Error,TypeError,ValueError,AttributeError) as exc:
+                try:self._c.execute("ROLLBACK")
+                except sqlite3.Error: pass
+                if isinstance(exc,TrialLedgerError): raise
+                raise TrialLedgerError("invalid validation artifact") from exc
 
     def save_validation_artifact(self, trial_id: str, payload: Mapping[str, Any]) -> None:
         with self._lock:
