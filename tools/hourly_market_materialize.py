@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import os
 import tempfile
 from dataclasses import dataclass
@@ -22,8 +21,8 @@ from services.data.hourly_universe import (
 
 INPUT_SCHEMA = "hourly-market-input-v1"
 OUTPUT_SCHEMA = "hourly-market-materialized-v1"
-_INTERVALS = (3600, 14400)
-_KINDS = {"bar", "funding", "open_interest", "universe"}
+_ALLOWED_INTERVALS = (3600, 14400)
+_KINDS = ("bar", "funding", "open_interest", "universe")
 
 
 @dataclass(frozen=True)
@@ -50,44 +49,62 @@ def _required(row: dict[str, Any], names: Iterable[str]) -> None:
 def _record(row: dict[str, Any], kind: str) -> Any:
     if row.get("schema_version") != INPUT_SCHEMA:
         raise ValueError("unsupported input schema_version")
-    if row.get("kind") != kind or kind not in _KINDS:
+    if kind not in _KINDS or row.get("kind") != kind:
         raise ValueError("unknown kind")
     if not isinstance(row.get("source_digest"), str) or not row["source_digest"].strip():
         raise ValueError("source_digest is required")
+    common = {"schema_version", "kind", "source_digest"}
     if kind == "bar":
-        _required(row, ("instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume", "interval_seconds"))
-        if row["interval_seconds"] not in (60, 300):
-            raise ValueError("input bars must be 1m or 5m")
-        return HourlyBar(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume")))
+        fields = ("instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume", "interval_seconds")
+        _required(row, fields)
+        if set(row) != common | set(fields) or row["interval_seconds"] not in (60, 300):
+            raise ValueError("invalid bar envelope")
+        return HourlyBar(*(row[k] for k in fields[:-1]))
     if kind == "funding":
-        _required(row, ("instrument", "event_time", "knowledge_time", "rate"))
-        return HourlyFunding(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "rate")))
+        fields = ("instrument", "event_time", "knowledge_time", "rate")
+        _required(row, fields)
+        if set(row) != common | set(fields):
+            raise ValueError("invalid funding envelope")
+        return HourlyFunding(*(row[k] for k in fields))
     if kind == "open_interest":
-        _required(row, ("instrument", "event_time", "knowledge_time", "value"))
-        return HourlyOpenInterest(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "value")))
-    _required(row, ("instrument", "event_time", "knowledge_time", "quote_volume", "spread_bps", "listed_at", "data_coverage"))
-    return UniverseObservation(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "quote_volume", "spread_bps", "listed_at", "data_coverage")))
+        fields = ("instrument", "event_time", "knowledge_time", "value")
+        _required(row, fields)
+        if set(row) != common | set(fields):
+            raise ValueError("invalid open_interest envelope")
+        return HourlyOpenInterest(*(row[k] for k in fields))
+    fields = ("instrument", "event_time", "knowledge_time", "quote_volume", "spread_bps", "listed_at", "data_coverage")
+    _required(row, fields)
+    if set(row) != common | set(fields):
+        raise ValueError("invalid universe envelope")
+    return UniverseObservation(*(row[k] for k in fields))
 
 
-def _read_raw(root: Path, as_of: int) -> tuple[list[Any], list[UniverseObservation], list[str], list[dict[str, Any]]]:
+def _read_raw(root: Path, as_of: int) -> tuple[list[Any], list[UniverseObservation], list[str], list[dict[str, Any]], dict[str, int]]:
     if not root.is_dir():
         raise ValueError("raw_root must be a directory")
     values: list[Any] = []
     universes: list[UniverseObservation] = []
     source_digests: list[str] = []
     inputs: list[dict[str, Any]] = []
+    bar_intervals: dict[str, int] = {}
+    seen: set[tuple[str, str, int, int]] = set()
     files = sorted(root.rglob("*.jsonl"))
     if not files:
         raise ValueError("raw_root contains no JSONL input")
+    counts = {kind: 0 for kind in _KINDS}
     for path in files:
         raw = path.read_bytes()
         file_digest = _sha(raw)
-        for line_no, line in enumerate(raw.decode("utf-8").splitlines(), 1):
+        try:
+            lines = raw.decode("utf-8").splitlines()
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"invalid UTF-8 at {path}") from exc
+        for line_no, line in enumerate(lines, 1):
             if not line.strip():
                 continue
             try:
                 row = json.loads(line)
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid JSONL at {path}:{line_no}") from exc
             if not isinstance(row, dict):
                 raise ValueError("input record must be an object")
@@ -95,55 +112,98 @@ def _read_raw(root: Path, as_of: int) -> tuple[list[Any], list[UniverseObservati
             value = _record(row, kind)
             if value.event_time > as_of or value.knowledge_time > as_of:
                 raise ValueError("future event or knowledge time")
-            if kind == "universe":
+            key = (kind, value.instrument, value.event_time, value.knowledge_time)
+            if key in seen:
+                raise ValueError("duplicate point-in-time record")
+            seen.add(key)
+            counts[kind] += 1
+            source_digests.append(row["source_digest"])
+            if kind == "bar":
+                interval = row["interval_seconds"]
+                prior = bar_intervals.get(value.instrument)
+                if prior is not None and prior != interval:
+                    raise ValueError("inconsistent base interval for instrument")
+                bar_intervals[value.instrument] = interval
+                values.append(value)
+            elif kind == "universe":
                 universes.append(value)
             else:
                 values.append(value)
-            source_digests.append(row["source_digest"])
         inputs.append({"path": path.relative_to(root).as_posix(), "sha256": file_digest})
-    return values, universes, sorted(set(source_digests)), inputs
+    if any(counts[kind] == 0 for kind in _KINDS):
+        raise ValueError("raw input must contain nonempty bar, funding, open_interest, and universe sets")
+    bars = sorted((r for r in values if isinstance(r, HourlyBar)), key=lambda r: (r.instrument, r.event_time))
+    for instrument in bar_intervals:
+        points = [r.event_time for r in bars if r.instrument == instrument]
+        base = bar_intervals[instrument]
+        if any(b - a != base for a, b in zip(points, points[1:])):
+            raise ValueError("bar event_time cadence has a gap")
+    return values, universes, sorted(set(source_digests)), inputs, bar_intervals
 
 
-def _series(rows: list[Any], interval: int) -> tuple[list[HourlyBar], list[HourlyFunding], list[HourlyOpenInterest]]:
+def _series(rows: list[Any], interval: int, bar_intervals: dict[str, int]) -> tuple[list[HourlyBar], list[HourlyFunding], list[HourlyOpenInterest]]:
     bars = sorted((r for r in rows if isinstance(r, HourlyBar)), key=lambda r: (r.instrument, r.event_time))
-    aggregated = aggregate_bars(bars, interval_seconds=interval)
+    for instrument, base in sorted(bar_intervals.items()):
+        points = [r.event_time for r in bars if r.instrument == instrument]
+        bucket_size = interval // base
+        if interval % base or not points or len(points) < bucket_size:
+            raise ValueError("insufficient bars for complete output bucket")
+        for start in range(0, len(points), bucket_size):
+            group = points[start:start + bucket_size]
+            if len(group) != bucket_size or any(b - a != base for a, b in zip(group, group[1:])):
+                raise ValueError("partial or non-contiguous output bucket")
+            if group[0] % interval or group[-1] // interval != group[0] // interval:
+                raise ValueError("bars do not form complete aligned output buckets")
+    aggregated = list(aggregate_bars(bars, interval_seconds=interval))
+
     def latest(cls: type) -> list[Any]:
         grouped: dict[tuple[str, int], list[Any]] = {}
         for row in rows:
             if isinstance(row, cls):
                 grouped.setdefault((row.instrument, row.event_time // interval), []).append(row)
         result = []
-        for key, group in sorted(grouped.items()):
-            row = max(group, key=lambda x: (x.event_time, x.knowledge_time))
-            if cls is HourlyFunding:
-                result.append(HourlyFunding(row.instrument, key[1] * interval, max(x.knowledge_time for x in group), row.rate))
-            else:
-                result.append(HourlyOpenInterest(row.instrument, key[1] * interval, max(x.knowledge_time for x in group), row.value))
+        for (instrument, bucket), group in sorted(grouped.items()):
+            result.append(cls(instrument, bucket * interval, max(x.knowledge_time for x in group),
+                              getattr(max(group, key=lambda x: (x.event_time, x.knowledge_time)), "rate", None)
+                              if cls is HourlyFunding else getattr(max(group, key=lambda x: (x.event_time, x.knowledge_time)), "value")))
         return result
-    return list(aggregated), latest(HourlyFunding), latest(HourlyOpenInterest)
+    return aggregated, latest(HourlyFunding), latest(HourlyOpenInterest)
 
 
 def _publish(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        if path.read_bytes() != data:
-            raise FileExistsError(f"immutable artifact conflict: {path}")
-        return
-    fd, temp_name = tempfile.mkstemp(prefix=".materialize-", dir=str(path.parent))
+    lock = path.parent / f".{path.name}.lock"
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise FileExistsError(f"artifact target is locked: {path}") from exc
+    try:
+        os.close(fd)
         if path.exists():
             if path.read_bytes() != data:
                 raise FileExistsError(f"immutable artifact conflict: {path}")
-            os.unlink(temp_name)
-        else:
-            os.replace(temp_name, path)
+            return
+        temp_name = ""
+        fd, temp_name = tempfile.mkstemp(prefix=".materialize-", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if path.exists():
+                if path.read_bytes() != data:
+                    raise FileExistsError(f"immutable artifact conflict: {path}")
+            else:
+                os.replace(temp_name, path)
+                temp_name = ""
+        finally:
+            if temp_name and os.path.exists(temp_name):
+                os.unlink(temp_name)
     finally:
-        if os.path.exists(temp_name):
-            os.unlink(temp_name)
+        try:
+            os.unlink(lock)
+        except FileNotFoundError:
+            pass
 
 
 def _rows(panel: HourlyMarketPanel, interval: int, universe: tuple[str, ...]) -> list[dict[str, Any]]:
@@ -159,15 +219,24 @@ def _rows(panel: HourlyMarketPanel, interval: int, universe: tuple[str, ...]) ->
     return sorted(output, key=lambda x: (x["event_time"], x["instrument"], x["kind"]))
 
 
-def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, policy: UniversePolicy) -> MaterializationReceipt:
+def _validate_intervals(intervals: Iterable[int]) -> tuple[int, ...]:
+    values = tuple(intervals)
+    if not values or len(set(values)) != len(values) or any(isinstance(v, bool) or v not in _ALLOWED_INTERVALS for v in values):
+        raise ValueError(f"intervals must be unique values from {_ALLOWED_INTERVALS}")
+    return values
+
+
+def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, policy: UniversePolicy,
+                              intervals: Iterable[int] = (3600, 14400)) -> MaterializationReceipt:
     if isinstance(as_of, bool) or not isinstance(as_of, int) or as_of < 0:
         raise ValueError("as_of must be a non-negative integer")
-    rows, observations, source_digests, inputs = _read_raw(Path(raw_root), as_of)
+    intervals = _validate_intervals(intervals)
+    rows, observations, source_digests, inputs, bar_intervals = _read_raw(Path(raw_root), as_of)
     universe = select_hourly_universe(observations, as_of=as_of, policy=policy)
     manifests: list[Path] = []
     digests: list[str] = []
-    for interval in _INTERVALS:
-        bars, funding, oi = _series(rows, interval)
+    for interval in intervals:
+        bars, funding, oi = _series(rows, interval, bar_intervals)
         panel = HourlyMarketPanel("hourly-market-v1", as_of, tuple(bars), tuple(funding), tuple(oi), _sha(_canonical(source_digests)))
         validate_panel(panel)
         records = _rows(panel, interval, universe.instruments)
@@ -175,11 +244,10 @@ def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, 
             raise ValueError("no materialized records")
         data = b"".join(_canonical(record) for record in records)
         partition = Path(output_root) / "hourly_market" / datetime.fromtimestamp(as_of, tz=timezone.utc).strftime("%Y-%m-%d") / f"interval-{interval}"
-        data_path = partition / "data.jsonl"
-        _publish(data_path, data)
+        _publish(partition / "data.jsonl", data)
         manifest_payload = {"schema_version": OUTPUT_SCHEMA, "as_of": as_of, "interval_seconds": interval,
                             "input_files": inputs, "policy": {k: getattr(policy, k) for k in ("min_size", "max_size", "min_listing_age_seconds", "max_spread_bps", "min_data_coverage")},
-                            "source_digests": source_digests, "selected_universe_instruments": list(universe.instruments),
+                            "complete": True, "source_digests": source_digests, "selected_universe_instruments": list(universe.instruments),
                             "record_counts": {"total": len(records), "bar": sum(r["kind"] == "bar" for r in records), "funding": sum(r["kind"] == "funding" for r in records), "open_interest": sum(r["kind"] == "open_interest" for r in records)},
                             "output_sha256": _sha(data), "manifest_digest": ""}
         manifest_payload["manifest_digest"] = _sha(_canonical({k: v for k, v in manifest_payload.items() if k != "manifest_digest"}))
@@ -190,18 +258,78 @@ def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, 
     return MaterializationReceipt(tuple(manifests), tuple(digests))
 
 
-def load_materialized_partition(partition: Path) -> list[dict[str, Any]]:
+def load_materialized_partition(partition: Path, *, raw_root: Path | None = None) -> list[dict[str, Any]]:
     partition = Path(partition)
-    manifest = partition / "manifest.json"
-    data_path = partition / "data.jsonl"
-    if not manifest.is_file() or not data_path.is_file():
+    manifest_path, data_path = partition / "manifest.json", partition / "data.jsonl"
+    if not manifest_path.is_file() or not data_path.is_file():
         raise ValueError("incomplete materialized partition")
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
-    expected = payload.get("manifest_digest")
-    actual = _sha(_canonical({k: v for k, v in payload.items() if k != "manifest_digest"}))
-    if expected != actual or payload.get("output_sha256") != _sha(data_path.read_bytes()):
-        raise ValueError("materialized partition digest mismatch")
-    return [json.loads(line) for line in data_path.read_text(encoding="utf-8").splitlines() if line]
+    manifest_bytes = manifest_path.read_bytes()
+    try:
+        payload = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid manifest JSON") from exc
+    required = {"schema_version", "as_of", "interval_seconds", "input_files", "policy", "complete", "source_digests", "selected_universe_instruments", "record_counts", "output_sha256", "manifest_digest"}
+    if not isinstance(payload, dict) or set(payload) != required or payload["schema_version"] != OUTPUT_SCHEMA or payload["complete"] is not True:
+        raise ValueError("invalid manifest shape")
+    if manifest_bytes != _canonical(payload):
+        raise ValueError("manifest is not canonical JSON")
+    interval = payload["interval_seconds"]
+    if isinstance(payload["as_of"], bool) or not isinstance(payload["as_of"], int) or payload["as_of"] < 0 or interval not in _ALLOWED_INTERVALS:
+        raise ValueError("invalid manifest time or interval")
+    if not isinstance(payload["selected_universe_instruments"], list) or not payload["selected_universe_instruments"] or len(set(payload["selected_universe_instruments"])) != len(payload["selected_universe_instruments"]) or any(not isinstance(x, str) or not x.strip() for x in payload["selected_universe_instruments"]):
+        raise ValueError("invalid selected universe")
+    policy_keys = {"min_size", "max_size", "min_listing_age_seconds", "max_spread_bps", "min_data_coverage"}
+    if not isinstance(payload["policy"], dict) or set(payload["policy"]) != policy_keys:
+        raise ValueError("invalid policy")
+    try:
+        policy = UniversePolicy(**payload["policy"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid policy") from exc
+    if len(payload["selected_universe_instruments"]) < policy.min_size or len(payload["selected_universe_instruments"]) > policy.max_size:
+        raise ValueError("invalid selected universe size")
+    if not isinstance(payload["input_files"], list) or any(set(x) != {"path", "sha256"} or not isinstance(x["path"], str) or not isinstance(x["sha256"], str) or len(x["sha256"]) != 64 for x in payload["input_files"]):
+        raise ValueError("invalid input files")
+    if not isinstance(payload["source_digests"], list) or payload["source_digests"] != sorted(set(payload["source_digests"])) or any(not isinstance(x, str) or not x for x in payload["source_digests"]):
+        raise ValueError("invalid source digests")
+    counts = payload["record_counts"]
+    if not isinstance(counts, dict) or set(counts) != {"total", "bar", "funding", "open_interest"} or any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts.values()) or counts["total"] != counts["bar"] + counts["funding"] + counts["open_interest"]:
+        raise ValueError("invalid record counts")
+    if payload["manifest_digest"] != _sha(_canonical({k: v for k, v in payload.items() if k != "manifest_digest"})):
+        raise ValueError("manifest digest mismatch")
+    data_bytes = data_path.read_bytes()
+    if payload["output_sha256"] != _sha(data_bytes):
+        raise ValueError("output digest mismatch")
+    universe = set(payload["selected_universe_instruments"])
+    expected_keys = {"schema_version", "kind", "interval_seconds", "instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume"}
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in data_bytes.decode("utf-8").splitlines():
+            row = json.loads(line)
+            if not isinstance(row, dict) or row.get("schema_version") != OUTPUT_SCHEMA or row.get("interval_seconds") != interval or row.get("instrument") not in universe:
+                raise ValueError("invalid output row")
+            kind = row.get("kind")
+            keys = expected_keys if kind == "bar" else ({"schema_version", "kind", "interval_seconds", "instrument", "event_time", "knowledge_time", "rate"} if kind == "funding" else {"schema_version", "kind", "interval_seconds", "instrument", "event_time", "knowledge_time", "value"})
+            if kind not in {"bar", "funding", "open_interest"} or set(row) != keys:
+                raise ValueError("invalid output row schema")
+            if any(isinstance(row[k], bool) or not isinstance(row[k], int) for k in ("event_time", "knowledge_time")) or row["event_time"] > payload["as_of"] or row["knowledge_time"] > payload["as_of"]:
+                raise ValueError("invalid output row time")
+            if kind == "bar":
+                HourlyBar(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume")))
+            elif kind == "funding":
+                HourlyFunding(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "rate")))
+            else:
+                HourlyOpenInterest(*(row[k] for k in ("instrument", "event_time", "knowledge_time", "value")))
+            rows.append(row)
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise ValueError("invalid materialized data") from exc
+    if len(rows) != counts["total"] or {k: sum(r["kind"] == k for r in rows) for k in ("bar", "funding", "open_interest")} != {k: counts[k] for k in ("bar", "funding", "open_interest")}:
+        raise ValueError("record count mismatch")
+    if raw_root is not None:
+        for item in payload["input_files"]:
+            source = Path(raw_root) / item["path"]
+            if not source.is_file() or _sha(source.read_bytes()) != item["sha256"]:
+                raise ValueError("input file digest mismatch")
+    return rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -209,11 +337,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--raw-root", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--as-of", required=True, type=int)
+    parser.add_argument("--interval-seconds", action="append", type=int)
     parser.add_argument("--min-size", type=int, default=30)
     parser.add_argument("--max-size", type=int, default=80)
+    parser.add_argument("--min-listing-age-seconds", type=int, default=0)
+    parser.add_argument("--max-spread-bps", type=float, default=UniversePolicy().max_spread_bps)
+    parser.add_argument("--min-data-coverage", type=float, default=0.0)
     args = parser.parse_args(argv)
-    materialize_hourly_market(raw_root=Path(args.raw_root), output_root=Path(args.output_root), as_of=args.as_of,
-                              policy=UniversePolicy(min_size=args.min_size, max_size=args.max_size))
+    intervals = tuple(args.interval_seconds) if args.interval_seconds else (3600, 14400)
+    policy = UniversePolicy(min_size=args.min_size, max_size=args.max_size,
+                            min_listing_age_seconds=args.min_listing_age_seconds,
+                            max_spread_bps=args.max_spread_bps,
+                            min_data_coverage=args.min_data_coverage)
+    materialize_hourly_market(raw_root=Path(args.raw_root), output_root=Path(args.output_root), as_of=args.as_of, policy=policy, intervals=intervals)
     return 0
 
 
