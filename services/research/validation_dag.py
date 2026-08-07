@@ -423,7 +423,12 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     if type(event_at) is not int or isinstance(event_at,bool) or type(lease_now) is not int or isinstance(lease_now,bool): raise ValueError("event_at and lease_now must be deterministic ints")
     if wait_timeout_seconds is None: wait_timeout_seconds=float(lease_seconds)
     if type(wait_timeout_seconds) not in (int,float) or not math.isfinite(float(wait_timeout_seconds)) or wait_timeout_seconds <= 0: raise ValueError("wait_timeout_seconds must be finite positive")
-    declared=getattr(candidate,"validation_policy_digest",None)
+    definition=getattr(candidate,"definition",None)
+    if isinstance(definition,AlphaDefinition):
+        declared_policy=definition.validation_policy
+        declared=declared_policy.get("digest") if isinstance(declared_policy,Mapping) and set(declared_policy)=={"digest"} else None
+    else:
+        declared=getattr(candidate,"validation_policy_digest",None)
     if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
     alpha,family,exact=_identity(candidate); execution_panel=_execution_snapshot(panel); panel_digest=_panel_digest(execution_panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"trust_mode":"PRODUCTION" if production else "TEST"})
     try: ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"PLANNED",0,event_at))

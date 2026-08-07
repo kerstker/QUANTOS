@@ -576,3 +576,55 @@ def test_cross_connection_stage_longer_than_five_seconds_uses_wait_budget(tmp_pa
     threads=[threading.Thread(target=worker,args=(ledger,)) for ledger in ledgers]
     [thread.start() for thread in threads]; [thread.join() for thread in threads]; [ledger.close() for ledger in ledgers]
     assert not errors and len(results)==2 and results[0] == results[1] and calls == ["cheap"]
+
+
+def test_canonical_alpha_candidate_uses_definition_bound_policy(tmp_path):
+    from services.research.alpha_family import AlphaCandidate
+    from services.research.alpha_identity import AlphaDefinition
+
+    policy = ValidationPolicy((Stage("cheap"), Stage("oos"), Stage("realism")))
+    definition = AlphaDefinition(
+        definition=("ts_mean", ("field", "close"), 3),
+        feature_contract={"features": ["close"]},
+        data_schema={"dataset": "hourly_bars", "version": 1},
+        universe_policy={"name": "dynamic_perpetuals", "version": 1},
+        horizon="1h",
+        cost_model={"fee_bps": 1.0},
+        validation_policy={"digest": policy.digest},
+        model="ridge",
+        model_version="1",
+    )
+    candidate = AlphaCandidate(definition)
+
+    with TrialLedger(str(tmp_path / "canonical-candidate.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, {}, policy, ledger, event_at=1, lease_now=1
+        )
+
+    assert artifact.verdict == "PASS"
+    assert artifact.alpha_id == candidate.alpha_id
+    assert artifact.family_id == candidate.family_id
+
+
+def test_canonical_alpha_candidate_rejects_different_validation_policy(tmp_path):
+    from services.research.alpha_family import AlphaCandidate
+    from services.research.alpha_identity import AlphaDefinition
+
+    policy = ValidationPolicy((Stage("cheap"), Stage("oos"), Stage("realism")))
+    definition = AlphaDefinition(
+        definition=("ts_mean", ("field", "close"), 3),
+        feature_contract={"features": ["close"]},
+        data_schema={"dataset": "hourly_bars", "version": 1},
+        universe_policy={"name": "dynamic_perpetuals", "version": 1},
+        horizon="1h",
+        cost_model={"fee_bps": 1.0},
+        validation_policy={"digest": "0" * 64},
+        model="ridge",
+        model_version="1",
+    )
+
+    with TrialLedger(str(tmp_path / "wrong-candidate-policy.db")) as ledger:
+        with pytest.raises(ValueError, match="validation policy digest mismatch"):
+            run_validation_dag(
+                AlphaCandidate(definition), {}, policy, ledger, event_at=1, lease_now=1
+            )
