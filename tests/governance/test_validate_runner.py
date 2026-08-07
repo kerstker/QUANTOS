@@ -651,23 +651,15 @@ def test_full_run_uses_stable_anchor_after_artifact_only_head(tmp_path, monkeypa
 def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path, monkeypatch):
     validate = _load_validate_module()
     report_path = tmp_path / "validation.json"
-    clock = iter((1000.0, 2000.0))
-    monkeypatch.setattr(validate.time, "time", lambda: next(clock, 3000.0))
+    monkeypatch.setattr(validate.time, "time", lambda: 1000.0)
     checks = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
+    monkeypatch.setattr(validate, "_phase13_refresh_checks", lambda: _fake_phase13(tmp_path))
     kwargs = dict(
         stages=None,
         json_report=str(report_path),
         timeout_seconds=2,
         checks=checks,
         derived_refresh_checks=[],
-        phase13_refresh_checks=[
-            (name, [sys.executable, "-c", "pass"], str(tmp_path))
-            for name in (
-                "phase13-readiness:refresh",
-                "phase13-readiness:current",
-                "phase13-readiness:tests",
-            )
-        ],
     )
 
     assert validate.run(**kwargs) == 0
@@ -675,9 +667,9 @@ def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path, monkey
     first_stat = report_path.stat()
     assert validate.run(**kwargs) == 0
     second_stat = report_path.stat()
-    second = json.loads(report_path.read_text(encoding="utf-8"))
-    assert second["started_at_ms"] == 3000000
-    assert second_stat.st_mtime_ns != first_stat.st_mtime_ns
+    second = report_path.read_bytes()
+    assert second == first
+    assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
 
 
 def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path):

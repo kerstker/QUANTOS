@@ -433,11 +433,6 @@ def _expected_full_stage_names(selected, derived_specs, phase13_specs) -> list[s
     return names
 
 
-
-    """Return whether a stage can assert against refreshed derived artifacts."""
-    return stage_name.startswith(("pytest:", "frontend:"))
-
-
 def _sha256_file(path: str) -> str | None:
     if not os.path.isfile(path):
         return None
