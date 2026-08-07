@@ -351,6 +351,23 @@ class RealismValidationAdapter(_TypedAdapter):
         from services.validation.regime import regime_conditional_stats, label_regimes_by_vol, regime_profitable_frac
         from quantos.contracts.cost import CostModel
         x=context.panel.get("realism") if isinstance(context.panel,Mapping) else None
+        threshold_names={"min_capacity_aum","max_cost_fraction","max_cvar","min_hill_tail_index","min_regime_profitable_frac","max_lower_tail_dependence"}
+        if isinstance(x,Mapping) and threshold_names.intersection(x):
+            return self._block("panel cannot define validation thresholds")
+        realism_settings=context.policy.settings.get("realism",{}) if isinstance(context.policy.settings,Mapping) else {}
+        if not isinstance(realism_settings,Mapping) or set(realism_settings)-threshold_names:
+            return self._block("invalid realism policy settings")
+        if any(
+            type(value) not in (int,float)
+            or isinstance(value,bool)
+            or not math.isfinite(float(value))
+            or float(value) < 0.0
+            for value in realism_settings.values()
+        ) or any(
+            name in realism_settings and float(realism_settings[name]) > 1.0
+            for name in ("max_cost_fraction","min_regime_profitable_frac","max_lower_tail_dependence")
+        ):
+            return self._block("invalid realism policy settings")
         required={"gross_returns","gross_event_times","gross_knowledge_times","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","event_times","knowledge_times","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing realism inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         event_times=tuple(x["event_times"]); gross_event_times=tuple(x["gross_event_times"])
@@ -381,8 +398,23 @@ class RealismValidationAdapter(_TypedAdapter):
             if len(regime_labels) != len(x["returns"]) or sum(v is not None for v in regime_labels) < 2: raise ValueError("regime labels do not align")
             regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
-        if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not math.isfinite(cost_value): return self._block("realism gate blocked")
-        return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime={str(k): v for k, v in regime.items()},regime_profitable_frac=regime_profitable,cost=cost_value)
+        if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not isinstance(regime_profitable,(int,float)) or not math.isfinite(float(regime_profitable)) or not 0.0 <= float(regime_profitable) <= 1.0 or not math.isfinite(cost_value) or float(x["trade_notional"]) <= 0.0: return self._block("realism gate blocked")
+        cost_fraction=float(cost_value)/float(x["trade_notional"])
+        metrics={
+            "min_capacity_aum":float(band["aum_low"]),
+            "max_cost_fraction":cost_fraction,
+            "max_cvar":float(tail["cvar"]),
+            "min_hill_tail_index":float(hill),
+            "min_regime_profitable_frac":float(regime_profitable),
+            "max_lower_tail_dependence":float(ltd),
+        }
+        failed=[]
+        for name,threshold in realism_settings.items():
+            value=metrics[name]
+            if (name.startswith("min_") and value < float(threshold)) or (name.startswith("max_") and value > float(threshold)):
+                failed.append(name)
+        detail={"capacity":band,"tail":tail,"hill_tail_index":hill,"lower_tail_dependence":ltd,"regime":{str(k): v for k, v in regime.items()},"regime_profitable_frac":regime_profitable,"cost":cost_value,"cost_fraction":cost_fraction,"policy_thresholds":dict(realism_settings),"failed_thresholds":sorted(failed)}
+        return self._block("realism gate blocked",**detail) if failed else self._pass(**detail)
 
 def production_adapters() -> tuple[ValidationStage,...]: return (CheapValidationAdapter(),OOSValidationAdapter(),RealismValidationAdapter())
 _DEFAULT_ADAPTERS=production_adapters()

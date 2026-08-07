@@ -1,3 +1,5 @@
+import pytest
+
 from tools.validation_dag_production_check import run_production_validation_check
 
 
@@ -361,3 +363,79 @@ def test_production_blocks_oos_knowledge_before_event_time(tmp_path):
         )
 
     assert artifact.verdict == "BLOCK"
+
+
+@pytest.mark.parametrize(("setting", "threshold"), (
+    ("min_capacity_aum", 1e30),
+    ("max_cost_fraction", 0.0),
+    ("max_cvar", 0.0),
+    ("min_hill_tail_index", 1e30),
+    ("min_regime_profitable_frac", 1.0),
+    ("max_lower_tail_dependence", 0.0),
+))
+def test_production_realism_policy_thresholds_are_load_bearing(
+    tmp_path, setting, threshold
+):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    if setting == "min_regime_profitable_frac":
+        panel["realism"]["returns"] = tuple(
+            -abs(value) for value in panel["realism"]["returns"]
+        )
+    policy = ValidationPolicy(settings={"realism": {setting: threshold}})
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / f"realism-{setting}.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "realism gate blocked"
+    assert receipt["evidence"]["failed_thresholds"] == [setting]
+
+
+def test_production_rejects_realism_thresholds_from_panel(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    panel["realism"]["max_cvar"] = 999.0
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "panel-realism-threshold.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "panel cannot define validation thresholds"
+
+
+def test_production_blocks_invalid_realism_policy(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    policy = ValidationPolicy(settings={"realism": {"unknown": 1.0}})
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "invalid-realism-policy.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "invalid realism policy settings"
