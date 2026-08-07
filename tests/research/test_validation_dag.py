@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from services.research.trial_ledger import TrialLedger, TrialLedgerError, TrialRecord
+from services.research.trial_ledger import TrialLedger, TrialLedgerConflict, TrialLedgerError, TrialRecord
 from services.research.validation_dag import (
     StageEvidence,
     ValidationPolicy,
@@ -199,6 +199,65 @@ def test_concurrent_calls_only_execute_each_stage_once(tmp_path):
     assert not errors
     assert len({result.trial_id for result in results}) == 1
     assert calls == ["cheap", "oos", "realism"]
+
+
+def test_in_progress_wait_is_not_blocked_by_full_dag_process_lock(tmp_path):
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingStage(Stage):
+        def evaluate(self, context):
+            entered.set()
+            assert release.wait(timeout=2.0)
+            return super().evaluate(context)
+
+    policy = make_policy(BlockingStage("cheap"), Stage("oos"), Stage("realism"))
+    candidate = make_candidate(policy)
+    with TrialLedger(str(tmp_path / "ledger.db")) as ledger:
+        first_errors = []
+        second_errors = []
+        first = threading.Thread(
+            target=lambda: _capture_error(
+                first_errors,
+                lambda: run_validation_dag(
+                    candidate, {}, policy, ledger, event_at=1, lease_now=1
+                ),
+            )
+        )
+        first.start()
+        assert entered.wait(timeout=1.0)
+        second = threading.Thread(
+            target=lambda: _capture_error(
+                second_errors,
+                lambda: run_validation_dag(
+                    candidate,
+                    {},
+                    policy,
+                    ledger,
+                    event_at=1,
+                    lease_now=1,
+                    wait_timeout_seconds=0.02,
+                ),
+            )
+        )
+        second.start()
+        second.join(timeout=0.5)
+        release.set()
+        first.join(timeout=2.0)
+        second.join(timeout=2.0)
+
+    assert not second.is_alive()
+    assert not first_errors
+    assert len(second_errors) == 1
+    assert isinstance(second_errors[0], TrialLedgerConflict)
+    assert "wait timeout" in str(second_errors[0])
+
+
+def _capture_error(errors, operation):
+    try:
+        operation()
+    except Exception as exc:
+        errors.append(exc)
 
 
 def test_terminal_status_and_artifact_publish_roll_back_together(tmp_path, monkeypatch):

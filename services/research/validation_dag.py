@@ -539,11 +539,15 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
         try:
             ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"RUNNING",1,event_at))
         except TrialLedgerError:
-            for _ in range(10000):
+            deadline=time.monotonic()+float(wait_timeout_seconds)
+            attempt=0
+            while time.monotonic() < deadline:
                 ar=ledger.validation_receipt(trial_id).get("__artifact__")
                 if ar:
                     return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-            raise
+                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
+                attempt += 1
+            raise TrialLedgerConflict("validation artifact wait timeout")
     trial_snapshot=_frozen_trial_snapshot(ledger,trial_id,family)
     trial_set_digest=_digest(list(trial_snapshot.trial_ids))
     frozen_definitions=tuple(ledger.load(item).exact_definition_id for item in trial_snapshot.trial_ids)
@@ -554,7 +558,8 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
             deadline=time.monotonic()+float(wait_timeout_seconds)
-            for attempt in range(10000):
+            attempt=0
+            while time.monotonic() < deadline:
                 current_receipts=ledger.validation_receipt(trial_id)
                 if current_receipts.get("__artifact__"):
                     return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
@@ -563,19 +568,20 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                     claim=current_stage["state"]
                     claim_attempt=current_stage["attempt"]
                     break
-                if time.monotonic() >= deadline: raise TrialLedgerConflict("validation stage wait timeout")
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
+                attempt += 1
             else:
                 raise TrialLedgerConflict("validation stage wait timeout")
         if claim == "IN_PROGRESS":
             claim = "IN_PROGRESS"
             deadline=time.monotonic()+float(wait_timeout_seconds)
-            for attempt in range(10000):
+            attempt=0
+            while time.monotonic() < deadline:
                 current=ledger.validation_receipt(trial_id).get(stage.name)
                 if current and current["state"] in {"DONE","BLOCKED","FAILED"}:
                     claim=current["state"]; claim_attempt=current["attempt"]; break
-                if time.monotonic() >= deadline: raise TrialLedgerConflict("validation stage wait timeout")
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
+                attempt += 1
             if claim == "IN_PROGRESS": raise TrialLedgerConflict("validation stage wait timeout")
         if claim in {"DONE","BLOCKED","FAILED"}:
             current=ledger.validation_receipt(trial_id)[stage.name]; hashes[stage.name]=current["payload"]["evidence_hash"]; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id};
@@ -599,11 +605,12 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
             deadline=time.monotonic()+float(wait_timeout_seconds)
-            for attempt in range(10000):
+            attempt=0
+            while time.monotonic() < deadline:
                 ar=ledger.validation_receipt(trial_id).get("__artifact__")
                 if ar: return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-                if time.monotonic() >= deadline: raise TrialLedgerConflict("validation artifact wait timeout")
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
+                attempt += 1
             raise TrialLedgerConflict("validation artifact wait timeout")
         if claim == "CLAIMED":
             _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now,attempt=claim_attempt)
@@ -625,8 +632,6 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
 def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
     if not isinstance(ledger, TrialLedger):
         raise TypeError("policy and ledger types required")
-    # Serialize orchestration for a shared ledger object; SQLite remains the durable cross-process authority.
-    with ledger._lock:
-        return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,wait_timeout_seconds=wait_timeout_seconds,production=production)
+    return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,wait_timeout_seconds=wait_timeout_seconds,production=production)
 
 __all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","run_validation_dag"]
