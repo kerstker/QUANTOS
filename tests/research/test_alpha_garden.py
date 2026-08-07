@@ -13,6 +13,7 @@ from services.research.alpha_garden import (
     GeneratorRegistry,
     adapt_gp_output,
     make_identity_adapter,
+    adapt_existing_generator,
     generate_batch,
 )
 
@@ -165,3 +166,41 @@ def test_named_adapter_fails_closed_without_complete_identity():
         adapt_gp_output({"expression": ("field", "close")})
     adapter = make_identity_adapter({"feature_contract": {"fields": ["close"]}, "data_schema": {"name": "hourly"}, "universe_policy": {"name": "test"}, "horizon": "1h", "cost_model": {"bps": 5}, "validation_policy": {"name": "purged"}, "model": "ridge", "model_version": "1"})
     assert isinstance(adapter({"expression": ("field", "close")}), AlphaDefinition)
+
+
+def test_name_and_version_cannot_ambiguously_contain_separator():
+    with pytest.raises(ValueError):
+        GeneratorEntry("a@b", "1", "0" * 64, lambda c, r: ())
+    with pytest.raises(ValueError):
+        GeneratorEntry("a", "1@2", "0" * 64, lambda c, r: ())
+
+
+def test_mapping_and_scalar_outputs_are_singletons_not_iterated():
+    payload = {
+        "definition": ("field", "close"),
+        "feature_contract": {"fields": ["close"]},
+        "data_schema": {"name": "hourly"}, "universe_policy": {"name": "test"},
+        "horizon": "1h", "cost_model": {"bps": 5},
+        "validation_policy": {"name": "purged"}, "model": "ridge", "model_version": "1",
+    }
+    # A custom adapter proves that a non-iterable scalar reaches the adapter once.
+    calls = []
+    wrapped = adapt_existing_generator(lambda c, r: payload, lambda value: (calls.append(value), definition())[1])
+    result = wrapped({}, random.Random(1))
+    assert isinstance(result, AlphaDefinition)
+    assert calls == [payload]
+
+
+def test_identity_adapter_deep_snapshots_nested_metadata():
+    metadata = {"fields": ["close"], "nested": {"x": [1]}}
+    adapter = make_identity_adapter({
+        "feature_contract": metadata,
+        "data_schema": {"name": "hourly"}, "universe_policy": {"name": "test"},
+        "horizon": "1h", "cost_model": {"bps": 5},
+        "validation_policy": {"name": "purged"}, "model": "ridge", "model_version": "1",
+    })
+    metadata["fields"].append("open")
+    metadata["nested"]["x"].append(2)
+    result = adapter({"expression": ("field", "close")})
+    assert result.feature_contract["fields"] == ("close",)
+    assert result.feature_contract["nested"]["x"] == (1,)

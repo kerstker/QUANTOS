@@ -39,6 +39,10 @@ class GeneratorEntry:
             value = getattr(self, field)
             if type(value) is not str or not value.strip():
                 raise ValueError(f"{field} must be a non-empty string")
+        # The public audit key is deliberately name@version.  Reject separators
+        # rather than silently creating ambiguous keys (for example ``a@b@c``).
+        if "@" in self.name or "@" in self.version:
+            raise ValueError("name and version must not contain '@'")
         if not re.fullmatch(r"[0-9a-f]{64}", self.family):
             raise ValueError("family must be a canonical family_id")
         if not callable(self.generate):
@@ -149,15 +153,35 @@ def adapt_ml_template_output(value: Any) -> AlphaDefinition:
     return _adapt_named_output(value, "ml_template")
 
 
+def _snapshot_metadata(value: Any, path: str = "identity") -> Any:
+    """Copy only the JSON-shaped values accepted by AlphaDefinition._freeze."""
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"{path} must be finite")
+        return value
+    if isinstance(value, Mapping):
+        result = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TypeError(f"{path} mapping keys must be strings")
+            result[key] = _snapshot_metadata(item, f"{path}.{key}")
+        return MappingProxyType(result)
+    if type(value) in (list, tuple):
+        return tuple(_snapshot_metadata(item, f"{path}[{i}]") for i, item in enumerate(value))
+    raise TypeError(f"{path} contains unsupported value {value!r}")
+
+
 def make_identity_adapter(identity: Mapping[str, Any]) -> AdaptFn:
-    """Return an adapter with caller-supplied, complete Task 4 identity metadata."""
+    """Return an adapter with a deep, immutable caller-supplied identity snapshot."""
     if not isinstance(identity, Mapping):
         raise TypeError("identity must be a mapping")
     required = {"feature_contract", "data_schema", "universe_policy", "horizon",
                 "cost_model", "validation_policy", "model", "model_version"}
     if not required.issubset(identity):
         raise ValueError("identity metadata is incomplete")
-    frozen_identity = dict(identity)
+    frozen_identity = {key: _snapshot_metadata(identity[key], key) for key in required}
 
     def adapt(value: Any) -> AlphaDefinition:
         if isinstance(value, AlphaDefinition):
@@ -172,6 +196,11 @@ def make_identity_adapter(identity: Mapping[str, Any]) -> AdaptFn:
     return adapt
 
 
+def _is_singleton_output(value: Any) -> bool:
+    # Mappings, text and bytes are scalar payloads, not batches of their keys/chars.
+    return isinstance(value, (AlphaDefinition, Mapping, str, bytes, bytearray))
+
+
 def adapt_existing_generator(generate: Callable[..., Iterable[Any] | Any], adapter: AdaptFn = adapt_alpha_definition) -> GenerateFn:
     """Wrap an existing generator without importing or duplicating its algorithm."""
     if not callable(generate) or not callable(adapter):
@@ -179,7 +208,7 @@ def adapt_existing_generator(generate: Callable[..., Iterable[Any] | Any], adapt
 
     def wrapped(context: Any, rng: random.Random) -> Iterable[AlphaDefinition] | AlphaDefinition:
         output = generate(context, rng)
-        if isinstance(output, AlphaDefinition):
+        if _is_singleton_output(output):
             return adapter(output)
         try:
             iterator = iter(output)
@@ -190,37 +219,66 @@ def adapt_existing_generator(generate: Callable[..., Iterable[Any] | Any], adapt
     return wrapped
 
 
+# Independent, deterministic work bound: no generator can force unbounded
+# rejection storage or CPU.  It is intentionally separate from admission caps.
+ATTEMPT_CAP_MULTIPLIER = 1
+
+
+def _entry_attempt_cap(entry_cap: int, budget: GenerationBudget) -> int:
+    # Admission and attempt limits are separate policies, even though the
+    # default bound tracks the global candidate budget for predictable work.
+    return max(1, max(entry_cap, budget.max_candidates) * ATTEMPT_CAP_MULTIPLIER)
+
+
 def generate_batch(registry: GeneratorRegistry, budget: GenerationBudget, context: Any) -> CandidateBatch:
     if not isinstance(registry, GeneratorRegistry):
         raise TypeError("registry must be GeneratorRegistry")
     if not isinstance(budget, GenerationBudget):
         raise TypeError("budget must be GenerationBudget")
+
+    generator_counts: Counter[str] = Counter({entry.entry_id: 0 for entry in registry})
+    family_counts: Counter[str] = Counter()
     if budget.max_candidates == 0 or budget.max_family_candidates == 0:
-        return CandidateBatch((), (), {"accepted": 0, "rejected": 0}, {}, {})
+        return CandidateBatch((), (), {"accepted": 0, "rejected": 0},
+                              generator_counts, family_counts)
 
     rng = random.Random(budget.seed)
     accepted: list[AlphaCandidate] = []
     rejections: list[Rejection] = []
     seen: set[str] = set()
-    generator_counts: Counter[str] = Counter({entry.entry_id: 0 for entry in registry})
-    family_counts: Counter[str] = Counter()
     entry_caps = {entry.entry_id: math.floor(budget.max_candidates * entry.max_share)
-                   for entry in registry}
+                  for entry in registry}
 
     for entry in registry:
+        # These checks happen before calling generate: caps are admission and
+        # invocation limits, not merely post-output rejection reasons.
         entry_id = entry.entry_id
         cap = entry_caps[entry_id]
-        if cap <= 0:
+        if len(accepted) >= budget.max_candidates or cap <= generator_counts[entry_id]:
             continue
+        if family_counts[entry.family] >= budget.max_family_candidates:
+            rejections.append(Rejection("family_cap", entry_id, family_id=entry.family))
+            continue
+        attempt_limit = _entry_attempt_cap(cap, budget)
         attempts = 0
         exhausted = False
         try:
             produced = entry.generate(context, rng)
-            iterator = iter((produced,) if isinstance(produced, AlphaDefinition) else produced)
+            if _is_singleton_output(produced):
+                iterator = iter((produced,))
+            else:
+                try:
+                    iterator = iter(produced)
+                except TypeError:
+                    iterator = iter((produced,))
         except Exception:
             rejections.append(Rejection("generator_error", entry_id))
             continue
-        while len(accepted) < budget.max_candidates and attempts < budget.max_candidates:
+
+        while (len(accepted) < budget.max_candidates
+               and generator_counts[entry_id] < cap
+               and family_counts[entry.family] < budget.max_family_candidates
+               and attempts < attempt_limit):
             try:
                 raw = next(iterator)
             except StopIteration:
@@ -254,10 +312,17 @@ def generate_batch(registry: GeneratorRegistry, budget: GenerationBudget, contex
             accepted.append(candidate)
             generator_counts[entry_id] += 1
             family_counts[fid] += 1
-        if not exhausted and attempts >= budget.max_candidates:
+
+        # Reaching an admission cap or a global cap is not an attempt-cap
+        # event.  Only an actual attempt limit with unknown remaining output is.
+        if (not exhausted and attempts >= attempt_limit
+                and len(accepted) < budget.max_candidates
+                and generator_counts[entry_id] < cap
+                and family_counts[entry.family] < budget.max_family_candidates):
             rejections.append(Rejection("generator_attempt_cap", entry_id))
 
     counts = Counter(item.reason for item in rejections)
     counts["accepted"] = len(accepted)
     counts["rejected"] = len(rejections)
-    return CandidateBatch(tuple(accepted), tuple(rejections), counts, generator_counts, family_counts)
+    return CandidateBatch(tuple(accepted), tuple(rejections), counts,
+                          generator_counts, family_counts)
