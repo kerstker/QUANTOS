@@ -234,7 +234,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     from quantos.contracts.data import Bar
     from quantos.contracts.feature import FeatureValue, LeakageCheckResult
     from quantos.contracts.cost import CostModel
-    from quantos.contracts.validation import BatchPboEvidence, PboAlignment
+    from quantos.contracts.validation import BatchPboEvidence
     from quantos.contracts.hashing import stable_hash
     from services.alpha.family_testing import FamilyAssignment, HierarchicalFdrResult
     from services.research.validation_dag import register_leakage_compute, production_adapters
@@ -267,7 +267,10 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     monkeypatch.setattr(wfmod, "purged_kfold", lambda *a, **k: (calls.__setitem__("purged", calls["purged"] + 1) or [([0], [1])]))
     monkeypatch.setattr(dsrmod, "deflated_sharpe_ratio", lambda *a, **k: (calls.__setitem__("dsr", calls["dsr"] + 1) or .99))
     monkeypatch.setattr(dsrmod, "pbo_cscv", lambda *a, **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or .1))
-    evidence = pbomod.create_batch_pbo_evidence(candidate_definition_hashes=("8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e", "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08"), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4)
+    evidence = pbomod.create_batch_pbo_evidence(return_series_by_definition={
+        "8032d111eff0e85a23a228312e35d88cc09a3a2fc34e418ef7c5f22047f6934e": tuple((i, float(v)) for i, v in enumerate((.1, .2, .3, .4))),
+        "7e6bccdfaa7fb1598a877741379d3f21d572a9e987984644aee3e041c7347a08": tuple((i, float(v)) for i, v in enumerate((.2, .3, .4, .5))),
+    })
     monkeypatch.setattr(pbomod, "create_batch_pbo_evidence", lambda **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or evidence))
     monkeypatch.setattr(pbomod, "verify_batch_pbo_evidence", lambda x: (calls.__setitem__("pbo_verify", calls["pbo_verify"] + 1) or True))
     monkeypatch.setattr(mtmod, "benjamini_hochberg", lambda *a, **k: (calls.__setitem__("bh", calls["bh"] + 1) or {0}))
@@ -291,7 +294,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     definition_hashes=tuple(_digest({"canonical_definition": _canonical(item["definition"])}) for item in definitions)
     subject_returns=tuple(.02 if i % 2 else .01 for i in range(100))
     peer_returns=tuple(.001 if i % 2 else -.001 for i in range(100))
-    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 100, "train_size": 30, "test_size": 20, "returns": subject_returns, "return_series_by_definition": {definition_hashes[0]: subject_returns, definition_hashes[1]: peer_returns}, "observed_sr": 99.0, "n_obs": 999, "n_trials": 1, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3), (.3, .4), (.4, .5)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": definition_hashes, "pbo_candidate_definitions": definitions}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),), ((.2, 10.0),)), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": tuple(.01 for _ in range(25)), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": tuple(.01 for _ in range(25)), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
+    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 100, "train_size": 30, "test_size": 20, "returns": subject_returns, "return_series_by_definition": {definition_hashes[0]: subject_returns, definition_hashes[1]: peer_returns}, "observed_sr": 99.0, "n_obs": 999, "n_trials": 1, "var_sr": .1, "pbo_return_series_by_definition": {definition_hashes[0]: tuple((i, float(v)) for i, v in enumerate(subject_returns)), definition_hashes[1]: tuple((i, float(v)) for i, v in enumerate(peer_returns))}, "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_candidate_definition_hashes": definition_hashes, "pbo_candidate_definitions": definitions}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),), ((.2, 10.0),)), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": tuple(.01 for _ in range(25)), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": tuple(.01 for _ in range(25)), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
     policy = ValidationPolicy()
     panel["oos"]["candidate_id"] = "alpha-0"
     panel["oos"]["candidate_index"] = 0

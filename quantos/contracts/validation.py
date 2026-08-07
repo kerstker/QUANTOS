@@ -28,99 +28,132 @@ class PboAlignment(str, Enum):
     POSITIONAL_LEGACY = "POSITIONAL_LEGACY"
 
 
+class PboReturnObservation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    event_time: int = Field(ge=0)
+    value: float
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exact_types(cls, value):
+        if not isinstance(value, Mapping):
+            raise TypeError("PBO return observation must be a mapping")
+        if type(value.get("event_time")) is not int:
+            raise TypeError("PBO event times must be exact integers")
+        if type(value.get("value")) is not float:
+            raise TypeError("PBO returns must be exact float64 values")
+        return value
+
+    @model_validator(mode="after")
+    def _finite(self) -> "PboReturnObservation":
+        if not math.isfinite(self.value):
+            raise ValueError("PBO returns must be finite")
+        return self
+
+
+class PboDefinitionReturnSeries(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    definition_hash: str = Field(min_length=64, max_length=64)
+    observations: tuple[PboReturnObservation, ...]
+    observations_sha256: str = Field(min_length=64, max_length=64)
+
+    @model_validator(mode="after")
+    def _validate_series(self) -> "PboDefinitionReturnSeries":
+        if not _is_sha256(self.definition_hash):
+            raise ValueError("candidate definition hashes must be SHA-256 hex digests")
+        times = tuple(item.event_time for item in self.observations)
+        if not times or tuple(sorted(set(times))) != times:
+            raise ValueError("PBO return event times must be sorted and unique")
+        expected = canonical_sha256([
+            {"event_time": item.event_time, "value": item.value}
+            for item in self.observations
+        ])
+        if self.observations_sha256 != expected:
+            raise ValueError("PBO return-series digest mismatch")
+        return self
+
+
 class BatchPboEvidence(BaseModel):
-    """Replayable CSCV input retained with each evaluated candidate."""
+    """Replayable CSCV evidence built only from timestamped definition returns."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     algorithm: Literal["CSCV_V1"] = "CSCV_V1"
     candidate_definition_hashes: tuple[str, ...]
+    return_series: tuple[PboDefinitionReturnSeries, ...]
     performance_matrix: tuple[tuple[float, ...], ...]
     alignment: PboAlignment
     aligned_period_count: int = Field(ge=4)
-    aligned_event_times: tuple[int, ...] = ()
+    aligned_event_times: tuple[int, ...]
     aligned_event_times_sha256: str = Field(min_length=64, max_length=64)
     pbo: float = Field(ge=0.0, le=1.0)
     identity_commitment: str = Field(min_length=64, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_legacy_schema(cls, value):
-        if not isinstance(value, Mapping) or "schema_version" not in value:
-            raise ValueError("PBO evidence schema_version is required")
-        if value["schema_version"] != 2:
-            raise ValueError("unsupported PBO evidence schema_version; expected 2")
-        matrix = value.get("performance_matrix", ())
-        if any(type(item) is not float for row in matrix for item in row):
+    def _require_v3_exact_values(cls, value):
+        if not isinstance(value, Mapping) or value.get("schema_version") != 3:
+            raise ValueError("unsupported PBO evidence schema_version; expected 3")
+        if any(type(item) is not float for row in value.get("performance_matrix", ()) for item in row):
             raise TypeError("PBO performance values must be exact float64 values")
-        times = value.get("aligned_event_times", ())
-        if any(type(item) is not int for item in times):
+        if any(type(item) is not int for item in value.get("aligned_event_times", ())):
             raise TypeError("PBO event times must be exact integers")
         return value
 
     @model_validator(mode="after")
     def _validate_evidence_shape(self) -> "BatchPboEvidence":
         hashes = self.candidate_definition_hashes
-        if len(hashes) < 2 or len(set(hashes)) != len(hashes):
-            raise ValueError(
-                "PBO evidence requires at least two distinct candidate definitions"
-            )
+        if len(hashes) < 2 or tuple(sorted(set(hashes))) != hashes:
+            raise ValueError("PBO candidate definitions must be sorted and distinct")
         if any(not _is_sha256(value) for value in hashes):
-            raise ValueError(
-                "candidate definition hashes must be SHA-256 hex digests"
-            )
-        rows = self.performance_matrix
-        if not (2 <= len(rows) <= 8):
-            raise ValueError(
-                "PBO performance matrix must contain between 2 and 8 blocks"
-            )
-        if len(rows) % 2:
-            raise ValueError("PBO performance matrix requires an even block count")
-        if any(len(row) != len(hashes) for row in rows):
-            raise ValueError(
-                "PBO performance matrix must be rectangular and candidate-bound"
-            )
-        if any(not math.isfinite(value) for row in rows for value in row):
-            raise ValueError(
-                "PBO performance matrix must contain only finite values"
-            )
-        if len(rows) > self.aligned_period_count:
-            raise ValueError("PBO block count cannot exceed aligned period count")
-
-        if self.alignment == PboAlignment.EVENT_TIME_INTERSECTION:
-            times = self.aligned_event_times
-            if (
-                len(times) != self.aligned_period_count
-                or any(value < 0 for value in times)
-                or tuple(sorted(set(times))) != times
-            ):
-                raise ValueError(
-                    "aligned event times must be exact, sorted, unique, and complete"
-                )
-            expected_calendar_hash = stable_hash(list(times))
-        else:
-            if self.aligned_event_times:
-                raise ValueError(
-                    "positional legacy evidence cannot claim event-time alignment"
-                )
-            expected_calendar_hash = stable_hash(
-                {
-                    "alignment": self.alignment.value,
-                    "aligned_period_count": self.aligned_period_count,
-                }
-            )
-        if self.aligned_event_times_sha256 != expected_calendar_hash:
+            raise ValueError("candidate definition hashes must be SHA-256 hex digests")
+        if self.alignment != PboAlignment.EVENT_TIME_INTERSECTION:
+            raise ValueError("PBO v3 requires event-time intersection")
+        series_hashes = tuple(item.definition_hash for item in self.return_series)
+        if series_hashes != hashes:
+            raise ValueError("PBO return series must match candidate definitions")
+        times = self.aligned_event_times
+        if (
+            len(times) != self.aligned_period_count
+            or tuple(sorted(set(times))) != times
+        ):
+            raise ValueError("aligned event times must be exact, sorted, unique, and complete")
+        calendars = [set(item.event_time for item in series.observations) for series in self.return_series]
+        intersection = tuple(sorted(set.intersection(*calendars)))
+        if intersection != times:
+            raise ValueError("aligned event-time intersection mismatch")
+        if self.aligned_event_times_sha256 != stable_hash(list(times)):
             raise ValueError("aligned event-time digest mismatch")
-        if self.identity_commitment != canonical_sha256({
+        block_count = min(8, len(times))
+        if block_count % 2:
+            block_count -= 1
+        by_hash = {
+            series.definition_hash: {item.event_time: item.value for item in series.observations}
+            for series in self.return_series
+        }
+        expected_matrix = tuple(
+            tuple(
+                math.fsum(by_hash[definition_hash][event_time] for event_time in times[len(times) * block // block_count:len(times) * (block + 1) // block_count])
+                for definition_hash in hashes
+            )
+            for block in range(block_count)
+        )
+        if self.performance_matrix != expected_matrix:
+            raise ValueError("PBO performance matrix is not derived from retained returns")
+        if any(not math.isfinite(value) for row in self.performance_matrix for value in row):
+            raise ValueError("PBO performance matrix must contain only finite values")
+        body = {
             "schema_version": self.schema_version,
             "algorithm": self.algorithm,
-            "candidate_definition_hashes": list(self.candidate_definition_hashes),
+            "candidate_definition_hashes": list(hashes),
+            "return_series": [series.model_dump(mode="python") for series in self.return_series],
             "performance_matrix": [list(row) for row in self.performance_matrix],
             "alignment": self.alignment.value,
             "aligned_period_count": self.aligned_period_count,
-            "aligned_event_times": list(self.aligned_event_times),
+            "aligned_event_times": list(times),
             "pbo": self.pbo,
-        }):
+        }
+        if self.identity_commitment != canonical_sha256(body):
             raise ValueError("PBO identity commitment mismatch")
         return self
 

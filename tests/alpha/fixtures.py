@@ -6,7 +6,6 @@ from typing import Any
 from quantos.contracts.alpha import (
     AlphaDefinition,
     AlphaEvaluation,
-    PboAlignment,
 )
 from quantos.contracts.research import ValidationVerdict
 from services.validation.pbo_evidence import create_batch_pbo_evidence
@@ -50,11 +49,10 @@ def bound_pbo_evidence(catalog, alpha_id: str):
         if trial_hash != definition_hash
     )
     return create_batch_pbo_evidence(
-        candidate_definition_hashes=(definition_hash, support_hash),
-        performance_matrix=((0.04, 0.043), (-0.03, -0.027),
-                            (0.05, 0.053), (-0.01, -0.007)),
-        alignment=PboAlignment.POSITIONAL_LEGACY,
-        aligned_period_count=8,
+        return_series_by_definition={
+            definition_hash: tuple((event_time, float(value)) for event_time, value in enumerate((0.04, -0.03, 0.05, -0.01, 0.02, -0.02, 0.03, -0.01))),
+            support_hash: tuple((event_time, float(value)) for event_time, value in enumerate((0.043, -0.027, 0.053, -0.007, 0.023, -0.017, 0.033, -0.007))),
+        },
     )
 
 

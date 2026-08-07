@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from quantos.contracts.alpha import AlphaDefinition, PboAlignment
+from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
@@ -139,15 +139,14 @@ def _bound_pbo(cat, alpha_id="a1"):
         cat.register_trial(extra_hash)
         trial_hashes = list(cat.snapshot().trials)
     ordered = (subject_hash, *sorted(value for value in trial_hashes if value != subject_hash))
-    matrix = tuple(
-        tuple(base + column * 0.003 for column in range(len(ordered)))
-        for base in (0.04, -0.03, 0.05, -0.01)
-    )
     return create_batch_pbo_evidence(
-        candidate_definition_hashes=ordered,
-        performance_matrix=matrix,
-        alignment=PboAlignment.POSITIONAL_LEGACY,
-        aligned_period_count=8,
+        return_series_by_definition={
+            definition_hash: tuple(
+                (event_time, float(base + column * 0.003))
+                for event_time, base in enumerate((0.04, -0.03, 0.05, -0.01, 0.02, -0.02, 0.03, -0.01))
+            )
+            for column, definition_hash in enumerate(ordered)
+        },
     )
 
 
@@ -223,10 +222,10 @@ def test_foreign_candidate_pbo_evidence_fails_closed():
     cat = _seeded_cat(0)
     foreign = tuple(value for value in cat.snapshot().trials if value != cat.get("a1").definition_hash)
     evidence = create_batch_pbo_evidence(
-        candidate_definition_hashes=foreign,
-        performance_matrix=((0.1, 0.0), (-0.1, 0.1), (0.2, -0.1), (-0.2, 0.2)),
-        alignment=PboAlignment.POSITIONAL_LEGACY,
-        aligned_period_count=8,
+        return_series_by_definition={
+            definition_hash: tuple((event_time, float(((-1) ** event_time) * (0.01 + column * 0.002))) for event_time in range(8))
+            for column, definition_hash in enumerate(foreign)
+        },
     )
     result = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
         "a1", _panel(), leakage_ok=True, pbo_evidence=evidence, regime_profitable_frac=1.0

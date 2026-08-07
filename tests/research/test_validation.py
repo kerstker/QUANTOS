@@ -4,7 +4,6 @@ import pytest
 
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import ValidationVerdict
-from quantos.contracts.validation import PboAlignment
 from services.research.validation.deflated_sharpe import (
     deflated_sharpe_ratio, expected_max_sharpe, min_track_record_length, pbo_cscv,
 )
@@ -98,16 +97,16 @@ def _gate_inputs(
             trial_hashes[2]: series(0.0055),
         },
     )
-    performance = (
-        ((5.0, 0.0), (0.0, 5.0), (5.0, 0.0), (0.0, 5.0))
+    pbo_values = (
+        ((5.0, 0.0, 5.0, 0.0), (0.0, 5.0, 0.0, 5.0))
         if high_pbo
-        else ((3.0, 1.0),) * 4
+        else ((3.0, 3.0, 3.0, 3.0), (1.0, 1.0, 1.0, 1.0))
     )
     pbo_evidence = create_batch_pbo_evidence(
-        candidate_definition_hashes=(subject_hash, trial_hashes[1]),
-        performance_matrix=performance,
-        alignment=PboAlignment.POSITIONAL_LEGACY,
-        aligned_period_count=4,
+        return_series_by_definition={
+            definition_hash: tuple((event_time, float(value)) for event_time, value in enumerate(values))
+            for definition_hash, values in zip((subject_hash, trial_hashes[1]), pbo_values)
+        },
     )
     inputs = dict(
         oos_sharpe=1.0,
@@ -262,25 +261,32 @@ def test_low_capacity_combined_with_another_soft_failure_is_a_hard_fail():
     assert res.verdict == ValidationVerdict.FAIL and not res.promotable
 
 
-def test_pbo_evidence_commitment_rejects_identity_and_column_mutation():
-    from quantos.contracts.validation import PboAlignment
+def _pbo_v3_source(first=0.1):
+    return {
+        "a" * 64: tuple((event_time, float(value)) for event_time, value in enumerate((first, 0.2, 0.3, 0.4))),
+        "b" * 64: tuple((event_time, float(value)) for event_time, value in enumerate((0.2, 0.3, 0.4, 0.5))),
+    }
+
+
+def test_pbo_evidence_commitment_rejects_identity_source_and_matrix_mutation():
     from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
-    evidence=create_batch_pbo_evidence(candidate_definition_hashes=("a"*64,"b"*64),performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)),alignment=PboAlignment.POSITIONAL_LEGACY,aligned_period_count=4)
+    evidence=create_batch_pbo_evidence(return_series_by_definition=_pbo_v3_source())
     assert verify_batch_pbo_evidence(evidence)
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"candidate_definition_hashes": ("c"*64,"b"*64)}))
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"performance_matrix": tuple(tuple(reversed(row)) for row in evidence.performance_matrix)}))
     assert not verify_batch_pbo_evidence(evidence.model_copy(update={"pbo": min(1.0,evidence.pbo+.1)}))
 
 
-def test_pbo_evidence_v2_and_legacy_v1_rejected():
+def test_pbo_evidence_v3_rejects_legacy_schemas_and_missing_commitment():
     from pydantic import ValidationError
-    from quantos.contracts.validation import BatchPboEvidence, PboAlignment
+    from quantos.contracts.validation import BatchPboEvidence
     from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
-    evidence=create_batch_pbo_evidence(candidate_definition_hashes=("a"*64,"b"*64),performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)),alignment=PboAlignment.POSITIONAL_LEGACY,aligned_period_count=4)
-    assert evidence.schema_version == 2 and verify_batch_pbo_evidence(evidence)
-    legacy=evidence.model_dump(mode="python"); legacy["schema_version"]=1; legacy.pop("identity_commitment")
-    with pytest.raises(ValidationError, match="unsupported PBO evidence schema_version"):
-        BatchPboEvidence.model_validate(legacy)
+    evidence=create_batch_pbo_evidence(return_series_by_definition=_pbo_v3_source())
+    assert evidence.schema_version == 3 and verify_batch_pbo_evidence(evidence)
+    for schema in (1, 2):
+        legacy=evidence.model_dump(mode="python"); legacy["schema_version"]=schema
+        with pytest.raises(ValidationError, match="schema_version"):
+            BatchPboEvidence.model_validate(legacy)
     missing=evidence.model_dump(mode="python"); missing.pop("identity_commitment")
     with pytest.raises(ValidationError): BatchPboEvidence.model_validate(missing)
     missing_schema=evidence.model_dump(mode="python"); missing_schema.pop("schema_version")
@@ -288,42 +294,20 @@ def test_pbo_evidence_v2_and_legacy_v1_rejected():
         BatchPboEvidence.model_validate(missing_schema)
 
 
-def test_pbo_evidence_rejects_coerced_numbers_and_odd_cscv_blocks():
-    from pydantic import ValidationError
-    from quantos.contracts.validation import PboAlignment
+def test_pbo_evidence_rejects_coerced_source_numbers_and_duplicate_times():
     from services.validation.pbo_evidence import create_batch_pbo_evidence
-
-    kwargs={
-        "candidate_definition_hashes": ("a"*64, "b"*64),
-        "alignment": PboAlignment.EVENT_TIME_INTERSECTION,
-        "aligned_period_count": 4,
-        "aligned_event_times": (0, 1, 2, 3),
-    }
-    with pytest.raises((TypeError, ValueError, ValidationError)):
-        create_batch_pbo_evidence(performance_matrix=((True, .2), (.2, .3), (.3, .4), (.4, .5)), **kwargs)
-    with pytest.raises((TypeError, ValueError, ValidationError)):
-        create_batch_pbo_evidence(performance_matrix=(("0.1", .2), (.2, .3), (.3, .4), (.4, .5)), **kwargs)
-    with pytest.raises((TypeError, ValueError, ValidationError)):
-        create_batch_pbo_evidence(performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), aligned_event_times=(0, 1, 2, 3.9), **{k:v for k,v in kwargs.items() if k != "aligned_event_times"})
-    with pytest.raises((TypeError, ValueError, ValidationError), match="even"):
-        create_batch_pbo_evidence(
-            candidate_definition_hashes=("a"*64, "b"*64),
-            performance_matrix=((.1, .2), (.2, .3), (.3, .4)),
-            alignment=PboAlignment.POSITIONAL_LEGACY,
-            aligned_period_count=4,
-        )
+    source=_pbo_v3_source()
+    bad=dict(source); bad["a"*64]=((0, True), *bad["a"*64][1:])
+    with pytest.raises(TypeError, match="exact float"):
+        create_batch_pbo_evidence(return_series_by_definition=bad)
+    bad=dict(source); bad["a"*64]=((0, 0.1), (0, 0.2), *bad["a"*64][2:])
+    with pytest.raises(ValueError, match="sorted and unique"):
+        create_batch_pbo_evidence(return_series_by_definition=bad)
 
 
-def test_pbo_commitment_binds_schema_and_exact_float64():
-    from quantos.contracts.validation import PboAlignment
+def test_pbo_commitment_binds_exact_timestamped_float64():
     from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
-
-    common={
-        "candidate_definition_hashes": ("a"*64, "b"*64),
-        "alignment": PboAlignment.POSITIONAL_LEGACY,
-        "aligned_period_count": 4,
-    }
-    first=create_batch_pbo_evidence(performance_matrix=((.1,.2),(.2,.3),(.3,.4),(.4,.5)), **common)
-    second=create_batch_pbo_evidence(performance_matrix=((.100000000001,.2),(.2,.3),(.3,.4),(.4,.5)), **common)
+    first=create_batch_pbo_evidence(return_series_by_definition=_pbo_v3_source())
+    second=create_batch_pbo_evidence(return_series_by_definition=_pbo_v3_source(0.100000000001))
     assert first.identity_commitment != second.identity_commitment
-    assert not verify_batch_pbo_evidence(first.model_copy(update={"schema_version": 1}))
+    assert not verify_batch_pbo_evidence(first.model_copy(update={"schema_version": 2}))

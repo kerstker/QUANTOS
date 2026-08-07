@@ -61,7 +61,7 @@ def test_batch_pbo_excludes_the_non_overlapping_tail_that_carries_an_outlier():
     assert evidence.aligned_event_times == tuple(range(10, 10 + n_common))
 
 
-def test_batch_pbo_falls_back_to_positional_when_event_time_absent():
+def test_batch_pbo_rejects_missing_event_time():
     """Legacy callers that hand-build PanelPeriod without event_time (event_time=None, the dataclass
     default) must keep working exactly as before -- this is a backward-compatibility guarantee, not
     a new default philosophy. Mirrors tests/alpha/test_factory.py::_real_cands's construction style
@@ -77,8 +77,7 @@ def test_batch_pbo_falls_back_to_positional_when_event_time_absent():
         ("b", [_legacy_period(i) for i in range(20)]),
     ]
     evidence = batch_pbo(candidates, cost=_COST, quantile=0.5, target_aum=1e7)
-    assert evidence is not None and 0.0 <= evidence.pbo <= 1.0
-    assert evidence.alignment.value == "POSITIONAL_LEGACY"
+    assert evidence is None
 
 
 def test_batch_pbo_intersects_common_calendar_window_even_when_lengths_already_match():

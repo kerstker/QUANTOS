@@ -18,7 +18,6 @@ from quantos.contracts.alpha import (
     ActorKind,
     AlphaDefinition,
     BatchPboEvidence,
-    PboAlignment,
 )
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
@@ -105,40 +104,17 @@ def batch_pbo(
     if len(series) < 2:                       # CSCV selection bias needs >= 2 configs
         return None
 
-    all_timestamped = all(
-        len(ts) == len(rs) and all(t is not None for t in ts) for ts, rs in zip(times, series))
-    if all_timestamped:
-        if any(len(set(ts)) != len(ts) for ts in times):
-            return None
-        common = set(times[0])
-        for ts in times[1:]:
-            common &= set(ts)
-        common_sorted = sorted(common)
-        by_time = [dict(zip(ts, rs)) for ts, rs in zip(times, series)]
-        series = [[d[ct] for ct in common_sorted] for d in by_time]
-        alignment = PboAlignment.EVENT_TIME_INTERSECTION
-        aligned_event_times = common_sorted
-    # else: legacy positional fallback — `series` is already the raw per-candidate return lists.
-    else:
-        alignment = PboAlignment.POSITIONAL_LEGACY
-        aligned_event_times = []
-
-    t = min((len(s) for s in series), default=0)
-    if t < 4:                                 # need >= 2 IS/OOS blocks
+    if not all(len(ts) == len(rs) and all(type(t) is int for t in ts) for ts, rs in zip(times, series)):
         return None
-    n_blocks = min(_MAX_CSCV_BLOCKS, t)
-    block = t // n_blocks
-    perf = []
-    for b in range(n_blocks):
-        lo, hi = b * block, (t if b == n_blocks - 1 else (b + 1) * block)
-        perf.append([sum(s[lo:hi]) for s in series])
+    if any(len(set(ts)) != len(ts) or ts != sorted(ts) for ts in times):
+        return None
+    timestamped_returns = {
+        definition_hash: tuple((event_time, float(value)) for event_time, value in zip(candidate_times, returns))
+        for definition_hash, candidate_times, returns in zip(candidate_hashes, times, series)
+    }
     try:
         return create_batch_pbo_evidence(
-            candidate_definition_hashes=candidate_hashes,
-            performance_matrix=perf,
-            alignment=alignment,
-            aligned_period_count=t,
-            aligned_event_times=aligned_event_times,
+            return_series_by_definition=timestamped_returns,
         )
     except Exception:
         traceback.print_exc(file=sys.stderr)

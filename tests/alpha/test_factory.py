@@ -103,7 +103,7 @@ def _real_cands(n=3, n_periods=15, n_inst=12):
             signals = tuple(float((k + j) % n_inst) for k in range(n_inst))
             fwd = tuple(0.004 * (k - (n_inst - 1) / 2) + 0.002 * (((k * 5 + t * 3 + j) % 7) - 3)
                         for k in range(n_inst))
-            periods.append(PanelPeriod(instruments=insts, signals=signals, forward_returns=fwd))
+            periods.append(PanelPeriod(instruments=insts, signals=signals, forward_returns=fwd, event_time=t))
         out.append((AlphaDefinition(alpha_id=f"rc{j}", name=f"R{j}", factor_ids=(f"rf{j}",)), periods))
     return out
 

@@ -8,7 +8,6 @@ from typing import Any, Mapping, Sequence
 from quantos.contracts.cost import CostModel
 from quantos.contracts.data import Bar
 from quantos.contracts.feature import FeatureValue
-from quantos.contracts.validation import PboAlignment
 from services.alpha.family_testing import FamilyAssignment
 from services.research.trial_ledger import TrialLedger
 from services.research.validation_dag import (
@@ -109,10 +108,6 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
             "n_obs": len(returns),
             "n_trials": 1,
             "var_sr": 0.04,
-            "perf_matrix": tuple(
-                (0.10 + 0.01 * i, 0.04 + 0.002 * i, -0.01 + 0.001 * i)
-                for i in range(8)
-            ),
             "candidate_ids": candidate_ids,
             "candidate_id": candidate_ids[0],
             "candidate_index": 0,
@@ -122,9 +117,14 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
                 {"alpha-0": "DECLARED", "alpha-1": "DECLARED", "alpha-2": "DECLARED"},
             ),
             "candidate_family": "family-a",
-            "pbo_alignment": PboAlignment.EVENT_TIME_INTERSECTION,
-            "pbo_periods": 8,
-            "pbo_event_times": tuple(range(8)),
+            "pbo_return_series_by_definition": {
+                definition_hash: tuple((event_time, float(value)) for event_time, value in enumerate(series))
+                for definition_hash, series in {
+                    definition_hashes[0]: returns,
+                    definition_hashes[1]: tuple(value * 0.5 + (0.001 if index % 2 else -0.001) for index, value in enumerate(returns)),
+                    definition_hashes[2]: tuple(-value + (0.002 if index % 3 else -0.002) for index, value in enumerate(returns)),
+                }.items()
+            },
             "pbo_candidate_definition_hashes": definition_hashes,
             "pbo_candidate_definitions": definitions,
         },
@@ -194,6 +194,10 @@ def run_production_validation_check(root: str | Path) -> dict[str, Any]:
             **panel["oos"],
             "returns": ordered_decay_returns,
             "return_series_by_definition": ordered_decay_population,
+            "pbo_return_series_by_definition": {
+                definition_hash: tuple((event_time, float(value)) for event_time, value in enumerate(series))
+                for definition_hash, series in ordered_decay_population.items()
+            },
         },
     }
     malformed_realism = {**panel, "realism": {**panel["realism"], "cost_model": {"fee_bps": 1.0}}}

@@ -191,7 +191,7 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","return_series_by_definition","perf_matrix","candidate_ids","pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        required={"n","train_size","test_size","returns","return_series_by_definition","candidate_ids","pvalues","families","pbo_return_series_by_definition","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
         threshold_names={"fdr_q","dsr_floor","pbo_max","min_oos_fold_mean"}
         if isinstance(x,Mapping) and threshold_names.intersection(x):
             return self._block("panel cannot define validation thresholds")
@@ -261,8 +261,10 @@ class OOSValidationAdapter(_TypedAdapter):
             dsr=catalog_evidence.deflated_sharpe
             candidate_exact=getattr(context.candidate,"exact_definition_id",None)
             if candidate_id != ids[candidate_index] or (candidate_exact is not None and candidate_exact != definition_hashes[candidate_index]): raise ValueError("PBO candidate identity mismatch")
-            pbo_evidence=create_batch_pbo_evidence(candidate_definition_hashes=definition_hashes,performance_matrix=x["perf_matrix"],alignment=x["pbo_alignment"],aligned_period_count=x["pbo_periods"],aligned_event_times=x.get("pbo_event_times",()))
-            if tuple(pbo_evidence.candidate_definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]) or tuple(tuple(r) for r in pbo_evidence.performance_matrix) != tuple(tuple(r) for r in x["perf_matrix"]) or pbo_evidence.alignment != x["pbo_alignment"] or pbo_evidence.aligned_period_count != x["pbo_periods"] or tuple(pbo_evidence.aligned_event_times) != tuple(x.get("pbo_event_times",())): raise ValueError("PBO evidence binding mismatch")
+            pbo_returns=x["pbo_return_series_by_definition"]
+            if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != set(definition_hashes): raise ValueError("PBO return population mismatch")
+            pbo_evidence=create_batch_pbo_evidence(return_series_by_definition=pbo_returns)
+            if tuple(pbo_evidence.candidate_definition_hashes) != tuple(sorted(definition_hashes)): raise ValueError("PBO evidence binding mismatch")
             if not verify_batch_pbo_evidence(pbo_evidence): raise ValueError("PBO evidence verification failed")
             pbo=pbo_evidence.pbo
             if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)) or not hasattr(fam,"survivors") or not isinstance(fam.survivors,(set,frozenset)): raise ValueError("malformed family FDR result")

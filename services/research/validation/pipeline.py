@@ -13,7 +13,6 @@ from typing import Optional, Sequence
 from quantos.contracts.cost import CostModel
 from quantos.contracts.data import Bar
 from quantos.contracts.research import ValidationResult, ValidationVerdict
-from quantos.contracts.validation import PboAlignment
 from services.research.ports.backtest import (
     BacktestExecutionPort,
     BacktestOutcome,
@@ -106,18 +105,11 @@ def run_research_validation(
             "candidate definitions are absent from the catalog ledger"
         )
 
-    performance = tuple(
-        tuple(
-            candidate_per_fold[candidate][fold]
-            for candidate in range(len(candidate_ids))
-        )
-        for fold in range(len(splits))
-    )
     pbo_evidence = create_batch_pbo_evidence(
-        candidate_definition_hashes=definition_hashes,
-        performance_matrix=performance,
-        alignment=PboAlignment.POSITIONAL_LEGACY,
-        aligned_period_count=len(candidate_per_bar[0]),
+        return_series_by_definition={
+            definition_hash: tuple((bar.event_time, float(value)) for bar, value in zip(bars, candidate_returns))
+            for definition_hash, candidate_returns in zip(definition_hashes, candidate_per_bar)
+        },
     )
 
     best = max(
