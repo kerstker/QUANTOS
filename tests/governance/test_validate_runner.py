@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import pytest
 from pathlib import Path
 
 
@@ -350,7 +351,7 @@ def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path
         "phase13-readiness:current",
         "phase13-readiness:tests",
     ]
-    assert report["summary"]["passed"] == 5
+    assert report["summary"]["passed"] == 8
 
 
 def test_evidence_consumers_run_after_derived_refresh(tmp_path):
@@ -906,6 +907,19 @@ def test_future_canonical_timing_is_not_reused_by_default_dag(tmp_path, monkeypa
     ]
 
 
+def test_all_validation_rejects_empty_phase13_override(tmp_path):
+    validate = _load_validate_module()
+    with pytest.raises(ValueError, match="Phase 13"):
+        validate.run(
+            stages=None,
+            json_report=str(tmp_path / "validation.json"),
+            timeout_seconds=2,
+            checks=[("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))],
+            phase13_refresh_checks=[],
+            derived_refresh_checks=[],
+        )
+
+
 def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():
     validate = _load_validate_module()
     argv = next(
@@ -913,7 +927,6 @@ def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():
         for name, argv, _cwd in validate.CHECKS
         if name == "frontend: tests"
     )
-
     assert argv == [
         validate.NPM,
         "test",
