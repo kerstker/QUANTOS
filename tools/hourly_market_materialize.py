@@ -5,7 +5,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +25,8 @@ INPUT_SCHEMA = "hourly-market-input-v1"
 OUTPUT_SCHEMA = "hourly-market-materialized-v1"
 _ALLOWED_INTERVALS = (3600, 14400)
 _KINDS = ("bar", "funding", "open_interest", "universe")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_MAX_INT = (1 << 63) - 1
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,28 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _bounded_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= _MAX_INT:
+        raise ValueError(f"{name} must be a bounded non-negative integer")
+    return value
+
+
+def _strict_digest(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not _HEX64.fullmatch(value):
+        raise ValueError(f"{name} must be 64 lowercase hexadecimal characters")
+    return value
+
+
+def _input_path(value: Any) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ValueError("invalid input path")
+    from pathlib import PurePosixPath
+    path = PurePosixPath(value)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts) or path.as_posix() != value:
+        raise ValueError("invalid input path")
+    return value
+
+
 def _required(row: dict[str, Any], names: Iterable[str]) -> None:
     missing = [name for name in names if name not in row]
     if missing:
@@ -51,8 +77,7 @@ def _record(row: dict[str, Any], kind: str) -> Any:
         raise ValueError("unsupported input schema_version")
     if kind not in _KINDS or row.get("kind") != kind:
         raise ValueError("unknown kind")
-    if not isinstance(row.get("source_digest"), str) or not row["source_digest"].strip():
-        raise ValueError("source_digest is required")
+    _strict_digest(row.get("source_digest"), "source_digest")
     common = {"schema_version", "kind", "source_digest"}
     if kind == "bar":
         fields = ("instrument", "event_time", "knowledge_time", "open", "high", "low", "close", "quote_volume", "interval_seconds")
@@ -170,15 +195,44 @@ def _series(rows: list[Any], interval: int, bar_intervals: dict[str, int]) -> tu
     return aggregated, latest(HourlyFunding), latest(HourlyOpenInterest)
 
 
+@contextmanager
+def _advisory_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+            os.fsync(handle.fileno())
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            raise FileExistsError(f"artifact target is locked: {path}") from exc
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
 def _publish(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = path.parent / f".{path.name}.lock"
-    try:
-        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
-        raise FileExistsError(f"artifact target is locked: {path}") from exc
-    try:
-        os.close(fd)
+    with _advisory_lock(lock):
         if path.exists():
             if path.read_bytes() != data:
                 raise FileExistsError(f"immutable artifact conflict: {path}")
@@ -199,12 +253,6 @@ def _publish(path: Path, data: bytes) -> None:
         finally:
             if temp_name and os.path.exists(temp_name):
                 os.unlink(temp_name)
-    finally:
-        try:
-            os.unlink(lock)
-        except FileNotFoundError:
-            pass
-
 
 def _rows(panel: HourlyMarketPanel, interval: int, universe: tuple[str, ...]) -> list[dict[str, Any]]:
     output = []
@@ -233,6 +281,12 @@ def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, 
     intervals = _validate_intervals(intervals)
     rows, observations, source_digests, inputs, bar_intervals = _read_raw(Path(raw_root), as_of)
     universe = select_hourly_universe(observations, as_of=as_of, policy=policy)
+    selected = set(universe.instruments)
+    bar_instruments = {row.instrument for row in rows if isinstance(row, HourlyBar)}
+    funding_instruments = {row.instrument for row in rows if isinstance(row, HourlyFunding)}
+    oi_instruments = {row.instrument for row in rows if isinstance(row, HourlyOpenInterest)}
+    if not selected <= bar_instruments or not selected <= funding_instruments or not selected <= oi_instruments:
+        raise ValueError("each selected instrument requires bars, funding, and open_interest")
     manifests: list[Path] = []
     digests: list[str] = []
     for interval in intervals:
@@ -287,10 +341,21 @@ def load_materialized_partition(partition: Path, *, raw_root: Path | None = None
         raise ValueError("invalid policy") from exc
     if len(payload["selected_universe_instruments"]) < policy.min_size or len(payload["selected_universe_instruments"]) > policy.max_size:
         raise ValueError("invalid selected universe size")
-    if not isinstance(payload["input_files"], list) or any(set(x) != {"path", "sha256"} or not isinstance(x["path"], str) or not isinstance(x["sha256"], str) or len(x["sha256"]) != 64 for x in payload["input_files"]):
+    input_files = payload["input_files"]
+    if not isinstance(input_files, list) or not input_files:
         raise ValueError("invalid input files")
-    if not isinstance(payload["source_digests"], list) or payload["source_digests"] != sorted(set(payload["source_digests"])) or any(not isinstance(x, str) or not x for x in payload["source_digests"]):
+    input_paths: list[str] = []
+    for item in input_files:
+        if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
+            raise ValueError("invalid input files")
+        input_paths.append(_input_path(item["path"]))
+        _strict_digest(item["sha256"], "input file sha256")
+    if len(set(input_paths)) != len(input_paths):
+        raise ValueError("duplicate input file path")
+    if not isinstance(payload["source_digests"], list) or not payload["source_digests"] or payload["source_digests"] != sorted(set(payload["source_digests"])):
         raise ValueError("invalid source digests")
+    for digest in payload["source_digests"]:
+        _strict_digest(digest, "source_digest")
     counts = payload["record_counts"]
     if not isinstance(counts, dict) or set(counts) != {"total", "bar", "funding", "open_interest"} or any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts.values()) or counts["total"] != counts["bar"] + counts["funding"] + counts["open_interest"]:
         raise ValueError("invalid record counts")
@@ -322,11 +387,18 @@ def load_materialized_partition(partition: Path, *, raw_root: Path | None = None
             rows.append(row)
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         raise ValueError("invalid materialized data") from exc
+    if data_bytes != b"".join(_canonical(row) for row in rows):
+        raise ValueError("materialized data is not canonical JSONL")
     if len(rows) != counts["total"] or {k: sum(r["kind"] == k for r in rows) for k in ("bar", "funding", "open_interest")} != {k: counts[k] for k in ("bar", "funding", "open_interest")}:
         raise ValueError("record count mismatch")
     if raw_root is not None:
-        for item in payload["input_files"]:
-            source = Path(raw_root) / item["path"]
+        root = Path(raw_root).resolve()
+        for item in input_files:
+            source = (root / item["path"]).resolve()
+            try:
+                source.relative_to(root)
+            except ValueError as exc:
+                raise ValueError("input path escapes raw_root") from exc
             if not source.is_file() or _sha(source.read_bytes()) != item["sha256"]:
                 raise ValueError("input file digest mismatch")
     return rows
