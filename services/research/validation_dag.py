@@ -306,8 +306,8 @@ def _receipt_evidence(stage, receipt):
     payload=receipt[stage]["payload"]; return payload["evidence_hash"]
 
 
-def _complete_or_recover(ledger, trial_id, stage, state, payload, *, owner, now):
-    try: ledger.complete_validation_stage(trial_id,stage,state,payload,owner=owner,now=now)
+def _complete_or_recover(ledger, trial_id, stage, state, payload, *, owner, now, attempt):
+    try: ledger.complete_validation_stage(trial_id,stage,state,payload,owner=owner,now=now,attempt=attempt)
     except TrialLedgerConflict:
         current=ledger.validation_receipt(trial_id).get(stage)
         if not current or current["state"] not in {"DONE","BLOCKED","FAILED"}: raise
@@ -349,7 +349,8 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     context=ValidationContext(candidate,execution_panel,policy,trial_id,panel_digest,policy.digest,event_at,max(1,trial_snapshot.count),trial_snapshot.trial_ids,trial_set_digest); hashes={}; metadata={}; verdict="PASS"; reason=None
     for pos,stage in enumerate(policy.stages):
         try:
-            claim=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
+            claim_result=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
+            claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
             deadline=time.monotonic()+float(wait_timeout_seconds)
             for attempt in range(10000):
@@ -359,6 +360,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 current_stage=current_receipts.get(stage.name)
                 if current_stage and current_stage["state"] in {"DONE","BLOCKED","FAILED"}:
                     claim=current_stage["state"]
+                    claim_attempt=current_stage["attempt"]
                     break
                 if time.monotonic() >= deadline: raise TrialLedgerConflict("validation stage wait timeout")
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
@@ -370,7 +372,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             for attempt in range(10000):
                 current=ledger.validation_receipt(trial_id).get(stage.name)
                 if current and current["state"] in {"DONE","BLOCKED","FAILED"}:
-                    claim=current["state"]; break
+                    claim=current["state"]; claim_attempt=current["attempt"]; break
                 if time.monotonic() >= deadline: raise TrialLedgerConflict("validation stage wait timeout")
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
             if claim == "IN_PROGRESS": raise TrialLedgerConflict("validation stage wait timeout")
@@ -386,12 +388,14 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             if not isinstance(evidence,StageEvidence) or evidence.stage!=stage.name or evidence.version!=stage.version or evidence.implementation_id!=stage.implementation_id: raise ValueError("stage evidence identity mismatch")
         except Exception as exc: evidence=_exception_evidence(stage.name,stage.version,stage.implementation_id,exc); reason=f"provider exception: {type(exc).__name__}"
         hashes[stage.name]=evidence.evidence_hash; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id}
-        _complete_or_recover(ledger,trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
+        _complete_or_recover(ledger,trial_id,stage.name,"DONE" if evidence.outcome=="PASS" else "BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id,"outcome":evidence.outcome,"evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now,attempt=claim_attempt)
         if evidence.outcome=="BLOCK": verdict="BLOCK"; reason=reason or evidence.reason; break
     blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     while blocked_stage:
         evidence=StageEvidence(blocked_stage.name,blocked_stage.version,"BLOCK",{"short_circuit":True,"upstream":"blocked"},"short-circuit after upstream BLOCK",blocked_stage.implementation_id); hashes[blocked_stage.name]=evidence.evidence_hash; metadata[blocked_stage.name]={"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id};
-        try: claim=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
+        try:
+            claim_result=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
+            claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
             deadline=time.monotonic()+float(wait_timeout_seconds)
             for attempt in range(10000):
@@ -401,7 +405,7 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
                 time.sleep(min(0.01, 0.0005 * (attempt + 1)))
             raise TrialLedgerConflict("validation artifact wait timeout")
         if claim == "CLAIMED":
-            _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now)
+            _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now,attempt=claim_attempt)
         elif claim == "IN_PROGRESS":
             deadline=time.monotonic()+float(wait_timeout_seconds)
             while time.monotonic() < deadline:

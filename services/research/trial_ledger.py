@@ -48,6 +48,12 @@ class EffectiveTrialCount:
     count: int; trial_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ValidationClaim:
+    state: str
+    attempt: int
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trial_events (trial_id TEXT NOT NULL,event_index INTEGER NOT NULL,alpha_id TEXT NOT NULL,family_id TEXT NOT NULL,exact_definition_id TEXT NOT NULL,validation_policy_digest TEXT NOT NULL,status TEXT NOT NULL,at INTEGER NOT NULL,global_seq INTEGER NOT NULL UNIQUE,prev_hash TEXT NOT NULL,event_hash TEXT NOT NULL,PRIMARY KEY(trial_id,event_index));
 CREATE TABLE IF NOT EXISTS trial_heads (trial_id TEXT PRIMARY KEY,event_count INTEGER NOT NULL,head_hash TEXT NOT NULL,global_count INTEGER NOT NULL,global_head_hash TEXT NOT NULL);
@@ -332,11 +338,13 @@ class TrialLedger:
 
     def _receipt_insert_locked(self, trial_id, stage, state, payload, owner, lease_until, attempt):
         encoded=_canonical(payload); payload_hash=_hash(encoded.encode()); count,prev=self._c.execute("SELECT event_count,head_hash FROM validation_receipt_heads WHERE id=1").fetchone(); seq=count+1
-        row_hash=_hash(_canonical({"trial_id":trial_id,"stage":stage,"event_index":attempt-1,"state":state,"payload_hash":payload_hash,"global_seq":seq,"prev_hash":prev,"owner":owner,"lease_until":lease_until,"attempt":attempt}).encode())
-        self._c.execute("INSERT INTO validation_receipt_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(trial_id,stage,attempt-1,state,encoded,payload_hash,seq,prev,row_hash,owner,lease_until,attempt))
+        latest=self._c.execute("SELECT max(event_index) FROM validation_receipt_events WHERE trial_id=? AND stage=?",(trial_id,stage)).fetchone()[0]
+        event_index=0 if latest is None else latest+1
+        row_hash=_hash(_canonical({"trial_id":trial_id,"stage":stage,"event_index":event_index,"state":state,"payload_hash":payload_hash,"global_seq":seq,"prev_hash":prev,"owner":owner,"lease_until":lease_until,"attempt":attempt}).encode())
+        self._c.execute("INSERT INTO validation_receipt_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(trial_id,stage,event_index,state,encoded,payload_hash,seq,prev,row_hash,owner,lease_until,attempt))
         self._c.execute("UPDATE validation_receipt_heads SET event_count=?,head_hash=? WHERE id=1",(seq,row_hash))
 
-    def claim_validation_stage(self, trial_id: str, stage: str, *, owner: str = "legacy", now: int = 0, lease_seconds: int = 60, panel_digest: str, policy_digest: str) -> str:
+    def claim_validation_stage(self, trial_id: str, stage: str, *, owner: str = "legacy", now: int = 0, lease_seconds: int = 60, panel_digest: str, policy_digest: str) -> ValidationClaim:
         self._validate_receipt_identity(trial_id,stage)
         if not isinstance(owner,str) or not owner or not isinstance(now,int) or isinstance(now,bool) or not isinstance(lease_seconds,int) or lease_seconds <= 0 or type(panel_digest) is not str or not _HEX64.fullmatch(panel_digest) or type(policy_digest) is not str or not _HEX64.fullmatch(policy_digest): raise TrialLedgerError("invalid receipt lease or execution binding")
         with self._lock:
@@ -344,26 +352,26 @@ class TrialLedger:
                 self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked()
                 if not self._trial_exists_locked(trial_id): raise TrialLedgerError("validation receipt requires trial")
                 current=self._receipt_rows_locked(trial_id).get(stage)
-                if current and current["state"] in {"DONE", "BLOCKED", "FAILED"}: self._c.execute("COMMIT"); return current["state"]
+                if current and current["state"] in {"DONE", "BLOCKED", "FAILED"}: self._c.execute("COMMIT"); return ValidationClaim(current["state"],current["attempt"])
                 if self._aggregate_locked(trial_id).status != "RUNNING": raise TrialLedgerError("validation receipt requires RUNNING trial")
-                if current and current["state"] == "CLAIMED" and current["lease_until"] > now: self._c.execute("COMMIT"); return "IN_PROGRESS"
+                if current and current["state"] == "CLAIMED" and current["lease_until"] > now: self._c.execute("COMMIT"); return ValidationClaim("IN_PROGRESS",current["attempt"])
                 attempt=(current["attempt"]+1) if current else 1
-                self._receipt_insert_locked(trial_id,stage,"CLAIMED",{"stage":stage,"attempt":attempt,"panel_digest":panel_digest,"policy_digest":policy_digest},owner,now+lease_seconds,attempt); self._c.execute("COMMIT"); return "CLAIMED"
+                self._receipt_insert_locked(trial_id,stage,"CLAIMED",{"stage":stage,"attempt":attempt,"panel_digest":panel_digest,"policy_digest":policy_digest},owner,now+lease_seconds,attempt); self._c.execute("COMMIT"); return ValidationClaim("CLAIMED",attempt)
             except (TrialLedgerError,sqlite3.Error) as exc:
                 try:self._c.execute("ROLLBACK")
                 except sqlite3.Error:pass
                 if isinstance(exc,TrialLedgerError): raise
                 raise TrialLedgerError("ledger database failure") from exc
 
-    def complete_validation_stage(self, trial_id, stage, state, payload, *, owner="legacy", now=0):
+    def complete_validation_stage(self, trial_id, stage, state, payload, *, owner="legacy", now=0, attempt: int):
         self._validate_receipt_identity(trial_id,stage)
-        if state not in {"DONE","BLOCKED","FAILED"} or not isinstance(owner,str) or not isinstance(now,int): raise TrialLedgerError("invalid receipt completion")
+        if state not in {"DONE","BLOCKED","FAILED"} or not isinstance(owner,str) or not isinstance(now,int) or type(attempt) is not int or attempt < 1: raise TrialLedgerError("invalid receipt completion")
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE"); self._verify_locked(); self._verify_receipts_locked();
                 if self._aggregate_locked(trial_id).status != "RUNNING": raise TrialLedgerError("validation receipt requires RUNNING trial")
                 current=self._receipt_rows_locked(trial_id).get(stage)
-                if not current or current["state"] != "CLAIMED" or current["owner"] != owner or current["lease_until"] <= now: raise TrialLedgerConflict("receipt claim ownership lost")
+                if not current or current["state"] != "CLAIMED" or current["owner"] != owner or current["lease_until"] <= now or current["attempt"] != attempt: raise TrialLedgerConflict("receipt claim ownership lost")
                 if not isinstance(payload,Mapping) or set(payload) != {"trial_id","panel_digest","policy_digest","event_at","effective_trial_count","trial_set_digest","evidence_hash","stage","version","implementation_id","outcome","evidence","reason"}: raise TrialLedgerError("terminal receipt payload schema invalid")
                 if payload["trial_id"] != trial_id or type(payload["event_at"]) is not int or payload["event_at"] != self._aggregate_locked(trial_id).events[0].at or type(payload["effective_trial_count"]) is not int or payload["effective_trial_count"] < 0 or type(payload["trial_set_digest"]) is not str or not _HEX64.fullmatch(payload["trial_set_digest"]) or payload["stage"] != stage or payload["outcome"] not in {"PASS","BLOCK"}: raise TrialLedgerError("terminal receipt binding invalid")
                 if not all(type(payload[k]) is str and _HEX64.fullmatch(payload[k]) for k in ("trial_id","panel_digest","policy_digest","evidence_hash")): raise TrialLedgerError("terminal receipt identity invalid")
@@ -372,7 +380,7 @@ class TrialLedger:
                 expected=_hash(_canonical({"stage":payload["stage"],"version":payload["version"],"implementation_id":payload["implementation_id"],"outcome":payload["outcome"],"evidence":payload["evidence"],"reason":payload["reason"]}).encode())
                 if payload["evidence_hash"] != expected: raise TrialLedgerError("terminal receipt evidence hash invalid")
                 if (state == "DONE" and payload["outcome"] != "PASS") or (state in {"BLOCKED","FAILED"} and payload["outcome"] != "BLOCK"): raise TrialLedgerError("receipt state/outcome mismatch")
-                self._receipt_insert_locked(trial_id,stage,state,payload,owner,current["lease_until"],current["attempt"]+1); self._c.execute("COMMIT")
+                self._receipt_insert_locked(trial_id,stage,state,payload,owner,current["lease_until"],attempt); self._c.execute("COMMIT")
             except (TrialLedgerError,sqlite3.Error) as exc:
                 try:self._c.execute("ROLLBACK")
                 except sqlite3.Error:pass

@@ -269,9 +269,27 @@ def test_receipt_reclaims_stale_claim(tmp_path):
     path = str(tmp_path / "stale.db")
     ledger = TrialLedger(path)
     ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
-    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="old", now=100, lease_seconds=5) == "CLAIMED"
-    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="new", now=106, lease_seconds=5) == "CLAIMED"
+    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="old", now=100, lease_seconds=5).state == "CLAIMED"
+    assert ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="new", now=106, lease_seconds=5).state == "CLAIMED"
     assert ledger.validation_receipt(h(1))["cheap"]["owner"] == "new"
+
+
+def test_receipt_attempt_fences_old_worker_even_with_same_owner(tmp_path):
+    path = str(tmp_path / "fencing.db")
+    ledger = TrialLedger(path)
+    ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
+    first = ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="validation", now=100, lease_seconds=5)
+    second = ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64, owner="validation", now=106, lease_seconds=5)
+    assert first.state == second.state == "CLAIMED"
+    assert second.attempt == first.attempt + 1
+    from services.research.validation_dag import StageEvidence
+    evidence = StageEvidence("cheap", "1", "PASS", {"ok": True}, None, "tests.cheap:1")
+    payload = {"trial_id":h(1),"panel_digest":"a"*64,"policy_digest":"b"*64,"event_at":1,"effective_trial_count":1,"trial_set_digest":h(7),"evidence_hash":evidence.evidence_hash,"stage":"cheap","version":"1","implementation_id":"tests.cheap:1","outcome":"PASS","evidence":evidence.evidence,"reason":None}
+    with pytest.raises(TrialLedgerConflict, match="ownership lost"):
+        ledger.complete_validation_stage(h(1), "cheap", "DONE", payload, owner="validation", now=106, attempt=first.attempt)
+    ledger.complete_validation_stage(h(1), "cheap", "DONE", payload, owner="validation", now=106, attempt=second.attempt)
+    receipt = ledger.validation_receipt(h(1))["cheap"]
+    assert receipt["attempt"] == second.attempt
 
 
 def test_receipt_rejects_phantom_trial(tmp_path):
@@ -282,25 +300,25 @@ def test_receipt_rejects_phantom_trial(tmp_path):
 def test_receipt_prefix_hole_is_rejected(tmp_path):
     path = str(tmp_path / "hole.db")
     ledger = TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2))
-    ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64)
-    with pytest.raises(TrialLedgerError): ledger.complete_validation_stage(h(1), "cheap", "DONE", {"evidence_hash": h(902)}, owner="legacy", now=0)
+    claim=ledger.claim_validation_stage(h(1), "cheap", panel_digest="a"*64, policy_digest="b"*64)
+    with pytest.raises(TrialLedgerError): ledger.complete_validation_stage(h(1), "cheap", "DONE", {"evidence_hash": h(902)}, owner="legacy", now=0, attempt=claim.attempt)
     ledger.verify()
     path = str(tmp_path / "receipt-tamper.db")
     ledger = TrialLedger(path); tid = h(801)
     ledger.append(rec(801)); ledger.append(rec(801, status="RUNNING", index=1, at=2))
     with pytest.raises(TrialLedgerError):
         ledger.save_validation_artifact(tid, {"nested": {1: "bad"}})
-    ledger.claim_validation_stage(tid, "cheap", panel_digest="a"*64, policy_digest="b"*64)
+    claim=ledger.claim_validation_stage(tid, "cheap", panel_digest="a"*64, policy_digest="b"*64)
     with pytest.raises(TrialLedgerError):
-        ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
+        ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True}, attempt=claim.attempt)
     ledger.verify()
 
 
 
 def test_named_recovery_forwards_bindings_and_reclaims_expired_lease(tmp_path):
     path=str(tmp_path / "named-recovery.db"); ledger=TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1))
-    assert ledger.claim_validation_stage(h(1),"cheap",owner="crashed",now=100,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)) == "CLAIMED"
-    assert ledger.recover_validation_stage(h(1),"cheap",owner="recovery",now=161,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)) == "CLAIMED"
+    assert ledger.claim_validation_stage(h(1),"cheap",owner="crashed",now=100,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)).state == "CLAIMED"
+    assert ledger.recover_validation_stage(h(1),"cheap",owner="recovery",now=161,lease_seconds=60,panel_digest=h(8),policy_digest=h(9)).state == "CLAIMED"
     receipt=ledger.validation_receipt(h(1))["cheap"]
     assert receipt["owner"] == "recovery" and receipt["attempt"] == 2
 
