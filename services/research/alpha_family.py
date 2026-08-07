@@ -8,17 +8,11 @@ import math
 from typing import Any, Iterable, Mapping
 
 from services.research.alpha_identity import AlphaDefinition, alpha_id
+from services.research.alpha_expression import _TS_PAIR, _TS_WINDOW
 
 
-_TUNABLE_OPS = {"signed_power"}
-# alpha_identity's grammar is the authority; these are the operators whose final
-# numeric argument is a tunable window rather than economic structure.
-_TUNABLE_WINDOW_OPS = {
-    "ts_delay", "ts_delta", "ts_mean", "ts_sum", "ts_std", "ts_min", "ts_max",
-    "ts_rank", "decay_linear", "ts_argmax", "ts_argmin", "ts_corr", "ts_cov",
-    "ts_beta", "ts_skew", "ts_kurt", "ts_zscore", "cs_rank", "cs_zscore",
-    "cs_neutralize", "cs_winsorize", "ew_mean", "ew_std", "ew_zscore",
-}
+# Only these grammar operators have a final numeric window argument.
+_TUNABLE_WINDOW_OPS = frozenset(_TS_WINDOW) | frozenset(_TS_PAIR)
 
 
 def _structure(expr: Any) -> Any:
@@ -27,7 +21,9 @@ def _structure(expr: Any) -> Any:
     if op == "field":
         return ("field", expr[1])
     if op == "const":
-        return ("const",)  # constant magnitude is tunable; const-vs-field stays distinct
+        value = expr[1]
+        sign = -1 if value < 0 else 1 if value > 0 else 0
+        return ("const", ("sign", sign))  # magnitude is tunable; direction is structural
     if op == "signed_power":
         exponent = expr[2]
         # Preserve direction (sign), while ignoring tunable magnitude.
@@ -77,8 +73,16 @@ class AlphaCandidate:
             raise TypeError("definition must be AlphaDefinition")
         for name in ("signal_fingerprint", "return_fingerprint"):
             value = getattr(self, name)
-            if value is not None:
-                object.__setattr__(self, name, tuple(value))
+            if value is None:
+                continue
+            if type(value) not in (list, tuple):
+                raise TypeError(f"{name} must be a flat numeric sequence or None")
+            frozen = []
+            for item in value:
+                if type(item) not in (int, float) or not math.isfinite(item):
+                    raise ValueError(f"{name} must contain only finite numeric non-bools")
+                frozen.append(item)
+            object.__setattr__(self, name, tuple(frozen))
 
     @property
     def alpha_id(self) -> str:
@@ -119,10 +123,8 @@ class DedupResult:
         return self.exact_duplicates + self.behavioral_duplicates
 
 
-def _correlation(left: tuple[Any, ...] | None, right: tuple[Any, ...] | None) -> float | None:
+def _correlation(left: tuple[float, ...] | None, right: tuple[float, ...] | None) -> float | None:
     if left is None or right is None or len(left) != len(right) or len(left) < 2:
-        return None
-    if any(type(x) not in (int, float) or not math.isfinite(x) for x in left + right):
         return None
     ml, mr = sum(left) / len(left), sum(right) / len(right)
     dl = [x - ml for x in left]
@@ -134,11 +136,31 @@ def _correlation(left: tuple[Any, ...] | None, right: tuple[Any, ...] | None) ->
     return sum(x * y for x, y in zip(dl, dr)) / math.sqrt(sl * sr)
 
 
+def _same_domain_correlation(left: AlphaCandidate, right: AlphaCandidate) -> float | None:
+    """Compare returns only when both have returns; otherwise signals only when both do."""
+    if left.return_fingerprint is not None and right.return_fingerprint is not None:
+        return _correlation(left.return_fingerprint, right.return_fingerprint)
+    if left.signal_fingerprint is not None and right.signal_fingerprint is not None:
+        return _correlation(left.signal_fingerprint, right.signal_fingerprint)
+    return None
+
+
+def _fingerprint_key(value: tuple[float, ...] | None) -> tuple:
+    return (0,) if value is None else (1, tuple(value))
+
+
+def _candidate_key(candidate: AlphaCandidate) -> tuple:
+    return (candidate.alpha_id, _fingerprint_key(candidate.return_fingerprint),
+            _fingerprint_key(candidate.signal_fingerprint))
+
+
 def deduplicate_candidates(candidates: Iterable[AlphaCandidate], *, correlation_threshold: float) -> DedupResult:
-    if type(correlation_threshold) not in (int, float) or not math.isfinite(correlation_threshold):
+    if type(correlation_threshold) not in (int, float):
+        raise TypeError("correlation_threshold must be a finite int or float")
+    if not math.isfinite(correlation_threshold):
         raise ValueError("correlation_threshold must be finite")
-    if not 0 <= correlation_threshold < 1:
-        raise ValueError("correlation_threshold must be in [0, 1)")
+    if not 0 <= correlation_threshold <= 1:
+        raise ValueError("correlation_threshold must be in [0, 1]")
     items = tuple(candidates)
     if any(not isinstance(c, AlphaCandidate) for c in items):
         raise TypeError("candidates must contain AlphaCandidate values")
@@ -150,17 +172,18 @@ def deduplicate_candidates(candidates: Iterable[AlphaCandidate], *, correlation_
         if prior is None:
             by_id[aid] = candidate
         else:
-            rep = min(prior, candidate, key=lambda c: c.alpha_id)
+            rep = min(prior, candidate, key=_candidate_key)
             by_id[aid] = rep
-            exact.append(DuplicateRelationship(aid, rep.alpha_id, "exact", candidate.family_id, rep.family_id))
-    reps = tuple(sorted(by_id.values(), key=lambda c: c.alpha_id))
+            exact.append(DuplicateRelationship(aid, rep.alpha_id, "exact", rep.family_id, rep.family_id))
+    reps = tuple(sorted(by_id.values(), key=_candidate_key))
     behavioral: list[DuplicateRelationship] = []
     for index, left in enumerate(reps):
         for right in reps[index + 1:]:
-            corr = _correlation(left.fingerprint, right.fingerprint)
-            if corr is None or abs(corr) < correlation_threshold:
+            corr = _same_domain_correlation(left, right)
+            if corr is None or corr < correlation_threshold:
                 continue
             behavioral.append(DuplicateRelationship(
                 right.alpha_id, left.alpha_id, "behavioral", left.family_id, right.family_id, corr))
-    return DedupResult(reps, tuple(sorted(exact, key=lambda r: (r.duplicate_alpha_id, r.representative_alpha_id))),
+    return DedupResult(reps, tuple(sorted(exact, key=lambda r: (r.duplicate_alpha_id, r.representative_alpha_id,
+                                                                  r.family_id_a, r.family_id_b, r.correlation or 0))),
                        tuple(behavioral))
