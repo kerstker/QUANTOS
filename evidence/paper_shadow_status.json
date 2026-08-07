@@ -3,9 +3,9 @@
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "1649805c20634ee52f4bc59657e52238a1a6d0aa",
+  "commit": "cd41cfae171d185e23fc415431b00844fe8da0ee",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786048547373,
+  "generated_at_ms": 1786064735672,
   "generator_sha256": "9074e4ae87cfe94701faf9b6a3881ca6831badbc3ce95090cc873794aa3fb355",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
   "input_hash": "80e944f648aa269ddc5cdf7421559695ed62cd98a7f61f288aa07ccb4539c7bd",
@@ -88,12 +88,12 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "1649805c20634ee52f4bc59657e52238a1a6d0aa",
+    "head_commit": "cd41cfae171d185e23fc415431b00844fe8da0ee",
     "overall_status": "PASS",
-    "reported_commit": "1649805c20634ee52f4bc59657e52238a1a6d0aa",
-    "reported_validate_script_sha256": "05f0bda63924666ebe3af98ebfa5b3f22f65ef1dba921d235aa9f1dbcc0813be",
+    "reported_commit": "cd41cfae171d185e23fc415431b00844fe8da0ee",
+    "reported_validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "selection_scope": "ALL",
-    "validate_script_sha256": "05f0bda63924666ebe3af98ebfa5b3f22f65ef1dba921d235aa9f1dbcc0813be"
+    "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5"
   },
   "working_tree_dirty": true
 }

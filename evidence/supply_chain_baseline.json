@@ -342,7 +342,7 @@
     "scripts/generate_strong_identity_evidence.py": "3cd8fb570691433d0afef6947b2035ac58ea4d47b13502dd330fe547608d6861",
     "scripts/generate_supply_chain_evidence.py": "3e42a255cdddfffb5676fa9fa4ed675f016985f29109b8c568a3319e7e9e07e1",
     "scripts/register_schedules.ps1": "b55493a6f03ff293ffcd2a970d3978535c101d1fe33e8e2720893c2f26fede5f",
-    "scripts/validate.py": "05f0bda63924666ebe3af98ebfa5b3f22f65ef1dba921d235aa9f1dbcc0813be",
+    "scripts/validate.py": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "services/alpha/evaluator.py": "cdcca5b9f8925c1877c889ac43d6c477428959afbe091965a2f3190edf5a9877",
     "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
     "services/alpha/factory.py": "9b276d9e71a2f506e6518af2b903f8bf6c9e28e56a2853b44e475b63901c2ef0",
@@ -555,9 +555,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786047863826,
-    "run_id": "a2752087d02622213bff252cda90d70e1a631387e7eb1e3dbb5244094998593c",
-    "source_commit": "1649805c20634ee52f4bc59657e52238a1a6d0aa"
+    "generated_at": 1786064057625,
+    "run_id": "614cbf83bd207adf34dc55f520cab4b23bee860bf7fe138882adde652d69e79d",
+    "source_commit": "cd41cfae171d185e23fc415431b00844fe8da0ee"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
