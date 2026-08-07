@@ -88,6 +88,11 @@ class AlphaCandidate:
     def family_id(self) -> str:
         return family_id(self.definition)
 
+    @property
+    def fingerprint(self) -> tuple[Any, ...] | None:
+        """Preferred deterministic behavioral fingerprint (returns, then signal)."""
+        return self.return_fingerprint if self.return_fingerprint is not None else self.signal_fingerprint
+
 
 # Short compatibility name for callers that prefer the domain term.
 Candidate = AlphaCandidate
@@ -152,7 +157,7 @@ def deduplicate_candidates(candidates: Iterable[AlphaCandidate], *, correlation_
     behavioral: list[DuplicateRelationship] = []
     for index, left in enumerate(reps):
         for right in reps[index + 1:]:
-            corr = _correlation(left.return_fingerprint, right.return_fingerprint)
+            corr = _correlation(left.fingerprint, right.fingerprint)
             if corr is None or abs(corr) < correlation_threshold:
                 continue
             behavioral.append(DuplicateRelationship(
