@@ -111,6 +111,11 @@ def _panel_digest(panel: Any) -> str:
     return _digest(scrub(panel))
 
 
+def validation_panel_digest(panel: Any) -> str:
+    """Return the exact immutable execution-panel commitment used by the DAG."""
+    return _panel_digest(_execution_snapshot(panel))
+
+
 def _finite_tree(value: Any, *, allow_none: bool=False) -> bool:
     if value is None: return allow_none
     if type(value) in (int,float): return math.isfinite(float(value))
@@ -474,6 +479,18 @@ class ValidationArtifact:
         if _digest(body) != self.artifact_commitment: raise ValueError("artifact commitment mismatch")
         object.__setattr__(self,"stage_evidence_hashes",_freeze(self.stage_evidence_hashes)); object.__setattr__(self,"stage_receipt_bindings",_freeze(self.stage_receipt_bindings)); object.__setattr__(self,"stage_metadata",_freeze(self.stage_metadata))
 
+
+@dataclass(frozen=True, slots=True)
+class ValidationTrialIdentity:
+    trial_id: str
+    alpha_id: str
+    family_id: str
+    exact_definition_id: str
+    panel_digest: str
+    policy_digest: str
+    event_at: int
+    production: bool
+
 def _identity(candidate):
     definition=getattr(candidate,"definition",None)
     if definition is not None:
@@ -486,6 +503,75 @@ def _identity(candidate):
         supplied=getattr(candidate,attr,None)
         if supplied is not None and supplied!=expected: raise ValueError(f"{attr} identity mismatch")
     return alpha,family,exact
+
+
+def _prepare_validation_trial(candidate, panel, policy, *, event_at, production):
+    if not isinstance(policy, ValidationPolicy):
+        raise TypeError("policy type required")
+    if production:
+        if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS):
+            raise ValueError("production DAG requires registered typed adapters")
+        for stage, canonical in zip(policy.stages, _DEFAULT_ADAPTERS):
+            if (type(stage), stage.name, stage.version, stage.implementation_id) != (
+                type(canonical), canonical.name, canonical.version, canonical.implementation_id
+            ):
+                raise ValueError("production adapter identity is not canonical")
+            if getattr(stage.evaluate, "__func__", None) is not _PRODUCTION_EVALUATORS.get(type(stage)):
+                raise ValueError("production adapter implementation is not sealed")
+    if type(event_at) is not int:
+        raise ValueError("event_at must be a deterministic int")
+    definition = getattr(candidate, "definition", None)
+    if isinstance(definition, AlphaDefinition):
+        declared_policy = definition.validation_policy
+        declared = (
+            declared_policy.get("digest")
+            if isinstance(declared_policy, Mapping) and set(declared_policy) == {"digest"}
+            else None
+        )
+    else:
+        declared = getattr(candidate, "validation_policy_digest", None)
+    if declared is None or declared != policy.digest:
+        raise ValueError("candidate validation policy digest mismatch")
+    alpha, family, exact = _identity(candidate)
+    execution_panel = _execution_snapshot(panel)
+    panel_digest = _panel_digest(execution_panel)
+    trial_id = _digest(
+        {
+            "alpha_id": alpha,
+            "family_id": family,
+            "exact_definition_id": exact,
+            "panel_digest": panel_digest,
+            "policy_digest": policy.digest,
+            "event_at": event_at,
+            "trust_mode": "PRODUCTION" if production else "TEST",
+        }
+    )
+    identity = ValidationTrialIdentity(
+        trial_id,
+        alpha,
+        family,
+        exact,
+        panel_digest,
+        policy.digest,
+        event_at,
+        production,
+    )
+    return identity, execution_panel
+
+
+def validation_trial_identity(
+    candidate: Any,
+    panel: Any,
+    policy: ValidationPolicy,
+    *,
+    event_at: int,
+    production: bool = False,
+) -> ValidationTrialIdentity:
+    """Build the canonical trial envelope without mutating the trial ledger."""
+    identity, _ = _prepare_validation_trial(
+        candidate, panel, policy, event_at=event_at, production=production
+    )
+    return identity
 
 def _exception_evidence(stage,version,implementation,exc): return StageEvidence(stage,version,"BLOCK",{"exception_type":type(exc).__name__,"exception_code":type(exc).__name__},f"provider exception: {type(exc).__name__}",implementation)
 
@@ -533,21 +619,10 @@ def _frozen_trial_snapshot(ledger: TrialLedger, trial_id: str, family_id: str) -
 
 
 def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
-    if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
-    if production:
-        if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
-        for stage, canonical in zip(policy.stages, _DEFAULT_ADAPTERS):
-            if (type(stage), stage.name, stage.version, stage.implementation_id) != (type(canonical), canonical.name, canonical.version, canonical.implementation_id): raise ValueError("production adapter identity is not canonical")
-            if getattr(stage.evaluate, "__func__", None) is not _PRODUCTION_EVALUATORS.get(type(stage)): raise ValueError("production adapter implementation is not sealed")
-    if type(event_at) is not int or isinstance(event_at,bool) or type(lease_now) is not int or isinstance(lease_now,bool): raise ValueError("event_at and lease_now must be deterministic ints")
-    definition=getattr(candidate,"definition",None)
-    if isinstance(definition,AlphaDefinition):
-        declared_policy=definition.validation_policy
-        declared=declared_policy.get("digest") if isinstance(declared_policy,Mapping) and set(declared_policy)=={"digest"} else None
-    else:
-        declared=getattr(candidate,"validation_policy_digest",None)
-    if declared is None or declared!=policy.digest: raise ValueError("candidate validation policy digest mismatch")
-    alpha,family,exact=_identity(candidate); execution_panel=_execution_snapshot(panel); panel_digest=_panel_digest(execution_panel); trial_id=_digest({"alpha_id":alpha,"family_id":family,"exact_definition_id":exact,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"trust_mode":"PRODUCTION" if production else "TEST"})
+    if not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
+    if type(lease_now) is not int: raise ValueError("event_at and lease_now must be deterministic ints")
+    identity,execution_panel=_prepare_validation_trial(candidate,panel,policy,event_at=event_at,production=production)
+    trial_id=identity.trial_id; alpha=identity.alpha_id; family=identity.family_id; exact=identity.exact_definition_id; panel_digest=identity.panel_digest
     try: ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"PLANNED",0,event_at))
     except TrialLedgerConflict:
         existing=ledger.load(trial_id)
@@ -624,4 +699,4 @@ def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:Tr
         raise TypeError("policy and ledger types required")
     return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,production=production)
 
-__all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","run_validation_dag"]
+__all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","ValidationTrialIdentity","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","validation_panel_digest","validation_trial_identity","run_validation_dag"]
