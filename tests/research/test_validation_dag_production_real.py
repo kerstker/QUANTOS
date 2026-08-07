@@ -52,7 +52,7 @@ def test_production_rejects_external_fdr_pvalues(tmp_path):
             panel,
             policy,
             ledger,
-            event_at=1,
+            event_at=100,
             lease_now=1,
             production=True,
         )
@@ -79,7 +79,7 @@ def test_production_fdr_is_derived_from_oos_return_population(tmp_path):
             panel,
             policy,
             ledger,
-            event_at=1,
+            event_at=100,
             lease_now=1,
             production=True,
         )
@@ -107,7 +107,7 @@ def test_constant_positive_oos_returns_produce_finite_durable_fdr_evidence(tmp_p
     with TrialLedger(str(tmp_path / "constant-fdr.db")) as ledger:
         _seed_peer_trials(ledger, panel, candidate, policy)
         artifact = run_validation_dag(
-            candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
         )
         evidence = ledger.validation_receipt(artifact.trial_id)["oos"]["payload"]["evidence"]
 
@@ -128,7 +128,7 @@ def test_production_blocks_population_outside_frozen_trial_set(tmp_path):
 
     with TrialLedger(str(tmp_path / "unfrozen-population.db")) as ledger:
         artifact = run_validation_dag(
-            candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
         )
         receipt = ledger.validation_receipt(artifact.trial_id)["oos"]["payload"]
 
@@ -170,10 +170,194 @@ def test_production_blocks_leakage_compute_for_other_definition(tmp_path):
 
     with TrialLedger(str(tmp_path / "wrong-leakage-definition.db")) as ledger:
         artifact = run_validation_dag(
-            candidate, panel, policy, ledger, event_at=1, lease_now=1, production=True
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
         )
         receipts = ledger.validation_receipt(artifact.trial_id)
 
     assert artifact.verdict == "BLOCK"
     assert receipts["cheap"]["payload"]["reason"] == "leakage compute definition mismatch"
     assert receipts["oos"]["payload"]["evidence"]["short_circuit"] is True
+
+
+def test_production_blocks_future_known_leakage_bar(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    bars = panel["cheap"]["bars"]
+    panel["cheap"]["bars"] = (
+        bars[0].model_copy(update={"knowledge_time": 101}),
+        *bars[1:],
+    )
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-known-bar.db")) as ledger:
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["cheap"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "leakage inputs exceed validation as-of"
+
+
+def test_production_blocks_future_oos_observation(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    definition_hash = panel["oos"]["pbo_candidate_definition_hashes"][0]
+    series = list(panel["oos"]["pbo_return_series_by_definition"][definition_hash])
+    series[-1] = (101, series[-1][1])
+    panel["oos"]["pbo_return_series_by_definition"][definition_hash] = tuple(series)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-oos.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["oos"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "oos engine unavailable"
+
+
+def test_production_blocks_pbo_returns_different_from_catalog(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    definition_hash = panel["oos"]["pbo_candidate_definition_hashes"][1]
+    series = list(panel["oos"]["pbo_return_series_by_definition"][definition_hash])
+    event_time, value = series[0]
+    series[0] = (event_time, value + 0.5)
+    panel["oos"]["pbo_return_series_by_definition"][definition_hash] = tuple(series)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "different-pbo-returns.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["oos"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "oos engine unavailable"
+
+
+def test_production_blocks_realism_without_event_time_provenance(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    panel["realism"].pop("event_times")
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "realism-no-times.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "missing realism inputs"
+
+
+def test_production_blocks_future_realism_observation(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    times = list(panel["realism"]["event_times"]); times[-1] = 101
+    panel["realism"]["event_times"] = tuple(times)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-realism.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "realism inputs exceed validation as-of"
+
+
+def test_production_blocks_future_known_oos_observation(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    definition_hash = panel["oos"]["pbo_candidate_definition_hashes"][0]
+    times = list(panel["oos"]["knowledge_times_by_definition"][definition_hash])
+    times[-1] = 101
+    panel["oos"]["knowledge_times_by_definition"][definition_hash] = tuple(times)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-known-oos.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["oos"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "oos engine unavailable"
+
+
+def test_production_blocks_future_known_realism_observation(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    times = list(panel["realism"]["knowledge_times"]); times[-1] = 101
+    panel["realism"]["knowledge_times"] = tuple(times)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "future-known-realism.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+        receipt = ledger.validation_receipt(artifact.trial_id)["realism"]["payload"]
+
+    assert artifact.verdict == "BLOCK"
+    assert receipt["reason"] == "realism inputs exceed validation as-of"
+
+
+def test_production_blocks_oos_knowledge_before_event_time(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    from services.research.validation_dag import ValidationPolicy, run_validation_dag
+    from tools.validation_dag_production_check import _Candidate, _valid_panel
+
+    panel, exact_definition_id = _valid_panel()
+    definition_hash = panel["oos"]["pbo_candidate_definition_hashes"][0]
+    times = list(panel["oos"]["knowledge_times_by_definition"][definition_hash])
+    times[-1] = times[-1] - 1
+    panel["oos"]["knowledge_times_by_definition"][definition_hash] = tuple(times)
+    policy = ValidationPolicy()
+    candidate = _Candidate("a" * 64, "f" * 64, exact_definition_id, policy.digest)
+
+    with TrialLedger(str(tmp_path / "invalid-oos-bitemporal.db")) as ledger:
+        _seed_peer_trials(ledger, panel, candidate, policy)
+        artifact = run_validation_dag(
+            candidate, panel, policy, ledger, event_at=100, lease_now=1, production=True
+        )
+
+    assert artifact.verdict == "BLOCK"

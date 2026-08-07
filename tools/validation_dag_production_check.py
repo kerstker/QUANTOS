@@ -128,13 +128,25 @@ def _valid_panel() -> tuple[dict[str, Any], str]:
             },
             "pbo_candidate_definition_hashes": definition_hashes,
             "pbo_candidate_definitions": definitions,
+            "knowledge_times_by_definition": {
+                definition_hash: tuple(range(len(series)))
+                for definition_hash, series in {
+                    definition_hashes[0]: returns,
+                    definition_hashes[1]: tuple(value * 0.5 + (0.001 if index % 2 else -0.001) for index, value in enumerate(returns)),
+                    definition_hashes[2]: tuple(-value + (0.002 if index % 3 else -0.002) for index, value in enumerate(returns)),
+                }.items()
+            },
         },
         "realism": {
             "gross_returns": gross_returns,
+            "gross_event_times": tuple(range(len(gross_returns))),
+            "gross_knowledge_times": tuple(range(len(gross_returns))),
             "turnover_by_period": turnover,
             "aum_grid": (10_000.0, 1_000_000.0, 100_000_000.0, 10_000_000_000.0, 1_000_000_000_000.0),
             "impact_coef_lo_hi": (0.05, 0.20),
             "returns": returns,
+            "event_times": tuple(range(len(returns))),
+            "knowledge_times": tuple(range(len(returns))),
             "market_closes": tuple(market_closes),
             "benchmark_returns": benchmark,
             "tail_q": 0.25,
@@ -162,7 +174,7 @@ def _run_case(root: Path, name: str, panel: Mapping[str, Any], exact_definition_
             panel,
             policy,
             ledger,
-            event_at=1,
+            event_at=100,
             lease_now=1,
             production=True,
         )

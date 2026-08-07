@@ -176,8 +176,20 @@ class CheapValidationAdapter(_TypedAdapter):
         if candidate_exact is not None and compute.exact_definition_id != candidate_exact:
             return self._block("leakage compute definition mismatch")
         try:
+            bars=tuple(x["bars"])
+            target_event_time=x["target_event_time"]
+            if type(target_event_time) is not int or target_event_time > context.event_at:
+                return self._block("leakage inputs exceed validation as-of")
+            if not bars or any(
+                type(getattr(bar,"event_time",None)) is not int
+                or type(getattr(bar,"knowledge_time",None)) is not int
+                or bar.event_time > context.event_at
+                or bar.knowledge_time > context.event_at
+                for bar in bars
+            ):
+                return self._block("leakage inputs exceed validation as-of")
             from quantos.contracts.feature import FeatureValue
-            baseline=compute.compute(x["bars"])
+            baseline=compute.compute(bars)
             if not isinstance(baseline,(tuple,list)) or not baseline or any(not isinstance(value,FeatureValue) for value in baseline):
                 return self._block("missing target feature evidence")
             target_values=tuple(
@@ -202,7 +214,7 @@ class OOSValidationAdapter(_TypedAdapter):
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","return_series_by_definition","candidate_ids","families","pbo_return_series_by_definition","pbo_candidate_definition_hashes","pbo_candidate_definitions"}
+        required={"n","train_size","test_size","returns","return_series_by_definition","candidate_ids","families","pbo_return_series_by_definition","pbo_candidate_definition_hashes","pbo_candidate_definitions","knowledge_times_by_definition"}
         threshold_names={"fdr_q","dsr_floor","pbo_max","min_oos_fold_mean"}
         if isinstance(x,Mapping) and threshold_names.intersection(x):
             return self._block("panel cannot define validation thresholds")
@@ -290,6 +302,32 @@ class OOSValidationAdapter(_TypedAdapter):
             if candidate_id != ids[candidate_index] or (candidate_exact is not None and candidate_exact != definition_hashes[candidate_index]): raise ValueError("PBO candidate identity mismatch")
             pbo_returns=x["pbo_return_series_by_definition"]
             if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != frozen_definitions: raise ValueError("PBO return population mismatch")
+            knowledge_by_definition=x["knowledge_times_by_definition"]
+            if not isinstance(knowledge_by_definition,Mapping) or set(knowledge_by_definition) != frozen_definitions:
+                raise ValueError("OOS knowledge-time population mismatch")
+            for definition_hash in definition_hashes:
+                timestamped=tuple(pbo_returns[definition_hash])
+                knowledge_times=tuple(knowledge_by_definition[definition_hash])
+                if len(timestamped) != n or len(knowledge_times) != n:
+                    raise ValueError("PBO return series length mismatch")
+                if any(type(value) is not int or value > context.event_at for value in knowledge_times):
+                    raise ValueError("OOS knowledge time exceeds validation as-of")
+                event_times=[]; timestamped_values=[]
+                for observation in timestamped:
+                    if not isinstance(observation,(tuple,list)) or len(observation) != 2:
+                        raise ValueError("malformed timestamped OOS return")
+                    event_time,value=observation
+                    if type(event_time) is not int or event_time > context.event_at:
+                        raise ValueError("OOS observation exceeds validation as-of")
+                    if type(value) is not float or not math.isfinite(value):
+                        raise ValueError("timestamped OOS returns must be exact finite floats")
+                    event_times.append(event_time); timestamped_values.append(value)
+                if event_times != sorted(set(event_times)):
+                    raise ValueError("OOS event times must be sorted and unique")
+                if any(knowledge_time < event_time for event_time,knowledge_time in zip(event_times,knowledge_times)):
+                    raise ValueError("OOS knowledge time precedes event time")
+                if tuple(timestamped_values) != tuple(return_population[definition_hash]):
+                    raise ValueError("PBO returns do not match catalog population")
             pbo_evidence=create_batch_pbo_evidence(return_series_by_definition=pbo_returns)
             if tuple(pbo_evidence.candidate_definition_hashes) != tuple(sorted(definition_hashes)): raise ValueError("PBO evidence binding mismatch")
             if not verify_batch_pbo_evidence(pbo_evidence): raise ValueError("PBO evidence verification failed")
@@ -313,8 +351,22 @@ class RealismValidationAdapter(_TypedAdapter):
         from services.validation.regime import regime_conditional_stats, label_regimes_by_vol, regime_profitable_frac
         from quantos.contracts.cost import CostModel
         x=context.panel.get("realism") if isinstance(context.panel,Mapping) else None
-        required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
+        required={"gross_returns","gross_event_times","gross_knowledge_times","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","event_times","knowledge_times","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing realism inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
+        event_times=tuple(x["event_times"]); gross_event_times=tuple(x["gross_event_times"])
+        knowledge_times=tuple(x["knowledge_times"]); gross_knowledge_times=tuple(x["gross_knowledge_times"])
+        if (
+            len(event_times) != len(x["returns"])
+            or len(knowledge_times) != len(x["returns"])
+            or len(gross_event_times) != len(x["gross_returns"])
+            or len(gross_knowledge_times) != len(x["gross_returns"])
+            or any(type(value) is not int or value > context.event_at for value in (*event_times,*gross_event_times,*knowledge_times,*gross_knowledge_times))
+            or list(event_times) != sorted(set(event_times))
+            or list(gross_event_times) != sorted(set(gross_event_times))
+            or any(knowledge_time < event_time for event_time,knowledge_time in zip(event_times,knowledge_times))
+            or any(knowledge_time < event_time for event_time,knowledge_time in zip(gross_event_times,gross_knowledge_times))
+        ):
+            return self._block("realism inputs exceed validation as-of")
         cost=x["cost_model"]
         if not isinstance(cost,CostModel) or not all(type(getattr(cost,k)) in (int,float) and math.isfinite(float(getattr(cost,k))) and float(getattr(cost,k)) >= 0.0 for k in ("fee_bps","slippage_bps","impact_coef")): return self._block("typed finite CostModel required")
         if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","market_closes","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
