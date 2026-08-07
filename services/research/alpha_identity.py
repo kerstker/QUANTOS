@@ -16,11 +16,12 @@ from services.research.alpha_expression import _CS, _CS2, _EW1, _EW2, _TS_PAIR, 
 
 # Versions are intentionally explicit: an identity must not silently change
 # when a caller supplies an arbitrary estimator name or implementation path.
-MODEL_REGISTRY = {
+MODEL_REGISTRY = MappingProxyType({
     "gbm": frozenset({"1", "1.0"}),
     "ridge": frozenset({"1", "1.0"}),
     "xgb": frozenset({"1", "1.0"}),
-}
+})
+HORIZON_REGISTRY = frozenset({"1h", "4h"})
 _OPERATOR_ARITIES = {
     "field": 2,
     "const": 2,
@@ -109,7 +110,7 @@ class AlphaDefinition:
     feature_contract: Any
     data_schema: Any
     universe_policy: Any
-    horizon: int
+    horizon: str
     cost_model: Any
     validation_policy: Any
     model: str
@@ -121,8 +122,8 @@ class AlphaDefinition:
         object.__setattr__(self, "definition", frozen_definition)
         for name in ("feature_contract", "data_schema", "universe_policy", "cost_model", "validation_policy"):
             object.__setattr__(self, name, _freeze(getattr(self, name), name))
-        if type(self.horizon) is not int or self.horizon < 1:
-            raise ValueError("horizon must be a positive strict int")
+        if type(self.horizon) is not str or self.horizon not in HORIZON_REGISTRY:
+            raise ValueError(f"horizon is not registered: {self.horizon!r}")
         if type(self.model) is not str or self.model not in MODEL_REGISTRY:
             raise ValueError(f"model is not registered: {self.model!r}")
         if type(self.model_version) is not str or self.model_version not in MODEL_REGISTRY[self.model]:

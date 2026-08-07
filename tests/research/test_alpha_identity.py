@@ -3,7 +3,12 @@ import math
 
 import pytest
 
-from services.research.alpha_identity import AlphaDefinition, alpha_id, canonical_alpha_json
+from services.research.alpha_identity import (
+    MODEL_REGISTRY,
+    AlphaDefinition,
+    alpha_id,
+    canonical_alpha_json,
+)
 
 
 def definition(**overrides):
@@ -12,7 +17,7 @@ def definition(**overrides):
         feature_contract={"features": ["close"], "strict": True},
         data_schema={"dataset": "bars", "version": 1},
         universe_policy={"name": "top_liquid", "min_count": 10},
-        horizon=1,
+        horizon="1h",
         cost_model={"bps": 10.0},
         validation_policy={"method": "purged_walk_forward", "folds": 5},
         model="ridge",
@@ -36,7 +41,7 @@ def test_mapping_order_is_canonical_and_identity_is_full_sha256():
                                     "cost_model", "validation_policy", "model", "model_version"])
 def test_each_identity_component_changes_id(field):
     a = definition()
-    changed = {"horizon": 2, "feature_contract": {"features": ["volume"]},
+    changed = {"horizon": "4h", "feature_contract": {"features": ["volume"]},
                "data_schema": {"dataset": "bars", "version": 2},
                "universe_policy": {"name": "all"}, "cost_model": {"bps": 11.0},
                "validation_policy": {"method": "holdout"}, "model": "gbm",
@@ -44,7 +49,24 @@ def test_each_identity_component_changes_id(field):
     assert alpha_id(replace(a, **{field: changed})) != alpha_id(a)
 
 
-def test_operator_tree_and_model_registry_are_explicit():
+@pytest.mark.parametrize("bad", ["15m", "1d", 1, 4, True, False, None])
+def test_horizon_accepts_only_registered_hourly_labels(bad):
+    with pytest.raises((ValueError, TypeError)):
+        definition(horizon=bad)
+
+
+def test_replace_can_change_hourly_horizon_and_identity():
+    a = definition(horizon="1h")
+    b = replace(a, horizon="4h")
+    assert b.horizon == "4h"
+    assert alpha_id(b) != alpha_id(a)
+
+
+def test_model_registry_rejects_downstream_mutation():
+    with pytest.raises(TypeError):
+        MODEL_REGISTRY["new_model"] = frozenset({"1"})
+    with pytest.raises(AttributeError):
+        MODEL_REGISTRY["ridge"].add("2")
     assert alpha_id(definition(definition=("signed_power", ("field", "close"), 2.0)))
     with pytest.raises(ValueError):
         definition(definition=("not_registered", ("field", "close")))

@@ -3,6 +3,8 @@ instrument's past, a cross-sectional op reads only the same period, and a future
 past alpha value. These tests pin that, plus operator correctness and the backtest integration."""
 import math
 
+import pytest
+
 from quantos.contracts.data import Bar
 from services.data.persistent_store import SqlitePITStore
 from services.alpha.panel_backtest import run_panel_backtest
@@ -78,7 +80,14 @@ def test_none_propagates():
     assert ax.cs_rank([[1.0, None, 2.0]])[0][1] is None
 
 
-# ---- canonical id ---------------------------------------------------------------------------
+
+
+def test_cs_winsorize_is_unary_and_three_element_form_is_rejected():
+    panel = ax.FieldPanel(("A", "B", "C"), (1,), {"close": [[1.0, 2.0, 100.0]]})
+    expr = ("cs_winsorize", ("field", "close"))
+    assert ax.evaluate(expr, panel) == ax.cs_winsorize(panel.matrices["close"])
+    with pytest.raises(ValueError):
+        ax.evaluate(("cs_winsorize", ("field", "close"), 3.0), panel)
 def test_deserialize_round_trips_serialize():
     """deserialize is the exact inverse of serialize across fields / consts / windows / nesting."""
     exprs = [

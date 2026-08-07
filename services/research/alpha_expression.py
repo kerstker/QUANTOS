@@ -339,6 +339,8 @@ def evaluate(expr, panel: FieldPanel) -> Matrix:
     if head in _TS_WINDOW:
         return _TS_WINDOW[head](evaluate(expr[1], panel), int(expr[2]))
     if head in _CS:
+        if len(expr) != 2:
+            raise ValueError(f"{head} expects exactly one child")
         return _CS[head](evaluate(expr[1], panel))
     if head in _CS2:
         return _CS2[head](evaluate(expr[1], panel), evaluate(expr[2], panel))
