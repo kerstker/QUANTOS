@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
 import hashlib, json, math, re
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, runtime_checkable
 from services.research.alpha_identity import AlphaDefinition, alpha_id as canonical_alpha_id, canonical_alpha_json
@@ -14,19 +15,25 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, RegisteredLeakageCompute): return value
+    if callable(getattr(value, "trade_cost", None)) and callable(getattr(value, "impact_bps", None)): return value
+    if isinstance(value, Enum): return value.value
+    if hasattr(value, "model_dump") and callable(value.model_dump): return _freeze(value.model_dump())
     if is_dataclass(value): return MappingProxyType({f.name: _freeze(getattr(value,f.name)) for f in fields(value)})
     if isinstance(value, Mapping):
         if any(type(k) is not str for k in value): raise TypeError("mapping keys must be strings")
         return MappingProxyType({k:_freeze(value[k]) for k in sorted(value)})
     if isinstance(value,(tuple,list)): return tuple(_freeze(v) for v in value)
+    if isinstance(value,(set,frozenset)): return tuple(sorted(_freeze(v) for v in value))
     if type(value) in (str,int,bool) or value is None: return value
     if type(value) is float and math.isfinite(value): return value
     raise TypeError(f"value is not canonical JSON: {type(value).__name__}")
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, RegisteredLeakageCompute): return {"registered_compute":value.implementation_id}
+    if isinstance(value, Enum): return value.value
+    if hasattr(value, "model_dump") and callable(value.model_dump): return {"__type__":f"{type(value).__module__}.{type(value).__qualname__}", **_jsonable(value.model_dump())}
     if isinstance(value, Mapping): return {k:_jsonable(value[k]) for k in sorted(value)}
-    if isinstance(value,(tuple,list)): return [_jsonable(v) for v in value]
+    if isinstance(value,(tuple,list,set,frozenset)): return [_jsonable(v) for v in value]
     if is_dataclass(value): return {"__type__":f"{type(value).__module__}.{type(value).__qualname__}", **{f.name:_jsonable(getattr(value,f.name)) for f in fields(value)}}
     if type(value) in (str,int,bool) or value is None: return value
     if type(value) is float and math.isfinite(value): return value
@@ -127,10 +134,11 @@ class OOSValidationAdapter(_TypedAdapter):
     def evaluate(self, context):
         from services.validation.walk_forward import purged_kfold, walk_forward_splits
         from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
+        from services.validation.pbo_evidence import create_batch_pbo_evidence, verify_batch_pbo_evidence
         from services.alpha.multiple_testing import benjamini_hochberg, benjamini_hochberg_yekutieli
         from services.alpha.family_testing import hierarchical_fdr
         x=context.panel.get("oos") if isinstance(context.panel,Mapping) else None
-        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","family_pvalues","families"}
+        required={"n","train_size","test_size","returns","observed_sr","n_obs","n_trials","var_sr","perf_matrix","candidate_ids","pvalues","family_pvalues","families","pbo_alignment","pbo_periods","pbo_candidate_definition_hashes"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing oos inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         try:
             wf=walk_forward_splits(x["n"],x["train_size"],x["test_size"],x.get("step")); pk=purged_kfold(x["n"],x.get("k",2),x.get("embargo",0))
@@ -146,6 +154,8 @@ class OOSValidationAdapter(_TypedAdapter):
             family_pvalues=x["family_pvalues"]
             if not isinstance(family_pvalues,Mapping) or any(type(v) not in (int,float) or not math.isfinite(float(v)) or not 0.0 <= float(v) <= 1.0 for v in family_pvalues.values()): raise ValueError("invalid family p-values")
             fam=hierarchical_fdr(pvalues=family_pvalues,families=x["families"],q=q)
+            pbo_evidence=create_batch_pbo_evidence(candidate_definition_hashes=x["pbo_candidate_definition_hashes"],performance_matrix=x["perf_matrix"],alignment=x["pbo_alignment"],aligned_period_count=x["pbo_periods"],aligned_event_times=x.get("pbo_event_times",()))
+            if not verify_batch_pbo_evidence(pbo_evidence): raise ValueError("PBO evidence verification failed")
             if not hasattr(fam,"selected_families") or not isinstance(fam.selected_families,(set,frozenset)) or not hasattr(fam,"survivors") or not isinstance(fam.survivors,(set,frozenset)): raise ValueError("malformed family FDR result")
             candidate_index=x.get("candidate_index",0); candidate_id=x.get("candidate_id",ids[candidate_index] if type(candidate_index) is int and 0 <= candidate_index < len(ids) else None); candidate_family=x.get("candidate_family")
             if type(candidate_index) is not int or not 0 <= candidate_index < len(ids) or candidate_index not in bh or candidate_index not in bhy or candidate_id != ids[candidate_index]: raise ValueError("candidate failed BH/BHY")
@@ -160,19 +170,19 @@ class RealismValidationAdapter(_TypedAdapter):
     def evaluate(self, context):
         from services.research.realism.capacity_curve import capacity_band
         from services.research.realism.tail_risk import historical_var_cvar,hill_tail_index,lower_tail_dependence
-        from services.validation.regime import regime_conditional_stats
+        from services.validation.regime import regime_conditional_stats, label_regimes_by_vol, regime_profitable_frac
         from quantos.contracts.cost import CostModel
         x=context.panel.get("realism") if isinstance(context.panel,Mapping) else None
-        required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
+        required={"gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","market_closes","benchmark_returns","cost_model","trade_notional","trade_shares","adv_shares"}
         if not isinstance(x,Mapping) or not required <= set(x): return self._block("missing realism inputs",missing_input=sorted(required-(set(x) if isinstance(x,Mapping) else required)))
         cost=x["cost_model"]
         if not isinstance(cost,CostModel) or not all(type(getattr(cost,k)) in (int,float) and math.isfinite(float(getattr(cost,k))) and float(getattr(cost,k)) >= 0.0 for k in ("fee_bps","slippage_bps","impact_coef")): return self._block("typed finite CostModel required")
-        if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
+        if not all(_finite_tree(x.get(k)) for k in ("gross_returns","turnover_by_period","aum_grid","impact_coef_lo_hi","returns","regime_labels","market_closes","benchmark_returns","trade_notional","trade_shares","adv_shares")): return self._block("nonfinite realism input")
         try:
-            band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],x["regime_labels"]); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
+            band=capacity_band(x["gross_returns"],x["turnover_by_period"],x["aum_grid"],x["impact_coef_lo_hi"]); regime_labels=label_regimes_by_vol(x["market_closes"]); regime_profitable=regime_profitable_frac(x["returns"],regime_labels); tail=historical_var_cvar(x["returns"],x.get("alpha",.95)); hill=hill_tail_index(x["returns"],x.get("tail_q",.1)); ltd=lower_tail_dependence(x["returns"],x["benchmark_returns"],x.get("tail_q",.1)); regime=regime_conditional_stats(x["returns"],regime_labels); cost_value=cost.trade_cost(x["trade_notional"],x["trade_shares"],x["adv_shares"])
         except Exception as exc: return self._block("realism engine unavailable",exception_type=type(exc).__name__)
         if not isinstance(band,Mapping) or not _finite_tree(band) or band.get("aum_low") is None or not isinstance(tail,Mapping) or not _finite_tree(tail) or tail.get("cvar") is None or hill is None or not isinstance(hill,(int,float)) or not math.isfinite(float(hill)) or ltd is None or not isinstance(ltd,(int,float)) or not math.isfinite(float(ltd)) or not 0.0 <= float(ltd) <= 1.0 or not isinstance(regime,Mapping) or not _finite_tree(regime) or not math.isfinite(cost_value): return self._block("realism gate blocked")
-        return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime=regime,cost=cost_value)
+        return self._pass(capacity=band,tail=tail,hill_tail_index=hill,lower_tail_dependence=ltd,regime=regime,regime_profitable_frac=regime_profitable,cost=cost_value)
 
 def production_adapters() -> tuple[ValidationStage,...]: return (CheapValidationAdapter(),OOSValidationAdapter(),RealismValidationAdapter())
 _DEFAULT_ADAPTERS=production_adapters()

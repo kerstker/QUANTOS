@@ -227,3 +227,69 @@ def test_exception_hash_ignores_message(tmp_path):
     second = run(tmp_path / "b.db", "two")
     assert first.stage_evidence_hashes == second.stage_evidence_hashes
     assert first.reason == second.reason
+
+
+def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch):
+    from quantos.contracts.data import Bar
+    from quantos.contracts.feature import LeakageCheckResult
+    from quantos.contracts.cost import CostModel
+    from quantos.contracts.validation import BatchPboEvidence, PboAlignment
+    from quantos.contracts.hashing import stable_hash
+    from services.alpha.family_testing import FamilyAssignment, HierarchicalFdrResult
+    from services.research.validation_dag import register_leakage_compute, production_adapters
+    import services.features.leakage as leakage
+    import services.validation.walk_forward as wfmod
+    import services.validation.deflated_sharpe as dsrmod
+    import services.validation.pbo_evidence as pbomod
+    import services.alpha.multiple_testing as mtmod
+    import services.alpha.family_testing as fammod
+    import services.research.realism.capacity_curve as capmod
+    import services.research.realism.tail_risk as tailmod
+    import services.validation.regime as regmod
+    calls = {k: 0 for k in ("leakage", "walk", "purged", "dsr", "pbo", "pbo_verify", "bh", "bhy", "family", "cost", "impact", "capacity", "regime_labels", "regime_stats", "regime_prof", "var", "hill", "lower")}
+    def compute(rows): return []
+    compute.__name__ = "registered_compute"
+    registered = register_leakage_compute("tests.registered_compute:1", compute)
+    monkeypatch.setattr(leakage, "detect_leakage", lambda *a, **k: (calls.__setitem__("leakage", calls["leakage"] + 1) or LeakageCheckResult(feature_id="x", passed=True)))
+    monkeypatch.setattr(wfmod, "walk_forward_splits", lambda *a, **k: (calls.__setitem__("walk", calls["walk"] + 1) or [([0], [1])]))
+    monkeypatch.setattr(wfmod, "purged_kfold", lambda *a, **k: (calls.__setitem__("purged", calls["purged"] + 1) or [([0], [1])]))
+    monkeypatch.setattr(dsrmod, "deflated_sharpe_ratio", lambda *a, **k: (calls.__setitem__("dsr", calls["dsr"] + 1) or .99))
+    monkeypatch.setattr(dsrmod, "pbo_cscv", lambda *a, **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or .1))
+    evidence = BatchPboEvidence(candidate_definition_hashes=("a" * 64, "b" * 64), performance_matrix=((.1, .2), (.2, .3), (.3, .4), (.4, .5)), alignment=PboAlignment.POSITIONAL_LEGACY, aligned_period_count=4, aligned_event_times=(), aligned_event_times_sha256=stable_hash({"alignment": "POSITIONAL_LEGACY", "aligned_period_count": 4}), pbo=.1)
+    monkeypatch.setattr(pbomod, "create_batch_pbo_evidence", lambda **k: (calls.__setitem__("pbo", calls["pbo"] + 1) or evidence))
+    monkeypatch.setattr(pbomod, "verify_batch_pbo_evidence", lambda x: (calls.__setitem__("pbo_verify", calls["pbo_verify"] + 1) or True))
+    monkeypatch.setattr(mtmod, "benjamini_hochberg", lambda *a, **k: (calls.__setitem__("bh", calls["bh"] + 1) or {0}))
+    monkeypatch.setattr(mtmod, "benjamini_hochberg_yekutieli", lambda *a, **k: (calls.__setitem__("bhy", calls["bhy"] + 1) or {0}))
+    monkeypatch.setattr(fammod, "hierarchical_fdr", lambda **k: (calls.__setitem__("family", calls["family"] + 1) or HierarchicalFdrResult(frozenset({"alpha-0"}), frozenset({"family-a"}), {"family-a": .01}, {"family-a": .1}, 1, {})))
+    monkeypatch.setattr(capmod, "capacity_band", lambda *a, **k: (calls.__setitem__("capacity", calls["capacity"] + 1) or {"aum_low": 10.0, "aum_high": 20.0}))
+    monkeypatch.setattr(tailmod, "historical_var_cvar", lambda *a, **k: (calls.__setitem__("var", calls["var"] + 1) or {"var": .1, "cvar": .2}))
+    monkeypatch.setattr(tailmod, "hill_tail_index", lambda *a, **k: (calls.__setitem__("hill", calls["hill"] + 1) or 2.0))
+    monkeypatch.setattr(tailmod, "lower_tail_dependence", lambda *a, **k: (calls.__setitem__("lower", calls["lower"] + 1) or .1))
+    monkeypatch.setattr(regmod, "label_regimes_by_vol", lambda *a, **k: (calls.__setitem__("regime_labels", calls["regime_labels"] + 1) or [0, 1]))
+    monkeypatch.setattr(regmod, "regime_conditional_stats", lambda *a, **k: (calls.__setitem__("regime_stats", calls["regime_stats"] + 1) or {"0": {"sharpe": .1}}))
+    monkeypatch.setattr(regmod, "regime_profitable_frac", lambda *a, **k: (calls.__setitem__("regime_prof", calls["regime_prof"] + 1) or .5))
+    original_trade_cost=CostModel.trade_cost; original_impact_bps=CostModel.impact_bps
+    monkeypatch.setattr(CostModel, "trade_cost", lambda self, *a, **k: (calls.__setitem__("cost", calls["cost"] + 1) or original_trade_cost(self, *a, **k)))
+    monkeypatch.setattr(CostModel, "impact_bps", lambda self, *a, **k: (calls.__setitem__("impact", calls["impact"] + 1) or original_impact_bps(self, *a, **k)))
+    from services.research.validation_dag import ValidationContext, ValidationPolicy
+    panel = {"cheap": {"feature_id": "x", "compute": registered, "bars": (Bar(event_time=0, knowledge_time=0, instrument_id="BTC", open=1, high=1, low=1, close=1),), "target_event_time": 0}, "oos": {"n": 10, "train_size": 3, "test_size": 2, "returns": (.1, .2), "observed_sr": 2.0, "n_obs": 20, "n_trials": 2, "var_sr": .1, "perf_matrix": ((.1, .2), (.2, .3)), "pvalues": (.001, .9), "candidate_ids": ("alpha-0", "alpha-1"), "family_pvalues": {"family-a": .001}, "families": FamilyAssignment({"alpha-0": "family-a", "alpha-1": "family-a"}, {"alpha-0": "declared", "alpha-1": "declared"}), "candidate_family": "family-a", "pbo_alignment": PboAlignment.POSITIONAL_LEGACY, "pbo_periods": 4, "pbo_candidate_definition_hashes": ("a" * 64,)}, "realism": {"gross_returns": (.1, .2), "turnover_by_period": (((.1, 10.0),),), "aum_grid": (10.0, 20.0), "impact_coef_lo_hi": (0.1, 0.2), "returns": (.1, .2), "regime_labels": (0, 1), "market_closes": tuple(float(i + 1) for i in range(25)), "benchmark_returns": (.1, .2), "cost_model": CostModel(), "trade_notional": 10.0, "trade_shares": 1.0, "adv_shares": 10.0}}
+    policy = ValidationPolicy()
+    assert all(stage.evaluate(ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 1)).outcome == "PASS" for stage in production_adapters())
+    candidate=make_candidate(policy)
+    with TrialLedger(str(tmp_path / "production.db")) as ledger:
+        artifact=run_validation_dag(candidate, panel, policy, ledger, event_at=1, production=True)
+        assert artifact.verdict == "PASS", (artifact.reason, artifact.stage_evidence_hashes, ledger.validation_receipt(artifact.trial_id))
+        assert set(artifact.stage_metadata) == {"cheap", "oos", "realism"}
+        assert set(ledger.validation_receipt(artifact.trial_id)) >= {"cheap", "oos", "realism", "__artifact__"}
+    assert all(v >= 1 for v in calls.values()), calls
+
+
+def test_production_cheap_block_short_circuits_oos_realism(tmp_path):
+    policy=ValidationPolicy(); candidate=make_candidate(policy)
+    with TrialLedger(str(tmp_path / "production-block.db")) as ledger:
+        artifact=run_validation_dag(candidate, {}, policy, ledger, event_at=1, production=True)
+        assert artifact.verdict == "BLOCK"
+        receipt=ledger.validation_receipt(artifact.trial_id)
+    assert receipt["cheap"]["payload"]["outcome"] == "BLOCK"
+    assert receipt["oos"]["payload"]["evidence"].get("short_circuit") is True
+    assert receipt["realism"]["payload"]["evidence"].get("short_circuit") is True
