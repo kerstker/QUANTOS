@@ -1,7 +1,7 @@
 """确定性、分层、失败关闭的验证 DAG。生产 adapter 只调用已登记的 typed 引擎。"""
 from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
-import hashlib, json, math, re, statistics, time
+import hashlib, json, math, re, statistics
 from statistics import NormalDist
 from enum import Enum
 from types import MappingProxyType
@@ -532,7 +532,7 @@ def _frozen_trial_snapshot(ledger: TrialLedger, trial_id: str, family_id: str) -
     return EffectiveTrialCount(saved_count, frozen_ids)
 
 
-def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
+def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
     if not isinstance(policy,ValidationPolicy) or not isinstance(ledger,TrialLedger): raise TypeError("policy and ledger types required")
     if production:
         if tuple(type(x) for x in policy.stages) != tuple(type(x) for x in _DEFAULT_ADAPTERS): raise ValueError("production DAG requires registered typed adapters")
@@ -540,8 +540,6 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             if (type(stage), stage.name, stage.version, stage.implementation_id) != (type(canonical), canonical.name, canonical.version, canonical.implementation_id): raise ValueError("production adapter identity is not canonical")
             if getattr(stage.evaluate, "__func__", None) is not _PRODUCTION_EVALUATORS.get(type(stage)): raise ValueError("production adapter implementation is not sealed")
     if type(event_at) is not int or isinstance(event_at,bool) or type(lease_now) is not int or isinstance(lease_now,bool): raise ValueError("event_at and lease_now must be deterministic ints")
-    if wait_timeout_seconds is None: wait_timeout_seconds=float(lease_seconds)
-    if type(wait_timeout_seconds) not in (int,float) or not math.isfinite(float(wait_timeout_seconds)) or wait_timeout_seconds <= 0: raise ValueError("wait_timeout_seconds must be finite positive")
     definition=getattr(candidate,"definition",None)
     if isinstance(definition,AlphaDefinition):
         declared_policy=definition.validation_policy
@@ -563,16 +561,13 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     if aggregate.status=="PLANNED":
         try:
             ledger.append(TrialRecord(trial_id,alpha,family,exact,policy.digest,"RUNNING",1,event_at))
-        except TrialLedgerError:
-            deadline=time.monotonic()+float(wait_timeout_seconds)
-            attempt=0
-            while time.monotonic() < deadline:
-                ar=ledger.validation_receipt(trial_id).get("__artifact__")
-                if ar:
-                    return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
-                attempt += 1
-            raise TrialLedgerConflict("validation artifact wait timeout")
+        except TrialLedgerError as exc:
+            ar=ledger.validation_receipt(trial_id).get("__artifact__")
+            if ar:
+                return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
+            if ledger.load(trial_id).status == "RUNNING":
+                raise TrialLedgerConflict("validation trial in progress") from exc
+            raise
     trial_snapshot=_frozen_trial_snapshot(ledger,trial_id,family)
     trial_set_digest=_digest(list(trial_snapshot.trial_ids))
     frozen_definitions=tuple(ledger.load(item).exact_definition_id for item in trial_snapshot.trial_ids)
@@ -582,32 +577,12 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             claim_result=ledger.claim_validation_stage(trial_id,stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
             claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
-            deadline=time.monotonic()+float(wait_timeout_seconds)
-            attempt=0
-            while time.monotonic() < deadline:
-                current_receipts=ledger.validation_receipt(trial_id)
-                if current_receipts.get("__artifact__"):
-                    return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-                current_stage=current_receipts.get(stage.name)
-                if current_stage and current_stage["state"] in {"DONE","BLOCKED","FAILED"}:
-                    claim=current_stage["state"]
-                    claim_attempt=current_stage["attempt"]
-                    break
-                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
-                attempt += 1
-            else:
-                raise TrialLedgerConflict("validation stage wait timeout")
+            current_receipts=ledger.validation_receipt(trial_id)
+            if current_receipts.get("__artifact__"):
+                return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
+            raise
         if claim == "IN_PROGRESS":
-            claim = "IN_PROGRESS"
-            deadline=time.monotonic()+float(wait_timeout_seconds)
-            attempt=0
-            while time.monotonic() < deadline:
-                current=ledger.validation_receipt(trial_id).get(stage.name)
-                if current and current["state"] in {"DONE","BLOCKED","FAILED"}:
-                    claim=current["state"]; claim_attempt=current["attempt"]; break
-                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
-                attempt += 1
-            if claim == "IN_PROGRESS": raise TrialLedgerConflict("validation stage wait timeout")
+            raise TrialLedgerConflict(f"validation stage {stage.name} in progress")
         if claim in {"DONE","BLOCKED","FAILED"}:
             current=ledger.validation_receipt(trial_id)[stage.name]; hashes[stage.name]=current["payload"]["evidence_hash"]; metadata[stage.name]={"stage":stage.name,"version":stage.version,"implementation_id":stage.implementation_id};
             if current["payload"].get("outcome")=="BLOCK": verdict="BLOCK"; reason=reason or current["payload"].get("reason")
@@ -629,23 +604,13 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
             claim_result=ledger.claim_validation_stage(trial_id,blocked_stage.name,owner=owner,now=lease_now,lease_seconds=lease_seconds,panel_digest=panel_digest,policy_digest=policy.digest)
             claim, claim_attempt=claim_result.state, claim_result.attempt
         except TrialLedgerError:
-            deadline=time.monotonic()+float(wait_timeout_seconds)
-            attempt=0
-            while time.monotonic() < deadline:
-                ar=ledger.validation_receipt(trial_id).get("__artifact__")
-                if ar: return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
-                time.sleep(min(0.01, 0.0005 * (attempt + 1)))
-                attempt += 1
-            raise TrialLedgerConflict("validation artifact wait timeout")
+            ar=ledger.validation_receipt(trial_id).get("__artifact__")
+            if ar: return ValidationArtifact(**ledger.load_validation_artifact(trial_id,panel_digest=panel_digest,policy_digest=policy.digest))
+            raise
         if claim == "CLAIMED":
             _complete_or_recover(ledger,trial_id,blocked_stage.name,"BLOCKED",{"trial_id":trial_id,"panel_digest":panel_digest,"policy_digest":policy.digest,"event_at":event_at,"effective_trial_count":trial_snapshot.count,"trial_set_digest":trial_set_digest,"evidence_hash":evidence.evidence_hash,"stage":blocked_stage.name,"version":blocked_stage.version,"implementation_id":blocked_stage.implementation_id,"outcome":"BLOCK","evidence":evidence.evidence,"reason":evidence.reason},owner=owner,now=lease_now,attempt=claim_attempt)
         elif claim == "IN_PROGRESS":
-            deadline=time.monotonic()+float(wait_timeout_seconds)
-            while time.monotonic() < deadline:
-                current=ledger.validation_receipt(trial_id).get(blocked_stage.name)
-                if current and current["state"] in {"DONE","BLOCKED","FAILED"}: break
-                time.sleep(0.01)
-            else: raise TrialLedgerConflict("validation stage wait timeout")
+            raise TrialLedgerConflict(f"validation stage {blocked_stage.name} in progress")
         blocked_stage=next((s for s in policy.stages if s.name not in hashes),None)
     status="PASSED" if verdict=="PASS" else "FAILED"
     count=trial_snapshot.count
@@ -654,9 +619,9 @@ def _run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:T
     ledger.publish_validation_terminal(TrialRecord(trial_id,alpha,family,exact,policy.digest,status,2,event_at),base)
     return artifact
 
-def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,wait_timeout_seconds:float|None=None,production:bool=False)->ValidationArtifact:
+def run_validation_dag(candidate:Any,panel:Any,policy:ValidationPolicy,ledger:TrialLedger,*,event_at:int,owner:str="validation",lease_seconds:int=60,lease_now:int,production:bool=False)->ValidationArtifact:
     if not isinstance(ledger, TrialLedger):
         raise TypeError("policy and ledger types required")
-    return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,wait_timeout_seconds=wait_timeout_seconds,production=production)
+    return _run_validation_dag(candidate,panel,policy,ledger,event_at=event_at,owner=owner,lease_seconds=lease_seconds,lease_now=lease_now,production=production)
 
 __all__=["ValidationStage","ValidationPolicy","ValidationContext","StageEvidence","ValidationArtifact","CheapValidationAdapter","OOSValidationAdapter","RealismValidationAdapter","production_adapters","RegisteredLeakageCompute","register_leakage_compute","run_validation_dag"]

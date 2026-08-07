@@ -216,12 +216,13 @@ def test_concurrent_calls_only_execute_each_stage_once(tmp_path):
         threads = [threading.Thread(target=worker) for _ in range(4)]
         for thread in threads: thread.start()
         for thread in threads: thread.join()
-    assert not errors
-    assert len({result.trial_id for result in results}) == 1
+        final = run_validation_dag(candidate, {}, policy, ledger, event_at=1, lease_now=1)
+    assert all(isinstance(error, TrialLedgerConflict) for error in errors)
+    assert all(result == final for result in results)
     assert calls == ["cheap", "oos", "realism"]
 
 
-def test_in_progress_wait_is_not_blocked_by_full_dag_process_lock(tmp_path):
+def test_in_progress_fails_fast_and_retry_reuses_artifact(tmp_path):
     entered = threading.Event()
     release = threading.Event()
 
@@ -235,9 +236,10 @@ def test_in_progress_wait_is_not_blocked_by_full_dag_process_lock(tmp_path):
     candidate = make_candidate(policy)
     with TrialLedger(str(tmp_path / "ledger.db")) as ledger:
         first_errors = []
-        second_errors = []
+        first_results = []
         first = threading.Thread(
-            target=lambda: _capture_error(
+            target=lambda: _capture_result(
+                first_results,
                 first_errors,
                 lambda: run_validation_dag(
                     candidate, {}, policy, ledger, event_at=1, lease_now=1
@@ -246,36 +248,35 @@ def test_in_progress_wait_is_not_blocked_by_full_dag_process_lock(tmp_path):
         )
         first.start()
         assert entered.wait(timeout=1.0)
-        second = threading.Thread(
-            target=lambda: _capture_error(
-                second_errors,
-                lambda: run_validation_dag(
-                    candidate,
-                    {},
-                    policy,
-                    ledger,
-                    event_at=1,
-                    lease_now=1,
-                    wait_timeout_seconds=0.02,
-                ),
+        with pytest.raises(TrialLedgerConflict, match="in progress"):
+            run_validation_dag(
+                candidate,
+                {},
+                policy,
+                ledger,
+                event_at=1,
+                lease_now=1,
             )
-        )
-        second.start()
-        second.join(timeout=0.5)
         release.set()
         first.join(timeout=2.0)
-        second.join(timeout=2.0)
+        retry = run_validation_dag(
+            candidate, {}, policy, ledger, event_at=1, lease_now=1
+        )
 
-    assert not second.is_alive()
     assert not first_errors
-    assert len(second_errors) == 1
-    assert isinstance(second_errors[0], TrialLedgerConflict)
-    assert "wait timeout" in str(second_errors[0])
+    assert first_results == [retry]
 
 
 def _capture_error(errors, operation):
     try:
         operation()
+    except Exception as exc:
+        errors.append(exc)
+
+
+def _capture_result(results, errors, operation):
+    try:
+        results.append(operation())
     except Exception as exc:
         errors.append(exc)
 
@@ -583,42 +584,47 @@ def test_concurrent_cheap_block_returns_same_artifact(tmp_path):
             except Exception as exc: errors.append(exc)
         threads=[threading.Thread(target=worker) for _ in range(4)]
         [x.start() for x in threads]; [x.join() for x in threads]
-    assert not errors and len(results) == 4 and len({x.trial_id for x in results}) == 1 and all(x.verdict == "BLOCK" for x in results)
+        final=run_validation_dag(candidate, {}, policy, ledger, event_at=1, lease_now=1)
+    assert all(isinstance(error, TrialLedgerConflict) for error in errors)
+    assert all(result == final for result in results)
+    assert final.verdict == "BLOCK" and calls == ["cheap"]
 
 
 
-def test_cross_connection_slow_stage_single_side_effect(tmp_path):
-    import time
-    calls=[]
-    class Slow(Stage):
+def test_cross_connection_in_progress_fails_fast_without_duplicate_side_effect(tmp_path):
+    calls=[]; entered=threading.Event(); release=threading.Event()
+    class Blocking(Stage):
         def evaluate(self, context):
-            calls.append(self.name)
-            time.sleep(0.35)
+            entered.set(); assert release.wait(timeout=2.0)
             return super().evaluate(context)
-    policy=make_policy(Slow("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "cross.db")
+    policy=make_policy(Blocking("cheap", calls=calls), Stage("oos", calls=calls), Stage("realism", calls=calls)); candidate=make_candidate(policy); path=str(tmp_path / "cross.db")
     l1=TrialLedger(path); l2=TrialLedger(path); results=[]; errors=[]
-    def worker(ledger):
-        try: results.append(run_validation_dag(candidate, {}, policy, ledger, event_at=1, lease_now=1))
-        except Exception as exc: errors.append(exc)
-    import threading
-    t1=threading.Thread(target=worker,args=(l1,)); t2=threading.Thread(target=worker,args=(l2,)); t1.start(); t2.start(); t1.join(); t2.join(); l1.close(); l2.close()
-    assert not errors and len(results)==2 and results[0] == results[1] and calls.count("cheap") == 1
+    t1=threading.Thread(target=lambda: _capture_result(results, errors, lambda: run_validation_dag(candidate, {}, policy, l1, event_at=1, lease_now=1)))
+    t1.start(); assert entered.wait(timeout=1.0)
+    with pytest.raises(TrialLedgerConflict, match="in progress"):
+        run_validation_dag(candidate, {}, policy, l2, event_at=1, lease_now=1)
+    release.set(); t1.join(timeout=2.0)
+    retry=run_validation_dag(candidate, {}, policy, l2, event_at=1, lease_now=1)
+    l1.close(); l2.close()
+    assert not errors and results == [retry] and calls == ["cheap", "oos", "realism"]
 
 
-def test_cross_connection_slow_block_single_side_effect(tmp_path):
-    import time
-    calls=[]
-    class SlowBlock(Stage):
+def test_cross_connection_block_retry_has_single_side_effect(tmp_path):
+    calls=[]; entered=threading.Event(); release=threading.Event()
+    class BlockingBlock(Stage):
         def evaluate(self, context):
-            calls.append(self.name); time.sleep(0.35)
+            calls.append(self.name); entered.set(); assert release.wait(timeout=2.0)
             return StageEvidence(self.name,self.version,"BLOCK",{"blocked": True},implementation_id=self.implementation_id)
-    policy=make_policy(SlowBlock("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "cross-block.db")
+    policy=make_policy(BlockingBlock("cheap"), Stage("oos"), Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "cross-block.db")
     l1=TrialLedger(path); l2=TrialLedger(path); results=[]; errors=[]
-    def worker(ledger):
-        try: results.append(run_validation_dag(candidate, {}, policy, ledger, event_at=1, lease_now=1))
-        except Exception as exc: errors.append(exc)
-    t1=threading.Thread(target=worker,args=(l1,)); t2=threading.Thread(target=worker,args=(l2,)); t1.start(); t2.start(); t1.join(); t2.join(); l1.close(); l2.close()
-    assert not errors and len(results)==2 and results[0] == results[1] and results[0].verdict == "BLOCK" and calls == ["cheap"]
+    t1=threading.Thread(target=lambda: _capture_result(results, errors, lambda: run_validation_dag(candidate, {}, policy, l1, event_at=1, lease_now=1)))
+    t1.start(); assert entered.wait(timeout=1.0)
+    with pytest.raises(TrialLedgerConflict, match="in progress"):
+        run_validation_dag(candidate, {}, policy, l2, event_at=1, lease_now=1)
+    release.set(); t1.join(timeout=2.0)
+    retry=run_validation_dag(candidate, {}, policy, l2, event_at=1, lease_now=1)
+    l1.close(); l2.close()
+    assert not errors and results == [retry] and retry.verdict == "BLOCK" and calls == ["cheap"]
 
 def test_terminal_receipts_rebuild_artifact_without_provider_rerun(tmp_path):
     calls=[]; stages=tuple(Stage(name, calls=calls) for name in ("cheap", "oos", "realism")); policy=make_policy(*stages); candidate=make_candidate(policy); path=str(tmp_path / "crash.db")
@@ -675,22 +681,6 @@ def test_historical_artifact_survives_later_family_trial(tmp_path):
         second=run_validation_dag(second_candidate,{},policy,ledger,event_at=2,lease_now=2)
         restored=run_validation_dag(first_candidate,{},policy,ledger,event_at=1,lease_now=3)
     assert first == restored and first.effective_trial_count == 1 and second.effective_trial_count == 2
-
-
-def test_cross_connection_stage_longer_than_five_seconds_uses_wait_budget(tmp_path):
-    import time
-    calls=[]
-    class Slow(Stage):
-        def evaluate(self, context):
-            calls.append(self.name); time.sleep(5.2); return super().evaluate(context)
-    policy=make_policy(Slow("cheap"),Stage("oos"),Stage("realism")); candidate=make_candidate(policy); path=str(tmp_path / "long-wait.db")
-    ledgers=(TrialLedger(path),TrialLedger(path)); results=[]; errors=[]
-    def worker(ledger):
-        try: results.append(run_validation_dag(candidate,{},policy,ledger,event_at=1,lease_now=1,lease_seconds=60,wait_timeout_seconds=7))
-        except Exception as exc: errors.append(exc)
-    threads=[threading.Thread(target=worker,args=(ledger,)) for ledger in ledgers]
-    [thread.start() for thread in threads]; [thread.join() for thread in threads]; [ledger.close() for ledger in ledgers]
-    assert not errors and len(results)==2 and results[0] == results[1] and calls == ["cheap"]
 
 
 def test_canonical_alpha_candidate_uses_definition_bound_policy(tmp_path):
@@ -762,3 +752,22 @@ def test_leakage_registration_identity_cannot_be_rebound():
             bound_compute,
             exact_definition_id="2" * 64,
         )
+
+
+def test_validation_dag_core_does_not_read_or_sleep_on_wall_clock():
+    import ast
+    from pathlib import Path
+    import services.research.validation_dag as validation_dag
+
+    tree = ast.parse(Path(validation_dag.__file__).read_text(encoding="utf-8"))
+    forbidden_calls = {
+        (node.func.value.id, node.func.attr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "time"
+        and node.func.attr in {"monotonic", "sleep", "time"}
+    }
+
+    assert forbidden_calls == set()
