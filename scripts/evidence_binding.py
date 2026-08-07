@@ -11,6 +11,7 @@ from typing import Any
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
+GIT_COMMAND_TIMEOUT_SECONDS = 10
 
 # This is deliberately a finite, versioned list.  Widening it changes the
 # identity domain and must be reviewed as a new boundary policy.
@@ -41,7 +42,12 @@ def _repo_root() -> Path:
 
 
 def _git(repo: Path, *args: str, text: bool = True) -> str | bytes:
-    return subprocess.check_output(["git", *args], cwd=repo, text=text)
+    return subprocess.check_output(
+        ["git", *args],
+        cwd=repo,
+        text=text,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def _head(repo: Path | None = None) -> str:
@@ -93,8 +99,9 @@ def _check_clean_boundary(repo: Path) -> None:
             if not _allowlisted(path):
                 raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
             continue
-        # Ignored, unmerged, rename/copy, and any future porcelain record are
-        # intentionally rejected rather than guessed at.
+        # Unmerged, rename/copy, and any future porcelain record are
+        # intentionally rejected rather than guessed at. Ignored paths are not
+        # reported by this status query and are outside this dirty boundary.
         if kind != "1":
             raise ValueError("git status contains unsupported or non-allowlisted change")
         fields = line.split(" ", 8)

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 
+import scripts.evidence_binding as evidence_binding
 from scripts.evidence_binding import assert_current_binding, resolve_canonical_source_anchor
 from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
@@ -57,6 +58,44 @@ def test_phase13_dirty_state_rejects_source_dirty_outside_allowlist(tmp_path: Pa
     (repo / "source.py").write_text("source = 1\n", encoding="utf-8")
 
     assert _working_tree_dirty(repo) is True
+
+
+def test_phase13_dirty_state_staged_allowlisted_artifact_is_false(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    report = repo / "evidence" / "validation_report.json"
+    report.write_text('{"marker": "staged"}\n', encoding="utf-8")
+    _git(repo, "add", "evidence/validation_report.json")
+
+    assert _working_tree_dirty(repo) is False
+
+
+def test_phase13_dirty_state_staged_source_is_true(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    source = repo / "source.py"
+    source.write_text("source = 1\n", encoding="utf-8")
+    _git(repo, "add", "source.py")
+
+    assert _working_tree_dirty(repo) is True
+
+
+def test_phase13_dirty_state_untracked_exact_allowlisted_artifact_is_false(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    path = repo / "evidence" / "autonomy_readiness.json"
+    path.write_text('{"generated": true}\n', encoding="utf-8")
+
+    assert _working_tree_dirty(repo) is False
+
+
+def test_phase13_dirty_state_timeout_is_unknown(tmp_path: Path, monkeypatch) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+
+    def timeout(*args, **kwargs):
+        assert kwargs["timeout"] == evidence_binding.GIT_COMMAND_TIMEOUT_SECONDS
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(evidence_binding.subprocess, "check_output", timeout)
+
+    assert _working_tree_dirty(repo) is None
 
 
 def test_phase13_artifact_only_head_accepts_stable_anchor(
