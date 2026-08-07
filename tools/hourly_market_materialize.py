@@ -157,18 +157,15 @@ def _read_raw(root: Path, as_of: int) -> tuple[list[Any], list[UniverseObservati
         inputs.append({"path": path.relative_to(root).as_posix(), "sha256": file_digest})
     if any(counts[kind] == 0 for kind in _KINDS):
         raise ValueError("raw input must contain nonempty bar, funding, open_interest, and universe sets")
-    bars = sorted((r for r in values if isinstance(r, HourlyBar)), key=lambda r: (r.instrument, r.event_time))
-    for instrument in bar_intervals:
-        points = [r.event_time for r in bars if r.instrument == instrument]
-        base = bar_intervals[instrument]
-        if any(b - a != base for a, b in zip(points, points[1:])):
-            raise ValueError("bar event_time cadence has a gap")
     return values, universes, sorted(set(source_digests)), inputs, bar_intervals
 
 
-def _series(rows: list[Any], interval: int, bar_intervals: dict[str, int]) -> tuple[list[HourlyBar], list[HourlyFunding], list[HourlyOpenInterest]]:
-    bars = sorted((r for r in rows if isinstance(r, HourlyBar)), key=lambda r: (r.instrument, r.event_time))
-    for instrument, base in sorted(bar_intervals.items()):
+def _series(rows: list[Any], interval: int, bar_intervals: dict[str, int],
+            selected_instruments: set[str]) -> tuple[list[HourlyBar], list[HourlyFunding], list[HourlyOpenInterest]]:
+    bars = sorted((r for r in rows if isinstance(r, HourlyBar) and r.instrument in selected_instruments),
+                  key=lambda r: (r.instrument, r.event_time))
+    selected_intervals = {instrument: bar_intervals[instrument] for instrument in selected_instruments}
+    for instrument, base in sorted(selected_intervals.items()):
         points = [r.event_time for r in bars if r.instrument == instrument]
         bucket_size = interval // base
         if interval % base or not points or len(points) < bucket_size:
@@ -176,7 +173,7 @@ def _series(rows: list[Any], interval: int, bar_intervals: dict[str, int]) -> tu
         for start in range(0, len(points), bucket_size):
             group = points[start:start + bucket_size]
             if len(group) != bucket_size or any(b - a != base for a, b in zip(group, group[1:])):
-                raise ValueError("partial or non-contiguous output bucket")
+                raise ValueError("partial or non-contiguous output bucket (gap)")
             if group[0] % interval or group[-1] // interval != group[0] // interval:
                 raise ValueError("bars do not form complete aligned output buckets")
     aggregated = list(aggregate_bars(bars, interval_seconds=interval))
@@ -290,7 +287,7 @@ def materialize_hourly_market(*, raw_root: Path, output_root: Path, as_of: int, 
     manifests: list[Path] = []
     digests: list[str] = []
     for interval in intervals:
-        bars, funding, oi = _series(rows, interval, bar_intervals)
+        bars, funding, oi = _series(rows, interval, bar_intervals, selected)
         panel = HourlyMarketPanel("hourly-market-v1", as_of, tuple(bars), tuple(funding), tuple(oi), _sha(_canonical(source_digests)))
         validate_panel(panel)
         records = _rows(panel, interval, universe.instruments)

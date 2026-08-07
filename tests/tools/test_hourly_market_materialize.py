@@ -51,6 +51,48 @@ def test_intervals_are_explicit_and_validated(tmp_path):
     assert len(receipt.manifests) == 1
 
 
+def test_excluded_incomplete_instrument_does_not_abort_selected_materialization(tmp_path):
+    raw = _raw(tmp_path, bars=48)
+    path = next(raw.glob("*.jsonl"))
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows = [row for row in rows if row["instrument"] == "BTC"]
+    rows.extend(
+        {
+            "schema_version": mm.INPUT_SCHEMA,
+            "kind": "bar",
+            "source_digest": "b" * 64,
+            "instrument": "ALT",
+            "event_time": i * 300,
+            "knowledge_time": i * 300,
+            "open": 1.0,
+            "high": 2.0,
+            "low": 1.0,
+            "close": 1.5,
+            "quote_volume": 1.0,
+            "interval_seconds": 300,
+        }
+        for i in range(48)
+        if i != 7
+    )
+    rows.extend([
+        {"schema_version": mm.INPUT_SCHEMA, "kind": "funding", "source_digest": "b" * 64,
+         "instrument": "ALT", "event_time": 0, "knowledge_time": 0, "rate": .1},
+        {"schema_version": mm.INPUT_SCHEMA, "kind": "open_interest", "source_digest": "b" * 64,
+         "instrument": "ALT", "event_time": 0, "knowledge_time": 0, "value": 3.0},
+        {"schema_version": mm.INPUT_SCHEMA, "kind": "universe", "source_digest": "b" * 64,
+         "instrument": "ALT", "event_time": 0, "knowledge_time": 0, "quote_volume": .1,
+         "spread_bps": 1.0, "listed_at": 0, "data_coverage": 1.0},
+    ])
+    path.write_text("\n".join(json.dumps(row, separators=(",", ":")) for row in rows), encoding="utf-8")
+
+    receipt = materialize_hourly_market(
+        raw_root=raw, output_root=tmp_path / "out", as_of=14100,
+        policy=_policy(), intervals=(3600,)
+    )
+    output = load_materialized_partition(receipt.manifests[0].parent)
+    assert output and {row["instrument"] for row in output} == {"BTC"}
+
+
 def test_future_gap_schema_and_missing_kinds_fail_closed(tmp_path):
     with pytest.raises(ValueError, match="gap"):
         materialize_hourly_market(raw_root=_raw(tmp_path, gap=3), output_root=tmp_path / "o", as_of=14100, policy=_policy())
