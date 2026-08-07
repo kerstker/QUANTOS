@@ -10,6 +10,7 @@ from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
     _validation,
+    _working_tree_dirty,
     _write_json,
     _write_text,
     build_phase13,
@@ -40,6 +41,22 @@ def _init_binding_repo(tmp_path: Path) -> tuple[Path, str]:
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "initial")
     return repo, subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+
+
+def test_phase13_dirty_state_ignores_allowlisted_generated_artifact(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    (repo / "evidence" / "validation_report.json").write_text(
+        '{"marker": "generated"}\n', encoding="utf-8"
+    )
+
+    assert _working_tree_dirty(repo) is False
+
+
+def test_phase13_dirty_state_rejects_source_dirty_outside_allowlist(tmp_path: Path) -> None:
+    repo, _source = _init_binding_repo(tmp_path)
+    (repo / "source.py").write_text("source = 1\n", encoding="utf-8")
+
+    assert _working_tree_dirty(repo) is True
 
 
 def test_phase13_artifact_only_head_accepts_stable_anchor(

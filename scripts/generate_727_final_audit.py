@@ -67,6 +67,7 @@ if str(ROOT) not in sys.path:
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
 from scripts.evidence_binding import (
+    assert_canonical_working_tree,
     assert_current_binding,
     resolve_canonical_source_anchor,
     validation_binding_from_payload,
@@ -116,17 +117,12 @@ def _commit(root: Path) -> str:
 
 def _working_tree_dirty(root: Path) -> bool | None:
     try:
-        proc = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=root,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=10,
-        )
+        assert_canonical_working_tree(root)
+    except ValueError:
+        return True
     except (OSError, subprocess.SubprocessError):
         return None
-    return bool(proc.stdout.strip()) if proc.returncode == 0 else None
+    return False
 
 
 def _relative(root: Path, path: Path) -> str:

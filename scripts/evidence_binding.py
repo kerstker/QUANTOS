@@ -105,6 +105,18 @@ def _check_clean_boundary(repo: Path) -> None:
             raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
 
 
+def assert_canonical_working_tree(repo_root: Path | str | None = None) -> None:
+    """Accept only clean or canonical-generated-artifact-only working trees.
+
+    The canonical artifact allowlist is the single dirty-boundary policy used
+    by source-anchor resolution.  Callers that report a boolean dirty flag can
+    treat ``ValueError`` as unsafe source dirtiness while preserving this
+    resolver's fail-closed behavior.
+    """
+    repo = Path(repo_root) if repo_root is not None else _repo_root()
+    _check_clean_boundary(repo)
+
+
 def _artifact_commit(repo: Path, commit: str) -> bool:
     parents = str(_git(repo, "rev-list", "--parents", "-n", "1", commit)).split()
     if len(parents) != 2:
