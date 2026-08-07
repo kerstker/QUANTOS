@@ -82,17 +82,34 @@ def test_invalid_order_and_interval_rejected():
         aggregate_bars((rows[0],), interval_seconds=True)
 
 
+def test_panel_direct_construction_enforces_all_invariants():
+    bar = HourlyBar("B", 10, 10, 1, 1, 1, 1, 1)
+    with pytest.raises(ValueError, match="schema_version"):
+        HourlyMarketPanel("wrong", 10, (bar,), (), (), "digest")
+    with pytest.raises(ValueError, match="as_of"):
+        HourlyMarketPanel("hourly-market-v1", 9, (bar,), (), (), "digest")
+    duplicate = (bar, bar)
+    with pytest.raises(ValueError, match="strictly"):
+        HourlyMarketPanel("hourly-market-v1", 10, duplicate, (), (), "digest")
+    with pytest.raises(ValueError, match="instrument"):
+        HourlyMarketPanel("hourly-market-v1", 10, (bar,), (HourlyFunding("C", 10, 10, 0),), (), "digest")
+
+
 def test_panel_rejects_future_and_mismatched_series():
     bar = HourlyBar("B", 0, 1, 1, 1, 1, 1, 1)
-    panel = HourlyMarketPanel("hourly-market-v1", 0, (bar,), (), (), "d")
     with pytest.raises(ValueError, match="as_of"):
-        validate_panel(panel)
-    panel = HourlyMarketPanel("hourly-market-v1", 2, (bar,), (HourlyFunding("C", 0, 1, 0),), (), "d")
+        HourlyMarketPanel("hourly-market-v1", 0, (bar,), (), (), "d")
     with pytest.raises(ValueError, match="instrument"):
-        validate_panel(panel)
+        HourlyMarketPanel("hourly-market-v1", 2, (bar,), (HourlyFunding("C", 0, 1, 0),), (), "d")
 
 
 def test_panel_schema_and_digest_bound():
-    panel = HourlyMarketPanel("other", 1, (), (), (), "digest")
     with pytest.raises(ValueError):
-        validate_panel(panel)
+        HourlyMarketPanel("other", 1, (), (), (), "digest")
+
+
+def test_blank_instrument_and_digest_rejected_directly():
+    with pytest.raises(ValueError):
+        HourlyBar("   ", 0, 0, 1, 1, 1, 1, 0)
+    with pytest.raises(ValueError):
+        HourlyMarketPanel("hourly-market-v1", 0, (), (), (), "   ")

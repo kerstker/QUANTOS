@@ -21,7 +21,7 @@ def _finite(value: object, name: str) -> float:
 
 
 def _instrument(value: object) -> str:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         raise ValueError("instrument must be non-empty")
     return value
 
@@ -102,14 +102,9 @@ class HourlyMarketPanel:
         _time(self.as_of, "as_of")
         if not isinstance(self.bars, tuple) or not isinstance(self.funding, tuple) or not isinstance(self.open_interest, tuple):
             raise ValueError("panel series must be tuples")
-        if not isinstance(self.source_digest, str) or not self.source_digest:
+        if not isinstance(self.source_digest, str) or not self.source_digest.strip():
             raise ValueError("source_digest must be non-empty")
-        if any(not isinstance(row, HourlyBar) for row in self.bars):
-            raise ValueError("bars must contain HourlyBar records")
-        if any(not isinstance(row, HourlyFunding) for row in self.funding):
-            raise ValueError("funding must contain HourlyFunding records")
-        if any(not isinstance(row, HourlyOpenInterest) for row in self.open_interest):
-            raise ValueError("open_interest must contain HourlyOpenInterest records")
+        _validate_panel_core(self.schema_version, self.as_of, self.bars, self.funding, self.open_interest)
 
 
 def _validate_order(rows: tuple[object, ...]) -> None:
@@ -145,19 +140,25 @@ def aggregate_bars(rows: Iterable[HourlyBar], *, interval_seconds: int) -> tuple
     return tuple(result)
 
 
-def validate_panel(panel: HourlyMarketPanel) -> None:
-    if not isinstance(panel, HourlyMarketPanel):
-        raise ValueError("panel must be HourlyMarketPanel")
-    if panel.schema_version != _SCHEMA_VERSION:
+def _validate_panel_core(schema_version: str, as_of: int, bars: tuple[HourlyBar, ...],
+                         funding: tuple[HourlyFunding, ...],
+                         open_interest: tuple[HourlyOpenInterest, ...]) -> None:
+    if schema_version != _SCHEMA_VERSION:
         raise ValueError("unsupported schema_version")
-    series = (panel.bars, panel.funding, panel.open_interest)
+    series = (bars, funding, open_interest)
     for rows in series:
         _validate_order(rows)
         for row in rows:
-            if row.event_time > panel.as_of or row.knowledge_time > panel.as_of:
+            if row.event_time > as_of or row.knowledge_time > as_of:
                 raise ValueError("panel record is after as_of")
-    bar_keys = {(row.instrument, row.event_time) for row in panel.bars}
+    bar_keys = {(row.instrument, row.event_time) for row in bars}
     for rows in series[1:]:
         keys = {(row.instrument, row.event_time) for row in rows}
         if keys and keys != bar_keys:
             raise ValueError("panel series instrument/time keys must match bars")
+
+
+def validate_panel(panel: HourlyMarketPanel) -> None:
+    if not isinstance(panel, HourlyMarketPanel):
+        raise ValueError("panel must be HourlyMarketPanel")
+    _validate_panel_core(panel.schema_version, panel.as_of, panel.bars, panel.funding, panel.open_interest)
