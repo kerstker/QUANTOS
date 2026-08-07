@@ -3414,6 +3414,55 @@ def test_top_tier_refresh_reuses_current_canonical_time(tmp_path, monkeypatch):
     assert overridden["validation"]["generated_at"] == 456
 
 
+def test_top_tier_check_reuses_verified_binding_with_different_explicit_time(
+    tmp_path, monkeypatch
+):
+    from scripts.assess_top_tier import main
+
+    canonical_source = "a" * 40
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.resolve_canonical_source_anchor",
+        lambda _root: canonical_source,
+    )
+    monkeypatch.setenv("QUANTOS_VALIDATION_RUN_ID", "a" * 64)
+    monkeypatch.setenv("QUANTOS_VALIDATION_SOURCE_COMMIT", canonical_source)
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.assert_current_binding", lambda *args, **kwargs: None
+    )
+    json_out = tmp_path / "assessment.json"
+    matrix_out = tmp_path / "assessment.md"
+    args = [
+        "--repo-root",
+        str(ROOT),
+        "--json-out",
+        str(json_out),
+        "--matrix-out",
+        str(matrix_out),
+    ]
+
+    assert main([*args, "--as-of-ms", "123"]) == 0
+    before_bytes = json_out.read_bytes()
+    before = json.loads(before_bytes)
+    assessment = {key: value for key, value in before.items() if key != "validation"}
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.assess_repository",
+        lambda *args, **kwargs: json.loads(json.dumps(assessment)),
+    )
+
+    def unexpected_new_binding(*args, **kwargs):
+        raise AssertionError("check mode regenerated validation binding")
+
+    monkeypatch.setattr(
+        "scripts.assess_top_tier.validation_binding", unexpected_new_binding
+    )
+
+    assert main([*args, "--as-of-ms", "456", "--check"]) == 0
+    assert json_out.read_bytes() == before_bytes
+    assert json.loads(json_out.read_text(encoding="utf-8"))["validation"] == before[
+        "validation"
+    ]
+
+
 def test_top_tier_generator_standalone_check_validates_binding(tmp_path, monkeypatch):
     from scripts.assess_top_tier import main
     import subprocess
