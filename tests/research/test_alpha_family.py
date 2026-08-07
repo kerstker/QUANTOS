@@ -73,6 +73,29 @@ def test_behavioral_duplicate_is_signed_and_same_domain_only():
     assert not mixed.behavioral_duplicates
 
 
+def test_extreme_fingerprints_have_finite_behavioral_correlation():
+    a = definition(("ts_mean", ("field", "close"), 5))
+    b = definition(("ts_mean", ("field", "close"), 20))
+    result = deduplicate_candidates([
+        AlphaCandidate(a, return_fingerprint=(1e308, 1e308, -1e308, -1e308)),
+        AlphaCandidate(b, return_fingerprint=(2e307, 2e307, -2e307, -2e307)),
+    ], correlation_threshold=0.99)
+    assert len(result.behavioral_duplicates) == 1
+    correlation = result.behavioral_duplicates[0].correlation
+    assert correlation is not None and math.isfinite(correlation)
+    assert correlation == pytest.approx(1.0)
+
+
+def test_extreme_anti_correlated_fingerprints_do_not_emit_false_relation():
+    a = definition(("ts_mean", ("field", "close"), 5))
+    b = definition(("ts_mean", ("field", "close"), 20))
+    result = deduplicate_candidates([
+        AlphaCandidate(a, return_fingerprint=(1e308, 1e308, -1e308, -1e308)),
+        AlphaCandidate(b, return_fingerprint=(-2e307, -2e307, 2e307, 2e307)),
+    ], correlation_threshold=0.99)
+    assert not result.behavioral_duplicates
+
+
 def test_fingerprints_are_deeply_immutable_numeric_and_fail_closed():
     d = definition(("ts_mean", ("field", "close"), 5))
     for bad in ([[1.0, 2.0], 3], (True, 1.0), (1.0, math.nan), (1.0, math.inf), ("1", 2.0)):

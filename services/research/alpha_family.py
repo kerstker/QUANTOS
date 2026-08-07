@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import statistics
 from typing import Any, Iterable, Mapping
 
 from services.research.alpha_identity import AlphaDefinition, alpha_id
@@ -123,17 +124,55 @@ class DedupResult:
         return self.exact_duplicates + self.behavioral_duplicates
 
 
+def _stable_mean(values: tuple[float, ...]) -> float | None:
+    """Compute a finite mean without summing values at their original scale."""
+    try:
+        scale = max(abs(value) for value in values)
+        if not math.isfinite(scale):
+            return None
+        if scale == 0:
+            return 0.0
+        normalized_mean = statistics.fmean(value / scale for value in values)
+        mean = scale * normalized_mean
+        return mean if math.isfinite(mean) else None
+    except (OverflowError, ValueError):
+        return None
+
+
 def _correlation(left: tuple[float, ...] | None, right: tuple[float, ...] | None) -> float | None:
     if left is None or right is None or len(left) != len(right) or len(left) < 2:
         return None
-    ml, mr = sum(left) / len(left), sum(right) / len(right)
-    dl = [x - ml for x in left]
-    dr = [x - mr for x in right]
-    sl = sum(x * x for x in dl)
-    sr = sum(x * x for x in dr)
-    if sl == 0 or sr == 0:
+    try:
+        if any(not math.isfinite(value) for value in left + right):
+            return None
+        ml, mr = _stable_mean(left), _stable_mean(right)
+        if ml is None or mr is None:
+            return None
+        dl = [x - ml for x in left]
+        dr = [x - mr for x in right]
+        scale_l = max(abs(value) for value in dl)
+        scale_r = max(abs(value) for value in dr)
+        if (not math.isfinite(ml) or not math.isfinite(mr)
+                or not math.isfinite(scale_l) or not math.isfinite(scale_r)
+                or scale_l == 0 or scale_r == 0):
+            return None
+        normalized_l = [value / scale_l for value in dl]
+        normalized_r = [value / scale_r for value in dr]
+        sl = math.fsum(value * value for value in normalized_l)
+        sr = math.fsum(value * value for value in normalized_r)
+        if not math.isfinite(sl) or not math.isfinite(sr) or sl == 0 or sr == 0:
+            return None
+        numerator = math.fsum(x * y for x, y in zip(normalized_l, normalized_r))
+        denominator = math.sqrt(sl * sr)
+        if not math.isfinite(numerator) or not math.isfinite(denominator) or denominator == 0:
+            return None
+        correlation = numerator / denominator
+        if not math.isfinite(correlation):
+            return None
+        # Rounding can put a mathematically bounded result just outside the interval.
+        return max(-1.0, min(1.0, correlation))
+    except (OverflowError, ValueError):
         return None
-    return sum(x * y for x, y in zip(dl, dr)) / math.sqrt(sl * sr)
 
 
 def _same_domain_correlation(left: AlphaCandidate, right: AlphaCandidate) -> float | None:
@@ -180,8 +219,9 @@ def deduplicate_candidates(candidates: Iterable[AlphaCandidate], *, correlation_
     for index, left in enumerate(reps):
         for right in reps[index + 1:]:
             corr = _same_domain_correlation(left, right)
-            if corr is None or corr < correlation_threshold:
+            if corr is None or not math.isfinite(corr) or corr < correlation_threshold:
                 continue
+            assert math.isfinite(corr)
             behavioral.append(DuplicateRelationship(
                 right.alpha_id, left.alpha_id, "behavioral", left.family_id, right.family_id, corr))
     return DedupResult(reps, tuple(sorted(exact, key=lambda r: (r.duplicate_alpha_id, r.representative_alpha_id,
