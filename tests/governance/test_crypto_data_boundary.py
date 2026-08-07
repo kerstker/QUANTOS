@@ -217,7 +217,14 @@ def test_services_tree_has_no_network_imports():
     assert not offenders, "network imports inside services/ break the offline-core guarantee:\n" + "\n".join(offenders)
 
 
-def test_quantos_tree_has_no_network_imports():
+def test_hourly_materializer_is_local_only():
+    path = os.path.join(_ROOT, "tools", "hourly_market_materialize.py")
+    roots = _import_roots(path)
+    assert not (roots & _NETWORK_ROOTS), f"hourly materializer gained network imports: {sorted(roots & _NETWORK_ROOTS)}"
+    source = open(path, encoding="utf-8").read()
+    assert not any(token in source for token in _FORBIDDEN_TRADE_CALLS)
+
+
     # 2026-07-06 对抗式复审 CONFIRMED 修复:`_ALLOWED_FETCHER`/`_EXTRA_ALLOWED_BY_FILE` 只查
     # 每个抓取器*自己*的直接 import——一个抓取器 `from quantos.x import y` 时,若 quantos/x.py
     # 内部本身 import 了网络库,这条边界测试看不到(它只看抓取器文件的 AST 根,不看被 import
