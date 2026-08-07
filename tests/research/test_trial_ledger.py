@@ -151,6 +151,39 @@ def test_loaded_aggregate_is_immutable(tmp_path):
         loaded.status = "FAILED"
 
 
-def test_invalid_family_id(tmp_path):
-    ledger = TrialLedger(str(tmp_path / "trials.db"))
-    with pytest.raises(TrialLedgerError): ledger.effective_trial_count("bad")
+
+
+@pytest.mark.parametrize("field", ["alpha_id", "family_id", "exact_definition_id", "validation_policy_digest"])
+def test_identity_cannot_drift_after_first_event(tmp_path, field):
+    ledger = TrialLedger(str(tmp_path / "trials.db")); ledger.append(rec())
+    values = {"alpha_id": h(700), "family_id": h(701), "exact_definition_id": h(702), "validation_policy_digest": h(703)}
+    args = {"alpha_id": h(1001), "family_id": h(10), "exact_definition_id": h(1), "validation_policy_digest": h(99)}
+    args[field] = values[field]
+    with pytest.raises(TrialLedgerConflict):
+        ledger.append(TrialRecord(h(1), args["alpha_id"], args["family_id"], args["exact_definition_id"], args["validation_policy_digest"], "RUNNING", 1, 2))
+
+
+def test_verify_replays_transition_even_if_hashes_recomputed(tmp_path):
+    path = str(tmp_path / "trials.db"); ledger = TrialLedger(path); ledger.append(rec()); ledger.append(rec(status="RUNNING", index=1, at=2)); ledger.append(rec(status="PASSED", index=2, at=3))
+    con = sqlite3.connect(path); con.execute("DROP TRIGGER trial_events_no_update")
+    con.execute("UPDATE trial_events SET status='FAILED' WHERE trial_id=? AND event_index=2", (h(1),)); con.commit(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path).verify()
+
+
+def test_effective_count_uses_first_event_identity(tmp_path):
+    path = str(tmp_path / "trials.db"); ledger = TrialLedger(path); ledger.append(rec(1, family=30)); ledger.append(rec(1, family=30, status="RUNNING", index=1, at=2))
+    con = sqlite3.connect(path); con.execute("DROP TRIGGER trial_events_no_update")
+    con.execute("UPDATE trial_events SET family_id=? WHERE trial_id=? AND event_index=1", (h(31), h(1))); con.commit(); con.close()
+    with pytest.raises(TrialLedgerError): ledger.effective_trial_count(h(31))
+
+
+def test_per_trial_global_commitment_tamper_detected(tmp_path):
+    path = str(tmp_path / "trials.db"); ledger = TrialLedger(path); ledger.append(rec())
+    con = sqlite3.connect(path); con.execute("UPDATE trial_heads SET global_count=7 WHERE trial_id=?", (h(1),)); con.commit(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path).verify()
+
+
+def test_create_false_missing_or_closed_database_is_ledger_error(tmp_path):
+    with pytest.raises(TrialLedgerError): TrialLedger(str(tmp_path / "missing.db"), create=False)
+    ledger = TrialLedger(":memory:"); ledger._c.close()
+    with pytest.raises(TrialLedgerError): ledger.verify()
