@@ -42,6 +42,7 @@ ALLOWED_L2_MODULES = frozenset(
         "domain_event_seal",
         "external_heartbeat",
         "forward_track_advance",
+        "hourly_alpha_advance",
         "gonogo_report",
         "ic_panel_research",
         "l2_backup",

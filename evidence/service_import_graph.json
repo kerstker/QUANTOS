@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 44,
+  "edge_count": 45,
   "edges": [
     {
       "references": [
@@ -30,6 +30,11 @@
           "line": 25,
           "module": "services.lifecycle",
           "path": "services/alpha/degradation_monitor.py"
+        },
+        {
+          "line": 17,
+          "module": "services.lifecycle",
+          "path": "services/alpha/hourly_maintenance.py"
         },
         {
           "line": 36,
@@ -88,7 +93,7 @@
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 26,
+          "line": 25,
           "module": "services.validation.pbo_evidence",
           "path": "services/alpha/factory.py"
         },
@@ -382,6 +387,26 @@
           "line": 13,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/backtest_views.py"
+        },
+        {
+          "line": 11,
+          "module": "services.research.alpha_workflow_store",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 12,
+          "module": "services.research.paper_trading.forward_store",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.ports.persistence",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 14,
+          "module": "services.research.trial_ledger",
+          "path": "services/console/api/hourly_alpha_views.py"
         },
         {
           "line": 18,
@@ -983,10 +1008,41 @@
           "line": 20,
           "module": "services.alpha.factor_set",
           "path": "services/research/session.py"
+        },
+        {
+          "line": 38,
+          "module": "services.alpha.family_testing",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 252,
+          "module": "services.alpha.multiple_testing",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 253,
+          "module": "services.alpha.family_testing",
+          "path": "services/research/validation_dag.py"
         }
       ],
       "source": "research",
       "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 12,
+          "module": "services.data.hourly_market",
+          "path": "services/research/hourly_forward.py"
+        },
+        {
+          "line": 39,
+          "module": "services.data.hourly_market",
+          "path": "services/research/validation_dag.py"
+        }
+      ],
+      "source": "research",
+      "target": "data"
     },
     {
       "references": [
@@ -1020,6 +1076,11 @@
           "line": 29,
           "module": "services.features.binance_realtime_projection",
           "path": "services/research/realtime_alpha_discovery.py"
+        },
+        {
+          "line": 178,
+          "module": "services.features.leakage",
+          "path": "services/research/validation_dag.py"
         }
       ],
       "source": "research",
@@ -1125,27 +1186,27 @@
           "path": "services/research/validation/gate.py"
         },
         {
-          "line": 21,
+          "line": 20,
           "module": "services.validation.catalog_evidence",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 24,
+          "line": 23,
           "module": "services.validation.gate",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 25,
+          "line": 24,
           "module": "services.validation.performance",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 26,
+          "line": 25,
           "module": "services.validation.pbo_evidence",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 27,
+          "line": 26,
           "module": "services.validation.walk_forward",
           "path": "services/research/validation/pipeline.py"
         },
@@ -1158,6 +1219,26 @@
           "line": 3,
           "module": "services.validation.walk_forward",
           "path": "services/research/validation/walk_forward.py"
+        },
+        {
+          "line": 249,
+          "module": "services.validation.walk_forward",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 250,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 251,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 389,
+          "module": "services.validation.regime",
+          "path": "services/research/validation_dag.py"
         }
       ],
       "source": "research",
@@ -1234,7 +1315,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "0c332f7acd140b68a87e2b9193f54d7ea1416c3411cdb8a1d16ed6f03c4cf5dd",
+  "graph_sha256": "c23d70e3344f19718b8d0539cd23ee7cf6e54cd74ad2089d902eadebde50925a",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1272,7 +1353,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 439,
+  "source_file_count": 451,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

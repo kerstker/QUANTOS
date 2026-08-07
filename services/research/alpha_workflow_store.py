@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -140,14 +141,35 @@ def _require_int(name: str, value: int) -> None:
 class WorkflowStore:
     """Single-node SQLite authority for candidate-batch leases and checkpoints."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, *, create: bool = True) -> None:
         if type(path) is not str or not path:
             raise ValueError("path is required")
+        if not create and (path == ":memory:" or not os.path.isfile(path)):
+            raise AlphaWorkflowError(f"workflow database unavailable: {path}")
         self._lock = threading.RLock()
-        self._connection = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        target = path
+        uri = False
+        if not create:
+            target = f"file:{os.path.abspath(path).replace(os.sep, '/')}?mode=ro"
+            uri = True
+        self._connection = sqlite3.connect(
+            target,
+            isolation_level=None,
+            check_same_thread=False,
+            uri=uri,
+        )
         self._connection.execute("PRAGMA foreign_keys=ON")
         self._connection.execute("PRAGMA busy_timeout=5000")
-        self._initialize()
+        if create:
+            self._initialize()
+        else:
+            try:
+                self._verify_locked()
+            except (AlphaWorkflowError, sqlite3.Error, TypeError, ValueError) as exc:
+                self.close()
+                if isinstance(exc, AlphaWorkflowError):
+                    raise
+                raise AlphaWorkflowError("workflow database is unavailable or invalid") from exc
 
     def _initialize(self) -> None:
         with self._lock:

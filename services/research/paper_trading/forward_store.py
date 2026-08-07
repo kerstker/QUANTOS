@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 from typing import Mapping, Optional
@@ -236,13 +237,32 @@ def _numeric_mapping(value: Mapping[str, float], *, positive: bool = False) -> d
 class ForwardLedger:
     """Append-only forward decisions co-located with paper-track tables."""
 
-    def __init__(self, path: str, *, create: bool = False) -> None:
-        self._conn = sqlite3.connect(path)
+    def __init__(self, path: str, *, create: bool = False, read_only: bool = False) -> None:
+        if create and read_only:
+            raise ForwardLedgerError("forward ledger cannot be created read-only")
+        if read_only and (path == ":memory:" or not os.path.isfile(path)):
+            raise ForwardLedgerError(f"forward ledger unavailable: {path}")
+        target = (
+            f"file:{os.path.abspath(path).replace(os.sep, '/')}?mode=ro"
+            if read_only
+            else path
+        )
+        self._conn = sqlite3.connect(target, uri=read_only)
         self._conn.row_factory = sqlite3.Row
         if create:
             self._conn.executescript(_SCHEMA + _HOURLY_SCHEMA)
             self._conn.commit()
         self._require_schema()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        self.close()
+        return False
 
     def _require_schema(self) -> None:
         try:
@@ -659,6 +679,13 @@ class ForwardLedger:
                     (str(alpha_id),),
                 ).fetchall()
             return [dict(row) for row in rows]
+
+    def verify_hourly(self) -> bool:
+        """Verify both append-only hourly chains without mutating the ledger."""
+        with self._read_snapshot():
+            if not self._hourly_decision_chain_valid() or not self._hourly_realization_chain_valid():
+                raise ForwardLedgerError("invalid hourly forward chain")
+        return True
 
     def _hourly_decision_chain_valid(self) -> bool:
         try:

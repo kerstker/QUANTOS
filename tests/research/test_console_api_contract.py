@@ -142,6 +142,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
                                              "capacity", "deployment_gaps", "honesty_note")),
     # dry-run pipeline: end-to-end runs (gate as runtime chokepoint) from DryRunStore; synthetic-empty in CI
     "/api/v1/console/dry-run": ("", ("snapshot_present", "verdict", "n_runs", "latest", "runs", "realtime_alpha_autonomy", "safety_note")),
+    "/api/v1/console/hourly-alpha": ("", (
+        "schema_version", "as_of", "status", "freshness", "watermark",
+        "batch_funnel", "candidate_states", "stores", "safety")),
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
@@ -208,6 +211,7 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/carry-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_CARRY_OFFLINE_SNAPSHOT"},
     # dry-run pipeline: REAL DryRunStore runs when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
+    "/api/v1/console/hourly-alpha": "REAL_HOURLY_ALPHA_AUTHORITIES",
     "/api/v1/console/ic-panel": {"SYNTHETIC_DETERMINISTIC", "REAL_IC_PANEL_OFFLINE_SNAPSHOT"},
     # MEXC 对接:market/strategy 依赖离线 artifact(缺则诚实 SYNTHETIC),readiness 恒为真实计算清单
     "/api/v1/console/mexc-market": {"SYNTHETIC_DETERMINISTIC", "REAL_MEXC_MARKET_SNAPSHOT"},
