@@ -183,7 +183,40 @@ def test_per_trial_global_commitment_tamper_detected(tmp_path):
     with pytest.raises(TrialLedgerError): TrialLedger(path).verify()
 
 
-def test_create_false_missing_or_closed_database_is_ledger_error(tmp_path):
-    with pytest.raises(TrialLedgerError): TrialLedger(str(tmp_path / "missing.db"), create=False)
-    ledger = TrialLedger(":memory:"); ledger._c.close()
-    with pytest.raises(TrialLedgerError): ledger.verify()
+
+
+@pytest.mark.parametrize("kind", ["columns", "unique", "trigger"])
+def test_malformed_existing_schema_fails_closed(tmp_path, kind):
+    path = str(tmp_path / f"bad-{kind}.db")
+    con = sqlite3.connect(path)
+    if kind == "columns":
+        con.execute("CREATE TABLE trial_events (trial_id TEXT)")
+        con.execute("CREATE TABLE trial_heads (trial_id TEXT)")
+    else:
+        con.executescript("""
+        CREATE TABLE trial_events (trial_id TEXT NOT NULL,event_index INTEGER NOT NULL,alpha_id TEXT NOT NULL,family_id TEXT NOT NULL,exact_definition_id TEXT NOT NULL,validation_policy_digest TEXT NOT NULL,status TEXT NOT NULL,at INTEGER NOT NULL,global_seq INTEGER NOT NULL,prev_hash TEXT NOT NULL,event_hash TEXT NOT NULL,PRIMARY KEY(trial_id,event_index));
+        CREATE TABLE trial_heads (trial_id TEXT PRIMARY KEY,event_count INTEGER NOT NULL,head_hash TEXT NOT NULL,global_count INTEGER NOT NULL,global_head_hash TEXT NOT NULL);
+        """)
+        if kind == "trigger":
+            con.execute("CREATE TRIGGER trial_events_no_update BEFORE UPDATE ON trial_events BEGIN SELECT RAISE(ABORT,'wrong'); END")
+            con.execute("CREATE TRIGGER trial_events_no_delete BEFORE DELETE ON trial_events BEGIN SELECT RAISE(ABORT,'wrong'); END")
+    con.commit(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path, create=True)
+    with pytest.raises(TrialLedgerError): TrialLedger(path, create=False)
+
+
+def test_valid_existing_schema_is_accepted(tmp_path):
+    path = str(tmp_path / "valid.db"); TrialLedger(path).append(rec())
+    assert TrialLedger(path, create=True).verify() is True
+    assert TrialLedger(path, create=False).load(h(1)).status == "PLANNED"
+
+
+def test_constructor_translates_bad_path_and_unhashable_status(tmp_path):
+    missing = tmp_path / "missing.db"
+    with pytest.raises(TrialLedgerError): TrialLedger(str(missing), create=False)
+    assert not missing.exists()
+    with pytest.raises(TrialLedgerError): TrialLedger(None)
+    parent = tmp_path / "file"; parent.write_text("x")
+    with pytest.raises(TrialLedgerError): TrialLedger(str(parent / "db"))
+    ledger = TrialLedger(":memory:")
+    with pytest.raises(TrialLedgerError): ledger.append(TrialRecord(h(1), h(2), h(3), h(4), h(5), [], 0, 1))

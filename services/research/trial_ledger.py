@@ -46,28 +46,55 @@ def _hash(b: bytes) -> str: return hashlib.sha256(b).hexdigest()
 
 class TrialLedger:
     def __init__(self, db_path: str, create: bool = True):
-        if create and db_path != ":memory:":
-            parent = os.path.dirname(db_path)
-            if parent: os.makedirs(parent, exist_ok=True)
+        self._c = None
         try:
-            self._c = sqlite3.connect(db_path, check_same_thread=False); self._c.isolation_level = None
+            if not isinstance(db_path, str):
+                raise TrialLedgerError("db_path must be a string")
+            if not create and db_path != ":memory:" and not os.path.isfile(db_path):
+                raise TrialLedgerError("ledger database does not exist")
+            if create and db_path != ":memory:":
+                parent = os.path.dirname(db_path)
+                if parent: os.makedirs(parent, exist_ok=True)
+            self._c = sqlite3.connect(db_path, check_same_thread=False)
+            self._c.isolation_level = None
             self._lock = threading.RLock()
             if create:
                 with self._lock: self._c.executescript(_SCHEMA)
-            else:
-                self._require_schema()
-        except (sqlite3.Error, OSError) as exc: raise TrialLedgerError("ledger database unavailable") from exc
+            self._require_schema()
+        except TrialLedgerError:
+            if self._c is not None:
+                try: self._c.close()
+                except sqlite3.Error: pass
+            raise
+        except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
+            if self._c is not None:
+                try: self._c.close()
+                except sqlite3.Error: pass
+            raise TrialLedgerError("ledger database unavailable") from exc
 
     def _require_schema(self):
+        expected_events = [("trial_id", "TEXT", 1, 1), ("event_index", "INTEGER", 1, 2), ("alpha_id", "TEXT", 1, 0), ("family_id", "TEXT", 1, 0), ("exact_definition_id", "TEXT", 1, 0), ("validation_policy_digest", "TEXT", 1, 0), ("status", "TEXT", 1, 0), ("at", "INTEGER", 1, 0), ("global_seq", "INTEGER", 1, 0), ("prev_hash", "TEXT", 1, 0), ("event_hash", "TEXT", 1, 0)]
+        expected_heads = [("trial_id", "TEXT", 0, 1), ("event_count", "INTEGER", 1, 0), ("head_hash", "TEXT", 1, 0), ("global_count", "INTEGER", 1, 0), ("global_head_hash", "TEXT", 1, 0)]
         names = {r[0] for r in self._c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if not {"trial_events", "trial_heads"} <= names: raise TrialLedgerError("ledger schema missing")
+        def info(table):
+            return [(r[1], r[2].upper(), r[3], r[5]) for r in self._c.execute(f"PRAGMA table_info({table})").fetchall()]
+        if info("trial_events") != expected_events or info("trial_heads") != expected_heads:
+            raise TrialLedgerError("ledger table schema mismatch")
+        indexes = self._c.execute("PRAGMA index_list(trial_events)").fetchall()
+        if not any(r[2] and [x[2] for x in self._c.execute(f"PRAGMA index_info('{r[1]}')").fetchall()] == ["global_seq"] for r in indexes):
+            raise TrialLedgerError("global_seq UNIQUE commitment missing")
+        triggers = {r[0]: (r[1] or "").lower() for r in self._c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'").fetchall()}
+        for name, action in (("trial_events_no_update", "before update on trial_events"), ("trial_events_no_delete", "before delete on trial_events")):
+            sql = triggers.get(name, "")
+            if action not in sql or "raise(abort" not in sql: raise TrialLedgerError("append-only trigger schema mismatch")
 
     @staticmethod
     def _validate_record(r):
         if not isinstance(r, TrialRecord): raise TrialLedgerError("record type required")
         for name in ("trial_id", "alpha_id", "family_id", "exact_definition_id", "validation_policy_digest"):
             if not isinstance(getattr(r,name), str) or not _HEX64.fullmatch(getattr(r,name)): raise TrialLedgerError(f"invalid {name}")
-        if r.status not in _STATES: raise TrialLedgerError("unknown trial status")
+        if not isinstance(r.status, str) or r.status not in _STATES: raise TrialLedgerError("unknown trial status")
         if not isinstance(r.event_index,int) or isinstance(r.event_index,bool) or r.event_index < 0: raise TrialLedgerError("invalid event_index")
         if not isinstance(r.at,int) or isinstance(r.at,bool): raise TrialLedgerError("invalid at")
         try: _canonical(r,0)
