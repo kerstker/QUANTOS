@@ -126,8 +126,6 @@ def test_phase13_dirty_state_allowlisted_symlink_is_unsafe(
 
 def test_phase13_artifact_commit_symlink_mode_is_not_artifact_only(tmp_path: Path) -> None:
     repo, _source = _init_binding_repo(tmp_path)
-    target = repo / "target.json"
-    target.write_text("{}\n", encoding="utf-8")
     blob = subprocess.check_output(
         ["git", "hash-object", "-w", "--stdin"],
         cwd=repo,
@@ -135,6 +133,8 @@ def test_phase13_artifact_commit_symlink_mode_is_not_artifact_only(tmp_path: Pat
     ).decode().strip()
     _git(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},evidence/validation_report.json")
     _git(repo, "commit", "-m", "symlink artifact")
+    _git(repo, "checkout", "-f", "HEAD")
+    assert subprocess.check_output(["git", "status", "--porcelain"], cwd=repo, text=True) == ""
     commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=repo, text=True
     ).strip()

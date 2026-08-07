@@ -94,6 +94,15 @@ def _assert_regular_artifact(repo: Path, path: str) -> None:
 
 
 def _check_clean_boundary(repo: Path) -> None:
+    for path in CANONICAL_GENERATED_ARTIFACT_ALLOWLIST:
+        try:
+            mode = os.lstat(repo / path).st_mode
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError(f"canonical artifact path cannot be inspected: {path!r}") from exc
+        if not stat.S_ISREG(mode):
+            raise ValueError(f"canonical artifact path is not a regular file: {path!r}")
     raw = _git(repo, "status", "--porcelain=v2", "--untracked-files=all", "-z", text=False)
     assert isinstance(raw, bytes)
     for record in raw.split(b"\0"):
