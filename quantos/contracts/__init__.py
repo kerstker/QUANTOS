@@ -71,6 +71,18 @@ from .identity import GovernanceRole, StrongIdentityAssurance, VerifiedIdentity
 from .data import VolumeSemantics, VolumeUnit
 from .cost import CostModel
 from .paper import FillMethod, OrderSide as PaperOrderSide, PaperFill
+from .mft_execution import (
+    MFT_TESTNET_ENVIRONMENT,
+    MFT_TESTNET_INTENT_SCHEMA,
+    MFT_TESTNET_RECEIPT_SCHEMA,
+    TestnetExecutionIntent,
+    TestnetExecutionReceipt,
+    TestnetExecutionReceiptStatus,
+    TestnetIntentVerification,
+    create_testnet_execution_intent,
+    create_testnet_execution_receipt,
+    verify_testnet_execution_intent,
+)
 from .research import (
     ArtifactCore,
     ArtifactCoreScanReceipt,
@@ -115,6 +127,16 @@ __all__ = [
     "FillMethod",
     "PaperOrderSide",
     "PaperFill",
+    "MFT_TESTNET_ENVIRONMENT",
+    "MFT_TESTNET_INTENT_SCHEMA",
+    "MFT_TESTNET_RECEIPT_SCHEMA",
+    "TestnetExecutionIntent",
+    "TestnetIntentVerification",
+    "TestnetExecutionReceiptStatus",
+    "TestnetExecutionReceipt",
+    "create_testnet_execution_intent",
+    "verify_testnet_execution_intent",
+    "create_testnet_execution_receipt",
     "Actor",
     "ActorKind",
     "AlphaDefinition",
