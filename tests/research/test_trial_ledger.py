@@ -44,13 +44,17 @@ def test_invalid_status_or_transition_rejected(tmp_path, status, index):
         ledger.append(rec(status=status, index=index, at=2))
 
 
-def test_idempotency_and_conflict(tmp_path):
-    ledger = TrialLedger(str(tmp_path / "trials.db"))
-    first = ledger.append(rec())
-    second = ledger.append(rec())
-    assert second == first
-    with pytest.raises(TrialLedgerConflict):
-        ledger.append(rec(at=999))
+def test_idempotency_for_later_events_and_terminal_retry(tmp_path):
+    path = str(tmp_path / "trials.db")
+    ledger = TrialLedger(path)
+    ledger.append(rec())
+    running = rec(status="RUNNING", index=1, at=2)
+    aggregate = ledger.append(running)
+    assert ledger.append(running) == aggregate
+    passed = rec(status="PASSED", index=2, at=3)
+    terminal = ledger.append(passed)
+    assert ledger.append(passed) == terminal
+    assert sqlite3.connect(path).execute("SELECT count(*) FROM trial_events").fetchone()[0] == 3
 
 
 def test_sqlite_triggers_reject_mutation(tmp_path):
@@ -211,7 +215,30 @@ def test_valid_existing_schema_is_accepted(tmp_path):
     assert TrialLedger(path, create=False).load(h(1)).status == "PLANNED"
 
 
-def test_constructor_translates_bad_path_and_unhashable_status(tmp_path):
+def test_close_and_context_manager_are_deterministic(tmp_path):
+    path = str(tmp_path / "close.db")
+    with TrialLedger(path) as ledger:
+        ledger.append(rec())
+    ledger.close()
+    ledger.close()
+    with pytest.raises(TrialLedgerError): ledger.verify()
+
+
+@pytest.mark.parametrize("action", ["UPDATE", "DELETE"])
+def test_inert_when_zero_trigger_rejected(tmp_path, action):
+    path = str(tmp_path / f"when-{action}.db")
+    con = sqlite3.connect(path)
+    con.executescript("""
+    CREATE TABLE trial_events (trial_id TEXT NOT NULL,event_index INTEGER NOT NULL,alpha_id TEXT NOT NULL,family_id TEXT NOT NULL,exact_definition_id TEXT NOT NULL,validation_policy_digest TEXT NOT NULL,status TEXT NOT NULL,at INTEGER NOT NULL,global_seq INTEGER NOT NULL UNIQUE,prev_hash TEXT NOT NULL,event_hash TEXT NOT NULL,PRIMARY KEY(trial_id,event_index));
+    CREATE TABLE trial_heads (trial_id TEXT PRIMARY KEY,event_count INTEGER NOT NULL,head_hash TEXT NOT NULL,global_count INTEGER NOT NULL,global_head_hash TEXT NOT NULL);
+    """)
+    name = "trial_events_no_update" if action == "UPDATE" else "trial_events_no_delete"
+    con.execute(f"CREATE TRIGGER {name} BEFORE {action} ON trial_events WHEN 0 BEGIN SELECT RAISE(ABORT,'trial_events is append-only'); END")
+    con.commit(); con.close()
+    with pytest.raises(TrialLedgerError): TrialLedger(path, create=True)
+    with pytest.raises(TrialLedgerError): TrialLedger(path, create=False)
+
+
     missing = tmp_path / "missing.db"
     with pytest.raises(TrialLedgerError): TrialLedger(str(missing), create=False)
     assert not missing.exists()

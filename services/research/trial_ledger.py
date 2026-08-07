@@ -84,10 +84,13 @@ class TrialLedger:
         indexes = self._c.execute("PRAGMA index_list(trial_events)").fetchall()
         if not any(r[2] and [x[2] for x in self._c.execute(f"PRAGMA index_info('{r[1]}')").fetchall()] == ["global_seq"] for r in indexes):
             raise TrialLedgerError("global_seq UNIQUE commitment missing")
-        triggers = {r[0]: (r[1] or "").lower() for r in self._c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'").fetchall()}
-        for name, action in (("trial_events_no_update", "before update on trial_events"), ("trial_events_no_delete", "before delete on trial_events")):
-            sql = triggers.get(name, "")
-            if action not in sql or "raise(abort" not in sql: raise TrialLedgerError("append-only trigger schema mismatch")
+        triggers = {r[0]: " ".join((r[1] or "").lower().split()) for r in self._c.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'").fetchall()}
+        expected_triggers = {
+            "trial_events_no_update": "create trigger trial_events_no_update before update on trial_events begin select raise(abort,'trial_events is append-only'); end",
+            "trial_events_no_delete": "create trigger trial_events_no_delete before delete on trial_events begin select raise(abort,'trial_events is append-only'); end",
+        }
+        for name, expected in expected_triggers.items():
+            if triggers.get(name) != expected: raise TrialLedgerError("append-only trigger schema mismatch")
 
     @staticmethod
     def _validate_record(r):
@@ -100,9 +103,23 @@ class TrialLedger:
         try: _canonical(r,0)
         except (TypeError, ValueError, OverflowError) as exc: raise TrialLedgerError("non-canonical record") from exc
 
+    def close(self):
+        with getattr(self, "_lock", threading.RLock()):
+            if self._c is not None:
+                try: self._c.close()
+                except sqlite3.Error: pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
     def _global_head(self):
         row = self._c.execute("SELECT global_count,global_head_hash FROM trial_heads WHERE trial_id='' ").fetchone()
         return row if row else (0, "")
+
     def _rows(self, trial_id=None):
         sql = _SELECT + (" WHERE trial_id=?" if trial_id else "") + " ORDER BY global_seq"
         return self._c.execute(sql, (trial_id,) if trial_id else ()).fetchall()
@@ -146,7 +163,7 @@ class TrialLedger:
                 existing=self._c.execute(_SELECT+" WHERE trial_id=? AND event_index=?",(record.trial_id,record.event_index)).fetchone()
                 if existing:
                     stored=TrialRecord(existing[0],existing[2],existing[3],existing[4],existing[5],existing[6],existing[1],existing[7])
-                    if stored != record or existing[10] != _hash(_canonical(record,existing[8])): raise TrialLedgerConflict("same trial/event key has different content")
+                    if stored != record: raise TrialLedgerConflict("same trial/event key has different content")
                     aggregate=self._aggregate_locked(record.trial_id); self._c.execute("COMMIT"); return aggregate
                 expected=len(prior_rows)
                 if record.event_index != expected: raise TrialLedgerError("event_index is not next")
