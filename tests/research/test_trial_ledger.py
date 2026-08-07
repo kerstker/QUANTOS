@@ -254,3 +254,29 @@ def test_constructor_translates_bad_path_and_unhashable_status(tmp_path):
     ledger = TrialLedger(":memory:")
     with pytest.raises(TrialLedgerError): ledger.append(TrialRecord(h(1), h(2), h(3), h(4), h(5), [], 0, 1))
 
+
+    path = str(tmp_path / "receipts.db")
+    first, second = TrialLedger(path), TrialLedger(path)
+    tid = h(800)
+    assert first.claim_validation_stage(tid, "cheap") == "CLAIMED"
+    assert second.claim_validation_stage(tid, "cheap") == "IN_PROGRESS"
+    first.complete_validation_stage(tid, "cheap", "FAILED", {"reason": "x"})
+    assert first.reopen_validation_stage(tid, "cheap") == "CLAIMED"
+    first.complete_validation_stage(tid, "cheap", "DONE", {"reason": "retry"})
+    assert first.validation_receipt(tid)["cheap"]["state"] == "DONE"
+    first.verify()
+
+
+def test_validation_receipt_tamper_and_nested_key_rejected(tmp_path):
+    path = str(tmp_path / "receipt-tamper.db")
+    ledger = TrialLedger(path); tid = h(801)
+    with pytest.raises(TrialLedgerError):
+        ledger.save_validation_artifact(tid, {"nested": {1: "bad"}})
+    ledger.claim_validation_stage(tid, "cheap")
+    ledger.complete_validation_stage(tid, "cheap", "DONE", {"ok": True})
+    con = sqlite3.connect(path)
+    con.execute("DROP TRIGGER validation_receipts_no_update")
+    con.execute("UPDATE validation_receipt_events SET payload_json='{}' WHERE trial_id=?", (tid,)); con.commit(); con.close()
+    with pytest.raises(TrialLedgerError):
+        ledger.verify()
+
