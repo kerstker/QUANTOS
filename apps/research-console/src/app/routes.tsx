@@ -47,7 +47,7 @@ export const GROUPS: readonly GroupDef[] = [
 export const PAGES: readonly PageDef[] = [
   // ---- Wave 3 object workspaces: content is replaced task-by-task; the shell is authoritative now. ----
   { path: '/workbench/market', zh: '市场监控', en: 'Market Monitor', icon: 'MM', group: null,
-    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+    load: () => import('@/pages/workbench/MarketMonitor') },
   { path: '/workbench/alpha', zh: 'Alpha 控制面', en: 'Alpha Control Plane', icon: 'Aα', group: null,
     load: () => import('@/pages/workbench/WorkbenchScaffold') },
   { path: '/workbench/validation', zh: '验证证据', en: 'Validation Evidence', icon: 'VE', group: null,
