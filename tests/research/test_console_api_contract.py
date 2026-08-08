@@ -192,7 +192,10 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
 # Streaming transports are console endpoints, but deliberately do not map to a
 # single frontend *Payload JSON contract. Their event bodies are validated by
 # test_console_live_stream.py before the EventSource hook accepts them.
-NON_JSON_STREAM_ROUTES = {"/api/v1/console/stream/dry-run"}
+NON_JSON_STREAM_ROUTES = {
+    "/api/v1/console/stream/dry-run",
+    "/api/v1/console/stream/mft-execution",
+}
 
 # Stable backend-only read contracts reserved for the Wave 3 console.  They are
 # intentionally not mapped to a frontend *Payload type during Wave 2.
