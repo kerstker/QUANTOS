@@ -5,9 +5,9 @@
   },
   "artifact": "QUANTOS_727_AUTONOMY_READINESS",
   "blockers": [],
-  "commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+  "commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786142178378,
+  "generated_at_ms": 1786162099353,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders.",
   "implementation": {
@@ -16,7 +16,7 @@
     "production_order_authority": false,
     "workflow_event_policy_idempotency_scheduler": true
   },
-  "input_hash": "04b772fd14e7e213de050d6d1e836b2ffaef1956165e6d98964ff44972d21f5e",
+  "input_hash": "4696dd97c7997a780a3c7371c994732dbce00c0c4241af20bc9c11cd7716c4f8",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -32,14 +32,14 @@
     },
     "services/orchestration": {
       "exists": true,
-      "file_count": 12,
-      "files_sha256": "449d4c6e9994506ae80be31e8ce6b652ab17e565919dddc42fb34fe664531a00",
+      "file_count": 13,
+      "files_sha256": "18c6f6bf54244df52cab32db227d6b6328d15273b593be5a59a0d479fdea2b4b",
       "kind": "python_directory"
     },
     "tests/orchestration": {
       "exists": true,
-      "file_count": 10,
-      "files_sha256": "cd61bbdb2d1a0aaef140a6cd14942f3b6aeb53df6909719da9a7ad5402359346",
+      "file_count": 11,
+      "files_sha256": "05c9a1c0cccf09fa6718daac0ac644c5b14091975fb45ef29cea88b71aad8648",
       "kind": "python_directory"
     }
   },
@@ -56,9 +56,9 @@
   "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
     "current": true,
-    "head_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "head_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "overall_status": "PASS",
-    "reported_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "reported_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "reported_validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "selection_scope": "ALL",
     "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5"

@@ -1,0 +1,101 @@
+{
+  "acceptance": {
+    "canonical_validation": true,
+    "deterministic_fault_matrix": true,
+    "functional_implementation": true,
+    "mainnet_authority": false,
+    "micro_live_ready": false,
+    "operational_testnet_soak": false,
+    "read_model_replay": true
+  },
+  "actual_testnet": {
+    "credentials_accessed": false,
+    "network_used": false,
+    "operator_started": false,
+    "order_submission_attempted": false,
+    "status": "OPERATIONAL_SOAK_PENDING"
+  },
+  "artifact": "QUANTOS_MFT_WAVE2_ACCEPTANCE",
+  "blockers": [
+    "OPERATIONAL_TESTNET_SOAK_REQUIRES_INDEPENDENT_HUMAN_START",
+    "MICRO_LIVE_REQUIRES_EXTERNAL_IDP_MTLS_SIGNING_AND_PROCESS_ISOLATION",
+    "MICRO_LIVE_REQUIRES_SUFFICIENT_FORWARD_EVIDENCE",
+    "MICRO_LIVE_REQUIRES_HUMAN_REAL_MONEY_MANDATE_AND_GO_NO_GO"
+  ],
+  "canonical_validation": {
+    "duration_ms": 1118585,
+    "errored": 0,
+    "failed": 0,
+    "overall_status": "PASS",
+    "passed": 27,
+    "run_id": "61003cd742e772286b75ffa764dd613d7227bbe14ab8e08d752591e8e537776c",
+    "selected": 27,
+    "timed_out": 0,
+    "validation_report_sha256": "d595043c4278204c026583681fbec50445c9df588bb4cd0c2bf461707e182db7"
+  },
+  "commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
+  "deterministic_acceptance": {
+    "economic_effects_at_most_once": true,
+    "fake_venue_completed": true,
+    "fake_venue_economic_effect_count": 1,
+    "inbox_replay_created_no_new_submission": true,
+    "network_used": false,
+    "oms_replay_matches_ledger": true,
+    "read_model_replay_exact": true,
+    "repeated_control_events_idempotent": true
+  },
+  "fault_matrix": {
+    "ack_lost_recovered_by_client_order_id": true,
+    "cancel_fill_race_incremental_fill_preserved": true,
+    "expired_intent_zero_submission": true,
+    "ledger_failure_remains_unknown": true,
+    "mainnet_zero_submission": true,
+    "market_429_blocked": true,
+    "market_gap_blocked": true,
+    "market_out_of_order_blocked": true,
+    "market_timeout_blocked": true,
+    "missing_mandate_zero_submission": true,
+    "partial_fill_not_overcounted": true,
+    "process_crash_fenced_before_next_command": true,
+    "repeated_events_idempotent": true,
+    "unknown_order_zero_submission": true
+  },
+  "generated_at_ms": 1786162187390,
+  "honesty_note": "Wave 2 deterministic implementation, failure recovery, read-only contract, governance, backend, live-stack and frontend gates are accepted at L2. The end-to-end execution test used a local deterministic fake Testnet venue and no credential or network access. No real Testnet submit or operational soak was started in this development session. Empty results, timeout, 429 and unknown outcomes were treated as blockers, never as PASS. Micro-Live remains structurally unauthorized.",
+  "implementation_commits": [
+    "3332816a",
+    "e27c5025",
+    "583e6d32",
+    "ca289876",
+    "c2e59269",
+    "e4238c46",
+    "869002a3",
+    "f0aa45c1",
+    "e3620fa7",
+    "f03ed3b6",
+    "d46f3d5"
+  ],
+  "input_hash": "9b63389148838ccbf4797eeab0010d19464fddea5291442e30cba2834dbe625d",
+  "inputs": {
+    "docs/runbooks/mft-testnet-operations.md": "0fdbbe5ffe87abb88508e14734e4a7e127ce1e8052e57b9a7fc0b83f9f89aa92",
+    "evidence/service_import_graph.json": "d28b1b10f0f6eb68c7ab4f89e5c2c5e0e9d6783331fe11fa84d9223c297eb717",
+    "evidence/validation_report.json": "d595043c4278204c026583681fbec50445c9df588bb4cd0c2bf461707e182db7",
+    "tests/integration/test_mft_testnet_execution.py": "4df04044afd7176f0261ceff5f6da43390340e5237edd3f5488a88ba97d96252",
+    "wave2_plan_document": "3903f29d0247ea2fd58041653ecd88f9b9089f3cc9f550ff7d8823db9ec6a0f1"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "schema_version": 1,
+  "status": "IMPLEMENTATION_ACCEPTED_SOAK_PENDING",
+  "targeted_validation": {
+    "integration_fault_matrix_passed": 11,
+    "monitoring_console_passed": 221,
+    "wave2_related_passed": 1431
+  }
+}

@@ -3,12 +3,12 @@
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+  "commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786142178378,
+  "generated_at_ms": 1786162099353,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "f75e709e59e26be57a6e4b9a6176dce33d88d1ae3f04d567b3e2dba6c6d2a8de",
+  "input_hash": "acff8359f68ce18a0bc53912d2a3697463e4677760794fe5c587b12561dba31d",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": false,
@@ -42,14 +42,14 @@
     },
     "tests/live": {
       "exists": true,
-      "file_count": 61,
-      "files_sha256": "ec3ee0dec4bb8fe28ca5522eb1b2ab3171f5413c1345c43d9212382159597904",
+      "file_count": 67,
+      "files_sha256": "61a6b8e0c6f64a5c7e6e61da9a7414c5d4bcc25daceef50a758e9ca80a4a77e5",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
-      "file_count": 158,
-      "files_sha256": "554b554c33048ce3091b6a18c2d9de29af78759206bc6fa749df665bf73da2a8",
+      "file_count": 159,
+      "files_sha256": "b203ecd118b9793a69e555b6acc18de298237992244bdf174c53763df77b18ed",
       "kind": "python_directory"
     }
   },
@@ -88,9 +88,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "head_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "overall_status": "PASS",
-    "reported_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "reported_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "reported_validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "selection_scope": "ALL",
     "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5"

@@ -9,7 +9,7 @@
     "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
     "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
   ],
-  "commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+  "commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "external_verification": {
     "account_smoke": false,
@@ -19,7 +19,7 @@
     "test_order_executed": false,
     "user_stream_verified": false
   },
-  "generated_at_ms": 1786142178378,
+  "generated_at_ms": 1786162099353,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
   "implementation": {
@@ -32,7 +32,7 @@
     "unknown_order_persistence": true,
     "user_stream": true
   },
-  "input_hash": "824418e231889d06b71355936a6b038e882a513f57b9770a67996f08506992f0",
+  "input_hash": "9a324ee374f14dfb6f0f90cf4ab16109403214a7259df43335f5efb63abd8674",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -61,8 +61,8 @@
     "live/execution/order_recovery.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "ff7910f72fb83f8b68756295b8cb497d2584e91939c7a4f39bbe2db2f0d6101b",
-      "size_bytes": 32312
+      "sha256": "052b1e79dbaba3776554fc8f4ba4d261ca526e20c5b0891c46c26a0ec4ac582d",
+      "size_bytes": 34675
     },
     "live/execution/startup_recovery.py": {
       "exists": true,
@@ -91,8 +91,8 @@
     "tests/live/test_order_recovery.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "154aaa68d69dd38ced5ed9936f4c49b56f193a3d9691a14bd84c7a83ee5cc038",
-      "size_bytes": 4701
+      "sha256": "a7012fa63f2597ea1014fd2861936ecbfdf7cc00bef24a39f956da76431ccf74",
+      "size_bytes": 7205
     },
     "tests/live/test_startup_recovery.py": {
       "exists": true,
@@ -138,9 +138,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "head_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "overall_status": "PASS",
-    "reported_commit": "bd083734e55eb998c3411c5b79230b03e8c0054d",
+    "reported_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97",
     "reported_validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "selection_scope": "ALL",
     "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5"
