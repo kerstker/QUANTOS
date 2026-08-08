@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 44,
+  "edge_count": 45,
   "edges": [
     {
       "references": [
@@ -826,17 +826,17 @@
     {
       "references": [
         {
-          "line": 51,
+          "line": 52,
           "module": "services.alpha.catalog",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 52,
+          "line": 53,
           "module": "services.alpha.guards",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 53,
+          "line": 54,
           "module": "services.alpha.promotion",
           "path": "services/promotion_api/main.py"
         }
@@ -847,27 +847,27 @@
     {
       "references": [
         {
-          "line": 59,
+          "line": 60,
           "module": "services.governance.approval",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 66,
+          "line": 67,
           "module": "services.governance.approval_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 67,
+          "line": 68,
           "module": "services.governance.identity_authorization",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 71,
+          "line": 72,
           "module": "services.governance.identity_authorization_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 77,
+          "line": 78,
           "module": "services.governance.strong_identity",
           "path": "services/promotion_api/main.py"
         }
@@ -878,12 +878,12 @@
     {
       "references": [
         {
-          "line": 84,
+          "line": 85,
           "module": "services.monitoring.audit_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 85,
+          "line": 86,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/promotion_api/main.py"
         }
@@ -894,17 +894,38 @@
     {
       "references": [
         {
-          "line": 92,
+          "line": 93,
+          "module": "services.orchestration.command_bus",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 98,
+          "module": "services.orchestration.command_envelope",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 99,
+          "module": "services.orchestration.idempotency",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "orchestration"
+    },
+    {
+      "references": [
+        {
+          "line": 105,
           "module": "services.research.experiment_registry.registry",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 93,
+          "line": 106,
           "module": "services.research.experiment_registry.store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 94,
+          "line": 107,
           "module": "services.research.paper_trading.store",
           "path": "services/promotion_api/main.py"
         }
@@ -1304,7 +1325,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "07643ef52ca413b5fb4514ffe7e3bf5b8ef4769851ab57662c017adb2c02e338",
+  "graph_sha256": "48a1020c368273cfb9c20e232567dee33e9d88b81023aea16d69f3fa4d07d28f",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
