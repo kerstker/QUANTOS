@@ -3,7 +3,7 @@ serialization round-trip)."""
 import pytest
 from pydantic import ValidationError
 
-from quantos.contracts.hashing import source_file_sha256
+from quantos.contracts.hashing import source_file_sha256, stable_json
 
 from quantos.contracts import (
     RESEARCH_SAFE_DEFAULTS,
@@ -198,6 +198,15 @@ def test_stable_hash_is_order_independent():
 def test_stable_hash_canonicalizes_floats():
     # 0.1 + 0.2 != 0.3 in IEEE754, but must hash the same after rounding
     assert stable_hash({"x": 0.1 + 0.2}) == stable_hash({"x": 0.3})
+
+
+def test_stable_json_exposes_the_exact_hash_input_without_erasing_float_tags():
+    assert stable_json({"text": "运行", "ratio": 1.0, "x": 0.1234567890123}) == (
+        '{"ratio":1.0,"text":"\\u8fd0\\u884c","x":0.123456789}'
+    )
+    assert stable_hash({"fill_ratio": 1.0}) == (
+        "f6eff70c513aab222e4f21b088eabb62dac5032ad60359c2a5b82a2b9396c8aa"
+    )
 
 
 def test_short_hash_length():

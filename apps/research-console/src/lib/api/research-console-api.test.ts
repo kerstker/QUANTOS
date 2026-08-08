@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertConsoleSnapshot } from './research-console-api';
+import {
+  assertConsoleSnapshot,
+  assertMftExecutionDelta,
+  assertMftExecutionSnapshot,
+} from './research-console-api';
+import { MFT_CONSOLE_SCHEMA } from '@/workbench/contracts';
+import { makeMftSnapshot } from '@/workbench/__tests__/mft-fixtures';
 
 // The frontend trusts the backend via a compile-time cast and silently falls
 // back to mock on error. assertConsoleSnapshot is the runtime line of defense:
@@ -31,5 +37,30 @@ describe('assertConsoleSnapshot', () => {
 
   it('names the failing path in the error for debuggability', () => {
     expect(() => assertConsoleSnapshot({}, '/api/v1/console/overview')).toThrow(/overview/);
+  });
+});
+
+describe('MFT execution API guards', () => {
+  it('accepts the dedicated MFT authority source without weakening generic snapshots', () => {
+    const snapshot = makeMftSnapshot();
+    expect(assertMftExecutionSnapshot(snapshot)).toEqual(snapshot);
+    expect(() => assertConsoleSnapshot(snapshot, '/api/v1/console/mft-execution')).toThrow();
+  });
+
+  it('rejects malformed resnapshot responses and unknown delta schemas', () => {
+    expect(() => assertMftExecutionDelta({
+      schema_version: MFT_CONSOLE_SCHEMA,
+      status: 'RESNAPSHOT_REQUIRED',
+      reason: 'CURSOR_GAP',
+      refetch: '/wrong',
+      read_only: true,
+    })).toThrow();
+    expect(() => assertMftExecutionDelta({
+      schema_version: 'quantos.mft-execution-console.v2',
+      status: 'RESNAPSHOT_REQUIRED',
+      reason: 'CURSOR_GAP',
+      refetch: '/api/v1/console/mft-execution',
+      read_only: true,
+    })).toThrow(/UNKNOWN_SCHEMA/);
   });
 });

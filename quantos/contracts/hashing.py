@@ -25,10 +25,20 @@ def _canonicalize(obj: Any) -> Any:
     return obj
 
 
+def stable_json(obj: Any) -> str:
+    """Return the exact canonical JSON bytestring consumed by :func:`stable_hash`.
+
+    This is useful at language boundaries where JSON parsing erases the
+    distinction between an integer and an integer-shaped float such as ``1.0``.
+    """
+    return json.dumps(
+        _canonicalize(obj), sort_keys=True, separators=(",", ":"), default=str
+    )
+
+
 def stable_hash(obj: Any) -> str:
     """Return a stable 64-hex-char sha256 of `obj` (order- and float-stable)."""
-    payload = json.dumps(_canonicalize(obj), sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(stable_json(obj).encode("utf-8")).hexdigest()
 
 
 def short_hash(obj: Any, length: int = 16) -> str:

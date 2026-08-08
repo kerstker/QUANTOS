@@ -59,14 +59,20 @@ FastAPI 0.139、SQLite read model、SSE/WebSocket。
 - Create: `apps/research-console/src/workbench/__tests__/contracts.test.ts`
 - Create: `apps/research-console/src/workbench/__tests__/mft-reducer.test.ts`
 - Modify: `apps/research-console/src/lib/api/research-console-api.ts`
+- Modify: `quantos/contracts/hashing.py`
+- Modify: `quantos/contracts/__init__.py`
+- Modify: `services/monitoring/mft_read_model.py`
 - Test: `apps/research-console/src/lib/api/research-console-api.test.ts`
+- Test: `tests/research/test_mft_execution_console_contract.py`
+- Test: `tests/contracts/test_contracts.py`
 
 **Acceptance**
 
 - manifest 对五个顶级工作区给出唯一 purpose、route、权威 endpoint 和 provenance policy；
 - MFT v1 snapshot/delta 运行时校验 fail-closed，不只依赖 TypeScript 静态类型；
-- reducer 验证 schema、from_cursor、连续 sequence、prev_hash、payload_hash、event_hash、
-  terminal cursor 和 safety；不信任服务端未校验字段；
+- Task 37 v1 以兼容加法暴露精确 `payload_hash_input`（解决 JSON 解析丢失 `1.0` 浮点
+  类型标签的问题）；reducer 验证 schema、from_cursor、连续 sequence、prev_hash、
+  payload_hash、event_hash、terminal cursor 和 safety；不信任服务端未校验字段；
 - gap、时间倒退、未知 section、未知 schema、缺 freshness/watermark/provenance 均返回
   `RESNAPSHOT_REQUIRED`，不部分应用；
 - REAL_API 失败不返回 mock，MOCK 模式显式带 `SYNTHETIC` 标签。

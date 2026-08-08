@@ -5,7 +5,7 @@ services. Import from here, not from per-service local copies.
 """
 
 from .config import RESEARCH_SAFE_DEFAULTS, SafetyConfig, SafetyViolation
-from .hashing import short_hash, stable_hash
+from .hashing import short_hash, stable_hash, stable_json
 from .canonical import (
     CanonicalJsonError,
     canonical_json_bytes,
@@ -152,6 +152,7 @@ __all__ = [
     "KillSwitchScope",
     "KillSwitchState",
     "stable_hash",
+    "stable_json",
     "short_hash",
     "CanonicalJsonError",
     "canonicalize_float64",

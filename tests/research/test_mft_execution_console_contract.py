@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sqlite3
 
@@ -153,6 +154,10 @@ def test_delta_rebuilds_the_next_snapshot_exactly(tmp_path):
 
     assert delta["status"] == "OK"
     assert delta["events"]
+    for event in delta["events"]:
+        canonical = event["payload_hash_input"]
+        assert json.loads(canonical) == event["payload"]
+        assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == event["payload_hash"]
     assert apply_mft_delta(before, delta) == after
 
     tampered = copy.deepcopy(delta)

@@ -40,6 +40,12 @@ import type {
   SystemHealthPayload,
   ValidationDashboardPayload,
 } from '@/lib/types/research';
+import {
+  parseMftDelta,
+  parseMftSnapshot,
+  type MftDeltaResponse,
+  type MftSnapshot,
+} from '@/workbench/contracts';
 
 const SAME_ORIGIN_MARKER = '__QUANTOS_SAME_ORIGIN__';
 const configuredConsoleBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -119,6 +125,42 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
   const value = assertConsoleSnapshot<TPayload>(await response.json(), path);
   snapshotCache.set(path, { value, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
   return value;
+}
+
+export function assertMftExecutionSnapshot(body: unknown): MftSnapshot {
+  return parseMftSnapshot(body);
+}
+
+export function assertMftExecutionDelta(body: unknown): MftDeltaResponse {
+  return parseMftDelta(body);
+}
+
+async function fetchMftJson<T>(
+  path: string,
+  guard: (body: unknown) => T,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!RESEARCH_CONSOLE_API_BASE) throw new Error('VITE_API_URL is not configured');
+  if (signal?.aborted) throw new Error('Console snapshot request aborted');
+  const response = await fetch(new URL(path, RESEARCH_CONSOLE_API_BASE), { method: 'GET', signal });
+  if (!response.ok) throw new Error(`Console API returned ${response.status}`);
+  return guard(await response.json());
+}
+
+export function fetchMftExecutionSnapshot(signal?: AbortSignal): Promise<MftSnapshot> {
+  return fetchMftJson('/api/v1/console/mft-execution', assertMftExecutionSnapshot, signal);
+}
+
+export function fetchMftExecutionDelta(
+  cursor: string,
+  signal?: AbortSignal,
+  limit = 500,
+): Promise<MftDeltaResponse> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    return Promise.reject(new Error('MFT delta limit must be between 1 and 1000'));
+  }
+  const path = `/api/v1/console/mft-execution/delta?cursor=${encodeURIComponent(cursor)}&limit=${limit}`;
+  return fetchMftJson(path, assertMftExecutionDelta, signal);
 }
 
 export function fetchOverviewSnapshot(signal?: AbortSignal) {

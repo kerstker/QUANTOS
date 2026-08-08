@@ -16,7 +16,7 @@ import re
 import sqlite3
 from typing import Any
 
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import stable_hash, stable_json
 
 
 MFT_CONSOLE_SCHEMA = "quantos.mft-execution-console.v1"
@@ -494,6 +494,7 @@ class MftReadModelStore:
                         "section": section,
                         "event_at_ms": event_at_ms,
                         "payload": payload,
+                        "payload_hash_input": stable_json(payload),
                         "payload_hash": payload_hash,
                         "prev_hash": stored_prev,
                         "event_hash": stored_hash,
