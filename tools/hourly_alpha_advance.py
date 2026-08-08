@@ -97,6 +97,7 @@ class AdvanceResult:
 
 
 DecisionBuilder = Callable[[str, HourlyMarketPanel], ForwardDecisionSpec | None]
+PaperIntentProjector = Callable[[AdvanceResult], object]
 
 
 def _require_budget(value: int) -> int:
@@ -151,10 +152,13 @@ def advance_hourly_alpha(
     lease_until: int,
     correlation_threshold: float = 0.999,
     production: bool = True,
+    paper_intent_projector: PaperIntentProjector | None = None,
 ) -> AdvanceResult:
-    """Advance one deterministic batch and, when fully admitted, record shadow decisions."""
+    """Advance a batch, then project an intent only from an existing PAPER state."""
     validate_panel(panel)
     budget = _require_budget(budget)
+    if paper_intent_projector is not None and not callable(paper_intent_projector):
+        raise TypeError("paper_intent_projector must be callable")
     if type(as_of) is not int or panel.as_of != as_of:
         raise ValueError("as_of must exactly match the attested hourly panel")
     if isinstance(validation_panel, Mapping) and validation_panel.get("hourly_market") != panel:
@@ -230,7 +234,7 @@ def advance_hourly_alpha(
     status = "COMPLETED" if receipt.validated_count == 0 or not errors else "BLOCKED"
     if snapshot.state == "SHADOW" and not errors:
         status = "COMPLETED"
-    return AdvanceResult(
+    result = AdvanceResult(
         status=status,
         workflow_state=snapshot.state,
         receipt=receipt,
@@ -238,6 +242,13 @@ def advance_hourly_alpha(
         skipped_decisions=skipped,
         decision_errors=tuple(errors),
     )
+    if (
+        paper_intent_projector is not None
+        and result.status == "COMPLETED"
+        and result.workflow_state == "PAPER"
+    ):
+        paper_intent_projector(result)
+    return result
 
 
 def _partition(panel_root: Path, as_of: int) -> Path:

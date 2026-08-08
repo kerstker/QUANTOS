@@ -136,7 +136,15 @@ def _decision(alpha_id: str, panel: HourlyMarketPanel) -> ForwardDecisionSpec:
     )
 
 
-def _run(tmp_path, registry, policy, *, worker="worker-a", lease_now=T0):
+def _run(
+    tmp_path,
+    registry,
+    policy,
+    *,
+    worker="worker-a",
+    lease_now=T0,
+    paper_intent_projector=None,
+):
     panel = _panel()
     with WorkflowStore(str(tmp_path / "workflow.db")) as workflow, TrialLedger(
         str(tmp_path / "trials.db")
@@ -158,6 +166,7 @@ def _run(tmp_path, registry, policy, *, worker="worker-a", lease_now=T0):
             lease_now=lease_now,
             lease_until=lease_now + 10,
             production=False,
+            paper_intent_projector=paper_intent_projector,
         )
 
 
@@ -206,6 +215,61 @@ def test_crash_checkpoint_resumes_without_revalidating_finished_candidate(tmp_pa
     assert result.workflow_state == "SHADOW"
     assert counts[("cheap", ordered_ids[0])] == 1
     assert counts[("cheap", ordered_ids[1])] == 2
+
+
+def test_shadow_workflow_cannot_project_a_testnet_intent(tmp_path):
+    _, policy, _, registry = _inputs()
+    projected = []
+
+    result = _run(
+        tmp_path,
+        registry,
+        policy,
+        paper_intent_projector=projected.append,
+    )
+
+    assert result.workflow_state == "SHADOW"
+    assert projected == []
+
+
+def test_existing_paper_workflow_invokes_intent_projection_after_completion(tmp_path):
+    _, policy, _, registry = _inputs()
+    initial = _run(tmp_path, registry, policy)
+    with WorkflowStore(str(tmp_path / "workflow.db")) as workflow:
+        workflow.transition(initial.receipt.batch_id, "PAPER", at=T0)
+    projected = []
+
+    result = _run(
+        tmp_path,
+        registry,
+        policy,
+        worker="worker-b",
+        paper_intent_projector=projected.append,
+    )
+
+    assert result.status == "COMPLETED"
+    assert result.workflow_state == "PAPER"
+    assert projected == [result]
+
+
+def test_paper_intent_outbox_failure_is_not_hidden_as_completed(tmp_path):
+    _, policy, _, registry = _inputs()
+    initial = _run(tmp_path, registry, policy)
+    with WorkflowStore(str(tmp_path / "workflow.db")) as workflow:
+        workflow.transition(initial.receipt.batch_id, "PAPER", at=T0)
+
+    def fail_projection(result):
+        del result
+        raise OSError("simulated intent outbox failure")
+
+    with pytest.raises(OSError, match="outbox failure"):
+        _run(
+            tmp_path,
+            registry,
+            policy,
+            worker="worker-b",
+            paper_intent_projector=fail_projection,
+        )
 
 
 def test_budget_is_bounded_and_cli_has_no_live_or_submission_switches(tmp_path):
