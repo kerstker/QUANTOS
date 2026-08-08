@@ -1,11 +1,17 @@
+import hashlib
 import io
 import json
 import zipfile
 
+import pytest
+
 from services.data.raw_archive import (archive_json_response,
                                        archive_response,
                                        summarize_archive)
-from tools.raw_data_lineage_backfill import run_backfill as _run_backfill
+from tools.raw_data_lineage_backfill import (
+    reanchor_backfill_archive,
+    run_backfill as _run_backfill,
+)
 
 _DAY = 86_400_000
 _NOW = 21 * _DAY
@@ -36,6 +42,179 @@ def _seed(tmp_path):
         "_meta": {}, "data": {"BTC": {str(_EXPECTED): oi_record}},
     }), encoding="utf-8")
     return mark, funding, oi, oi_record
+
+
+def _artifact(path):
+    payload = path.read_bytes()
+    return {
+        "path": path.as_posix(),
+        "size_bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _stale_backfill(tmp_path):
+    mark, funding, oi, _ = _seed(tmp_path)
+    path = tmp_path / "backfill.json"
+    document = {
+        "schema_version": 1,
+        "readiness": "L2_DRY_RUN_ONLY",
+        "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
+        "generated_at_ms": _NOW - 100,
+        "instrument_scope": ["BTC"],
+        "required_days": [_EXPECTED],
+        "archive_root": (tmp_path / "raw").as_posix(),
+        "artifacts": {
+            "prices": _artifact(mark),
+            "funding": _artifact(funding),
+            "oi_metrics": _artifact(oi),
+        },
+        "sources": {
+            name: {
+                "attempted_records": 1,
+                "matched_records": 1,
+                "failures": [],
+                "failed_tickers": [],
+                "warnings": [],
+                "passed": True,
+            }
+            for name in ("perp_mark_prices", "funding", "oi_metrics")
+        },
+        "raw_lineage_scope": {
+            "dataset_ids": [
+                "funding",
+                "oi_metrics",
+                "oi_metrics_rest_gap_fill",
+                "perp_mark_prices",
+                "perp_mark_prices_rest_gap_fill",
+            ],
+            "instrument_ids": ["BTC"],
+        },
+        "raw_lineage": {
+            "status": "BLOCK",
+            "aggregate_sha256": "0" * 64,
+            "datasets": {},
+            "errors": [{"kind": "FULL_AUDIT_STALE"}],
+        },
+        "verdict": "BLOCK",
+        "block_reasons": ["ARCHIVE:BLOCK"],
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path, mark, funding, oi
+
+
+def test_offline_reanchor_refreshes_only_the_archive_witness(tmp_path):
+    evidence, mark, funding, oi = _stale_backfill(tmp_path)
+    calls = []
+
+    def archive_summary(root, *, dataset_ids, instrument_ids, now_ms):
+        calls.append((root, dataset_ids, instrument_ids, now_ms))
+        return {
+            "status": "PASS",
+            "aggregate_sha256": "a" * 64,
+            "datasets": {
+                "funding": 1,
+                "oi_metrics": 1,
+                "perp_mark_prices": 1,
+            },
+            "errors": [],
+        }
+
+    report = reanchor_backfill_archive(
+        evidence_path=str(evidence),
+        now_ms=_NOW,
+        mark_path=str(mark),
+        funding_path=str(funding),
+        oi_path=str(oi),
+        archive_summary=archive_summary,
+    )
+
+    assert report["verdict"] == "PASS"
+    assert report["block_reasons"] == []
+    assert report["raw_lineage"]["aggregate_sha256"] == "a" * 64
+    assert report["archive_witness_reanchor"] == {
+        "mode": "OFFLINE_NO_REFETCH",
+        "previous_generated_at_ms": _NOW - 100,
+        "reanchored_at_ms": _NOW,
+    }
+    assert report["sources"] == json.loads(evidence.read_text())["sources"]
+    assert len(calls) == 1
+
+
+def test_offline_reanchor_rejects_changed_artifacts_or_failed_sources(tmp_path):
+    evidence, mark, funding, oi = _stale_backfill(tmp_path)
+    mark.write_text("changed", encoding="utf-8")
+
+    with pytest.raises(Exception, match="artifact"):
+        reanchor_backfill_archive(
+            evidence_path=str(evidence),
+            now_ms=_NOW,
+            mark_path=str(mark),
+            funding_path=str(funding),
+            oi_path=str(oi),
+            archive_summary=lambda *args, **kwargs: {"status": "PASS"},
+        )
+
+    evidence, mark, funding, oi = _stale_backfill(tmp_path)
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["sources"]["funding"]["failed_tickers"] = ["BTC"]
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(Exception, match="source"):
+        reanchor_backfill_archive(
+            evidence_path=str(evidence),
+            now_ms=_NOW,
+            mark_path=str(mark),
+            funding_path=str(funding),
+            oi_path=str(oi),
+            archive_summary=lambda *args, **kwargs: {"status": "PASS"},
+        )
+
+
+def test_offline_reanchor_preserves_archive_block(tmp_path):
+    evidence, mark, funding, oi = _stale_backfill(tmp_path)
+
+    report = reanchor_backfill_archive(
+        evidence_path=str(evidence),
+        now_ms=_NOW,
+        mark_path=str(mark),
+        funding_path=str(funding),
+        oi_path=str(oi),
+        archive_summary=lambda *args, **kwargs: {
+            "status": "BLOCK",
+            "datasets": {"funding": 1},
+            "errors": [{"kind": "FULL_AUDIT_STALE"}],
+        },
+    )
+
+    assert report["verdict"] == "BLOCK"
+    assert report["block_reasons"] == [
+        "ARCHIVE:BLOCK",
+        "ARCHIVE_MISSING_DATASETS:['oi_metrics', 'perp_mark_prices']",
+    ]
+
+
+def test_offline_reanchor_rejects_malformed_pass_summary(tmp_path):
+    evidence, mark, funding, oi = _stale_backfill(tmp_path)
+
+    with pytest.raises(Exception, match="archive summary"):
+        reanchor_backfill_archive(
+            evidence_path=str(evidence),
+            now_ms=_NOW,
+            mark_path=str(mark),
+            funding_path=str(funding),
+            oi_path=str(oi),
+            archive_summary=lambda *args, **kwargs: {
+                "status": "PASS",
+                "aggregate_sha256": None,
+                "datasets": {
+                    "funding": 1,
+                    "oi_metrics": 1,
+                    "perp_mark_prices": 1,
+                },
+                "errors": [],
+            },
+        )
 
 
 def _archive_bytes(root, dataset, payload, observed_at_ms):

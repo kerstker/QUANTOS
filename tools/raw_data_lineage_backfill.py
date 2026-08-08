@@ -82,6 +82,174 @@ def _artifact(path: str) -> dict:
     }
 
 
+def reanchor_backfill_archive(
+    *,
+    evidence_path: str = _OUTPUT,
+    now_ms: int | None = None,
+    archive_root: str | None = None,
+    mark_path: str = _MARK,
+    funding_path: str = _FUNDING,
+    oi_path: str = _OI,
+    archive_summary=summarize_indexed_archive,
+) -> dict:
+    """Refresh only the archive witness of a completed backfill.
+
+    The network reconciliation remains immutable evidence.  This operation is
+    permitted only when every retained source report passed, the canonical
+    cache artifacts are byte-identical, and the scope is unchanged.  It does
+    not invoke any fetcher and therefore cannot make a newly completed full
+    archive audit stale again.
+    """
+
+    payload = _load_object(evidence_path, label="lineage backfill evidence")
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("readiness") != "L2_DRY_RUN_ONLY"
+        or payload.get("purpose") != "RECENT_FORWARD_RAW_LINEAGE_BACKFILL"
+    ):
+        raise LineageBackfillError("lineage backfill evidence schema is invalid")
+    previous_generated_at_ms = payload.get("generated_at_ms")
+    if (
+        isinstance(previous_generated_at_ms, bool)
+        or not isinstance(previous_generated_at_ms, int)
+        or previous_generated_at_ms < 0
+    ):
+        raise LineageBackfillError("lineage backfill evidence time is invalid")
+    reanchored_at_ms = int(time.time() * 1_000) if now_ms is None else now_ms
+    if (
+        isinstance(reanchored_at_ms, bool)
+        or not isinstance(reanchored_at_ms, int)
+        or reanchored_at_ms < previous_generated_at_ms
+    ):
+        raise LineageBackfillError("archive reanchor time is invalid")
+
+    scope = payload.get("instrument_scope")
+    if (
+        not isinstance(scope, list)
+        or not scope
+        or any(not isinstance(item, str) or not item for item in scope)
+        or scope != sorted(set(scope))
+    ):
+        raise LineageBackfillError("lineage backfill scope is invalid")
+    required_days = payload.get("required_days")
+    if (
+        not isinstance(required_days, list)
+        or not required_days
+        or any(isinstance(item, bool) or not isinstance(item, int) for item in required_days)
+        or required_days != sorted(set(required_days))
+    ):
+        raise LineageBackfillError("lineage backfill days are invalid")
+    expected_lineage_scope = {
+        "dataset_ids": sorted(RAW_LINEAGE_BACKFILL_DATASETS),
+        "instrument_ids": scope,
+    }
+    if payload.get("raw_lineage_scope") != expected_lineage_scope:
+        raise LineageBackfillError("lineage backfill archive scope is invalid")
+
+    try:
+        current_artifacts = {
+            "prices": _artifact(mark_path),
+            "funding": _artifact(funding_path),
+            "oi_metrics": _artifact(oi_path),
+        }
+    except OSError as exc:
+        raise LineageBackfillError(
+            "lineage backfill artifact is unreadable"
+        ) from exc
+    retained_artifacts = payload.get("artifacts")
+    if not isinstance(retained_artifacts, dict):
+        raise LineageBackfillError("lineage backfill artifacts are missing")
+    for name, current in current_artifacts.items():
+        retained = retained_artifacts.get(name)
+        if not isinstance(retained, dict) or any(
+            retained.get(field) != current[field]
+            for field in ("path", "size_bytes", "sha256")
+        ):
+            raise LineageBackfillError(
+                f"lineage backfill artifact changed: {name}"
+            )
+
+    sources = payload.get("sources")
+    if not isinstance(sources, dict):
+        raise LineageBackfillError("lineage backfill sources are missing")
+    for name in ("perp_mark_prices", "funding", "oi_metrics"):
+        source = sources.get(name)
+        attempted = source.get("attempted_records") if isinstance(source, dict) else None
+        matched = source.get("matched_records") if isinstance(source, dict) else None
+        if (
+            not isinstance(source, dict)
+            or source.get("passed") is not True
+            or isinstance(attempted, bool)
+            or not isinstance(attempted, int)
+            or attempted <= 0
+            or matched != attempted
+            or source.get("failures") not in ([], ())
+            or source.get("failed_tickers") not in ([], ())
+        ):
+            raise LineageBackfillError(
+                f"lineage backfill source did not pass: {name}"
+            )
+
+    retained_archive_root = payload.get("archive_root")
+    resolved_archive_root = (
+        retained_archive_root if archive_root is None else archive_root
+    )
+    if not isinstance(resolved_archive_root, str) or not resolved_archive_root:
+        raise LineageBackfillError("lineage backfill archive root is invalid")
+    if (
+        archive_root is not None
+        and archive_root.replace("\\", "/") != retained_archive_root
+    ):
+        raise LineageBackfillError("lineage backfill archive root changed")
+    try:
+        raw_lineage = archive_summary(
+            resolved_archive_root,
+            dataset_ids=RAW_LINEAGE_BACKFILL_DATASETS,
+            instrument_ids=frozenset(scope),
+            now_ms=reanchored_at_ms,
+        )
+    except Exception as exc:
+        raise LineageBackfillError("archive summary is unavailable") from exc
+    if not isinstance(raw_lineage, dict):
+        raise LineageBackfillError("archive summary is invalid")
+    required_datasets = {"funding", "oi_metrics", "perp_mark_prices"}
+    datasets = raw_lineage.get("datasets")
+    missing_datasets = sorted(
+        required_datasets - (set(datasets) if isinstance(datasets, dict) else set())
+    )
+    aggregate_sha256 = raw_lineage.get("aggregate_sha256")
+    valid_pass_summary = (
+        isinstance(aggregate_sha256, str)
+        and len(aggregate_sha256) == 64
+        and all(character in "0123456789abcdef" for character in aggregate_sha256)
+        and raw_lineage.get("errors") in ([], ())
+        and not missing_datasets
+    )
+    if raw_lineage.get("status") == "PASS" and not valid_pass_summary:
+        raise LineageBackfillError("archive summary PASS evidence is invalid")
+    block_reasons = []
+    if raw_lineage.get("status") != "PASS":
+        block_reasons.append(f"ARCHIVE:{raw_lineage.get('status')}")
+    if missing_datasets:
+        block_reasons.append(f"ARCHIVE_MISSING_DATASETS:{missing_datasets}")
+
+    report = dict(payload)
+    report.update(
+        {
+            "generated_at_ms": reanchored_at_ms,
+            "raw_lineage": raw_lineage,
+            "verdict": "PASS" if not block_reasons else "BLOCK",
+            "block_reasons": block_reasons,
+            "archive_witness_reanchor": {
+                "mode": "OFFLINE_NO_REFETCH",
+                "previous_generated_at_ms": previous_generated_at_ms,
+                "reanchored_at_ms": reanchored_at_ms,
+            },
+        }
+    )
+    return report
+
+
 def _equivalent(left, right) -> bool:
     if isinstance(left, bool) or isinstance(right, bool):
         return left is right
@@ -536,7 +704,25 @@ def main(argv=None) -> int:
     parser.add_argument("--now-ms", type=int)
     parser.add_argument("--lookback-days", type=int, default=8)
     parser.add_argument("--funding-workers", type=int, default=8)
+    parser.add_argument(
+        "--offline-reanchor",
+        action="store_true",
+        help="refresh only a byte-identical backfill's archive witness",
+    )
     args = parser.parse_args(argv)
+    if args.offline_reanchor:
+        try:
+            report = reanchor_backfill_archive(
+                evidence_path=args.output,
+                now_ms=args.now_ms,
+            )
+        except LineageBackfillError as exc:
+            print(f"raw-lineage offline reanchor: BLOCK ({exc})")
+            return 2
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        atomic_write_json(args.output, report, indent=2)
+        print(f"raw-lineage offline reanchor: {report['verdict']}")
+        return 0 if report["verdict"] == "PASS" else 2
     report = run_backfill(
         now_ms=args.now_ms,
         lookback_days=args.lookback_days,
