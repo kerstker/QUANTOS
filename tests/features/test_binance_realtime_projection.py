@@ -1,8 +1,12 @@
 import pytest
 
+from services.data.binance_realtime_store import (
+    MAX_FUTURE_SKEW_MS as STORE_MAX_FUTURE_SKEW_MS,
+)
 from services.features.binance_realtime_projection import (
     BinanceRealtimeProjectionError,
     FEATURE_IDS,
+    MAX_FUTURE_SKEW_MS,
     project_snapshot,
 )
 
@@ -67,6 +71,7 @@ def test_projection_rejects_incomplete_or_future_source():
 
 
 def test_projection_uses_conservative_knowledge_time_for_bounded_clock_skew():
+    assert MAX_FUTURE_SKEW_MS == STORE_MAX_FUTURE_SKEW_MS
     snapshot = _snapshot()
     snapshot.update(
         {
@@ -78,7 +83,7 @@ def test_projection_uses_conservative_knowledge_time_for_bounded_clock_skew():
     snapshot["quality"].update(
         {
             "exchange_clock_skew_ms": 10,
-            "future_skew_bound_ms": 30_000,
+            "future_skew_bound_ms": MAX_FUTURE_SKEW_MS,
         }
     )
 
@@ -103,7 +108,7 @@ def test_projection_rejects_unattested_or_oversized_clock_skew():
     snapshot["quality"].update(
         {
             "exchange_clock_skew_ms": 10,
-            "future_skew_bound_ms": 30_000,
+            "future_skew_bound_ms": MAX_FUTURE_SKEW_MS,
         }
     )
     snapshot["event_time_ms"] = 31_001

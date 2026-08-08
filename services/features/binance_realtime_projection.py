@@ -12,11 +12,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from quantos.contracts.feature import FeatureValue
-from services.data.binance_realtime_store import MAX_FUTURE_SKEW_MS
 
 
 FEATURE_VERSION = "binance-public-stream.v1"
 MATERIALIZER_VERSION = "binance-realtime-projection.v1"
+MAX_FUTURE_SKEW_MS = 30_000
 CORE_FEATURE_IDS = (
     "rt_mid_price",
     "rt_spread_bps",
