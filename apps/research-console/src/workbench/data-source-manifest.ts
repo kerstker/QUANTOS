@@ -8,6 +8,9 @@ export type WorkbenchObjectId =
 export interface WorkbenchDataSourceEntry {
   id: WorkbenchObjectId;
   route: string;
+  zh: string;
+  en: string;
+  icon: string;
   purpose: string;
   authoritativeEndpoints: readonly string[];
   acceptedProvenance: readonly string[];
@@ -21,6 +24,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
   {
     id: 'market-monitor',
     route: '/workbench/market',
+    zh: '市场监控',
+    en: 'Market Monitor',
+    icon: 'MM',
     purpose: '市场连续性、调度、水位线、风险摘要与告警',
     authoritativeEndpoints: ['/api/v1/console/mft-execution', '/api/v1/console/overview'],
     acceptedProvenance: ['REAL_MFT_READ_MODEL', 'REAL_HOURLY_ALPHA_AUTHORITIES'],
@@ -30,6 +36,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
   {
     id: 'alpha-control-plane',
     route: '/workbench/alpha',
+    zh: 'Alpha 控制面',
+    en: 'Alpha Control Plane',
+    icon: 'Aα',
     purpose: '候选、家族、血缘、生命周期与自动研究任务',
     authoritativeEndpoints: [
       '/api/v1/console/hourly-alpha',
@@ -43,6 +52,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
   {
     id: 'validation-evidence',
     route: '/workbench/validation',
+    zh: '验证证据',
+    en: 'Validation Evidence',
+    icon: 'VE',
     purpose: 'Trial Ledger、验证 DAG、反证与前向现实差距',
     authoritativeEndpoints: [
       '/api/v1/console/hourly-alpha',
@@ -56,6 +68,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
   {
     id: 'portfolio-risk',
     route: '/workbench/portfolio-risk',
+    zh: '组合与风险',
+    en: 'Portfolio & Risk',
+    icon: 'PR',
     purpose: '组合目标、实际仓位、敞口、归因、漂移与应急状态',
     authoritativeEndpoints: [
       '/api/v1/console/portfolio',
@@ -69,6 +84,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
   {
     id: 'execution-orders',
     route: '/workbench/execution',
+    zh: '执行与订单',
+    en: 'Execution & Orders',
+    icon: 'EO',
     purpose: '意图、OMS、成交、持仓、TCA、对账与 mandate 到期',
     authoritativeEndpoints: [
       '/api/v1/console/mft-execution',

@@ -45,6 +45,18 @@ export const GROUPS: readonly GroupDef[] = [
 ] as const;
 
 export const PAGES: readonly PageDef[] = [
+  // ---- Wave 3 object workspaces: content is replaced task-by-task; the shell is authoritative now. ----
+  { path: '/workbench/market', zh: '市场监控', en: 'Market Monitor', icon: 'MM', group: null,
+    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+  { path: '/workbench/alpha', zh: 'Alpha 控制面', en: 'Alpha Control Plane', icon: 'Aα', group: null,
+    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+  { path: '/workbench/validation', zh: '验证证据', en: 'Validation Evidence', icon: 'VE', group: null,
+    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+  { path: '/workbench/portfolio-risk', zh: '组合与风险', en: 'Portfolio & Risk', icon: 'PR', group: null,
+    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+  { path: '/workbench/execution', zh: '执行与订单', en: 'Execution & Orders', icon: 'EO', group: null,
+    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+
   // ---- 总览:新手引导(真正的首页 — 说明全流程、导向各分组)+ 唯一落地仪表盘 ----
   { path: '/research/getting-started', zh: '新手引导', en: 'Getting Started', icon: 'GS', group: 'overview',
     load: () => import('@/pages/GettingStarted') },
@@ -138,7 +150,7 @@ export const PAGES: readonly PageDef[] = [
 
 /** 旧路由 → 语义就近的新目标(书签不断链;蓝图页统一去「系统完整度」——那里诚实说明哪些子系统尚未建成)。 */
 export const REDIRECTS: readonly RedirectDef[] = [
-  { from: '/research', to: '/research/command' },
+  { from: '/research', to: '/workbench/market' },
   { from: '/research/model-risk-review', to: '/research/system-completeness' },
   { from: '/research/reviewer-workflow', to: '/research/system-completeness' },
   { from: '/research/access-control', to: '/research/system-completeness' },

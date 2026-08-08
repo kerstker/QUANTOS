@@ -1,71 +1,78 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from '@/lib/router';
+
 import App from '@/App';
-import { GROUPS } from '@/app/routes';
+import { MemoryRouter } from '@/lib/router';
 
-// App 级集成:完整外壳(AppShell + 注册表派生的导航 + lazy 路由 + 重定向)在 jsdom 里真渲染。
-// 冒烟测试盖单页;这里盖「组装」——五入口操作面默认简洁、完整导航按需可达、旧路由语义重定向。
-describe('App shell integration (registry-derived nav + redirects)', () => {
-  // 断言用「页面独有内容」而非页名——页名同时出现在导航栏里,findByText 会撞多元素。
-  it('lands on Command Center and exposes only five primary operations by default', async () => {
+describe('Wave 3 app shell integration', () => {
+  it('lands on Market Monitor with exactly five object workspaces', async () => {
     render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
-    const primary = screen.getByRole('navigation', { name: 'primary operations' });
-    expect(within(primary).getAllByRole('link')).toHaveLength(5);
-    expect(screen.queryByRole('navigation', { name: 'lifecycle pipeline' })).toBeNull();
-    expect(screen.queryByRole('navigation', { name: 'section pages' })).toBeNull();
-
-    const advanced = screen.getByRole('button', { name: /Advanced|高级工作台/ });
-    expect(advanced.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(advanced);
-    expect(advanced.getAttribute('aria-expanded')).toBe('true');
-    for (const group of GROUPS) {
-      expect(screen.getAllByText(group.zh).length, group.id).toBeGreaterThan(0);
-    }
+    expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();
+    const primary = screen.getByRole('navigation', { name: 'object workspaces' });
+    const links = within(primary).getAllByRole('link');
+    expect(links).toHaveLength(5);
+    expect(links.map(link => link.getAttribute('href'))).toEqual([
+      '/workbench/market',
+      '/workbench/alpha',
+      '/workbench/validation',
+      '/workbench/portfolio-risk',
+      '/workbench/execution',
+    ]);
+    expect(screen.queryByRole('button', { name: /Advanced|高级工作台/ })).toBeNull();
   });
 
-  it('redirects a removed blueprint route to the honest completeness page', async () => {
+  it('keeps L2 and unverified identity visible when the real MFT API is unavailable', async () => {
+    render(<MemoryRouter initialEntries={['/workbench/market']}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();
+    const status = screen.getByRole('status', { name: '全局运行状态' });
+    expect(status).toHaveTextContent('L2_DRY_RUN_ONLY');
+    expect(status).toHaveTextContent('强身份未验证');
+    expect(status).toHaveTextContent(/UNAVAILABLE|不可用/);
+  });
+
+  it('keeps the safety bar visible when switching to the light theme', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    render(<MemoryRouter initialEntries={['/workbench/market']}><App /></MemoryRouter>);
+    await screen.findByRole('heading', { name: /市场监控/ });
+    fireEvent.click(screen.getByRole('button', { name: '切换浅色模式' }));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(screen.getByRole('status', { name: '全局运行状态' })).toHaveTextContent('L2_DRY_RUN_ONLY');
+    document.documentElement.dataset.theme = 'dark';
+  });
+
+  it('opens governance, audit, health, and task surfaces as global drawers', async () => {
+    render(<MemoryRouter initialEntries={['/workbench/market']}><App /></MemoryRouter>);
+    await screen.findByRole('heading', { name: /市场监控/ });
+    for (const label of ['治理', '审计', '健康', '任务']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole('button', { name: '治理' }));
+    expect(screen.getByRole('dialog', { name: '治理抽屉' })).toHaveTextContent('只读');
+    fireEvent.click(screen.getByRole('button', { name: '关闭治理抽屉' }));
+    expect(screen.queryByRole('dialog', { name: '治理抽屉' })).toBeNull();
+  });
+
+  it('redirects the bare research route to Market Monitor', async () => {
+    render(<MemoryRouter initialEntries={['/research']}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();
+  });
+
+  it('keeps removed blueprint routes on their honest legacy redirect', async () => {
     render(<MemoryRouter initialEntries={['/research/incident-response']}><App /></MemoryRouter>);
     expect(await screen.findByText('系统完整度审查')).toBeTruthy();
   });
 
-  it('redirects the bare /research route to the operator command center', async () => {
-    render(<MemoryRouter initialEntries={['/research']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
-  });
-
-  it('Command Center is still reachable at its own route', async () => {
+  it('keeps legacy details reachable without making them top-level workspaces', async () => {
     render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
     expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'object workspaces' })).toBeTruthy();
   });
-  it('opens the global route search instead of a decorative placeholder', async () => {
-    render(<MemoryRouter initialEntries={['/research/getting-started']}><App /></MemoryRouter>);
-    const search = screen.getByRole('button', { name: /Global search|全局搜索/ });
-    fireEvent.click(search);
+
+  it('opens global search for legacy detail and drill-down pages', async () => {
+    render(<MemoryRouter initialEntries={['/workbench/market']}><App /></MemoryRouter>);
+    await screen.findByRole('heading', { name: /市场监控/ });
+    fireEvent.click(screen.getByRole('button', { name: /Global search|全局搜索/ }));
     expect(await screen.findByRole('dialog', { name: '全局搜索' })).toBeTruthy();
     expect(screen.getByPlaceholderText(/Search pages|搜索页面/)).toBeTruthy();
-  });
-
-  it('keeps the lifecycle rail compact and moves section pages behind disclosure', async () => {
-    render(<MemoryRouter initialEntries={['/research/dry-run']}><App /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: /全自动纸面交易驾驶舱/ })).toBeTruthy();
-
-    const advanced = screen.getByRole('button', { name: /Advanced|高级工作台/ });
-    expect(advanced.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(advanced);
-
-    const lifecycle = screen.getByRole('navigation', { name: 'lifecycle pipeline' });
-    expect(lifecycle.querySelector('[data-layout="compact-grid"]')).toBeTruthy();
-    expect(within(lifecycle).queryByText(/auto \d/i)).toBeNull();
-
-    const section = screen.getByRole('navigation', { name: 'section pages' });
-    const menu = within(section).getByRole('button', { name: /All pages|全部页面/ });
-    expect(menu.getAttribute('aria-expanded')).toBe('false');
-    expect(within(section).queryByRole('link', { name: /GoNoGo 证据/ })).toBeNull();
-
-    fireEvent.click(menu);
-    expect(menu.getAttribute('aria-expanded')).toBe('true');
-    expect(within(section).getByRole('link', { name: /GoNoGo 证据/ })).toBeTruthy();
   });
 });

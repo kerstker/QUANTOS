@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from '@/lib/router';
 import { AppShell, type NavGroup } from '@/ui/AppShell';
 import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
 import { ErrorBoundary } from '@/ui/primitives';
-import { MarketTape } from '@/ui/workbench';
 
 // 路由、导航、冒烟测试的唯一真源是 src/app/routes.tsx 的页面注册表(2026-07-03 信息架构重构)。
 // 这里只做派生:每页 route-level 代码分割(React.lazy),首屏 chunk 保持最小。
@@ -40,11 +39,11 @@ function RouteErrorFallback({ page }: { page: (typeof PAGES)[number] }) {
 
 export default function App() {
   return (
-    <AppShell nav={nav} tape={<MarketTape />}>
+    <AppShell nav={nav}>
       <ErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/research/command" replace />} />
+            <Route path="/" element={<Navigate to="/workbench/market" replace />} />
             {REDIRECTS.map(r => (
               <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
             ))}
