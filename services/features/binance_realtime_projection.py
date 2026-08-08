@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from quantos.contracts.feature import FeatureValue
+from services.data.binance_realtime_store import MAX_FUTURE_SKEW_MS
 
 
 FEATURE_VERSION = "binance-public-stream.v1"
@@ -103,11 +104,27 @@ def project_snapshot(snapshot: Mapping[str, Any]) -> tuple[FeatureValue, ...]:
     if not instrument_id.endswith("USDT"):
         raise BinanceRealtimeProjectionError("snapshot instrument is invalid")
     event_time = _timestamp(snapshot.get("event_time_ms"), "event_time_ms")
+    observed_time = _timestamp(snapshot.get("observed_at_ms"), "observed_at_ms")
     knowledge_time = _timestamp(
-        snapshot.get("observed_at_ms"), "observed_at_ms"
+        snapshot.get("knowledge_time_ms", observed_time),
+        "knowledge_time_ms",
     )
-    if knowledge_time < event_time:
+    if knowledge_time < max(event_time, observed_time):
         raise BinanceRealtimeProjectionError("snapshot violates PIT ordering")
+    future_skew_ms = max(0, event_time - observed_time)
+    if future_skew_ms:
+        attested_skew_ms = quality.get("exchange_clock_skew_ms")
+        attested_bound_ms = quality.get("future_skew_bound_ms")
+        if (
+            type(attested_skew_ms) is not int
+            or type(attested_bound_ms) is not int
+            or attested_skew_ms != future_skew_ms
+            or attested_bound_ms != MAX_FUTURE_SKEW_MS
+            or future_skew_ms > MAX_FUTURE_SKEW_MS
+        ):
+            raise BinanceRealtimeProjectionError(
+                "snapshot exchange clock skew is not bounded and attested"
+            )
 
     book = snapshot.get("book")
     depth = snapshot.get("depth20")

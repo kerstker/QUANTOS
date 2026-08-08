@@ -64,3 +64,50 @@ def test_projection_rejects_incomplete_or_future_source():
     snapshot["event_time_ms"] = 1_001
     with pytest.raises(BinanceRealtimeProjectionError, match="PIT"):
         project_snapshot(snapshot)
+
+
+def test_projection_uses_conservative_knowledge_time_for_bounded_clock_skew():
+    snapshot = _snapshot()
+    snapshot.update(
+        {
+            "event_time_ms": 1_010,
+            "observed_at_ms": 1_000,
+            "knowledge_time_ms": 1_010,
+        }
+    )
+    snapshot["quality"].update(
+        {
+            "exchange_clock_skew_ms": 10,
+            "future_skew_bound_ms": 30_000,
+        }
+    )
+
+    values = project_snapshot(snapshot)
+
+    assert all(value.event_time == 1_010 for value in values)
+    assert all(value.knowledge_time == 1_010 for value in values)
+
+
+def test_projection_rejects_unattested_or_oversized_clock_skew():
+    snapshot = _snapshot()
+    snapshot.update(
+        {
+            "event_time_ms": 1_010,
+            "observed_at_ms": 1_000,
+            "knowledge_time_ms": 1_010,
+        }
+    )
+    with pytest.raises(BinanceRealtimeProjectionError, match="clock skew"):
+        project_snapshot(snapshot)
+
+    snapshot["quality"].update(
+        {
+            "exchange_clock_skew_ms": 10,
+            "future_skew_bound_ms": 30_000,
+        }
+    )
+    snapshot["event_time_ms"] = 31_001
+    snapshot["knowledge_time_ms"] = 31_001
+    snapshot["quality"]["exchange_clock_skew_ms"] = 30_001
+    with pytest.raises(BinanceRealtimeProjectionError, match="clock skew"):
+        project_snapshot(snapshot)

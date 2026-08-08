@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 实时特征 bounded-clock-skew PIT 接缝修复：** 新不可变 release 的
+> Execution Paper 运行证明验收正确暴露前置特征 worker 被
+> `snapshot violates PIT ordering` 阻断。根因是 WebSocket collector 与权威存储已允许并记录
+> 30 秒内交易所时钟领先，并把 `knowledge_time_ms=max(observed,event)` 作为保守可知时刻；特征
+> projector 却忽略该字段，错误地把本机 `observed_at_ms` 当 knowledge time。现 projector 消费
+> 权威 `knowledge_time_ms`，仅在 `exchange_clock_skew_ms` 与固定 30 秒 source contract 逐项匹配
+> 时接受领先事件；缺少证明、超界或 knowledge 仍早于 event/observed 均 fail-closed。该修复不
+> 放宽新鲜度、PIT 或任何 L2 安全边界。
+
 > **2026-08-09 WP0 Realtime Execution Paper 发布运行证明第三增量：**
 > `realtime_alpha_execution_paper` 成为第三个强制 release-run attestation worker。Signal
 > Shadow 的 admission/decision 现在在单一 SQLite 读事务中物化，证明绑定完整 source authority
