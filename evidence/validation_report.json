@@ -1,9 +1,9 @@
 {
   "checks_manifest_sha256": "f633e58825bd6d6cb8c6079d3d853c12db7c39a012995a5f27a513c04e748c05",
-  "commit": "afac0301e740ae6d85ec1bff98b3a33b73f26c6a",
+  "commit": "95574816fe4dac4cbedd0dfb7a210b0e937072ed",
   "derived_refresh_manifest_sha256": "a89e68560008b91e94d1ad8c0b5facf304c9441b221a6e0c8611dad29dab8e6e",
-  "duration_ms": 1498661,
-  "generated_at_ms": 1786207380054,
+  "duration_ms": 1147463,
+  "generated_at_ms": 1786213931597,
   "overall_status": "PASS",
   "phase13_manifest_sha256": "a3e35a1f1d927e465296ba4a66eff0d011cd07bade2084f4880476e8fc5c079d",
   "readiness": "L2_DRY_RUN_ONLY",
@@ -19,7 +19,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 216,
+      "duration_ms": 114,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -32,7 +32,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 189,
+      "duration_ms": 102,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -45,7 +45,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 272,
+      "duration_ms": 122,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -58,7 +58,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 176,
+      "duration_ms": 92,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -71,7 +71,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 173,
+      "duration_ms": 101,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -84,7 +84,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 644,
+      "duration_ms": 394,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -97,7 +97,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 2060,
+      "duration_ms": 1336,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -109,7 +109,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\tools\\provision_artifact_admission_authority.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 373,
+      "duration_ms": 220,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -122,7 +122,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 676,
+      "duration_ms": 375,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -136,7 +136,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 1019,
+      "duration_ms": 550,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -150,7 +150,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 8638,
+      "duration_ms": 6058,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -163,7 +163,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 141,
+      "duration_ms": 74,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -175,7 +175,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 762,
+      "duration_ms": 442,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -187,7 +187,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 5024,
+      "duration_ms": 2968,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -199,7 +199,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\generate_supply_chain_evidence.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 4293,
+      "duration_ms": 1427,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -212,7 +212,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 3036,
+      "duration_ms": 1765,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -224,7 +224,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\scripts\\assess_top_tier.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 16374,
+      "duration_ms": 11919,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -237,7 +237,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 16331,
+      "duration_ms": 11882,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -273,7 +273,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 1110963,
+      "duration_ms": 861726,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -290,7 +290,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 121517,
+      "duration_ms": 102031,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -303,7 +303,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
-      "duration_ms": 5457,
+      "duration_ms": 4221,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -316,7 +316,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
-      "duration_ms": 36095,
+      "duration_ms": 23668,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -331,7 +331,7 @@
         "--no-file-parallelism"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
-      "duration_ms": 64113,
+      "duration_ms": 45119,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -344,7 +344,7 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\apps\\research-console",
-      "duration_ms": 7039,
+      "duration_ms": 4784,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -358,7 +358,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 7693,
+      "duration_ms": 5510,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -373,7 +373,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 7868,
+      "duration_ms": 5139,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -388,7 +388,7 @@
         "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha\\tests\\governance\\test_727_final_audit.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.claude\\worktrees\\wave1-hourly-alpha",
-      "duration_ms": 76486,
+      "duration_ms": 54881,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -426,7 +426,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1786205881393,
+  "started_at_ms": 1786212784134,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -438,8 +438,8 @@
   "validate_script_sha256": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
   "validation": {
     "current": true,
-    "generated_at": 1786207380054,
-    "run_id": "ca7c1ddf18df8a492113fba6de6d4cf854493370e15c763d3b9e0f9b422d6180",
-    "source_commit": "afac0301e740ae6d85ec1bff98b3a33b73f26c6a"
+    "generated_at": 1786213931597,
+    "run_id": "76e2db0e2f321a4c3e3f3d8ee9fa1a10571c270ce255c08d21478392a3f96203",
+    "source_commit": "95574816fe4dac4cbedd0dfb7a210b0e937072ed"
   }
 }
