@@ -194,6 +194,13 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
 # test_console_live_stream.py before the EventSource hook accepts them.
 NON_JSON_STREAM_ROUTES = {"/api/v1/console/stream/dry-run"}
 
+# Stable backend-only read contracts reserved for the Wave 3 console.  They are
+# intentionally not mapped to a frontend *Payload type during Wave 2.
+BACKEND_ONLY_ROUTES = {
+    "/api/v1/console/mft-execution",
+    "/api/v1/console/mft-execution/delta",
+}
+
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
 # marker. They still must be read-only snapshots; only the honesty label differs.
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
@@ -285,14 +292,14 @@ def test_every_frontend_payload_type_has_an_endpoint():
     # if a *Payload type ever maps to a route not under contract, this fails loudly
     routed = {path for path, operations in app.openapi()["paths"].items() if "get" in operations}
     routed = {p for p in routed if p.startswith("/api/v1/console/")}
-    expected = set(CONTRACT) | NON_JSON_STREAM_ROUTES
+    expected = set(CONTRACT) | NON_JSON_STREAM_ROUTES | BACKEND_ONLY_ROUTES
     assert routed == expected, f"contract/route mismatch: {routed ^ expected}"
 
 
 def test_architecture_inventory_counts_included_router_endpoints():
     body = client.get("/api/v1/console/architecture").json()
     assert body["inventory"]["n_console_endpoints"] == (
-        len(CONTRACT) + len(NON_JSON_STREAM_ROUTES)
+        len(CONTRACT) + len(NON_JSON_STREAM_ROUTES) + len(BACKEND_ONLY_ROUTES)
     )
 
 
