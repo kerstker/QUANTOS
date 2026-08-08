@@ -292,6 +292,11 @@
     {
       "references": [
         {
+          "line": 11,
+          "module": "services.monitoring.mft_read_model",
+          "path": "services/console/api/mft_execution_views.py"
+        },
+        {
           "line": 27,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/console/api/system_views.py"
@@ -1299,7 +1304,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "138f8f98428067cf41b85cdce670784cdc4e0667bddb5c8e0974760d6e0a5f2e",
+  "graph_sha256": "07643ef52ca413b5fb4514ffe7e3bf5b8ef4769851ab57662c017adb2c02e338",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1337,7 +1342,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 455,
+  "source_file_count": 459,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
