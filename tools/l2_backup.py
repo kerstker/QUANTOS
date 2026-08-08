@@ -43,7 +43,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 4
+SOURCE_CONTRACT_VERSION = 5
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
@@ -87,6 +87,11 @@ DEFAULT_SOURCES = (
         True,
     ),
     BackupSource("data/cache/alpha_maintenance.db", "alpha_maintenance", False),
+    BackupSource(
+        "data/cache/mft_testnet_soak.db",
+        "mft_testnet_soak_evidence_authority",
+        False,
+    ),
     BackupSource(
         "data/cache/paper_candidate_registry.db",
         "factory_candidate_admission",

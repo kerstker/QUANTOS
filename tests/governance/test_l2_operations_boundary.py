@@ -87,6 +87,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         ),
         "data/cache/live_kill_switch.db": ("kill_switch_authority", False),
         "data/cache/live_refresh_history.db": ("data_refresh_history", True),
+        "data/cache/mft_testnet_soak.db": (
+            "mft_testnet_soak_evidence_authority",
+            False,
+        ),
         "data/cache/paper_candidate_registry.db": (
             "factory_candidate_admission",
             False,

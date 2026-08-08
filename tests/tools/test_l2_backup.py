@@ -67,6 +67,17 @@ def test_fixed_artifact_admission_authority_is_an_optional_backup_source():
     assert source.required is False
 
 
+def test_mft_testnet_soak_evidence_is_an_optional_backup_source():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path == "data/cache/mft_testnet_soak.db"
+    )
+
+    assert source.role == "mft_testnet_soak_evidence_authority"
+    assert source.required is False
+
+
 @pytest.mark.parametrize(
     ("relative_path", "role"),
     [

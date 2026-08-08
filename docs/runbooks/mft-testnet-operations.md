@@ -154,3 +154,61 @@ Completing a Testnet soak does not authorize Micro-Live. Micro-Live remains
 blocked on external identity/mTLS, an independent signing authority, process
 permission isolation, sufficient forward evidence, a human real-money mandate,
 and a separate Go/No-Go.
+
+### Task 39 preregistered policy and evidence authority
+
+The versioned policy is `config/mft_testnet_soak_policy.json`. Version 1 fixes
+the window before any operational start: seven continuous days, one hourly
+cycle, at least 168 completed cycles, no failed cycle, and no gap longer than
+90 minutes. The numerical limits are explicitly
+`PREREGISTERED_UNCALIBRATED_ENGINEERING_LIMITS`; passing them is Testnet
+engineering evidence, not production calibration.
+
+`tools.mft_testnet_soak` is an evidence recorder, not an execution driver. It
+has no submit switch, credential loader, network client, exchange adapter, or
+mainnet mode. It accepts exactly one mutation per invocation:
+
+1. an operator-created start receipt that binds the policy hash, a Testnet
+   mandate hash, a credential-reference hash, and a human-authorization
+   receipt hash; or
+2. one cycle receipt that binds market continuity, scheduler lease, intent,
+   OMS, fill, reconciliation, risk, TCA, parity, and recovery-drill artifacts.
+
+The start receipt is deliberately classified
+`OPERATOR_ASSERTED_TESTNET_ONLY`, not strong identity. The recorder cannot
+create or upgrade it. Credential values and mandate contents must never be
+placed in either receipt. Each cycle artifact is named by a canonical relative
+path beneath the operator-selected evidence root; the recorder opens the real
+file, rejects symlinks/traversal/missing files, recomputes SHA-256, and only
+then appends the receipt to `data/cache/mft_testnet_soak.db`.
+
+Before an operator start, publish the honest pending projection without any
+credential or network access:
+
+```powershell
+rtk py -3.14 -m tools.mft_testnet_soak `
+  --policy config/mft_testnet_soak_policy.json `
+  --store data/cache/mft_testnet_soak.db `
+  --evidence-root data/cache/mft_testnet_soak_evidence `
+  --status-out evidence/mft_testnet_soak_latest.json
+```
+
+An authorized operator starts the window in a separate invocation by adding
+`--start-receipt <operator-secured-start-receipt.json>`. Each completed cycle
+is then recorded with `--cycle-receipt <cycle-receipt.json>`. The cycle receipt
+must use the same `run_id`, `operator_start_id`, and policy hash as the start
+receipt. Empty intent/fill/submission sets, 429, timeout, unknown OMS state,
+failed recovery drill, threshold breach, evidence hash mismatch, cycle gap,
+chain corruption, or any mainnet submission count produces
+`OPERATIONAL_SOAK_BLOCKED`, never PASS.
+
+Continuity includes the interval from the operator start to cycle zero. Cycle
+start/completion times must advance monotonically, and no individual cycle may
+span longer than the registered maximum gap; a burst of late receipts or one
+artificially long cycle therefore cannot satisfy the seven-day window.
+
+The only successful terminal status is `OPERATIONAL_SOAK_PASSED`, and its
+projection always retains `micro_live_ready=false`,
+`live_order_authority=false`, and all five L2 safety flags. It does not modify
+Wave 2 or Wave 3 acceptance artifacts automatically; an independent human
+review must decide whether to record the operational result.

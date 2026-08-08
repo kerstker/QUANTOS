@@ -86,25 +86,26 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 46066,
+  "backup_elapsed_ms": 43321,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
   "file_count": 17,
   "history_authoritative": true,
-  "history_event_hash": "b0ff9b3afc9d5c3b5023698292b7a5c9b5541978f0238309f58be44fc8249ae9",
-  "history_event_seq": 84,
+  "history_event_hash": "bf6d548c6589ba3b3602502f60ce8ebff24ea10ebe3a93e2dd4ea48577b9aee9",
+  "history_event_seq": 86,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
     "data/cache/approvals.db",
     "data/cache/identity_authorization.db",
+    "data/cache/mft_testnet_soak.db",
     "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1786182058656,
+  "observed_at_ms": 1786184779047,
   "required_source_count": 12,
-  "restore_elapsed_ms": 13143,
+  "restore_elapsed_ms": 13250,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,
@@ -190,6 +191,11 @@
         "role": "data_refresh_history"
       },
       {
+        "relative_path": "data/cache/mft_testnet_soak.db",
+        "required": false,
+        "role": "mft_testnet_soak_evidence_authority"
+      },
+      {
         "relative_path": "data/cache/paper_candidate_registry.db",
         "required": false,
         "role": "factory_candidate_admission"
@@ -215,9 +221,9 @@
         "role": "vendor_delivery_history_authority"
       }
     ],
-    "version": 4
+    "version": 5
   },
-  "source_contract_sha256": "71806035fcaf5aed1bf01ef1a94eded1579f96a4651f126c8a51213f87e4613d",
+  "source_contract_sha256": "7f445792d1506e9a1ed95ee35fa4f52bb56d27455cbf248f5d39a73b12097b6e",
   "source_contract_verified": true,
   "sqlite_integrity_verified": true,
   "verdict": "PASS"

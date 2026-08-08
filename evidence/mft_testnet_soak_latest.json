@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "artifact": "QUANTOS_MFT_TESTNET_SOAK_STATUS",
+  "policy_id": "mft-testnet-soak.v1",
+  "policy_version": "1.0.0",
+  "policy_hash": "598b48b9085068bc2a6cc711e67a4bff7a3ee426bea3c5bc930cb905ceab6122",
+  "as_of_ms": 1786185341862,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "chain_valid": true,
+  "recorded_cycles": 0,
+  "completed_cycles": 0,
+  "failed_cycles": 0,
+  "minimum_completed_cycles": 168,
+  "minimum_duration_ms": 604800000,
+  "observed_duration_ms": 0,
+  "maximum_observed_cycle_gap_ms": null,
+  "blockers": [
+    "OPERATOR_START_RECEIPT_MISSING"
+  ],
+  "cycle_failure_reasons": [],
+  "micro_live_ready": false,
+  "live_order_authority": false,
+  "completion_effect": "TESTNET_ENGINEERING_ONLY_NO_MICRO_LIVE_AUTHORITY",
+  "safety_flags": {
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "status": "OPERATIONAL_SOAK_PENDING",
+  "run_id": null,
+  "operator_start_id": null
+}

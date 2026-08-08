@@ -357,6 +357,10 @@ L2 scheduler leader ── feature/alpha/paper workers ── execution intent o
 
 这是运维任务，不是一次开发会话内可伪造的测试。
 
+> 开发准备状态（2026-08-08）：版本化七日/168 周期 policy、十类逐周期证据合同、
+> 追加式哈希链 authority、真实 artifact 字节复核和 fail-closed 状态投影已落地；
+> 当前仍无人工启动回执，因此实际运行保持 `OPERATIONAL_SOAK_PENDING`。
+
 - 连续运行窗口、最小长度和告警值必须在启动前写入版本化 soak policy；
 - 每周期保存 market continuity、scheduler lease、intent、OMS、fill、reconciliation、risk、TCA、
   parity 和恢复演练证据；
