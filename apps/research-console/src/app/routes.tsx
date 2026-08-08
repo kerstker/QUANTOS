@@ -55,7 +55,7 @@ export const PAGES: readonly PageDef[] = [
   { path: '/workbench/portfolio-risk', zh: '组合与风险', en: 'Portfolio & Risk', icon: 'PR', group: null,
     load: () => import('@/pages/workbench/PortfolioRisk') },
   { path: '/workbench/execution', zh: '执行与订单', en: 'Execution & Orders', icon: 'EO', group: null,
-    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+    load: () => import('@/pages/workbench/ExecutionOrders') },
 
   // ---- 总览:新手引导(真正的首页 — 说明全流程、导向各分组)+ 唯一落地仪表盘 ----
   { path: '/research/getting-started', zh: '新手引导', en: 'Getting Started', icon: 'GS', group: 'overview',

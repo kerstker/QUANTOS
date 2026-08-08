@@ -8,6 +8,7 @@ import {
 } from '../contracts';
 import { canonicalMftJson, stableMftHash } from '../mft-reducer';
 import {
+  mergeMftEventTape,
   parseMftStreamNotice,
   synchronizeMftReadModel,
   type MftSyncTransport,
@@ -118,6 +119,23 @@ describe('synchronizeMftReadModel', () => {
     expect(result.snapshot?.cursor).toBe(advanced.snapshot.cursor);
     expect(result.pages).toBe(1);
     expect(result.reloaded).toBe(false);
+    expect(result.events).toEqual(advanced.delta.events);
+  });
+
+  it('deduplicates an identical event id without duplicating economic effect', async () => {
+    const initial = makeMftSnapshot();
+    const advanced = await nextSnapshot(initial);
+    const first = advanced.delta.events[0];
+    const duplicate = { ...first, sequence: first.sequence + 1, event_hash: 'f'.repeat(64) };
+    expect(mergeMftEventTape([first], [duplicate])).toEqual([first]);
+  });
+
+  it('fails closed when a repeated event id changes its economic payload', async () => {
+    const initial = makeMftSnapshot();
+    const advanced = await nextSnapshot(initial);
+    const first = advanced.delta.events[0];
+    const conflict = { ...first, sequence: first.sequence + 1, payload_hash: 'f'.repeat(64) };
+    expect(() => mergeMftEventTape([first], [conflict])).toThrow(/DUPLICATE_EVENT_ID_CONFLICT/);
   });
 
   it('refetches one full snapshot after a cursor gap and never loops', async () => {

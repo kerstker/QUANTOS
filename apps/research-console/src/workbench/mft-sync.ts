@@ -4,6 +4,7 @@ import {
   parseMftDelta,
   parseMftSnapshot,
   type MftDeltaResponse,
+  type MftDeltaEvent,
   type MftFreshness,
   type MftSnapshot,
   type MftWatermark,
@@ -26,7 +27,13 @@ export interface MftSyncResult {
   reason: string | null;
   pages: number;
   reloaded: boolean;
+  events: MftDeltaEvent[];
+  eventHistory: MftEventHistory;
 }
+
+export type MftEventHistory = 'SESSION_DELTA' | 'RESET_BY_RESNAPSHOT';
+
+const MFT_EVENT_TAPE_LIMIT = 200;
 
 export interface MftSyncTransport {
   fetchSnapshot: (signal?: AbortSignal) => Promise<MftSnapshot>;
@@ -35,6 +42,8 @@ export interface MftSyncTransport {
 
 export interface MftSyncOptions {
   current?: MftSnapshot | null;
+  events?: readonly MftDeltaEvent[];
+  eventHistory?: MftEventHistory;
   signal?: AbortSignal;
   maxPages?: number;
 }
@@ -101,9 +110,35 @@ export function parseMftStreamNotice(value: unknown): MftStreamNotice {
   return value as unknown as MftStreamNotice;
 }
 
-function snapshotResult(snapshot: MftSnapshot, pages: number, reloaded: boolean): MftSyncResult {
+export function mergeMftEventTape(
+  current: readonly MftDeltaEvent[],
+  incoming: readonly MftDeltaEvent[],
+): MftDeltaEvent[] {
+  const byId = new Map<string, MftDeltaEvent>();
+  for (const event of [...current, ...incoming].sort((a, b) => a.sequence - b.sequence)) {
+    const retained = byId.get(event.event_id);
+    if (retained) {
+      if (retained.section !== event.section || retained.payload_hash !== event.payload_hash) {
+        throw new MftContractError('MFT_DUPLICATE_EVENT_ID_CONFLICT');
+      }
+      continue;
+    }
+    byId.set(event.event_id, event);
+  }
+  return [...byId.values()]
+    .sort((a, b) => a.sequence - b.sequence)
+    .slice(-MFT_EVENT_TAPE_LIMIT);
+}
+
+function snapshotResult(
+  snapshot: MftSnapshot,
+  pages: number,
+  reloaded: boolean,
+  events: MftDeltaEvent[],
+  eventHistory: MftEventHistory,
+): MftSyncResult {
   if (snapshot.status === 'AVAILABLE') {
-    return { phase: 'LIVE', snapshot, reason: null, pages, reloaded };
+    return { phase: 'LIVE', snapshot, reason: null, pages, reloaded, events, eventHistory };
   }
   const stale = snapshot.freshness.status === 'STALE';
   return {
@@ -112,6 +147,8 @@ function snapshotResult(snapshot: MftSnapshot, pages: number, reloaded: boolean)
     reason: typeof snapshot.reason === 'string' ? snapshot.reason : snapshot.snapshot_status,
     pages,
     reloaded,
+    events,
+    eventHistory,
   };
 }
 
@@ -132,18 +169,23 @@ export async function synchronizeMftReadModel(
   if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 1_000) {
     return {
       phase: 'RESNAPSHOT_REQUIRED', snapshot: null, reason: 'DELTA_PAGE_LIMIT_INVALID',
-      pages: 0, reloaded: false,
+      pages: 0, reloaded: false, events: [], eventHistory: 'SESSION_DELTA',
     };
   }
   let snapshot: MftSnapshot | null = null;
   let pages = 0;
   let reloaded = false;
+  let events: MftDeltaEvent[] = [];
+  let eventHistory: MftEventHistory = options.eventHistory ?? 'SESSION_DELTA';
   try {
+    events = mergeMftEventTape([], options.events ?? []);
     snapshot = options.current ? parseMftSnapshot(options.current) : null;
     if (snapshot === null || snapshot.status !== 'AVAILABLE') {
       snapshot = parseMftSnapshot(await transport.fetchSnapshot(options.signal));
     }
-    if (snapshot.status !== 'AVAILABLE') return snapshotResult(snapshot, pages, reloaded);
+    if (snapshot.status !== 'AVAILABLE') {
+      return snapshotResult(snapshot, pages, reloaded, events, eventHistory);
+    }
 
     while (pages < maxPages) {
       if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError');
@@ -154,11 +196,16 @@ export async function synchronizeMftReadModel(
         if (reloaded) {
           return {
             phase: 'RESNAPSHOT_REQUIRED', snapshot, reason: delta.reason, pages, reloaded,
+            events, eventHistory,
           };
         }
         snapshot = parseMftSnapshot(await transport.fetchSnapshot(options.signal));
         reloaded = true;
-        if (snapshot.status !== 'AVAILABLE') return snapshotResult(snapshot, pages, reloaded);
+        events = [];
+        eventHistory = 'RESET_BY_RESNAPSHOT';
+        if (snapshot.status !== 'AVAILABLE') {
+          return snapshotResult(snapshot, pages, reloaded, events, eventHistory);
+        }
         continue;
       }
       const applied = await applyMftDelta(snapshot, delta);
@@ -166,29 +213,47 @@ export async function synchronizeMftReadModel(
         if (reloaded) {
           return {
             phase: 'RESNAPSHOT_REQUIRED', snapshot, reason: applied.reason, pages, reloaded,
+            events, eventHistory,
           };
         }
         snapshot = parseMftSnapshot(await transport.fetchSnapshot(options.signal));
         reloaded = true;
-        if (snapshot.status !== 'AVAILABLE') return snapshotResult(snapshot, pages, reloaded);
+        events = [];
+        eventHistory = 'RESET_BY_RESNAPSHOT';
+        if (snapshot.status !== 'AVAILABLE') {
+          return snapshotResult(snapshot, pages, reloaded, events, eventHistory);
+        }
         continue;
+      }
+      try {
+        events = mergeMftEventTape(events, delta.events);
+      } catch (error) {
+        return {
+          phase: 'RESNAPSHOT_REQUIRED', snapshot,
+          reason: error instanceof MftContractError ? error.code : 'MFT_EVENT_TAPE_INVALID',
+          pages, reloaded, events: [], eventHistory: 'RESET_BY_RESNAPSHOT',
+        };
       }
       const previousCursor = snapshot.cursor;
       snapshot = applied.snapshot;
-      if (!delta.has_more) return snapshotResult(snapshot, pages, reloaded);
+      if (!delta.has_more) return snapshotResult(snapshot, pages, reloaded, events, eventHistory);
       if (snapshot.cursor === previousCursor) {
         return {
           phase: 'RESNAPSHOT_REQUIRED', snapshot, reason: 'DELTA_NO_PROGRESS', pages, reloaded,
+          events, eventHistory,
         };
       }
     }
     return {
       phase: 'RESNAPSHOT_REQUIRED', snapshot, reason: 'DELTA_PAGE_LIMIT', pages, reloaded,
+      events, eventHistory,
     };
   } catch (error) {
     return {
       phase: 'UNAVAILABLE', snapshot, reason: failureReason(error, options.signal),
       pages, reloaded,
+      events,
+      eventHistory,
     };
   }
 }

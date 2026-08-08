@@ -12,7 +12,9 @@ import {
   type MftSyncPhase,
   type MftSyncResult,
   type MftSyncTransport,
+  type MftEventHistory,
 } from './mft-sync';
+import type { MftDeltaEvent } from './contracts';
 
 export interface MftReadModelState {
   phase: MftSyncPhase;
@@ -21,6 +23,8 @@ export interface MftReadModelState {
   pages: number;
   reloaded: boolean;
   transport: 'SSE' | 'POLLING' | 'NONE';
+  events: MftDeltaEvent[];
+  eventHistory: MftEventHistory;
 }
 
 const INITIAL: MftReadModelState = {
@@ -30,6 +34,8 @@ const INITIAL: MftReadModelState = {
   pages: 0,
   reloaded: false,
   transport: 'NONE',
+  events: [],
+  eventHistory: 'SESSION_DELTA',
 };
 
 const MFT_REQUEST_TIMEOUT_MS = 10_000;
@@ -70,6 +76,8 @@ const TRANSPORT: MftSyncTransport = {
 export function useMftReadModel(): MftReadModelState {
   const [state, setState] = useState<MftReadModelState>(INITIAL);
   const snapshotRef = useRef<MftSnapshot | null>(null);
+  const eventsRef = useRef<MftDeltaEvent[]>([]);
+  const eventHistoryRef = useRef<MftEventHistory>('SESSION_DELTA');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,6 +92,8 @@ export function useMftReadModel(): MftReadModelState {
     const commit = (result: MftSyncResult, transport: MftReadModelState['transport']) => {
       if (!active || controller.signal.aborted) return;
       snapshotRef.current = result.snapshot;
+      eventsRef.current = result.events;
+      eventHistoryRef.current = result.eventHistory;
       setState({ ...result, transport });
     };
 
@@ -100,6 +110,8 @@ export function useMftReadModel(): MftReadModelState {
         queuedForceSnapshot = false;
         const result = await synchronizeMftReadModel(TRANSPORT, {
           current: forceSnapshot ? null : snapshotRef.current,
+          events: forceSnapshot ? [] : eventsRef.current,
+          eventHistory: forceSnapshot ? 'RESET_BY_RESNAPSHOT' : eventHistoryRef.current,
           signal: controller.signal,
         });
         forceSnapshot = false;
