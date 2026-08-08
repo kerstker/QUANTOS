@@ -556,8 +556,8 @@
   "validation": {
     "current": true,
     "generated_at": 0,
-    "run_id": "81e38d0c0ff60feaf0b8b4556541089e8b84137f68a0832c9b6f4d64d9a3a571",
-    "source_commit": "011662a7938a97eb3097cb1f5b8543cdf952dc28"
+    "run_id": "865f8a8304e89cdfea84df34cfdfe031d9bc4683f0f9ef4887435ce723509f38",
+    "source_commit": "dd0540c0ffe92715f4b6aebf7759c4675cb4af97"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
