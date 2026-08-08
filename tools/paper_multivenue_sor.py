@@ -79,6 +79,7 @@ PUBLIC_BOOK_SOURCES = {
     ),
     "bybit_linear": frozenset({"BYBIT_PUBLIC_LINEAR_REST"}),
 }
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
 class PaperMultiVenueSORError(RuntimeError):
@@ -281,6 +282,129 @@ def _snapshot_id(books: Sequence[dict[str, Any]]) -> str:
         allow_nan=False,
     )
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _canonical_sha256(value: object) -> str:
+    body = json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _build_release_run_attestation(
+    status: Mapping[str, Any],
+    bundle: Mapping[str, Any],
+    run: Any,
+    *,
+    output_path: str | Path,
+) -> dict[str, Any]:
+    """Bind one paper SOR run to its exact public inputs and outputs."""
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    snapshot_id = bundle.get("snapshot_id")
+    books = bundle.get("books")
+    bundle_quality = bundle.get("quality")
+    bundle_quality = (
+        bundle_quality if isinstance(bundle_quality, Mapping) else {}
+    )
+    routing_contract = {
+        "paper_instruments": list(PAPER_INSTRUMENTS),
+        "canary_instruments": list(INSTRUMENTS),
+        "target_notional": str(TARGET_NOTIONAL),
+        "max_quote_age_ms": MAX_QUOTE_AGE_MS,
+        "max_venue_skew_ms": MAX_VENUE_SKEW_MS,
+        "fee_policy_version": FEE_POLICY_VERSION,
+        "fee_assumptions_bps": {
+            name: str(value)
+            for name, value in sorted(FEE_ASSUMPTIONS_BPS.items())
+        },
+    }
+    input_hashes = {
+        "public_cross_venue_book_bundle": _canonical_sha256(bundle),
+        "public_cross_venue_books": snapshot_id,
+        "routing_input_contract": _canonical_sha256(routing_contract),
+    }
+    output_hashes = {
+        "paper_sor_status_file": _sha256_file(output_path),
+        "dry_run_reproducibility": getattr(run, "reproducibility_hash", None),
+    }
+    safety = status.get("safety")
+    safety = safety if isinstance(safety, Mapping) else {}
+    safety_contract = {
+        "paper_only": status.get("simulation_only"),
+        "live_allowed": safety.get("live_trading"),
+        "order_submission_allowed": safety.get("order_submission"),
+        "credentials_accessed": safety.get("credentials"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and status.get("status") == "PASS"
+        and status.get("snapshot_id") == snapshot_id
+        and bundle.get("provenance") == "REAL_PUBLIC_CROSS_VENUE_ORDER_BOOKS"
+        and bundle.get("fee_policy_version") == FEE_POLICY_VERSION
+        and bundle.get("fee_calibration") == "UNCALIBRATED_RESEARCH_ASSUMPTION"
+        and bundle_quality.get("complete") is True
+        and bundle_quality.get("simulation_only") is True
+        and bundle_quality.get("private_access") is False
+        and bundle_quality.get("broker_connectivity") is False
+        and bundle_quality.get("order_submission") is False
+        and isinstance(books, list)
+        and _is_sha256(snapshot_id)
+        and _snapshot_id(books) == snapshot_id
+        and all(_is_sha256(value) for value in input_hashes.values())
+        and all(_is_sha256(value) for value in output_hashes.values())
+        and safety_contract == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "paper_multivenue_sor",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": input_hashes,
+        "output_hashes": output_hashes,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy for the immutable L2 launcher."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def collect_books(
@@ -669,6 +793,8 @@ def execute(
     status_path: str = DEFAULT_STATUS,
     http_get: Callable[[str], object] = _http_get_json,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
     books, bundle, _appended, book_rows = refresh_persisted_routing_snapshot(
         binance_store_path=binance_store_path,
@@ -740,6 +866,12 @@ def execute(
     atomic_write_json(status_path, status)
     if status["status"] != "PASS":
         raise PaperMultiVenueSORError("paper SOR canary produced no multi-venue TCA")
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        status,
+        bundle,
+        run,
+        output_path=status_path,
+    )
     return status
 
 

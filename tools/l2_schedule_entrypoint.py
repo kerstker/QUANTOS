@@ -78,7 +78,9 @@ _RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
 _STATE_ROOT_ENV = "QUANTOS_STATE_ROOT"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ATTESTABLE_EXIT_CODES = frozenset({0, 2})
-REQUIRED_INPUT_ATTESTATION_MODULES = frozenset({"alpha_production_workflow"})
+REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
+    {"alpha_production_workflow", "paper_multivenue_sor"}
+)
 _ATTESTATION_SAFETY = {
     "paper_only": True,
     "live_allowed": False,

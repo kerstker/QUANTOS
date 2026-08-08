@@ -36,12 +36,14 @@ separates release verification from worker outcome, so a verified release plus
 a non-zero worker exit is recorded as `release_verified=true`, `status=FAILED`.
 Receipt schema v2 also carries `worker_attestation_required`, `worker_attested`,
 the validated attestation document, and its canonical SHA-256. The unique
-`alpha_production_workflow` authority is the first required worker: a successful
-or safe-blocked run without its logical input/evidence hashes, policy hashes,
-authority chain heads, projection hash, and exact release commit fails closed.
-Workers not yet instrumented remain explicit with
-`worker_attestation_required=false`; that is a migration boundary, not a claim
-that their mutable inputs are already release-bound.
+`alpha_production_workflow` authority and the public-book
+`paper_multivenue_sor` worker are required: a successful or safe-blocked run
+without its exact release commit and complete logical input/output hashes fails
+closed. Alpha binds its evidence, policies, authority chain heads, and projection;
+SOR binds its complete public cross-venue book bundle, routing contract, status
+artifact, and dry-run reproducibility hash. Workers not yet instrumented remain
+explicit with `worker_attestation_required=false`; that is a migration boundary,
+not a claim that their mutable inputs are already release-bound.
 The independent watchdog pins the Python executable class, launcher path,
 module, state root, and release commit; legacy direct `-m tools.*`, unpinned, or
 same-root actions fail closed as `ACTION_DRIFT`. Existing tasks must therefore

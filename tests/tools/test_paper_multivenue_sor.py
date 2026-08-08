@@ -1,9 +1,12 @@
+import hashlib
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.cross_venue_order_book_store import CrossVenueOrderBookStore
+import tools.paper_multivenue_sor as paper_sor
 from tools.paper_multivenue_sor import (
     INSTRUMENTS,
     MAX_FUTURE_SKEW_MS,
@@ -11,10 +14,12 @@ from tools.paper_multivenue_sor import (
     MAX_VENUE_SKEW_MS,
     PaperMultiVenueSORError,
     collect_books,
+    execute,
     load_persisted_routing_snapshot,
     parse_binance_rest_book,
     parse_bybit_book,
     refresh_persisted_routing_snapshot,
+    release_run_attestation,
     run_canary,
 )
 
@@ -398,3 +403,136 @@ def test_persisted_routing_snapshot_rejects_unapproved_public_source(tmp_path):
             tickers=("BTC",),
             now_ms=now_ms,
         )
+
+
+def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch):
+    rows = [
+        {
+            "instrument_id": instrument_id,
+            "venue": venue,
+            "source": source,
+            "observed_at_ms": 2_000_000,
+            "bids": [["1", 1]],
+            "asks": [["2", 1]],
+            "taker_fee_bps": fee,
+            "latency_ms": 0,
+        }
+        for instrument_id in paper_sor.PAPER_INSTRUMENTS
+        for venue, source, fee in (
+            ("binance_usdm", "BINANCE_PUBLIC_USDM_WEBSOCKET", "5"),
+            ("bybit_linear", "BYBIT_PUBLIC_LINEAR_REST", "5.5"),
+        )
+    ]
+    bundle = {
+        "schema_version": 1,
+        "snapshot_id": paper_sor._snapshot_id(rows),
+        "observed_at_ms": 2_000_000,
+        "provenance": "REAL_PUBLIC_CROSS_VENUE_ORDER_BOOKS",
+        "fee_policy_version": paper_sor.FEE_POLICY_VERSION,
+        "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
+        "binance_sources": {
+            instrument_id: "BINANCE_PUBLIC_USDM_WEBSOCKET"
+            for instrument_id in paper_sor.PAPER_INSTRUMENTS
+        },
+        "books": rows,
+        "quality": {
+            "complete": True,
+            "binance_rest_failover_used": False,
+            "simulation_only": True,
+            "private_access": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+        },
+    }
+    run = SimpleNamespace(
+        run_id="paper-sor-run",
+        reproducibility_hash="c" * 64,
+        detail={
+            "route_tca": [{"instrument_id": "DOGEUSDT"}],
+            "routing": [
+                {
+                    "slices": [
+                        {"venue_id": "binance_usdm"},
+                        {"venue_id": "bybit_linear"},
+                    ]
+                }
+            ],
+        },
+    )
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
+    monkeypatch.setattr(
+        paper_sor,
+        "refresh_persisted_routing_snapshot",
+        lambda **_kwargs: (
+            {instrument_id: () for instrument_id in paper_sor.INSTRUMENTS},
+            bundle,
+            True,
+            1,
+        ),
+    )
+    monkeypatch.setattr(paper_sor, "run_canary", lambda **_kwargs: run)
+    monkeypatch.setattr(
+        paper_sor,
+        "open_domain_event_bus",
+        lambda: SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(
+        paper_sor,
+        "save_and_project_dry_run",
+        lambda *_args, **_kwargs: {"stored": True},
+    )
+    status_path = tmp_path / "paper_sor_status.json"
+
+    status = execute(
+        now_ms=2_000_000,
+        dry_run_store_path=str(tmp_path / "dry_run.db"),
+        status_path=str(status_path),
+    )
+    attestation = release_run_attestation()
+
+    assert attestation is not None
+    assert attestation["complete"] is True
+    assert attestation["module"] == "paper_multivenue_sor"
+    assert attestation["release_commit"] == "a" * 40
+    assert attestation["input_hashes"]["public_cross_venue_books"] == status[
+        "snapshot_id"
+    ]
+    assert attestation["output_hashes"]["dry_run_reproducibility"] == "c" * 64
+    assert attestation["output_hashes"]["paper_sor_status_file"] == hashlib.sha256(
+        status_path.read_bytes()
+    ).hexdigest()
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+
+    bundle["quality"]["private_access"] = True
+    assert paper_sor._build_release_run_attestation(
+        status,
+        bundle,
+        run,
+        output_path=status_path,
+    )["complete"] is False
+
+
+def test_execute_clears_stale_attestation_before_failed_run(tmp_path, monkeypatch):
+    paper_sor._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+    monkeypatch.setattr(
+        paper_sor,
+        "refresh_persisted_routing_snapshot",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            PaperMultiVenueSORError("fresh books unavailable")
+        ),
+    )
+
+    with pytest.raises(PaperMultiVenueSORError, match="fresh books unavailable"):
+        execute(
+            now_ms=2_000_000,
+            dry_run_store_path=str(tmp_path / "dry_run.db"),
+            status_path=str(tmp_path / "paper_sor_status.json"),
+        )
+
+    assert release_run_attestation() is None

@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Paper SOR 发布运行证明第二增量：**
+> `paper_multivenue_sor` 现与唯一 Alpha 工作流同列为不可变 L2 launcher 的强制证明
+> worker。每次成功运行必须把完整公共跨场所盘口 bundle、独立可重算的 book snapshot、
+> 固定路由输入合同（全量/金丝雀 universe、notional、新鲜度/偏差上限、费用假设）绑定为
+> 输入哈希，并把状态文件和 dry-run reproducibility hash 绑定为输出哈希；release commit
+> 与 `paper_only=true`、live/order/credentials/broker 全 false 逐项校验。新运行开始前先清空
+> 旧证明，失败重试不能沿用上次 PASS。缺失、畸形、commit 不符、快照不可重算或安全声明
+> 漂移均由 launcher fail-closed。其余尚未逐个接入的 worker 仍诚实标记
+> `worker_attestation_required=false`；WP0 尚未宣称整体闭合。
+
 > **2026-08-09 Paper SOR 校验后时钟重锚修复（开发分支已验证，待不可变发布）：**
 > 现场 `QUANTOS_paper_multivenue_sor` 在大型公开行情权威库上先做完整哈希链复核，
 > 却继续用复核开始前的 `now_ms` 选择 Binance 快照，再以复核结束后的墙钟标记 Bybit

@@ -10,6 +10,7 @@ import pytest
 
 from tools.l2_schedule_entrypoint import (
     ALLOWED_L2_MODULES,
+    REQUIRED_INPUT_ATTESTATION_MODULES,
     ScheduleEntrypointError,
     _configure_headless_logging,
     _install_headless_subprocess_guard,
@@ -21,10 +22,10 @@ from tools.l2_schedule_entrypoint import (
 COMMIT = "a" * 40
 
 
-def _worker_attestation() -> dict:
+def _worker_attestation(module: str = "alpha_production_workflow") -> dict:
     return {
         "schema_version": 1,
-        "module": "alpha_production_workflow",
+        "module": module,
         "release_commit": COMMIT,
         "complete": True,
         "input_hashes": {
@@ -277,13 +278,20 @@ def test_entrypoint_reports_release_verification_before_worker_runs(
     assert observed == [(code_root.resolve(), COMMIT)]
 
 
-def test_required_worker_fails_closed_without_input_attestation(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "module_name",
+    sorted(REQUIRED_INPUT_ATTESTATION_MODULES | {"paper_multivenue_sor"}),
+)
+def test_required_worker_fails_closed_without_input_attestation(
+    tmp_path: Path,
+    module_name: str,
+) -> None:
     code_root = tmp_path / "release"
     module = _module(code_root, result=0)
 
     with pytest.raises(ScheduleEntrypointError, match="input/evidence attestation"):
         run_scheduled_module(
-            "alpha_production_workflow",
+            module_name,
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
@@ -291,14 +299,21 @@ def test_required_worker_fails_closed_without_input_attestation(tmp_path: Path) 
         )
 
 
-def test_required_worker_attestation_is_validated_and_hash_bound(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "module_name",
+    ("alpha_production_workflow", "paper_multivenue_sor"),
+)
+def test_required_worker_attestation_is_validated_and_hash_bound(
+    tmp_path: Path,
+    module_name: str,
+) -> None:
     code_root = tmp_path / "release"
     module = _module(code_root, result=0)
-    module.release_run_attestation = _worker_attestation
+    module.release_run_attestation = lambda: _worker_attestation(module_name)
     observed = []
 
     assert run_scheduled_module(
-        "alpha_production_workflow",
+        module_name,
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
@@ -306,7 +321,7 @@ def test_required_worker_attestation_is_validated_and_hash_bound(tmp_path: Path)
         on_worker_attested=lambda document, digest: observed.append((document, digest)),
     ) == 0
 
-    assert observed[0][0] == _worker_attestation()
+    assert observed[0][0] == _worker_attestation(module_name)
     assert re.fullmatch(r"[0-9a-f]{64}", observed[0][1])
 
 

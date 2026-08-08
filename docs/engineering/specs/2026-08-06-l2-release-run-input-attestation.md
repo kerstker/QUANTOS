@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 first increment
+Roadmap slice: WP0 increments 1-2
 
 ## Problem
 
@@ -31,12 +31,20 @@ identity set, all evidence documents, the exact attested forward-realization win
 and the two pre-registered policy hashes.  Its output set includes the projection file
 hash and both append-only authority chain heads.
 
+`paper_multivenue_sor` is the second required module.  Its input set binds the full
+canonical public cross-venue book bundle, the bundle's independently reproducible book
+snapshot hash, and the fixed routing-input contract (universe, canary subset, notional,
+freshness/skew limits, and fee assumptions).  Its output set binds the persisted status
+file and the dry-run reproducibility hash.  A failed retry clears any prior in-memory
+attestation before touching new inputs, so a previous PASS cannot attest a later run.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
 - It does not claim cross-host storage, WORM retention, external witnessing, or a
   signed container provenance.
-- Other scheduled workers remain explicitly `worker_attestation_required=false` until
+- Scheduled workers other than `alpha_production_workflow` and
+  `paper_multivenue_sor` remain explicitly `worker_attestation_required=false` until
   their real consumed-input contracts are instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or
   live-trading flag changes are introduced.
