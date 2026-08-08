@@ -83,7 +83,9 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
       '/api/v1/console/risk-dashboard',
       '/api/v1/console/mft-execution',
     ],
-    acceptedProvenance: ['REAL_MFT_READ_MODEL', 'REAL', 'REPOSITORY_EVIDENCE'],
+    acceptedProvenance: [
+      'REAL_MFT_READ_MODEL', 'REAL_CRYPTO_SERIES', 'REAL', 'REPOSITORY_EVIDENCE',
+    ],
     allowSyntheticFallback: false,
     forbiddenDependencies: FORBIDDEN,
   },

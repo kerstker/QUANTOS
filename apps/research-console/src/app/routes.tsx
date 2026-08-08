@@ -53,7 +53,7 @@ export const PAGES: readonly PageDef[] = [
   { path: '/workbench/validation', zh: '验证证据', en: 'Validation Evidence', icon: 'VE', group: null,
     load: () => import('@/pages/workbench/ValidationEvidence') },
   { path: '/workbench/portfolio-risk', zh: '组合与风险', en: 'Portfolio & Risk', icon: 'PR', group: null,
-    load: () => import('@/pages/workbench/WorkbenchScaffold') },
+    load: () => import('@/pages/workbench/PortfolioRisk') },
   { path: '/workbench/execution', zh: '执行与订单', en: 'Execution & Orders', icon: 'EO', group: null,
     load: () => import('@/pages/workbench/WorkbenchScaffold') },
 
