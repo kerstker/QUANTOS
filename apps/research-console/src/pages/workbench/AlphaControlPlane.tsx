@@ -127,6 +127,7 @@ function EvidenceLinks({ candidate }: { candidate: HourlyAlphaCandidate }) {
     ['/research/experiments', 'Trial / experiment'],
     ['/research/alpha-graph', 'Lineage graph'],
     ['/research/alpha-lifecycle', 'Lifecycle detail'],
+    ['/workbench/portfolio-risk', 'Portfolio / risk context'],
   ] as const;
   return (
     <div className="flex min-w-[150px] flex-col items-start gap-1">

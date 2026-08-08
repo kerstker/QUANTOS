@@ -365,10 +365,12 @@ export default function ValidationEvidence() {
       <Panel eyebrow="Evidence drill-down" title="只读详情入口">
         <div className="flex flex-wrap gap-2">
           {[
-            ['/research/validation', 'Legacy validation detail'],
             ['/research/experiments', 'Experiment registry'],
             ['/research/alpha-lifecycle', 'Lifecycle / forward detail'],
+            ['/research/backtest-results', 'Backtest detail'],
             ['/workbench/alpha', 'Alpha authority'],
+            ['/workbench/portfolio-risk', 'Portfolio / risk context'],
+            ['/workbench/execution', 'Forward execution reality'],
           ].map(([href, label]) => (
             <a key={href} href={candidate ? `${href}?alpha_id=${encodeURIComponent(candidate.candidate_id)}` : href}
               className="rounded-md border border-line px-3 py-2 text-xs text-accent hover:bg-inset">

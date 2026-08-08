@@ -47,7 +47,7 @@ describe('Wave 3 app shell integration', () => {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     fireEvent.click(screen.getByRole('button', { name: '治理' }));
-    expect(screen.getByRole('dialog', { name: '治理抽屉' })).toHaveTextContent('只读');
+    expect(screen.getByRole('dialog', { name: '治理抽屉' })).toHaveTextContent('GOVERNANCE_UNAVAILABLE');
     fireEvent.click(screen.getByRole('button', { name: '关闭治理抽屉' }));
     expect(screen.queryByRole('dialog', { name: '治理抽屉' })).toBeNull();
   });
@@ -57,22 +57,35 @@ describe('Wave 3 app shell integration', () => {
     expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();
   });
 
-  it('keeps removed blueprint routes on their honest legacy redirect', async () => {
+  it('does not preserve an ambiguous stale blueprint redirect', () => {
     render(<MemoryRouter initialEntries={['/research/incident-response']}><App /></MemoryRouter>);
-    expect(await screen.findByText('系统完整度审查')).toBeTruthy();
-  });
-
-  it('keeps legacy details reachable without making them top-level workspaces', async () => {
-    render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
+    expect(screen.queryByRole('heading')).toBeNull();
     expect(screen.getByRole('navigation', { name: 'object workspaces' })).toBeTruthy();
   });
 
-  it('opens global search for legacy detail and drill-down pages', async () => {
+  it('maps the old command overview bookmark to the read-only task drawer', async () => {
+    render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: '任务抽屉' })).toHaveTextContent('TASKS_UNAVAILABLE');
+    expect(screen.getByRole('navigation', { name: 'object workspaces' })).toBeTruthy();
+  });
+
+  it('keeps bounded evidence detail routes without promoting them to top-level workspaces', async () => {
+    render(<MemoryRouter initialEntries={['/research/experiments']}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { level: 1, name: /实验注册表/ })).toBeTruthy();
+    const primary = screen.getByRole('navigation', { name: 'object workspaces' });
+    expect(within(primary).getAllByRole('link')).toHaveLength(5);
+  });
+
+  it('opens global search for workspaces, bounded details, and four drawers', async () => {
     render(<MemoryRouter initialEntries={['/workbench/market']}><App /></MemoryRouter>);
     await screen.findByRole('heading', { name: /市场监控/ });
     fireEvent.click(screen.getByRole('button', { name: /Global search|全局搜索/ }));
     expect(await screen.findByRole('dialog', { name: '全局搜索' })).toBeTruthy();
     expect(screen.getByPlaceholderText(/Search pages|搜索页面/)).toBeTruthy();
+    expect(screen.getAllByText('Alpha 控制面').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('治理').length).toBeGreaterThan(1);
+    expect(screen.getByText('实验登记详情')).toBeTruthy();
+    expect(screen.queryByText('Getting Started')).toBeNull();
   });
 });

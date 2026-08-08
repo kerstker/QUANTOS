@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeMftSnapshot } from '@/workbench/__tests__/mft-fixtures';
+import { MemoryRouter } from '@/lib/router';
 import { GlobalDrawerHost } from '@/workbench/GlobalDrawerHost';
 import { GlobalStatusBar } from '@/workbench/GlobalStatusBar';
 
@@ -56,9 +57,9 @@ describe('GlobalStatusBar', () => {
 
 describe('GlobalDrawerHost', () => {
   it('is keyboard reachable and closes with Escape', () => {
-    render(<GlobalDrawerHost />);
+    render(<MemoryRouter><GlobalDrawerHost /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: '健康' }));
-    expect(screen.getByRole('dialog', { name: '健康抽屉' })).toHaveTextContent('UNAVAILABLE');
+    expect(screen.getByRole('dialog', { name: '健康抽屉' })).toHaveTextContent('HEALTH_UNAVAILABLE');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '健康抽屉' })).toBeNull();
   });

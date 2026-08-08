@@ -12,6 +12,9 @@ describe('Wave 3 data-source manifest', () => {
     expect(new Set(WORKBENCH_DATA_SOURCE_MANIFEST.map(item => item.id)).size).toBe(5);
     expect(new Set(WORKBENCH_DATA_SOURCE_MANIFEST.map(item => item.route)).size).toBe(5);
     expect(new Set(WORKBENCH_DATA_SOURCE_MANIFEST.map(item => item.purpose)).size).toBe(5);
+    expect(new Set(WORKBENCH_DATA_SOURCE_MANIFEST.map(
+      item => JSON.stringify(item.authoritativeEndpoints),
+    )).size).toBe(5);
   });
 
   it('forbids synthetic fallback and direct execution dependencies everywhere', () => {

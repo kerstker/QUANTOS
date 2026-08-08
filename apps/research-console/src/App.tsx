@@ -15,6 +15,13 @@ const nav: NavGroup[] = GROUPS.map(group => ({
     .map(({ page }) => ({ to: page.path, zh: page.zh, en: page.en, icon: page.icon })),
 }));
 
+nav.push({
+  zh: '只读详情',
+  en: 'READ-ONLY DETAILS',
+  items: LAZY.filter(({ page }) => page.group === null && !page.path.includes(':'))
+    .map(({ page }) => ({ to: page.path, zh: page.zh, en: page.en, icon: page.icon })),
+});
+
 function RouteFallback() {
   return (
     <div className="flex h-64 items-center justify-center text-xs text-faint">

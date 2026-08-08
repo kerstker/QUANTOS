@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { NavLink } from '@/lib/router';
+import { NavLink, useLocation } from '@/lib/router';
 import {
   fetchRuntimeContract,
   getConsoleRuntimeMode,
 } from '@/lib/api/research-console-api';
 import type { RuntimeContractPayload } from '@/lib/types/research';
 import { WORKBENCH_DATA_SOURCE_MANIFEST } from '@/workbench/data-source-manifest';
-import { GlobalDrawerHost } from '@/workbench/GlobalDrawerHost';
+import { GLOBAL_DRAWER_DEFINITIONS, GlobalDrawerHost } from '@/workbench/GlobalDrawerHost';
 import { GlobalStatusBar } from '@/workbench/GlobalStatusBar';
 import { ConfirmDialogHost } from './dialog';
 import { ToastProvider } from './toast';
@@ -96,11 +96,21 @@ function CommandPalette({ nav, open, onClose }: {
   open: boolean;
   onClose: () => void;
 }) {
+  const { pathname } = useLocation();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const items = useMemo(
-    () => nav.flatMap(group => group.items.map(item => ({ ...item, group: group.zh }))),
-    [nav],
+    () => [
+      ...nav.flatMap(group => group.items.map(item => ({ ...item, group: group.zh }))),
+      ...GLOBAL_DRAWER_DEFINITIONS.map(drawer => ({
+        to: `${pathname}?drawer=${drawer.id}`,
+        zh: drawer.label,
+        en: drawer.en,
+        icon: drawer.id.slice(0, 2).toUpperCase(),
+        group: '全局抽屉',
+      })),
+    ],
+    [nav, pathname],
   );
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
