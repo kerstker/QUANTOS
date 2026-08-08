@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 全量原始归档审计吞吐闭合：** 现场换版验收暴露
+> `QUANTOS_raw_archive_audit` 随归档增长已逼近并在最新一轮触及 2 小时任务上限；
+> 根因不是校验弱化需求，而是 62 万条 observation 重复重型解析同一批公共 source URI，
+> 随后又串行读取/哈希约 46 万个唯一内容对象。现保留每条 observation digest/schema/
+> source URI/size 与每个 object digest 的完整验证，只对完全相同且已验证的 URI 使用 4096 项
+> 有界缓存，并把唯一对象校验改为 8 路、2048 项批次的有界并行；错误输出仍按 observation
+> 路径确定性排序，索引锚只在零错误时刷新。真实 `H:\QUANTOS_STATE` 全量运行
+> **624452 observations / 0 invalid / 746703ms（约 12 分 27 秒）PASS**，相对上一完整成功轮
+> 5996164ms（约 100 分钟）约 8 倍提速，重新落入 2 小时硬上限内；仍是全量审计，未改成抽样。
+
 > **2026-08-09 实时特征 bounded-clock-skew PIT 接缝修复：** 新不可变 release 的
 > Execution Paper 运行证明验收正确暴露前置特征 worker 被
 > `snapshot violates PIT ordering` 阻断。根因是 WebSocket collector 与权威存储已允许并记录

@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from services.data import raw_archive as raw_archive_module
 from services.data.raw_archive import (
     RawArchiveError,
     archive_json_response,
@@ -34,6 +35,36 @@ def _archive(root, *, payload=b"raw-response", observed_at_ms=1000):
             "duplicate_rows": 0,
         },
     )
+
+
+def test_repeated_source_uri_validation_reuses_bounded_cache():
+    cached_validator = raw_archive_module._validate_source_uri_cached
+    cached_validator.cache_clear()
+    source_uri = "https://data.example.test/market/BTC/day.zip"
+
+    assert raw_archive_module._validate_source_uri(source_uri) == source_uri
+    after_first = cached_validator.cache_info()
+    assert raw_archive_module._validate_source_uri(source_uri) == source_uri
+    after_second = cached_validator.cache_info()
+
+    assert after_first.misses == 1
+    assert after_second.hits == 1
+    assert after_second.maxsize == 4096
+
+
+def test_parallel_object_verifier_deduplicates_and_reports_missing(tmp_path):
+    archived = _archive(tmp_path)
+    present = archived["artifact_sha256"]
+    missing = "0" * 64
+
+    verified = raw_archive_module._verify_archive_objects(
+        str(tmp_path), [present, missing, present]
+    )
+
+    assert verified == {
+        present: (None, len(b"raw-response")),
+        missing: ("OBJECT_MISSING", None),
+    }
 
 
 def test_raw_response_is_content_addressed_and_idempotent(tmp_path):

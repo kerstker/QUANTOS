@@ -10,6 +10,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
@@ -45,8 +46,8 @@ def _require_text(name: str, value: str) -> str:
     return value.strip()
 
 
-def _validate_source_uri(source_uri: str) -> str:
-    source_uri = _require_text("source_uri", source_uri)
+@lru_cache(maxsize=4096)
+def _validate_source_uri_cached(source_uri: str) -> str:
     try:
         parsed = _HTTPS_URL.validate_python(source_uri)
     except ValidationError as exc:
@@ -64,6 +65,10 @@ def _validate_source_uri(source_uri: str) -> str:
                 f"source_uri contains a sensitive query parameter: {key}"
             )
     return source_uri
+
+
+def _validate_source_uri(source_uri: str) -> str:
+    return _validate_source_uri_cached(_require_text("source_uri", source_uri))
 
 
 def _json_bytes(value, *, label: str) -> bytes:
@@ -274,6 +279,42 @@ def _load_observation(path: str) -> tuple[dict | None, str | None]:
         ), None
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
         return None, "OBSERVATION_UNREADABLE"
+
+
+def _verify_archive_object(
+    root: str, artifact_sha: str
+) -> tuple[str | None, int | None]:
+    object_path = os.path.join(
+        root, "objects", "sha256", artifact_sha[:2], artifact_sha + ".bin"
+    )
+    try:
+        body = open(object_path, "rb").read()
+    except OSError:
+        return "OBJECT_MISSING", None
+    if _sha256(body) != artifact_sha:
+        return "OBJECT_DIGEST_MISMATCH", len(body)
+    return None, len(body)
+
+
+def _verify_archive_objects(
+    root: str, artifact_shas
+) -> dict[str, tuple[str | None, int | None]]:
+    """Verify each immutable object once with bounded filesystem parallelism."""
+    unique = tuple(dict.fromkeys(artifact_shas))
+    verified = {}
+    if not unique:
+        return verified
+
+    def verify(artifact_sha: str):
+        return artifact_sha, _verify_archive_object(root, artifact_sha)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for offset in range(0, len(unique), 2048):
+            for artifact_sha, result in executor.map(
+                verify, unique[offset:offset + 2048]
+            ):
+                verified[artifact_sha] = result
+    return verified
 
 
 def _validate_observation_schema(observation: dict) -> None:
@@ -523,7 +564,7 @@ def summarize_archive(
     index_rows = []
     with ThreadPoolExecutor(max_workers=8) as executor:
         loaded_observations = list(executor.map(_load_observation, paths))
-    verified_objects = {}
+    audit_items = []
     for path, (observation, load_error) in zip(paths, loaded_observations):
         observation_id = os.path.splitext(os.path.basename(path))[0]
         if not scoped:
@@ -533,8 +574,7 @@ def summarize_archive(
                 # The unfiltered admission summary remains load-bearing for
                 # malformed observations that cannot be attributed safely.
                 continue
-            errors.append({"observation_sha256": observation_id, "kind": load_error})
-            invalid.add(observation_id)
+            audit_items.append((observation_id, None, load_error, None))
             continue
 
         try:
@@ -542,11 +582,9 @@ def summarize_archive(
         except (RawArchiveError, TypeError):
             if scoped:
                 continue
-            errors.append({
-                "observation_sha256": observation_id,
-                "kind": "OBSERVATION_SCHEMA_INVALID",
-            })
-            invalid.add(observation_id)
+            audit_items.append(
+                (observation_id, None, "OBSERVATION_SCHEMA_INVALID", None)
+            )
             continue
 
         if (
@@ -566,25 +604,25 @@ def summarize_archive(
         )
         object_relative = observation.get("object_path")
         if object_relative != expected_object:
+            audit_items.append(
+                (observation_id, None, "OBJECT_PATH_INVALID", None)
+            )
+            continue
+        audit_items.append((observation_id, observation, None, artifact_sha))
+
+    verified_objects = _verify_archive_objects(
+        root,
+        (item[3] for item in audit_items if item[3] is not None),
+    )
+    for observation_id, observation, pre_error, artifact_sha in audit_items:
+        if pre_error is not None:
             errors.append({
                 "observation_sha256": observation_id,
-                "kind": "OBJECT_PATH_INVALID",
+                "kind": pre_error,
             })
             invalid.add(observation_id)
             continue
-        object_path = os.path.join(root, *object_relative.split("/"))
-        verification = verified_objects.get(artifact_sha)
-        if verification is None:
-            try:
-                body = open(object_path, "rb").read()
-            except OSError:
-                verification = ("OBJECT_MISSING", None)
-            else:
-                if _sha256(body) != artifact_sha:
-                    verification = ("OBJECT_DIGEST_MISMATCH", len(body))
-                else:
-                    verification = (None, len(body))
-            verified_objects[artifact_sha] = verification
+        verification = verified_objects[artifact_sha]
         kind, actual_size = verification
         if kind is None and actual_size != observation.get("size_bytes"):
             kind = "OBJECT_SIZE_MISMATCH"
