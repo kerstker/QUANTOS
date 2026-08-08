@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "domain": "reliability_operations",
-      "passed": 1,
+      "passed": 0,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -695,6 +695,11 @@
               "role": "data_refresh_history"
             },
             {
+              "relative_path": "data/cache/mft_testnet_soak.db",
+              "required": false,
+              "role": "mft_testnet_soak_evidence_authority"
+            },
+            {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
               "role": "factory_candidate_admission"
@@ -720,7 +725,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 4
+          "version": 5
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -740,25 +745,13 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
+      "detail": "invalid expected source contract: source contract version must be 2, 3, or 4",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "tools/l2_scheduler_watchdog.py",
-        "tools/external_heartbeat.py",
-        "tools/domain_event_seal.py",
-        "tools/restore_drill.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/tools/test_l2_scheduler_watchdog.py",
-        "tests/tools/test_external_heartbeat.py",
-        "tests/tools/test_domain_event_seal.py",
-        "tests/governance/test_l2_operations_boundary.py",
-        "evidence/l2_backup_latest.json"
-      ],
+      "evidence": [],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -768,7 +761,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "UNVERIFIED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -856,6 +849,11 @@
               "role": "data_refresh_history"
             },
             {
+              "relative_path": "data/cache/mft_testnet_soak.db",
+              "required": false,
+              "role": "mft_testnet_soak_evidence_authority"
+            },
+            {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
               "role": "factory_candidate_admission"
@@ -881,7 +879,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 4
+          "version": 5
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -907,20 +905,11 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history checker arguments are incomplete",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "services/governance/l2_restore_history.py",
-        "services/governance/l2_restore_checkpoint.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/governance/test_l2_restore_history.py",
-        "tests/governance/test_l2_restore_checkpoint.py",
-        "tests/governance/test_l2_restore_top_tier.py",
-        "data/cache/l2_restore_history.db"
-      ],
+      "evidence": [],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -932,7 +921,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "UNVERIFIED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1041,6 +1030,7 @@
         "config/artifact_receipt_authority_registry.generation-0.json",
         "config/artifact_receipt_authority_registry.json",
         "config/identity_authorization_registry.json",
+        "config/mft_testnet_soak_policy.json",
         "config/model_provider_registry.json",
         "config/service_import_policy.json",
         "config/templates/live_mandate_binance_mainnet.json.template",
@@ -1143,6 +1133,8 @@
         "services/monitoring/event_bus.py",
         "services/monitoring/event_health.py",
         "services/monitoring/event_projection.py",
+        "services/monitoring/mft_soak.py",
+        "services/monitoring/mft_soak_store.py",
         "services/promotion_api/main.py",
         "services/research/alpha_family_registry.py",
         "services/research/alpha_production_workflow.py",
@@ -1209,6 +1201,7 @@
         "tests/monitoring/test_event_consumer_group.py",
         "tests/monitoring/test_event_projection.py",
         "tests/monitoring/test_governance_decision_audit.py",
+        "tests/monitoring/test_mft_soak.py",
         "tests/research/test_alpha_family_registry.py",
         "tests/research/test_alpha_production_workflow.py",
         "tests/research/test_console_api_contract.py",
@@ -1236,6 +1229,7 @@
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_mft_testnet_soak.py",
         "tests/tools/test_paper_order_preview.py",
         "tests/tools/test_realtime_alpha_discovery.py",
         "tests/tools/test_realtime_alpha_execution_paper.py",
@@ -1269,6 +1263,7 @@
         "tools/live_risk_sentinel.py",
         "tools/live_testnet_smoke.py",
         "tools/live_track_advance.py",
+        "tools/mft_testnet_soak.py",
         "tools/paper_order_preview.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/realtime_alpha_discovery.py",
@@ -1522,19 +1517,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 3,
+    "failed": 2,
     "manual_evidence_required": 0,
     "partial": 5,
-    "passed": 14,
+    "passed": 13,
     "red_lines_failed": 4,
     "total": 22,
-    "unverified": 0
+    "unverified": 2
   },
   "validation": {
     "current": true,
-    "generated_at": 1786182167560,
-    "run_id": "1da6170a3f25c7719c10fd0c3a14125f13c1fa37b56c57379d9bdf92e61789f1",
-    "source_commit": "f29f69be64073efd49c7f3bcc7966196e77fb410"
+    "generated_at": 1786186938727,
+    "run_id": "9ec41fac02764d5f6c4d4937bca905fa0ca6b3ff4cb09aeee7b587971fe4916a",
+    "source_commit": "9633acd4048944e76dbe1bac81bb89f65a3d435f"
   },
   "verdict": "NOT_TOP_TIER"
 }
