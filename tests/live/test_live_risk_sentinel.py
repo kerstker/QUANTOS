@@ -46,10 +46,24 @@ def test_signed_equity_jump_alert_threshold_is_active():
     assert s._EQUITY_JUMP_ALERT_PCT == 0.15
 
 
-def test_signed_min_margin_ratio_is_active():
-    # 用户 2026-07-07 签署:维持保证金比率地板 2.0(低于即 breach → arm kill-switch)。drift-lock。
+def test_margin_ratio_has_no_sentinel_default_and_requires_versioned_policy():
     from tools import live_risk_sentinel as s
-    assert s._MIN_MARGIN_RATIO == 2.0
+    from live.governance.mandate_store import RiskSupervisorPolicy
+
+    assert not hasattr(s, "_MIN_MARGIN_RATIO")
+    policy = RiskSupervisorPolicy(
+        schema_version=1,
+        policy_id="human-signed-test-policy",
+        policy_version="v1",
+        max_market_age_ms=1_000,
+        max_scheduler_age_ms=5_000,
+        max_drawdown_pct=0.20,
+        min_margin_ratio=2.0,
+        max_single_name_fraction=0.40,
+        max_participation_rate=0.05,
+        reconciliation_tolerance=1e-9,
+    )
+    assert policy.min_margin_ratio == 2.0
 
 
 # ---------------------------------------------------------------------------

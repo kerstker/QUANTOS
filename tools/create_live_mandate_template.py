@@ -37,8 +37,10 @@ def build_template() -> dict:
             "流水线内部统一裸名,适配器提交时才拼 USDT 后缀;填合约符号会导致全部订单被"
             " instrument_not_allowed 拒绝(fail-closed,但不是你想要的)。",
             "notional 都是名义额(quantity * price 的美元值),不是币的数量。",
-            "issued_at/expires_at 是 epoch 毫秒;expires_at 可以填 null = 永不过期"
-            "(不建议——8 周前向证据窗口之后应该重新审视限额,而不是让 mandate 无限期有效)。",
+            "issued_at/expires_at 是 epoch 毫秒;连续 supervisor 要求 expires_at 明确存在,"
+            "不接受永久 mandate。",
+            "risk_supervisor_policy 的每个 REPLACE_ME* 阈值也必须由真人签署;模板不提供"
+            "任何业务默认值。policy_id/policy_version 会进入 supervisor 状态和审计哈希。",
             "approved_by 留真实签署人的名字/id,是审计留痕,不是任何权限校验的一部分。",
         ],
         "mandate_id": f"{_PLACEHOLDER}_e.g._mandate_2026_07_stage1",
@@ -53,7 +55,19 @@ def build_template() -> dict:
         },
         "approved_by": [f"{_PLACEHOLDER}_your_name_or_id"],
         "issued_at": f"{_PLACEHOLDER_NUMBER}_EPOCH_MS",
-        "expires_at": None,
+        "expires_at": f"{_PLACEHOLDER_NUMBER}_EPOCH_MS",
+        "risk_supervisor_policy": {
+            "schema_version": 1,
+            "policy_id": f"{_PLACEHOLDER}_risk_policy_id",
+            "policy_version": f"{_PLACEHOLDER}_risk_policy_version",
+            "max_market_age_ms": _PLACEHOLDER_NUMBER,
+            "max_scheduler_age_ms": _PLACEHOLDER_NUMBER,
+            "max_drawdown_pct": _PLACEHOLDER_NUMBER,
+            "min_margin_ratio": _PLACEHOLDER_NUMBER,
+            "max_single_name_fraction": _PLACEHOLDER_NUMBER,
+            "max_participation_rate": _PLACEHOLDER_NUMBER,
+            "reconciliation_tolerance": _PLACEHOLDER_NUMBER,
+        },
     }
 
 

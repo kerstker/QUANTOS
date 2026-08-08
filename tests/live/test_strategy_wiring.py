@@ -301,15 +301,22 @@ def test_watchdog_scheduled_strategy_status_file_is_expected(tmp_path, monkeypat
 
 def test_sentinel_risk_positions_come_from_venue_rows_not_ledger():
     """live_risk_sentinel 的风控仓位来自 venue 真实持仓行(binance_position_rows/
-    bybit_position_rows),LiveLedger 只在 --act 分支作为紧急减仓的记账目标——本战线对
-    哨兵**零改动**,这里钉死这个事实(设计 §2 曾错误断言哨兵读 ledger.all_positions,
-    评审更正)。哨兵不感知策略:紧急减仓的分账打标在 emergency.py 内部完成。"""
+    bybit_position_rows)。Task 34 新增的账户级 LiveLedger 读取只用于外部对账,不得替代
+    venue 仓位进入风险计算。哨兵仍不感知策略:紧急减仓分账在 emergency.py 完成。"""
     src = open(os.path.join(_ROOT, "tools", "live_risk_sentinel.py"), encoding="utf-8").read()
-    assert "all_positions" not in src                          # 风控从不读本地账本仓位
+    supervisor = open(
+        os.path.join(_ROOT, "live", "execution", "risk_supervisor.py"),
+        encoding="utf-8",
+    ).read()
     assert "binance_position_rows" in src and "bybit_position_rows" in src
+    assert "positions=positions" in src                        # 风险输入仍是 venue rows
+    assert "ledger_positions=_supervisor_ledger_positions" in src
+    assert "ledger.all_positions()" in src                     # 仅账户级对账输入
+    assert "reconcile_positions(" in supervisor
+    assert "positions=snapshot.positions" in supervisor       # 风险原语不读 ledger
     assert "strategy_id" not in src                            # 哨兵是账户级的,不感知策略
-    assert src.count("LiveLedger(") == 1                       # 账本构造只有一处……
-    assert "LiveLedger(" in src.split("if act:")[1]            # ……且在 --act 记账分支里
+    assert src.count("LiveLedger(") == 2                       # 对账读 + --act 记账
+    assert "LiveLedger(" in src.split("if act:")[1]
 
 
 def test_driver_wires_realtime_funding_cross_check_after_price_check():

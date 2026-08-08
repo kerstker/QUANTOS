@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 import math
 import os
+from dataclasses import dataclass
 
 from live.governance.mandate import Mandate
+from quantos.contracts.hashing import stable_hash
 
 _REQUIRED = ("mandate_id", "venue", "exchange", "allowed_instruments",
             "max_single_order_notional", "max_gross_notional", "max_net_notional")
@@ -20,6 +22,142 @@ _REQUIRED = ("mandate_id", "venue", "exchange", "allowed_instruments",
 
 class MandateLoadError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class RiskSupervisorPolicy:
+    """Human-versioned limits for the continuous Testnet risk supervisor.
+
+    No field has a business default.  A missing or malformed policy therefore
+    blocks new risk instead of allowing the runtime to invent a threshold.
+    """
+
+    schema_version: int
+    policy_id: str
+    policy_version: str
+    max_market_age_ms: int
+    max_scheduler_age_ms: int
+    max_drawdown_pct: float
+    min_margin_ratio: float
+    max_single_name_fraction: float
+    max_participation_rate: float
+    reconciliation_tolerance: float
+
+    def __post_init__(self) -> None:
+        if isinstance(self.schema_version, bool) or self.schema_version != 1:
+            raise ValueError("risk supervisor schema_version must be 1")
+        for name in ("policy_id", "policy_version"):
+            value = getattr(self, name)
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+            ):
+                raise ValueError(f"{name} must be non-empty canonical text")
+        for name in ("max_market_age_ms", "max_scheduler_age_ms"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in (
+            "max_drawdown_pct",
+            "min_margin_ratio",
+            "max_single_name_fraction",
+            "max_participation_rate",
+            "reconciliation_tolerance",
+        ):
+            value = getattr(self, name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise ValueError(f"{name} must be finite")
+            object.__setattr__(self, name, float(value))
+        if not 0 < self.max_drawdown_pct <= 1:
+            raise ValueError("max_drawdown_pct must be in (0, 1]")
+        if self.min_margin_ratio <= 0:
+            raise ValueError("min_margin_ratio must be positive")
+        if not 0 < self.max_single_name_fraction <= 1:
+            raise ValueError("max_single_name_fraction must be in (0, 1]")
+        if not 0 < self.max_participation_rate <= 1:
+            raise ValueError("max_participation_rate must be in (0, 1]")
+        if self.reconciliation_tolerance < 0:
+            raise ValueError("reconciliation_tolerance must be non-negative")
+
+    def body(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "max_market_age_ms": self.max_market_age_ms,
+            "max_scheduler_age_ms": self.max_scheduler_age_ms,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "min_margin_ratio": self.min_margin_ratio,
+            "max_single_name_fraction": self.max_single_name_fraction,
+            "max_participation_rate": self.max_participation_rate,
+            "reconciliation_tolerance": self.reconciliation_tolerance,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_hash(self.body())
+
+
+_SUPERVISOR_POLICY_FIELDS = (
+    "schema_version",
+    "policy_id",
+    "policy_version",
+    "max_market_age_ms",
+    "max_scheduler_age_ms",
+    "max_drawdown_pct",
+    "min_margin_ratio",
+    "max_single_name_fraction",
+    "max_participation_rate",
+    "reconciliation_tolerance",
+)
+
+
+def load_risk_supervisor_policy(path: str) -> RiskSupervisorPolicy:
+    """Load the explicit versioned policy block from a mandate JSON file."""
+
+    if not os.path.exists(path):
+        raise MandateLoadError(f"mandate file not found: {path}")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        raise MandateLoadError(
+            f"mandate file malformed/unreadable: {path}: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise MandateLoadError(f"mandate file must contain an object: {path}")
+    raw = data.get("risk_supervisor_policy")
+    if not isinstance(raw, dict):
+        raise MandateLoadError(
+            f"risk_supervisor_policy is missing or invalid: {path}"
+        )
+    missing = [name for name in _SUPERVISOR_POLICY_FIELDS if name not in raw]
+    if missing:
+        raise MandateLoadError(
+            f"risk_supervisor_policy has invalid/missing fields {missing}: {path}"
+        )
+    try:
+        return RiskSupervisorPolicy(
+            schema_version=raw["schema_version"],
+            policy_id=raw["policy_id"],
+            policy_version=raw["policy_version"],
+            max_market_age_ms=raw["max_market_age_ms"],
+            max_scheduler_age_ms=raw["max_scheduler_age_ms"],
+            max_drawdown_pct=raw["max_drawdown_pct"],
+            min_margin_ratio=raw["min_margin_ratio"],
+            max_single_name_fraction=raw["max_single_name_fraction"],
+            max_participation_rate=raw["max_participation_rate"],
+            reconciliation_tolerance=raw["reconciliation_tolerance"],
+        )
+    except (TypeError, ValueError) as exc:
+        raise MandateLoadError(
+            f"risk_supervisor_policy is invalid: {path}: {exc}"
+        ) from exc
 
 
 def load_mandate(path: str) -> Mandate:

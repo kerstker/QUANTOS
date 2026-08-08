@@ -6,8 +6,8 @@
 1. 查真实权益/仓位/uPnL(只读);
 2. **持久化权益曲线点**(append-only `data/cache/live_equity{suffix}.jsonl`)——live 权益
    历史本身就是 Go/No-Go 证据的一部分;
-3. 用与周度驱动器**同一套** `evaluate_risk_state`(回撤阈值 0.20 + mandate 派生的敞口限额)
-   评估越限;
+3. 用 `evaluate_risk_state` + 统一 supervisor 评估版本化 policy、mandate、market/scheduler
+   freshness、保证金、集中度、参与率、对账与 UNKNOWN orders;不在哨兵里默认风险数字;
 4. 越限 → 告警(alert_sink);加 `--act` 时走**已批准的独立紧急减仓通道**(与驱动器 breach
    分支同一策略:回撤越限全平/敞口越限减回 90%/纯数据质量问题绝不自动交易)。
 
@@ -32,6 +32,7 @@ from live.execution.anomaly import detect_equity_anomaly
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.equity_state import (append_equity_observation,
                                          record_and_validate_peak_equity)
+from live.execution.order_recovery import SqliteOrderRecoveryStore
 from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import (
     RiskBreach,
@@ -39,11 +40,22 @@ from live.execution.risk_monitor import (
     evaluate_risk_state,
     respond_to_breach_persisted,
 )
+from live.execution.risk_supervisor import (
+    RiskSupervisorSnapshot,
+    apply_risk_supervisor_action,
+    evaluate_risk_supervisor,
+)
 from live.governance.kill_switch_store import (
+    load_kill_switch_state,
     open_authoritative_kill_switch_store,
     write_kill_switch_json_mirror,
 )
-from live.governance.mandate_store import MandateLoadError, load_mandate
+from live.governance.mandate_store import (
+    MandateLoadError,
+    load_mandate,
+    load_risk_supervisor_policy,
+)
+from quantos.contracts.mft_execution import MFT_TESTNET_ENVIRONMENT
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.firm_aggregation import aggregate_firm_books
 from services.portfolio.firm_gate import evaluate_firm_gate
@@ -55,15 +67,12 @@ from tools.live_snapshot import binance_position_rows, bybit_position_rows, port
 from tools.kill_switch_events import dispatch_and_project_kill_switch_events
 from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
 
-_MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
 # 盘中权益跳变告警阈值(Phase 5 item 2):两轮之间 |权益跳变| 超过它就**告警一次**(仅告警,绝不
 # arm kill-switch / 减仓 / 碰 order 路径——异常常良性但值得人看)。**用户 2026-07-07 签署 0.15**
 # (此前默认 None=关闭)。见 live/execution/anomaly.py 文档。
 _EQUITY_JUMP_ALERT_PCT: Optional[float] = 0.15
-# 维持保证金比率地板(Phase 5 item 2):维持保证金余额 / 维持保证金要求 < 它 -> 记 breach -> arm
-# kill-switch(halt,fail-safe 停止方向)。**用户 2026-07-07 签署 2.0**(此前默认 None=不绑定)。
-# 数据不全(维持额缺/非有限)fail-closed 记 breach;无维持要求(mm<=0,即无仓)-> 安全不报。
-_MIN_MARGIN_RATIO: Optional[float] = 2.0
+# Drawdown and margin limits now come only from the versioned policy block in
+# the human-authored mandate file.  Missing policy evidence halts new risk.
 # firm 级敞口硬门上限(审计 P1-6;**用户 2026-07-07 亲自签署**的业务风险预算,非工程占位):
 # 所有交易所加总的名义额绝对值之和上限 / 净方向敞口上限(gross 的 1/2)/ 单个币跨所占 firm_gross
 # 的比例上限。哨兵(能看到两所仓位)据此写 firm_gate_status.json;驱动器读它 BLOCK 就停止新增(见
@@ -72,6 +81,15 @@ _FIRM_MAX_GROSS = 20000.0
 _FIRM_MAX_NET = 10000.0
 _FIRM_MAX_SINGLE_NAME_WEIGHT = 0.20
 _FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
+_MARKET_STATUS_PATH = os.path.join(
+    "data", "cache", "binance_realtime_stream_status.json"
+)
+_RUNTIME_STATUS_PATH = os.path.join(
+    "data", "cache", "mft_l2_runtime_status.json"
+)
+_SENTINEL_STATUS_PATH = os.path.join(
+    "data", "cache", "risk_sentinel_status.json"
+)
 
 
 def _equity_path(suffix: str) -> str:
@@ -213,6 +231,137 @@ def sentinel_caps(mandate) -> dict:
             "source": "no_mandate_drawdown_only"}
 
 
+def _read_json_object(path: str) -> Optional[dict]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle)
+        return value if isinstance(value, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _supervisor_ledger_positions(path: str) -> Optional[dict]:
+    if not os.path.exists(path):
+        return None
+    ledger = None
+    try:
+        ledger = LiveLedger(path)
+        return ledger.all_positions()
+    except Exception:
+        return None
+    finally:
+        if ledger is not None:
+            ledger.close()
+
+
+def _supervisor_unknown_count(path: str) -> Optional[int]:
+    if not os.path.exists(path):
+        return None
+    store = None
+    try:
+        store = SqliteOrderRecoveryStore(path)
+        return len(store.pending())
+    except Exception:
+        return None
+    finally:
+        if store is not None:
+            store.close()
+
+
+def _build_supervisor_decision(
+    *,
+    venue_name: str,
+    venue,
+    paths: dict,
+    mandate,
+    policy,
+    now: int,
+    equity: float,
+    peak: float,
+    positions: dict,
+    prices: dict,
+    maint_balance,
+    maint_requirement,
+):
+    if policy is None:
+        return None
+    market_status = _read_json_object(_MARKET_STATUS_PATH)
+    cursor = None if market_status is None else market_status.get("cursor")
+    if not isinstance(cursor, dict) or venue_name != "binance":
+        cursor = {}
+    runtime_status = _read_json_object(_RUNTIME_STATUS_PATH) or {}
+    previous_status = _read_json_object(_SENTINEL_STATUS_PATH) or {}
+    mode = getattr(venue, "venue_mode", None)
+    environment = (
+        MFT_TESTNET_ENVIRONMENT
+        if venue_name == "binance" and mode == "testnet"
+        else "UNSUPPORTED"
+    )
+    snapshot = RiskSupervisorSnapshot(
+        now_ms=now,
+        execution_environment=environment,
+        venue=mode,
+        exchange=venue_name,
+        market_publishable=cursor.get("publishable"),
+        market_watermark_ms=cursor.get("watermark_ms"),
+        scheduler_last_success_ms=runtime_status.get("cycle_slot_ms"),
+        mandate=mandate,
+        account_equity=equity,
+        peak_equity=peak,
+        positions=positions,
+        prices=prices,
+        maint_margin_balance=maint_balance,
+        margin_maint_amount=maint_requirement,
+        # The sentinel owns no pending order plan.  It must not fabricate ADV
+        # participation evidence; an execution cycle supplies it explicitly.
+        participation_rates=None,
+        ledger_positions=_supervisor_ledger_positions(paths["ledger"]),
+        unknown_order_count=_supervisor_unknown_count(paths["order_recovery"]),
+        kill_switch_tripped=load_kill_switch_state(
+            paths["kill_switch"]
+        ).tripped,
+        previous_cycle_at_ms=previous_status.get("ran_at"),
+    )
+    return evaluate_risk_supervisor(snapshot, policy)
+
+
+def persist_risk_supervisor_decision(
+    *,
+    state_path: str,
+    decision,
+    worker_id: str = "risk-supervisor-kill-switch-event-projection",
+) -> dict:
+    store = open_authoritative_kill_switch_store(state_path)
+    try:
+        response = apply_risk_supervisor_action(decision, store=store)
+        state = store.load_state()
+        mirror_error = None
+        delivery_error = None
+        delivery = None
+        try:
+            write_kill_switch_json_mirror(state_path, state)
+        except Exception as exc:
+            mirror_error = type(exc).__name__
+        try:
+            delivery = dispatch_and_project_kill_switch_events(
+                store,
+                state_path=state_path,
+                now=decision.evaluated_at_ms,
+                worker_id=worker_id,
+            )
+        except Exception as exc:
+            delivery_error = type(exc).__name__
+        return {
+            "response": response,
+            "state": state,
+            "mirror_error": mirror_error,
+            "delivery": delivery,
+            "delivery_error": delivery_error,
+        }
+    finally:
+        store.close()
+
+
 def persist_kill_switch_breach(
     *,
     state_path: str,
@@ -297,8 +446,13 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
         ], context="risk_sentinel", now_ms=now)
 
     mandate = None
+    supervisor_policy = None
     try:
         mandate = load_mandate(cfg["mandate_file"])
+    except MandateLoadError:
+        pass
+    try:
+        supervisor_policy = load_risk_supervisor_policy(cfg["mandate_file"])
     except MandateLoadError:
         pass
     caps = sentinel_caps(mandate)
@@ -308,12 +462,16 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     # 维持保证金比率地板(用户签署 2.0):从账户 payload 取维持保证金余额/要求喂 gate。字段缺失 -> None
     # -> evaluate_risk_state fail-closed 记 breach;无维持要求(mm<=0,无仓)-> 安全不报。
     maint_bal, maint_req = cfg["margin"](acct)
-    breach = evaluate_risk_state(
-        equity=equity, peak_equity=peak, positions=positions, prices=prices,
-        max_drawdown_pct=_MAX_DRAWDOWN_PCT,
-        max_gross_exposure=caps["max_gross_exposure"], max_net_exposure=caps["max_net_exposure"],
-        min_margin_ratio=_MIN_MARGIN_RATIO, maint_margin_balance=maint_bal,
-        margin_maint_amount=maint_req)
+    if supervisor_policy is not None and mandate is not None:
+        breach = evaluate_risk_state(
+            equity=equity, peak_equity=peak, positions=positions, prices=prices,
+            max_drawdown_pct=supervisor_policy.max_drawdown_pct,
+            max_gross_exposure=caps["max_gross_exposure"],
+            max_net_exposure=caps["max_net_exposure"],
+            min_margin_ratio=supervisor_policy.min_margin_ratio,
+            maint_margin_balance=maint_bal, margin_maint_amount=maint_req)
+    else:
+        breach = RiskBreach(False, (), 0.0, 0.0, 0.0)
 
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
@@ -333,6 +491,41 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
            "notional_by_instrument": {r["instrument_id"]: r["qty"] * r["mark_price"]
                                       for r in rows if r["mark_price"] > 0}}
 
+    supervisor_decision = _build_supervisor_decision(
+        venue_name=venue_name,
+        venue=venue,
+        paths=paths,
+        mandate=mandate,
+        policy=supervisor_policy,
+        now=now,
+        equity=equity,
+        peak=peak,
+        positions=positions,
+        prices=prices,
+        maint_balance=maint_bal,
+        maint_requirement=maint_req,
+    )
+    if supervisor_decision is None:
+        out["risk_supervisor"] = {
+            "verdict": "HALT_NEW_RISK",
+            "reasons": ["RISK_SUPERVISOR_POLICY_UNAVAILABLE"],
+            "latch_kill_switch": False,
+            "automatic_action": "HALT_NEW_RISK",
+            "policy_id": None,
+            "policy_version": None,
+            "policy_hash": None,
+        }
+    else:
+        out["risk_supervisor"] = {
+            "verdict": supervisor_decision.verdict.value,
+            "reasons": list(supervisor_decision.reasons),
+            "latch_kill_switch": supervisor_decision.latch_kill_switch,
+            "automatic_action": supervisor_decision.automatic_action,
+            "policy_id": supervisor_decision.policy_id,
+            "policy_version": supervisor_decision.policy_version,
+            "policy_hash": supervisor_decision.policy_hash,
+        }
+
     # 只读风险展示(审计 §4.4 [P1-R2])——绝不参与上面已经做完的 breach 判断,只是多加一个
     # 字段。weights 用本轮真实持仓名义额占 gross 的比例;returns 用哨兵自己持久化的权益曲线
     # (含刚刚 append 的这一条)降采样成日频后的收益率,与驱动器共用同一份历史,不另起口径。
@@ -348,12 +541,51 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
               f"(jump={anomaly.jump_pct:.2%}) — ALERT ONLY, no auto-action"],
              context="risk_sentinel", now_ms=now)
 
+    supervisor_alerts = []
+    if out["risk_supervisor"]["verdict"] != "ALLOW_TESTNET_NEW_RISK":
+        supervisor_alerts.append(
+            f"RISK SUPERVISOR [{venue_name}]: "
+            f"{out['risk_supervisor']['verdict']} "
+            f"{out['risk_supervisor']['reasons']}"
+        )
+    if supervisor_decision is not None and supervisor_decision.latch_kill_switch:
+        try:
+            persistence = persist_risk_supervisor_decision(
+                state_path=paths["kill_switch"], decision=supervisor_decision
+            )
+            supervisor_action = persistence["response"]["action"]
+            out["risk_supervisor"]["kill_switch_action"] = supervisor_action
+            if persistence["mirror_error"] is not None:
+                supervisor_alerts.append(
+                    f"RISK SUPERVISOR MIRROR FAILED [{venue_name}]: "
+                    f"{persistence['mirror_error']}"
+                )
+            if persistence["delivery_error"] is not None:
+                supervisor_alerts.append(
+                    f"RISK SUPERVISOR EVENT DELIVERY PENDING [{venue_name}]: "
+                    f"{persistence['delivery_error']}"
+                )
+        except Exception as exc:
+            out["risk_supervisor"]["kill_switch_action"] = (
+                "state_store_unavailable"
+            )
+            supervisor_alerts.append(
+                f"RISK SUPERVISOR AUTHORITY FAILED [{venue_name}]: "
+                f"{type(exc).__name__}; new risk remains halted"
+            )
+
     if not breach.breached:
+        if supervisor_alerts:
+            emit(supervisor_alerts, context="risk_sentinel", now_ms=now)
+            out["alerts"] = supervisor_alerts
         return out
 
-    alerts = [f"SENTINEL RISK BREACH [{venue_name}]: {breach.reasons} "
-              f"(drawdown={breach.drawdown_pct:.2%}, gross=${breach.gross_exposure:.2f}, "
-              f"net=${breach.net_exposure:.2f})"]
+    alerts = supervisor_alerts + [
+        f"SENTINEL RISK BREACH [{venue_name}]: {breach.reasons} "
+        f"(drawdown={breach.drawdown_pct:.2%}, "
+        f"gross=${breach.gross_exposure:.2f}, "
+        f"net=${breach.net_exposure:.2f})"
+    ]
 
     # The SQLite transition and redacted event share one transaction. JSON is a
     # compatibility mirror only; delivery failures leave a durable pending outbox.
@@ -458,12 +690,18 @@ def main() -> None:
                   f"new exposure until it drops back (self-clearing) — human review advised"],
                  context="risk_sentinel", now_ms=now)
 
-    status_path = os.path.join("data", "cache", "risk_sentinel_status.json")
+    status_path = _SENTINEL_STATUS_PATH
     json.dump({"ran_at": now, "act": act, "results": results, "firm_view": firm_view,
                "firm_gate": firm_gate},
               open(status_path, "w", encoding="utf-8"), indent=2)
     for r in results:
-        flag = "BREACH" if r.get("breached") else ("ERROR" if r.get("error") else "ok")
+        supervisor = r.get("risk_supervisor") or {}
+        if supervisor.get("verdict") not in {None, "ALLOW_TESTNET_NEW_RISK"}:
+            flag = "BLOCKED"
+        else:
+            flag = "BREACH" if r.get("breached") else (
+                "ERROR" if r.get("error") else "ok"
+            )
         print(f"[{flag}] {r['venue']}: equity={r.get('equity')} gross={r.get('gross_notional')} "
               f"upnl={r.get('upnl_total')}", flush=True)
     if firm_view:

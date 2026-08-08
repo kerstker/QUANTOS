@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from live.governance.mandate_store import MandateLoadError, load_mandate, _REQUIRED
+from live.governance.mandate_store import (
+    MandateLoadError,
+    _REQUIRED,
+    load_mandate,
+    load_risk_supervisor_policy,
+)
 from tools.create_live_mandate_template import build_template, write_template
 
 
@@ -22,12 +27,22 @@ def test_build_template_exchange_prefilled_to_binance():
     assert build_template()["exchange"] == "binance"
 
 
+def test_build_template_contains_unfilled_versioned_supervisor_policy():
+    policy = build_template()["risk_supervisor_policy"]
+    assert policy["schema_version"] == 1
+    assert policy["policy_id"].startswith("REPLACE_ME")
+    assert policy["max_participation_rate"] == "REPLACE_ME_WITH_A_REAL_NUMBER"
+    assert build_template()["expires_at"] is not None
+
+
 def test_build_template_placeholder_numbers_cannot_load_as_real_mandate(tmp_path):
     path = tmp_path / "live_mandate.json"
     path.write_text(json.dumps(build_template()), encoding="utf-8")
     # 模板原样复制成真实文件名也必须 fail-closed,不能被误当真实 mandate 加载
     with pytest.raises(MandateLoadError):
         load_mandate(str(path))
+    with pytest.raises(MandateLoadError):
+        load_risk_supervisor_policy(str(path))
 
 
 def test_write_template_creates_file_and_parent_dir(tmp_path):
