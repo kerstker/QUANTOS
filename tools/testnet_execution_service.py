@@ -34,6 +34,13 @@ from live.governance.kill_switch_store import (
     open_authoritative_kill_switch_store,
 )
 from live.governance.mandate_store import load_mandate
+from live.governance.testnet_mandate_proposal import (
+    MandateProposalError,
+    TestnetMandateCeiling,
+    derive_testnet_mandate_ceiling,
+    parse_runtime_risk_limits,
+    validate_mandate_within_ceiling,
+)
 from live.governance.validation_attestation import load_attestations
 from live.pipeline import UNIT_SCALE
 from quantos.contracts.alpha import Actor, ActorKind
@@ -177,11 +184,27 @@ def _load_authority_body(path: str) -> Mapping[str, object]:
     return value
 
 
-def _authority_provider(args: argparse.Namespace):
+def _require_mandate_within_system_policy(
+    mandate: object,
+    ceiling: TestnetMandateCeiling,
+) -> None:
+    try:
+        validate_mandate_within_ceiling(mandate, ceiling)
+    except (MandateProposalError, TypeError, ValueError):
+        raise _fail("MANDATE_EXCEEDS_SYSTEM_POLICY") from None
+
+
+def _authority_provider(
+    args: argparse.Namespace,
+    *,
+    mandate_ceiling: TestnetMandateCeiling | None = None,
+):
     def provide(intent: TestnetExecutionIntent, now_ms: int) -> ExecutionAuthoritySnapshot:
         del now_ms
         body = _load_authority_body(args.authority)
         mandate = load_mandate(args.mandate)
+        if mandate_ceiling is not None:
+            _require_mandate_within_system_policy(mandate, mandate_ceiling)
         attestations = load_attestations(args.attestations)
         state = load_kill_switch_state(args.kill_switch)
         contiguous = body.get("market_contiguous")
@@ -218,96 +241,10 @@ def _authority_provider(args: argparse.Namespace):
 def _risk_limits(raw: object) -> RiskLimits:
     if not isinstance(raw, Mapping):
         raise _fail("RUNTIME_RISK_LIMITS_INVALID")
-    required = {field.name for field in fields(RiskLimits)}
-    if set(raw) != required:
+    if set(raw) != {field.name for field in fields(RiskLimits)}:
         raise _fail("RUNTIME_RISK_LIMIT_FIELDS_MISMATCH")
-    values = dict(raw)
     try:
-        for name in ("allowed_instruments", "allowed_accounts"):
-            source = values[name]
-            if isinstance(source, (str, bytes)):
-                raise TypeError(f"{name} must be a collection")
-            materialized = tuple(source)
-            if (
-                not materialized
-                or any(
-                    not isinstance(item, str)
-                    or not item.strip()
-                    or item != item.strip()
-                    for item in materialized
-                )
-                or len(set(materialized)) != len(materialized)
-            ):
-                raise ValueError(f"{name} must contain unique canonical text")
-            values[name] = frozenset(materialized)
-        integer_fields = (
-            "default_max_position_qty",
-            "fat_finger_qty",
-            "max_orders_per_window",
-            "rate_window_ms",
-            "min_cancel_rate_samples",
-        )
-        for name in integer_fields:
-            value = values[name]
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer")
-        position_caps = []
-        seen = set()
-        for item in values["max_position_qty"]:
-            if not isinstance(item, (list, tuple)) or len(item) != 2:
-                raise TypeError("max_position_qty entry is malformed")
-            instrument, cap = item
-            if (
-                not isinstance(instrument, str)
-                or not instrument.strip()
-                or instrument in seen
-                or isinstance(cap, bool)
-                or not isinstance(cap, int)
-                or cap <= 0
-            ):
-                raise ValueError("max_position_qty entry is invalid")
-            seen.add(instrument)
-            position_caps.append((instrument, cap))
-        values["max_position_qty"] = tuple(position_caps)
-        nonnegative_fields = ("cash_buffer_pct",)
-        numeric_fields = {
-            "max_order_notional",
-            "max_price_deviation_pct",
-            "max_gross_exposure",
-            "max_net_exposure",
-            "max_leverage",
-            "max_single_name_pct",
-            "daily_loss_limit",
-            "max_drawdown",
-            "max_turnover",
-            "max_cancel_rate",
-            "max_participation_rate",
-            "max_instrument_vol",
-        }
-        for name in numeric_fields | set(nonnegative_fields):
-            value = values[name]
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise TypeError(f"{name} must be numeric")
-            number = float(value)
-            if not math.isfinite(number):
-                raise ValueError(f"{name} must be finite")
-            if name in nonnegative_fields:
-                if number < 0:
-                    raise ValueError(f"{name} must be non-negative")
-            elif number <= 0:
-                raise ValueError(f"{name} must be positive")
-            values[name] = number
-        for name in (
-            "max_price_deviation_pct",
-            "max_single_name_pct",
-            "max_drawdown",
-            "max_cancel_rate",
-            "max_participation_rate",
-            "cash_buffer_pct",
-        ):
-            if values[name] > 1.0:
-                raise ValueError(f"{name} must not exceed one")
-        return RiskLimits(**values)
+        return parse_runtime_risk_limits(raw)
     except Exception as exc:
         raise _fail(_code("RUNTIME_RISK_LIMITS_INVALID", exc)) from None
 
@@ -318,6 +255,7 @@ class _PreparedRuntime:
     aum: float
     current_positions: Mapping[str, float]
     account_positions: Mapping[str, float]
+    mandate_ceiling: TestnetMandateCeiling
     gate: PreTradeRiskGate
     ctx_factory: Callable[[object], RiskContext]
     ledger: LiveLedger
@@ -380,6 +318,10 @@ def _prepare_runtime(
         raise _fail("RUNTIME_TARGET_NOT_ALLOWED")
     if not target_instruments.issubset(market):
         raise _fail("RUNTIME_TARGET_MARKET_MISSING")
+    try:
+        mandate_ceiling = derive_testnet_mandate_ceiling(intent, body)
+    except MandateProposalError:
+        raise _fail("RUNTIME_MANDATE_PROPOSAL_INVALID") from None
     max_staleness = _integer(
         body.get("gate_max_staleness_ms"), "GATE_MAX_STALENESS_MS", positive=True
     )
@@ -467,6 +409,7 @@ def _prepare_runtime(
         aum=aum,
         current_positions=current_positions,
         account_positions=account_positions,
+        mandate_ceiling=mandate_ceiling,
         gate=gate,
         ctx_factory=ctx_factory,
         ledger=ledger,
@@ -530,14 +473,18 @@ def build_runner(
         resources.append(recovery)
         prepared: _PreparedRuntime | None = None
         if args.testnet_submit:
+            prepared = _prepare_runtime(args, intent, now_ms)
+            resources.extend((prepared.ledger, prepared.audit))
+            mandate = load_mandate(args.mandate)
+            _require_mandate_within_system_policy(
+                mandate, prepared.mandate_ceiling
+            )
             api_key, api_secret = load_testnet_credentials(environ)
             venue = BinanceFuturesAdapter(
                 api_key=api_key,
                 api_secret=api_secret,
                 base_url=BinanceFuturesAdapter.TESTNET_BASE,
             )
-            prepared = _prepare_runtime(args, intent, now_ms)
-            resources.extend((prepared.ledger, prepared.audit))
             pipeline_provider = lambda command, current_ms: prepared.pipeline_inputs()
         else:
             venue = _PreviewVenue()
@@ -550,7 +497,12 @@ def build_runner(
             commands,
             recovery_store=recovery,
             venue=venue,
-            authority_provider=_authority_provider(args),
+            authority_provider=_authority_provider(
+                args,
+                mandate_ceiling=(
+                    None if prepared is None else prepared.mandate_ceiling
+                ),
+            ),
             pipeline_inputs_provider=pipeline_provider,
             max_market_age_ms=args.max_market_age_ms,
             lease_ms=args.lease_ms,

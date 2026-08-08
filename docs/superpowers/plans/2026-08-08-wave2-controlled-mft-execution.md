@@ -359,6 +359,8 @@ L2 scheduler leader ── feature/alpha/paper workers ── execution intent o
 
 > 开发准备状态（2026-08-08）：版本化七日/168 周期 policy、十类逐周期证据合同、
 > 追加式哈希链 authority、真实 artifact 字节复核和 fail-closed 状态投影已落地；
+> Testnet mandate 金额现由提交 intent 所绑定的版本化 `RiskLimits` 生成 unsigned proposal，
+> 人工只能批准或收紧；worker 在读取凭证前和 authority 重载时都拒绝扩大金额/标的范围；
 > 当前仍无人工启动回执，因此实际运行保持 `OPERATIONAL_SOAK_PENDING`。
 
 - 连续运行窗口、最小长度和告警值必须在启动前写入版本化 soak policy；

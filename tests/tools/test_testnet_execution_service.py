@@ -342,6 +342,40 @@ def test_production_submit_runner_constructs_testnet_only_without_network(tmp_pa
         runner.close()
 
 
+def test_submit_rejects_mandate_above_runtime_policy_before_credentials(tmp_path) -> None:
+    _write_authority_files(tmp_path)
+    _write_runtime(tmp_path)
+    mandate_path = tmp_path / "mandate.json"
+    mandate = json.loads(mandate_path.read_text(encoding="utf-8"))
+    mandate["max_gross_notional"] = 5_000_000.01
+    mandate_path.write_text(json.dumps(mandate), encoding="utf-8")
+    args = cli.build_parser().parse_args(_submit_args(tmp_path))
+    cli.validate_args(args)
+
+    class CredentialsMustNotBeRead(dict):
+        def get(self, key, default=None):
+            raise AssertionError(f"credential access preceded mandate policy validation: {key}")
+
+    with pytest.raises(cli.CliConfigurationError, match="MANDATE_EXCEEDS_SYSTEM_POLICY"):
+        cli.build_runner(args, _intent(), NOW, CredentialsMustNotBeRead())
+
+
+def test_authority_provider_revalidates_mandate_policy_after_runner_setup(tmp_path) -> None:
+    _write_authority_files(tmp_path)
+    _write_runtime(tmp_path)
+    args = cli.build_parser().parse_args(_submit_args(tmp_path))
+    runtime = json.loads((tmp_path / "runtime.json").read_text(encoding="utf-8"))
+    ceiling = cli.derive_testnet_mandate_ceiling(_intent(), runtime)
+    provider = cli._authority_provider(args, mandate_ceiling=ceiling)
+    mandate_path = tmp_path / "mandate.json"
+    mandate = json.loads(mandate_path.read_text(encoding="utf-8"))
+    mandate["max_net_notional"] = 3_000_000.01
+    mandate_path.write_text(json.dumps(mandate), encoding="utf-8")
+
+    with pytest.raises(cli.CliConfigurationError, match="MANDATE_EXCEEDS_SYSTEM_POLICY"):
+        provider(_intent(), NOW)
+
+
 @pytest.mark.parametrize(
     ("mutate", "reason"),
     (

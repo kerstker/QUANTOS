@@ -155,6 +155,38 @@ blocked on external identity/mTLS, an independent signing authority, process
 permission isolation, sufficient forward evidence, a human real-money mandate,
 and a separate Go/No-Go.
 
+### System-derived mandate ceiling
+
+Operators do not invent or retype risk amounts. Before human approval, generate
+an unsigned proposal from the exact submission-requested intent and versioned
+runtime risk policy used by the Testnet worker:
+
+```powershell
+rtk py -3.14 -m tools.testnet_mandate_proposal `
+  --intent <submission-authorized-testnet-intent-json> `
+  --runtime-input <versioned-runtime-json> `
+  --out <unsigned-testnet-mandate-proposal-json>
+```
+
+The proposal binds `intent_hash`, the full runtime-input hash, the normalized
+`RiskLimits` hash, and the risk-policy version. Its single-order, gross, and
+net amounts come from those machine-enforced limits. It is deliberately
+`HUMAN_REVIEW_REQUIRED`, has an empty `approved_by`, is already expired, and
+grants no execution, live-order, or Micro-Live authority.
+
+The human operator may approve the proposed limits or make them smaller, then
+set the operator identity and validity window in a separate mandate file. The
+Testnet worker independently recomputes the same ceiling from its runtime input
+on every submission and rejects a wider instrument scope or larger amount
+before reading Testnet credentials. It repeats the comparison when loading the
+authority snapshot, so changing the mandate after worker setup also fails
+closed. A proposal generated outside the intent validity window is invalid.
+
+No current production intent/runtime pair is checked into the repository by
+design. Until the external operator supplies those non-secret authority files,
+there is no honest numerical proposal and Task 39 remains
+`OPERATIONAL_SOAK_PENDING`.
+
 ### Task 39 preregistered policy and evidence authority
 
 The versioned policy is `config/mft_testnet_soak_policy.json`. Version 1 fixes
