@@ -76,12 +76,12 @@
     "4a990ea6",
     "125609e2"
   ],
-  "input_hash": "2ea551cd128e128387ec458f5c4edd48d72bfd3577c06587dac9c9ace9fe8c91",
+  "input_hash": "78d2860eb4f5c4c0b6bf480454a6f74e7a3e40a233df74950a160bb410fa09a6",
   "inputs": {
     "apps/research-console/e2e/professional-workbench.spec.ts": "f4bafe13002f6e391e591b513dd6cddded208f04a47e5a01ddd7661f61f46848",
     "apps/research-console/src/app/routes.tsx": "804f4bf835315fd33e49e84c5ccc1da4973662f0ff41ad2f5c3fd08441be1a35",
     "apps/research-console/src/ui/workbench.tsx": "7e9d3b3d22b801fd77781d2c079d6fae6073d9111a907684c2adec52a2eb63cf",
-    "docs/superpowers/plans/2026-08-08-wave3-professional-workbench.md": "4a496783c7890b2d5051ac5331e938a3a1b57576cf3599421d13b0af69babc5f",
+    "roadmap:2026-08-08-wave3-professional-workbench": "4a496783c7890b2d5051ac5331e938a3a1b57576cf3599421d13b0af69babc5f",
     "evidence/service_import_graph.json": "8f9f9ae8a2a8d3efb6d8a1d6bc81bd2cf2b47a5944d2c3eabe67bb4259d54fd9",
     "evidence/validation_report.json": "bdab1a119f2f7eeace584404f5da9ec403bc85401a5d43c5f0b4fd6c0faa4ad8",
     "services/promotion_api/main.py": "f41374b63f69d51027c851199c29e18f066b9ad76d1732c91d385202ee0533c7"
