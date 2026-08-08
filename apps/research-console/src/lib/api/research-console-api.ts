@@ -46,6 +46,10 @@ import {
   type MftDeltaResponse,
   type MftSnapshot,
 } from '@/workbench/contracts';
+import {
+  parseHourlyAlphaSnapshot,
+  type HourlyAlphaSnapshot,
+} from '@/workbench/hourly-alpha-contract';
 
 const SAME_ORIGIN_MARKER = '__QUANTOS_SAME_ORIGIN__';
 const configuredConsoleBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -135,7 +139,7 @@ export function assertMftExecutionDelta(body: unknown): MftDeltaResponse {
   return parseMftDelta(body);
 }
 
-async function fetchMftJson<T>(
+async function fetchGuardedJson<T>(
   path: string,
   guard: (body: unknown) => T,
   signal?: AbortSignal,
@@ -148,7 +152,7 @@ async function fetchMftJson<T>(
 }
 
 export function fetchMftExecutionSnapshot(signal?: AbortSignal): Promise<MftSnapshot> {
-  return fetchMftJson('/api/v1/console/mft-execution', assertMftExecutionSnapshot, signal);
+  return fetchGuardedJson('/api/v1/console/mft-execution', assertMftExecutionSnapshot, signal);
 }
 
 export function fetchMftExecutionDelta(
@@ -160,7 +164,17 @@ export function fetchMftExecutionDelta(
     return Promise.reject(new Error('MFT delta limit must be between 1 and 1000'));
   }
   const path = `/api/v1/console/mft-execution/delta?cursor=${encodeURIComponent(cursor)}&limit=${limit}`;
-  return fetchMftJson(path, assertMftExecutionDelta, signal);
+  return fetchGuardedJson(path, assertMftExecutionDelta, signal);
+}
+
+export function assertHourlyAlphaSnapshot(body: unknown): HourlyAlphaSnapshot {
+  return parseHourlyAlphaSnapshot(body);
+}
+
+export function fetchHourlyAlphaSnapshot(signal?: AbortSignal): Promise<HourlyAlphaSnapshot> {
+  return fetchGuardedJson(
+    '/api/v1/console/hourly-alpha', assertHourlyAlphaSnapshot, signal,
+  );
 }
 
 export function fetchOverviewSnapshot(signal?: AbortSignal) {
