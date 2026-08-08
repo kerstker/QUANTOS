@@ -18,6 +18,7 @@ from live.execution.emergency import (flatten_target_for_breach, submit_emergenc
 from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import RiskBreach, compute_flatten_orders
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.config import SafetyViolation
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.kill_switch import KillSwitch
@@ -78,6 +79,12 @@ def test_validate_nonpositive_qty_rejected():
     assert validate_flatten_order(OrderSide.SELL, -0.5, position=1.0) is not None
 
 
+@pytest.mark.parametrize("qty,position", [(float("nan"), 1.0), (1.0, float("nan")),
+                                           (float("inf"), 1.0), (1.0, float("-inf"))])
+def test_validate_nonfinite_quantity_or_position_rejected(qty, position):
+    assert validate_flatten_order(OrderSide.SELL, qty, position=position) is not None
+
+
 def test_validate_exhaustive_grid_only_strictly_reducing_orders_pass():
     """性质网格:任意 持仓×方向×数量 组合,放行 <=> 严格减少 |敞口| 且绝不穿过零点反向。"""
     for pos in (-2.0, -0.5, 0.0, 0.5, 2.0):
@@ -135,6 +142,45 @@ def test_no_breach_returns_none():
 
 # --- submit_emergency_flatten:提交编排 ---
 
+def test_emergency_channel_rejects_non_testnet_adapter_before_any_side_effect(ledger):
+    venue = _FakeVenue()
+    venue.venue_mode = "mainnet"
+    audit = GlobalAuditLog()
+
+    with pytest.raises(SafetyViolation, match="Testnet-only"):
+        submit_emergency_flatten(
+            flatten_orders=[("BTC", OrderSide.SELL, 1.0)],
+            positions={"BTC": 1.0},
+            prices=_PRICES,
+            venue=venue,
+            ledger=ledger,
+            audit=audit,
+            now=_NOW,
+        )
+
+    assert venue.calls == []
+    assert audit.events == ()
+
+
+def test_unknown_venue_position_rejects_only_that_leg_without_submission(ledger):
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+
+    result = submit_emergency_flatten(
+        flatten_orders=[("BTC", OrderSide.SELL, 1.0)],
+        positions={},
+        prices=_PRICES,
+        venue=venue,
+        ledger=ledger,
+        audit=audit,
+        now=_NOW,
+    )
+
+    assert result.submitted == ()
+    assert result.rejected[0][3] == "venue_position_unknown"
+    assert venue.calls == []
+
+
 def test_full_flatten_submits_reduce_only_and_records_fills(ledger):
     positions = {"BTC": 2.0, "ETH": -50.0}
     _prefill(ledger, positions)
@@ -145,6 +191,8 @@ def test_full_flatten_submits_reduce_only_and_records_fills(ledger):
                                       venue=venue, ledger=ledger, audit=audit, now=_NOW)
     assert len(result.submitted) == 2
     assert result.rejected == () and result.errors == ()
+    assert not result.manual_review_required
+    assert not result.kill_switch_must_remain_latched
     assert all(o.reduce_only for o in venue.calls)           # 交易所侧强制 reduce-only
     assert ledger.position("BTC") == pytest.approx(0.0)      # 2.0 - 2.0
     assert ledger.position("ETH") == pytest.approx(0.0)      # -50 + 50
@@ -263,6 +311,8 @@ def test_genuine_submit_failure_is_fail_soft_per_order(ledger):
     assert len(result.errors) == 1                           # BTC 真失败
     assert len(result.submitted) == 1                        # ETH 不受影响
     assert ledger.position("ETH") == pytest.approx(0.0)
+    assert result.manual_review_required
+    assert result.kill_switch_must_remain_latched
 
 
 def test_ledger_write_failure_tracked_separately_not_as_submit_failure(ledger):
@@ -275,6 +325,8 @@ def test_ledger_write_failure_tracked_separately_not_as_submit_failure(ledger):
     assert result.errors == ()
     assert len(result.submitted) == 1                        # venue 侧真实成功
     assert len(result.ledger_write_errors) == 1
+    assert result.manual_review_required
+    assert result.kill_switch_must_remain_latched
 
 
 def test_emergency_order_journaled_before_place_order(ledger):

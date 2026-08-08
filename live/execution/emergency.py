@@ -22,6 +22,7 @@ reduce-only 在内的所有意图——越紧急越送不出去。机构标准�
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from typing import List, Mapping, Optional, Sequence, Tuple
 
@@ -32,6 +33,7 @@ from live.exchange.base import VenueAdapter
 from live.pipeline import (DEFAULT_MAX_CONFIRM_POLLS, _cancel_and_requery, _confirm_fill,
                            _det_id, _record_tca_failsoft)
 from quantos.contracts.trading import OrderSide
+from quantos.contracts.config import SafetyViolation
 from services.monitoring.audit_log import GlobalAuditLog
 
 _EXPOSURE_BREACH_MARGIN = 0.9      # 减回到限额的 90%,留余量防止下一轮立刻再次越限
@@ -48,6 +50,18 @@ def validate_flatten_order(side: OrderSide, qty: float, *, position: float) -> O
     """结构性"只能减仓"校验(纯函数)。放行(返回 None)当且仅当:数量为正、当前有持仓、
     方向与持仓相反、且数量不超过 |持仓|(减到零允许,穿过零点反向开仓禁止)。
     否则返回拒绝原因字符串。"""
+    if (
+        isinstance(qty, bool)
+        or not isinstance(qty, (int, float))
+        or not math.isfinite(float(qty))
+    ):
+        return "quantity_not_finite"
+    if (
+        isinstance(position, bool)
+        or not isinstance(position, (int, float))
+        or not math.isfinite(float(position))
+    ):
+        return "position_not_finite"
     if qty <= 0:
         return f"non_positive_qty:{qty}"
     if position == 0.0:
@@ -94,6 +108,8 @@ class EmergencyFlattenResult:
     rejected: Tuple = ()              # ((instrument_id, side, qty, reason), ...)
     errors: Tuple = ()
     ledger_write_errors: Tuple = ()
+    manual_review_required: bool = False
+    kill_switch_must_remain_latched: bool = False
 
 
 def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, float]],
@@ -104,6 +120,8 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
     """把 `compute_flatten_orders` 的输出真正提交出去(经窄校验 + 交易所过滤器 + reduce-only
     强制 + 轮询确认/超时撤单 + 记账 + 审计)。`positions` 必须是**权威当前持仓**(来自
     venue.positions()),校验以它为准。"""
+    if getattr(venue, "venue_mode", None) != "testnet":
+        raise SafetyViolation("emergency execution adapter is Testnet-only")
     run_id = _det_id("emergency_flatten", now, tuple(sorted(positions.items())))
     audit.append(event_id=_det_id("emg_start", run_id), actor="live:emergency_flatten",
                 action="EMERGENCY_FLATTEN_START", timestamp=now, target=run_id,
@@ -113,7 +131,10 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
     validated: List[Tuple[str, OrderSide, float]] = []
     rejected: List[Tuple[str, str, float, str]] = []
     for instrument_id, side, qty in flatten_orders:
-        reason = validate_flatten_order(side, qty, position=positions.get(instrument_id, 0.0))
+        if instrument_id not in positions:
+            reason = "venue_position_unknown"
+        else:
+            reason = validate_flatten_order(side, qty, position=positions[instrument_id])
         if reason is not None:
             rejected.append((instrument_id, side.value, qty, reason))
             audit.append(event_id=_det_id("emg_rej", run_id, instrument_id),
@@ -123,7 +144,21 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
         validated.append((instrument_id, side, qty))
 
     if not validated:
-        return EmergencyFlattenResult(rejected=tuple(rejected))
+        partial_failure = bool(flatten_orders and rejected)
+        if partial_failure:
+            audit.append(
+                event_id=_det_id("emg_manual", run_id),
+                actor="live:emergency_flatten",
+                action="EMERGENCY_MANUAL_REVIEW_REQUIRED",
+                timestamp=now,
+                target=run_id,
+                metadata={"reason": "no_provably_safe_reduction"},
+            )
+        return EmergencyFlattenResult(
+            rejected=tuple(rejected),
+            manual_review_required=partial_failure,
+            kill_switch_must_remain_latched=partial_failure,
+        )
 
     # 2) 交易所过滤器(fail-open,见模块 docstring 的刻意不对称)
     try:
@@ -143,6 +178,35 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
             for inst, side, qty in validated)]
     else:
         adjusted = [replace(o, reduce_only=True) for o in adjusted]    # 强制 reduce-only
+
+    # A filter may only round a validated reduction.  Revalidate after this
+    # untrusted boundary so no future filter can create a non-market, non-reduce-only,
+    # or exposure-increasing emergency request.
+    safe_adjusted = []
+    for order in adjusted:
+        position = positions.get(order.instrument_id)
+        reason = (
+            "venue_position_unknown"
+            if position is None
+            else validate_flatten_order(order.side, order.quantity, position=position)
+        )
+        if reason is None and order.order_type != "MARKET":
+            reason = "emergency_order_must_be_market"
+        if reason is None and not order.reduce_only:
+            reason = "emergency_order_must_be_reduce_only"
+        if reason is not None:
+            rejected.append((order.instrument_id, order.side.value, order.quantity, reason))
+            audit.append(
+                event_id=_det_id("emg_post_filter_rej", run_id, order.instrument_id),
+                actor="live:emergency_flatten",
+                action="EMERGENCY_ORDER_REJECTED",
+                timestamp=now,
+                target=order.instrument_id,
+                metadata={"reason": reason},
+            )
+            continue
+        safe_adjusted.append(order)
+    adjusted = safe_adjusted
 
     # 3) 提交 + 确认(镜像主流水线的全部教训:异常回查、轮询终态、超时撤单、记账失败单独追踪)
     submitted, errors, ledger_errors = [], [], []
@@ -216,8 +280,35 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
                                "status": confirmed.status, "reduce_only": "True"})
         submitted.append(confirmed)
 
-    return EmergencyFlattenResult(submitted=tuple(submitted), rejected=tuple(rejected),
-                                  errors=tuple(errors), ledger_write_errors=tuple(ledger_errors))
+    partial_failure = (
+        bool(rejected or errors or ledger_errors)
+        or len(submitted) != len(flatten_orders)
+        or any(result.status != "FILLED" for result in submitted)
+    )
+    if partial_failure:
+        audit.append(
+            event_id=_det_id("emg_manual", run_id),
+            actor="live:emergency_flatten",
+            action="EMERGENCY_MANUAL_REVIEW_REQUIRED",
+            timestamp=now,
+            target=run_id,
+            metadata={
+                "submitted": str(len(submitted)),
+                "requested": str(len(flatten_orders)),
+                "errors": str(len(errors)),
+                "ledger_errors": str(len(ledger_errors)),
+                "rejected": str(len(rejected)),
+                "kill_switch": "MUST_REMAIN_LATCHED",
+            },
+        )
+    return EmergencyFlattenResult(
+        submitted=tuple(submitted),
+        rejected=tuple(rejected),
+        errors=tuple(errors),
+        ledger_write_errors=tuple(ledger_errors),
+        manual_review_required=partial_failure,
+        kill_switch_must_remain_latched=partial_failure,
+    )
 
 
 def _raw_request(instrument_id: str, side: OrderSide, qty: float, cid: str):

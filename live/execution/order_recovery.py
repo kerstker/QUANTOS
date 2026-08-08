@@ -783,11 +783,21 @@ def resolve_unknown_orders(
             "state": absent.state.value,
             "retry_authorized": False,
         })
+    blocking_orders = [
+        {
+            "client_order_id": record.client_order_id,
+            "deployment_id": record.deployment_id,
+            "state": record.state.value,
+            "record_hash": record.record_hash,
+        }
+        for record in store.pending(deployment_id=deployment_id)
+    ]
     return {
         "outcomes": outcomes,
         "blocked_deployments": sorted({
-            record.deployment_id for record in store.pending(deployment_id=deployment_id)
+            record["deployment_id"] for record in blocking_orders
         }),
+        "blocking_orders": blocking_orders,
         "retryable_orders": sorted(
             record.client_order_id for record in store.latest_records()
             if record.state is RecoveryState.RETRY_AUTHORIZED
