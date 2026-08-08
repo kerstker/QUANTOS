@@ -1,5 +1,22 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-08 Wave 3 专业工作台 L2 实施验收：** Tasks 40–50 已形成五对象工作区
+> （Market Monitor、Alpha Control Plane、Validation Evidence、Portfolio & Risk、
+> Execution & Orders）和治理/审计/健康/任务全局抽屉。源提交
+> `f29f69be64073efd49c7f3bcc7966196e77fb410` 的 canonical run
+> `1da6170a3f25c7719c10fd0c3a14125f13c1fa37b56c57379d9bdf92e61789f1`
+> 为 **27/27 PASS**（0 failed / 0 errored / 0 timed out，964437ms），包含全后端、
+> live/tools、前端 typecheck/eslint/Vitest/build、供应链、top-tier 与 Phase 13。
+> Playwright 为 14/14，其中专业工作台 11/11；unknown schema、missing field、stale、
+> cursor gap、429、timeout、SSE 断流和空结果均显式失败关闭。另以
+> `VITE_MOCK_MODE=false` 实际启动 `services.console.main:app` 与 Vite：当前开发
+> worktree 缺少 MFT/workflow 权威库时，五工作区全部诚实显示 `UNAVAILABLE` 并隐藏运营
+> 数字，治理抽屉验证 L2 契约且显示 `EXTERNAL IDENTITY PENDING / COMMANDS DISABLED`。
+> 因外部 OIDC/mTLS/MFA/应用授权未配置，真实晋级命令未执行；Task 39 Testnet 运维 soak
+> 也未启动，继续保持 `OPERATIONAL_SOAK_PENDING`。readiness 仍为
+> `L2_DRY_RUN_ONLY`，五个真钱安全旗帜逐项不变。机器证据：
+> `evidence/workbench_wave3_acceptance.json`。
+
 > **2026-08-06 WP0 每轮输入/证据原子性第一增量：** 不可变 L2 launcher 的
 > release-run receipt 从 schema v1 升为 v2，新增可强制的 worker attestation
 > 协议；`alpha_production_workflow` 作为唯一候选权威成为首个强制模块。每次成功或
