@@ -38,6 +38,7 @@ export interface PromotionEvidenceSummary {
 export interface PromotionCandidate {
   alpha_id: string;
   state: string;
+  target_version: number;
   evidence: PromotionEvidenceSummary;
   precheck_hints: string[];
 }
@@ -55,6 +56,7 @@ export interface PromotionRequestSummary {
   kind: string;
   created_at: number;
   n_steps: number;
+  target_version: number;
   state: string;
   last_actor: string;
   last_ts: number;
@@ -81,6 +83,63 @@ export interface PromotionExecuteOutcome {
   reasons: string[];
   audit_ok: boolean;
   evidence_notes: string[];
+}
+
+export type PromotionCommandAction =
+  | 'OPEN_PROMOTION'
+  | 'REVIEW_PROMOTION'
+  | 'APPROVE_PROMOTION'
+  | 'REJECT_PROMOTION'
+  | 'EXECUTE_PROMOTION';
+
+export interface PromotionExpectedImpact {
+  scope: 'RESEARCH_PROMOTION_ONLY';
+  target_id: string;
+  approval_state: string;
+  research_state: string;
+  live_trading_authorized: false;
+  order_submission_allowed: false;
+  capital_scaling_allowed: false;
+  risk_limit_change: false;
+  kill_switch_reset: false;
+}
+
+export interface PromotionCommandPreview {
+  action: PromotionCommandAction;
+  target_id: string;
+  target_version: number;
+  business_reason: string;
+  verified_actor_id: string;
+  required_role: string;
+  strong_identity: 'OIDC_MTLS_MFA';
+  expected_impact: PromotionExpectedImpact;
+  risk_diff: string[];
+  preview_hash: string;
+}
+
+export interface PromotionCommandBody {
+  idempotency_key: string;
+  target_version: number;
+  business_reason: string;
+  expected_impact: PromotionExpectedImpact;
+  risk_diff: string[];
+  preview_hash: string;
+}
+
+export interface PromotionCommandReceipt {
+  receipt_id: string;
+  command_id: string;
+  idempotency_key: string;
+  action: PromotionCommandAction;
+  verified_actor_id: string;
+  target_id: string;
+  target_version_before: number;
+  target_version_after: number;
+  business_reason: string;
+  expected_impact: PromotionExpectedImpact;
+  risk_diff: string[];
+  authority_requery: Record<string, unknown>;
+  audit_receipt: { event_id: string; entry_hash: string };
 }
 
 async function govFetch<T>(path: string, init?: { method?: 'GET' | 'POST'; body?: unknown }): Promise<T> {
@@ -122,22 +181,48 @@ export function fetchPromotionRequest(requestId: string): Promise<PromotionReque
   return govFetch<PromotionRequestDetail>(`${P}/requests/${encodeURIComponent(requestId)}`);
 }
 
-export function openPromotionRequest(alphaId: string, note = ''): Promise<{ request_id: string; subject_id: string; state: string }> {
-  return govFetch(`${P}/requests`, { method: 'POST', body: { alpha_id: alphaId, note } });
+export function previewPromotionCommand(
+  action: PromotionCommandAction,
+  targetId: string,
+  businessReason: string,
+): Promise<PromotionCommandPreview> {
+  return govFetch(`${P}/commands/preview`, {
+    method: 'POST',
+    body: { action, target_id: targetId, business_reason: businessReason },
+  });
 }
 
-export function reviewPromotionRequest(requestId: string, note = ''): Promise<PromotionRequestDetail> {
-  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/review`, { method: 'POST', body: { note } });
+export function openPromotionRequest(
+  alphaId: string,
+  command: PromotionCommandBody,
+): Promise<PromotionCommandReceipt & { request_id: string; subject_id: string; state: string }> {
+  return govFetch(`${P}/requests`, { method: 'POST', body: { alpha_id: alphaId, ...command } });
 }
 
-export function approvePromotionRequest(requestId: string, note = ''): Promise<PromotionRequestDetail> {
-  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST', body: { note } });
+export function reviewPromotionRequest(
+  requestId: string,
+  command: PromotionCommandBody,
+): Promise<PromotionCommandReceipt & PromotionRequestDetail> {
+  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/review`, { method: 'POST', body: command });
 }
 
-export function rejectPromotionRequest(requestId: string, note = ''): Promise<PromotionRequestDetail> {
-  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/reject`, { method: 'POST', body: { note } });
+export function approvePromotionRequest(
+  requestId: string,
+  command: PromotionCommandBody,
+): Promise<PromotionCommandReceipt & PromotionRequestDetail> {
+  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST', body: command });
 }
 
-export function executePromotionRequest(requestId: string): Promise<PromotionExecuteOutcome> {
-  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/execute`, { method: 'POST', body: {} });
+export function rejectPromotionRequest(
+  requestId: string,
+  command: PromotionCommandBody,
+): Promise<PromotionCommandReceipt & PromotionRequestDetail> {
+  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/reject`, { method: 'POST', body: command });
+}
+
+export function executePromotionRequest(
+  requestId: string,
+  command: PromotionCommandBody,
+): Promise<PromotionCommandReceipt & PromotionExecuteOutcome> {
+  return govFetch(`${P}/requests/${encodeURIComponent(requestId)}/execute`, { method: 'POST', body: command });
 }

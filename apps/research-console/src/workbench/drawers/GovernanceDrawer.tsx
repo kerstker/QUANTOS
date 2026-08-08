@@ -1,6 +1,7 @@
 import { fetchRuntimeContract, getConsoleRuntimeMode } from '@/lib/api/research-console-api';
 import type { RuntimeContractPayload } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import { CommandReviewPanel } from '../CommandReviewPanel';
 
 function unavailable(apiState: string, error: string | null) {
   const mode = getConsoleRuntimeMode();
@@ -27,7 +28,14 @@ function BoundaryRow({ label, blocked }: { label: string; blocked: boolean }) {
 
 export function GovernanceDrawer() {
   const state = useConsoleSnapshot<RuntimeContractPayload>(fetchRuntimeContract);
-  if (!state.usingBackend || state.payload === null) return unavailable(state.apiState, state.error);
+  if (!state.usingBackend || state.payload === null) {
+    return (
+      <div className="space-y-4">
+        {unavailable(state.apiState, state.error)}
+        <CommandReviewPanel contractVerified={false} />
+      </div>
+    );
+  }
 
   const payload = state.payload;
   const boundary = payload.safety_boundary;
@@ -57,6 +65,7 @@ export function GovernanceDrawer() {
       <p className="font-mono text-[10px] text-faint">
         ORDER SUBMISSION BLOCKED · schema catalog {payload.event_schema_catalog.sha256.slice(0, 12)}
       </p>
+      <CommandReviewPanel contractVerified={verified} />
     </div>
   );
 }

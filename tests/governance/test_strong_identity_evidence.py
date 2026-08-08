@@ -22,7 +22,7 @@ def _fixture_repo(tmp_path: Path) -> None:
             "state nonce PKCE_TRANSACTION_STORAGE_KEY MAX_TRANSACTION_AGE_MS "
             "storage.removeItem response = await runtime.fetch access token memory only\n"
         ),
-        "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
         "tests/governance/test_oidc_key_registry.py": "tests\n",
@@ -90,7 +90,7 @@ def test_strong_identity_evidence_hashes_every_load_bearing_source(tmp_path):
         "services/promotion_api/main.py",
         "apps/research-console/src/lib/api/promotion-api.ts",
         "apps/research-console/src/lib/api/governance-pkce.ts",
-        "apps/research-console/src/pages/PromotionQueue.tsx",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx",
         "scripts/generate_strong_identity_evidence.py",
     }
     assert set(evidence["verification_paths"]) == {

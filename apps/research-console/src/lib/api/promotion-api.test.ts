@@ -1,5 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const command = {
+  idempotency_key: '11111111-1111-4111-8111-111111111111',
+  target_version: 7,
+  business_reason: 'review alpha evidence',
+  expected_impact: {
+    scope: 'RESEARCH_PROMOTION_ONLY' as const,
+    target_id: 'a1',
+    approval_state: 'REQUESTED',
+    research_state: 'UNCHANGED',
+    live_trading_authorized: false as const,
+    order_submission_allowed: false as const,
+    capital_scaling_allowed: false as const,
+    risk_limit_change: false as const,
+    kill_switch_reset: false as const,
+  },
+  risk_diff: ['approval_state: ABSENT -> REQUESTED'],
+  preview_hash: 'a'.repeat(64),
+};
+
 // Strong identity: every request carries a short-lived OIDC bearer token. The
 // actor comes from verified claims; the client must never send an operator label.
 describe('promotion-api headers', () => {
@@ -40,7 +59,7 @@ describe('promotion-api headers', () => {
     const { openPromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
     setGovernanceAccessToken('signed-oidc-token');
 
-    await openPromotionRequest('a1', 'note');
+    await openPromotionRequest('a1', command);
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
@@ -48,6 +67,7 @@ describe('promotion-api headers', () => {
     expect(headers['X-Gov-Token']).toBeUndefined();
     expect(headers['X-Operator']).toBeUndefined();
     expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ alpha_id: 'a1', ...command });
   });
 
   it('executePromotionRequest sends the same verified identity protocol', async () => {
@@ -59,7 +79,7 @@ describe('promotion-api headers', () => {
     const { executePromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
     setGovernanceAccessToken('signed-oidc-token');
 
-    await executePromotionRequest('promo-1');
+    await executePromotionRequest('promo-1', command);
 
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer signed-oidc-token');
@@ -90,7 +110,7 @@ describe('promotion-api headers', () => {
     const { reviewPromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
     setGovernanceAccessToken('signed-oidc-token');
 
-    await expect(reviewPromotionRequest('promo-1')).rejects.toThrow('reviewer must differ');
+    await expect(reviewPromotionRequest('promo-1', command)).rejects.toThrow('reviewer must differ');
   });
 
   it('fails before fetch when no OIDC access token is present', async () => {

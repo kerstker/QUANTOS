@@ -6,6 +6,7 @@ three-subject separation, immutable actor IDs, and one-way execution semantics.
 """
 
 from pathlib import Path
+import uuid
 
 import pytest
 from fastapi import Header, HTTPException
@@ -183,6 +184,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_EXP_DB", str(tmp_path / "experiments_reg.db"))
     monkeypatch.setattr(m, "_PAPER_DB", str(tmp_path / "paper_track.db"))
     monkeypatch.setattr(m, "_AUDIT_DB", str(tmp_path / "gov_audit.db"))
+    monkeypatch.setattr(m, "_COMMAND_DB", str(tmp_path / "promotion_commands.db"))
     monkeypatch.setattr(m, "_EVENT_DB", str(tmp_path / "domain_events.db"))
     monkeypatch.setattr(
         m,
@@ -212,11 +214,26 @@ def _h(operator, roles=ALL_ROLES):
 
 
 def _open(client, operator="alice", alpha_id="a1"):
-    r = client.post(
-        "/api/v1/governance/promotion/requests", json={"alpha_id": alpha_id, "note": "please"}, headers=_h(operator)
+    r = _post_command(
+        client,
+        "OPEN_PROMOTION",
+        alpha_id,
+        "/api/v1/governance/promotion/requests",
+        operator,
+        "open governed promotion review",
+        extra={"alpha_id": alpha_id},
     )
     assert r.status_code == 200, r.text
     return r.json()["request_id"]
+
+
+def _post_command(client, action, target_id, path, operator, reason, *, extra=None, roles=ALL_ROLES):
+    preview = _preview_command(client, action, target_id, operator, reason)
+    return client.post(
+        path,
+        json={**(extra or {}), **_command_body(preview)},
+        headers=_h(operator, roles),
+    )
 
 
 def test_health_is_static_and_open(client):
@@ -238,10 +255,13 @@ def test_reader_cannot_open_and_requester_cannot_approve(client):
     )
     assert r.status_code == 403
     rid = _open(client, "alice")
-    client.post(
+    _post_command(
+        client,
+        "REVIEW_PROMOTION",
+        rid,
         f"/api/v1/governance/promotion/requests/{rid}/review",
-        json={},
-        headers=_h("bob"),
+        "bob",
+        "independent evidence review",
     )
     r = client.post(
         f"/api/v1/governance/promotion/requests/{rid}/approve",
@@ -372,15 +392,22 @@ def test_candidates_lists_paper_trading_alpha_with_evidence(client):
 
 def test_open_request_for_unknown_alpha_is_409(client):
     r = client.post(
-        "/api/v1/governance/promotion/requests", json={"alpha_id": "ghost", "note": ""}, headers=_h("alice")
+        "/api/v1/governance/promotion/commands/preview",
+        json={"action": "OPEN_PROMOTION", "target_id": "ghost", "business_reason": "review unknown alpha"},
+        headers=_h("alice"),
     )
     assert r.status_code == 409
 
 
 def test_same_operator_cannot_fill_two_roles(client):
     rid = _open(client, "alice")
-    r = client.post(
-        f"/api/v1/governance/promotion/requests/{rid}/review", json={"note": "self-review"}, headers=_h("alice")
+    r = _post_command(
+        client,
+        "REVIEW_PROMOTION",
+        rid,
+        f"/api/v1/governance/promotion/requests/{rid}/review",
+        "alice",
+        "self review attempt",
     )
     assert r.status_code == 409  # ApprovalViolation 原样透出
 
@@ -388,24 +415,41 @@ def test_same_operator_cannot_fill_two_roles(client):
 def test_three_distinct_operators_full_loop_and_execute(client):
     rid = _open(client, "alice")
     assert (
-        client.post(
-            f"/api/v1/governance/promotion/requests/{rid}/review", json={"note": "ok"}, headers=_h("bob")
+        _post_command(
+            client, "REVIEW_PROMOTION", rid,
+            f"/api/v1/governance/promotion/requests/{rid}/review",
+            "bob", "independent evidence review",
         ).status_code
         == 200
     )
     assert (
-        client.post(
-            f"/api/v1/governance/promotion/requests/{rid}/approve", json={"note": "yes"}, headers=_h("carol")
+        _post_command(
+            client, "APPROVE_PROMOTION", rid,
+            f"/api/v1/governance/promotion/requests/{rid}/approve",
+            "carol", "approve research eligibility",
         ).status_code
         == 200
     )
-    r = client.post(f"/api/v1/governance/promotion/requests/{rid}/execute", json={}, headers=_h("carol"))
+    execution_preview = _preview_command(
+        client,
+        "EXECUTE_PROMOTION",
+        rid,
+        "carol",
+        "consume approval once and requery authority",
+    )
+    execution_body = _command_body(execution_preview)
+    execute_path = f"/api/v1/governance/promotion/requests/{rid}/execute"
+    r = client.post(execute_path, json=execution_body, headers=_h("carol"))
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True and body["alpha_id"] == "a1" and body["dst"] == "APPROVED"
     assert body["event_outbox_id"]
     assert body["event_delivery"]["ok"] is True
     assert body["event_delivery"]["dispatch"] == {"dispatched": 1, "pending": 0}
+    assert body["authority_requery"]["research_state"] == "APPROVED"
+    replay = client.post(execute_path, json=execution_body, headers=_h("carol"))
+    assert replay.status_code == 200
+    assert replay.json() == body
     # 详情端点显示完整步骤时间线(谁做的、何时)
     detail = client.get(f"/api/v1/governance/promotion/requests/{rid}", headers=_h("alice")).json()
     states = [s["state"] for s in detail["steps"]]
@@ -421,10 +465,20 @@ def test_three_distinct_operators_full_loop_and_execute(client):
 
 def test_execute_by_non_approver_is_409_and_grant_not_burned(client):
     rid = _open(client, "alice")
-    client.post(f"/api/v1/governance/promotion/requests/{rid}/review", json={}, headers=_h("bob"))
-    client.post(f"/api/v1/governance/promotion/requests/{rid}/approve", json={}, headers=_h("carol"))
-    r = client.post(
-        f"/api/v1/governance/promotion/requests/{rid}/execute", json={}, headers=_h("bob")
+    _post_command(
+        client, "REVIEW_PROMOTION", rid,
+        f"/api/v1/governance/promotion/requests/{rid}/review",
+        "bob", "independent evidence review",
+    )
+    _post_command(
+        client, "APPROVE_PROMOTION", rid,
+        f"/api/v1/governance/promotion/requests/{rid}/approve",
+        "carol", "approve research eligibility",
+    )
+    r = _post_command(
+        client, "EXECUTE_PROMOTION", rid,
+        f"/api/v1/governance/promotion/requests/{rid}/execute",
+        "bob", "unauthorized execution attempt",
     )  # bob 不是批准人
     assert r.status_code == 409
     detail = client.get(f"/api/v1/governance/promotion/requests/{rid}", headers=_h("alice")).json()
@@ -433,13 +487,21 @@ def test_execute_by_non_approver_is_409_and_grant_not_burned(client):
 
 def test_reject_closes_request(client):
     rid = _open(client, "alice")
-    r = client.post(f"/api/v1/governance/promotion/requests/{rid}/reject", json={"note": "no"}, headers=_h("bob"))
+    r = _post_command(
+        client, "REJECT_PROMOTION", rid,
+        f"/api/v1/governance/promotion/requests/{rid}/reject",
+        "bob", "evidence is insufficient",
+    )
     assert r.status_code == 200
     detail = client.get(f"/api/v1/governance/promotion/requests/{rid}", headers=_h("alice")).json()
     assert detail["state"] == "REJECTED"
     # 已否决的请求不能继续走
     assert (
-        client.post(f"/api/v1/governance/promotion/requests/{rid}/review", json={}, headers=_h("carol")).status_code
+        _post_command(
+            client, "REVIEW_PROMOTION", rid,
+            f"/api/v1/governance/promotion/requests/{rid}/review",
+            "carol", "attempt review after rejection",
+        ).status_code
         == 409
     )
 
@@ -456,3 +518,141 @@ def test_requests_list_shows_states(client):
     rows = {x["request_id"]: x for x in r.json()["requests"]}
     assert rows[rid]["state"] == "REQUESTED"
     assert rows[rid]["subject_id"].startswith("alpha-promotion:a1:")
+
+
+def _preview_command(client, action, target_id, operator, reason):
+    response = client.post(
+        "/api/v1/governance/promotion/commands/preview",
+        json={
+            "action": action,
+            "target_id": target_id,
+            "business_reason": reason,
+        },
+        headers=_h(operator),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _command_body(preview, *, idempotency_key=None):
+    return {
+        "idempotency_key": idempotency_key or str(uuid.uuid4()),
+        "target_version": preview["target_version"],
+        "business_reason": preview["business_reason"],
+        "expected_impact": preview["expected_impact"],
+        "risk_diff": preview["risk_diff"],
+        "preview_hash": preview["preview_hash"],
+    }
+
+
+def test_preview_is_identity_bound_and_excludes_real_money_effects(client):
+    preview = _preview_command(
+        client,
+        "OPEN_PROMOTION",
+        "a1",
+        "alice",
+        "advance validated research into governed review",
+    )
+
+    assert preview["verified_actor_id"] == f"{ISSUER}|alice"
+    assert preview["required_role"] == GovernanceRole.PROMOTION_REQUESTER.value
+    assert preview["strong_identity"] == "OIDC_MTLS_MFA"
+    assert preview["target_version"] >= 0
+    assert preview["expected_impact"]["approval_state"] == "REQUESTED"
+    assert preview["expected_impact"]["live_trading_authorized"] is False
+    assert preview["expected_impact"]["order_submission_allowed"] is False
+    assert preview["expected_impact"]["capital_scaling_allowed"] is False
+    assert preview["expected_impact"]["risk_limit_change"] is False
+    assert preview["expected_impact"]["kill_switch_reset"] is False
+    assert len(preview["preview_hash"]) == 64
+
+
+def test_command_requires_nonempty_reason_random_uuid_and_exact_preview(client):
+    preview = _preview_command(client, "OPEN_PROMOTION", "a1", "alice", "review alpha evidence")
+    good = _command_body(preview)
+    for field, value in (
+        ("business_reason", " "),
+        ("idempotency_key", "predictable-key"),
+        ("preview_hash", "0" * 64),
+    ):
+        body = {**good, field: value}
+        response = client.post(
+            "/api/v1/governance/promotion/requests",
+            json={"alpha_id": "a1", **body},
+            headers=_h("alice"),
+        )
+        assert response.status_code in {409, 422}, response.text
+
+
+def test_same_key_replays_same_receipt_and_conflicting_content_fails_closed(client):
+    preview = _preview_command(client, "OPEN_PROMOTION", "a1", "alice", "review alpha evidence")
+    body = {"alpha_id": "a1", **_command_body(preview)}
+
+    first = client.post("/api/v1/governance/promotion/requests", json=body, headers=_h("alice"))
+    replay = client.post("/api/v1/governance/promotion/requests", json=body, headers=_h("alice"))
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json()
+    assert first.json()["receipt_id"]
+    assert first.json()["audit_receipt"]["entry_hash"]
+    assert len(client.get("/api/v1/governance/promotion/requests", headers=_h("alice")).json()["requests"]) == 1
+
+    conflict = client.post(
+        "/api/v1/governance/promotion/requests",
+        json={**body, "business_reason": "different content"},
+        headers=_h("alice"),
+    )
+    assert conflict.status_code == 409
+    assert "idempotency" in conflict.text.lower()
+
+
+def test_stale_target_version_is_rejected_before_side_effect(client):
+    preview = _preview_command(client, "OPEN_PROMOTION", "a1", "alice", "review alpha evidence")
+    body = _command_body(preview)
+    body["target_version"] += 1
+    response = client.post(
+        "/api/v1/governance/promotion/requests",
+        json={"alpha_id": "a1", **body},
+        headers=_h("alice"),
+    )
+
+    assert response.status_code == 409
+    assert "version" in response.text.lower()
+    assert client.get("/api/v1/governance/promotion/requests", headers=_h("alice")).json()["requests"] == []
+
+
+def test_natural_request_version_drift_rejects_a_new_command_key(client):
+    rid = _open(client, "alice")
+    preview = _preview_command(client, "REVIEW_PROMOTION", rid, "bob", "review evidence once")
+    path = f"/api/v1/governance/promotion/requests/{rid}/review"
+    first = client.post(path, json=_command_body(preview), headers=_h("bob"))
+    assert first.status_code == 200
+
+    stale = client.post(path, json=_command_body(preview), headers=_h("bob"))
+    assert stale.status_code == 409
+    assert "version" in stale.text.lower()
+    detail = client.get(f"/api/v1/governance/promotion/requests/{rid}", headers=_h("alice")).json()
+    assert detail["state"] == "REVIEWED"
+    assert detail["n_steps"] == 2
+
+
+def test_audit_write_failure_disables_command_before_side_effect(client, monkeypatch):
+    preview = _preview_command(client, "OPEN_PROMOTION", "a1", "alice", "review alpha evidence")
+
+    class BrokenAudit:
+        def append(self, **_kwargs):
+            raise OSError("audit disk unavailable")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m, "_audit", BrokenAudit)
+    response = client.post(
+        "/api/v1/governance/promotion/requests",
+        json={"alpha_id": "a1", **_command_body(preview)},
+        headers=_h("alice"),
+    )
+
+    assert response.status_code == 503
+    assert "audit" in response.text.lower()
+    assert client.get("/api/v1/governance/promotion/requests", headers=_h("alice")).json()["requests"] == []

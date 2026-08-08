@@ -2229,7 +2229,7 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
             "state nonce PKCE_TRANSACTION_STORAGE_KEY MAX_TRANSACTION_AGE_MS "
             "storage.removeItem response = await runtime.fetch access token memory only\n"
         ),
-        "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
         "tests/governance/test_oidc_key_registry.py": "tests\n",

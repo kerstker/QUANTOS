@@ -138,6 +138,25 @@ def test_promotion_api_has_no_shared_token_or_self_asserted_identity():
     )
 
 
+def test_promotion_command_surface_is_research_only_and_fail_closed():
+    path = os.path.join(_ROOT, "services", "promotion_api", "main.py")
+    source = open(path, encoding="utf-8").read()
+    assert "SqliteCommandLog" in source
+    assert "CommandEnvelope" in source
+    assert "idempotency_key" in source
+    assert "target_version" in source
+    assert "business_reason" in source
+    assert "expected_impact" in source
+    assert "preview_hash" in source
+    for forbidden in (
+        "SUBMIT_ORDER",
+        "SCALE_CAPITAL",
+        "MODIFY_RISK_LIMIT",
+        "RESET_KILL_SWITCH",
+    ):
+        assert forbidden not in source
+
+
 def test_identity_authorization_default_registry_is_empty_and_l2_only():
     import json
 
@@ -234,6 +253,7 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_EXP_DB", str(tmp_path / "experiments_reg.db"))
     monkeypatch.setattr(m, "_PAPER_DB", str(tmp_path / "paper_track.db"))
     monkeypatch.setattr(m, "_AUDIT_DB", str(tmp_path / "gov_audit.db"))
+    monkeypatch.setattr(m, "_COMMAND_DB", str(tmp_path / "promotion_commands.db"))
     return TestClient(m.app), m
 
 
@@ -243,6 +263,7 @@ def test_all_data_endpoints_require_strong_bearer_identity(tmp_path, monkeypatch
         ("GET", "/api/v1/governance/promotion/candidates"),
         ("GET", "/api/v1/governance/promotion/requests"),
         ("GET", "/api/v1/governance/promotion/requests/x"),
+        ("POST", "/api/v1/governance/promotion/commands/preview"),
         ("POST", "/api/v1/governance/promotion/requests"),
         ("POST", "/api/v1/governance/promotion/requests/x/review"),
         ("POST", "/api/v1/governance/promotion/requests/x/approve"),

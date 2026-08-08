@@ -4897,7 +4897,7 @@ def _strong_identity_baseline_evidence(
         "services/promotion_api/main.py",
         "apps/research-console/src/lib/api/promotion-api.ts",
         "apps/research-console/src/lib/api/governance-pkce.ts",
-        "apps/research-console/src/pages/PromotionQueue.tsx",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx",
         "scripts/generate_strong_identity_evidence.py",
     }
     implementation_hashes = document.get("implementation_sha256")
