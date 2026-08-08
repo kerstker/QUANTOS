@@ -300,6 +300,11 @@ def collect_books(
     try:
         if not store.chain_valid():
             raise PaperMultiVenueSORError("Binance realtime chain is invalid")
+        # Full-chain verification can take materially longer than the public
+        # quote freshness window on a large authority store.  Re-anchor the
+        # collection clock after verification so Binance and Bybit are selected
+        # against the same decision time instead of manufacturing venue skew.
+        now_ms = max(now_ms, int(read_clock()))
         output: dict[str, tuple[VenueBook, VenueBook]] = {}
         rows: list[dict[str, Any]] = []
         binance_sources: dict[str, str] = {}

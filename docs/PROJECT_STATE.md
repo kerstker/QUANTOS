@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 Paper SOR 校验后时钟重锚修复（开发分支已验证，待不可变发布）：**
+> 现场 `QUANTOS_paper_multivenue_sor` 在大型公开行情权威库上先做完整哈希链复核，
+> 却继续用复核开始前的 `now_ms` 选择 Binance 快照，再以复核结束后的墙钟标记 Bybit
+> 快照，稳定制造 `cross-venue quote skew is too large`。现于链复核成功后重新锚定同一
+> 注入时钟，不放宽 10 分钟新鲜度/跨场所偏差阈值。回归 20/20 PASS；对真实
+> `H:\QUANTOS_STATE` 公开行情库完成一次只读验证（14 标的、28 books、235.6 秒、
+> `binance_rest_failover_used=false`、PASS），全程无凭证、账户或订单能力。当前调度器仍
+> 锁定不可变 release `1116c7bda144b620c622eb9d69a1b970181ccfa1`，必须在本修复通过
+> canonical gate 并形成新的 clean release 后才能重注册，不能原地改 release。
+> 同期 Binance systemic-risk 公开 REST 收到 HTTP 418 并进入约 73 分钟持久 cooldown，
+> 必须等待而不能绕过或重试放大；`alpha_production_workflow` 当前 37 个候选、0 个
+> Execution-Paper eligible，因此没有可诚实生成的 Task 39 intent/runtime 金额提案。
+
 > **2026-08-08 Wave 3 专业工作台 L2 实施验收：** Tasks 40–50 已形成五对象工作区
 > （Market Monitor、Alpha Control Plane、Validation Evidence、Portfolio & Risk、
 > Execution & Orders）和治理/审计/健康/任务全局抽屉。源提交

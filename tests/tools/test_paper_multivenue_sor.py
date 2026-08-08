@@ -8,6 +8,7 @@ from tools.paper_multivenue_sor import (
     INSTRUMENTS,
     MAX_FUTURE_SKEW_MS,
     MAX_QUOTE_AGE_MS,
+    MAX_VENUE_SKEW_MS,
     PaperMultiVenueSORError,
     collect_books,
     load_persisted_routing_snapshot,
@@ -202,6 +203,37 @@ def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
     assert all(
         route["status"] == "COMPLETE" for route in run.detail["routing"]
     )
+
+
+def test_collect_books_reanchors_snapshot_time_after_chain_verification(tmp_path):
+    started_at_ms = 2_000_000
+    verified_at_ms = started_at_ms + MAX_VENUE_SKEW_MS + 1_000
+    instrument_id = "BTCUSDT"
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        store.append_snapshot(
+            _binance_snapshot(instrument_id, "60000", started_at_ms)
+        )
+        store.append_snapshot(
+            _binance_snapshot(instrument_id, "60000", verified_at_ms)
+        )
+    finally:
+        store.close()
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=started_at_ms,
+        http_get=lambda _url: _bybit_payload(
+            instrument_id, "60000", verified_at_ms
+        ),
+        clock_ms=lambda: verified_at_ms,
+        instruments=(instrument_id,),
+    )
+
+    assert set(books) == {instrument_id}
+    assert bundle["observed_at_ms"] == verified_at_ms
+    assert bundle["quality"]["binance_rest_failover_used"] is False
 
 
 def test_collect_books_uses_visible_binance_rest_failover_when_stream_is_stale(
