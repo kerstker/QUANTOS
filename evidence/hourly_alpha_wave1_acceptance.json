@@ -34,10 +34,10 @@
     "6c904e7",
     "bd08373"
   ],
-  "input_hash": "f1371554ae7ab76d08c7f658d526c1daca6abc025308d97fa488e2889967e025",
+  "input_hash": "646329b6c66ecf11330d67da7ca7a616b33878f69ef950d6df649ae62dfb8b6d",
   "inputs": {
     "docs/runbooks/hourly-alpha-operations.md": "354f6f2c2f682aa89f314a3823eec2d336175e1d4bb940c4f9b8d6bd80b3126f",
-    "docs/superpowers/plans/2026-08-06-wave1-hourly-alpha-garden-paper.md": "f3c26fabae5bfb07076c2b81c54c90ae7e00dd1ff661ed7ac0777ccc620668b3",
+    "wave1_plan_document": "f3c26fabae5bfb07076c2b81c54c90ae7e00dd1ff661ed7ac0777ccc620668b3",
     "evidence/validation_report.json": "4155d5aecd3377505ec49b3be47a433a014e69b06d6daf88b951c6a987b291d5",
     "tests/integration/test_hourly_alpha_to_paper.py": "b13203d40074aca78bcbe5a45ac9d62976679d1d02075e4115458ee77aa2b5fb"
   },
