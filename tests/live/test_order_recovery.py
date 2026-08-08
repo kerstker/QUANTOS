@@ -8,6 +8,10 @@ from live.execution.order_recovery import (
     SqliteOrderRecoveryStore,
     resolve_unknown_orders,
 )
+from live.execution.oms import OmsAuthority
+from live.execution.order_event_store import SqliteOrderEventStore
+from live.execution.position_ledger import LiveLedger
+from quantos.contracts.trading import OrderSide
 from services.risk.pre_trade.kill_switch import KillSwitch
 
 
@@ -72,6 +76,66 @@ def test_found_terminal_order_is_taken_over_and_not_retried(tmp_path):
     assert store.client_submission_permitted(
         deployment_id="alpha-a", client_order_id="cid-1"
     ) is False
+
+
+def test_terminal_recovery_journals_and_projects_before_resolving(tmp_path):
+    store = SqliteOrderRecoveryStore(str(tmp_path / "recovery.db"), create=True)
+    _register(store)
+    event_store = SqliteOrderEventStore(str(tmp_path / "events.db"), create=True)
+    ledger = LiveLedger(str(tmp_path / "ledger.db"), create=True)
+    oms = OmsAuthority(event_store, ledger, recovery_store=store)
+    oms.register_submission(
+        client_order_id="cid-1",
+        instrument_id="BTC",
+        side=OrderSide.BUY,
+        order_quantity=0.01,
+        strategy_id="alpha-a",
+        order_type="MARKET",
+        limit_price=None,
+        observed_at_ms=100,
+        command_event_id="command-cid-1",
+    )
+    venue = _FoundVenue(VenueOrderResult(
+        venue_order_id="venue-1", client_order_id="cid-1", instrument_id="BTC",
+        status="FILLED", filled_qty=0.01, avg_price=60000.0,
+    ))
+
+    result = resolve_unknown_orders(
+        store, venue, now_ms=200, oms_authority=oms,
+    )
+
+    assert result["outcomes"][0]["outcome"] == "RESOLVED"
+    assert store.latest("cid-1").state is RecoveryState.RESOLVED
+    assert ledger.all_positions() == {"BTC": pytest.approx(0.01)}
+    assert event_store.row_count() == 2
+    ledger.close()
+    event_store.close()
+    store.close()
+
+
+def test_recovery_cannot_resolve_when_oms_has_no_prejournaled_order(tmp_path):
+    store = SqliteOrderRecoveryStore(str(tmp_path / "recovery.db"), create=True)
+    _register(store)
+    event_store = SqliteOrderEventStore(str(tmp_path / "events.db"), create=True)
+    ledger = LiveLedger(str(tmp_path / "ledger.db"), create=True)
+    oms = OmsAuthority(event_store, ledger, recovery_store=store)
+    venue = _FoundVenue(VenueOrderResult(
+        venue_order_id="venue-1", client_order_id="cid-1", instrument_id="BTC",
+        status="FILLED", filled_qty=0.01, avg_price=60000.0,
+    ))
+
+    result = resolve_unknown_orders(
+        store, venue, now_ms=200, oms_authority=oms,
+    )
+
+    assert result["outcomes"][0]["outcome"] == "OMS_PROJECTION_BLOCKED"
+    assert store.latest("cid-1").state is RecoveryState.FOUND
+    assert store.deployment_blocked("alpha-a") is True
+    assert event_store.row_count() == 0
+    assert ledger.orders() == []
+    ledger.close()
+    event_store.close()
+    store.close()
 
 
 def test_confirmed_absence_requires_explicit_retry_authorization(tmp_path):

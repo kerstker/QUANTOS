@@ -626,6 +626,7 @@ def resolve_unknown_orders(
     kill_switch: object = None,
     kill_switch_actor: Optional[Actor] = None,
     kill_switch_arm: Optional[Callable[[str, int], object]] = None,
+    oms_authority: object = None,
 ) -> dict:
     """Resolve durable unknowns without ever submitting a replacement order.
 
@@ -637,6 +638,11 @@ def resolve_unknown_orders(
     """
     if not isinstance(store, SqliteOrderRecoveryStore):
         raise TypeError("store must be a SqliteOrderRecoveryStore")
+    if oms_authority is not None:
+        from live.execution.oms import OmsAuthority
+
+        if not isinstance(oms_authority, OmsAuthority):
+            raise TypeError("oms_authority must be an OmsAuthority")
     now_ms = _require_time(now_ms)
     if deployment_id is not None:
         deployment_id = _require_text(deployment_id, name="deployment_id")
@@ -668,6 +674,41 @@ def resolve_unknown_orders(
         if results:
             found = store.mark_found(record.client_order_id, results[0], now_ms=now_ms)
             final = found
+            if oms_authority is not None:
+                from live.execution.order_event_store import OrderEventSource
+                from quantos.contracts.hashing import stable_hash
+
+                snapshot = {
+                    "client_order_id": results[0].client_order_id,
+                    "venue_order_id": results[0].venue_order_id,
+                    "instrument_id": results[0].instrument_id,
+                    "status": results[0].status,
+                    "filled_qty": results[0].filled_qty,
+                    "avg_price": results[0].avg_price,
+                }
+                snapshot_hash = stable_hash(snapshot)
+                try:
+                    oms_authority.ingest_venue_snapshot(
+                        client_order_id=record.client_order_id,
+                        source=OrderEventSource.RECOVERY,
+                        source_sequence=now_ms,
+                        venue_event_id=f"recovery-{snapshot_hash}",
+                        venue_order_id=results[0].venue_order_id,
+                        venue_status=results[0].status,
+                        cumulative_filled_qty=results[0].filled_qty,
+                        avg_fill_price=results[0].avg_price,
+                        observed_at_ms=now_ms,
+                        venue_payload_hash=snapshot_hash,
+                    )
+                except Exception as exc:
+                    outcomes.append({
+                        "client_order_id": record.client_order_id,
+                        "deployment_id": record.deployment_id,
+                        "outcome": "OMS_PROJECTION_BLOCKED",
+                        "state": found.state.value,
+                        "error_code": f"OMS_{type(exc).__name__.upper()}",
+                    })
+                    continue
             if results[0].status in {"FILLED", "CANCELED", "REJECTED", "EXPIRED"}:
                 final = store.mark_resolved(
                     record.client_order_id, now_ms=now_ms,

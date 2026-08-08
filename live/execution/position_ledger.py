@@ -25,12 +25,14 @@ append-only SQLite；同一 client_order_id/fill_id + 同一不可变 payload �
 from __future__ import annotations
 
 import sqlite3
+import math
 from typing import Dict, List, Optional
 
 from live.execution.oms_state import (assert_snapshot_transition,
                                       canonical_for_venue_status)
 from quantos.contracts.order import OrderState
 from quantos.contracts.trading import OrderSide
+from quantos.contracts.hashing import stable_hash
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS live_orders (
@@ -101,6 +103,13 @@ _TCA_ARRIVAL_COLUMNS = (
 # 记录过的历史事实;新写入永远由 Python API 显式传值(默认 order_type="MARKET"),不依赖
 # SQL 端默认值。只作用于 live_orders(live_fills/live_tca 不需要下单方式这个维度)。
 _ORDER_TYPE_TABLE = "live_orders"
+_OMS_PROJECTION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS live_oms_projections (
+  event_hash      TEXT PRIMARY KEY,
+  projection_hash TEXT NOT NULL,
+  projected_at_ms INTEGER NOT NULL
+);
+"""
 
 
 class LiveLedgerError(RuntimeError):
@@ -118,6 +127,7 @@ class LiveLedger:
         if create:
             self._conn.executescript(_SCHEMA)
             self._conn.executescript(_TCA_SCHEMA)
+            self._conn.executescript(_OMS_PROJECTION_SCHEMA)
             self._conn.commit()
         self._require_schema()
         # 迁移必须在无 create 路径也跑:ops API / gonogo_report 用 LiveLedger(path) 打开
@@ -125,6 +135,10 @@ class LiveLedger:
         self._migrate_order_type_columns()
         self._migrate_canonical_state_column()
         self._migrate_tca_arrival_columns()
+
+    def _ensure_oms_projection_schema(self) -> None:
+        self._conn.executescript(_OMS_PROJECTION_SCHEMA)
+        self._conn.commit()
 
     def _require_schema(self) -> None:
         try:
@@ -325,6 +339,223 @@ class LiveLedger:
                 )
             return
         self._conn.commit()
+
+    def apply_oms_projection(
+        self,
+        record,
+        *,
+        fill_id: str = "",
+        fill_quantity: float = 0.0,
+        fill_price: float = 0.0,
+    ) -> bool:
+        """Atomically apply one already-journaled OMS event and its fill delta.
+
+        The event journal is the authority.  This method is only its idempotent
+        SQLite read-model projection; a marker and every order/fill mutation
+        commit together so a crash can be repaired by replaying unprojected
+        event hashes.
+        """
+        from live.execution.order_event_store import OrderEventRecord
+
+        if not isinstance(record, OrderEventRecord):
+            raise TypeError("record must be an OrderEventRecord")
+        event = record.event
+        if (
+            isinstance(fill_quantity, bool)
+            or not isinstance(fill_quantity, (int, float))
+            or not math.isfinite(float(fill_quantity))
+            or float(fill_quantity) < 0
+        ):
+            raise ValueError("fill_quantity must be finite and non-negative")
+        fill_quantity = float(fill_quantity)
+        if isinstance(fill_price, bool) or not isinstance(fill_price, (int, float)):
+            raise ValueError("fill_price must be numeric")
+        fill_price = float(fill_price)
+        if fill_quantity > 0:
+            if not fill_id or not math.isfinite(fill_price) or fill_price <= 0:
+                raise ValueError("positive fill projection requires id and price")
+        elif fill_id or fill_price != 0:
+            raise ValueError("zero fill projection cannot carry fill data")
+        projection_hash = stable_hash(
+            {
+                "event_hash": record.event_hash,
+                "fill_id": fill_id,
+                "fill_quantity": fill_quantity,
+                "fill_price": fill_price,
+            }
+        )
+        self._ensure_oms_projection_schema()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing_projection = self._conn.execute(
+                "SELECT projection_hash FROM live_oms_projections WHERE event_hash=?",
+                (record.event_hash,),
+            ).fetchone()
+            if existing_projection is not None:
+                if existing_projection["projection_hash"] != projection_hash:
+                    raise LiveLedgerConflictError(
+                        "OMS event hash reused with a different projection"
+                    )
+                self._conn.rollback()
+                return False
+            row = self._conn.execute(
+                "SELECT * FROM live_orders WHERE client_order_id=?",
+                (event.client_order_id,),
+            ).fetchone()
+            prior_fills = self._conn.execute(
+                "SELECT quantity,price FROM live_fills WHERE client_order_id=?",
+                (event.client_order_id,),
+            ).fetchall()
+            prior_quantity = sum(float(item["quantity"]) for item in prior_fills)
+            prior_notional = sum(
+                float(item["quantity"]) * float(item["price"])
+                for item in prior_fills
+            )
+            expected_quantity = event.cumulative_filled_qty - prior_quantity
+            if expected_quantity < -1e-12:
+                raise LiveLedgerConflictError(
+                    "OMS cumulative fill is behind the ledger"
+                )
+            if abs(expected_quantity) <= 1e-12:
+                if fill_id or fill_quantity != 0 or fill_price != 0:
+                    raise LiveLedgerConflictError(
+                        "OMS duplicate snapshot cannot add a fill"
+                    )
+            else:
+                expected_notional = (
+                    event.avg_fill_price * event.cumulative_filled_qty
+                    - prior_notional
+                )
+                expected_price = expected_notional / expected_quantity
+                expected_fill_id = stable_hash(
+                    {
+                        "client_order_id": event.client_order_id,
+                        "event_hash": record.event_hash,
+                        "cumulative_filled_qty": event.cumulative_filled_qty,
+                    }
+                )
+                if (
+                    fill_id != expected_fill_id
+                    or not math.isclose(
+                        fill_quantity, expected_quantity, rel_tol=0, abs_tol=1e-12
+                    )
+                    or not math.isclose(
+                        fill_price, expected_price, rel_tol=0, abs_tol=1e-12
+                    )
+                ):
+                    raise LiveLedgerConflictError(
+                        "OMS fill projection does not match cumulative venue evidence"
+                    )
+            immutable = (
+                event.instrument_id,
+                event.side.value,
+                event.order_quantity,
+                event.strategy_id,
+                event.order_type,
+                event.limit_price,
+            )
+            if row is None:
+                if (
+                    event.venue_status != "PENDING_NEW"
+                    or event.canonical_state is not OrderState.RISK_APPROVED
+                    or event.cumulative_filled_qty != 0
+                ):
+                    raise LiveLedgerConflictError(
+                        "first OMS projection must be PENDING_NEW"
+                    )
+                self._conn.execute(
+                    "INSERT INTO live_orders"
+                    "(client_order_id,instrument_id,side,quantity,submitted_at,"
+                    "venue_order_id,status,strategy_id,order_type,limit_price,canonical_state)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        event.client_order_id,
+                        event.instrument_id,
+                        event.side.value,
+                        event.order_quantity,
+                        event.observed_at_ms,
+                        event.venue_order_id,
+                        event.venue_status,
+                        event.strategy_id,
+                        event.order_type,
+                        event.limit_price,
+                        event.canonical_state.value,
+                    ),
+                )
+            else:
+                existing_immutable = (
+                    row["instrument_id"],
+                    row["side"],
+                    float(row["quantity"]),
+                    row["strategy_id"],
+                    row["order_type"],
+                    row["limit_price"],
+                )
+                if existing_immutable != immutable:
+                    raise LiveLedgerConflictError(
+                        "OMS event conflicts with immutable ledger order"
+                    )
+                previous = (
+                    OrderState(row["canonical_state"])
+                    if row["canonical_state"] is not None
+                    else canonical_for_venue_status(row["status"])
+                )
+                assert_snapshot_transition(previous, event.canonical_state)
+                venue_order_id = event.venue_order_id or row["venue_order_id"]
+                self._conn.execute(
+                    "UPDATE live_orders SET venue_order_id=?,status=?,canonical_state=? "
+                    "WHERE client_order_id=?",
+                    (
+                        venue_order_id,
+                        event.venue_status,
+                        event.canonical_state.value,
+                        event.client_order_id,
+                    ),
+                )
+            if fill_quantity > 0:
+                self._conn.execute(
+                    "INSERT INTO live_fills"
+                    "(fill_id,client_order_id,instrument_id,side,quantity,price,"
+                    "filled_at,strategy_id) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        fill_id,
+                        event.client_order_id,
+                        event.instrument_id,
+                        event.side.value,
+                        fill_quantity,
+                        float(fill_price),
+                        event.observed_at_ms,
+                        event.strategy_id,
+                    ),
+                )
+            self._conn.execute(
+                "INSERT INTO live_oms_projections"
+                "(event_hash,projection_hash,projected_at_ms) VALUES (?,?,?)",
+                (record.event_hash, projection_hash, event.observed_at_ms),
+            )
+            self._conn.commit()
+            return True
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+
+    def unprojected_oms_event_hashes(
+        self, event_hashes
+    ) -> tuple[str, ...]:
+        hashes = tuple(event_hashes)
+        if any(not isinstance(value, str) or not value for value in hashes):
+            raise ValueError("event_hashes must contain non-empty strings")
+        if not hashes:
+            return ()
+        self._ensure_oms_projection_schema()
+        projected = {
+            row["event_hash"]
+            for row in self._conn.execute(
+                "SELECT event_hash FROM live_oms_projections"
+            ).fetchall()
+        }
+        return tuple(value for value in hashes if value not in projected)
 
     def record_tca(self, fill_id: str, *, client_order_id: str, instrument_id: str,
                    side: OrderSide, decision_price: float, fill_price: float, quantity: float,
