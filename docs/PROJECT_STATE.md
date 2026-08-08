@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Realtime Execution Paper 发布运行证明第三增量：**
+> `realtime_alpha_execution_paper` 成为第三个强制 release-run attestation worker。Signal
+> Shadow 的 admission/decision 现在在单一 SQLite 读事务中物化，证明绑定完整 source authority
+> hash，避免同一轮多次查询看到不同追加进度；同时绑定本轮实际解析的 feature/contract 状态、
+> 执行账本运行前 authority、固定执行合同和实际消费的公共 routing snapshot。输出绑定运行后
+> Execution Paper 双链 authority 与报告文件。`RUNNING` 和诚实 `SAFE_BLOCKED` 都只能证明本轮
+> 输入，启动即清空旧证明；live/order/credentials/broker 继续全 false。其余 worker 尚待逐个
+> 接入，WP0 不宣称整体闭合。
+
 > **2026-08-09 WP0 Paper SOR 发布运行证明第二增量：**
 > `paper_multivenue_sor` 现与唯一 Alpha 工作流同列为不可变 L2 launcher 的强制证明
 > worker。每次成功运行必须把完整公共跨场所盘口 bundle、独立可重算的 book snapshot、

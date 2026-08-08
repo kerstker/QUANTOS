@@ -50,6 +50,7 @@ def test_admission_execution_restart_and_exact_replay(tmp_path) -> None:
             baseline_decision_time_ms=100,
             admitted_at_ms=150,
         )
+        admission_hash = store.authority_hash()
         assert not store.admit(
             "candidate-1",
             {"source": "shadow", "class": "engineering"},
@@ -57,6 +58,10 @@ def test_admission_execution_restart_and_exact_replay(tmp_path) -> None:
             admitted_at_ms=150,
         )
         assert store.record_execution("candidate-1", _preview(), recorded_at_ms=250)
+        execution_hash = store.authority_hash()
+        assert len(admission_hash) == 64
+        assert len(execution_hash) == 64
+        assert execution_hash != admission_hash
         assert not store.record_execution("candidate-1", _preview(), recorded_at_ms=250)
         assert store.latest_positions("candidate-1") == {"BTC": 1}
         assert store.summary("candidate-1")["n_fill_slices"] == 2
@@ -71,6 +76,7 @@ def test_admission_execution_restart_and_exact_replay(tmp_path) -> None:
         assert reopened.admitted_candidate_ids() == ("candidate-1",)
         assert reopened.get_by_decision("candidate-1", 200) is not None
         assert reopened.chain_valid()
+        assert reopened.authority_hash() == execution_hash
 
 
 def test_conflict_and_authority_widening_fail_closed(tmp_path) -> None:

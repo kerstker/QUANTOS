@@ -7,6 +7,7 @@ promotion, broker, credential, or order-submission authority.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import math
 import sqlite3
@@ -113,6 +114,20 @@ class RealtimeAlphaShadowStore:
 
     def close(self) -> None:
         self._conn.close()
+
+    @contextmanager
+    def read_snapshot(self):
+        """Freeze a consistent SQLite view for one multi-query consumer."""
+        if self._conn.in_transaction:
+            raise RealtimeAlphaShadowStoreError(
+                "shadow read snapshot cannot nest a transaction"
+            )
+        self._conn.execute("BEGIN")
+        try:
+            yield self
+        finally:
+            if self._conn.in_transaction:
+                self._conn.rollback()
 
     def _events(
         self,
@@ -421,6 +436,22 @@ class RealtimeAlphaShadowStore:
             self._conn.execute(
                 "SELECT COUNT(*) FROM realtime_alpha_shadow_events"
             ).fetchone()[0]
+        )
+
+    def authority_hash(self) -> str:
+        """Content-address the complete valid shadow authority state."""
+        if not self.chain_valid():
+            raise RealtimeAlphaShadowStoreError("shadow ledger chain is invalid")
+        row = self._conn.execute(
+            "SELECT row_hash FROM realtime_alpha_shadow_events "
+            "ORDER BY event_seq DESC LIMIT 1"
+        ).fetchone()
+        return stable_hash(
+            {
+                "schema_version": 1,
+                "event_count": self.event_count(),
+                "chain_head": "" if row is None else str(row["row_hash"]),
+            }
         )
 
 

@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
+import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import time
 from typing import Any
@@ -59,10 +61,114 @@ _ROUTING_REFRESHABLE_ERRORS = frozenset(
 )
 EXECUTION_CLASS = "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER"
 EXECUTION_PROFILE = "REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1"
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
 class RealtimeAlphaExecutionPaperError(RuntimeError):
     """Realtime execution-paper evidence is stale, unsafe, or conflicted."""
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _execution_input_contract_hash() -> str:
+    return stable_hash(
+        {
+            "schema_version": 1,
+            "execution_class": EXECUTION_CLASS,
+            "execution_profile": EXECUTION_PROFILE,
+            "max_status_age_ms": MAX_STATUS_AGE_MS,
+            "max_execution_delay_ms": MAX_EXECUTION_DELAY_MS,
+            "max_decision_resolutions_per_track_per_cycle": (
+                MAX_DECISION_RESOLUTIONS_PER_TRACK_PER_CYCLE
+            ),
+            "routing": {
+                "max_quote_age_ms": MAX_QUOTE_AGE_MS,
+                "min_fill_fraction": "1",
+                "max_venue_fraction": "1",
+                "latency_penalty_bps_per_ms": "0",
+            },
+            "require_full_research_risk": False,
+            "public_market_data_only": True,
+            "simulation_only": True,
+        }
+    )
+
+
+def _build_release_run_attestation(
+    report: Mapping[str, Any],
+    *,
+    input_hashes: Mapping[str, str],
+    output_hashes: Mapping[str, str],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["execution_paper_report_file"] = _sha256_file(output_path)
+    safety = report.get("safety")
+    safety = safety if isinstance(safety, Mapping) else {}
+    verdict = report.get("verdict")
+    verdict = verdict if isinstance(verdict, Mapping) else {}
+    safety_contract = {
+        "paper_only": safety.get("paper_only"),
+        "live_allowed": verdict.get("live_allowed"),
+        "order_submission_allowed": verdict.get("order_submission_allowed"),
+        "credentials_accessed": safety.get("credentials_accessed"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and report.get("status") in {"RUNNING", "SAFE_BLOCKED"}
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety_contract == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "realtime_alpha_execution_paper",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy for the immutable L2 launcher."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _is_routing_refreshable(error: BaseException) -> bool:
@@ -84,9 +190,12 @@ def load_lot_specs(
     *,
     tickers: Sequence[str],
     now_ms: int,
+    observed_hashes: dict[str, str] | None = None,
 ) -> tuple[dict[str, LotSpec], dict[str, Any]]:
     """Load current public exchange filters as a complete lot authority."""
     status = _read_object(path, "Binance realtime market status")
+    if observed_hashes is not None:
+        observed_hashes["binance_contract_filter_status"] = stable_hash(status)
     generated = status.get("generated_at_ms")
     if (
         status.get("verdict") != "PASS"
@@ -139,8 +248,15 @@ def load_lot_specs(
     return result, status
 
 
-def _feature_status(path: str | Path, *, now_ms: int) -> dict[str, Any]:
+def _feature_status(
+    path: str | Path,
+    *,
+    now_ms: int,
+    observed_hashes: dict[str, str] | None = None,
+) -> dict[str, Any]:
     status = _read_object(path, "realtime feature status")
+    if observed_hashes is not None:
+        observed_hashes["realtime_feature_status"] = stable_hash(status)
     generated = status.get("generated_at_ms")
     batch = status.get("batch")
     if (
@@ -375,7 +491,13 @@ def run_cycle(
     output_path: str | Path = DEFAULT_OUTPUT,
     now_ms: int | None = None,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
+    input_hashes = {
+        "execution_input_contract": _execution_input_contract_hash(),
+    }
+    output_hashes: dict[str, str] = {}
     errors: dict[str, str] = {}
     waiting: dict[str, str] = {}
     tracks: dict[str, dict[str, Any]] = {}
@@ -461,12 +583,24 @@ def run_cycle(
                 ) from refresh_error
 
     try:
-        feature_status = _feature_status(feature_status_path, now_ms=now)
+        feature_status = _feature_status(
+            feature_status_path,
+            now_ms=now,
+            observed_hashes=input_hashes,
+        )
         with RealtimeAlphaShadowStore(str(shadow_store_path), create=False) as shadow:
-            if not shadow.chain_valid():
-                raise RealtimeAlphaExecutionPaperError("Signal-Shadow chain is invalid")
+            with shadow.read_snapshot():
+                input_hashes["signal_shadow_authority"] = shadow.authority_hash()
+                source_ids = shadow.admitted_candidate_ids()
+                source_admissions = {
+                    candidate_id: shadow.admission(candidate_id)
+                    for candidate_id in source_ids
+                }
+                source_decisions = {
+                    candidate_id: shadow.decisions(candidate_id)
+                    for candidate_id in source_ids
+                }
             source_chain_valid = True
-            source_ids = shadow.admitted_candidate_ids()
             if not source_ids:
                 raise RealtimeAlphaExecutionPaperError("Signal-Shadow has no admitted tracks")
             all_tickers = tuple(
@@ -474,13 +608,16 @@ def run_cycle(
                     {
                         str(symbol).removesuffix("USDT")
                         for candidate_id in source_ids
-                        for row in shadow.decisions(candidate_id)
+                        for row in source_decisions[candidate_id]
                         for symbol in row["payload"].get("weights", {})
                     }
                 )
             )
             specs, market_status = load_lot_specs(
-                market_status_path, tickers=all_tickers, now_ms=now
+                market_status_path,
+                tickers=all_tickers,
+                now_ms=now,
+                observed_hashes=input_hashes,
             )
             execution_path = Path(execution_store_path)
             with RealtimeEngineeringPaperStore(
@@ -493,15 +630,12 @@ def run_cycle(
                     or execution_path.stat().st_size == 0
                 ),
             ) as store:
-                if not store.chain_valid():
-                    raise RealtimeAlphaExecutionPaperError(
-                        "engineering execution ledger chain is invalid"
-                    )
+                input_hashes["execution_authority_before"] = store.authority_hash()
                 for candidate_id in source_ids:
                     if store.admission(candidate_id) is not None:
                         continue
-                    source_admission = shadow.admission(candidate_id)
-                    decisions = shadow.decisions(candidate_id)
+                    source_admission = source_admissions[candidate_id]
+                    decisions = source_decisions[candidate_id]
                     if source_admission is None or not decisions:
                         waiting[candidate_id] = "WAITING_FOR_SIGNAL_SHADOW_DECISION"
                         continue
@@ -536,7 +670,7 @@ def run_cycle(
                         resolved = store.resolved_decision_times(candidate_id)
                         pending_events = [
                             row
-                            for row in shadow.decisions(candidate_id)
+                            for row in source_decisions[candidate_id]
                             if int(row["identity_time_ms"]) > baseline
                             and int(row["identity_time_ms"]) not in resolved
                         ]
@@ -553,6 +687,9 @@ def run_cycle(
                             if books is None:
                                 books, native_prices, routing_snapshot_id, routing_as_of_ms = (
                                     load_routing_snapshot_for_cycle()
+                                )
+                                input_hashes["routing_snapshot"] = str(
+                                    routing_snapshot_id
                                 )
                                 lot_books, lot_prices = scale_snapshot_to_lots(
                                     books, native_prices, specs
@@ -690,7 +827,8 @@ def run_cycle(
                         )
                     except Exception as exc:
                         errors[candidate_id] = f"{type(exc).__name__}: {str(exc)[:200]}"
-                execution_chain_valid = store.chain_valid()
+                output_hashes["execution_authority_after"] = store.authority_hash()
+                execution_chain_valid = True
                 event_count = store.event_count()
     except Exception as exc:
         errors["_system"] = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -779,6 +917,12 @@ def run_cycle(
         },
     }
     atomic_write_json(str(output_path), report, indent=2)
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        report,
+        input_hashes=input_hashes,
+        output_hashes=output_hashes,
+        output_path=output_path,
+    )
     return report
 
 
@@ -827,5 +971,6 @@ __all__ = [
     "RealtimeAlphaExecutionPaperError",
     "load_lot_specs",
     "main",
+    "release_run_attestation",
     "run_cycle",
 ]

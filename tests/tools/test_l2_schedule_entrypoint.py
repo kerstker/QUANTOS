@@ -280,7 +280,10 @@ def test_entrypoint_reports_release_verification_before_worker_runs(
 
 @pytest.mark.parametrize(
     "module_name",
-    sorted(REQUIRED_INPUT_ATTESTATION_MODULES | {"paper_multivenue_sor"}),
+    sorted(
+        REQUIRED_INPUT_ATTESTATION_MODULES
+        | {"paper_multivenue_sor", "realtime_alpha_execution_paper"}
+    ),
 )
 def test_required_worker_fails_closed_without_input_attestation(
     tmp_path: Path,
@@ -301,7 +304,11 @@ def test_required_worker_fails_closed_without_input_attestation(
 
 @pytest.mark.parametrize(
     "module_name",
-    ("alpha_production_workflow", "paper_multivenue_sor"),
+    (
+        "alpha_production_workflow",
+        "paper_multivenue_sor",
+        "realtime_alpha_execution_paper",
+    ),
 )
 def test_required_worker_attestation_is_validated_and_hash_bound(
     tmp_path: Path,
@@ -513,6 +520,16 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "realtime_alpha_execution_paper",
             "realtime_alpha_formal_shadow",
             "realtime_alpha_forward_shadow",
+        }
+    )
+
+
+def test_required_input_attestation_surface_is_explicit() -> None:
+    assert REQUIRED_INPUT_ATTESTATION_MODULES == frozenset(
+        {
+            "alpha_production_workflow",
+            "paper_multivenue_sor",
+            "realtime_alpha_execution_paper",
         }
     )
 

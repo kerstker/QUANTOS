@@ -689,6 +689,40 @@ class RealtimeEngineeringPaperStore:
         )
         return primary + missed
 
+    def authority_hash(self) -> str:
+        """Content-address both valid append-only execution authority chains."""
+        if not self.chain_valid():
+            raise RealtimeEngineeringPaperStoreError(
+                "engineering execution ledger chain is invalid"
+            )
+        primary = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM realtime_engineering_paper_events"
+        ).fetchone()
+        missed = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM realtime_engineering_paper_missed"
+        ).fetchone()
+        primary_head = self._conn.execute(
+            "SELECT row_hash FROM realtime_engineering_paper_events "
+            "ORDER BY event_seq DESC LIMIT 1"
+        ).fetchone()
+        missed_head = self._conn.execute(
+            "SELECT row_hash FROM realtime_engineering_paper_missed "
+            "ORDER BY event_seq DESC LIMIT 1"
+        ).fetchone()
+        return stable_hash(
+            {
+                "schema_version": 1,
+                "primary_count": int(primary["n"]),
+                "primary_chain_head": (
+                    "" if primary_head is None else str(primary_head["row_hash"])
+                ),
+                "resolution_count": int(missed["n"]),
+                "resolution_chain_head": (
+                    "" if missed_head is None else str(missed_head["row_hash"])
+                ),
+            }
+        )
+
     def _missed_chain_valid(self) -> bool:
         previous = ""
         rows = self._conn.execute(

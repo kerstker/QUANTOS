@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-2
+Roadmap slice: WP0 increments 1-3
 
 ## Problem
 
@@ -38,13 +38,23 @@ freshness/skew limits, and fee assumptions).  Its output set binds the persisted
 file and the dry-run reproducibility hash.  A failed retry clears any prior in-memory
 attestation before touching new inputs, so a previous PASS cannot attest a later run.
 
+`realtime_alpha_execution_paper` is the third required module and the first
+multi-authority consumer.  One SQLite read transaction freezes the complete Signal
+Shadow event view while candidate admissions and decisions are materialized.  The run
+binds that authority hash, the parsed feature and contract-filter status documents, the
+execution ledger's pre-run authority hash, the fixed execution policy, and the exact
+public routing snapshot when one is consumed.  Outputs bind the post-run execution
+ledger authority and report file.  `SAFE_BLOCKED` remains attestable with the inputs
+that were actually parsed; a new attempt always clears the previous attestation.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
 - It does not claim cross-host storage, WORM retention, external witnessing, or a
   signed container provenance.
-- Scheduled workers other than `alpha_production_workflow` and
-  `paper_multivenue_sor` remain explicitly `worker_attestation_required=false` until
-  their real consumed-input contracts are instrumented in later WP0 slices.
+- Scheduled workers other than `alpha_production_workflow`,
+  `paper_multivenue_sor`, and `realtime_alpha_execution_paper` remain explicitly
+  `worker_attestation_required=false` until their real consumed-input contracts are
+  instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or
   live-trading flag changes are introduced.

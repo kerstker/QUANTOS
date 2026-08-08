@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import hashlib
 import json
 
+from quantos.contracts.hashing import stable_hash
 from services.execution.simulated_sor import BookLevel, VenueBook
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from tools.paper_multivenue_sor import PaperMultiVenueSORError
-from tools.realtime_alpha_execution_paper import load_lot_specs, run_cycle
+import tools.realtime_alpha_execution_paper as execution_paper
+from tools.realtime_alpha_execution_paper import (
+    load_lot_specs,
+    release_run_attestation,
+    run_cycle,
+)
 
 
 def _write_statuses(tmp_path, now: int) -> tuple[object, object]:
@@ -474,3 +481,150 @@ def test_zero_intent_decision_is_audited_as_no_action(tmp_path, monkeypatch) -> 
     replay = run_cycle(**common, now_ms=500)
     assert replay["cycle"]["new_no_actions"] == 0
     assert replay["tracks"]["rt-candidate"]["n_no_actions"] == 1
+
+
+def test_cycle_emits_complete_release_run_attestation(tmp_path, monkeypatch) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    output = tmp_path / "execution.json"
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": tmp_path / "execution.db",
+        "output_path": output,
+    }
+    run_cycle(**common, now_ms=300)
+    with RealtimeAlphaShadowStore(str(shadow), create=False) as source:
+        source.record_decision(
+            "rt-candidate",
+            _decision("rt-candidate", 400),
+            recorded_at_ms=400,
+        )
+    _write_statuses(tmp_path, 500)
+    monkeypatch.setattr(
+        execution_paper,
+        "load_persisted_routing_snapshot",
+        lambda **_kwargs: (
+            {"BTC": (_book(), _book())},
+            {"BTC": 60_000.0},
+            "d" * 64,
+            450,
+        ),
+    )
+    monkeypatch.setattr(
+        execution_paper,
+        "build_alpha_preview",
+        lambda alpha_id, pending, **_kwargs: _preview(
+            alpha_id, int(pending["decided_ts"])
+        ),
+    )
+
+    report = run_cycle(
+        **common,
+        now_ms=500,
+    )
+    attestation = release_run_attestation()
+
+    assert report["status"] == "RUNNING"
+    assert attestation is not None
+    assert attestation["complete"] is True
+    assert attestation["module"] == "realtime_alpha_execution_paper"
+    assert attestation["release_commit"] == "a" * 40
+    assert attestation["input_hashes"]["realtime_feature_status"] == stable_hash(
+        json.loads(feature.read_text(encoding="utf-8"))
+    )
+    assert attestation["input_hashes"][
+        "binance_contract_filter_status"
+    ] == stable_hash(json.loads(market.read_text(encoding="utf-8")))
+    assert attestation["input_hashes"]["routing_snapshot"] == "d" * 64
+    assert attestation["output_hashes"][
+        "execution_paper_report_file"
+    ] == hashlib.sha256(output.read_bytes()).hexdigest()
+    assert attestation["input_hashes"][
+        "execution_authority_before"
+    ] != attestation["output_hashes"]["execution_authority_after"]
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+
+
+def test_safe_block_replaces_prior_release_run_attestation(tmp_path, monkeypatch) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    output = tmp_path / "execution.json"
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": tmp_path / "execution.db",
+        "output_path": output,
+    }
+    run_cycle(**common, now_ms=300)
+    prior = release_run_attestation()
+    assert prior is not None and prior["complete"] is True
+    feature.write_text(
+        json.dumps(
+            {
+                "status": "BLOCK",
+                "generated_at_ms": 400,
+                "batch": {"chain_valid": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    blocked = run_cycle(**common, now_ms=400)
+    current = release_run_attestation()
+
+    assert blocked["status"] == "SAFE_BLOCKED"
+    assert current is not None
+    assert current["complete"] is True
+    assert current != prior
+    assert current["input_hashes"]["realtime_feature_status"] == stable_hash(
+        json.loads(feature.read_text(encoding="utf-8"))
+    )
+    assert current["output_hashes"][
+        "execution_paper_report_file"
+    ] == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+def test_cycle_clears_stale_attestation_before_unhandled_output_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    execution_paper._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    monkeypatch.setattr(
+        execution_paper,
+        "atomic_write_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk unavailable")),
+    )
+
+    try:
+        run_cycle(
+            shadow_store_path=shadow,
+            feature_status_path=feature,
+            market_status_path=market,
+            execution_store_path=tmp_path / "execution.db",
+            output_path=tmp_path / "execution.json",
+            now_ms=300,
+        )
+    except OSError as exc:
+        assert "disk unavailable" in str(exc)
+    else:
+        raise AssertionError("output failure must remain visible")
+
+    assert release_run_attestation() is None

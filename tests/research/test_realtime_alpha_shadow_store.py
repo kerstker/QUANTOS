@@ -46,8 +46,13 @@ def test_read_only_open_does_not_create_missing_ledger(tmp_path) -> None:
 def test_shadow_ledger_freezes_decision_before_append_only_realization(tmp_path) -> None:
     with RealtimeAlphaShadowStore(str(tmp_path / "shadow.db"), create=True) as store:
         assert store.admit("rt_alpha", {"horizon_ms": 30_000}, admitted_at_ms=100) is True
+        admission_hash = store.authority_hash()
         assert store.admit("rt_alpha", {"horizon_ms": 30_000}, admitted_at_ms=200) is False
         assert store.record_decision("rt_alpha", _decision(), recorded_at_ms=1_100) is True
+        decision_hash = store.authority_hash()
+        assert len(admission_hash) == 64
+        assert len(decision_hash) == 64
+        assert decision_hash != admission_hash
         assert len(store.pending("rt_alpha")) == 1
         assert store.record_realization(
             "rt_alpha", _realization(), recorded_at_ms=31_100
@@ -98,3 +103,31 @@ def test_shadow_ledger_rejects_identity_conflict_and_unsafe_decision(tmp_path) -
             assert "identity reused" in str(exc)
         else:
             raise AssertionError("decision rewrite must fail")
+
+
+def test_read_snapshot_freezes_multi_query_authority_view(tmp_path) -> None:
+    path = tmp_path / "shadow.db"
+    with RealtimeAlphaShadowStore(str(path), create=True) as reader:
+        reader.admit("rt_alpha", {"horizon_ms": 30_000}, admitted_at_ms=100)
+        reader.record_decision("rt_alpha", _decision(), recorded_at_ms=1_100)
+
+        with reader.read_snapshot():
+            frozen_hash = reader.authority_hash()
+            frozen_times = tuple(
+                row["identity_time_ms"] for row in reader.decisions("rt_alpha")
+            )
+            with RealtimeAlphaShadowStore(str(path), create=False) as writer:
+                writer.record_decision(
+                    "rt_alpha",
+                    _decision(decision_time=2_000),
+                    recorded_at_ms=2_100,
+                )
+            assert reader.authority_hash() == frozen_hash
+            assert tuple(
+                row["identity_time_ms"] for row in reader.decisions("rt_alpha")
+            ) == frozen_times
+
+        assert reader.authority_hash() != frozen_hash
+        assert tuple(
+            row["identity_time_ms"] for row in reader.decisions("rt_alpha")
+        ) == (1_000, 2_000)
