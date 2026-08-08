@@ -31,8 +31,8 @@
   /* ink */
   --ink:    #e8eaf0;
   --muted:  #9aa3b2;
-  /* Lowest-emphasis copy still clears WCAG AA against elevated/panel/inset. */
-  --faint:  #808a98;
+  /* Also clears AA after the cockpit's bounded opacity composition. */
+  --faint:  #9aa3b2;
 
   /* signature amber accent + exchange semantics */
   --accent:     #f0b90b;   /* institutional amber primary */
@@ -78,10 +78,12 @@
 
   --ink:    #172033;
   --muted:  #526075;
-  --faint:  #667085;
+  /* Small terminal labels remain AA-readable on white and elevated surfaces. */
+  --faint:  #596579;
 
-  --accent:     #b77900;
-  --accent-2:   #d69600;
+  /* Darker amber preserves the signature hue while clearing AA for small copy. */
+  --accent:     #865800;
+  --accent-2:   #9b6500;
   --accent-dim: #f7e7b4;
   --accent-ink: #ffffff;
   --info:       #1769c2;
@@ -91,12 +93,12 @@
   --special:    #5665d8;
   --cyan:       #087f86;
 
-  --grad: linear-gradient(135deg, #b77900 0%, #d69600 52%, #8f5e00 100%);
+  --grad: linear-gradient(135deg, #865800 0%, #9b6500 52%, #714a00 100%);
   --grad-cyan: linear-gradient(135deg, #087f86 0%, #1769c2 100%);
   --grid: rgba(30,41,59,.07);
   --shadow-panel: 0 1px 0 rgba(255,255,255,.8) inset, 0 12px 28px -22px rgba(15,23,42,.45);
   --shadow-lift: 0 1px 0 rgba(255,255,255,.9) inset, 0 18px 34px -22px rgba(15,23,42,.42);
-  --glow-accent: 0 0 0 1px rgba(183,121,0,.25), 0 6px 20px -12px rgba(183,121,0,.25);
+  --glow-accent: 0 0 0 1px rgba(134,88,0,.25), 0 6px 20px -12px rgba(134,88,0,.25);
 }
 
 * { box-sizing: border-box; }
@@ -192,7 +194,8 @@ g[role="button"]:focus-visible { outline: none; }
 *::-webkit-scrollbar-thumb { background: rgba(148,163,184,.14); border-radius: 4px; border: 1px solid transparent; background-clip: padding-box; }
 *::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.24); background-clip: padding-box; }
 
-@keyframes q-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* Do not fade whole text regions: intermediate opacity can drop small labels below AA. */
+@keyframes q-rise { from { transform: translateY(8px); } to { transform: none; } }
 @keyframes q-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 @keyframes q-sheen { from { background-position: -200% 0; } to { background-position: 200% 0; } }
 @keyframes q-tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }

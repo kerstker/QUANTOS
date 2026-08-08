@@ -276,6 +276,9 @@ const systemCompletenessSnapshot = {
 async function installFixedApi(page: Page) {
   await page.addInitScript(fixedNow => {
     Date.now = () => fixedNow;
+    // The cockpit is SSE-first. This deterministic E2E exercises the supported
+    // one-shot read-only fallback instead of leaving an unhandled stream URL.
+    Object.defineProperty(window, 'EventSource', { configurable: true, value: undefined });
   }, OBSERVED_AT + 30_000);
   await page.route('**/api/v1/console/runtime-contract', route => route.fulfill({ json: runtimeContract }));
   await page.route('**/api/v1/console/dry-run', route => route.fulfill({ json: dryRunSnapshot }));
@@ -285,8 +288,8 @@ async function installFixedApi(page: Page) {
 test.beforeEach(async ({ page }) => {
   await installFixedApi(page);
   await page.goto('/research/dry-run');
-  await expect(page.getByRole('heading', { name: '全自动影子纸面驾驶舱' })).toBeVisible();
-  await expect(page.getByText('SCHEDULED_ACTIVE')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '全自动纸面交易驾驶舱' })).toBeVisible();
+  await expect(page.getByText('自动调度中')).toBeVisible();
 });
 
 test('paper cockpit is accessible and never overflows the institutional desktop viewport', async ({ page }) => {
@@ -314,14 +317,13 @@ test('paper cockpit visual contract', async ({ page }) => {
   await expect(page).toHaveScreenshot('paper-cockpit.png');
 });
 
-test('pre-live blocker queue is accessible, concise, and never overflows', async ({ page }) => {
+test('legacy completeness route converges to the accessible governance drawer', async ({ page }) => {
   await page.goto('/research/system-completeness');
-  await expect(page.getByRole('heading', { name: '系统完整度审查' })).toBeVisible();
-  await expect(page.getByText('Pre-live blocker queue')).toBeVisible();
-  await expect(page.getByTestId('prelive-blocker')).toHaveCount(7);
-  await expect(page.getByText('5 work now')).toBeVisible();
-  await expect(page.getByText('1 external')).toBeVisible();
-  await expect(page.getByText('1 after L2')).toBeVisible();
+  await expect(page).toHaveURL(/\/workbench\/market\?drawer=governance$/);
+  await expect(page.getByRole('dialog', { name: '治理抽屉' })).toBeVisible();
+  await expect(page.getByText('GOVERNANCE_CONTRACT_VERIFIED')).toBeVisible();
+  await expect(page.getByText('EXTERNAL IDENTITY PENDING')).toBeVisible();
+  await expect(page.getByText('COMMANDS DISABLED')).toBeVisible();
 
   const geometry = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
