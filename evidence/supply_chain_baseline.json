@@ -323,6 +323,7 @@
     "evidence/vulnerability/python_audit_latest.json": "244cfe82f2d613cd50d61259da60c1566824ab2435dfdfc824ffcdf430e050b6",
     "live/execution/risk_monitor.py": "d94a52c37ddc5759898a669b84679423448ba413dd0f6956916306eb88976dd5",
     "live/governance/kill_switch_store.py": "4f1ac7fe6f6c1b1c25b4e69359aca9bb558a43abed00734c27dd043c265c265f",
+    "live/governance/testnet_mandate_proposal.py": "3b475782089cfdcc9431c69bb5c5e91df22cdee79f592c523b8de4699524e978",
     "pyproject.toml": "759cf151fc805b005257c4876220ecaf9b8e5235404df0e40612ec71d81e0f59",
     "quantos/contracts/alpha.py": "838ae7c2bea71a7bdaa15b0cbb74a729c35e2335877b0ebb481c5cb35f4f0979",
     "quantos/contracts/event_schemas.py": "b3968daa4a4fc6c5af3963ac85a08cf34b4c7622e391b2111b125b1049976a8e",
@@ -341,7 +342,7 @@
     "scripts/generate_python_audit_evidence.py": "1cdca71af564789e6fb07f48b7d46d669c6ed617b36e158722481cf6cb7d503f",
     "scripts/generate_service_import_graph.py": "013d781f4d1a4025ef5d97256dab300b64892e5054dd8761e6e0e63aef3a9863",
     "scripts/generate_strong_identity_evidence.py": "04056ad00d8f233ae8b56cf4eb8df4384b931872d00d21761e796d3baf86b087",
-    "scripts/generate_supply_chain_evidence.py": "398d3279c642aeb135dca99cbd4dbbcbfb243983f4ec10eeb20edc9c8b2a9fb0",
+    "scripts/generate_supply_chain_evidence.py": "f39c0d8656e45b9638e9993ea8b2c938e1d40376d2bdb8fcc322035bd9e46a45",
     "scripts/register_schedules.ps1": "b55493a6f03ff293ffcd2a970d3978535c101d1fe33e8e2720893c2f26fede5f",
     "scripts/validate.py": "6575766e1d3fc97b74a4f28fe17aff877b501c97d1b554fd769f3cf94438fcd5",
     "services/alpha/evaluator.py": "cdcca5b9f8925c1877c889ac43d6c477428959afbe091965a2f3190edf5a9877",
@@ -458,6 +459,7 @@
     "tests/live/test_kill_switch_reset_cli.py": "199ec67f07f1869fb59a9b5d85503d5f9a8d8e6d67cb1b698ec9b4b79e941518",
     "tests/live/test_live_risk_sentinel.py": "42c009c0b8a3dbe2ccf0368e91ceb82111d9d37e9e9887a52f51e0421b099de5",
     "tests/live/test_risk_recovery_drill.py": "28600db1c4f7e009bc85ddefb286cefc3ce382f6514cabf105ef6e23278871ea",
+    "tests/live/test_testnet_mandate_proposal.py": "c99fbc9ff3ae2bbba55479fcfc646904e1eef0711abd021cdea12b422073ef92",
     "tests/monitoring/test_event_bus_health.py": "d3a9fa51f144649b96874b863fbac0e49c2cace0349a5f9bfd228aa2fa359d5d",
     "tests/monitoring/test_event_consumer.py": "de769df698176d8db958c5de5c38687de4fad9514a03eb6ebe3c442c0c5ea8bd",
     "tests/monitoring/test_event_consumer_group.py": "ab888967e4643ba73d6a44695abbd4f62be48b9c5cb9d143963a8e0fb8b5d885",
@@ -497,6 +499,8 @@
     "tests/tools/test_realtime_alpha_execution_paper.py": "0ea25aede68502012e5994591f632902a71f491addab0962b4ba645f12a25904",
     "tests/tools/test_realtime_alpha_forward_shadow.py": "9154d2345ce5ebe77c3258833d2f5d8cee6993e7c4b8966964bf8f51fdbd6f27",
     "tests/tools/test_reproducible_source_bundle.py": "b6993076a825ed0ad7b7c3b09cca761312bf13d9af4810e7ba32e19a69b86681",
+    "tests/tools/test_testnet_execution_service.py": "ccc39a68f8ba83c618ccc64d9584ee9c77cd75b760ec07116e06dbe67834ba4a",
+    "tests/tools/test_testnet_mandate_proposal.py": "f99c8c7402cf857c3ed11f0563982c7095cea095d6bc46d5a5e54152f62105ce",
     "tools/alpha_candidate_admission.py": "a08e402e97df96320edefc3cf155847d023bebc8957067d31bc6b9d6f51d5bb7",
     "tools/alpha_maintenance_sweep.py": "5e2aa93d086fdf3da5d0d5cea7075dfe53b471342e89c970d516e32a18399395",
     "tools/alpha_production_workflow.py": "ef26b98104b2eaf39e3e2fc4d730c31124432a53306a12daae13e47eaa706243",
@@ -533,6 +537,8 @@
     "tools/realtime_alpha_forward_shadow.py": "fd7582dcc4349789889b7b9fbae0219b6c80aa7d85387cc285b1d28c8b1a0b46",
     "tools/restore_drill.py": "954b3405348d2d8e95dbd7bdde07205c38799fca667c70c4aeafe67d1e4962dd",
     "tools/risk_recovery_drill.py": "130d9ffd6ba70b14583abc66b0ab29d86a85c8879e882b846a5b8c26195ad3cf",
+    "tools/testnet_execution_service.py": "d477daf5b169bb0ebae5772805d4107e04820948be8874f40d9c6ef0e2953a77",
+    "tools/testnet_mandate_proposal.py": "ee82e701b217bc1585a07bb3ef0dabc785b76a0ded1ef18781e66ef268184539",
     "tools/verify_artifact_admission.py": "306154dc26cc432ca224c61835a99eae02d5eb16360d21601b337c8c375b7ede"
   },
   "mode": "OFFLINE_REPOSITORY_BASELINE",
@@ -561,9 +567,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786186914728,
-    "run_id": "9ec41fac02764d5f6c4d4937bca905fa0ca6b3ff4cb09aeee7b587971fe4916a",
-    "source_commit": "9633acd4048944e76dbe1bac81bb89f65a3d435f"
+    "generated_at": 1786194485423,
+    "run_id": "7a3d0d2179a28be01f5d905ba0a021333d1450c69e523ee6251f9ef85e4f71f1",
+    "source_commit": "b5dbf96533057b4784f9b4034bc2f051b6559596"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"

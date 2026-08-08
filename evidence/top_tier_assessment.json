@@ -1061,6 +1061,7 @@
         "evidence/vulnerability/python_audit_latest.json",
         "live/execution/risk_monitor.py",
         "live/governance/kill_switch_store.py",
+        "live/governance/testnet_mandate_proposal.py",
         "pyproject.toml",
         "quantos/contracts/alpha.py",
         "quantos/contracts/event_schemas.py",
@@ -1196,6 +1197,7 @@
         "tests/live/test_kill_switch_reset_cli.py",
         "tests/live/test_live_risk_sentinel.py",
         "tests/live/test_risk_recovery_drill.py",
+        "tests/live/test_testnet_mandate_proposal.py",
         "tests/monitoring/test_event_bus_health.py",
         "tests/monitoring/test_event_consumer.py",
         "tests/monitoring/test_event_consumer_group.py",
@@ -1235,6 +1237,8 @@
         "tests/tools/test_realtime_alpha_execution_paper.py",
         "tests/tools/test_realtime_alpha_forward_shadow.py",
         "tests/tools/test_reproducible_source_bundle.py",
+        "tests/tools/test_testnet_execution_service.py",
+        "tests/tools/test_testnet_mandate_proposal.py",
         "tools/alpha_candidate_admission.py",
         "tools/alpha_maintenance_sweep.py",
         "tools/alpha_production_workflow.py",
@@ -1271,6 +1275,8 @@
         "tools/realtime_alpha_forward_shadow.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
+        "tools/testnet_execution_service.py",
+        "tools/testnet_mandate_proposal.py",
         "tools/verify_artifact_admission.py"
       ],
       "id": "PLATFORM.SUPPLY_CHAIN",
@@ -1527,9 +1533,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786186938727,
-    "run_id": "9ec41fac02764d5f6c4d4937bca905fa0ca6b3ff4cb09aeee7b587971fe4916a",
-    "source_commit": "9633acd4048944e76dbe1bac81bb89f65a3d435f"
+    "generated_at": 1786194509462,
+    "run_id": "7a3d0d2179a28be01f5d905ba0a021333d1450c69e523ee6251f9ef85e4f71f1",
+    "source_commit": "b5dbf96533057b4784f9b4034bc2f051b6559596"
   },
   "verdict": "NOT_TOP_TIER"
 }
