@@ -516,7 +516,7 @@
     "tools/alpha_production_workflow.py": "ef26b98104b2eaf39e3e2fc4d730c31124432a53306a12daae13e47eaa706243",
     "tools/artifact_admission_seal.py": "6acdfa3c110629cb437923aecbe5ba2502599fd629ff478609187a90c27ef765",
     "tools/build_reproducible_source_bundle.py": "fcbb0fbb6c9b210e97ba1afcc23f2ba036c72ce3137a88bdfc520f997f5586fa",
-    "tools/crypto_factory_loop.py": "0713e14d1f28e7d989bb436af874be002812c27bd252c57da793d492e3704c6d",
+    "tools/crypto_factory_loop.py": "6111fe31cc51030672ab251da49ea9f8e5336058a0d0bce1580a7fa4704a37ad",
     "tools/crypto_robust_optimization.py": "9a72712ce1cfb133025393d9d83e866f0efc07c45abecfca86a8cb8c27074988",
     "tools/deployment_events.py": "e1e3380510c04fb8856ee45d783d2ca750a355266f119b035aa81981042f2eb1",
     "tools/domain_event_bus.py": "3e482b2d19f13b266afaf276b304398d3490391343c477ebd8f0abde6f566b7e",
@@ -577,9 +577,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786305378614,
-    "run_id": "84979a1f673f56eea29e9b3f9ee7a032a04965cc341f9cd7a80bde23ab495c9c",
-    "source_commit": "83c3c525bfbe917bb61c1d490be21056111d8ba6"
+    "generated_at": 1786315041389,
+    "run_id": "6a8d2793177fc77052c99e58b3dc9505d1b151818907c891ec30dcde71340c69",
+    "source_commit": "8ad5590908efbee512b9d6334bbf623cfe27a371"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
