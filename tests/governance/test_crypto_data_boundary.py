@@ -100,7 +100,7 @@ _EXTRA_ALLOWED_BY_FILE = {
     "binance_funding_fetch.py": {"math"},
     "binance_perp_mark_fetch.py": {"math"},
     "binance_realtime_market.py": {
-        "collections", "math", "pathlib", "quantos", "typing"
+        "collections", "hashlib", "math", "pathlib", "quantos", "typing"
     },
     "binance_systemic_risk.py": {
         "collections", "dataclasses", "math", "pathlib", "quantos",
