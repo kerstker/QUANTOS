@@ -21,6 +21,17 @@
 > and live trading remain false. Production may consume the fix only through a
 > newly validated immutable release.
 
+> **2026-08-09 Binance depth recovery restart continuity:** a production
+> acceptance probe found two durable depth cursors left in `RECOVERING` after a
+> worker restart. The flush loop retried `GAP_DETECTED` and `BLOCKED` cursors but
+> omitted this persisted in-flight state, so those cursors could remain
+> unpublished indefinitely. A restarted worker now resumes `RECOVERING` through
+> the existing idempotent recovery journal path. Snapshot failure, an incomplete
+> bridge, or any cursor inconsistency still returns the cursor to `BLOCKED`; no
+> unverified depth state becomes publishable. The change is limited to public
+> market-data continuity and does not enable credentials, broker access, order
+> submission, or live trading.
+
 > **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
 > `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online
 > backup，正式独立评估在提交搜索尝试时耗尽 5 秒 busy timeout 并 fail-closed。

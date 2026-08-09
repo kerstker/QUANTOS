@@ -887,6 +887,11 @@ async def run_stream(
                     cursor = cursor_store.latest("depth20", symbol)
                     if cursor is not None and cursor.state in {
                         StreamCursorState.GAP_DETECTED,
+                        # A process can stop after RECOVERY_STARTED but before
+                        # the REST result is journaled.  begin_recovery is
+                        # idempotent for this persisted state, so a new worker
+                        # must resume it instead of blocking forever.
+                        StreamCursorState.RECOVERING,
                         StreamCursorState.BLOCKED,
                     }:
                         recovered = await _recover_depth_cursor_async(

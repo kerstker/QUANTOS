@@ -679,6 +679,75 @@ async def test_async_recovery_keeps_cursor_writes_on_event_loop(tmp_path):
         cursor.close()
 
 
+@pytest.mark.asyncio
+async def test_run_stream_resumes_persisted_recovering_cursor(tmp_path, monkeypatch):
+    store_path = str(tmp_path / "stream.db")
+    snapshot_store = BinanceRealtimeStore(store_path, create=True)
+    snapshot_store.close()
+    cursor = StreamCursorStore(store_path, create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=9_900,
+            observed_at_ms=10_000,
+        )
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=20,
+            final_update_id=21,
+            previous_final_update_id=19,
+            event_time_ms=9_901,
+            observed_at_ms=10_000,
+        )
+        cursor.begin_recovery(
+            "depth20",
+            "BTCUSDT",
+            observed_at_ms=10_001,
+        )
+        initial_verification = cursor.verify_chain_from()
+    finally:
+        cursor.close()
+
+    async def consume(endpoint, _url, *, state, stop, deadline):
+        del deadline
+        state.connections[endpoint] = True
+        await stop.wait()
+
+    monkeypatch.setattr(realtime, "_consume", consume)
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_subprocess",
+        lambda *_args, **_kwargs: dict(initial_verification),
+    )
+
+    await realtime.run_stream(
+        tickers=("BTC",),
+        duration_seconds=0.08,
+        flush_seconds=0.01,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        batch_store_path=str(tmp_path / "batches.db"),
+        rest_depth_fetch=lambda *_args, **_kwargs: {
+            "last_update_id": 21,
+            "event_time_ms": 9_902,
+        },
+    )
+
+    reopened = StreamCursorStore(store_path)
+    try:
+        recovered = reopened.latest("depth20", "BTCUSDT")
+        assert recovered is not None
+        assert recovered.state is realtime.StreamCursorState.RECOVERED
+        assert recovered.publishable is True
+    finally:
+        reopened.close()
+
+
 @pytest.mark.parametrize(
     ("failure", "reason"),
     [
