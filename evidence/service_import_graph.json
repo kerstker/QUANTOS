@@ -826,17 +826,17 @@
     {
       "references": [
         {
-          "line": 52,
+          "line": 53,
           "module": "services.alpha.catalog",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 53,
+          "line": 54,
           "module": "services.alpha.guards",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 54,
+          "line": 55,
           "module": "services.alpha.promotion",
           "path": "services/promotion_api/main.py"
         }
@@ -847,27 +847,27 @@
     {
       "references": [
         {
-          "line": 60,
+          "line": 61,
           "module": "services.governance.approval",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 67,
+          "line": 68,
           "module": "services.governance.approval_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 68,
+          "line": 69,
           "module": "services.governance.identity_authorization",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 72,
+          "line": 73,
           "module": "services.governance.identity_authorization_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 78,
+          "line": 79,
           "module": "services.governance.strong_identity",
           "path": "services/promotion_api/main.py"
         }
@@ -878,12 +878,12 @@
     {
       "references": [
         {
-          "line": 85,
+          "line": 86,
           "module": "services.monitoring.audit_store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 86,
+          "line": 87,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/promotion_api/main.py"
         }
@@ -894,17 +894,17 @@
     {
       "references": [
         {
-          "line": 93,
+          "line": 94,
           "module": "services.orchestration.command_bus",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 98,
+          "line": 99,
           "module": "services.orchestration.command_envelope",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 99,
+          "line": 100,
           "module": "services.orchestration.idempotency",
           "path": "services/promotion_api/main.py"
         }
@@ -915,17 +915,17 @@
     {
       "references": [
         {
-          "line": 105,
+          "line": 107,
           "module": "services.research.experiment_registry.registry",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 106,
+          "line": 108,
           "module": "services.research.experiment_registry.store",
           "path": "services/promotion_api/main.py"
         },
         {
-          "line": 107,
+          "line": 109,
           "module": "services.research.paper_trading.store",
           "path": "services/promotion_api/main.py"
         }
@@ -1325,7 +1325,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "b7a4234814f7f3a91ebc86a6d088866ef2831f203ffae0dde8147193df2f15c6",
+  "graph_sha256": "abded9eba4be6ce382dd25ee7bfaa6a40fbafcc214ebbf2a9b443f9568e7959b",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1363,7 +1363,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 461,
+  "source_file_count": 463,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
