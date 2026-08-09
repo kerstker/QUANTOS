@@ -78,6 +78,28 @@ def test_collector_binds_current_release_cycle_and_runs_isolated_drills(
     assert report["verdict"]["paper_operation_continues"] is True
     assert report["safety"]["fault_injection_isolated"] is True
     assert report["safety"]["broker_order_submission"] is False
+    attestation = paper_operational_evidence.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "paper_operational_evidence"
+    assert attestation["release_commit"] == "b" * 40
+    assert set(attestation["input_hashes"]) == {
+        "candidate_universe",
+        "fault_matrix_results",
+        "operational_evidence_contract",
+        "operational_store_authority_before",
+        "upstream_cycle_view",
+    }
+    assert set(attestation["output_hashes"]) == {
+        "operational_evidence_report_file",
+        "operational_store_authority_after",
+    }
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
 
     replay = paper_operational_evidence.collect(
         store_path=str(tmp_path / "operational.db"),
@@ -97,3 +119,67 @@ def test_fault_matrix_exercises_every_preregistered_drill():
         paper_operational_evidence.PRODUCTION_PAPER_POLICY_V1.required_drills
     )
     assert all(results.values())
+
+
+def test_main_failure_clears_prior_release_attestation(monkeypatch) -> None:
+    paper_operational_evidence._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+
+    def fail(**_kwargs):
+        raise RuntimeError("broken operational evidence")
+
+    monkeypatch.setattr(paper_operational_evidence, "collect", fail)
+
+    assert paper_operational_evidence.main([]) == 1
+    assert paper_operational_evidence.release_run_attestation() is None
+
+
+def test_collector_marks_attestation_incomplete_when_upstream_changes(
+    monkeypatch, tmp_path
+) -> None:
+    receipt_root = tmp_path / "receipts"
+    receipt_root.mkdir()
+    receipt = {
+        "module": "paper_shadow_realtime",
+        "receipt_sha256": "c" * 64,
+        "release_commit": "a" * 40,
+        "release_verified": True,
+        "status": "FAILED",
+        "exit_code": 2,
+        "started_at": _iso(1_000_000),
+        "finished_at": _iso(1_010_000),
+    }
+    (receipt_root / "100-paper_shadow_realtime.json").write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+    shadow_path = tmp_path / "shadow.json"
+    shadow_path.write_text(json.dumps({"status": "SAFE_BLOCKED"}), encoding="utf-8")
+    monkeypatch.setattr(
+        paper_operational_evidence, "paper_candidate_ids", lambda: ("alpha",)
+    )
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "b" * 40)
+    original = paper_operational_evidence._upstream_cycle_view
+    calls = 0
+
+    def changing_view(**kwargs):
+        nonlocal calls
+        calls += 1
+        view, latest, shadow = original(**kwargs)
+        if calls == 2:
+            view = {**view, "status": "CHANGED_AFTER_CONSUMPTION"}
+        return view, latest, shadow
+
+    monkeypatch.setattr(
+        paper_operational_evidence, "_upstream_cycle_view", changing_view
+    )
+
+    paper_operational_evidence.collect(
+        store_path=str(tmp_path / "operational.db"),
+        output_path=str(tmp_path / "operational.json"),
+        shadow_status_path=str(shadow_path),
+        receipt_root=str(receipt_root),
+        now_ms=1_011_000,
+    )
+
+    attestation = paper_operational_evidence.release_run_attestation()
+    assert attestation is not None
+    assert attestation["complete"] is False

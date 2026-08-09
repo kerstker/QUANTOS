@@ -19,6 +19,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SAFE_BLOCKED,
@@ -47,6 +48,123 @@ DEFAULT_OUTPUT = "data/cache/paper_operational_evidence.json"
 DEFAULT_SHADOW_STATUS = "data/cache/paper_shadow_realtime_status.json"
 DEFAULT_RECEIPT_ROOT = ".runtime/l2-release-runs"
 _RELEASE_PATTERN_LENGTH = 40
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _operational_store_authority_view(
+    store: PaperOperationalEvidenceStore,
+) -> dict[str, Any]:
+    events = store.events()
+    return {
+        "chain_valid": store.chain_valid(),
+        "row_count": len(events),
+        "event_counts": {
+            event_type: sum(
+                1 for event in events if event.get("event_type") == event_type
+            )
+            for event_type in ("CYCLE", "DRILL")
+        },
+        "head_hash": events[-1]["row_hash"] if events else "0" * 64,
+        "events_hash": stable_hash(events),
+    }
+
+
+def _build_release_run_attestation(
+    report: Mapping[str, Any],
+    *,
+    candidate_ids: Sequence[str],
+    fault_results: Mapping[str, bool],
+    contract: Mapping[str, Any],
+    upstream_view: Mapping[str, Any],
+    upstream_stable: bool,
+    store_before: Mapping[str, Any],
+    store_after: Mapping[str, Any],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    input_hashes = {
+        "candidate_universe": stable_hash(list(candidate_ids)),
+        "fault_matrix_results": stable_hash(dict(sorted(fault_results.items()))),
+        "operational_evidence_contract": stable_hash(dict(contract)),
+        "operational_store_authority_before": stable_hash(dict(store_before)),
+        "upstream_cycle_view": stable_hash(dict(upstream_view)),
+    }
+    report_hash = _sha256_file(output_path)
+    output_hashes = {
+        "operational_evidence_report_file": report_hash,
+        "operational_store_authority_after": stable_hash(dict(store_after)),
+    }
+    raw_safety = report.get("safety")
+    raw_safety = raw_safety if isinstance(raw_safety, Mapping) else {}
+    verdict = report.get("verdict")
+    verdict = verdict if isinstance(verdict, Mapping) else {}
+    safety = {
+        "paper_only": raw_safety.get("paper_only"),
+        "live_allowed": verdict.get("live_allowed"),
+        "order_submission_allowed": verdict.get("order_submission_allowed"),
+        "credentials_accessed": raw_safety.get("credentials_accessed"),
+        "broker_connectivity": raw_safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    required_drills = set(PRODUCTION_PAPER_POLICY_V1.required_drills)
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == _RELEASE_PATTERN_LENGTH
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and report.get("flow") == "PRODUCTION_PAPER_OPERATIONAL_EVIDENCE"
+        and report.get("chain_valid") is True
+        and store_before.get("chain_valid") is True
+        and store_after.get("chain_valid") is True
+        and upstream_stable
+        and set(fault_results) == required_drills
+        and all(fault_results.values())
+        and verdict.get("paper_operation_continues") is True
+        and verdict.get("formal_paper_admission_changed") is False
+        and verdict.get("promotion_eligible") is False
+        and candidate_ids
+        and all(_is_sha256(value) for value in input_hashes.values())
+        and all(_is_sha256(value) for value in output_hashes.values())
+        and safety == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "paper_operational_evidence",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": dict(sorted(input_hashes.items())),
+        "output_hashes": dict(sorted(output_hashes.items())),
+        "safety": safety,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy of the latest operational-evidence proof."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _shadow_candidate_ids() -> tuple[str, ...]:
@@ -92,6 +210,45 @@ def _latest_receipt(receipt_root: str | Path) -> tuple[Path, dict[str, Any]] | N
         return None
     _finished, path, receipt = max(candidates, key=lambda item: item[0])
     return path, receipt
+
+
+def _upstream_cycle_view(
+    *,
+    receipt_root: str | Path,
+    shadow_status_path: str | Path,
+) -> tuple[
+    dict[str, Any],
+    tuple[Path, dict[str, Any]] | None,
+    dict[str, Any] | None,
+]:
+    latest = _latest_receipt(receipt_root)
+    if latest is None:
+        return (
+            {
+                "status": "MISSING_FINISHED_SHADOW_RECEIPT",
+                "receipt_root": os.path.normpath(str(Path(receipt_root).resolve())),
+                "shadow_status": "NOT_CONSUMED",
+            },
+            None,
+            None,
+        )
+    receipt_path, receipt = latest
+    shadow = _load_object(shadow_status_path)
+    return (
+        {
+            "status": "CONSUMED",
+            "receipt_path": os.path.normpath(str(receipt_path.resolve())),
+            "receipt_file_sha256": _sha256_file(receipt_path),
+            "receipt_document": receipt,
+            "shadow_status_path": os.path.normpath(
+                str(Path(shadow_status_path).resolve())
+            ),
+            "shadow_status_file_sha256": _sha256_file(shadow_status_path),
+            "shadow_status_document": shadow,
+        },
+        latest,
+        shadow,
+    )
 
 
 def _cycle_payload(
@@ -321,19 +478,26 @@ def collect(
     receipt_root: str = DEFAULT_RECEIPT_ROOT,
     now_ms: int | None = None,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     observed_now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    expected_candidates = _shadow_candidate_ids()
+    upstream_view, latest, shadow = _upstream_cycle_view(
+        receipt_root=receipt_root,
+        shadow_status_path=shadow_status_path,
+    )
     store = PaperOperationalEvidenceStore(store_path, create=True)
     new_events = 0
     try:
+        store_before = _operational_store_authority_view(store)
         collector_release = os.environ.get("QUANTOS_RELEASE_COMMIT", "UNPINNED")
-        latest = _latest_receipt(receipt_root)
         if latest is not None:
             receipt_path, receipt = latest
             event_id, occurred_at_ms, payload = _cycle_payload(
                 receipt_path=receipt_path,
                 receipt=receipt,
-                shadow=_load_object(shadow_status_path),
-                expected_candidates=_shadow_candidate_ids(),
+                shadow=shadow,
+                expected_candidates=expected_candidates,
                 collector_release_commit=collector_release,
             )
             new_events += int(
@@ -348,7 +512,8 @@ def collect(
             event["event_id"]: event["occurred_at_ms"]
             for event in store.events("DRILL")
         }
-        for name, passed in run_isolated_fault_matrix().items():
+        fault_results = run_isolated_fault_matrix()
+        for name, passed in fault_results.items():
             event_id = hashlib.sha256(
                 f"{PRODUCTION_PAPER_POLICY_V1.policy_version}:{collector_release}:{name}".encode(
                     "utf-8"
@@ -374,6 +539,7 @@ def collect(
             now_ms=observed_now,
             chain_valid=chain_valid,
         )
+        store_after = _operational_store_authority_view(store)
     finally:
         store.close()
     report = {
@@ -412,10 +578,40 @@ def collect(
         },
     }
     atomic_write_json(output_path, report, indent=2)
+    upstream_after, _latest_after, _shadow_after = _upstream_cycle_view(
+        receipt_root=receipt_root,
+        shadow_status_path=shadow_status_path,
+    )
+    contract = {
+        "schema_version": 1,
+        "observed_now_ms": observed_now,
+        "policy": report["policy"],
+        "required_drills": list(PRODUCTION_PAPER_POLICY_V1.required_drills),
+        "sources": {
+            "receipt_root": os.path.normpath(str(Path(receipt_root).resolve())),
+            "shadow_status": os.path.normpath(
+                str(Path(shadow_status_path).resolve())
+            ),
+            "store": os.path.normpath(str(Path(store_path).resolve())),
+        },
+    }
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        report,
+        candidate_ids=expected_candidates,
+        fault_results=fault_results,
+        contract=contract,
+        upstream_view=upstream_view,
+        upstream_stable=upstream_view == upstream_after,
+        store_before=store_before,
+        store_after=store_after,
+        output_path=output_path,
+    )
     return report
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", default=DEFAULT_STORE)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
@@ -463,5 +659,6 @@ __all__ = [
     "DEFAULT_STORE",
     "collect",
     "main",
+    "release_run_attestation",
     "run_isolated_fault_matrix",
 ]

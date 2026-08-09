@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Paper Operational Evidence 发布运行证明第十一增量：**
+> `paper_operational_evidence` 已接入强制 release-run attestation。证明绑定唯一 Shadow 候选全集、
+> 预注册 5 分钟/30 分钟 smoke/24 小时 Production 窗口合同、实际消费且运行前后稳定的最新
+> `paper_shadow_realtime` release receipt + Shadow 制品、6 项隔离故障演练的逐项结果，以及运行前后
+> 追加式运维证据链权威；输出绑定原子报告文件。上游回执/制品在收集中变化、任一演练失败、链损坏或
+> 安全声明漂移都会使证明不完整。真实 `H:\QUANTOS_STATE` 隔离开发冒烟写入 1 个周期 + 6 项演练，
+> 链有效、窗口诚实为 `MATURING`、5 input + 2 output hashes，安全五项通过；146 项关联回归通过，
+> 仍须全量门禁和新不可变发布正式复验。上一风险包增量已在不可变发布 `c6b3c8c` 正式运行：receipt
+> `1786255743055-52584-paper_research_risk_bundle.json` 为
+> `COMPLETED/exit=0/worker_attested=true`，37 个候选、4 input + 2 output hashes，13 类源权威
+> 前后哈希相同；业务 37 个仍全部 `PENDING`，执行授权/订单/live/凭证/broker 均为 false。
+
 > **2026-08-09 WP0 Paper Research-Risk Bundle 发布运行证明第十增量：**
 > `paper_research_risk_bundle` 已接入强制 release-run attestation。证明绑定唯一候选全集、固定九引擎/
 > Paper AUM/FX 新鲜度/前向成熟度合同、运行前后逐字节一致的 13 类源权威（前向账本、静态与独立评估、
@@ -7,7 +19,7 @@
 > 以及最终逐候选风险输入视图和原子发布文件；任一源在计算中变化都会使证明不完整并被 launcher 拒绝。
 > `PENDING` 是可证明的业务阻断而非生产作业失败，缺失输入仍逐项保留，绝不由默认金额或合成风险数据
 > 填充。真实 `H:\QUANTOS_STATE` 开发冒烟完成 37 个候选、`PENDING`、4 input + 2 output hashes，安全
-> 五项全通过；253 项关联回归通过，仍须全量门禁和新不可变发布的正式周期复验。上一增量 Paper Preview
+> 五项全通过；253 项关联回归及 27/27 全量门禁通过，并已由上方 `c6b3c8c` 完成正式周期复验。上一增量 Paper Preview
 > 已在不可变发布 `b81335d` 正式运行：receipt
 > `1786253517162-58444-paper_order_preview.json` 为预期 `FAILED/NONZERO_EXIT/exit=2`（业务
 > SAFE_BLOCKED 的统一外层记录）、`worker_attested=true`，9 input + 2 output hashes；37 个候选均被

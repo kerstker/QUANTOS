@@ -162,10 +162,11 @@ Gate 只允许 `PASS / FAIL / ABSTAIN / PENDING`。AI 不能覆盖结果；材�
 退出条件：工作树可解释；调度运行的 commit/container/data/evidence 全部绑定；
 `assess_top_tier.py --check` 无漂移；旧诊断 Paper 明确标记，不能获得部署资格。
 
-状态（2026-08-09）：**输入/证据绑定前十个增量已实现，WP0 尚未闭合。** L2 release-run
+状态（2026-08-09）：**输入/证据绑定前十一个增量已实现，WP0 尚未闭合。** L2 release-run
 receipt 已支持经 launcher 严格校验的 worker attestation；唯一候选权威
 `alpha_production_workflow`、公共双场所路由 `paper_multivenue_sor`、正式 Paper 准入/模拟执行
-`paper_order_preview`、其九引擎输入生产者 `paper_research_risk_bundle` 和承重接缝
+`paper_order_preview`、其九引擎输入生产者 `paper_research_risk_bundle`、连续窗口收集器
+`paper_operational_evidence` 和承重接缝
 `realtime_alpha_execution_paper`，以及上游公共行情权威
 `binance_realtime_market` 与
 data→feature 接缝 `binance_realtime_features`
@@ -180,7 +181,8 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   以及 discovery 实际消费的 PIT 帧/容量/反馈/全局实验上下文和输出候选权威；两条 Shadow
   路径分别绑定自己的运行前后账本权威、实际消费 PIT 帧与独立报告，formal 证明不能借用
   engineering authority；risk bundle 另绑定候选全集、固定九引擎/AUM/FX/成熟度合同、运行前后
-  一致的前向/评估/FX/维护/PIT/实验注册表权威（含 SQLite WAL）和最终逐候选输入视图；
+  一致的前向/评估/FX/维护/PIT/实验注册表权威（含 SQLite WAL）和最终逐候选输入视图；运维收集器
+  绑定实际 Shadow release receipt/制品、预注册窗口合同、6 项隔离演练和运行前后证据链权威；
   缺失、不完整或安全声明漂移均 fail-closed。其余 worker 仍逐项待接入；
   container/SBOM 的同轮绑定、外部签名/WORM/独立见证和全量派生证据无漂移仍是 WP0 剩余项。
   discovery 首次强制证明实跑因尾部帧 SQL 的无界二次自连接触发 30 分钟上限并被拒绝；已改为
@@ -190,7 +192,8 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   `55aa07d` 也已正式通过，24 个候选、208 个事件、链有效且不反馈 selector；公共行情新发布
   `49de569` 已连续两轮 14/14 PASS、0 失败、完整证明；正式 Paper Preview 已由 `b81335d`
   以预期 SAFE_BLOCKED/exit=2、完整 9 input + 2 output hashes 复验，0 意图/0 订单且账本未变；
-  risk-bundle 增量仍待新不可变发布的 runtime 复验。
+  risk-bundle 已由 `c6b3c8c` 正式 `COMPLETED/worker_attested=true`，37 个候选保持诚实 PENDING、
+  4 input + 2 output hashes 且源权威前后相同；operational-evidence 增量仍待新不可变发布复验。
 
 ### WP1：唯一候选工作流
 
