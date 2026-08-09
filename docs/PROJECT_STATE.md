@@ -42,9 +42,19 @@
 > `row_count()` reads one singleton row rather than rescanning the archive.
 > Missing or invalid metadata blocks both reads and inserts, including after a
 > restart; it is never silently rebuilt once initialized. PIT values, append-only
-> retention, drift policy, and all L2 trading boundaries remain unchanged. A new
-> immutable release must perform the one-time production migration and timing
-> acceptance before the optimization is considered deployed.
+> retention, drift policy, and all L2 trading boundaries remain unchanged.
+> Immutable release `3eb0b7f` completed the one-time 13.6M-row migration in
+> 652s; the next cycle completed in 510s. A direct real-state probe confirmed
+> 13,624,530 rows open in 1.5ms and count in 9ms, so the counter itself is
+> deployed but did not close the whole-worker latency. Read-only stage timing
+> measured watermarks at 46.3s, trailing 98-series PIT reads at 0.33s,
+> calibration at 0.23s, and source verification/projection below 1.3s; the
+> remaining dominant path is the interleaved append into two 5.5GB indexes.
+> Batches are therefore now stably ordered by the shared primary-key prefix
+> before `executemany`, preserving equal-key first-value-wins semantics while
+> converting random page churn into locality-preserving writes. That second
+> optimization still requires a new immutable release and production timing
+> acceptance before the full latency issue is considered closed.
 
 > **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
 > `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online

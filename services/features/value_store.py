@@ -254,6 +254,23 @@ class SqliteFeatureValueStore:
         batch = tuple(values)
         if any(not isinstance(value, FeatureValue) for value in batch):
             raise TypeError("values must contain FeatureValue instances")
+        # The feature store carries two multi-gigabyte indexes with the common
+        # (feature, version, instrument) prefix.  Snapshot-major callers
+        # otherwise bounce between distant B-tree pages for every value.  A
+        # stable primary-key sort makes each transaction locality-preserving;
+        # equal-key duplicates retain caller order and therefore preserve the
+        # existing INSERT OR IGNORE first-value-wins contract.
+        batch = tuple(
+            sorted(
+                batch,
+                key=lambda value: (
+                    value.feature_id,
+                    value.instrument_id,
+                    value.event_time,
+                    value.knowledge_time,
+                ),
+            )
+        )
         with self._lock:
             self._require_schema()
             try:

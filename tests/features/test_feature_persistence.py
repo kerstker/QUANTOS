@@ -202,6 +202,72 @@ def test_value_store_batch_write_is_atomic_and_reproducible(tmp_path):
     assert [v.value for v in store.as_of("mom_10", "v1", "BTC", 999)] == [0.5, 0.7]
 
 
+def test_value_store_batch_inserts_follow_primary_key_locality(tmp_path):
+    path = os.path.join(str(tmp_path), "ordered.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store._conn.executescript(
+        """
+        CREATE TABLE observed_insert_order (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature_id TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            event_time INTEGER NOT NULL,
+            knowledge_time INTEGER NOT NULL
+        );
+        CREATE TRIGGER observe_feature_insert_order
+        AFTER INSERT ON feature_values
+        BEGIN
+            INSERT INTO observed_insert_order(
+                feature_id,
+                instrument_id,
+                event_time,
+                knowledge_time
+            ) VALUES (
+                NEW.feature_id,
+                NEW.instrument_id,
+                NEW.event_time,
+                NEW.knowledge_time
+            );
+        END;
+        """
+    )
+    values = [
+        _fv(300, 300, 3.0, fid="z_feature", inst="ETH"),
+        _fv(200, 200, 2.0, fid="a_feature", inst="BTC"),
+        _fv(100, 100, 1.0, fid="a_feature", inst="BTC"),
+        _fv(150, 150, 1.5, fid="a_feature", inst="ADA"),
+    ]
+
+    assert store.add_many(values, version="v1") == 4
+    observed = store._conn.execute(
+        "SELECT feature_id, instrument_id, event_time, knowledge_time"
+        " FROM observed_insert_order ORDER BY seq"
+    ).fetchall()
+    assert [tuple(row) for row in observed] == [
+        ("a_feature", "ADA", 150, 150),
+        ("a_feature", "BTC", 100, 100),
+        ("a_feature", "BTC", 200, 200),
+        ("z_feature", "ETH", 300, 300),
+    ]
+
+
+def test_value_store_locality_sort_preserves_equal_key_first_value(tmp_path):
+    store = SqliteFeatureValueStore(
+        os.path.join(str(tmp_path), "stable-order.db"),
+        create=True,
+    )
+    first = _fv(100, 100, 1.0)
+    same_identity_later = _fv(100, 100, 9.0)
+
+    assert store.add_many(
+        [same_identity_later, _fv(200, 200, 2.0), first],
+        version="v1",
+    ) == 2
+    retained = store.latest_as_of("mom_10", "v1", "BTC", 100)
+    assert retained is not None
+    assert retained.value == 9.0
+
+
 def test_value_store_row_count_counter_tracks_only_inserted_rows(tmp_path):
     path = os.path.join(str(tmp_path), "count.db")
     store = SqliteFeatureValueStore(path, create=True)
