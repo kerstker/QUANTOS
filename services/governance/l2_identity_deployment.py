@@ -12,7 +12,6 @@ import json
 from pathlib import PurePosixPath
 import re
 from typing import Any, Literal
-from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -35,6 +34,7 @@ _CONTAINER_IMAGE = re.compile(
     r"(?:/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$"
 )
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_URL_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$")
 _ALLOWED_ALGORITHMS = frozenset({"EdDSA", "RS256"})
 _ALL_GOVERNANCE_ROLES = tuple(GovernanceRole)
 
@@ -64,22 +64,8 @@ def _canonical_https_url(
         raise ValueError(f"{label} must be a canonical HTTPS URL")
     if any(char.isspace() for char in value) or "*" in value or "\\" in value:
         raise ValueError(f"{label} must be a canonical HTTPS URL")
-    try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError as exc:
-        raise ValueError(f"{label} must be a canonical HTTPS URL") from exc
-    hostname = parsed.hostname
-    if (
-        parsed.scheme != "https"
-        or not hostname
-        or hostname != hostname.lower()
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-        or port == 0
-    ):
+    authority, hostname, path = _https_url_parts(value, label=label)
+    if hostname != hostname.lower():
         raise ValueError(f"{label} must be a canonical HTTPS URL")
     try:
         ipaddress.ip_address(hostname)
@@ -90,13 +76,33 @@ def _canonical_https_url(
     labels = hostname.split(".")
     if len(labels) < 2 or any(_DNS_LABEL.fullmatch(item) is None for item in labels):
         raise ValueError(f"{label} must use a canonical DNS name")
-    if parsed.netloc != parsed.netloc.lower():
+    if authority != authority.lower():
         raise ValueError(f"{label} authority must be lowercase")
-    if origin_only and parsed.path not in {"", "/"}:
+    if origin_only and path not in {"", "/"}:
         raise ValueError(f"{label} must be an HTTPS origin")
-    if "//" in parsed.path:
+    if "//" in path or (path and _URL_PATH.fullmatch(path) is None):
         raise ValueError(f"{label} path is not canonical")
     return value
+
+
+def _https_url_parts(value: str, *, label: str) -> tuple[str, str, str]:
+    prefix = "https://"
+    if not value.startswith(prefix):
+        raise ValueError(f"{label} must be a canonical HTTPS URL")
+    remainder = value[len(prefix) :]
+    if not remainder or any(character in remainder for character in ("@", "?", "#")):
+        raise ValueError(f"{label} must be a canonical HTTPS URL")
+    authority, separator, suffix = remainder.partition("/")
+    if not authority or authority.count(":") > 1:
+        raise ValueError(f"{label} must be a canonical HTTPS URL")
+    if ":" in authority:
+        hostname, port_text = authority.rsplit(":", 1)
+        if not port_text.isdigit() or not 1 <= int(port_text) <= 65_535:
+            raise ValueError(f"{label} must use a valid HTTPS port")
+    else:
+        hostname = authority
+    path = f"/{suffix}" if separator else ""
+    return authority, hostname, path
 
 
 def _validate_image_reference(value: str) -> str:
@@ -149,12 +155,15 @@ class OidcBrowserClientDeployment(_FrozenContract):
     @model_validator(mode="after")
     def _redirect_origins(self) -> "OidcBrowserClientDeployment":
         allowed_origins = {
-            f"{urlsplit(origin).scheme}://{urlsplit(origin).netloc}"
+            f"https://{_https_url_parts(origin, label='web origin')[0]}"
             for origin in self.web_origins
         }
         for redirect in self.redirect_uris:
-            parsed = urlsplit(redirect)
-            if f"{parsed.scheme}://{parsed.netloc}" not in allowed_origins:
+            authority, _hostname, _path = _https_url_parts(
+                redirect,
+                label="redirect URI",
+            )
+            if f"https://{authority}" not in allowed_origins:
                 raise ValueError("every redirect URI must use an exact configured web origin")
         return self
 
@@ -184,7 +193,10 @@ class L2OidcDeployment(_FrozenContract):
     @classmethod
     def _issuer(cls, value: str) -> str:
         validated = _canonical_https_url(value, label="OIDC issuer")
-        path = urlsplit(validated).path
+        _authority, _hostname, path = _https_url_parts(
+            validated,
+            label="OIDC issuer",
+        )
         if not path.startswith("/realms/") or path.endswith("/"):
             raise ValueError("Keycloak issuer must identify one exact realm")
         return validated
