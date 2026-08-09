@@ -4900,8 +4900,10 @@ def _strong_identity_baseline_evidence(
         "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
+        "services/governance/l2_identity_deployment.py",
         "config/identity_authorization_registry.json",
         "services/promotion_api/main.py",
+        "services/promotion_api/trusted_mtls_proxy.py",
         "apps/research-console/src/lib/api/promotion-api.ts",
         "apps/research-console/src/lib/api/governance-pkce.ts",
         "apps/research-console/src/workbench/CommandReviewPanel.tsx",
@@ -4938,9 +4940,11 @@ def _strong_identity_baseline_evidence(
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_l2_identity_deployment.py",
         "tests/governance/test_promotion_api_boundary.py",
         "tests/governance/test_promotion_api_endpoints.py",
         "apps/research-console/src/lib/api/governance-pkce.test.ts",
+        "tests/governance/test_trusted_mtls_proxy.py",
     }
     verification_paths = document.get("verification_paths")
     if not isinstance(verification_paths, list) or set(verification_paths) != required_verification:
