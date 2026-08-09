@@ -14,11 +14,8 @@ import asyncio
 import json
 import math
 import os
-import subprocess
-import sys
 import time
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -39,6 +36,7 @@ from services.data.binance_stream_cursor import (
 from services.features.realtime_feature_batch_store import (
     trusted_source_chain_checkpoint,
 )
+from tools import binance_cursor_chain_audit_process
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_rest_gap_fill import RestGapFillError, fetch_depth_snapshot
 from tools.cache_io import atomic_write_json
@@ -55,9 +53,6 @@ FLUSH_SECONDS = 5.0
 MAX_STREAM_LAG_MS = 10_000
 CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
-CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 30 * 60.0
-
-
 class BinanceStreamDataError(RuntimeError):
     """A stream frame violates the documented public market-data contract."""
 
@@ -826,44 +821,14 @@ def _verify_cursor_chain_subprocess(
     checkpoint_row_hash: str = "",
 ) -> dict[str, Any]:
     """Run a potentially full cursor audit outside the WebSocket process GIL."""
-    command = [
-        sys.executable,
-        "-m",
-        "tools.binance_realtime_stream",
-        "--verify-cursor-chain",
-        "--store",
-        str(Path(store_path).resolve()),
-        "--cursor-checkpoint-seq",
-        str(checkpoint_seq),
-        "--cursor-checkpoint-row-hash",
-        checkpoint_row_hash,
-    ]
-    result = subprocess.run(
-        command,
-        cwd=str(Path(__file__).resolve().parents[1]),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS,
-    )
     try:
-        verification = json.loads(result.stdout)
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise BinanceStreamDataError(
-            "cursor chain verifier returned malformed output"
-        ) from exc
-    if not isinstance(verification, dict) or not isinstance(
-        verification.get("valid"), bool
-    ):
-        raise BinanceStreamDataError(
-            "cursor chain verifier returned an inconsistent result"
+        return binance_cursor_chain_audit_process.run_cursor_chain_audit(
+            store_path,
+            checkpoint_seq=checkpoint_seq,
+            checkpoint_row_hash=checkpoint_row_hash,
         )
-    success = verification["valid"] is True
-    if (result.returncode == 0) != success:
-        raise BinanceStreamDataError(
-            "cursor chain verifier returned an inconsistent result"
-        )
-    return verification
+    except binance_cursor_chain_audit_process.CursorChainAuditProcessError as exc:
+        raise BinanceStreamDataError(str(exc)) from exc
 
 
 async def run_stream(

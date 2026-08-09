@@ -128,7 +128,7 @@ def test_cursor_chain_full_audit_runs_in_isolated_subprocess(tmp_path):
 
 def test_cursor_chain_subprocess_rejects_malformed_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        realtime.subprocess,
+        realtime.binance_cursor_chain_audit_process.subprocess,
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(
             stdout="not-json",
@@ -154,7 +154,7 @@ def test_cursor_chain_subprocess_rejects_inconsistent_exit_status(
     stdout,
 ):
     monkeypatch.setattr(
-        realtime.subprocess,
+        realtime.binance_cursor_chain_audit_process.subprocess,
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(
             stdout=stdout,
@@ -164,6 +164,37 @@ def test_cursor_chain_subprocess_rejects_inconsistent_exit_status(
 
     with pytest.raises(BinanceStreamDataError, match="inconsistent result"):
         _verify_cursor_chain_subprocess(str(tmp_path / "stream.db"))
+
+
+def test_cursor_chain_subprocess_uses_fixed_module_without_shell(tmp_path, monkeypatch):
+    observed = {}
+
+    def run(command, **kwargs):
+        observed["command"] = command
+        observed["kwargs"] = kwargs
+        return SimpleNamespace(
+            stdout=(
+                '{"valid":true,"verified_seq":0,'
+                '"verified_row_hash":""}'
+            ),
+            returncode=0,
+        )
+
+    monkeypatch.setattr(
+        realtime.binance_cursor_chain_audit_process.subprocess,
+        "run",
+        run,
+    )
+
+    verification = _verify_cursor_chain_subprocess(str(tmp_path / "stream.db"))
+
+    assert verification["valid"] is True
+    assert observed["command"][1:4] == [
+        "-m",
+        "tools.binance_realtime_stream",
+        "--verify-cursor-chain",
+    ]
+    assert observed["kwargs"]["shell"] is False
 
 
 @pytest.mark.asyncio
