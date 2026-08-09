@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "backend": {
+    "scope": ["quantos", "services", "live", "tools"],
+    "minimum_line_percent": 78.0,
+    "minimum_branch_percent": 67.0
+  },
+  "frontend": {
+    "scope": "src/**/*.{ts,tsx}",
+    "lines": 73.0,
+    "statements": 68.0,
+    "functions": 68.0,
+    "branches": 63.0
+  }
+}

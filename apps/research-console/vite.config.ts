@@ -2,6 +2,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import coveragePolicy from '../../config/ci_coverage_policy.json';
 
 export default defineConfig(({ mode }) => {
   const fileEnv = loadEnv(mode, __dirname, 'VITE_');
@@ -34,6 +35,21 @@ export default defineConfig(({ mode }) => {
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     css: false,
+    coverage: {
+      provider: 'v8',
+      include: [coveragePolicy.frontend.scope],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/test/**',
+        'src/**/*.d.ts',
+      ],
+      thresholds: {
+        lines: coveragePolicy.frontend.lines,
+        statements: coveragePolicy.frontend.statements,
+        functions: coveragePolicy.frontend.functions,
+        branches: coveragePolicy.frontend.branches,
+      },
+    },
   },
   };
 });
