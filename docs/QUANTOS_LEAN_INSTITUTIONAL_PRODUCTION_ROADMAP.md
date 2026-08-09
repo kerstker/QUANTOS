@@ -162,21 +162,26 @@ Gate 只允许 `PASS / FAIL / ABSTAIN / PENDING`。AI 不能覆盖结果；材�
 退出条件：工作树可解释；调度运行的 commit/container/data/evidence 全部绑定；
 `assess_top_tier.py --check` 无漂移；旧诊断 Paper 明确标记，不能获得部署资格。
 
-状态（2026-08-09）：**输入/证据绑定前六个增量已实现，WP0 尚未闭合。** L2 release-run
+状态（2026-08-09）：**输入/证据绑定前七个增量已实现，WP0 尚未闭合。** L2 release-run
 receipt 已支持经 launcher 严格校验的 worker attestation；唯一候选权威
 `alpha_production_workflow`、公共双场所路由 `paper_multivenue_sor` 和承重接缝
 `realtime_alpha_execution_paper`，以及上游公共 data→feature 接缝 `binance_realtime_features`
 、selection-bearing feature→candidate 接缝 `realtime_alpha_discovery`，以及 engineering
-Signal-Shadow 接缝 `realtime_alpha_forward_shadow` 已成为强制模块。
+Signal-Shadow 接缝 `realtime_alpha_forward_shadow`，以及物理隔离的 formal-blinded
+Signal-Shadow 接缝 `realtime_alpha_formal_shadow` 已成为强制模块。
 除候选证据与策略/链头外，现已绑定完整盘口
 bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状态、执行前后账本权威、实际消费的
 路由快照和最终报告，并绑定实时特征实际消费的公共源快照/源链/漂移视图、输出批次权威，
-  以及 discovery 实际消费的 PIT 帧/容量/反馈/全局实验上下文和输出候选权威；
+  以及 discovery 实际消费的 PIT 帧/容量/反馈/全局实验上下文和输出候选权威；两条 Shadow
+  路径分别绑定自己的运行前后账本权威、实际消费 PIT 帧与独立报告，formal 证明不能借用
+  engineering authority；
   缺失、不完整或安全声明漂移均 fail-closed。其余 worker 仍逐项待接入；
   container/SBOM 的同轮绑定、外部签名/WORM/独立见证和全量派生证据无漂移仍是 WP0 剩余项。
   discovery 首次强制证明实跑因尾部帧 SQL 的无界二次自连接触发 30 分钟上限并被拒绝；已改为
   单次条件聚合并以 SQLite 指令预算钉死；新不可变发布已在约 107 秒正式完成，精确 release、
-  7 input + 3 output hashes、完整安全声明均通过。forward-shadow 本轮实现仍待正式 runtime 复验。
+  7 input + 3 output hashes、完整安全声明均通过。forward-shadow 新发布 `535b22e` 也已正式
+  `COMPLETED/worker_attested=true`，24 个候选、192 个事件且链有效；formal-shadow 本轮实现仍待
+  新不可变发布的正式 runtime 复验。
 
 ### WP1：唯一候选工作流
 

@@ -31,6 +31,7 @@ from tools.realtime_alpha_forward_shadow import (
     FORMAL_BLINDED_SHADOW_AUTHORITY,
     FORMAL_BLINDED_SHADOW_PAPER_CLASS,
     RealtimeAlphaForwardShadowError,
+    release_run_attestation_for_authority,
     run_cycle as _run_cycle,
 )
 
@@ -38,6 +39,11 @@ from tools.realtime_alpha_forward_shadow import (
 ROOT = runtime_state_root()
 DEFAULT_FORMAL_SHADOW_STORE = ROOT / "data" / "cache" / "realtime_alpha_formal_shadow.db"
 DEFAULT_FORMAL_OUTPUT = ROOT / "data" / "cache" / "realtime_alpha_formal_shadow.json"
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return the latest detached formal-shadow release proof."""
+    return release_run_attestation_for_authority(FORMAL_BLINDED_SHADOW_AUTHORITY)
 
 
 def run_cycle(
@@ -115,5 +121,6 @@ __all__ = [
     "DEFAULT_FORMAL_OUTPUT",
     "DEFAULT_FORMAL_SHADOW_STORE",
     "FORMAL_BLINDED_SHADOW_AUTHORITY",
+    "release_run_attestation",
     "run_cycle",
 ]

@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Realtime Alpha Formal Blinded Shadow 发布运行证明第七增量：**
+> `realtime_alpha_formal_shadow` 已接入独立的强制 release-run attestation。
+> 它复用确定性的帧/标签实现，但只读取自己的 formal authority 证明并写入物理隔离的
+> `realtime_alpha_formal_shadow.db` 与报告；证明绑定精确 discovery/feature-status 文件、
+> 固定周期与 formal authority 政策、运行前 formal-shadow/family 权威、实际消费的每段
+> realization/decision PIT 帧，以及运行后两条权威和 formal 报告文件。launcher 现在对
+> formal 模块 fail-closed，且不能借用 engineering-shadow 的证明。Forward Shadow 已在
+> 不可变发布 `535b22e` 正式运行通过：`COMPLETED/exit=0/worker_attested=true`，24 个候选、
+> 192 个账本事件、哈希链有效。Formal 增量已通过聚焦回归，仍须新不可变发布的正式调度实跑；
+> 两条路径均严格 paper-only，live/order/credentials/broker 全 false。
+
 > **2026-08-09 WP0 Realtime Alpha Forward Shadow 发布运行证明第六增量：**
 > `realtime_alpha_forward_shadow` 已成为第六个强制 release-run attestation worker。输入绑定
 > discovery/feature-status 文件、固定周期/authority 政策、运行前 engineering-shadow 与 family

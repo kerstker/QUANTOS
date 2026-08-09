@@ -155,7 +155,12 @@ def _build_release_run_attestation(
         release_commit = release_commit.strip().lower()
     inputs = dict(sorted(input_hashes.items()))
     outputs = dict(sorted(output_hashes.items()))
-    outputs["forward_shadow_report_file"] = _sha256_file(output_path)
+    report_hash_name = (
+        "formal_shadow_report_file"
+        if authority == FORMAL_BLINDED_SHADOW_AUTHORITY
+        else "forward_shadow_report_file"
+    )
+    outputs[report_hash_name] = _sha256_file(output_path)
     safety = report.get("safety")
     safety = safety if isinstance(safety, Mapping) else {}
     verdict = report.get("verdict")

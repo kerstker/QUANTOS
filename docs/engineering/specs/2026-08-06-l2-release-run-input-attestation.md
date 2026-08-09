@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-6
+Roadmap slice: WP0 increments 1-7
 
 ## Problem
 
@@ -79,6 +79,14 @@ states, and every actually consumed realization/decision PIT frame view.  Output
 bind both post-run authorities and the report file.  WAITING and SAFE_BLOCKED are
 attestable exact-input outcomes; every attempt clears the prior proof first.
 
+`realtime_alpha_formal_shadow` is the seventh required module.  It reuses the
+deterministic frame/label implementation but exposes only the proof stored under
+the physically separate formal-blinded authority.  Its input and output classes
+match the engineering seam while naming and hashing the formal report and formal
+shadow ledger independently.  The launcher therefore cannot accept an engineering
+proof for a formal run; formal outcomes remain excluded from selector feedback and
+grant no maturity, promotion, deployment, broker, or order authority.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
@@ -87,7 +95,7 @@ attestable exact-input outcomes; every attempt clears the prior proof first.
 - Scheduled workers other than `alpha_production_workflow`,
   `paper_multivenue_sor`, `realtime_alpha_execution_paper`,
   `binance_realtime_features`, `realtime_alpha_discovery`, and
-  `realtime_alpha_forward_shadow` remain explicitly
+  `realtime_alpha_forward_shadow`, and `realtime_alpha_formal_shadow` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are
   instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or

@@ -15,6 +15,8 @@ from services.research.realtime_alpha_discovery import (
     RealtimeHypothesis,
     default_realtime_hypotheses,
 )
+from tools import realtime_alpha_formal_shadow as formal_shadow_module
+from tools import realtime_alpha_forward_shadow as forward_shadow_module
 from tools.realtime_alpha_forward_shadow import (
     ENGINEERING_SHADOW_AUTHORITY,
     FORMAL_BLINDED_SHADOW_AUTHORITY,
@@ -26,7 +28,6 @@ from tools.realtime_alpha_forward_shadow import (
     run_cycle,
 )
 from tools.realtime_alpha_formal_shadow import run_cycle as run_formal_cycle
-from tools import realtime_alpha_forward_shadow as forward_shadow_module
 
 
 def _discovery(
@@ -422,6 +423,15 @@ def test_forward_shadow_failure_clears_prior_release_attestation(tmp_path) -> No
     assert forward_shadow_module.release_run_attestation() is None
 
 
+def test_formal_attestation_never_falls_back_to_engineering_authority() -> None:
+    forward_shadow_module._LAST_RELEASE_RUN_ATTESTATIONS.clear()
+    forward_shadow_module._LAST_RELEASE_RUN_ATTESTATIONS[
+        ENGINEERING_SHADOW_AUTHORITY
+    ] = {"module": "realtime_alpha_forward_shadow", "complete": True}
+
+    assert formal_shadow_module.release_run_attestation() is None
+
+
 def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
     tmp_path, monkeypatch
 ) -> None:
@@ -524,6 +534,8 @@ def test_formal_shadow_is_separate_and_not_feedback_authority(
     tmp_path, monkeypatch
 ) -> None:
     base = 1_000_000
+    release_commit = "e" * 40
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
     spec = default_realtime_hypotheses()[0]
     discovery_path = tmp_path / "discovery.json"
     discovery_path.write_text(
@@ -589,3 +601,25 @@ def test_formal_shadow_is_separate_and_not_feedback_authority(
         FORMAL_BLINDED_SHADOW_PAPER_CLASS
     )
     assert admission["payload"]["identity"]["selector_feedback_consumed"] is False
+
+    attestation = formal_shadow_module.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "realtime_alpha_formal_shadow"
+    assert attestation["release_commit"] == release_commit
+    assert attestation["input_hashes"]["discovery_file"] == hashlib.sha256(
+        discovery_path.read_bytes()
+    ).hexdigest()
+    assert attestation["input_hashes"]["feature_status_file"] == hashlib.sha256(
+        feature_status_path.read_bytes()
+    ).hexdigest()
+    assert attestation["output_hashes"]["formal_shadow_report_file"] == (
+        hashlib.sha256((tmp_path / "formal-shadow.json").read_bytes()).hexdigest()
+    )
+    assert "forward_shadow_report_file" not in attestation["output_hashes"]
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
