@@ -29,10 +29,10 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "domain": "frontend_console",
-      "passed": 1,
-      "red_lines_failed": 1,
+      "passed": 2,
+      "red_lines_failed": 0,
       "requirements": 2
     },
     {
@@ -479,15 +479,15 @@
         "path": "apps/research-console/src/pages/SystemCompleteness.tsx"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M4",
       "description": "Completeness UI consumes assessor without hand scores",
-      "detail": "missing: apps/research-console/src/pages/SystemCompleteness.tsx",
+      "detail": "all required markers are present",
       "domain": "frontend_console",
       "evidence": [
         "apps/research-console/src/pages/SystemCompleteness.tsx"
       ],
       "id": "FRONTEND.EVIDENCE.SINGLE_SOURCE",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Replace legacy hand-written completion scores",
       "red_line": true,
       "required_evidence": [
@@ -496,7 +496,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -1544,19 +1544,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 3,
+    "failed": 2,
     "manual_evidence_required": 0,
     "partial": 5,
-    "passed": 14,
-    "red_lines_failed": 4,
+    "passed": 15,
+    "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
   },
   "validation": {
     "current": true,
-    "generated_at": 1786285382049,
-    "run_id": "ecea5c4123a4a1fbeea927a4f95b197cf8ef6ce65606727d7b6b163667970bfd",
-    "source_commit": "f3ae23052b8cbba94f67f16901f648e3e064d64c"
+    "generated_at": 1786288353634,
+    "run_id": "c13a87507735cff5d5920ae918680adfe08f6160ae6d97ceb7a34d8903c8ce04",
+    "source_commit": "9c0f75255153e101454cfa8bc14810eb5ff65478"
   },
   "verdict": "NOT_TOP_TIER"
 }

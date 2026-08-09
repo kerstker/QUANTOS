@@ -5,7 +5,7 @@
 
 **System verdict:** `NOT_TOP_TIER`
 
-**Requirements:** 22 total; 14 pass; 3 failed; 0 manual/external; 4 red lines open
+**Requirements:** 22 total; 15 pass; 2 failed; 0 manual/external; 3 red lines open
 
 ## Domain Summary
 
@@ -15,7 +15,7 @@
 | `alpha_research` | M3 | 2 | 2 | 0 |
 | `data_moat` | M2 | 1 | 2 | 0 |
 | `execution_microstructure` | M3 | 1 | 2 | 0 |
-| `frontend_console` | M0 | 1 | 2 | 1 |
+| `frontend_console` | M3 | 2 | 2 | 0 |
 | `governance_security` | M1 | 1 | 2 | 1 |
 | `platform_engineering` | M3 | 1 | 2 | 1 |
 | `portfolio_construction` | M3 | 2 | 2 | 0 |
@@ -35,7 +35,7 @@
 | `DATA.VENDOR.DEPTH` | `data_moat` | B | NEEDS_EXTERNAL | M2 / M4 | PARTIAL | NO | `quantos/contracts/vendor_data.py`<br>`services/data/vendor_admission.py`<br>`services/data/vendor_delivery_history.py`<br>`tests/data/test_vendor_admission.py`<br>`tests/data/test_vendor_delivery_history.py`<br>`tests/governance/test_vendor_data_boundary.py`<br>`docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md` | all declared evidence paths exist; local readiness only; external target evidence remains required Next: Acquire a genuine licensed tick/order-book source; provision an external license verifier; operate the append-only delivery authority with real deliveries, SLA incidents and remediation; retain contractual rights and legal review |
 | `EXECUTION.DRYRUN.RECONCILIATION` | `execution_microstructure` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `services/execution/dry_run_pipeline.py`<br>`tests/integration/test_dry_run_all.py` | all declared evidence paths exist Next: Sustain long-running forward evidence |
 | `EXECUTION.MULTIVENUE.SOR` | `execution_microstructure` | B | POST_L2 | M3 / M4 | PARTIAL | NO | `services/execution/simulated_sor.py`<br>`services/execution/simulated_tca.py`<br>`services/execution/paper_tca_history.py`<br>`services/execution/dry_run_pipeline.py`<br>`services/execution/dry_run_store.py`<br>`tests/execution/test_simulated_sor.py`<br>`tests/execution/test_simulated_tca.py`<br>`tests/execution/test_paper_tca_history.py`<br>`tests/execution/test_dry_run_pipeline.py`<br>`tests/execution/test_dry_run_store.py`<br>`tests/execution/test_execution_import_boundary.py`<br>`docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md` | all declared evidence paths exist; local readiness only; external target evidence remains required Next: Retain longitudinal route-level dry-run TCA while awaiting post-L2 approval; then prove real multi-venue broker connectivity, fill quality, outage behavior and production TCA |
-| `FRONTEND.EVIDENCE.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M0 / M4 | FAILED | YES | `apps/research-console/src/pages/SystemCompleteness.tsx` | missing: apps/research-console/src/pages/SystemCompleteness.tsx Next: Replace legacy hand-written completion scores |
+| `FRONTEND.EVIDENCE.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `apps/research-console/src/pages/SystemCompleteness.tsx` | all required markers are present Next: Replace legacy hand-written completion scores |
 | `FRONTEND.ROUTES.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `.github/workflows/validate.yml`<br>`apps/research-console/src/app/routes.tsx`<br>`apps/research-console/src/pages/__tests__/pages.smoke.test.tsx`<br>`apps/research-console/playwright.config.ts`<br>`apps/research-console/e2e/paper-cockpit.spec.ts`<br>`apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png`<br>`apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png`<br>`tests/governance/test_frontend_institutional_e2e_gate.py` | all declared evidence paths exist Next: Sustain the pinned Windows/Linux accessibility, overflow, and visual-regression gate as the cockpit evolves |
 | `GOV.APPROVAL.HASHCHAIN` | `governance_security` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `services/governance/approval.py`<br>`services/governance/approval_store.py` | all declared evidence paths exist Next: Bind approval to strong external identity |
 | `GOV.IDENTITY.STRONG_AUTH` | `governance_security` | B | L2_SAFE_NOW | M1 / M4 | FAILED | YES | `evidence/strong_identity_baseline.json`<br>`apps/research-console/src/lib/api/governance-pkce.test.ts`<br>`tests/governance/test_identity_access_review.py`<br>`tests/governance/test_identity_authorization.py`<br>`tests/governance/test_identity_authorization_store.py`<br>`tests/governance/test_oidc_key_registry.py`<br>`tests/governance/test_promotion_api_boundary.py`<br>`tests/governance/test_promotion_api_endpoints.py`<br>`tests/governance/test_strong_identity.py`<br>`requirements.txt`<br>`pyproject.toml` | strong-identity baseline failed: dependency_versions, implementation_hashes Next: Deploy external OIDC and trusted mTLS; prove managed key rotation, identity lifecycle, revocation, access reviews, and AI-workload exclusion |
