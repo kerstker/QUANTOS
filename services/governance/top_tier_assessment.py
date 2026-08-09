@@ -2176,9 +2176,10 @@ def _l2_source_contract_error(contract: Any) -> str | None:
     if not isinstance(contract, dict) or set(contract) != {"version", "sources"}:
         return "source contract must contain only version and sources"
     # v4 (2026-08-04) added the autonomous realtime engineering execution-paper
-    # ledger as a required source; structural validation remains version-agnostic.
-    if contract.get("version") not in (2, 3, 4):
-        return "source contract version must be 2, 3, or 4"
+    # ledger. v5 added the Task 39 soak evidence authority. Keep the accepted
+    # set finite so a future contract version still requires explicit review.
+    if contract.get("version") not in (2, 3, 4, 5):
+        return "source contract version must be 2, 3, 4, or 5"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"
