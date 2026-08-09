@@ -226,6 +226,38 @@ def test_bucket_loader_selects_latest_complete_snapshot_without_lookahead(tmp_pa
     assert frames["BTCUSDT"][0].mid_price == 120.0
 
 
+def test_bucket_tail_query_does_not_scan_unbounded_feature_history(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_path = tmp_path / "features.db"
+    end_ms = _write_store(store_path, instruments=1, buckets=3_000)
+    original_connect = discovery_module.sqlite3.connect
+
+    def budgeted_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        callbacks_remaining = 50
+
+        def progress() -> int:
+            nonlocal callbacks_remaining
+            callbacks_remaining -= 1
+            return int(callbacks_remaining < 0)
+
+        connection.set_progress_handler(progress, 1_000)
+        return connection
+
+    monkeypatch.setattr(discovery_module.sqlite3, "connect", budgeted_connect)
+
+    frames = load_bucketed_frames(
+        store_path,
+        instruments=("S00USDT",),
+        start_ms=end_ms - 60_000,
+        end_ms=end_ms,
+    )
+
+    assert len(frames["S00USDT"]) == 3
+
+
 def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(
     tmp_path,
     monkeypatch,

@@ -8,6 +8,10 @@
 > 全局 trial/历史收益上下文。输出绑定运行后 family-registry 权威、当轮 search/candidate/
 > provenance/evaluation 制品和报告文件。成功探索与诚实 collection/block 都只能证明本轮输入，
 > 入口先清空旧证明；paper-only 且 live/order/credentials/broker 全 false。WP0 仍未整体闭合。
+> 首次正式发布实跑同时暴露并拒绝了一个 30 分钟 runtime 超时：尾部帧 SQL 在选出完整快照后
+> 又无界自连接 1340 万行特征表。现改为单次条件聚合，新增 SQLite 指令预算回归；真实 10 分钟
+> 尾部查询约 60s→0.006s，24 候选无持久化整轮约 82s→21s。修复仍须经新提交的正式发布实跑
+> 才能把本增量 runtime 验收记为通过。
 
 > **2026-08-09 WP0 Binance 实时特征发布运行证明第四增量：**
 > `binance_realtime_features` 已成为第四个强制 release-run attestation worker，并补上

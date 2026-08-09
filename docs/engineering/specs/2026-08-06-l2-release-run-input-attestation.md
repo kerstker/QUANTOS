@@ -66,7 +66,10 @@ transactionally frozen global experiment context.  Outputs bind the post-run
 family-registry authority, the exact search/candidate/provenance/evaluation
 artifacts written for the cycle, and the report file.  Both successful exploration
 and honest collection/block states are attestable; every attempt clears prior
-in-memory attestation before reading mutable state.
+in-memory attestation before reading mutable state.  The bounded PIT-frame loader
+uses one conditional-aggregation pass over the requested tail; a SQLite progress
+budget regression forbids the former second, unbounded self-join over the complete
+feature history.
 
 ## Boundaries
 

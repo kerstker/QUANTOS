@@ -342,13 +342,31 @@ def _query_bucketed_frames(
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA query_only=ON")
         result: dict[str, tuple[RealtimeFrame, ...]] = {}
+        feature_columns = {
+            "rt_mid_price": "mid_price",
+            "rt_spread_bps": "spread_bps",
+            "rt_depth_imbalance_5": "depth_imbalance_5",
+            "rt_mark_basis_bps": "mark_basis_bps",
+            "rt_funding_rate": "funding_rate",
+            "rt_taker_imbalance_5s": "taker_imbalance_5s",
+            "rt_liquidation_imbalance_5s": "liquidation_imbalance_5s",
+        }
+        if set(feature_columns) != set(selected_features):
+            raise RealtimeAlphaWorkerError(
+                "realtime frame projection does not match the core feature contract"
+            )
+        pivot_columns = ",\n                    ".join(
+            f"MAX(CASE WHEN feature_id=? THEN value END) AS {column}"
+            for column in feature_columns.values()
+        )
         query = f"""
             WITH complete_snapshots AS (
                 SELECT
                     instrument_id,
                     event_time,
                     knowledge_time,
-                    (CAST(knowledge_time / ? AS INTEGER) + 1) * ? AS decision_time
+                    (CAST(knowledge_time / ? AS INTEGER) + 1) * ? AS decision_time,
+                    {pivot_columns}
                 FROM feature_values
                 WHERE feature_version=?
                   AND feature_id IN ({feature_placeholders})
@@ -361,10 +379,7 @@ def _query_bucketed_frames(
                 HAVING COUNT(DISTINCT feature_id)=?
             ), ranked_snapshots AS (
                 SELECT
-                    instrument_id,
-                    event_time,
-                    knowledge_time,
-                    decision_time,
+                    complete_snapshots.*,
                     ROW_NUMBER() OVER (
                         PARTITION BY instrument_id,decision_time
                         ORDER BY knowledge_time DESC,event_time DESC
@@ -373,26 +388,19 @@ def _query_bucketed_frames(
                 WHERE decision_time<=?
             )
             SELECT
-                ranked.instrument_id,
-                ranked.event_time,
-                ranked.knowledge_time,
-                ranked.decision_time,
-                fv.feature_id,
-                fv.value
+                instrument_id,
+                event_time,
+                knowledge_time,
+                decision_time,
+                {", ".join(feature_columns.values())}
             FROM ranked_snapshots AS ranked
-            JOIN feature_values AS fv
-              ON fv.instrument_id=ranked.instrument_id
-             AND fv.event_time=ranked.event_time
-             AND fv.knowledge_time=ranked.knowledge_time
-             AND fv.feature_version=?
-             AND fv.feature_id IN ({feature_placeholders})
             WHERE ranked.row_number=1
-            ORDER BY ranked.instrument_id,ranked.decision_time,
-                     ranked.knowledge_time,ranked.event_time,fv.feature_id
+            ORDER BY instrument_id,decision_time,knowledge_time,event_time
         """
         parameters = (
             bucket_ms,
             bucket_ms,
+            *feature_columns.keys(),
             FEATURE_VERSION,
             *selected_features,
             *selected_instruments,
@@ -400,52 +408,27 @@ def _query_bucketed_frames(
             end_ms,
             len(selected_features),
             end_ms + bucket_ms,
-            FEATURE_VERSION,
-            *selected_features,
         )
-        current_key: tuple[str, int, int, int] | None = None
-        current_values: dict[str, float] = {}
         frames_by_instrument: dict[str, list[RealtimeFrame]] = {}
 
-        def flush_current() -> None:
-            if current_key is None or set(current_values) != set(selected_features):
-                return
-            instrument, event_time, knowledge_time, decision_time = current_key
-            if knowledge_time < event_time:
-                return
+        for row in connection.execute(query, parameters):
             try:
+                values = {
+                    feature_id: float(row[column])
+                    for feature_id, column in feature_columns.items()
+                }
+                if not all(math.isfinite(value) for value in values.values()):
+                    continue
                 frame = _complete_frame(
-                    instrument,
-                    event_time_ms=event_time,
-                    knowledge_time_ms=knowledge_time,
-                    decision_time_ms=decision_time,
-                    values=current_values,
+                    str(row["instrument_id"]),
+                    event_time_ms=int(row["event_time"]),
+                    knowledge_time_ms=int(row["knowledge_time"]),
+                    decision_time_ms=int(row["decision_time"]),
+                    values=values,
                 )
             except (KeyError, TypeError, ValueError):
-                return
-            frames_by_instrument.setdefault(instrument, []).append(frame)
-
-        for row in connection.execute(query, parameters):
-            key = (
-                str(row["instrument_id"]),
-                int(row["event_time"]),
-                int(row["knowledge_time"]),
-                int(row["decision_time"]),
-            )
-            if current_key != key:
-                flush_current()
-                current_key = key
-                current_values = {}
-            value = row["value"]
-            if value is None:
                 continue
-            try:
-                numeric = float(value)
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(numeric):
-                current_values[str(row["feature_id"])] = numeric
-        flush_current()
+            frames_by_instrument.setdefault(frame.instrument_id, []).append(frame)
         result = {
             instrument: tuple(rows)
             for instrument, rows in frames_by_instrument.items()
