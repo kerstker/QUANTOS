@@ -1,0 +1,43 @@
+{
+  "artifact_count": 17,
+  "artifact_sha256": {
+    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "c97bdf7ee81270e3440406cba6f52342b4b2b67ff22d2856a40c2814a011fbc6",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "331c92c9a2ec24bdcb620fb88fe2ca5a4e2b045937b14d2ca6ad33f730572fa4",
+    "evidence/alpha_lifecycle_status.json": "2005f479d274a654405b323f02db644d77b8462cc1f6d1aaea3ecc5752da6432",
+    "evidence/autonomy_readiness.json": "d28858e43be6cf4c0efec8613f685be8dae8aeffe824eef9f709c18de981baaf",
+    "evidence/chaos_recovery_status.json": "51aa34f561f0e364abd8507b5137fc6261a4c24fc4f37fda024c20830d57e347",
+    "evidence/factor_garden_status.json": "02c872c75b0712f2985dda68b5398e04ae4d26f1b46e67f2cd4640b900bc5087",
+    "evidence/l2_backup_latest.json": "dbe5f321a2bbec2b523ae9dc1055c449de8090e69d36aa9aa3b93da1dd7d96e6",
+    "evidence/mexc_integration_status.json": "1d6968929f28e93937422ccbfdc545c2ef0b0b3c3f954fb96acd3c872e22aa96",
+    "evidence/paper_shadow_status.json": "5e95099f41915f1b0217dc290d85ac166efe947b24eb003f8a677172327abc5e",
+    "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
+    "evidence/sbom.cdx.json": "4d4f264493e7f1cbe2314d55d2c10d49afdf00ca0f52688801232ef584bf83d5",
+    "evidence/supply_chain_baseline.json": "726aa271f74cb4af465f35cb8cb1d616ac90f283379588ab55977b3406f98b4c",
+    "evidence/top_tier_assessment.json": "703bdfb4229fa906f93a9981b2986379c743b897e3f5bf646a6bfd56e8e35f06",
+    "evidence/trial_ledger_integrity.json": "c6b462408b1a9f715a3d8afe71e6a569ebf51df7104e4ff7715811b7ddcb43b2",
+    "evidence/validation_report.json": "5518880c7b4b62987b437d516732bf7f7ad55ee3eacb47294e50359e1941de99",
+    "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
+    "evidence/vulnerability/python_audit_latest.json": "244cfe82f2d613cd50d61259da60c1566824ab2435dfdfc824ffcdf430e050b6"
+  },
+  "canonical_artifact_allowlist_version": "v2",
+  "claims": {
+    "artifact_signature_status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST",
+    "container_reproducibility_evidence_status": "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL",
+    "container_reproducible_archive_sha256": "c75beb67829b64a2b10f6917f1d63b664e10ce40b06b970c072f8fa608e7e385",
+    "container_runtime_image_digest": "sha256:a886edc81ebd33b96798f70a2555d650b1ce198dd387411f29b67c9948818803",
+    "container_vulnerability_evidence_status": "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN",
+    "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+    "supply_chain_verdict": "PARTIAL",
+    "top_tier_verdict": "NOT_TOP_TIER",
+    "validation_overall_status": "PASS"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "schema_version": 1,
+  "validation": {
+    "current": true,
+    "generated_at": 1786261864861,
+    "run_id": "fd86ee4c1de0e60132011bb93e78784ab0d9c6bcb4921fa19c30c24f50f5e2aa",
+    "source_commit": "2c23aff5ddbc2a44799d4ab36611a8042ab9be6e"
+  },
+  "validation_report_sha256": "5518880c7b4b62987b437d516732bf7f7ad55ee3eacb47294e50359e1941de99"
+}

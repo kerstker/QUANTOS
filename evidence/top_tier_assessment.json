@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "domain": "reliability_operations",
-      "passed": 0,
+      "passed": 1,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -745,13 +745,25 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "invalid expected source contract: source contract version must be 2, 3, or 4",
+      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
       "domain": "reliability_operations",
-      "evidence": [],
+      "evidence": [
+        "tools/l2_backup.py",
+        "tools/l2_scheduler_watchdog.py",
+        "tools/external_heartbeat.py",
+        "tools/domain_event_seal.py",
+        "tools/restore_drill.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_external_heartbeat.py",
+        "tests/tools/test_domain_event_seal.py",
+        "tests/governance/test_l2_operations_boundary.py",
+        "evidence/l2_backup_latest.json"
+      ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -761,7 +773,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "UNVERIFIED",
+      "status": "PASS",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -905,11 +917,20 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history checker arguments are incomplete",
+      "detail": "restore-history health failed: SOURCE_CONTRACT_MISMATCH, LATEST_TERMINAL_NOT_PASS, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
-      "evidence": [],
+      "evidence": [
+        "tools/l2_backup.py",
+        "services/governance/l2_restore_history.py",
+        "services/governance/l2_restore_checkpoint.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/governance/test_l2_restore_history.py",
+        "tests/governance/test_l2_restore_checkpoint.py",
+        "tests/governance/test_l2_restore_top_tier.py",
+        "data/cache/l2_restore_history.db"
+      ],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -921,7 +942,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "UNVERIFIED",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1523,19 +1544,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 2,
+    "failed": 3,
     "manual_evidence_required": 0,
     "partial": 5,
-    "passed": 13,
+    "passed": 14,
     "red_lines_failed": 4,
     "total": 22,
-    "unverified": 2
+    "unverified": 0
   },
   "validation": {
     "current": true,
-    "generated_at": 1786257677572,
-    "run_id": "f31e8ff3c3f417f7108a5f21ce01287686b51823eba7da1ae65f5c8796d36c15",
-    "source_commit": "1b6bd29d7f3c61d2efdf0cc5be08419d61ed12d0"
+    "generated_at": 1786260792275,
+    "run_id": "fd86ee4c1de0e60132011bb93e78784ab0d9c6bcb4921fa19c30c24f50f5e2aa",
+    "source_commit": "2c23aff5ddbc2a44799d4ab36611a8042ab9be6e"
   },
   "verdict": "NOT_TOP_TIER"
 }
