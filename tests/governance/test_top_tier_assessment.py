@@ -2247,6 +2247,7 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "services/governance/identity_authorization_store.py": (
             "BEGIN IMMEDIATE append_registry_snapshot expected_registry_head identity_authorization_events\n"
         ),
+        "services/governance/l2_identity_deployment.py": "L2 deployment contract\n",
         "config/identity_authorization_registry.json": (
             '{"schema_version":1,"readiness":"L2_DRY_RUN_ONLY","generation":0,"principals":{}}\n'
         ),
@@ -2255,6 +2256,7 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
             "PROMOTION_EXECUTOR evaluate_authorization "
             "IdentityAuthorizationStore\n"
         ),
+        "services/promotion_api/trusted_mtls_proxy.py": "trusted Envoy UDS adapter\n",
         "apps/research-console/src/lib/api/promotion-api.ts": "Authorization Bearer\n",
         "apps/research-console/src/lib/api/governance-pkce.ts": (
             "code_challenge_method S256 getRandomValues subtle.digest response_type "
@@ -2268,8 +2270,10 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",
+        "tests/governance/test_l2_identity_deployment.py": "tests\n",
         "tests/governance/test_promotion_api_boundary.py": "tests\n",
         "tests/governance/test_promotion_api_endpoints.py": "tests\n",
+        "tests/governance/test_trusted_mtls_proxy.py": "tests\n",
         "apps/research-console/src/lib/api/governance-pkce.test.ts": "tests\n",
     }
     for relative, content in sources.items():
