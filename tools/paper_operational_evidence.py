@@ -396,6 +396,19 @@ def _cycle_payload(
     return receipt_sha, finished_at_ms, payload
 
 
+def _cycle_replay_view(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Ignore only the observing collector's commit for exact cycle replay.
+
+    The upstream receipt is the durable cycle identity.  Re-observing that
+    same receipt after an immutable collector release change must not duplicate
+    the cycle or rewrite its first-observer audit field.  Every business,
+    artifact, reconciliation, and safety field remains part of the comparison.
+    """
+    result = dict(payload)
+    result.pop("collector_release_commit", None)
+    return result
+
+
 def _valid_shadow_fixture(expected: Sequence[str]) -> dict[str, Any]:
     return {
         "errors": {},
@@ -500,14 +513,23 @@ def collect(
                 expected_candidates=expected_candidates,
                 collector_release_commit=collector_release,
             )
-            new_events += int(
-                store.append(
+            existing_cycle = {
+                event["event_id"]: event for event in store.events("CYCLE")
+            }.get(event_id)
+            if existing_cycle is not None and (
+                int(existing_cycle["occurred_at_ms"]) == occurred_at_ms
+                and _cycle_replay_view(existing_cycle["payload"])
+                == _cycle_replay_view(payload)
+            ):
+                cycle_inserted = False
+            else:
+                cycle_inserted = store.append(
                     event_type="CYCLE",
                     event_id=event_id,
                     occurred_at_ms=occurred_at_ms,
                     payload=payload,
                 )
-            )
+            new_events += int(cycle_inserted)
         existing_drill_times = {
             event["event_id"]: event["occurred_at_ms"]
             for event in store.events("DRILL")

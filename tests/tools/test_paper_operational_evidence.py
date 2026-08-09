@@ -112,6 +112,23 @@ def test_collector_binds_current_release_cycle_and_runs_isolated_drills(
     assert replay["window"]["accepted_cycle_count"] == 1
     assert all(replay["window"]["drills"].values())
 
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "d" * 40)
+    after_release_change = paper_operational_evidence.collect(
+        store_path=str(tmp_path / "operational.db"),
+        output_path=str(tmp_path / "operational.json"),
+        shadow_status_path=str(shadow_path),
+        receipt_root=str(receipt_root),
+        now_ms=finished + 3_000,
+    )
+    assert after_release_change["new_events"] == len(
+        paper_operational_evidence.PRODUCTION_PAPER_POLICY_V1.required_drills
+    )
+    assert after_release_change["window"]["accepted_cycle_count"] == 1
+    changed_attestation = paper_operational_evidence.release_run_attestation()
+    assert changed_attestation is not None
+    assert changed_attestation["complete"] is True
+    assert changed_attestation["release_commit"] == "d" * 40
+
 
 def test_fault_matrix_exercises_every_preregistered_drill():
     results = paper_operational_evidence.run_isolated_fault_matrix()
@@ -119,6 +136,25 @@ def test_fault_matrix_exercises_every_preregistered_drill():
         paper_operational_evidence.PRODUCTION_PAPER_POLICY_V1.required_drills
     )
     assert all(results.values())
+
+
+def test_cycle_release_replay_ignores_only_collector_commit() -> None:
+    original = {
+        "collector_release_commit": "a" * 40,
+        "collector_release_verified": True,
+        "artifact_sha256": "b" * 64,
+        "accepted": True,
+        "reasons": [],
+    }
+    new_collector = {**original, "collector_release_commit": "c" * 40}
+    changed_artifact = {**new_collector, "artifact_sha256": "d" * 64}
+
+    assert paper_operational_evidence._cycle_replay_view(
+        original
+    ) == paper_operational_evidence._cycle_replay_view(new_collector)
+    assert paper_operational_evidence._cycle_replay_view(
+        original
+    ) != paper_operational_evidence._cycle_replay_view(changed_artifact)
 
 
 def test_main_failure_clears_prior_release_attestation(monkeypatch) -> None:

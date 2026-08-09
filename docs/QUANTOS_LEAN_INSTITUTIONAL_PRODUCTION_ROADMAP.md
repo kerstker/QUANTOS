@@ -193,7 +193,9 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   `49de569` 已连续两轮 14/14 PASS、0 失败、完整证明；正式 Paper Preview 已由 `b81335d`
   以预期 SAFE_BLOCKED/exit=2、完整 9 input + 2 output hashes 复验，0 意图/0 订单且账本未变；
   risk-bundle 已由 `c6b3c8c` 正式 `COMPLETED/worker_attested=true`，37 个候选保持诚实 PENDING、
-  4 input + 2 output hashes 且源权威前后相同；operational-evidence 增量仍待新不可变发布复验。
+  4 input + 2 output hashes 且源权威前后相同；operational-evidence 首次 `959f66c` 实跑正确拒绝同一
+  upstream receipt 跨 collector release 的身份冲突，现已修复为周期去重、首次审计不改写且新 release
+  仅追加自己的演练，仍待新不可变发布复验。
 
 ### WP1：唯一候选工作流
 

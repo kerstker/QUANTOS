@@ -51,7 +51,10 @@ requires all source authorities (including SQLite WAL bytes) to remain identical
 across the computation, and binds the exact per-candidate input view plus output.
 The operational collector binds the exact upstream release receipt and Shadow
 artifact, candidate scope, preregistered window policy, isolated drill results,
-and the append-only evidence authority before and after collection.
+and the append-only evidence authority before and after collection. Re-observing
+one upstream receipt after a collector release change is cycle-idempotent: the
+cycle is not counted twice or rewritten, while the new release records its own
+isolated drill events.
 Workers not yet instrumented remain explicit with
 `worker_attestation_required=false`; that is a migration boundary, not a claim
 that their mutable inputs are already release-bound.

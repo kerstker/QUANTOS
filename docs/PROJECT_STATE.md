@@ -7,7 +7,10 @@
 > 追加式运维证据链权威；输出绑定原子报告文件。上游回执/制品在收集中变化、任一演练失败、链损坏或
 > 安全声明漂移都会使证明不完整。真实 `H:\QUANTOS_STATE` 隔离开发冒烟写入 1 个周期 + 6 项演练，
 > 链有效、窗口诚实为 `MATURING`、5 input + 2 output hashes，安全五项通过；146 项关联回归通过，
-> 仍须全量门禁和新不可变发布正式复验。上一风险包增量已在不可变发布 `c6b3c8c` 正式运行：receipt
+> 首个不可变发布 `959f66c` 实跑暴露并拒绝跨 release 重放缺口：同一上游 receipt 的事件 ID 不变，
+> 但 collector release 字段变化，追加链以“同 ID 不同内容”阻断。现已补失败测试并修复为周期不重复计数、
+> 首次观察者审计字段不改写、新 release 仅追加自己的隔离演练；比较只忽略 collector commit，制品/对账/
+> 安全/业务字段仍全部承重。仍须关联回归、全量门禁和新不可变发布正式复验。上一风险包增量已在不可变发布 `c6b3c8c` 正式运行：receipt
 > `1786255743055-52584-paper_research_risk_bundle.json` 为
 > `COMPLETED/exit=0/worker_attested=true`，37 个候选、4 input + 2 output hashes，13 类源权威
 > 前后哈希相同；业务 37 个仍全部 `PENDING`，执行授权/订单/live/凭证/broker 均为 false。
