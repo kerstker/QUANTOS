@@ -1,21 +1,21 @@
 {
   "artifact_count": 17,
   "artifact_sha256": {
-    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "c97bdf7ee81270e3440406cba6f52342b4b2b67ff22d2856a40c2814a011fbc6",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "331c92c9a2ec24bdcb620fb88fe2ca5a4e2b045937b14d2ca6ad33f730572fa4",
-    "evidence/alpha_lifecycle_status.json": "2005f479d274a654405b323f02db644d77b8462cc1f6d1aaea3ecc5752da6432",
-    "evidence/autonomy_readiness.json": "d28858e43be6cf4c0efec8613f685be8dae8aeffe824eef9f709c18de981baaf",
-    "evidence/chaos_recovery_status.json": "51aa34f561f0e364abd8507b5137fc6261a4c24fc4f37fda024c20830d57e347",
-    "evidence/factor_garden_status.json": "02c872c75b0712f2985dda68b5398e04ae4d26f1b46e67f2cd4640b900bc5087",
-    "evidence/l2_backup_latest.json": "dbe5f321a2bbec2b523ae9dc1055c449de8090e69d36aa9aa3b93da1dd7d96e6",
-    "evidence/mexc_integration_status.json": "1d6968929f28e93937422ccbfdc545c2ef0b0b3c3f954fb96acd3c872e22aa96",
-    "evidence/paper_shadow_status.json": "5e95099f41915f1b0217dc290d85ac166efe947b24eb003f8a677172327abc5e",
+    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "4f51363db3389de757a2a5d8e73bc373dc6f5f49e827c86904a2e04bda0fa3bc",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "0053818b28adaeb23dd2c76c14d685f39d5c01d23bc7214ee8497351e0bbcdaa",
+    "evidence/alpha_lifecycle_status.json": "7368260fe5fd22604d80dc93e71b25dbe7dab2bbffbbbd0e5ebee15cade1da77",
+    "evidence/autonomy_readiness.json": "287fb03096e9c4e915846f0b37a0211c5dea55a4ead94bc1d46c861d966271af",
+    "evidence/chaos_recovery_status.json": "75c4086b6195cf417d565244638c324e05b565a292822fb7fcf52f2098c5ee28",
+    "evidence/factor_garden_status.json": "fdcc7ea0d91e094276ff3d86d2feb8e2d5bcf07e4096ec5049b3a5a3005c236b",
+    "evidence/l2_backup_latest.json": "9189d15af3df812968dc8ed3b72cbe7a07ea1b131abfd3a0b7f8f401bfe1ff4f",
+    "evidence/mexc_integration_status.json": "b041f27978f76ce307fa050bdaae50faf03c1ce89dd5b54c347a0bb12de0011f",
+    "evidence/paper_shadow_status.json": "cb881b08a77386e848538960b6a114b05aa6b5a6e0e9750ee5530d3b44c98571",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
     "evidence/sbom.cdx.json": "4d4f264493e7f1cbe2314d55d2c10d49afdf00ca0f52688801232ef584bf83d5",
-    "evidence/supply_chain_baseline.json": "726aa271f74cb4af465f35cb8cb1d616ac90f283379588ab55977b3406f98b4c",
-    "evidence/top_tier_assessment.json": "703bdfb4229fa906f93a9981b2986379c743b897e3f5bf646a6bfd56e8e35f06",
-    "evidence/trial_ledger_integrity.json": "c6b462408b1a9f715a3d8afe71e6a569ebf51df7104e4ff7715811b7ddcb43b2",
-    "evidence/validation_report.json": "5518880c7b4b62987b437d516732bf7f7ad55ee3eacb47294e50359e1941de99",
+    "evidence/supply_chain_baseline.json": "54b871921466a83bd664957ac0bf76e41ffcf4506de162bef9cb78e41c3c6cdf",
+    "evidence/top_tier_assessment.json": "6b2a068f01b54f69b1eb9045993e8cb02ad7ac4a5faa7c1f7547218c01d4d6bc",
+    "evidence/trial_ledger_integrity.json": "01c84e5a6c497f0b88da68496255b8cd73bf965dfe30c725f57c53dd098ac1df",
+    "evidence/validation_report.json": "afe3db2cc7b0c078aafd1134371f2cb5e72d4557a6ed61761f6797dd07a1b68f",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
     "evidence/vulnerability/python_audit_latest.json": "244cfe82f2d613cd50d61259da60c1566824ab2435dfdfc824ffcdf430e050b6"
   },
@@ -35,9 +35,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1786261864861,
-    "run_id": "fd86ee4c1de0e60132011bb93e78784ab0d9c6bcb4921fa19c30c24f50f5e2aa",
-    "source_commit": "2c23aff5ddbc2a44799d4ab36611a8042ab9be6e"
+    "generated_at": 1786263769073,
+    "run_id": "211b9e43586a163f9da87cea12136bec5fa76c9d22671d41eae627749c42f5c7",
+    "source_commit": "0e61085708824b1dc5b7bb60bf09d027113b9fa1"
   },
-  "validation_report_sha256": "5518880c7b4b62987b437d516732bf7f7ad55ee3eacb47294e50359e1941de99"
+  "validation_report_sha256": "afe3db2cc7b0c078aafd1134371f2cb5e72d4557a6ed61761f6797dd07a1b68f"
 }
