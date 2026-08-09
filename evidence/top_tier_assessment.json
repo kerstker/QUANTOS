@@ -36,7 +36,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "governance_security",
       "passed": 1,
       "red_lines_failed": 1,
@@ -583,12 +583,24 @@
         "path": "evidence/strong_identity_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "OIDC mTLS RBAC and separation of duties are enforced",
-      "detail": "strong-identity baseline failed: dependency_versions, implementation_hashes",
+      "detail": "asymmetric OIDC verification, MFA, RFC 8705 mTLS binding, immutable subject identity, application-owned lifecycle authorization, durable authorization decisions, and three-party separation are load-bearing; browser Authorization Code + PKCE S256 is implemented with one-time state/nonce and memory-only access tokens; external OIDC, trusted TLS deployment, managed key custody, external identity lifecycle operations, and independent AI identity-exclusion evidence remain open; evidence does not meet target maturity",
       "domain": "governance_security",
       "evidence": [
         "evidence/strong_identity_baseline.json",
+        "apps/research-console/src/lib/api/governance-pkce.ts",
+        "apps/research-console/src/lib/api/promotion-api.ts",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx",
+        "config/identity_authorization_registry.json",
+        "quantos/contracts/identity.py",
+        "scripts/generate_strong_identity_evidence.py",
+        "services/governance/identity_access_review.py",
+        "services/governance/identity_authorization.py",
+        "services/governance/identity_authorization_store.py",
+        "services/governance/oidc_key_registry.py",
+        "services/governance/strong_identity.py",
+        "services/promotion_api/main.py",
         "apps/research-console/src/lib/api/governance-pkce.test.ts",
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
@@ -610,7 +622,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1544,9 +1556,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 2,
+    "failed": 1,
     "manual_evidence_required": 0,
-    "partial": 5,
+    "partial": 6,
     "passed": 15,
     "red_lines_failed": 3,
     "total": 22,
@@ -1554,9 +1566,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786288353634,
-    "run_id": "c13a87507735cff5d5920ae918680adfe08f6160ae6d97ceb7a34d8903c8ce04",
-    "source_commit": "9c0f75255153e101454cfa8bc14810eb5ff65478"
+    "generated_at": 1786290758397,
+    "run_id": "74188d2e8225d18c28287b2d6cb2d53bf3c3e8119d827da621267fea8b5b4ae8",
+    "source_commit": "a06f0bfae596dccf9230bec3b9b3c90dcda4cf43"
   },
   "verdict": "NOT_TOP_TIER"
 }
