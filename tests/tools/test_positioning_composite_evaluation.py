@@ -140,3 +140,50 @@ def test_decision_requires_verified_formal_pass_before_forward_admission() -> No
         "forward_admission_allowed": True,
         "testnet_eligible": False,
     }
+
+
+def test_evaluation_row_uses_immutable_search_link_for_definition_binding() -> None:
+    _candidates, _evidence, mappings = driver.build_candidate_batch(_panel())
+    mapping = mappings["positioning_consensus"]
+    run_id = "run-positioning"
+    content_hash = "c" * 64
+    registry = SimpleNamespace(
+        get_evaluation=lambda candidate_run_id: {
+            "run_id": candidate_run_id,
+            "alpha_id": mapping["research_alpha_id"],
+            "dataset_version": "dataset-v1",
+            "content_hash": content_hash,
+            "evaluation_json": json.dumps(
+                {
+                    "verdict": "FAIL",
+                    "deflated_sharpe": 0.33,
+                    "pbo": 0.15,
+                    "net_sharpe": 2.16,
+                    "n_periods": 196,
+                    "reasons": ["DEFLATED_SHARPE_BELOW_MIN"],
+                }
+            ),
+        },
+        search_evaluations=lambda search_id: [
+            {
+                "search_id": search_id,
+                "config_hash": mapping["definition_hash"],
+                "run_id": run_id,
+                "evaluation_content_hash": content_hash,
+            }
+        ],
+        verify_evaluation=lambda candidate_run_id: candidate_run_id == run_id,
+    )
+
+    item = driver._evaluation_row(
+        registry,
+        "search-positioning",
+        run_id,
+        mappings,
+    )
+
+    assert item is not None
+    alias, evaluation = item
+    assert alias == "positioning_consensus"
+    assert evaluation["verified"] is True
+    assert evaluation["verdict"] == "FAIL"

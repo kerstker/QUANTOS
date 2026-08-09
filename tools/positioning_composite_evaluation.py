@@ -175,12 +175,24 @@ def build_candidate_batch(panel) -> tuple[list, dict[str, dict], dict[str, dict]
 
 def _evaluation_row(
     registry: object,
+    search_id: str,
     run_id: object,
     mappings: Mapping[str, Mapping[str, Any]],
 ) -> tuple[str, dict[str, Any]] | None:
-    row = registry.get_evaluation(str(run_id))
+    run_id = str(run_id)
+    row = registry.get_evaluation(run_id)
     if not isinstance(row, Mapping):
         return None
+    links = [
+        link
+        for link in registry.search_evaluations(search_id)
+        if isinstance(link, Mapping) and str(link.get("run_id", "")) == run_id
+    ]
+    if len(links) != 1:
+        raise RuntimeError("evaluation has no unique immutable search binding")
+    link = links[0]
+    if link.get("evaluation_content_hash") != row.get("content_hash"):
+        raise RuntimeError("evaluation content binding mismatch")
     research_id = str(row.get("alpha_id", ""))
     alias = next(
         (
@@ -193,7 +205,7 @@ def _evaluation_row(
     if alias is None:
         raise RuntimeError("evaluation is not bound to the registered positioning family")
     mapping = mappings[alias]
-    if row.get("config_hash") != mapping["definition_hash"]:
+    if link.get("config_hash") != mapping["definition_hash"]:
         raise RuntimeError("evaluation definition binding mismatch")
     try:
         evaluation = json.loads(str(row["evaluation_json"]))
@@ -303,7 +315,7 @@ def run(
         )
         evaluations: dict[str, dict[str, Any]] = {}
         for run_id in result.get("recorded_run_ids", ()):
-            item = _evaluation_row(registry, run_id, mappings)
+            item = _evaluation_row(registry, search_id, run_id, mappings)
             if item is not None:
                 alias, evaluation = item
                 evaluations[alias] = evaluation
