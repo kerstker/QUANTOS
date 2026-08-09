@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import threading
+import time
 
 import pytest
 
@@ -103,6 +105,77 @@ def _seed_sqlite(path: Path) -> sqlite3.Connection:
     connection.execute("INSERT INTO authority(value) VALUES ('committed-state')")
     connection.commit()
     return connection
+
+
+def test_online_sqlite_backup_is_paginated_and_yields_to_authority_writers(monkeypatch):
+    calls: dict[str, object] = {}
+    pauses: list[float] = []
+
+    class SourceConnection:
+        def backup(self, target, *, pages, progress, sleep):
+            calls.update(target=target, pages=pages, sleep=sleep)
+            progress(0, 10, 20)
+            progress(101, 0, 20)
+
+    target = object()
+    monkeypatch.setattr(l2_backup_module.time, "sleep", pauses.append)
+
+    l2_backup_module._online_sqlite_backup(SourceConnection(), target)
+
+    assert calls == {
+        "target": target,
+        "pages": l2_backup_module.SQLITE_BACKUP_PAGES,
+        "sleep": l2_backup_module.SQLITE_BACKUP_BUSY_SLEEP_SECONDS,
+    }
+    assert 0 < l2_backup_module.SQLITE_BACKUP_PAGES <= 1_024
+    assert pauses == [l2_backup_module.SQLITE_BACKUP_WRITER_YIELD_SECONDS]
+
+
+def test_online_sqlite_backup_allows_delete_journal_writer_to_commit(tmp_path, monkeypatch):
+    source = tmp_path / "authority.db"
+    connection = sqlite3.connect(source)
+    connection.execute("PRAGMA journal_mode=DELETE")
+    connection.execute("CREATE TABLE authority (id INTEGER PRIMARY KEY, payload BLOB NOT NULL)")
+    connection.executemany(
+        "INSERT INTO authority(payload) VALUES (zeroblob(4096))",
+        [()] * 2_048,
+    )
+    connection.commit()
+    connection.close()
+
+    first_yield = threading.Event()
+    errors: list[BaseException] = []
+    real_sleep = time.sleep
+
+    def writer_window(seconds: float) -> None:
+        if not first_yield.is_set():
+            first_yield.set()
+            real_sleep(0.1)
+        else:
+            real_sleep(min(seconds, 0.001))
+
+    monkeypatch.setattr(l2_backup_module, "SQLITE_BACKUP_PAGES", 32)
+    monkeypatch.setattr(l2_backup_module.time, "sleep", writer_window)
+
+    def take_snapshot() -> None:
+        try:
+            l2_backup_module._snapshot_source_file(source, tmp_path / "scratch")
+        except BaseException as exc:  # surfaced in the asserting thread
+            errors.append(exc)
+
+    (tmp_path / "scratch").mkdir()
+    backup = threading.Thread(target=take_snapshot)
+    backup.start()
+    assert first_yield.wait(timeout=5)
+
+    writer = sqlite3.connect(source, timeout=1)
+    writer.execute("INSERT INTO authority(payload) VALUES (zeroblob(4096))")
+    writer.commit()
+    writer.close()
+
+    backup.join(timeout=10)
+    assert not backup.is_alive()
+    assert errors == []
 
 
 def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path, monkeypatch):

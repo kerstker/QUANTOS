@@ -418,9 +418,13 @@ python -m tools.l2_backup
 python scripts/assess_top_tier.py
 ```
 
-The backup covers the ten required L2 authority stores plus six optional enabled
-authorities, including the restore-history, approval, and identity-authorization authorities. Active SQLite files are captured through the SQLite online backup
-API. Every artifact and the manifest are AES-GCM encrypted; the batch is
+The source-contract v5 backup covers twelve required L2 authority stores plus
+nine optional authority roles when present, including restore history, the MFT
+Testnet soak evidence authority, approvals, and identity authorization. Active
+SQLite files are captured through the SQLite online backup API. The copy is
+bounded to 256 pages per step and deliberately yields between successful partial
+steps; this preserves a consistent online snapshot without starving writers on
+large DELETE-journal authorities. Every artifact and the manifest are AES-GCM encrypted; the batch is
 published atomically only after an isolated restore, digest verification, and
 SQLite `integrity_check`. Success evidence is
 `evidence/l2_backup_latest.json`. The passphrase environment mechanism protects

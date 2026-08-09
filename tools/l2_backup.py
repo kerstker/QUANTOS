@@ -45,6 +45,14 @@ DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
 SOURCE_CONTRACT_VERSION = 5
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
+# SQLite's Python backup API copies every remaining page in one step when
+# ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
+# then retains a read lock long enough for scheduled writers to exhaust their
+# busy timeout.  Bound each step and yield after successful partial steps so
+# production authority writes get a deterministic lock-acquisition window.
+SQLITE_BACKUP_PAGES = 256
+SQLITE_BACKUP_BUSY_SLEEP_SECONDS = 0.05
+SQLITE_BACKUP_WRITER_YIELD_SECONDS = 0.002
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
 _SNAPSHOT_METHODS = frozenset({"SQLITE_ONLINE_BACKUP", "STABLE_FILE_READ", "EMPTY_DB_PLACEHOLDER"})
@@ -272,6 +280,21 @@ def _sqlite_integrity(path: Path) -> None:
         raise L2BackupError(f"SQLite integrity check failed for {path.name}")
 
 
+def _online_sqlite_backup(source_connection, snapshot_connection) -> None:
+    """Copy a live authority in bounded steps without starving its writers."""
+
+    def yield_to_writers(_status: int, remaining: int, _total: int) -> None:
+        if remaining > 0:
+            time.sleep(SQLITE_BACKUP_WRITER_YIELD_SECONDS)
+
+    source_connection.backup(
+        snapshot_connection,
+        pages=SQLITE_BACKUP_PAGES,
+        progress=yield_to_writers,
+        sleep=SQLITE_BACKUP_BUSY_SLEEP_SECONDS,
+    )
+
+
 def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
     identity = hashlib.sha256(os.fspath(source.resolve()).encode("utf-8")).hexdigest()[:12]
     snapshot = scratch / f"{identity}-{source.name}"
@@ -292,7 +315,7 @@ def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
         with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as source_connection:
             source_connection.execute("PRAGMA query_only=ON")
             with closing(sqlite3.connect(snapshot)) as snapshot_connection:
-                source_connection.backup(snapshot_connection)
+                _online_sqlite_backup(source_connection, snapshot_connection)
     except sqlite3.Error as exc:
         raise L2BackupError(f"failed to snapshot SQLite source: {source.name}") from exc
     _sqlite_integrity(snapshot)

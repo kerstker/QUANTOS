@@ -1,5 +1,12 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
+> `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online
+> backup，正式独立评估在提交搜索尝试时耗尽 5 秒 busy timeout 并 fail-closed。
+> `ca67097` 现把在线复制限制为每步 256 页，并在未完成步骤间主动让出写入窗口；
+> 真实 DELETE-journal 并发回归证明备份过程中 writer 可提交，恢复完整性和 source-contract
+> 校验保持不变。40 项备份/恢复聚焦回归、干净工作树顶级评估复核和治理扫描均通过。
+
 > **2026-08-09 WP0 Release Evidence Same-Run Binding:** `scripts/validate.py`
 > now publishes `evidence/l2_release_evidence_manifest.json` only after the full
 > canonical gate and Phase 13 pass. The manifest binds the stable source anchor,
