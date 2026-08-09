@@ -1111,8 +1111,7 @@ def _alpha_trial_ledger_evidence(
                 "self._store.save_evaluation_catalog_snapshot"
             },
             "load_for_evaluation": {
-                "self._store.all_trial_hashes",
-                "self._store.all_alphas",
+                "self._store.evaluation_context_snapshot",
                 "catalog.restore_evaluation_context",
             },
             "record_evaluation": {"self._store.insert_evaluation"},
@@ -1123,6 +1122,13 @@ def _alpha_trial_ledger_evidence(
         },
         "store_path": {
             "save_evaluation_catalog_snapshot": set(),
+            "evaluation_context_snapshot": {
+                "self._conn.execute",
+                "self.all_trial_hashes",
+                "self.all_alphas",
+                "self._conn.commit",
+                "self._conn.rollback",
+            },
         },
     }
     wiring_failures: list[str] = []

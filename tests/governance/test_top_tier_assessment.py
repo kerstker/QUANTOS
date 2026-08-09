@@ -2398,6 +2398,17 @@ def _alpha_trial_store_wiring_source(
 
 def save_evaluation_catalog_snapshot(self):
     pass
+
+def evaluation_context_snapshot(self):
+    self._conn.execute("BEGIN")
+    try:
+        trials = self.all_trial_hashes()
+        alphas = self.all_alphas()
+        self._conn.commit()
+        return trials, alphas
+    except Exception:
+        self._conn.rollback()
+        raise
 """
         if include_evaluation_context
         else ""
@@ -2532,8 +2543,7 @@ def _write_alpha_trial_wiring(
         self._store.save_evaluation_catalog_snapshot(config_hashes=())
 
     def load_for_evaluation(self, catalog):
-        self._store.all_trial_hashes()
-        self._store.all_alphas()
+        self._store.evaluation_context_snapshot()
         catalog.restore_evaluation_context()
 """
     )
@@ -2852,6 +2862,26 @@ def test_alpha_trial_ledger_checker_rejects_legacy_only_evaluation_persistence_a
     assert "load_for_evaluation" in result["detail"]
     assert "save_evaluation_context" in result["detail"]
     assert "save_evaluation_catalog_snapshot" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_transactional_evaluation_snapshot(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    registry_path = tmp_path / checker_args["registry_path"]
+    registry_path.write_text(
+        registry_path.read_text(encoding="utf-8").replace(
+            "self._store.evaluation_context_snapshot()",
+            "self._store.all_trial_hashes()\n        self._store.all_alphas()",
+        ),
+        encoding="utf-8",
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "evaluation_context_snapshot" in result["detail"]
 
 
 def test_alpha_trial_ledger_checker_requires_exact_search_evaluation_binding(
