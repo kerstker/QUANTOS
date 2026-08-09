@@ -398,7 +398,11 @@ def test_engineering_preview_routes_new_fill_on_bound_public_book_snapshot():
     assert result["reconciliation_residual"] == 0.0
 
 
-def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tmp_path):
+def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(
+    tmp_path, monkeypatch
+):
+    release_commit = "b" * 40
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
     output = tmp_path / "preview.json"
     report = run_preview(
         alpha_ids=("crowd_contra",),
@@ -407,6 +411,9 @@ def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tm
         status_path=str(tmp_path / "missing-status.json"),
         output_path=str(output),
         paper_store_path=str(tmp_path / "paper.db"),
+        research_risk_bundle_path=str(tmp_path / "missing-risk.json"),
+        realtime_market_status_path=str(tmp_path / "missing-market.json"),
+        workflow_path=str(tmp_path / "missing-workflow.json"),
         generated_at_ms=DECISION_TS,
     )
 
@@ -414,6 +421,45 @@ def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tm
     assert report["verdict"]["live_allowed"] is False
     assert report["errors"]["crowd_contra"]["paper_execution"] == "PAPER_BLOCKED"
     assert json.loads(output.read_text(encoding="utf-8"))["safety"]["paper_only"] is True
+    attestation = paper_preview.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "paper_order_preview"
+    assert attestation["release_commit"] == release_commit
+    assert set(attestation["input_hashes"]) == {
+        "candidate_universe",
+        "exchange_filter_views",
+        "forward_decision_views",
+        "mark_price_view",
+        "paper_preview_contract",
+        "paper_store_authority_before",
+        "research_risk_views",
+        "supporting_artifact_documents",
+        "workflow_admission_view",
+    }
+    assert set(attestation["output_hashes"]) == {
+        "paper_order_preview_report_file",
+        "paper_store_authority_after",
+    }
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+
+
+def test_run_preview_failure_clears_prior_release_attestation(tmp_path):
+    paper_preview._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+
+    with pytest.raises(ValueError, match="non-empty subset"):
+        run_preview(
+            alpha_ids=(),
+            output_path=str(tmp_path / "preview.json"),
+            paper_store_path=str(tmp_path / "paper.db"),
+        )
+
+    assert paper_preview.release_run_attestation() is None
 
 
 def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):

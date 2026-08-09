@@ -15,6 +15,7 @@ four-engine subset remains diagnostic only and is reported as blocked.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -85,6 +86,101 @@ DEFAULT_COST_BPS = 10.0
 OFFICIAL_PAPER_PERIODS_PER_YEAR = 52.0
 MAX_DECISION_AGE_DAYS = 8
 MAX_EXCHANGE_FILTER_AGE_MS = 15 * 60_000
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _paper_store_authority_view(store: PaperExecutionStore) -> dict[str, Any]:
+    rows = store.rows()
+    return {
+        "chain_valid": store.chain_valid(),
+        "row_count": len(rows),
+        "rows_hash": stable_hash(rows),
+    }
+
+
+def _build_release_run_attestation(
+    report: Mapping[str, Any],
+    *,
+    input_hashes: Mapping[str, str],
+    output_hashes: Mapping[str, str],
+    output_path: str | Path,
+    store_before_valid: bool,
+    store_after_valid: bool,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["paper_order_preview_report_file"] = _sha256_file(output_path)
+    verdict = report.get("verdict")
+    verdict = verdict if isinstance(verdict, Mapping) else {}
+    raw_safety = report.get("safety")
+    raw_safety = raw_safety if isinstance(raw_safety, Mapping) else {}
+    safety = {
+        "paper_only": raw_safety.get("paper_only"),
+        "live_allowed": verdict.get("live_allowed"),
+        "order_submission_allowed": verdict.get("order_submission_allowed"),
+        "credentials_accessed": raw_safety.get("credentials_accessed"),
+        "broker_connectivity": raw_safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and report.get("flow") == "PAPER_ORDER_PREVIEW"
+        and report.get("readiness") == "L2_DRY_RUN_ONLY"
+        and isinstance(verdict.get("paper_preview_ready"), bool)
+        and store_before_valid
+        and store_after_valid
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "paper_order_preview",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy of the latest formal Paper-preview proof."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _load_json(path: str) -> dict[str, Any]:
@@ -146,6 +242,9 @@ def _forward_pending_preview(
     research_risk_bundle_path: str,
     generated_at_ms: int | None,
     error: str,
+    status_document: Mapping[str, Any] | None = None,
+    evaluation_document: Mapping[str, Any] | None = None,
+    risk_document: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Materialize a visible, non-executable row for an unready challenger.
 
@@ -154,19 +253,31 @@ def _forward_pending_preview(
     exception-only entry made the UI look as if the candidate did not exist.
     This row contains no orders, positions, or execution authority.
     """
-    status_document = _load_json(status_path)
+    status_document = (
+        _load_json(status_path)
+        if status_document is None
+        else dict(status_document)
+    )
     status_row = (
         status_document.get("alphas", {}).get(alpha_id)
         if isinstance(status_document.get("alphas"), Mapping)
         else None
     )
-    evaluation_document = _load_json(DEFAULT_FORWARD_EVALUATIONS)
+    evaluation_document = (
+        _load_json(DEFAULT_FORWARD_EVALUATIONS)
+        if evaluation_document is None
+        else dict(evaluation_document)
+    )
     evaluation_row = (
         evaluation_document.get("alphas", {}).get(alpha_id)
         if isinstance(evaluation_document.get("alphas"), Mapping)
         else None
     )
-    risk_document = _load_json(research_risk_bundle_path)
+    risk_document = (
+        _load_json(research_risk_bundle_path)
+        if risk_document is None
+        else dict(risk_document)
+    )
     risk_row = (
         risk_document.get("alphas", {}).get(alpha_id)
         if isinstance(risk_document.get("alphas"), Mapping)
@@ -271,6 +382,9 @@ def _workflow_blocked_preview(
     generated_at_ms: int | None,
     admission: Mapping[str, Any] | None,
     error: str,
+    status_document: Mapping[str, Any] | None = None,
+    evaluation_document: Mapping[str, Any] | None = None,
+    risk_document: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = _forward_pending_preview(
         alpha_id,
@@ -278,6 +392,9 @@ def _workflow_blocked_preview(
         research_risk_bundle_path=research_risk_bundle_path,
         generated_at_ms=generated_at_ms,
         error=error,
+        status_document=status_document,
+        evaluation_document=evaluation_document,
+        risk_document=risk_document,
     )
     row.update(
         {
@@ -359,9 +476,10 @@ def _load_exchange_filters(
     instruments: set[str],
     *,
     now_ms: int,
+    status_document: Mapping[str, Any] | None = None,
 ) -> dict[str, tuple[float, float, float]]:
     """Load current Binance execution filters from the verified public snapshot."""
-    status = _load_json(path)
+    status = _load_json(path) if status_document is None else dict(status_document)
     if status.get("verdict") != "PASS" or status.get("complete") is not True:
         raise RuntimeError("Binance realtime exchange filters are not PASS")
     generated_at = status.get("generated_at_ms")
@@ -906,23 +1024,23 @@ def run_preview(
     generated_at_ms: int | None = None,
 ) -> dict[str, Any]:
     """Build previews for the complete current forward-paper universe."""
-    selected = (
-        paper_candidate_ids(
-            forward_status=status_path,
-            evaluations=DEFAULT_FORWARD_EVALUATIONS,
-        )
-        if alpha_ids is None
-        else tuple(alpha_ids)
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
+    candidate_universe = paper_candidate_ids(
+        forward_status=status_path,
+        evaluations=DEFAULT_FORWARD_EVALUATIONS,
+        workflow=workflow_path,
     )
+    selected = candidate_universe if alpha_ids is None else tuple(alpha_ids)
     if not selected or any(
-        alpha not in paper_candidate_ids(
-            forward_status=status_path,
-            evaluations=DEFAULT_FORWARD_EVALUATIONS,
-        )
-        for alpha in selected
+        alpha not in candidate_universe for alpha in selected
     ):
         raise ValueError("alpha_ids must be a non-empty subset of the attested paper candidates")
     status = _load_json(status_path)
+    evaluation_document = _load_json(DEFAULT_FORWARD_EVALUATIONS)
+    risk_document = _load_json(research_risk_bundle_path)
+    market_status_document = _load_json(realtime_market_status_path)
+    workflow_document = _load_json(workflow_path)
     mark_by_ticker = load_mark_prices(mark_cache)
     workflow_error: str | None = None
     try:
@@ -932,12 +1050,25 @@ def run_preview(
         workflow_error = str(exc)
     previews: dict[str, Any] = {}
     errors: dict[str, Any] = {}
+    decision_views: dict[str, Any] = {}
+    research_risk_views: dict[str, Any] = {}
+    exchange_filter_views: dict[str, Any] = {}
     store = PaperExecutionStore(paper_store_path, create=True)
+    paper_store_before = _paper_store_authority_view(store)
+    paper_store_after = dict(paper_store_before)
     try:
         for alpha_id in selected:
+            decision_views[alpha_id] = {"status": "NOT_CONSUMED"}
+            research_risk_views[alpha_id] = {"status": "NOT_CONSUMED"}
+            exchange_filter_views[alpha_id] = {"status": "NOT_CONSUMED"}
             try:
-                pending, _ = _latest_attested_pending(forward_db, alpha_id)
+                pending, pending_count = _latest_attested_pending(forward_db, alpha_id)
                 pending["alpha_id"] = str(alpha_id)
+                decision_views[alpha_id] = {
+                    "status": "CONSUMED",
+                    "pending_count": pending_count,
+                    "pending": dict(pending),
+                }
                 decision_ts, _, _ = _decision_inputs(pending, mark_by_ticker)
                 _status_guard(status, recorded_at=int(pending.get("recorded_at", 0) or 0))
                 existing = store.get_by_decision(alpha_id, decision_ts)
@@ -958,7 +1089,18 @@ def run_preview(
                         generated_at_ms=generated_at_ms,
                         admission=workflow_admission,
                         error=reason,
+                        status_document=status,
+                        evaluation_document=evaluation_document,
+                        risk_document=risk_document,
                     )
+                    research_risk_views[alpha_id] = {
+                        "status": "WORKFLOW_BLOCKED_AUXILIARY_VIEW",
+                        "row": (
+                            risk_document.get("alphas", {}).get(alpha_id)
+                            if isinstance(risk_document.get("alphas"), Mapping)
+                            else None
+                        ),
+                    }
                     errors[alpha_id] = {
                         "error_type": "PaperWorkflowAdmissionBlocked",
                         "error": workflow_error
@@ -977,6 +1119,7 @@ def run_preview(
                     alpha_id=alpha_id,
                     pending=pending,
                 )
+                research_risk_views[alpha_id] = dict(bundle_result.status)
                 if existing is not None:
                     stored_aum = existing.get("aum")
                     stored_cost_bps = existing.get("cost_bps")
@@ -1081,6 +1224,22 @@ def run_preview(
                     }
                     previews[alpha_id] = existing
                     continue
+                exchange_filters = None
+                if bundle_result.inputs is not None:
+                    exchange_filters = _load_exchange_filters(
+                        realtime_market_status_path,
+                        set(json.loads(str(pending["weights_json"]))),
+                        now_ms=int(
+                            generated_at_ms
+                            if generated_at_ms is not None
+                            else time.time() * 1000
+                        ),
+                        status_document=market_status_document,
+                    )
+                    exchange_filter_views[alpha_id] = {
+                        "status": "CONSUMED",
+                        "filters": exchange_filters,
+                    }
                 preview = build_alpha_preview(
                     alpha_id,
                     pending,
@@ -1092,19 +1251,8 @@ def run_preview(
                     generated_at_ms=generated_at_ms,
                     research_risk_inputs=bundle_result.inputs,
                     research_risk_bundle_status=bundle_result.status,
-                    exchange_filters=(
-                        _load_exchange_filters(
-                            realtime_market_status_path,
-                            set(json.loads(str(pending["weights_json"]))),
-                            now_ms=int(
-                                generated_at_ms
-                                if generated_at_ms is not None
-                                else time.time() * 1000
-                            ),
-                        )
-                        if bundle_result.inputs is not None
-                        else None
-                    ),
+                    exchange_filters=exchange_filters,
+                    supported_alpha_ids=candidate_universe,
                 )
                 preview["workflow_admission"] = {
                     "authority": workflow_admission["authority"],
@@ -1144,6 +1292,12 @@ def run_preview(
                     }
             except Exception as exc:
                 message = str(exc)[:240]
+                if decision_views[alpha_id].get("status") == "NOT_CONSUMED":
+                    decision_views[alpha_id] = {
+                        "status": "QUERY_ERROR",
+                        "error_type": type(exc).__name__,
+                        "error": message,
+                    }
                 if (
                     alpha_id not in ALPHA_IDS
                     and alpha_id not in previews
@@ -1155,6 +1309,9 @@ def run_preview(
                         research_risk_bundle_path=research_risk_bundle_path,
                         generated_at_ms=generated_at_ms,
                         error=message,
+                        status_document=status,
+                        evaluation_document=evaluation_document,
+                        risk_document=risk_document,
                     )
                     errors[alpha_id] = {
                         "error_type": "ForwardCandidatePending",
@@ -1173,6 +1330,7 @@ def run_preview(
                         "order_submission_allowed": False,
                     }
     finally:
+        paper_store_after = _paper_store_authority_view(store)
         store.close()
     # The three established books are the current execution-paper account.
     # Forward challengers are evaluated in the same run, but their immaturity
@@ -1228,6 +1386,98 @@ def run_preview(
         },
     }
     atomic_write_json(output_path, report, indent=2)
+    workflow_admission_view = {
+        "error": workflow_error,
+        "authority": (
+            workflow_admission.get("authority")
+            if workflow_admission is not None
+            else None
+        ),
+        "status": (
+            workflow_admission.get("status")
+            if workflow_admission is not None
+            else None
+        ),
+        "source_path": (
+            workflow_admission.get("source_path")
+            if workflow_admission is not None
+            else None
+        ),
+        "source_hash": (
+            workflow_admission.get("source_hash")
+            if workflow_admission is not None
+            else None
+        ),
+        "eligible_ids": sorted(
+            workflow_admission.get("eligible_ids", ())
+            if workflow_admission is not None
+            else ()
+        ),
+        "execution_ids": sorted(
+            workflow_admission.get("execution_ids", ())
+            if workflow_admission is not None
+            else ()
+        ),
+        "authorized_ids": sorted(
+            workflow_admission.get("authorized_ids", ())
+            if workflow_admission is not None
+            else ()
+        ),
+    }
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        report,
+        input_hashes={
+            "candidate_universe": stable_hash(list(candidate_universe)),
+            "exchange_filter_views": stable_hash(exchange_filter_views),
+            "forward_decision_views": stable_hash(decision_views),
+            "mark_price_view": stable_hash(mark_by_ticker),
+            "paper_preview_contract": stable_hash(
+                {
+                    "schema_version": 1,
+                    "selected": list(selected),
+                    "generated_at_ms": report["generated_at"],
+                    "aum": float(aum),
+                    "cost_bps": float(cost_bps),
+                    "official_periods_per_year": OFFICIAL_PAPER_PERIODS_PER_YEAR,
+                    "max_decision_age_days": MAX_DECISION_AGE_DAYS,
+                    "max_exchange_filter_age_ms": MAX_EXCHANGE_FILTER_AGE_MS,
+                    "major_tickers": list(FORWARD_MAJOR_TICKERS),
+                    "full_research_risk_engines": sorted(FULL_RESEARCH_RISK_ENGINES),
+                    "sources": {
+                        "forward_db": os.path.normpath(str(forward_db)),
+                        "mark_cache": os.path.normpath(str(mark_cache)),
+                        "status": os.path.normpath(str(status_path)),
+                        "paper_store": os.path.normpath(str(paper_store_path)),
+                        "research_risk_bundle": os.path.normpath(
+                            str(research_risk_bundle_path)
+                        ),
+                        "realtime_market_status": os.path.normpath(
+                            str(realtime_market_status_path)
+                        ),
+                        "workflow": os.path.normpath(str(workflow_path)),
+                    },
+                }
+            ),
+            "paper_store_authority_before": stable_hash(paper_store_before),
+            "research_risk_views": stable_hash(research_risk_views),
+            "supporting_artifact_documents": stable_hash(
+                {
+                    "forward_status": status,
+                    "forward_evaluations": evaluation_document,
+                    "research_risk_bundle": risk_document,
+                    "realtime_market_status": market_status_document,
+                    "alpha_production_workflow": workflow_document,
+                }
+            ),
+            "workflow_admission_view": stable_hash(workflow_admission_view),
+        },
+        output_hashes={
+            "paper_store_authority_after": stable_hash(paper_store_after),
+        },
+        output_path=output_path,
+        store_before_valid=paper_store_before.get("chain_valid") is True,
+        store_after_valid=paper_store_after.get("chain_valid") is True,
+    )
     return report
 
 
@@ -1256,14 +1506,7 @@ def main(argv: list[str] | None = None) -> int:
         help="immutable same-PIT nine-engine risk bundle; missing means pending/block",
     )
     args = parser.parse_args(argv)
-    alpha_ids = (
-        paper_candidate_ids(
-            forward_status=args.status,
-            evaluations=DEFAULT_FORWARD_EVALUATIONS,
-        )
-        if args.alpha == "all"
-        else (args.alpha,)
-    )
+    alpha_ids = None if args.alpha == "all" else (args.alpha,)
     report = run_preview(
         alpha_ids=alpha_ids,
         forward_db=args.forward_db,
@@ -1298,5 +1541,6 @@ __all__ = [
     "DEFAULT_RESEARCH_RISK_BUNDLE",
     "build_alpha_preview",
     "_full_research_risk_approved",
+    "release_run_attestation",
     "run_preview",
 ]

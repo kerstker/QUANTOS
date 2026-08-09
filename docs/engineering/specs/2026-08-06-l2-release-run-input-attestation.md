@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-8
+Roadmap slice: WP0 increments 1-9
 
 ## Problem
 
@@ -96,13 +96,23 @@ post-run market-store head, and the status file.  The pre-existing chain is veri
 once and the appended suffix is verified from that checkpoint; a run without raw
 archival cannot produce a complete proof.
 
+`paper_order_preview` is the ninth required module and binds the formal
+Production-Paper admission/execution seam.  Inputs bind the once-resolved candidate
+universe, fixed sizing/risk/time contract, normalized mark-price view, workflow
+admission, per-candidate attested-decision queries, nine-engine bundle views,
+actually consumed public exchange filters, supporting status documents, and the
+pre-run append-only Paper-store authority.  Outputs bind the post-run Paper-store
+authority and report file.  A complete attestation for `paper_preview_ready=false`
+proves the exact safe-blocked run only; it grants no candidate, risk, fill, promotion,
+broker, or order approval.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
 - It does not claim cross-host storage, WORM retention, external witnessing, or a
   signed container provenance.
 - Scheduled workers other than `alpha_production_workflow`,
-  `paper_multivenue_sor`, `realtime_alpha_execution_paper`,
+  `paper_multivenue_sor`, `paper_order_preview`, `realtime_alpha_execution_paper`,
   `binance_realtime_features`, `binance_realtime_market`, `realtime_alpha_discovery`, and
   `realtime_alpha_forward_shadow`, and `realtime_alpha_formal_shadow` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are

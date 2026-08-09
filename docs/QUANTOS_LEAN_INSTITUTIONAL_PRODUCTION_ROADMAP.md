@@ -162,17 +162,19 @@ Gate 只允许 `PASS / FAIL / ABSTAIN / PENDING`。AI 不能覆盖结果；材�
 退出条件：工作树可解释；调度运行的 commit/container/data/evidence 全部绑定；
 `assess_top_tier.py --check` 无漂移；旧诊断 Paper 明确标记，不能获得部署资格。
 
-状态（2026-08-09）：**输入/证据绑定前八个增量已实现，WP0 尚未闭合。** L2 release-run
+状态（2026-08-09）：**输入/证据绑定前九个增量已实现，WP0 尚未闭合。** L2 release-run
 receipt 已支持经 launcher 严格校验的 worker attestation；唯一候选权威
-`alpha_production_workflow`、公共双场所路由 `paper_multivenue_sor` 和承重接缝
-`realtime_alpha_execution_paper`，以及上游公共行情权威 `binance_realtime_market` 与
+`alpha_production_workflow`、公共双场所路由 `paper_multivenue_sor`、正式 Paper 准入/模拟执行
+`paper_order_preview` 和承重接缝 `realtime_alpha_execution_paper`，以及上游公共行情权威
+`binance_realtime_market` 与
 data→feature 接缝 `binance_realtime_features`
 、selection-bearing feature→candidate 接缝 `realtime_alpha_discovery`，以及 engineering
 Signal-Shadow 接缝 `realtime_alpha_forward_shadow`，以及物理隔离的 formal-blinded
 Signal-Shadow 接缝 `realtime_alpha_formal_shadow` 已成为强制模块。
 除候选证据与策略/链头外，现已绑定完整盘口
 bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状态、执行前后账本权威、实际消费的
-路由快照和最终报告，并绑定公共 REST 完整响应/归档回执/行情链头，以及实时特征实际消费的
+路由快照和最终报告，并绑定正式 Paper 的候选/mark/工作流/逐候选决策/九引擎/交易过滤器视图与
+执行账本前后权威，绑定公共 REST 完整响应/归档回执/行情链头，以及实时特征实际消费的
 公共源快照/源链/漂移视图、输出批次权威，
   以及 discovery 实际消费的 PIT 帧/容量/反馈/全局实验上下文和输出候选权威；两条 Shadow
   路径分别绑定自己的运行前后账本权威、实际消费 PIT 帧与独立报告，formal 证明不能借用
@@ -183,8 +185,9 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   单次条件聚合并以 SQLite 指令预算钉死；新不可变发布已在约 107 秒正式完成，精确 release、
   7 input + 3 output hashes、完整安全声明均通过。forward-shadow 新发布 `535b22e` 也已正式
   `COMPLETED/worker_attested=true`，24 个候选、192 个事件且链有效；formal-shadow 新发布
-  `55aa07d` 也已正式通过，24 个候选、208 个事件、链有效且不反馈 selector；公共行情增量仍待
-  新不可变发布的正式 runtime 复验。
+  `55aa07d` 也已正式通过，24 个候选、208 个事件、链有效且不反馈 selector；公共行情新发布
+  `49de569` 已连续两轮 14/14 PASS、0 失败、完整证明；正式 Paper Preview 增量仍待新不可变发布的
+  runtime 复验。
 
 ### WP1：唯一候选工作流
 

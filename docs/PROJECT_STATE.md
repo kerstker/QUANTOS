@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Formal Paper Order Preview 发布运行证明第九增量：**
+> `paper_order_preview` 已接入强制 release-run attestation。证明绑定唯一候选全集、固定
+> Paper sizing/risk/时钟合同、实际 mark 视图、工作流准入、逐候选前向决策查询、九引擎 bundle
+> 消费视图、实际 Binance 公共合约过滤器、辅助状态文档，以及运行前 Paper 账本权威；输出绑定
+> 运行后追加式 Paper 账本权威和最终报告。业务 `paper_preview_ready=false` 仍是诚实阻断，证明完整
+> 只表示“本轮输入和阻断可复核”，不等于候选、九引擎或模拟成交通过。公共实时行情已在不可变
+> 发布 `49de569` 连续两轮正式通过：14/14 标的、0 失败、39,433+ 行且链有效，3 input +
+> 3 output hashes、`worker_attested=true`。Paper Preview 增量已通过 327 项相关回归，仍须新
+> 不可变发布的正式 SAFE_BLOCKED/PASS 周期复验；始终无凭证、broker、订单或 live 权限。
+
 > **2026-08-09 WP0 Binance Public Realtime Market 发布运行证明第八增量：**
 > `binance_realtime_market` 已接入强制 release-run attestation。输入绑定完整公共 REST
 > 响应 bundle（含 URL 与逐标的响应）、固定采集/新鲜度/归档合同，以及运行前已验证行情账本
