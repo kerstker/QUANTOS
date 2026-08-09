@@ -97,9 +97,13 @@ def _temp_repo(tmp_path: Path) -> tuple[Path, str]:
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "config", "user.name", "test")
     (repo / "source.txt").write_text("source\n", encoding="utf-8")
+    (repo / ".gitattributes").write_text(
+        "*.json text eol=lf\n*.md text eol=lf\n",
+        encoding="utf-8",
+    )
     (repo / "scripts").mkdir()
     (repo / "scripts/validate.py").write_text("# validation fixture\n", encoding="utf-8")
-    _git(repo, "add", "source.txt", "scripts/validate.py")
+    _git(repo, "add", ".gitattributes", "source.txt", "scripts/validate.py")
     _git(repo, "commit", "-qm", "source")
     return repo, _git(repo, "rev-parse", "HEAD")
 
@@ -128,9 +132,11 @@ def _write_release_evidence_inputs(repo: Path, source_commit: str) -> None:
         "evidence/reproducibility/container_build_latest.json": reproducibility,
     }
     for relative, document in documents.items():
-        (repo / relative).write_text(
-            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
+        (repo / relative).write_bytes(
+            (
+                json.dumps(document, sort_keys=True, separators=(",", ":"))
+                + "\n"
+            ).encode("utf-8")
         )
 
     artifact_hashes = {
@@ -251,9 +257,19 @@ def test_release_evidence_manifest_binds_full_allowlisted_artifact_set(tmp_path)
         expected_release_commit=release_commit,
     )
     assert verified == manifest
+    manifest_bytes = (repo / RELEASE_EVIDENCE_MANIFEST_PATH).read_bytes()
     assert digest == hashlib.sha256(
-        (repo / RELEASE_EVIDENCE_MANIFEST_PATH).read_bytes()
+        manifest_bytes.replace(b"\r\n", b"\n")
     ).hexdigest()
+
+    checkout = tmp_path / "release-checkout"
+    _git(repo, "worktree", "add", "--detach", str(checkout), release_commit)
+    checked_out, checked_out_digest = assert_release_evidence_manifest(
+        checkout,
+        expected_release_commit=release_commit,
+    )
+    assert checked_out == manifest
+    assert checked_out_digest == digest
 
     (repo / "evidence/sbom.cdx.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="drift"):

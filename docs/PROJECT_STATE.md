@@ -12,6 +12,10 @@
 > The final `paper_operational_evidence` immutable run from `c1e8eb8` retained a
 > complete 5-input/2-output worker attestation and valid chain. Its outer exit 2 is
 > the expected `MATURING` business result, not a release-verification failure.
+> The first detached-checkout rehearsal correctly exposed Windows CRLF-to-LF
+> normalization in three tracked text artifacts. A fresh-worktree regression now
+> requires manifest identity to survive checkout; text hashes use the repository's
+> declared LF form while semantic supply-chain cross-links and binary bytes remain exact.
 
 > **2026-08-09 WP0 Paper Operational Evidence 发布运行证明第十一增量：**
 > `paper_operational_evidence` 已接入强制 release-run attestation。证明绑定唯一 Shadow 候选全集、

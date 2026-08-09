@@ -44,6 +44,9 @@ report, top-tier assessment, SBOM, container vulnerability evidence, and the two
 build reproducibility proof. An evidence-only descendant commit is accepted only
 when its stable canonical source anchor matches the report; any source, artifact,
 manifest, or cross-link drift fails closed. The unique
+Text evidence is hashed in the repository's declared LF form so Windows checkout
+line-ending conversion cannot invalidate an otherwise identical immutable release;
+all non-line-ending bytes and all binary artifacts remain exact. The unique
 `alpha_production_workflow`, the public-book `paper_multivenue_sor`, formal
 `paper_order_preview`, its `paper_research_risk_bundle` producer, and
 the `paper_operational_evidence` window collector, and

@@ -162,6 +162,14 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _portable_artifact_sha256(path: Path) -> str:
+    """Hash tracked text exactly as Git's LF checkout contract represents it."""
+    payload = path.read_bytes()
+    if path.suffix.lower() in {".json", ".md"}:
+        payload = payload.replace(b"\r\n", b"\n")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -320,18 +328,20 @@ def build_release_evidence_manifest(
             "release evidence required artifacts are missing: " + ", ".join(missing)
         )
     artifact_sha256 = {
-        path: _sha256_file(repo / path)
+        path: _portable_artifact_sha256(repo / path)
         for path in sorted(present)
     }
-    if supply.get("sbom_sha256") != artifact_sha256["evidence/sbom.cdx.json"]:
+    if supply.get("sbom_sha256") != _sha256_file(
+        repo / "evidence/sbom.cdx.json"
+    ):
         raise ValueError("SBOM digest drift from supply-chain baseline")
-    if supply.get("container_vulnerability_evidence_sha256") != artifact_sha256[
-        "evidence/vulnerability/container_trivy_latest.json"
-    ]:
+    if supply.get("container_vulnerability_evidence_sha256") != _sha256_file(
+        repo / "evidence/vulnerability/container_trivy_latest.json"
+    ):
         raise ValueError("container audit digest drift from supply-chain baseline")
-    if supply.get("container_reproducibility_evidence_sha256") != artifact_sha256[
-        "evidence/reproducibility/container_build_latest.json"
-    ]:
+    if supply.get("container_reproducibility_evidence_sha256") != _sha256_file(
+        repo / "evidence/reproducibility/container_build_latest.json"
+    ):
         raise ValueError(
             "container reproducibility digest drift from supply-chain baseline"
         )
@@ -421,7 +431,7 @@ def assert_release_evidence_manifest(
     expected_document = build_release_evidence_manifest(repo)
     if actual != expected_document:
         raise ValueError("release evidence manifest drift")
-    return actual, _sha256_file(path)
+    return actual, _portable_artifact_sha256(path)
 
 
 def assert_canonical_working_tree(repo_root: Path | str | None = None) -> None:
