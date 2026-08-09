@@ -304,11 +304,7 @@ def test_required_worker_fails_closed_without_input_attestation(
 
 @pytest.mark.parametrize(
     "module_name",
-    (
-        "alpha_production_workflow",
-        "paper_multivenue_sor",
-        "realtime_alpha_execution_paper",
-    ),
+    sorted(REQUIRED_INPUT_ATTESTATION_MODULES),
 )
 def test_required_worker_attestation_is_validated_and_hash_bound(
     tmp_path: Path,
@@ -528,6 +524,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
     assert REQUIRED_INPUT_ATTESTATION_MODULES == frozenset(
         {
             "alpha_production_workflow",
+            "binance_realtime_market",
             "binance_realtime_features",
             "paper_multivenue_sor",
             "realtime_alpha_discovery",

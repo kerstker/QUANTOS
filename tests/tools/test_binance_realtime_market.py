@@ -1,3 +1,4 @@
+import hashlib
 import json
 from urllib.parse import parse_qs, urlparse
 
@@ -219,7 +220,9 @@ def _fake_http(url):
     raise AssertionError(url)
 
 
-def test_refresh_persists_complete_public_snapshot_and_status(tmp_path):
+def test_refresh_persists_complete_public_snapshot_and_status(tmp_path, monkeypatch):
+    release_commit = "f" * 40
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
     store_path = str(tmp_path / "market.db")
     status_path = str(tmp_path / "status.json")
     status = realtime.run_refresh(
@@ -267,12 +270,75 @@ def test_refresh_persists_complete_public_snapshot_and_status(tmp_path):
     assert row["quality"]["order_submission"] is False
     assert json.loads((tmp_path / "status.json").read_text())["complete"] is True
 
+    attestation = realtime.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "binance_realtime_market"
+    assert attestation["release_commit"] == release_commit
+    assert set(attestation["input_hashes"]) == {
+        "collector_contract",
+        "market_store_authority_before",
+        "public_response_bundle",
+    }
+    assert set(attestation["output_hashes"]) == {
+        "market_store_authority_after",
+        "raw_archive_receipts",
+        "realtime_market_status_file",
+    }
+    assert attestation["output_hashes"]["realtime_market_status_file"] == (
+        hashlib.sha256((tmp_path / "status.json").read_bytes()).hexdigest()
+    )
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+
     store = BinanceRealtimeStore(store_path)
     try:
         assert store.row_count() == 1
         assert store.chain_valid() is True
     finally:
         store.close()
+
+
+def test_refresh_failure_clears_prior_release_attestation(tmp_path):
+    realtime._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+
+    with pytest.raises(realtime.BinanceRealtimeDataError, match="empty"):
+        realtime.run_refresh(
+            tickers=(),
+            store_path=str(tmp_path / "market.db"),
+            status_path=str(tmp_path / "status.json"),
+            archive_root=None,
+            http_get=_fake_http,
+            now_ms=_NOW,
+            max_workers=1,
+        )
+
+    assert realtime.release_run_attestation() is None
+
+
+def test_release_attestation_requires_content_addressed_raw_archive(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
+
+    status = realtime.run_refresh(
+        tickers=("BTC",),
+        store_path=str(tmp_path / "market.db"),
+        status_path=str(tmp_path / "status.json"),
+        archive_root=None,
+        http_get=_fake_http,
+        now_ms=_NOW,
+        max_workers=1,
+    )
+
+    assert status["verdict"] == "PASS"
+    attestation = realtime.release_run_attestation()
+    assert attestation is not None
+    assert attestation["complete"] is False
 
 
 def test_refresh_blocks_stale_positioning_without_writing_a_row(tmp_path):

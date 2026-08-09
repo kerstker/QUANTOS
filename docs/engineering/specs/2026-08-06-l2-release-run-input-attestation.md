@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-7
+Roadmap slice: WP0 increments 1-8
 
 ## Problem
 
@@ -87,6 +87,15 @@ shadow ledger independently.  The launcher therefore cannot accept an engineerin
 proof for a formal run; formal outcomes remain excluded from selector feedback and
 grant no maturity, promotion, deployment, broker, or order authority.
 
+`binance_realtime_market` is the eighth required module and binds the upstream
+public REST market authority used by research and Paper execution filters.  Inputs
+bind the complete decoded public-response bundle with source URLs, the fixed
+universe/freshness/archive contract, and the verified pre-run market-store chain
+head.  Outputs bind every content-addressed raw-archive receipt, the verified
+post-run market-store head, and the status file.  The pre-existing chain is verified
+once and the appended suffix is verified from that checkpoint; a run without raw
+archival cannot produce a complete proof.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
@@ -94,7 +103,7 @@ grant no maturity, promotion, deployment, broker, or order authority.
   signed container provenance.
 - Scheduled workers other than `alpha_production_workflow`,
   `paper_multivenue_sor`, `realtime_alpha_execution_paper`,
-  `binance_realtime_features`, `realtime_alpha_discovery`, and
+  `binance_realtime_features`, `binance_realtime_market`, `realtime_alpha_discovery`, and
   `realtime_alpha_forward_shadow`, and `realtime_alpha_formal_shadow` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are
   instrumented in later WP0 slices.

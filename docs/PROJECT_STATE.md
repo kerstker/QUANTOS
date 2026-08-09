@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Binance Public Realtime Market 发布运行证明第八增量：**
+> `binance_realtime_market` 已接入强制 release-run attestation。输入绑定完整公共 REST
+> 响应 bundle（含 URL 与逐标的响应）、固定采集/新鲜度/归档合同，以及运行前已验证行情账本
+> 链头；输出绑定本轮 content-addressed raw-archive 回执、运行后账本链头与状态文件。既有链只在
+> 周期入口完整验证一次，追加后从可信 checkpoint 验证后缀，避免证明机制把每分钟任务变成两次
+> 全链扫描。Formal Blinded Shadow 已在不可变发布 `55aa07d` 正式运行通过：
+> `COMPLETED/exit=0/worker_attested=true`，24 个候选、208 个 formal 账本事件、链有效且
+> selector feedback=false。行情增量已通过聚焦回归，仍须新不可变发布的正式公共数据周期复验；
+> 全程仅公共数据、无凭证、无 broker、无订单、无 live 权限。
+
 > **2026-08-09 WP0 Realtime Alpha Formal Blinded Shadow 发布运行证明第七增量：**
 > `realtime_alpha_formal_shadow` 已接入独立的强制 release-run attestation。
 > 它复用确定性的帧/标签实现，但只读取自己的 formal authority 证明并写入物理隔离的

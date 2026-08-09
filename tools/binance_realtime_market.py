@@ -6,6 +6,7 @@ source timestamps and appended to a hash-chained SQLite store.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SUCCESS,
@@ -36,10 +38,137 @@ MAX_CANDLE_AGE_MS = 5 * 60_000
 MAX_ROLLING_TICKER_AGE_MS = 5 * 60_000
 MAX_POSITIONING_AGE_MS = 15 * 60_000
 MAX_FUNDING_AGE_MS = 12 * 60 * 60_000
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
 class BinanceRealtimeDataError(RuntimeError):
     """A public Binance response is missing, malformed, stale, or inconsistent."""
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _safe_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _market_store_authority_snapshot(path: str | Path) -> dict[str, Any]:
+    resolved = Path(path)
+    if not resolved.is_file():
+        return {
+            "exists": False,
+            "valid": True,
+            "row_count": 0,
+            "verified_seq": 0,
+            "verified_row_hash": "",
+        }
+    try:
+        store = BinanceRealtimeStore(str(resolved), create=False)
+        try:
+            verification = store.verify_chain_from()
+            return {
+                "exists": True,
+                "valid": verification.get("valid") is True,
+                "row_count": store.row_count(),
+                "verified_seq": int(verification.get("verified_seq", 0)),
+                "verified_row_hash": str(
+                    verification.get("verified_row_hash", "")
+                ),
+            }
+        finally:
+            store.close()
+    except Exception as exc:  # fail-closed state is still hash-bound evidence
+        return {
+            "exists": True,
+            "valid": False,
+            "error_type": type(exc).__name__,
+            "size": _safe_size(resolved),
+        }
+
+
+def _build_release_run_attestation(
+    status: Mapping[str, Any],
+    *,
+    input_hashes: Mapping[str, str],
+    output_hashes: Mapping[str, str],
+    status_path: str | Path,
+    archive_enabled: bool,
+    archive_receipt_count: int,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["realtime_market_status_file"] = _sha256_file(status_path)
+    raw_safety = status.get("safety")
+    raw_safety = raw_safety if isinstance(raw_safety, Mapping) else {}
+    safety = {
+        "paper_only": bool(
+            raw_safety.get("public_market_data_only") is True
+            and raw_safety.get("live_trading") is False
+        ),
+        "live_allowed": raw_safety.get("live_trading"),
+        "order_submission_allowed": raw_safety.get("order_submission"),
+        "credentials_accessed": raw_safety.get("credentials"),
+        "broker_connectivity": raw_safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and status.get("verdict") == "PASS"
+        and status.get("complete") is True
+        and archive_enabled
+        and archive_receipt_count > 0
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "binance_realtime_market",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy of the latest public-market release proof."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _http_get_json(url: str) -> object:
@@ -574,15 +703,16 @@ def _archive_payloads(
     book: Mapping[str, Any],
     payloads: Mapping[str, tuple[str, object]],
     archive_root: str,
-) -> None:
+) -> list[dict[str, Any]]:
     rows = {
         "mark": (mark_url, mark),
         "book": (book_url, book),
         **payloads,
     }
+    receipts: list[dict[str, Any]] = []
     for dataset, (source_uri, payload) in rows.items():
         count = len(payload) if isinstance(payload, list) else 1
-        archive_json_response(
+        receipt = archive_json_response(
             root=archive_root,
             payload=payload,
             source_uri=source_uri,
@@ -598,6 +728,14 @@ def _archive_payloads(
                 "duplicate_rows": 0,
             },
         )
+        receipts.append(
+            {
+                "dataset_id": f"binance_realtime_{dataset}",
+                "instrument_id": f"{ticker}USDT",
+                **receipt,
+            }
+        )
+    return receipts
 
 
 def run_refresh(
@@ -610,12 +748,15 @@ def run_refresh(
     now_ms: int | None = None,
     max_workers: int = 8,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     selected = tuple(dict.fromkeys(str(item).upper() for item in tickers))
     if not selected:
         raise BinanceRealtimeDataError("realtime universe is empty")
     for ticker in selected:
         if not ticker.isalnum():
             raise BinanceRealtimeDataError(f"invalid ticker {ticker!r}")
+    store_authority_before = _market_store_authority_snapshot(store_path)
 
     mark_url, mark_payload = _get("/fapi/v1/premiumIndex", None, http_get)
     book_url, book_payload = _get("/fapi/v1/ticker/bookTicker", None, http_get)
@@ -659,10 +800,60 @@ def run_refresh(
                 }
 
     observed_at_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    input_hashes = {
+        "collector_contract": stable_hash(
+            {
+                "schema_version": 1,
+                "provider": "BINANCE_PUBLIC_USDM",
+                "base_url": BASE_URL,
+                "universe": list(selected),
+                "period": PERIOD,
+                "observed_at_ms": observed_at_ms,
+                "archive_enabled": archive_root is not None,
+                "freshness_limits_ms": {
+                    "book": MAX_BOOK_AGE_MS,
+                    "candle": MAX_CANDLE_AGE_MS,
+                    "rolling_ticker": MAX_ROLLING_TICKER_AGE_MS,
+                    "positioning": MAX_POSITIONING_AGE_MS,
+                    "funding": MAX_FUNDING_AGE_MS,
+                },
+            }
+        ),
+        "market_store_authority_before": stable_hash(store_authority_before),
+        "public_response_bundle": stable_hash(
+            {
+                "shared": {
+                    "mark": {"source_uri": mark_url, "payload": mark_payload},
+                    "book": {"source_uri": book_url, "payload": book_payload},
+                    "exchange_info": {
+                        "source_uri": exchange_url,
+                        "payload": exchange_payload,
+                    },
+                    "rolling_24h": {
+                        "source_uri": rolling_url,
+                        "payload": rolling_payload,
+                    },
+                    "funding_info": {
+                        "source_uri": funding_info_url,
+                        "payload": funding_info_payload,
+                    },
+                },
+                "per_ticker": {
+                    ticker: {
+                        dataset: {"source_uri": source_uri, "payload": payload}
+                        for dataset, (source_uri, payload) in payloads.items()
+                    }
+                    for ticker, payloads in fetched.items()
+                },
+                "fetch_errors": errors,
+            }
+        ),
+    }
     Path(store_path).parent.mkdir(parents=True, exist_ok=True)
     store = BinanceRealtimeStore(store_path, create=True)
     inserted = 0
     snapshots: dict[str, dict[str, Any]] = {}
+    archive_receipts: list[dict[str, Any]] = []
     try:
         for ticker in selected:
             if ticker in errors:
@@ -679,17 +870,19 @@ def run_refresh(
                     observed_at_ms=observed_at_ms,
                 )
                 if archive_root is not None:
-                    _archive_payloads(
-                        ticker,
-                        observed_at_ms=observed_at_ms,
-                        mark_url=mark_url,
-                        mark=marks[ticker],
-                        book_url=book_url,
-                        book=books[ticker],
-                        payloads=fetched[ticker],
-                        archive_root=archive_root,
+                    archive_receipts.extend(
+                        _archive_payloads(
+                            ticker,
+                            observed_at_ms=observed_at_ms,
+                            mark_url=mark_url,
+                            mark=marks[ticker],
+                            book_url=book_url,
+                            book=books[ticker],
+                            payloads=fetched[ticker],
+                            archive_root=archive_root,
+                        )
                     )
-                    archive_json_response(
+                    exchange_receipt = archive_json_response(
                         root=archive_root,
                         payload=contracts[ticker],
                         source_uri=exchange_url,
@@ -705,7 +898,7 @@ def run_refresh(
                             "duplicate_rows": 0,
                         },
                     )
-                    archive_json_response(
+                    funding_receipt = archive_json_response(
                         root=archive_root,
                         payload=funding_policies.get(f"{ticker}USDT", []),
                         source_uri=funding_info_url,
@@ -725,7 +918,7 @@ def run_refresh(
                             "duplicate_rows": 0,
                         },
                     )
-                    archive_json_response(
+                    rolling_receipt = archive_json_response(
                         root=archive_root,
                         payload=rolling_rows[ticker],
                         source_uri=rolling_url,
@@ -741,6 +934,25 @@ def run_refresh(
                             "duplicate_rows": 0,
                         },
                     )
+                    archive_receipts.extend(
+                        [
+                            {
+                                "dataset_id": "binance_realtime_exchange_info",
+                                "instrument_id": f"{ticker}USDT",
+                                **exchange_receipt,
+                            },
+                            {
+                                "dataset_id": "binance_realtime_funding_info",
+                                "instrument_id": f"{ticker}USDT",
+                                **funding_receipt,
+                            },
+                            {
+                                "dataset_id": "binance_realtime_ticker_24h",
+                                "instrument_id": f"{ticker}USDT",
+                                **rolling_receipt,
+                            },
+                        ]
+                    )
                 inserted += int(store.append_snapshot(snapshot))
                 snapshots[ticker] = snapshot
             except Exception as exc:  # noqa: BLE001 - fail closed per ticker
@@ -748,8 +960,22 @@ def run_refresh(
                     "error_type": type(exc).__name__,
                     "message": str(exc)[:240],
                 }
-        chain_valid = store.chain_valid()
+        if store_authority_before.get("valid") is True:
+            verification = store.verify_chain_from(
+                checkpoint_seq=int(store_authority_before["verified_seq"]),
+                checkpoint_row_hash=str(store_authority_before["verified_row_hash"]),
+            )
+        else:
+            verification = store.verify_chain_from()
+        chain_valid = verification.get("valid") is True
         row_count = store.row_count()
+        store_authority_after = {
+            "exists": True,
+            "valid": chain_valid,
+            "row_count": row_count,
+            "verified_seq": int(verification.get("verified_seq", 0)),
+            "verified_row_hash": str(verification.get("verified_row_hash", "")),
+        }
     finally:
         store.close()
 
@@ -799,6 +1025,17 @@ def run_refresh(
         },
     }
     atomic_write_json(status_path, status, indent=2)
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        status,
+        input_hashes=input_hashes,
+        output_hashes={
+            "market_store_authority_after": stable_hash(store_authority_after),
+            "raw_archive_receipts": stable_hash(archive_receipts),
+        },
+        status_path=status_path,
+        archive_enabled=archive_root is not None,
+        archive_receipt_count=len(archive_receipts),
+    )
     return status
 
 
