@@ -69,8 +69,10 @@ _IMPLEMENTATION_PATHS = (
     "services/governance/identity_access_review.py",
     "services/governance/identity_authorization.py",
     "services/governance/identity_authorization_store.py",
+    "services/governance/l2_identity_deployment.py",
     "config/identity_authorization_registry.json",
     "services/promotion_api/main.py",
+    "services/promotion_api/trusted_mtls_proxy.py",
     "apps/research-console/src/lib/api/promotion-api.ts",
     "apps/research-console/src/lib/api/governance-pkce.ts",
     "apps/research-console/src/workbench/CommandReviewPanel.tsx",
@@ -82,9 +84,11 @@ _VERIFICATION_PATHS = (
     "tests/governance/test_identity_access_review.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
+    "tests/governance/test_l2_identity_deployment.py",
     "tests/governance/test_promotion_api_boundary.py",
     "tests/governance/test_promotion_api_endpoints.py",
     "apps/research-console/src/lib/api/governance-pkce.test.ts",
+    "tests/governance/test_trusted_mtls_proxy.py",
 )
 _M4_BLOCKERS = (
     "EXTERNAL_OIDC_ISSUER_OPERATIONAL_EVIDENCE_MISSING",

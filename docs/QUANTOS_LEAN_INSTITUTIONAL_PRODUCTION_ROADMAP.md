@@ -248,6 +248,17 @@ authority verdict 与授权候选数。真实成熟门槛未降低。
 
 补数据 SLA/第二源、外部身份与凭证域、持续签名/外部封存、恢复/WORM、外部监控和供应商退出方案。
 
+状态（2026-08-10，L2 内网身份设计切片）：已完成不授予任何运行权限的本地设计与承重边界。
+方案固定为内部 Keycloak OIDC + 私有客户端证书 CA + Envoy 下游 mTLS；浏览器使用
+Authorization Code + PKCE S256，access token 必须由同一客户端证书按 RFC 8705 绑定。
+Promotion API 只在显式 `ENVOY_UDS_V1` 模式下启用证书转译，并仅接受受限 Unix socket 上
+唯一 `SANITIZE_SET` XFCC 包络；TCP、重复/多跳头、摘要不符和调用方伪造 TLS scope 均拒绝。
+部署合同强制内部 HTTPS、不可变镜像摘要、短 token/MFA、应用侧授权与全部 runtime authority=false。
+设计与对抗测试已进入 strong-identity 基线证据，但实际 Keycloak/CA/Envoy 部署、人员注册、密钥轮换、
+证书撤销和恢复演练尚不存在，因此 `GOV.IDENTITY.STRONG_AUTH` 继续诚实保持 M3/PARTIAL；本切片不改变
+WP0→WP7 固定顺序，也不开放 Testnet、Micro-Live、Mainnet、凭证或订单权限。详见
+[`engineering/specs/2026-08-10-l2-internal-identity-design.md`](engineering/specs/2026-08-10-l2-internal-identity-design.md)。
+
 ### WP6：Testnet 与 Operational Canary
 
 使用与 Paper 相同 release 做 Binance/Bybit testnet 一致性、拒单、部分成交、重连和故障演练。

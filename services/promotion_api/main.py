@@ -34,6 +34,7 @@ See `docs/engineering/specs/2026-07-12-strong-identity-baseline-design.md`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import os
 from pathlib import Path
 import threading
@@ -102,6 +103,7 @@ from services.orchestration.idempotency import (
     CommandStateError,
     SqliteCommandLog,
 )
+from services.promotion_api.trusted_mtls_proxy import EnvoyMtlsScopeMiddleware
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
@@ -243,6 +245,21 @@ require_promotion_approver = _role_dependency(GovernanceRole.PROMOTION_APPROVER)
 require_promotion_executor = _role_dependency(GovernanceRole.PROMOTION_EXECUTOR)
 
 
+def configure_trusted_transport(
+    application: FastAPI,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Enable only the reviewed Envoy-to-UDS certificate translation mode."""
+
+    values = environ if environ is not None else os.environ
+    mode = values.get("QUANTOS_TRUSTED_MTLS_PROXY_MODE", "")
+    if not mode:
+        return
+    if mode != "ENVOY_UDS_V1":
+        raise RuntimeError(f"unsupported trusted mTLS proxy mode: {mode!r}")
+    application.add_middleware(EnvoyMtlsScopeMiddleware)
+
+
 app = FastAPI(title="QUANTOS Promotion API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -251,6 +268,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+configure_trusted_transport(app)
 
 _EXEC_LOCK = threading.Lock()  # 进程内单飞(防前端双击);跨进程靠 promotion.py 的文件锁
 _PREFIX = "/api/v1/governance/promotion"

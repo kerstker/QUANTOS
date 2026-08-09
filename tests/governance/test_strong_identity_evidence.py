@@ -12,10 +12,12 @@ def _fixture_repo(tmp_path: Path) -> None:
         "services/governance/identity_access_review.py": "access review attestation\n",
         "services/governance/identity_authorization.py": "authorization core\n",
         "services/governance/identity_authorization_store.py": "authorization store\n",
+        "services/governance/l2_identity_deployment.py": "L2 deployment contract\n",
         "config/identity_authorization_registry.json": (
             '{"schema_version":1,"readiness":"L2_DRY_RUN_ONLY","generation":0,"principals":{}}\n'
         ),
         "services/promotion_api/main.py": ("Authorization OIDC_MTLS_MFA_RBAC PROMOTION_APPROVER PROMOTION_EXECUTOR\n"),
+        "services/promotion_api/trusted_mtls_proxy.py": "trusted Envoy UDS adapter\n",
         "apps/research-console/src/lib/api/promotion-api.ts": "Authorization Bearer\n",
         "apps/research-console/src/lib/api/governance-pkce.ts": (
             "code_challenge_method S256 getRandomValues subtle.digest response_type "
@@ -29,8 +31,10 @@ def _fixture_repo(tmp_path: Path) -> None:
         "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",
+        "tests/governance/test_l2_identity_deployment.py": "tests\n",
         "tests/governance/test_promotion_api_boundary.py": "tests\n",
         "tests/governance/test_promotion_api_endpoints.py": "tests\n",
+        "tests/governance/test_trusted_mtls_proxy.py": "tests\n",
         "apps/research-console/src/lib/api/governance-pkce.test.ts": "tests\n",
     }
     for relative, content in sources.items():
@@ -86,8 +90,10 @@ def test_strong_identity_evidence_hashes_every_load_bearing_source(tmp_path):
         "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
+        "services/governance/l2_identity_deployment.py",
         "config/identity_authorization_registry.json",
         "services/promotion_api/main.py",
+        "services/promotion_api/trusted_mtls_proxy.py",
         "apps/research-console/src/lib/api/promotion-api.ts",
         "apps/research-console/src/lib/api/governance-pkce.ts",
         "apps/research-console/src/workbench/CommandReviewPanel.tsx",
@@ -99,7 +105,9 @@ def test_strong_identity_evidence_hashes_every_load_bearing_source(tmp_path):
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_l2_identity_deployment.py",
         "tests/governance/test_promotion_api_boundary.py",
         "tests/governance/test_promotion_api_endpoints.py",
+        "tests/governance/test_trusted_mtls_proxy.py",
         "apps/research-console/src/lib/api/governance-pkce.test.ts",
     }

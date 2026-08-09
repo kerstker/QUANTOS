@@ -231,13 +231,15 @@
     "apps/research-console/src/workbench/CommandReviewPanel.tsx": "d7cba3a5f75c20df5a4f74e894c49a7879c9aca83ffe42c17daf4ee3929d83e8",
     "config/identity_authorization_registry.json": "13df7ad56fd2076aa46c681dfe1bd19237909e2b3e760d0e0b3f6454c42f6256",
     "quantos/contracts/identity.py": "de7fc42afc941a27af125d6bbf31624de4bb2b30bdc6c0e3a2dbea653ad9f23d",
-    "scripts/generate_strong_identity_evidence.py": "04056ad00d8f233ae8b56cf4eb8df4384b931872d00d21761e796d3baf86b087",
+    "scripts/generate_strong_identity_evidence.py": "3ac8deeb9e539cb2e82f9d187ac602613a1a78273744ea547d6de29000ef6d1b",
     "services/governance/identity_access_review.py": "6d83b05d1727efbe60443b779e1ae1552e644d62fa7914200db709bd5cfbfc5a",
     "services/governance/identity_authorization.py": "fd4ab8245104927bfb978819067aa4279a60160403a2b2576e11dc84430cf144",
     "services/governance/identity_authorization_store.py": "768a73e1833e93e7bb5f0ad8204faa90857c87e5b91d27e9ad449cb3dc2f6890",
+    "services/governance/l2_identity_deployment.py": "c0f1f4e138d63425ed4cd058906a955180330df4e36de04f8d5b70919db929ad",
     "services/governance/oidc_key_registry.py": "9770247c35eec9cbdcae9284d5a771be09efa6d24f3a251e7cf4c746e04ac206",
     "services/governance/strong_identity.py": "f7a0c911a923dfd5639a7d8a94c04a2bf2432383e6454363345044f31f417282",
-    "services/promotion_api/main.py": "f41374b63f69d51027c851199c29e18f066b9ad76d1732c91d385202ee0533c7"
+    "services/promotion_api/main.py": "f0b2dce42c0b1a3499fa889cb4983222a31c7079d758eeeccbf6092edd7f6e5c",
+    "services/promotion_api/trusted_mtls_proxy.py": "d665067a3bf0fcbeb7b0ee27e35e9511a8899a3c04cb42cda526a168a126a5ef"
   },
   "legacy_shared_token_accepted": false,
   "live_trading_authority_granted": false,
@@ -273,8 +275,10 @@
     "tests/governance/test_identity_access_review.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
+    "tests/governance/test_l2_identity_deployment.py",
     "tests/governance/test_promotion_api_boundary.py",
     "tests/governance/test_promotion_api_endpoints.py",
-    "apps/research-console/src/lib/api/governance-pkce.test.ts"
+    "apps/research-console/src/lib/api/governance-pkce.test.ts",
+    "tests/governance/test_trusted_mtls_proxy.py"
   ]
 }

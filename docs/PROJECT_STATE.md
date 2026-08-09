@@ -2237,3 +2237,27 @@ predecessor count.  This keeps the current release's success ratio honest while
 preserving restart and historical failure evidence.  The change is paper-only;
 promotion, live deployment, broker connectivity, and order submission remain
 fail-closed.
+
+# 2026-08-10 L2 internal strong-identity design slice
+
+With no existing OIDC service available, the internal identity topology is now
+specified as Keycloak OIDC plus a private client-certificate CA and an Envoy
+mTLS ingress. A strict, secret-free deployment contract rejects public
+exposure, mutable image tags, grant downgrades, missing certificate-bound
+tokens, role widening, TCP application ingress, and every runtime-authority
+escalation. The Promotion API has an explicit `ENVOY_UDS_V1` mode whose trusted
+adapter accepts exactly one Envoy `SANITIZE_SET` certificate envelope over a
+Unix-domain-socket scope, validates the certificate/hash, strips forwarding
+headers, and constructs the existing verified ASGI TLS extension. TCP spoofing,
+duplicate or multi-hop headers, malformed certificates, and caller-fabricated
+TLS extensions fail closed.
+
+The new contract and transport boundary are bound into the deterministic
+strong-identity evidence. This is design and local implementation evidence,
+not proof of an operating identity authority: Keycloak, the CA, Envoy, distinct
+human enrollment, key rotation, active certificate revocation, recovery, and
+retained operational drills have not been deployed. Therefore
+`GOV.IDENTITY.STRONG_AUTH` remains M3/PARTIAL, the aggregate remains
+`NOT_TOP_TIER` at 15/22, and all L2/live/order/credential safety boundaries are
+unchanged. Design:
+[`engineering/specs/2026-08-10-l2-internal-identity-design.md`](engineering/specs/2026-08-10-l2-internal-identity-design.md).
