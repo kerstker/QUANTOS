@@ -44,17 +44,35 @@
 > restart; it is never silently rebuilt once initialized. PIT values, append-only
 > retention, drift policy, and all L2 trading boundaries remain unchanged.
 > Immutable release `3eb0b7f` completed the one-time 13.6M-row migration in
-> 652s; the next cycle completed in 510s. A direct real-state probe confirmed
+> 652s; the immediate 510s follow-up was still processing accumulated catch-up
+> work. Subsequent five-minute scheduled cycles became the representative
+> steady state: 5,712--6,384 new observations per cycle in roughly 17--18s. A
+> direct real-state probe confirmed
 > 13,624,530 rows open in 1.5ms and count in 9ms, so the counter itself is
-> deployed but did not close the whole-worker latency. Read-only stage timing
+> deployed and the recurring archive rescan bottleneck is closed. Read-only stage timing
 > measured watermarks at 46.3s, trailing 98-series PIT reads at 0.33s,
-> calibration at 0.23s, and source verification/projection below 1.3s; the
-> remaining dominant path is the interleaved append into two 5.5GB indexes.
-> Batches are therefore now stably ordered by the shared primary-key prefix
-> before `executemany`, preserving equal-key first-value-wins semantics while
-> converting random page churn into locality-preserving writes. That second
-> optimization still requires a new immutable release and production timing
-> acceptance before the full latency issue is considered closed.
+> calibration at 0.23s, and source verification/projection below 1.3s. Batches
+> are also stably ordered by the shared primary-key prefix before `executemany`,
+> preserving equal-key first-value-wins semantics while reducing random page
+> churn. Immutable release `76a8007` completed its first fully attested sorted
+> production cycle with 5,928 new observations in 17.1s. This is not a material
+> incremental speed-up over the post-counter steady state; the persistent exact
+> count is the measured fix, while ordering is a bounded locality safeguard.
+>
+> **2026-08-09 governed completeness evidence restored to the console:** the
+> converged console keeps `/research/system-completeness` mapped to the global
+> governance drawer, but the drawer now consumes the read-only
+> `/api/v1/console/system-completeness` assessment directly. It displays the
+> governed verdict, exact requirement counts, red lines, evidence paths and next
+> controlled actions without calculating a completion percentage. Any missing
+> backend snapshot or provenance other than `TOP_TIER_EVIDENCE_ASSESSMENT`
+> fails closed as `SYSTEM_COMPLETENESS_UNVERIFIED` and shows no counts or verdict.
+> Frontend unit tests (198), typecheck, lint, production build, focused browser
+> accessibility/route acceptance, 24 governance composition tests, and the
+> 499-file governance scan pass. A clean-source assessment now marks
+> `FRONTEND.EVIDENCE.SINGLE_SOURCE` M4/PASS and raises the repository result from
+> 14/22 to **15/22 PASS**; remaining non-pass items require external authority,
+> licensed/provider evidence, longer operating windows, or post-L2 scope.
 
 > **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
 > `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online
