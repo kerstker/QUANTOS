@@ -1,5 +1,6 @@
 import { fetchRuntimeContract, getConsoleRuntimeMode } from '@/lib/api/research-console-api';
 import type { RuntimeContractPayload } from '@/lib/types/research';
+import { SystemCompletenessEvidence } from '@/pages/SystemCompleteness';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { CommandReviewPanel } from '../CommandReviewPanel';
 
@@ -32,6 +33,7 @@ export function GovernanceDrawer() {
     return (
       <div className="space-y-4">
         {unavailable(state.apiState, state.error)}
+        <SystemCompletenessEvidence compact />
         <CommandReviewPanel contractVerified={false} />
       </div>
     );
@@ -65,6 +67,7 @@ export function GovernanceDrawer() {
       <p className="font-mono text-[10px] text-faint">
         ORDER SUBMISSION BLOCKED · schema catalog {payload.event_schema_catalog.sha256.slice(0, 12)}
       </p>
+      <SystemCompletenessEvidence compact />
       <CommandReviewPanel contractVerified={verified} />
     </div>
   );
