@@ -5,6 +5,8 @@ import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.binance_stream_cursor import StreamCursorStore
+from services.features.realtime_feature_batch_store import RealtimeFeatureBatchStore
+from tools import binance_realtime_stream as realtime
 from tools.binance_realtime_stream import (
     BinanceStreamDataError,
     StreamState,
@@ -44,7 +46,10 @@ def test_full_chain_verification_uses_an_isolated_connection_and_is_timestamped(
     store = BinanceRealtimeStore(path, create=True)
     store.close()
 
-    assert _verify_store_chain(path) is True
+    verification = _verify_store_chain(path)
+    assert verification["valid"] is True
+    assert verification["anchor_seq"] == 0
+    assert verification["verified_suffix_rows"] == 0
 
     state = StreamState(("BTC",))
     status = _status(
@@ -59,6 +64,101 @@ def test_full_chain_verification_uses_an_isolated_connection_and_is_timestamped(
     assert status["verdict"] == "WARMING_OR_RECONNECTING"
     assert status["store"]["chain_valid"] is None
     assert status["store"]["chain_verified_at_ms"] is None
+
+
+def test_chain_verification_resumes_from_trusted_checkpoint(tmp_path):
+    path = str(tmp_path / "stream.db")
+    store = BinanceRealtimeStore(path, create=True)
+    try:
+        assert store.append_snapshot(
+            {
+                "instrument_id": "BTCUSDT",
+                "observed_at_ms": 100,
+                "event_time_ms": 99,
+            }
+        ) is True
+        checkpoint = store.verify_chain_from()
+        assert store.append_snapshot(
+            {
+                "instrument_id": "ETHUSDT",
+                "observed_at_ms": 101,
+                "event_time_ms": 100,
+            }
+        ) is True
+    finally:
+        store.close()
+
+    verification = _verify_store_chain(
+        path,
+        checkpoint_seq=checkpoint["verified_seq"],
+        checkpoint_row_hash=checkpoint["verified_row_hash"],
+    )
+
+    assert verification["valid"] is True
+    assert verification["anchor_seq"] == 1
+    assert verification["verified_suffix_rows"] == 1
+    assert verification["verified_seq"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    batch_path = tmp_path / "batches.db"
+    now_ms = int(realtime.time.time() * 1_000)
+    batch_store = RealtimeFeatureBatchStore(str(batch_path), create=True)
+    batch_store.append(
+        {
+            "batch_id": "verified-source",
+            "observed_at_ms": 100,
+            "source": {
+                "chain_checkpoint": {
+                    "schema_version": 1,
+                    "verified_seq": 123,
+                    "verified_row_hash": "b" * 64,
+                    "full_verified_at_ms": now_ms,
+                }
+            },
+        }
+    )
+    batch_store.close()
+    calls = []
+
+    def verify(_path, *, checkpoint_seq, checkpoint_row_hash):
+        calls.append((checkpoint_seq, checkpoint_row_hash))
+        return {
+            "valid": True,
+            "anchor_seq": checkpoint_seq,
+            "verified_suffix_rows": 2,
+            "verified_seq": 125,
+            "verified_row_hash": "c" * 64,
+        }
+
+    async def consume(_endpoint, _url, *, state, stop, deadline):
+        del deadline
+        state.connections[_endpoint] = True
+        await stop.wait()
+
+    monkeypatch.setattr(realtime, "_verify_store_chain", verify)
+    monkeypatch.setattr(realtime, "_consume", consume)
+
+    status = await realtime.run_stream(
+        tickers=("BTC",),
+        duration_seconds=0.03,
+        flush_seconds=0.01,
+        store_path=str(tmp_path / "stream.db"),
+        status_path=str(tmp_path / "status.json"),
+        batch_store_path=str(batch_path),
+    )
+
+    assert calls[0] == (123, "b" * 64)
+    assert status["store"]["chain_valid"] is True
+    assert status["store"]["chain_verification"]["anchor_seq"] == 123
+    assert (
+        status["store"]["chain_verification"]["verification_mode"]
+        == "INCREMENTAL_FROM_TRUSTED_BATCH"
+    )
 
 
 def test_state_reduces_complete_stream_surface_into_one_snapshot():

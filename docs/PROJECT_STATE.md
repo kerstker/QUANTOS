@@ -1,5 +1,20 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 Binance public realtime chain verification scaling:** production
+> observation on the 1.85M-row public snapshot authority showed the stream
+> worker repeatedly starting from genesis, consuming a CPU core for minutes and
+> delaying five-second flush/recovery work enough to aggravate depth sequence
+> gaps. The source store already supports checkpointed suffix verification and
+> the append-only realtime feature-batch authority already carries a full-audit
+> checkpoint with a 24-hour expiry. The stream now verifies that batch authority,
+> anchors the exact source row hash, and checks only the new suffix; missing,
+> malformed, expired, or mismatched checkpoints still force a full fail-closed
+> audit. A real-state read-only probe verified 42 new rows after seq 1,850,202 in
+> 0.017s with a valid chain. This changes only credential-free public market-data
+> integrity throughput: private access, broker connectivity, order submission,
+> and live trading remain false. Production may consume the fix only through a
+> newly validated immutable release.
+
 > **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
 > `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online
 > backup，正式独立评估在提交搜索尝试时耗尽 5 秒 busy timeout 并 fail-closed。

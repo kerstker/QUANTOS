@@ -39,6 +39,7 @@ from services.features.binance_realtime_projection import (
 )
 from services.features.realtime_feature_batch_store import (
     RealtimeFeatureBatchStore,
+    trusted_source_chain_checkpoint,
 )
 from services.features.value_store import SqliteFeatureValueStore
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
@@ -237,55 +238,14 @@ def _trusted_source_checkpoint(
     now_ms: int,
 ) -> dict[str, Any]:
     """Load the source-chain anchor from the verified feature batch journal."""
-    batch_store = RealtimeFeatureBatchStore(batch_store_path, create=True)
     try:
-        batch_authority, latest = batch_store.latest_with_authority()
+        return trusted_source_chain_checkpoint(
+            batch_store_path,
+            now_ms=now_ms,
+            full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
+        )
     except Exception as exc:
         raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
-    finally:
-        batch_store.close()
-    source = latest.get("source") if isinstance(latest, dict) else None
-    checkpoint = source.get("chain_checkpoint") if isinstance(source, dict) else None
-    if checkpoint is None:
-        return {
-            "checkpoint_seq": 0,
-            "checkpoint_row_hash": "",
-            "full_verified_at_ms": None,
-            "verification_mode": "FULL_BOOTSTRAP",
-            "batch_authority": batch_authority,
-        }
-    if not isinstance(checkpoint, dict) or checkpoint.get("schema_version") != 1:
-        raise BinanceRealtimeFeatureError("source chain checkpoint is malformed")
-    seq = checkpoint.get("verified_seq")
-    row_hash = checkpoint.get("verified_row_hash")
-    full_verified_at_ms = checkpoint.get("full_verified_at_ms")
-    if (
-        isinstance(seq, bool)
-        or not isinstance(seq, int)
-        or seq <= 0
-        or not isinstance(row_hash, str)
-        or len(row_hash) != 64
-        or isinstance(full_verified_at_ms, bool)
-        or not isinstance(full_verified_at_ms, int)
-        or full_verified_at_ms < 0
-        or full_verified_at_ms > now_ms
-    ):
-        raise BinanceRealtimeFeatureError("source chain checkpoint is malformed")
-    if now_ms - full_verified_at_ms >= FULL_CHAIN_AUDIT_INTERVAL_MS:
-        return {
-            "checkpoint_seq": 0,
-            "checkpoint_row_hash": "",
-            "full_verified_at_ms": full_verified_at_ms,
-            "verification_mode": "FULL_PERIODIC_AUDIT",
-            "batch_authority": batch_authority,
-        }
-    return {
-        "checkpoint_seq": seq,
-        "checkpoint_row_hash": row_hash,
-        "full_verified_at_ms": full_verified_at_ms,
-        "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
-        "batch_authority": batch_authority,
-    }
 
 
 def _projection_watermarks(

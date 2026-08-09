@@ -5,6 +5,7 @@ import pytest
 from services.features.realtime_feature_batch_store import (
     RealtimeFeatureBatchStore,
     RealtimeFeatureBatchStoreError,
+    trusted_source_chain_checkpoint,
 )
 
 
@@ -89,3 +90,61 @@ def test_latest_authority_and_checkpoint_share_one_read_snapshot(
     finally:
         writer.close()
         reader.close()
+
+
+def test_trusted_source_checkpoint_is_loaded_from_verified_batch_authority(tmp_path):
+    path = tmp_path / "batches.db"
+    store = RealtimeFeatureBatchStore(str(path), create=True)
+    payload = _batch()
+    payload["source"] = {
+        "chain_checkpoint": {
+            "schema_version": 1,
+            "verified_seq": 123,
+            "verified_row_hash": "b" * 64,
+            "full_verified_at_ms": 900,
+        }
+    }
+    store.append(payload)
+    expected_authority = store.authority_hash()
+    store.close()
+
+    checkpoint = trusted_source_chain_checkpoint(
+        str(path),
+        now_ms=1_000,
+        full_chain_audit_interval_ms=500,
+    )
+
+    assert checkpoint == {
+        "checkpoint_seq": 123,
+        "checkpoint_row_hash": "b" * 64,
+        "full_verified_at_ms": 900,
+        "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+        "batch_authority": expected_authority,
+    }
+
+
+def test_expired_source_checkpoint_requires_full_periodic_audit(tmp_path):
+    path = tmp_path / "batches.db"
+    store = RealtimeFeatureBatchStore(str(path), create=True)
+    payload = _batch()
+    payload["source"] = {
+        "chain_checkpoint": {
+            "schema_version": 1,
+            "verified_seq": 123,
+            "verified_row_hash": "b" * 64,
+            "full_verified_at_ms": 400,
+        }
+    }
+    store.append(payload)
+    store.close()
+
+    checkpoint = trusted_source_chain_checkpoint(
+        str(path),
+        now_ms=1_000,
+        full_chain_audit_interval_ms=500,
+    )
+
+    assert checkpoint["checkpoint_seq"] == 0
+    assert checkpoint["checkpoint_row_hash"] == ""
+    assert checkpoint["full_verified_at_ms"] == 400
+    assert checkpoint["verification_mode"] == "FULL_PERIODIC_AUDIT"

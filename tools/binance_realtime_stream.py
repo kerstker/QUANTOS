@@ -33,6 +33,9 @@ from services.data.binance_stream_cursor import (
     StreamCursorState,
     StreamCursorStore,
 )
+from services.features.realtime_feature_batch_store import (
+    trusted_source_chain_checkpoint,
+)
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_rest_gap_fill import RestGapFillError, fetch_depth_snapshot
 from tools.cache_io import atomic_write_json
@@ -41,10 +44,14 @@ from tools.cache_io import atomic_write_json
 BASE_WSS = "wss://fstream.binance.com"
 DEFAULT_STORE = os.path.join("data", "cache", "binance_realtime_stream.db")
 DEFAULT_STATUS = os.path.join("data", "cache", "binance_realtime_stream_status.json")
+DEFAULT_BATCH_STORE = os.path.join(
+    "data", "cache", "binance_realtime_feature_batches.db"
+)
 DEFAULT_DURATION_SECONDS = 23 * 60 * 60
 FLUSH_SECONDS = 5.0
 MAX_STREAM_LAG_MS = 10_000
 CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
+FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
 
 
 class BinanceStreamDataError(RuntimeError):
@@ -704,6 +711,7 @@ def _status(
     chain_valid: bool | None,
     chain_verified_at_ms: int | None,
     cursor_status: Mapping[str, Any] | None = None,
+    chain_verification: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     complete = sum(
         1
@@ -752,6 +760,9 @@ def _status(
             "row_count": row_count,
             "chain_valid": chain_valid,
             "chain_verified_at_ms": chain_verified_at_ms,
+            "chain_verification": (
+                None if chain_verification is None else dict(chain_verification)
+            ),
         },
         "cursor": None if cursor_status is None else dict(cursor_status),
         "routes": {
@@ -769,11 +780,19 @@ def _status(
     }
 
 
-def _verify_store_chain(store_path: str) -> bool:
-    """Verify the full append-only chain on an isolated read connection."""
+def _verify_store_chain(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Verify one chain suffix on an isolated read connection."""
     verifier = BinanceRealtimeStore(store_path)
     try:
-        return verifier.chain_valid()
+        return verifier.verify_chain_from(
+            checkpoint_seq=checkpoint_seq,
+            checkpoint_row_hash=checkpoint_row_hash,
+        )
     finally:
         verifier.close()
 
@@ -785,6 +804,7 @@ async def run_stream(
     flush_seconds: float = FLUSH_SECONDS,
     store_path: str = DEFAULT_STORE,
     status_path: str = DEFAULT_STATUS,
+    batch_store_path: str = DEFAULT_BATCH_STORE,
     rest_depth_fetch=fetch_depth_snapshot,
 ) -> dict[str, Any]:
     if duration_seconds <= 0 or flush_seconds <= 0:
@@ -802,6 +822,12 @@ async def run_stream(
     latest_status: dict[str, Any] = {}
     chain_valid: bool | None = None
     chain_verified_at_ms: int | None = None
+    chain_verification: dict[str, Any] | None = None
+    chain_checkpoint = trusted_source_chain_checkpoint(
+        batch_store_path,
+        now_ms=int(time.time() * 1_000),
+        full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
+    )
 
     async def flush_loop() -> None:
         nonlocal latest_status
@@ -835,6 +861,7 @@ async def run_stream(
                     row_count=store.row_count(),
                     chain_valid=chain_valid,
                     chain_verified_at_ms=chain_verified_at_ms,
+                    chain_verification=chain_verification,
                     cursor_status=cursor_store.trading_watermark(
                         (("depth20", symbol) for symbol in sorted(state.symbols))
                     ),
@@ -844,10 +871,41 @@ async def run_stream(
             stop.set()
 
     async def verify_chain_loop() -> None:
-        nonlocal chain_valid, chain_verified_at_ms
+        nonlocal chain_checkpoint, chain_valid, chain_verification
+        nonlocal chain_verified_at_ms
         while not stop.is_set() and time.monotonic() < deadline:
-            chain_valid = await asyncio.to_thread(_verify_store_chain, store_path)
+            verification_mode = str(chain_checkpoint["verification_mode"])
+            verification = await asyncio.to_thread(
+                _verify_store_chain,
+                store_path,
+                checkpoint_seq=int(chain_checkpoint["checkpoint_seq"]),
+                checkpoint_row_hash=str(chain_checkpoint["checkpoint_row_hash"]),
+            )
             chain_verified_at_ms = int(time.time() * 1_000)
+            chain_valid = verification.get("valid") is True
+            chain_verification = {
+                **verification,
+                "verification_mode": verification_mode,
+                "batch_authority": chain_checkpoint["batch_authority"],
+                "full_verified_at_ms": (
+                    chain_verified_at_ms
+                    if int(verification.get("anchor_seq", -1)) == 0
+                    and chain_valid
+                    else chain_checkpoint["full_verified_at_ms"]
+                ),
+            }
+            if chain_valid:
+                chain_checkpoint = {
+                    "checkpoint_seq": int(verification["verified_seq"]),
+                    "checkpoint_row_hash": str(
+                        verification["verified_row_hash"]
+                    ),
+                    "full_verified_at_ms": chain_verification[
+                        "full_verified_at_ms"
+                    ],
+                    "verification_mode": "INCREMENTAL_FROM_STREAM_CHECKPOINT",
+                    "batch_authority": chain_checkpoint["batch_authority"],
+                }
             remaining = max(0.0, deadline - time.monotonic())
             wait_seconds = min(CHAIN_VERIFY_INTERVAL_SECONDS, remaining)
             if wait_seconds <= 0:
@@ -878,6 +936,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--flush-seconds", type=float, default=FLUSH_SECONDS)
     parser.add_argument("--store", default=DEFAULT_STORE)
     parser.add_argument("--status", default=DEFAULT_STATUS)
+    parser.add_argument("--batch-store", default=DEFAULT_BATCH_STORE)
     args = parser.parse_args(argv)
     try:
         status = asyncio.run(
@@ -886,6 +945,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 flush_seconds=args.flush_seconds,
                 store_path=args.store,
                 status_path=args.status,
+                batch_store_path=args.batch_store,
             )
         )
     except KeyboardInterrupt:
