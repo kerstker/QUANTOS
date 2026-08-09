@@ -532,6 +532,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
             "paper_multivenue_sor",
             "realtime_alpha_discovery",
             "realtime_alpha_execution_paper",
+            "realtime_alpha_forward_shadow",
         }
     )
 

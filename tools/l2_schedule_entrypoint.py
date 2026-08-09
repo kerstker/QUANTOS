@@ -85,6 +85,7 @@ REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
         "paper_multivenue_sor",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
+        "realtime_alpha_forward_shadow",
     }
 )
 _ATTESTATION_SAFETY = {

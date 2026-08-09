@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-5
+Roadmap slice: WP0 increments 1-6
 
 ## Problem
 
@@ -71,6 +71,14 @@ uses one conditional-aggregation pass over the requested tail; a SQLite progress
 budget regression forbids the former second, unbounded self-join over the complete
 feature history.
 
+`realtime_alpha_forward_shadow` is the sixth required module and binds the
+engineering Signal-Shadow seam without merging it with the formal blinded
+authority.  Inputs include the exact discovery and feature-status files, fixed
+cycle/authority policy, pre-run engineering-shadow and family-registry authority
+states, and every actually consumed realization/decision PIT frame view.  Outputs
+bind both post-run authorities and the report file.  WAITING and SAFE_BLOCKED are
+attestable exact-input outcomes; every attempt clears the prior proof first.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
@@ -78,7 +86,8 @@ feature history.
   signed container provenance.
 - Scheduled workers other than `alpha_production_workflow`,
   `paper_multivenue_sor`, `realtime_alpha_execution_paper`,
-  `binance_realtime_features`, and `realtime_alpha_discovery` remain explicitly
+  `binance_realtime_features`, `realtime_alpha_discovery`, and
+  `realtime_alpha_forward_shadow` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are
   instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or

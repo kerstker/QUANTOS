@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -25,6 +26,7 @@ from tools.realtime_alpha_forward_shadow import (
     run_cycle,
 )
 from tools.realtime_alpha_formal_shadow import run_cycle as run_formal_cycle
+from tools import realtime_alpha_forward_shadow as forward_shadow_module
 
 
 def _discovery(
@@ -215,8 +217,14 @@ def test_dynamic_sign_flip_challenger_is_hash_bound_and_lineage_checked() -> Non
     }
 
 
-def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_path) -> None:
+def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(
+    tmp_path,
+    monkeypatch,
+) -> None:
     now = 1_000_000
+    release_commit = "c" * 40
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
+    forward_shadow_module._LAST_RELEASE_RUN_ATTESTATIONS.clear()
     discovery = tmp_path / "discovery.json"
     discovery.write_text(json.dumps(_discovery(now)), encoding="utf-8")
     feature_status = tmp_path / "feature-status.json"
@@ -232,6 +240,7 @@ def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_pa
         output_path=output,
         now_ms=now,
     )
+    attestation = forward_shadow_module.release_run_attestation()
 
     assert report["status"] == "WAITING_FOR_EVALUATED_CANDIDATE"
     assert report["eligible_candidates"] == []
@@ -246,6 +255,26 @@ def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_pa
     assert report["verdict"]["order_submission_allowed"] is False
     assert not (tmp_path / "shadow.db").exists()
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == report["status"]
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "realtime_alpha_forward_shadow"
+    assert attestation["release_commit"] == release_commit
+    assert attestation["input_hashes"]["discovery_file"] == hashlib.sha256(
+        discovery.read_bytes()
+    ).hexdigest()
+    assert attestation["input_hashes"]["feature_status_file"] == hashlib.sha256(
+        feature_status.read_bytes()
+    ).hexdigest()
+    assert attestation["input_hashes"]["consumed_frame_views"] == stable_hash([])
+    assert attestation["output_hashes"]["forward_shadow_report_file"] == (
+        hashlib.sha256(output.read_bytes()).hexdigest()
+    )
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
 
 
 def test_unsafe_handoff_writes_fresh_safe_blocked_evidence(tmp_path) -> None:
@@ -280,6 +309,7 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
     tmp_path, monkeypatch
 ) -> None:
     base = 1_000_000
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "d" * 40)
     spec = default_realtime_hypotheses()[0]
     discovery_path = tmp_path / "discovery.json"
     feature_status_path = tmp_path / "feature-status.json"
@@ -359,11 +389,37 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
     regressed = _discovery(realization_time, eligible=False)
     discovery_path.write_text(json.dumps(regressed), encoding="utf-8")
     recovered = run_cycle(**common, now_ms=realization_time)
+    attestation = forward_shadow_module.release_run_attestation()
     assert recovered["status"] == "RUNNING"
     assert recovered["eligible_candidates"] == []
     assert recovered["admitted_candidates"] == [spec.candidate_id]
     assert recovered["cycle"]["new_realizations"] == 1
     assert recovered["ledger"]["chain_valid"] is True
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["input_hashes"]["shadow_authority_before"]
+    assert attestation["input_hashes"]["family_registry_authority_before"]
+    assert attestation["input_hashes"]["consumed_frame_views"] != stable_hash([])
+    assert attestation["output_hashes"]["shadow_authority_after"]
+    assert attestation["output_hashes"]["family_registry_authority_after"]
+
+
+def test_forward_shadow_failure_clears_prior_release_attestation(tmp_path) -> None:
+    forward_shadow_module._LAST_RELEASE_RUN_ATTESTATIONS[
+        ENGINEERING_SHADOW_AUTHORITY
+    ] = {"complete": True}
+
+    with pytest.raises(RealtimeAlphaForwardShadowError, match="unreadable"):
+        run_cycle(
+            discovery_path=tmp_path / "missing-discovery.json",
+            feature_status_path=tmp_path / "missing-feature-status.json",
+            feature_store_path=tmp_path / "missing-features.db",
+            family_registry_path=tmp_path / "missing-family.db",
+            shadow_store_path=tmp_path / "shadow.db",
+            output_path=tmp_path / "shadow.json",
+            now_ms=1_000_000,
+        )
+
+    assert forward_shadow_module.release_run_attestation() is None
 
 
 def test_engineering_track_starts_without_thirty_or_ninety_day_wait(

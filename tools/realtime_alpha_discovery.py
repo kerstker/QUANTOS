@@ -111,7 +111,7 @@ def _is_sha256(value: object) -> bool:
     )
 
 
-def _frame_view_hash(
+def realtime_frame_view_hash(
     frames: Mapping[str, Sequence[RealtimeFrame]],
 ) -> str:
     digest = hashlib.sha256(b"realtime-decision-frame-view.v1\0")
@@ -1208,7 +1208,7 @@ def run_cycle(
                 frame_cache_path=effective_frame_cache_path,
                 max_cache_lag_ms=policy.max_feature_age_ms,
             )
-            input_hashes["decision_frame_view"] = _frame_view_hash(frames)
+            input_hashes["decision_frame_view"] = realtime_frame_view_hash(frames)
             evaluations = {}
             for item in hypotheses:
                 lineage = lineage_by_id.get(item.candidate_id)
@@ -1606,5 +1606,6 @@ __all__ = [
     "load_bucketed_frames",
     "main",
     "release_run_attestation",
+    "realtime_frame_view_hash",
     "run_cycle",
 ]

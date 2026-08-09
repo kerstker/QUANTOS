@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Realtime Alpha Forward Shadow 发布运行证明第六增量：**
+> `realtime_alpha_forward_shadow` 已成为第六个强制 release-run attestation worker。输入绑定
+> discovery/feature-status 文件、固定周期/authority 政策、运行前 engineering-shadow 与 family
+> 权威，以及实际消费的每段 realization/decision PIT 帧；输出绑定运行后两条哈希链权威和报告
+> 文件。WAITING/SAFE_BLOCKED 同样只能证明本轮精确输入，异常入口先清旧证明；formal shadow 仍用
+> 独立物理账本和独立模块，未被本增量混入。paper-only 且 live/order/credentials/broker 全 false。
+> 实现已完成聚焦回归，仍须新不可变发布的正式调度实跑才能记为 runtime 通过。
+>
 > **2026-08-09 WP0 Realtime Alpha Discovery 发布运行证明第五增量：**
 > `realtime_alpha_discovery` 已成为第五个强制 release-run attestation worker，补上首个
 > selection-bearing feature→candidate 接缝。输入绑定解析后的 feature 状态、精确 coverage、
@@ -10,8 +18,10 @@
 > 入口先清空旧证明；paper-only 且 live/order/credentials/broker 全 false。WP0 仍未整体闭合。
 > 首次正式发布实跑同时暴露并拒绝了一个 30 分钟 runtime 超时：尾部帧 SQL 在选出完整快照后
 > 又无界自连接 1340 万行特征表。现改为单次条件聚合，新增 SQLite 指令预算回归；真实 10 分钟
-> 尾部查询约 60s→0.006s，24 候选无持久化整轮约 82s→21s。修复仍须经新提交的正式发布实跑
-> 才能把本增量 runtime 验收记为通过。
+> 尾部查询约 60s→0.006s，24 候选无持久化整轮约 82s→21s。新不可变发布 `63ffedf` 已在正常
+> L2 调度负载下正式复验：receipt `1786245639004-33012-realtime_alpha_discovery.json` 为
+> `COMPLETED/exit=0/worker_attested=true`，精确 release，7 input + 3 output hashes，约 107 秒完成；
+> 本增量 runtime 验收现已通过。
 
 > **2026-08-09 WP0 Binance 实时特征发布运行证明第四增量：**
 > `binance_realtime_features` 已成为第四个强制 release-run attestation worker，并补上

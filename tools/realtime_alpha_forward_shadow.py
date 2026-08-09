@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 from bisect import bisect_left
 from contextlib import ExitStack
+import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import time
 from typing import Any, Mapping, Sequence
@@ -38,7 +40,10 @@ from services.research.realtime_alpha_discovery import (
 )
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from tools.cache_io import atomic_write_json
-from tools.realtime_alpha_discovery import load_bucketed_frames
+from tools.realtime_alpha_discovery import (
+    load_bucketed_frames,
+    realtime_frame_view_hash,
+)
 
 
 ROOT = runtime_state_root()
@@ -63,6 +68,7 @@ ENGINEERING_SHADOW_PAPER_CLASS = "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
 FORMAL_BLINDED_SHADOW_PAPER_CLASS = "AUTONOMOUS_REALTIME_FORMAL_BLINDED_SHADOW"
 ENGINEERING_SHADOW_REALIZATION_STATUS = "ENGINEERING_SHADOW_REALIZED"
 FORMAL_BLINDED_SHADOW_REALIZATION_STATUS = "FORMAL_BLINDED_SHADOW_REALIZED"
+_LAST_RELEASE_RUN_ATTESTATIONS: dict[str, dict[str, Any]] = {}
 
 _SAFE_DISCOVERY_BOUNDARY = {
     "paper_only": True,
@@ -77,6 +83,144 @@ _SAFE_DISCOVERY_BOUNDARY = {
 
 class RealtimeAlphaForwardShadowError(RuntimeError):
     """Forward shadow evidence is missing, stale, unsafe, or conflicted."""
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _safe_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _family_authority_state(path: str | Path) -> str:
+    resolved = Path(path)
+    if not resolved.exists():
+        return stable_hash({"exists": False})
+    try:
+        with AlphaFamilyRegistry(str(resolved), create=False) as registry:
+            return registry.authority_hash()
+    except Exception as exc:
+        return stable_hash(
+            {
+                "exists": True,
+                "valid": False,
+                "size": _safe_size(resolved),
+                "error_type": type(exc).__name__,
+            }
+        )
+
+
+def _shadow_authority_state(path: str | Path) -> str:
+    resolved = Path(path)
+    if not resolved.exists():
+        return stable_hash({"exists": False})
+    if resolved.is_file() and resolved.stat().st_size == 0:
+        return stable_hash({"exists": True, "state": "RECOVERABLE_EMPTY"})
+    try:
+        with RealtimeAlphaShadowStore(str(resolved), create=False) as store:
+            return store.authority_hash()
+    except Exception as exc:
+        return stable_hash(
+            {
+                "exists": True,
+                "valid": False,
+                "size": _safe_size(resolved),
+                "error_type": type(exc).__name__,
+            }
+        )
+
+
+def _build_release_run_attestation(
+    report: Mapping[str, Any],
+    *,
+    authority: str,
+    input_hashes: Mapping[str, str],
+    output_hashes: Mapping[str, str],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["forward_shadow_report_file"] = _sha256_file(output_path)
+    safety = report.get("safety")
+    safety = safety if isinstance(safety, Mapping) else {}
+    verdict = report.get("verdict")
+    verdict = verdict if isinstance(verdict, Mapping) else {}
+    safety_contract = {
+        "paper_only": safety.get("paper_only"),
+        "live_allowed": verdict.get("live_allowed"),
+        "order_submission_allowed": verdict.get("order_submission_allowed"),
+        "credentials_accessed": safety.get("credentials_accessed"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    module_name = (
+        "realtime_alpha_formal_shadow"
+        if authority == FORMAL_BLINDED_SHADOW_AUTHORITY
+        else "realtime_alpha_forward_shadow"
+    )
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and report.get("status")
+        in {"RUNNING", "WAITING_FOR_EVALUATED_CANDIDATE", "SAFE_BLOCKED"}
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety_contract == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": module_name,
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation_for_authority(
+    authority: str,
+) -> dict[str, Any] | None:
+    payload = _LAST_RELEASE_RUN_ATTESTATIONS.get(authority)
+    if payload is None:
+        return None
+    return json.loads(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return the latest detached engineering-shadow release proof."""
+    return release_run_attestation_for_authority(ENGINEERING_SHADOW_AUTHORITY)
 
 
 def _manifest_spec(
@@ -206,14 +350,15 @@ def _discovery_manifest(
     return specs, lineage
 
 
-def _read_object(path: str | Path, label: str) -> dict[str, Any]:
+def _read_object(path: str | Path, label: str) -> tuple[dict[str, Any], str]:
     try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        raw = Path(path).read_bytes()
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RealtimeAlphaForwardShadowError(f"{label} is unreadable") from exc
     if not isinstance(value, dict):
         raise RealtimeAlphaForwardShadowError(f"{label} is not an object")
-    return value
+    return value, hashlib.sha256(raw).hexdigest()
 
 
 def eligible_candidates(
@@ -335,11 +480,30 @@ def _handoff_state(
     )
 
 
-def _feature_status_ready(path: str | Path, *, now_ms: int) -> tuple[bool, dict[str, Any]]:
+def _feature_status_ready(
+    path: str | Path,
+    *,
+    now_ms: int,
+) -> tuple[bool, dict[str, Any], str]:
     try:
-        status = _read_object(path, "realtime feature status")
-    except RealtimeAlphaForwardShadowError:
-        return False, {}
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        return False, {}, stable_hash({"exists": False})
+    except OSError as exc:
+        return False, {}, stable_hash(
+            {
+                "exists": True,
+                "readable": False,
+                "error_type": type(exc).__name__,
+            }
+        )
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        status = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False, {}, digest
+    if not isinstance(status, dict):
+        return False, {}, digest
     generated = status.get("generated_at_ms")
     ready = bool(
         status.get("status") == "PASS"
@@ -348,7 +512,7 @@ def _feature_status_ready(path: str | Path, *, now_ms: int) -> tuple[bool, dict[
         and isinstance(status.get("batch"), Mapping)
         and status["batch"].get("chain_valid") is True
     )
-    return ready, status
+    return ready, status, digest
 
 
 def _common_latest_frames(
@@ -575,6 +739,7 @@ def run_cycle(
     policy: RealtimeAlphaPolicy | None = None,
     authority: str = ENGINEERING_SHADOW_AUTHORITY,
 ) -> dict[str, Any]:
+    _LAST_RELEASE_RUN_ATTESTATIONS.pop(authority, None)
     if authority not in {
         ENGINEERING_SHADOW_AUTHORITY,
         FORMAL_BLINDED_SHADOW_AUTHORITY,
@@ -588,10 +753,31 @@ def run_cycle(
     )
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
+    input_hashes = {
+        "forward_shadow_cycle_contract": stable_hash(
+            {
+                "schema_version": 1,
+                "as_of_ms": now,
+                "authority": authority,
+                "policy": dict(vars(policy)),
+                "max_discovery_age_ms": MAX_DISCOVERY_AGE_MS,
+                "max_feature_status_age_ms": MAX_FEATURE_STATUS_AGE_MS,
+                "recent_frame_lookback_ms": RECENT_FRAME_LOOKBACK_MS,
+            }
+        ),
+        "family_registry_authority_before": _family_authority_state(
+            family_registry_path
+        ),
+        "shadow_authority_before": _shadow_authority_state(shadow_store_path),
+    }
+    consumed_frame_views: list[dict[str, Any]] = []
     decision_frame_cache_path = Path(feature_store_path).with_name(
         "realtime_decision_frames.db"
     )
-    discovery = _read_object(discovery_path, "realtime discovery snapshot")
+    discovery, discovery_file_hash = _read_object(
+        discovery_path, "realtime discovery snapshot"
+    )
+    input_hashes["discovery_file"] = discovery_file_hash
     handoff_valid = True
     handoff_error: str | None = None
     try:
@@ -606,7 +792,10 @@ def run_cycle(
     new_decisions = 0
     new_realizations = 0
     tracks: dict[str, dict[str, Any]] = {}
-    feature_ready, feature_status = _feature_status_ready(feature_status_path, now_ms=now)
+    feature_ready, feature_status, feature_status_hash = _feature_status_ready(
+        feature_status_path, now_ms=now
+    )
+    input_hashes["feature_status_file"] = feature_status_hash
     shadow_path = Path(shadow_store_path)
     chain_valid: bool | None = True if handoff_valid else None
     event_count: int | None = 0 if handoff_valid else None
@@ -620,10 +809,9 @@ def run_cycle(
                     family_registry = stack.enter_context(
                         AlphaFamilyRegistry(str(family_registry_path), create=False)
                     )
-                    if not family_registry.verify_chain():
-                        raise RealtimeAlphaForwardShadowError(
-                            "family registry chain is invalid"
-                        )
+                    input_hashes["family_registry_authority_before"] = (
+                        family_registry.authority_hash()
+                    )
                 store = stack.enter_context(
                     RealtimeAlphaShadowStore(
                         str(shadow_store_path),
@@ -668,10 +856,9 @@ def run_cycle(
                     family_registry = stack.enter_context(
                         AlphaFamilyRegistry(str(family_registry_path), create=False)
                     )
-                    if not family_registry.verify_chain():
-                        raise RealtimeAlphaForwardShadowError(
-                            "family registry chain is invalid"
-                        )
+                    input_hashes["family_registry_authority_before"] = (
+                        family_registry.authority_hash()
+                    )
 
                 for candidate_id in admitted_candidates:
                     try:
@@ -698,6 +885,21 @@ def run_cycle(
                                     bucket_ms=policy.decision_interval_ms,
                                     frame_cache_path=decision_frame_cache_path,
                                     max_cache_lag_ms=policy.max_feature_age_ms,
+                                )
+                                consumed_frame_views.append(
+                                    {
+                                        "candidate_id": candidate_id,
+                                        "purpose": "REALIZATION",
+                                        "decision_event_id": event.get("event_id"),
+                                        "start_ms": max(
+                                            0,
+                                            target - policy.decision_interval_ms,
+                                        ),
+                                        "end_ms": min(now, target + lateness),
+                                        "view_hash": realtime_frame_view_hash(
+                                            future_series
+                                        ),
+                                    }
                                 )
                                 future = _future_marks(
                                     decision, future_series, as_of_ms=now
@@ -726,6 +928,17 @@ def run_cycle(
                                 bucket_ms=policy.decision_interval_ms,
                                 frame_cache_path=decision_frame_cache_path,
                                 max_cache_lag_ms=policy.max_feature_age_ms,
+                            )
+                            consumed_frame_views.append(
+                                {
+                                    "candidate_id": candidate_id,
+                                    "purpose": "DECISION",
+                                    "start_ms": max(
+                                        0, now - RECENT_FRAME_LOOKBACK_MS
+                                    ),
+                                    "end_ms": now,
+                                    "view_hash": realtime_frame_view_hash(recent),
+                                }
                             )
                             frames = _common_latest_frames(recent, now_ms=now)
                             admitted_at = int(admission["payload"]["admitted_at_ms"])
@@ -927,6 +1140,19 @@ def run_cycle(
         },
     }
     atomic_write_json(str(output_path), report, indent=2)
+    input_hashes["consumed_frame_views"] = stable_hash(consumed_frame_views)
+    _LAST_RELEASE_RUN_ATTESTATIONS[authority] = _build_release_run_attestation(
+        report,
+        authority=authority,
+        input_hashes=input_hashes,
+        output_hashes={
+            "shadow_authority_after": _shadow_authority_state(shadow_store_path),
+            "family_registry_authority_after": _family_authority_state(
+                family_registry_path
+            ),
+        },
+        output_path=output_path,
+    )
     return report
 
 
@@ -974,5 +1200,7 @@ __all__ = [
     "RealtimeAlphaForwardShadowError",
     "eligible_candidates",
     "main",
+    "release_run_attestation",
+    "release_run_attestation_for_authority",
     "run_cycle",
 ]
