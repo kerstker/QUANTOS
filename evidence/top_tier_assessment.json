@@ -598,17 +598,21 @@
         "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
+        "services/governance/l2_identity_deployment.py",
         "services/governance/oidc_key_registry.py",
         "services/governance/strong_identity.py",
         "services/promotion_api/main.py",
+        "services/promotion_api/trusted_mtls_proxy.py",
         "apps/research-console/src/lib/api/governance-pkce.test.ts",
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_l2_identity_deployment.py",
         "tests/governance/test_oidc_key_registry.py",
         "tests/governance/test_promotion_api_boundary.py",
         "tests/governance/test_promotion_api_endpoints.py",
         "tests/governance/test_strong_identity.py",
+        "tests/governance/test_trusted_mtls_proxy.py",
         "requirements.txt",
         "pyproject.toml"
       ],
@@ -1566,9 +1570,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786296367425,
-    "run_id": "e67ab25600cf9caa5c15e6e229af9b8886ca7e73f7cf25399586d0c443cda4bd",
-    "source_commit": "2694c9bcdfe0550f156afeea93de3bcc3e5162b7"
+    "generated_at": 1786305400441,
+    "run_id": "84979a1f673f56eea29e9b3f9ee7a032a04965cc341f9cd7a80bde23ab495c9c",
+    "source_commit": "83c3c525bfbe917bb61c1d490be21056111d8ba6"
   },
   "verdict": "NOT_TOP_TIER"
 }
