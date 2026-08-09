@@ -37,7 +37,10 @@ from tools.alpha_candidate_admission import run as run_candidate_admission
 from tools.cache_io import atomic_write_json
 
 # F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
-from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
+from services.factor_garden.canonical import (
+    CROWD_CONTRA_EXPRESSION as CROWD_CONTRA,
+    TOP_CONTRA_EXPRESSION as TOP_CONTRA,
+)
 
 FIELDS = ("close", "volume", "funding", "basis", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 WINDOWS = (3, 7, 14, 30)
@@ -122,10 +125,19 @@ def main() -> None:
     print(f"=== loop-until-dry orthogonal mining ({len(instruments)} coins, {len(FIELDS)} dims) ===")
     known = {
         "carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
-        "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE),
+        "crowd_contra": economic_return_series(
+            ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE
+        ),
+        "top_contra": economic_return_series(
+            ax.evaluate(TOP_CONTRA, panel), panel, quantile=QUANTILE
+        ),
     }
-    known_ids = {ax.alpha_id(CARRY), ax.alpha_id(CROWD_CONTRA)}
-    print(f"seed basis: carry SR {sharpe(known['carry']):.2f}, crowd_contra SR {sharpe(known['crowd_contra']):.2f}")
+    known_ids = {ax.alpha_id(CARRY), ax.alpha_id(CROWD_CONTRA), ax.alpha_id(TOP_CONTRA)}
+    print(
+        f"seed basis: carry SR {sharpe(known['carry']):.2f}, "
+        f"crowd_contra SR {sharpe(known['crowd_contra']):.2f}, "
+        f"top_contra SR {sharpe(known['top_contra']):.2f}"
+    )
 
     chain, eligible_discoveries, dry, rnd, n_evaluated_total = [], [], 0, 0, 0
     previous_recorded_at: int | None = None
@@ -228,7 +240,10 @@ def main() -> None:
         )
         print(f"          {g['expr']}")
 
-    print(f"\nmined {len(chain)} orthogonal edge(s) beyond carry+crowd_contra before going dry:")
+    print(
+        f"\nmined {len(chain)} orthogonal edge(s) beyond "
+        "carry+crowd_contra+top_contra before going dry:"
+    )
     for i, c in enumerate(chain, 1):
         print(
             f"  {i}. SR {c['price_sharpe']:>5} lag1 {c['lag1_sharpe']:>5} net10 {c['net10_sharpe']:>5} "
@@ -248,7 +263,7 @@ def main() -> None:
         f"machine autonomously mined {len(chain)} NEW orthogonal edge(s) (each lag+cost-robust) "
         f"before drying out — multi-dimensional discovery loop works"
         if chain
-        else "no orthogonal edge beyond carry+crowd_contra survived the gauntlet"
+        else "no orthogonal edge beyond carry+crowd_contra+top_contra survived the gauntlet"
     )
     print(f"\nVERDICT: {verdict}")
     document = {
@@ -258,7 +273,7 @@ def main() -> None:
         "rounds": rnd,
         "dry_limit": DRY_LIMIT,
         "n_evaluated_total": n_evaluated_total,
-        "seed_basis": ["carry", "crowd_contra"],
+        "seed_basis": ["carry", "crowd_contra", "top_contra"],
         "discovered_chain": chain,
         "eligible_discoveries": eligible_discoveries,
         "oos_mean": oos.get("mean_oos_sharpe"),

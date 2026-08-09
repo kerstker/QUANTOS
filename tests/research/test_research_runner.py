@@ -36,6 +36,7 @@ def _factory_panel():
             "close": [[100.0, 101.0]] * 4,
             "funding": [[0.001, -0.001]] * 4,
             "global_ls": [[1.1, 0.9]] * 4,
+            "top_ls": [[1.2, 0.8]] * 4,
         },
     )
 
@@ -193,6 +194,11 @@ def test_factory_loop_runner_kind_injects_provenance_for_every_round(
     assert len(captured) == tool.DRY_LIMIT
     for call in captured:
         _assert_persistent_factory_call(call, marker)
+        assert set(call["basis_returns"]) == {
+            "carry",
+            "crowd_contra",
+            "top_contra",
+        }
     assert len({call["search_id"] for call in captured}) == len(captured)
 
 
