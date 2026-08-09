@@ -239,6 +239,54 @@ def _verify_release_identity(
         raise ScheduleEntrypointError("release identity verification failed") from exc
 
 
+def _verify_release_evidence(
+    release_root: Path,
+    expected_release_commit: str,
+) -> tuple[dict[str, object], str]:
+    """Verify the exact validation/SBOM/container evidence in the release.
+
+    Load the binding helper by verified absolute path rather than normal import
+    resolution so a mutable state-root ``PYTHONPATH`` entry cannot substitute
+    the release evidence policy.
+    """
+    helper_path = release_root / "scripts" / "evidence_binding.py"
+    try:
+        helper = ModuleType(
+            f"_quantos_release_evidence_binding_{expected_release_commit}"
+        )
+        helper.__file__ = str(helper_path)
+        exec(
+            compile(helper_path.read_bytes(), str(helper_path), "exec"),
+            helper.__dict__,
+        )
+        verifier = getattr(helper, "assert_release_evidence_manifest", None)
+        if not callable(verifier):
+            raise ScheduleEntrypointError(
+                "release evidence verifier is unavailable"
+            )
+        document, digest = verifier(
+            release_root,
+            expected_release_commit=expected_release_commit,
+        )
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != 1
+            or document.get("readiness") != "L2_DRY_RUN_ONLY"
+            or not isinstance(digest, str)
+            or _SHA256.fullmatch(digest) is None
+        ):
+            raise ScheduleEntrypointError(
+                "release evidence verifier returned an invalid result"
+            )
+        return document, digest
+    except ScheduleEntrypointError:
+        raise
+    except Exception as exc:
+        raise ScheduleEntrypointError(
+            "release evidence verification failed"
+        ) from exc
+
+
 def _receipt_document(payload: dict[str, object]) -> dict[str, object]:
     document = dict(payload)
     canonical = json.dumps(
@@ -334,7 +382,13 @@ def run_scheduled_module(
     code_root: str | Path | None = None,
     expected_release_commit: str,
     release_verifier: Callable[[Path, str], str] = _verify_release_identity,
+    release_evidence_verifier: Callable[
+        [Path, str], tuple[dict[str, object], str]
+    ] = _verify_release_evidence,
     on_release_verified: Callable[[Path, str], None] | None = None,
+    on_release_evidence_verified: Callable[
+        [dict[str, object], str], None
+    ] | None = None,
     on_worker_attested: Callable[[dict[str, object], str], None] | None = None,
     importer: Callable[[str], ModuleType] = importlib.import_module,
 ) -> int:
@@ -353,6 +407,15 @@ def run_scheduled_module(
         raise ScheduleEntrypointError("release verifier returned an unexpected commit")
     if on_release_verified is not None:
         on_release_verified(release_root, verified_commit)
+    release_evidence, release_evidence_sha256 = release_evidence_verifier(
+        release_root,
+        verified_commit,
+    )
+    if on_release_evidence_verified is not None:
+        on_release_evidence_verified(
+            release_evidence,
+            release_evidence_sha256,
+        )
     release_tools = release_root / "tools"
     original_path = list(sys.path)
     original_argv = list(sys.argv)
@@ -453,13 +516,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         / f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{os.getpid()}-{args.module}.json"
     )
     receipt: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "module": args.module,
         "status": "STARTED",
         "release_commit": args.release_commit,
         "release_root": str(release_root),
         "state_root": str(state_root),
         "release_verified": False,
+        "release_evidence_required": True,
+        "release_evidence_verified": False,
+        "release_evidence_sha256": None,
+        "release_evidence": None,
         "worker_attestation_required": (
             args.module in REQUIRED_INPUT_ATTESTATION_MODULES
         ),
@@ -502,11 +569,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         _write_release_run_receipt(receipt_path, receipt)
 
+    def record_release_evidence(
+        document: dict[str, object], digest: str
+    ) -> None:
+        receipt.update(
+            {
+                "release_evidence_verified": True,
+                "release_evidence_sha256": digest,
+                "release_evidence": document,
+            }
+        )
+        _write_release_run_receipt(receipt_path, receipt)
+
     try:
         result = run_scheduled_module(
             args.module,
             expected_release_commit=args.release_commit,
             on_release_verified=record_release_verification,
+            on_release_evidence_verified=record_release_evidence,
             on_worker_attested=record_worker_attestation,
         )
     except Exception as exc:
@@ -550,6 +630,7 @@ __all__ = [
     "ScheduleEntrypointError",
     "_configure_headless_logging",
     "_install_headless_subprocess_guard",
+    "_verify_release_evidence",
     "_verify_release_identity",
     "run_scheduled_module",
 ]

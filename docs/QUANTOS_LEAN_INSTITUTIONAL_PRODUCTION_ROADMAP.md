@@ -183,8 +183,12 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   engineering authority；risk bundle 另绑定候选全集、固定九引擎/AUM/FX/成熟度合同、运行前后
   一致的前向/评估/FX/维护/PIT/实验注册表权威（含 SQLite WAL）和最终逐候选输入视图；运维收集器
   绑定实际 Shadow release receipt/制品、预注册窗口合同、6 项隔离演练和运行前后证据链权威；
-  缺失、不完整或安全声明漂移均 fail-closed。其余 worker 仍逐项待接入；
-  container/SBOM 的同轮绑定、外部签名/WORM/独立见证和全量派生证据无漂移仍是 WP0 剩余项。
+  缺失、不完整或安全声明漂移均 fail-closed。其余非承重 worker 仍按风险逐项待接入；
+  container/SBOM 与全量 canonical 派生证据的同轮绑定已由
+  `l2_release_evidence_manifest.json` 和 release receipt v3 收口：调度器在导入任何 worker 前验证稳定
+  source anchor、完整验证报告、顶级评估、SBOM、容器漏洞/可复现构建证明及全部当前 allowlist 制品哈希；
+  任一源码、制品或交叉引用漂移均 fail-closed。外部签名/WORM/独立见证仍是 WP5 外部资源边界，
+  不得用本机自证替代。
   discovery 首次强制证明实跑因尾部帧 SQL 的无界二次自连接触发 30 分钟上限并被拒绝；已改为
   单次条件聚合并以 SQLite 指令预算钉死；新不可变发布已在约 107 秒正式完成，精确 release、
   7 input + 3 output hashes、完整安全声明均通过。forward-shadow 新发布 `535b22e` 也已正式
@@ -195,7 +199,9 @@ bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状�
   risk-bundle 已由 `c6b3c8c` 正式 `COMPLETED/worker_attested=true`，37 个候选保持诚实 PENDING、
   4 input + 2 output hashes 且源权威前后相同；operational-evidence 首次 `959f66c` 实跑正确拒绝同一
   upstream receipt 跨 collector release 的身份冲突，现已修复为周期去重、首次审计不改写且新 release
-  仅追加自己的演练，仍待新不可变发布复验。
+  仅追加自己的演练；新不可变发布 `c1e8eb8` 已正式复验，外层因窗口仍 `MATURING` 记录预期
+  `FAILED/NONZERO_EXIT/exit=2`，但 `release_verified=true`、`worker_attested=true`、5 input +
+  2 output hashes 完整，6 项演练通过、证据链有效且未重复计入上游周期。
 
 ### WP1：唯一候选工作流
 

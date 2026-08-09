@@ -270,6 +270,75 @@ def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_p
     }
 
 
+def test_canonical_full_validation_publishes_release_evidence_last(
+    tmp_path,
+    monkeypatch,
+):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation_report.json"
+    observed = []
+    monkeypatch.setattr(validate, "DEFAULT_REPORT", str(report_path))
+    monkeypatch.setattr(
+        validate,
+        "resolve_canonical_source_anchor",
+        lambda _repo: "a" * 40,
+    )
+
+    def publish_release_evidence():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        observed.append((report["overall_status"], report["selected_stages"][-1]))
+
+    monkeypatch.setattr(
+        validate,
+        "_publish_release_evidence_manifest",
+        publish_release_evidence,
+    )
+
+    result = validate.run(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=[("primary-pass", [sys.executable, "-c", "pass"], str(tmp_path))],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
+    )
+
+    assert result == 0
+    assert observed == [("PASS", "phase13-readiness:tests")]
+
+
+def test_canonical_release_evidence_publication_failure_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation_report.json"
+    monkeypatch.setattr(validate, "DEFAULT_REPORT", str(report_path))
+    monkeypatch.setattr(
+        validate,
+        "resolve_canonical_source_anchor",
+        lambda _repo: "a" * 40,
+    )
+
+    def reject_publication():
+        raise ValueError("release evidence drift")
+
+    monkeypatch.setattr(
+        validate,
+        "_publish_release_evidence_manifest",
+        reject_publication,
+    )
+
+    result = validate.run(
+        stages=None,
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=[("primary-pass", [sys.executable, "-c", "pass"], str(tmp_path))],
+        phase13_refresh_checks=_fake_phase13(tmp_path),
+    )
+
+    assert result == 1
+
+
 def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path):
     validate = _load_validate_module()
     report_path = tmp_path / "validation.json"

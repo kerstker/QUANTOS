@@ -1,7 +1,9 @@
 from pathlib import Path
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from types import SimpleNamespace
 import sys
@@ -20,6 +22,7 @@ from tools.l2_schedule_entrypoint import (
 
 
 COMMIT = "a" * 40
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _worker_attestation(module: str = "alpha_production_workflow") -> dict:
@@ -53,6 +56,19 @@ def _accept_release(root: Path, expected_commit: str) -> str:
     return expected_commit
 
 
+def _accept_release_evidence(
+    root: Path,
+    expected_commit: str,
+) -> tuple[dict[str, object], str]:
+    assert root.is_absolute()
+    assert expected_commit == COMMIT
+    return {
+        "schema_version": 1,
+        "readiness": "L2_DRY_RUN_ONLY",
+        "validation": {"source_commit": COMMIT},
+    }, "9" * 64
+
+
 def _module(code_root: Path, *, result: object = 0, observed: list | None = None):
     module_path = code_root / "tools" / "worker.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +80,126 @@ def _module(code_root: Path, *, result: object = 0, observed: list | None = None
         return result
 
     return SimpleNamespace(__file__=str(module_path), main=main)
+
+
+def _install_release_evidence_support(release: Path) -> None:
+    scripts = release / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copyfile(ROOT / "scripts/evidence_binding.py", scripts / "evidence_binding.py")
+    (scripts / "validate.py").write_text("# validation fixture\n", encoding="utf-8")
+
+
+def _seal_release_evidence(release: Path, source_commit: str) -> str:
+    from scripts.evidence_binding import write_release_evidence_manifest
+
+    def write(relative: str, document: object) -> str:
+        path = release / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    sbom_sha = write("evidence/sbom.cdx.json", {"bomFormat": "CycloneDX"})
+    container_sha = write(
+        "evidence/vulnerability/container_trivy_latest.json",
+        {"schema_version": 1, "verdict": "PASS"},
+    )
+    reproducibility_sha = write(
+        "evidence/reproducibility/container_build_latest.json",
+        {"schema_version": 1, "verdict": "PASS"},
+    )
+    checks, derived, phase13 = "1" * 64, "2" * 64, "3" * 64
+    run_payload = json.dumps(
+        {
+            "domain": "quantos-validation-run:v2",
+            "source_commit": source_commit,
+            "checks_manifest_sha256": checks,
+            "derived_refresh_manifest_sha256": derived,
+            "phase13_manifest_sha256": phase13,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    binding = {
+        "run_id": hashlib.sha256(run_payload).hexdigest(),
+        "source_commit": source_commit,
+        "generated_at": 1,
+        "current": True,
+    }
+    stages = [
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    ]
+    write(
+        "evidence/validation_report.json",
+        {
+            "schema_version": 1,
+            "report_kind": "FAIL_CLOSED_VALIDATION",
+            "commit": source_commit,
+            "validation": binding,
+            "readiness": "L2_DRY_RUN_ONLY",
+            "selection_scope": "ALL",
+            "selected_stages": stages,
+            "checks_manifest_sha256": checks,
+            "derived_refresh_manifest_sha256": derived,
+            "phase13_manifest_sha256": phase13,
+            "validate_script_sha256": hashlib.sha256(
+                (release / "scripts/validate.py").read_bytes()
+            ).hexdigest(),
+            "summary": {
+                "selected": 3,
+                "passed": 3,
+                "failed": 0,
+                "timed_out": 0,
+                "errored": 0,
+            },
+            "overall_status": "PASS",
+            "results": [{"stage": stage, "status": "PASS"} for stage in stages],
+        },
+    )
+    write(
+        "evidence/supply_chain_baseline.json",
+        {
+            "schema_version": 1,
+            "validation": binding,
+            "verdict": "PARTIAL",
+            "sbom_sha256": sbom_sha,
+            "container_vulnerability_evidence_status": (
+                "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
+            ),
+            "container_vulnerability_evidence_sha256": container_sha,
+            "container_runtime_image_digest": "sha256:" + "4" * 64,
+            "container_reproducibility_evidence_status": (
+                "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
+            ),
+            "container_reproducibility_evidence_sha256": reproducibility_sha,
+            "container_reproducible_archive_sha256": "5" * 64,
+            "container_reproducible_manifest_digest": "sha256:" + "4" * 64,
+            "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+            "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+        },
+    )
+    write(
+        "evidence/top_tier_assessment.json",
+        {"schema_version": 1, "validation": binding, "verdict": "NOT_TOP_TIER"},
+    )
+    write_release_evidence_manifest(release)
+    subprocess.run(["git", "add", "."], cwd=release, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "release evidence"],
+        cwd=release,
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=release,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
 
 def test_entrypoint_loads_allowlisted_module_from_release_root_and_keeps_state_cwd(
@@ -83,6 +219,7 @@ def test_entrypoint_loads_allowlisted_module_from_release_root_and_keeps_state_c
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
         importer=lambda name: loaded.append(name) or module,
     )
 
@@ -102,6 +239,7 @@ def test_entrypoint_rejects_unknown_module_before_import(tmp_path: Path) -> None
             code_root=tmp_path,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda name: imported.append(name),
         )
 
@@ -119,6 +257,7 @@ def test_entrypoint_rejects_module_resolved_outside_release_root(tmp_path: Path)
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
 
@@ -134,6 +273,7 @@ def test_entrypoint_rejects_ambiguous_exit_code(tmp_path: Path, result: object) 
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
 
@@ -160,6 +300,7 @@ def test_entrypoint_normalizes_system_exit_to_worker_result(
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
         importer=lambda _name: module,
     ) == expected
 
@@ -183,6 +324,7 @@ def test_entrypoint_rejects_ambiguous_system_exit_code(
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
 
@@ -204,6 +346,7 @@ def test_entrypoint_hides_launcher_arguments_from_worker(
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
         == 0
@@ -232,6 +375,7 @@ def test_entrypoint_binds_release_identity_into_worker_environment(
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
         importer=lambda _name: module,
     ) == 0
 
@@ -255,6 +399,7 @@ def test_entrypoint_rejects_release_and_state_root_overlap(
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: _module(code_root),
         )
 
@@ -271,11 +416,56 @@ def test_entrypoint_reports_release_verification_before_worker_runs(
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
         on_release_verified=lambda root, commit: observed.append((root, commit)),
         importer=lambda _name: module,
     ) == 0
 
     assert observed == [(code_root.resolve(), COMMIT)]
+
+
+def test_entrypoint_requires_release_evidence_before_worker_import(
+    tmp_path: Path,
+) -> None:
+    code_root = tmp_path / "release"
+    imported = []
+
+    def reject_evidence(_root: Path, _commit: str):
+        raise ScheduleEntrypointError("release evidence verification failed")
+
+    with pytest.raises(ScheduleEntrypointError, match="release evidence"):
+        run_scheduled_module(
+            "domain_event_ops",
+            code_root=code_root,
+            expected_release_commit=COMMIT,
+            release_verifier=_accept_release,
+            release_evidence_verifier=reject_evidence,
+            importer=lambda name: imported.append(name),
+        )
+
+    assert imported == []
+
+
+def test_entrypoint_reports_release_evidence_before_worker_runs(
+    tmp_path: Path,
+) -> None:
+    code_root = tmp_path / "release"
+    observed = []
+    module = _module(code_root, result=0)
+
+    assert run_scheduled_module(
+        "domain_event_ops",
+        code_root=code_root,
+        expected_release_commit=COMMIT,
+        release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
+        on_release_evidence_verified=lambda document, digest: observed.append(
+            (document, digest)
+        ),
+        importer=lambda _name: module,
+    ) == 0
+
+    assert observed == [(_accept_release_evidence(code_root.resolve(), COMMIT))]
 
 
 @pytest.mark.parametrize(
@@ -298,6 +488,7 @@ def test_required_worker_fails_closed_without_input_attestation(
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
 
@@ -320,6 +511,7 @@ def test_required_worker_attestation_is_validated_and_hash_bound(
         code_root=code_root,
         expected_release_commit=COMMIT,
         release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
         importer=lambda _name: module,
         on_worker_attested=lambda document, digest: observed.append((document, digest)),
     ) == 0
@@ -341,6 +533,7 @@ def test_required_worker_rejects_malformed_input_hash(tmp_path: Path) -> None:
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
+            release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
 
@@ -549,7 +742,7 @@ def test_every_registered_schedule_module_is_allowlisted() -> None:
 
 
 def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -> None:
-    source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
+    source_launcher = ROOT / "tools" / "l2_schedule_entrypoint.py"
     release = tmp_path / "release"
     state = tmp_path / "dirty-state"
     for root, marker in ((release, "RELEASE"), (state, "DIRTY")):
@@ -562,6 +755,7 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
         )
     launcher = release / "tools" / "l2_schedule_entrypoint.py"
     launcher.write_bytes(source_launcher.read_bytes())
+    _install_release_evidence_support(release)
     subprocess.run(["git", "init", "-q"], cwd=release, check=True)
     subprocess.run(
         ["git", "config", "user.email", "quantos-tests@example.invalid"],
@@ -575,13 +769,14 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     )
     subprocess.run(["git", "add", "."], cwd=release, check=True)
     subprocess.run(["git", "commit", "-qm", "release"], cwd=release, check=True)
-    commit = subprocess.run(
+    source_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=release,
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
+    commit = _seal_release_evidence(release, source_commit)
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(state)
 
@@ -612,13 +807,15 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     assert receipt["status"] == "COMPLETED"
     assert receipt["release_commit"] == commit
     assert receipt["release_verified"] is True
+    assert receipt["release_evidence_verified"] is True
+    assert re.fullmatch(r"[0-9a-f]{64}", receipt["release_evidence_sha256"])
     assert receipt["verified_at"] is not None
 
 
 def test_script_receipt_embeds_required_worker_input_attestation(
     tmp_path: Path,
 ) -> None:
-    source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
+    source_launcher = ROOT / "tools" / "l2_schedule_entrypoint.py"
     release = tmp_path / "release"
     state = tmp_path / "state"
     tools = release / "tools"
@@ -649,6 +846,7 @@ def test_script_receipt_embeds_required_worker_input_attestation(
     )
     launcher = tools / "l2_schedule_entrypoint.py"
     launcher.write_bytes(source_launcher.read_bytes())
+    _install_release_evidence_support(release)
     subprocess.run(["git", "init", "-q"], cwd=release, check=True)
     subprocess.run(
         ["git", "config", "user.email", "quantos-tests@example.invalid"],
@@ -662,13 +860,14 @@ def test_script_receipt_embeds_required_worker_input_attestation(
     )
     subprocess.run(["git", "add", "."], cwd=release, check=True)
     subprocess.run(["git", "commit", "-qm", "release"], cwd=release, check=True)
-    commit = subprocess.run(
+    source_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=release,
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
+    commit = _seal_release_evidence(release, source_commit)
 
     completed = subprocess.run(
         [
@@ -689,7 +888,9 @@ def test_script_receipt_embeds_required_worker_input_attestation(
     receipts = list((state / ".runtime" / "l2-release-runs").glob("*.json"))
     assert len(receipts) == 1
     receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
-    assert receipt["schema_version"] == 2
+    assert receipt["schema_version"] == 3
+    assert receipt["release_evidence_required"] is True
+    assert receipt["release_evidence_verified"] is True
     assert receipt["worker_attestation_required"] is True
     assert receipt["worker_attested"] is True
     assert re.fullmatch(r"[0-9a-f]{64}", receipt["worker_attestation_sha256"])
@@ -699,7 +900,7 @@ def test_script_receipt_embeds_required_worker_input_attestation(
 def test_script_receipt_distinguishes_verified_system_exit_failure(
     tmp_path: Path,
 ) -> None:
-    source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
+    source_launcher = ROOT / "tools" / "l2_schedule_entrypoint.py"
     release = tmp_path / "release"
     state = tmp_path / "state"
     tools = release / "tools"
@@ -712,6 +913,7 @@ def test_script_receipt_distinguishes_verified_system_exit_failure(
     )
     launcher = tools / "l2_schedule_entrypoint.py"
     launcher.write_bytes(source_launcher.read_bytes())
+    _install_release_evidence_support(release)
     subprocess.run(["git", "init", "-q"], cwd=release, check=True)
     subprocess.run(
         ["git", "config", "user.email", "quantos-tests@example.invalid"],
@@ -725,13 +927,14 @@ def test_script_receipt_distinguishes_verified_system_exit_failure(
     )
     subprocess.run(["git", "add", "."], cwd=release, check=True)
     subprocess.run(["git", "commit", "-qm", "release"], cwd=release, check=True)
-    commit = subprocess.run(
+    source_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=release,
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
+    commit = _seal_release_evidence(release, source_commit)
 
     completed = subprocess.run(
         [
@@ -755,4 +958,5 @@ def test_script_receipt_distinguishes_verified_system_exit_failure(
     assert receipt["status"] == "FAILED"
     assert receipt["exit_code"] == 7
     assert receipt["release_verified"] is True
+    assert receipt["release_evidence_verified"] is True
     assert receipt["verified_at"] is not None

@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Release Evidence Same-Run Binding:** `scripts/validate.py`
+> now publishes `evidence/l2_release_evidence_manifest.json` only after the full
+> canonical gate and Phase 13 pass. The manifest binds the stable source anchor,
+> full validation report, top-tier assessment, SBOM, container vulnerability and
+> reproducibility proofs, plus every currently present canonical generated artifact.
+> L2 scheduler receipts are schema v3 and verify this manifest before importing any
+> worker; source/artifact/cross-link drift fails closed. This closes the locally
+> achievable container/SBOM and derived-evidence binding item. External signing,
+> WORM retention, and independent witness remain explicit WP5 external boundaries.
+> The final `paper_operational_evidence` immutable run from `c1e8eb8` retained a
+> complete 5-input/2-output worker attestation and valid chain. Its outer exit 2 is
+> the expected `MATURING` business result, not a release-verification failure.
+
 > **2026-08-09 WP0 Paper Operational Evidence 发布运行证明第十一增量：**
 > `paper_operational_evidence` 已接入强制 release-run attestation。证明绑定唯一 Shadow 候选全集、
 > 预注册 5 分钟/30 分钟 smoke/24 小时 Production 窗口合同、实际消费且运行前后稳定的最新

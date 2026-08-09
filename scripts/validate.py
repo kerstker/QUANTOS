@@ -38,6 +38,7 @@ sys.path.insert(0, REPO)
 from scripts.evidence_binding import (  # noqa: E402
     resolve_canonical_source_anchor,
     validation_binding,
+    write_release_evidence_manifest,
 )
 
 APPS = os.path.join(REPO, "apps", "research-console")
@@ -441,6 +442,15 @@ def _sha256_file(path: str) -> str | None:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _publish_release_evidence_manifest() -> None:
+    document = write_release_evidence_manifest(REPO)
+    print(
+        "[validate] release evidence manifest: "
+        f"{document['artifact_count']} artifacts bound",
+        flush=True,
+    )
 
 
 def _git_commit() -> str:
@@ -1121,6 +1131,21 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             flush=True,
         )
         overall_status = "FAIL"
+
+    if (
+        selection_scope == "ALL"
+        and overall_status == "PASS"
+        and os.path.abspath(effective_report) == os.path.abspath(DEFAULT_REPORT)
+    ):
+        try:
+            _publish_release_evidence_manifest()
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            print(
+                "[validate] ERROR cannot publish release evidence manifest: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            overall_status = "FAIL"
 
     print(f"\n{'=' * 70}\n[validate] SUMMARY\n{'=' * 70}")
     for result in results:

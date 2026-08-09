@@ -5,6 +5,7 @@ each digested number is within tolerance and the reconciliation identity still h
 the repo catches silent drift in the numbers it cites. Regenerate digests via
 tools.build_evidence_digests after a driver refresh."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -96,9 +97,182 @@ def _temp_repo(tmp_path: Path) -> tuple[Path, str]:
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "config", "user.name", "test")
     (repo / "source.txt").write_text("source\n", encoding="utf-8")
-    _git(repo, "add", "source.txt")
+    (repo / "scripts").mkdir()
+    (repo / "scripts/validate.py").write_text("# validation fixture\n", encoding="utf-8")
+    _git(repo, "add", "source.txt", "scripts/validate.py")
     _git(repo, "commit", "-qm", "source")
     return repo, _git(repo, "rev-parse", "HEAD")
+
+
+def _canonical_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _write_release_evidence_inputs(repo: Path, source_commit: str) -> None:
+    evidence = repo / "evidence"
+    (evidence / "vulnerability").mkdir(parents=True)
+    (evidence / "reproducibility").mkdir(parents=True)
+
+    sbom = {"bomFormat": "CycloneDX", "components": []}
+    container = {"schema_version": 1, "verdict": "PASS"}
+    reproducibility = {"schema_version": 1, "verdict": "PASS"}
+    documents = {
+        "evidence/sbom.cdx.json": sbom,
+        "evidence/vulnerability/container_trivy_latest.json": container,
+        "evidence/reproducibility/container_build_latest.json": reproducibility,
+    }
+    for relative, document in documents.items():
+        (repo / relative).write_text(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+    artifact_hashes = {
+        relative: hashlib.sha256((repo / relative).read_bytes()).hexdigest()
+        for relative in documents
+    }
+    checks = "1" * 64
+    derived = "2" * 64
+    phase13 = "3" * 64
+    run_id = _canonical_sha256(
+        {
+            "domain": "quantos-validation-run:v2",
+            "source_commit": source_commit,
+            "checks_manifest_sha256": checks,
+            "derived_refresh_manifest_sha256": derived,
+            "phase13_manifest_sha256": phase13,
+        }
+    )
+    binding = {
+        "run_id": run_id,
+        "source_commit": source_commit,
+        "generated_at": 1,
+        "current": True,
+    }
+    stages = [
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    ]
+    report = {
+        "schema_version": 1,
+        "report_kind": "FAIL_CLOSED_VALIDATION",
+        "commit": source_commit,
+        "validation": binding,
+        "readiness": "L2_DRY_RUN_ONLY",
+        "selection_scope": "ALL",
+        "selected_stages": stages,
+        "checks_manifest_sha256": checks,
+        "derived_refresh_manifest_sha256": derived,
+        "phase13_manifest_sha256": phase13,
+        "validate_script_sha256": hashlib.sha256(
+            (repo / "scripts/validate.py").read_bytes()
+        ).hexdigest(),
+        "summary": {
+            "selected": 3,
+            "passed": 3,
+            "failed": 0,
+            "timed_out": 0,
+            "errored": 0,
+        },
+        "overall_status": "PASS",
+        "results": [{"stage": stage, "status": "PASS"} for stage in stages],
+    }
+    supply = {
+        "schema_version": 1,
+        "validation": dict(binding),
+        "verdict": "PARTIAL",
+        "sbom_sha256": artifact_hashes["evidence/sbom.cdx.json"],
+        "container_vulnerability_evidence_status": (
+            "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
+        ),
+        "container_vulnerability_evidence_sha256": artifact_hashes[
+            "evidence/vulnerability/container_trivy_latest.json"
+        ],
+        "container_runtime_image_digest": "sha256:" + "4" * 64,
+        "container_reproducibility_evidence_status": (
+            "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
+        ),
+        "container_reproducibility_evidence_sha256": artifact_hashes[
+            "evidence/reproducibility/container_build_latest.json"
+        ],
+        "container_reproducible_archive_sha256": "5" * 64,
+        "container_reproducible_manifest_digest": "sha256:" + "4" * 64,
+        "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+        "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+    }
+    top_tier = {
+        "schema_version": 1,
+        "validation": dict(binding),
+        "verdict": "NOT_TOP_TIER",
+    }
+    for relative, document in {
+        "evidence/validation_report.json": report,
+        "evidence/supply_chain_baseline.json": supply,
+        "evidence/top_tier_assessment.json": top_tier,
+    }.items():
+        (repo / relative).write_text(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+
+def test_release_evidence_manifest_binds_full_allowlisted_artifact_set(tmp_path):
+    from scripts.evidence_binding import (
+        RELEASE_EVIDENCE_MANIFEST_PATH,
+        assert_release_evidence_manifest,
+        write_release_evidence_manifest,
+    )
+
+    repo, source = _temp_repo(tmp_path)
+    _write_release_evidence_inputs(repo, source)
+    manifest = write_release_evidence_manifest(repo)
+    assert manifest["validation"]["source_commit"] == source
+    assert set(manifest["artifact_sha256"]) == {
+        "evidence/reproducibility/container_build_latest.json",
+        "evidence/sbom.cdx.json",
+        "evidence/supply_chain_baseline.json",
+        "evidence/top_tier_assessment.json",
+        "evidence/validation_report.json",
+        "evidence/vulnerability/container_trivy_latest.json",
+    }
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "release evidence")
+    release_commit = _git(repo, "rev-parse", "HEAD")
+
+    verified, digest = assert_release_evidence_manifest(
+        repo,
+        expected_release_commit=release_commit,
+    )
+    assert verified == manifest
+    assert digest == hashlib.sha256(
+        (repo / RELEASE_EVIDENCE_MANIFEST_PATH).read_bytes()
+    ).hexdigest()
+
+    (repo / "evidence/sbom.cdx.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="drift"):
+        assert_release_evidence_manifest(repo, expected_release_commit=release_commit)
+
+
+def test_release_evidence_manifest_rejects_stale_validation_source(tmp_path):
+    from scripts.evidence_binding import write_release_evidence_manifest
+
+    repo, source = _temp_repo(tmp_path)
+    _write_release_evidence_inputs(repo, source)
+    report_path = repo / "evidence/validation_report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["commit"] = "f" * 40
+    report["validation"]["source_commit"] = "f" * 40
+    report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source"):
+        write_release_evidence_manifest(repo)
 
 
 def _commit_artifact(repo: Path, name: str = "evidence/validation_report.json") -> str:

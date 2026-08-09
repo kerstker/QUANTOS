@@ -34,8 +34,16 @@ shadow stores; the console uses the same `QUANTOS_STATE_ROOT`. Every invocation
 writes a hash-bearing receipt under `.runtime/l2-release-runs/`. The receipt
 separates release verification from worker outcome, so a verified release plus
 a non-zero worker exit is recorded as `release_verified=true`, `status=FAILED`.
-Receipt schema v2 also carries `worker_attestation_required`, `worker_attested`,
-the validated attestation document, and its canonical SHA-256. The unique
+Receipt schema v3 also carries `release_evidence_required`,
+`release_evidence_verified`, the exact release-evidence manifest and its SHA-256,
+plus `worker_attestation_required`, `worker_attested`, the validated worker
+attestation document, and its canonical SHA-256. Before importing any worker,
+the launcher verifies that the full canonical generated-artifact set is hash-bound
+to the same current full validation run. That required set includes the validation
+report, top-tier assessment, SBOM, container vulnerability evidence, and the two-cold-
+build reproducibility proof. An evidence-only descendant commit is accepted only
+when its stable canonical source anchor matches the report; any source, artifact,
+manifest, or cross-link drift fails closed. The unique
 `alpha_production_workflow`, the public-book `paper_multivenue_sor`, formal
 `paper_order_preview`, its `paper_research_risk_bundle` producer, and
 the `paper_operational_evidence` window collector, and

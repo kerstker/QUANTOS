@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -16,7 +17,8 @@ GIT_COMMAND_TIMEOUT_SECONDS = 10
 
 # This is deliberately a finite, versioned list.  Widening it changes the
 # identity domain and must be reviewed as a new boundary policy.
-CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v1"
+CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v2"
+RELEASE_EVIDENCE_MANIFEST_PATH = "evidence/l2_release_evidence_manifest.json"
 CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md",
     "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md",
@@ -25,6 +27,7 @@ CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "evidence/chaos_recovery_status.json",
     "evidence/factor_garden_status.json",
     "evidence/l2_backup_latest.json",
+    RELEASE_EVIDENCE_MANIFEST_PATH,
     "evidence/mexc_integration_status.json",
     "evidence/paper_shadow_status.json",
     "evidence/reproducibility/container_build_latest.json",
@@ -36,6 +39,24 @@ CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "evidence/vulnerability/container_trivy_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
 })
+RELEASE_EVIDENCE_REQUIRED_ARTIFACTS = frozenset(
+    {
+        "evidence/reproducibility/container_build_latest.json",
+        "evidence/sbom.cdx.json",
+        "evidence/supply_chain_baseline.json",
+        "evidence/top_tier_assessment.json",
+        "evidence/validation_report.json",
+        "evidence/vulnerability/container_trivy_latest.json",
+    }
+)
+_VALIDATION_RUN_ID_DOMAIN = "quantos-validation-run:v2"
+_PHASE13_STAGES = frozenset(
+    {
+        "phase13-readiness:refresh",
+        "phase13-readiness:current",
+        "phase13-readiness:tests",
+    }
+)
 
 
 def _repo_root() -> Path:
@@ -131,6 +152,276 @@ def _check_clean_boundary(repo: Path) -> None:
         if len(xy) != 2 or any(flag not in ".AM" for flag in xy) or not _allowlisted(path):
             raise ValueError(f"dirty path is outside canonical artifact allowlist: {path!r}")
         _assert_regular_artifact(repo, path)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is unavailable or invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _validation_run_id(
+    *,
+    source_commit: str,
+    checks_manifest_sha256: str,
+    derived_refresh_manifest_sha256: str,
+    phase13_manifest_sha256: str,
+) -> str:
+    for value in (
+        checks_manifest_sha256,
+        derived_refresh_manifest_sha256,
+        phase13_manifest_sha256,
+    ):
+        if not isinstance(value, str) or _SHA64.fullmatch(value) is None:
+            raise ValueError("validation report contains an invalid manifest digest")
+    encoded = json.dumps(
+        {
+            "domain": _VALIDATION_RUN_ID_DOMAIN,
+            "source_commit": source_commit,
+            "checks_manifest_sha256": checks_manifest_sha256,
+            "derived_refresh_manifest_sha256": derived_refresh_manifest_sha256,
+            "phase13_manifest_sha256": phase13_manifest_sha256,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validated_report_identity(repo: Path) -> tuple[dict[str, object], dict[str, Any]]:
+    report = _load_json_object(
+        repo / "evidence/validation_report.json",
+        label="validation report",
+    )
+    binding = validation_binding_from_payload(report)
+    source_commit = resolve_canonical_source_anchor(repo)
+    results = report.get("results")
+    selected_stages = report.get("selected_stages")
+    if (
+        report.get("commit") != source_commit
+        or binding["source_commit"] != source_commit
+    ):
+        raise ValueError("validation report source is not the canonical source anchor")
+    if (
+        report.get("schema_version") != 1
+        or report.get("report_kind") != "FAIL_CLOSED_VALIDATION"
+        or report.get("readiness") != "L2_DRY_RUN_ONLY"
+        or report.get("selection_scope") != "ALL"
+        or report.get("overall_status") != "PASS"
+        or binding["current"] is not True
+        or not isinstance(results, list)
+        or not results
+        or any(
+            not isinstance(result, dict)
+            or not isinstance(result.get("stage"), str)
+            or result.get("status") != "PASS"
+            for result in results
+        )
+        or not isinstance(selected_stages, list)
+        or selected_stages != [result["stage"] for result in results]
+        or len(selected_stages) != len(set(selected_stages))
+        or not _PHASE13_STAGES.issubset(set(selected_stages))
+    ):
+        raise ValueError("validation report is not a complete current canonical PASS")
+    summary = {
+        "selected": len(results),
+        "passed": len(results),
+        "failed": 0,
+        "timed_out": 0,
+        "errored": 0,
+    }
+    if report.get("summary") != summary:
+        raise ValueError("validation report summary is inconsistent")
+    validate_sha256 = _sha256_file(repo / "scripts/validate.py")
+    if report.get("validate_script_sha256") != validate_sha256:
+        raise ValueError("validation report does not bind the current validator")
+    expected_run_id = _validation_run_id(
+        source_commit=source_commit,
+        checks_manifest_sha256=report.get("checks_manifest_sha256"),
+        derived_refresh_manifest_sha256=report.get(
+            "derived_refresh_manifest_sha256"
+        ),
+        phase13_manifest_sha256=report.get("phase13_manifest_sha256"),
+    )
+    if binding["run_id"] != expected_run_id:
+        raise ValueError("validation report run identity is inconsistent")
+    return binding, report
+
+
+def _same_validation_run(
+    payload: Mapping[str, Any],
+    *,
+    expected: Mapping[str, object],
+    label: str,
+) -> None:
+    binding = validation_binding_from_payload(payload)
+    if (
+        binding["source_commit"] != expected["source_commit"]
+        or binding["run_id"] != expected["run_id"]
+        or binding["current"] is not True
+    ):
+        raise ValueError(f"{label} is not bound to the canonical validation run")
+
+
+def build_release_evidence_manifest(
+    repo_root: Path | str | None = None,
+) -> dict[str, Any]:
+    """Build the deterministic L2 release-evidence identity document.
+
+    The manifest binds every currently present canonical generated artifact,
+    while a finite required core guarantees that validation, SBOM, container
+    scan/reproducibility, supply-chain, and top-tier evidence cannot disappear.
+    """
+    repo = Path(repo_root) if repo_root is not None else _repo_root()
+    binding, report = _validated_report_identity(repo)
+    supply = _load_json_object(
+        repo / "evidence/supply_chain_baseline.json",
+        label="supply-chain baseline",
+    )
+    top_tier = _load_json_object(
+        repo / "evidence/top_tier_assessment.json",
+        label="top-tier assessment",
+    )
+    _same_validation_run(supply, expected=binding, label="supply-chain baseline")
+    _same_validation_run(top_tier, expected=binding, label="top-tier assessment")
+
+    present = {
+        path
+        for path in CANONICAL_GENERATED_ARTIFACT_ALLOWLIST
+        if path != RELEASE_EVIDENCE_MANIFEST_PATH and (repo / path).is_file()
+    }
+    missing = sorted(RELEASE_EVIDENCE_REQUIRED_ARTIFACTS - present)
+    if missing:
+        raise ValueError(
+            "release evidence required artifacts are missing: " + ", ".join(missing)
+        )
+    artifact_sha256 = {
+        path: _sha256_file(repo / path)
+        for path in sorted(present)
+    }
+    if supply.get("sbom_sha256") != artifact_sha256["evidence/sbom.cdx.json"]:
+        raise ValueError("SBOM digest drift from supply-chain baseline")
+    if supply.get("container_vulnerability_evidence_sha256") != artifact_sha256[
+        "evidence/vulnerability/container_trivy_latest.json"
+    ]:
+        raise ValueError("container audit digest drift from supply-chain baseline")
+    if supply.get("container_reproducibility_evidence_sha256") != artifact_sha256[
+        "evidence/reproducibility/container_build_latest.json"
+    ]:
+        raise ValueError(
+            "container reproducibility digest drift from supply-chain baseline"
+        )
+    if (
+        supply.get("verdict") not in {"PASS", "PARTIAL"}
+        or supply.get("container_vulnerability_evidence_status")
+        != "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
+        or supply.get("container_reproducibility_evidence_status")
+        != "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
+        or not isinstance(supply.get("container_runtime_image_digest"), str)
+        or not isinstance(supply.get("container_reproducible_manifest_digest"), str)
+        or supply.get("container_runtime_image_digest")
+        != supply.get("container_reproducible_manifest_digest")
+        or not isinstance(supply.get("container_reproducible_archive_sha256"), str)
+        or _SHA64.fullmatch(supply["container_reproducible_archive_sha256"])
+        is None
+    ):
+        raise ValueError("container/SBOM release evidence is incomplete")
+
+    return {
+        "schema_version": 1,
+        "readiness": "L2_DRY_RUN_ONLY",
+        "canonical_artifact_allowlist_version": (
+            CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION
+        ),
+        "validation": dict(binding),
+        "validation_report_sha256": artifact_sha256[
+            "evidence/validation_report.json"
+        ],
+        "artifact_count": len(artifact_sha256),
+        "artifact_sha256": artifact_sha256,
+        "claims": {
+            "validation_overall_status": report["overall_status"],
+            "supply_chain_verdict": supply["verdict"],
+            "container_vulnerability_evidence_status": supply[
+                "container_vulnerability_evidence_status"
+            ],
+            "container_reproducibility_evidence_status": supply[
+                "container_reproducibility_evidence_status"
+            ],
+            "container_runtime_image_digest": supply[
+                "container_runtime_image_digest"
+            ],
+            "container_reproducible_archive_sha256": supply[
+                "container_reproducible_archive_sha256"
+            ],
+            "cross_host_container_reproducibility_status": supply.get(
+                "cross_host_container_reproducibility_status"
+            ),
+            "artifact_signature_status": supply.get("artifact_signature_status"),
+            "top_tier_verdict": top_tier.get("verdict"),
+        },
+    }
+
+
+def write_release_evidence_manifest(
+    repo_root: Path | str | None = None,
+) -> dict[str, Any]:
+    repo = Path(repo_root) if repo_root is not None else _repo_root()
+    document = build_release_evidence_manifest(repo)
+    path = repo / RELEASE_EVIDENCE_MANIFEST_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+    try:
+        temporary.write_text(
+            json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return document
+
+
+def assert_release_evidence_manifest(
+    repo_root: Path | str | None = None,
+    *,
+    expected_release_commit: str | None = None,
+) -> tuple[dict[str, Any], str]:
+    repo = Path(repo_root) if repo_root is not None else _repo_root()
+    if expected_release_commit is not None:
+        expected = _source(expected_release_commit)
+        if _head(repo) != expected:
+            raise ValueError("release evidence checkout does not match expected commit")
+    path = repo / RELEASE_EVIDENCE_MANIFEST_PATH
+    actual = _load_json_object(path, label="release evidence manifest")
+    expected_document = build_release_evidence_manifest(repo)
+    if actual != expected_document:
+        raise ValueError("release evidence manifest drift")
+    return actual, _sha256_file(path)
 
 
 def assert_canonical_working_tree(repo_root: Path | str | None = None) -> None:
