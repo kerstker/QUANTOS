@@ -58,6 +58,25 @@ _V2_COLUMNS = {
     "quality_verdict": "TEXT",         # caller/global quality marker (per-cell checks: later)
 }
 
+_ROW_COUNT_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS feature_value_store_metadata (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    row_count    INTEGER NOT NULL CHECK (row_count >= 0)
+) WITHOUT ROWID
+"""
+_ROW_COUNT_TRIGGER_SQL = """
+CREATE TRIGGER IF NOT EXISTS feature_values_count_after_insert
+AFTER INSERT ON feature_values
+BEGIN
+    UPDATE feature_value_store_metadata
+       SET row_count = row_count + 1
+     WHERE singleton_id = 1;
+    SELECT CASE WHEN changes() != 1
+        THEN RAISE(ABORT, 'feature value row-count metadata missing')
+    END;
+END
+"""
+
 
 class SqliteFeatureValueStore:
     def __init__(self, path: str, *, create: bool = False) -> None:
@@ -76,6 +95,69 @@ class SqliteFeatureValueStore:
                 self._conn.execute("PRAGMA synchronous=FULL")
                 self._conn.executescript(_SCHEMA)
                 self._conn.commit()
+                self._ensure_row_count_metadata_locked()
+
+    def _ensure_row_count_metadata_locked(self) -> None:
+        """Install an exact persistent insert counter under one write transaction.
+
+        Existing archives pay one exact COUNT during migration.  Once seeded, the
+        trigger advances the counter in the same transaction as every successful
+        INSERT; INSERT OR IGNORE duplicates do not fire it.  Caller holds ``_lock``.
+        """
+        def metadata_table_exists() -> bool:
+            return self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table'"
+                " AND name='feature_value_store_metadata'"
+            ).fetchone() is not None
+
+        def require_valid_metadata_row() -> None:
+            row = self._conn.execute(
+                "SELECT row_count FROM feature_value_store_metadata"
+                " WHERE singleton_id=1"
+            ).fetchone()
+            if row is None:
+                raise DataStoreError("feature value row-count metadata missing")
+            count = row["row_count"]
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise DataStoreError("feature value row-count metadata is invalid")
+
+        try:
+            if metadata_table_exists():
+                require_valid_metadata_row()
+                trigger_exists = self._conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='trigger'"
+                    " AND name='feature_values_count_after_insert'"
+                ).fetchone()
+                if trigger_exists is not None:
+                    return
+
+            self._conn.execute("BEGIN IMMEDIATE")
+            if metadata_table_exists():
+                # A table without its singleton row is corruption, not a
+                # migration candidate. Never silently rebuild evidence state.
+                require_valid_metadata_row()
+            else:
+                self._conn.execute(_ROW_COUNT_TABLE_SQL)
+                exact_count = int(
+                    self._conn.execute(
+                        "SELECT COUNT(*) FROM feature_values"
+                    ).fetchone()[0]
+                )
+                self._conn.execute(
+                    "INSERT INTO feature_value_store_metadata"
+                    " (singleton_id, row_count) VALUES (1, ?)",
+                    (exact_count,),
+                )
+            self._conn.execute(_ROW_COUNT_TRIGGER_SQL)
+            self._conn.commit()
+        except DataStoreError:
+            self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            self._conn.rollback()
+            raise DataStoreError(
+                f"feature value row-count metadata migration failed: {exc}"
+            ) from exc
 
     def _require_schema(self) -> None:
         try:
@@ -93,9 +175,34 @@ class SqliteFeatureValueStore:
     def row_count(self) -> int:
         with self._lock:
             self._require_schema()
-            return int(
-                self._conn.execute("SELECT COUNT(*) FROM feature_values").fetchone()[0]
-            )
+            try:
+                metadata_exists = self._conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table'"
+                    " AND name='feature_value_store_metadata'"
+                ).fetchone()
+                if metadata_exists is None:
+                    # Read-only compatibility for a legacy store opened without
+                    # ``create=True``.  The next writer performs the atomic,
+                    # persistent migration above.
+                    return int(
+                        self._conn.execute(
+                            "SELECT COUNT(*) FROM feature_values"
+                        ).fetchone()[0]
+                    )
+                row = self._conn.execute(
+                    "SELECT row_count FROM feature_value_store_metadata"
+                    " WHERE singleton_id=1"
+                ).fetchone()
+            except sqlite3.DatabaseError as exc:
+                raise DataStoreError(
+                    f"feature value row-count metadata unreadable: {exc}"
+                ) from exc
+            if row is None:
+                raise DataStoreError("feature value row-count metadata missing")
+            count = row["row_count"]
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise DataStoreError("feature value row-count metadata is invalid")
+            return count
 
     def add(self, fv: FeatureValue, *, version: str, computed_at_ms=None,
             dataset_version=None, materializer_version=None, quality_verdict=None) -> bool:
@@ -153,9 +260,8 @@ class SqliteFeatureValueStore:
                 self._conn.execute("BEGIN IMMEDIATE")
                 if has_v2:
                     self._ensure_v2_columns()          # re-checked under the write lock
-                before = self._conn.total_changes
                 if has_v2:
-                    self._conn.executemany(
+                    cursor = self._conn.executemany(
                         "INSERT OR IGNORE INTO feature_values(feature_id, feature_version,"
                         " instrument_id, event_time, knowledge_time, value, computed_at_ms,"
                         " dataset_version, materializer_version, quality_verdict)"
@@ -168,7 +274,7 @@ class SqliteFeatureValueStore:
                         ],
                     )
                 else:
-                    self._conn.executemany(
+                    cursor = self._conn.executemany(
                         "INSERT OR IGNORE INTO feature_values(feature_id, feature_version, instrument_id,"
                         " event_time, knowledge_time, value) VALUES (?,?,?,?,?,?)",
                         [
@@ -177,7 +283,11 @@ class SqliteFeatureValueStore:
                             for value in batch
                         ],
                     )
-                inserted = self._conn.total_changes - before
+                # Connection.total_changes includes the persistent row-count
+                # trigger's metadata UPDATE. Cursor.rowcount measures only the
+                # top-level INSERT OR IGNORE statements and preserves the public
+                # return contract.
+                inserted = cursor.rowcount
                 self._conn.commit()
                 return int(inserted)
             except (sqlite3.DatabaseError, TypeError, ValueError) as exc:

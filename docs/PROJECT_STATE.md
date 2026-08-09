@@ -32,6 +32,20 @@
 > market-data continuity and does not enable credentials, broker access, order
 > submission, or live trading.
 
+> **2026-08-09 Realtime feature archive constant-time retained count:** runtime
+> acceptance measured each realtime-feature cycle spending roughly 7--8 minutes
+> reopening and exactly counting the 13.5M-row `feature_values` archive. The
+> store now seeds one exact count for a legacy archive under an atomic write
+> transaction and installs an `AFTER INSERT` counter in the same database.
+> Successful inserts advance the counter transactionally; `INSERT OR IGNORE`
+> duplicates do not. Subsequent opens take a read-only fast path and
+> `row_count()` reads one singleton row rather than rescanning the archive.
+> Missing or invalid metadata blocks both reads and inserts, including after a
+> restart; it is never silently rebuilt once initialized. PIT values, append-only
+> retention, drift policy, and all L2 trading boundaries remain unchanged. A new
+> immutable release must perform the one-time production migration and timing
+> acceptance before the optimization is considered deployed.
+
 > **2026-08-09 L2 备份并发修复：** 当前 11.2 GB
 > `experiment_registry.db` 使用 DELETE journal；旧备份一次性调用 SQLite online
 > backup，正式独立评估在提交搜索尝试时耗尽 5 秒 busy timeout 并 fail-closed。

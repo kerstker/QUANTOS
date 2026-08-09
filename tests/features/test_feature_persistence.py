@@ -7,6 +7,7 @@ a PIT feature-value materialization store (was recomputed from raw bars every ru
   knowledge_time>=event_time blocks boundary lookahead, as_of() filters knowledge_time<=t.
 Both fail-closed on an uninitialized/corrupt store."""
 import os
+import sqlite3
 
 import pytest
 
@@ -14,6 +15,7 @@ from quantos.contracts.feature import (
     FeatureDefinition, FeatureRegistryItem, FeatureStatus, FeatureValue)
 from services.data.persistent_store import DataStoreError
 from services.features.registry_store import SqliteFeatureRegistryStore
+from services.features import value_store as value_store_module
 from services.features.value_store import SqliteFeatureValueStore
 
 
@@ -198,6 +200,106 @@ def test_value_store_batch_write_is_atomic_and_reproducible(tmp_path):
     assert store.add_many(values, version="v1") == 2
     assert store.add_many(values, version="v1") == 0
     assert [v.value for v in store.as_of("mom_10", "v1", "BTC", 999)] == [0.5, 0.7]
+
+
+def test_value_store_row_count_counter_tracks_only_inserted_rows(tmp_path):
+    path = os.path.join(str(tmp_path), "count.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    values = [_fv(100, 100, 0.5), _fv(200, 200, 0.7)]
+
+    assert store.add_many(values, version="v1") == 2
+    assert store.row_count() == 2
+    assert store.add_many(values, version="v1") == 0
+    assert store.row_count() == 2
+    assert store.add(_fv(300, 300, 0.9), version="v1") is True
+    assert store.row_count() == 3
+    store.close()
+
+    reopened = SqliteFeatureValueStore(path, create=True)
+    assert reopened.row_count() == 3
+
+
+def test_value_store_row_count_bootstraps_existing_archive_exactly(tmp_path):
+    path = os.path.join(str(tmp_path), "legacy-count.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE feature_values (
+            feature_id TEXT NOT NULL,
+            feature_version TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            event_time INTEGER NOT NULL,
+            knowledge_time INTEGER NOT NULL,
+            value REAL,
+            PRIMARY KEY (
+                feature_id,
+                feature_version,
+                instrument_id,
+                event_time,
+                knowledge_time
+            )
+        );
+        """
+    )
+    conn.executemany(
+        "INSERT INTO feature_values VALUES (?,?,?,?,?,?)",
+        [
+            ("mom_10", "v1", "BTC", 100, 100, 0.5),
+            ("mom_10", "v1", "BTC", 200, 200, 0.7),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteFeatureValueStore(path, create=True)
+    assert store.row_count() == 2
+    assert store.add(_fv(300, 300, 0.9), version="v1") is True
+    assert store.row_count() == 3
+
+
+def test_value_store_daily_row_count_does_not_scan_feature_archive(
+    tmp_path,
+    monkeypatch,
+):
+    path = os.path.join(str(tmp_path), "bounded-count.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store.add_many(
+        [_fv(index, index, float(index)) for index in range(1, 101)],
+        version="v1",
+    )
+    store.close()
+
+    statements = []
+    real_connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(value_store_module.sqlite3, "connect", traced_connect)
+    reopened = SqliteFeatureValueStore(path, create=True)
+    assert reopened.row_count() == 100
+    normalized = [" ".join(statement.upper().split()) for statement in statements]
+    assert not any(
+        "COUNT(*) FROM FEATURE_VALUES" in statement for statement in normalized
+    )
+
+
+def test_value_store_row_count_metadata_missing_fails_closed(tmp_path):
+    path = os.path.join(str(tmp_path), "missing-count.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store.add(_fv(100, 100, 0.5), version="v1")
+    store._conn.execute("DELETE FROM feature_value_store_metadata")
+    store._conn.commit()
+
+    with pytest.raises(DataStoreError, match="row-count metadata missing"):
+        store.row_count()
+    with pytest.raises(DataStoreError, match="row-count metadata missing"):
+        store.add(_fv(200, 200, 0.7), version="v1")
+    store.close()
+    with pytest.raises(DataStoreError, match="row-count metadata missing"):
+        SqliteFeatureValueStore(path, create=True)
 
 
 def test_value_store_rejects_invalid_as_of_time():
