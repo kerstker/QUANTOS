@@ -530,6 +530,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
             "alpha_production_workflow",
             "binance_realtime_features",
             "paper_multivenue_sor",
+            "realtime_alpha_discovery",
             "realtime_alpha_execution_paper",
         }
     )

@@ -313,14 +313,15 @@ class ExperimentRegistry:
             raise ExperimentStoreError(f"corrupt alpha_state row: {exc}") from exc  # never a silent partial load
         catalog.restore(CatalogSnapshot(trials=trials, alphas=tuple(rows)))
 
-    def load_for_evaluation(self, catalog: AlphaCatalog) -> None:
+    def load_for_evaluation(self, catalog: AlphaCatalog) -> str:
         """Load trial/statistical context without stale lifecycle identities."""
-        trials = tuple(self._store.all_trial_hashes())
+        trial_rows, alpha_rows = self._store.evaluation_context_snapshot()
+        trials = tuple(trial_rows)
         historical_returns = {}
         historical_pvalues = {}
         historical_definition_hashes = {}
         try:
-            for row in self._store.all_alphas():
+            for row in alpha_rows:
                 # Validate the complete canonical row even though lifecycle state is
                 # deliberately not installed into the fresh evaluation catalog.
                 definition = AlphaDefinition.model_validate(
@@ -348,6 +349,13 @@ class ExperimentRegistry:
             historical_returns=historical_returns,
             historical_pvalues=historical_pvalues,
             historical_definition_hashes=historical_definition_hashes,
+        )
+        return stable_hash(
+            {
+                "schema_version": 1,
+                "trials": sorted(trials),
+                "alpha_state_rows": alpha_rows,
+            }
         )
 
     # --- immutable evaluation artifacts -------------------------------------

@@ -2200,6 +2200,20 @@ class SqliteExperimentStore:
             )
         ]
 
+    def evaluation_context_snapshot(self) -> tuple[list[str], list[dict]]:
+        """Freeze trial identities and historical alpha rows in one view."""
+        self._require_schema()
+        try:
+            self._conn.execute("BEGIN")
+            trials = self.all_trial_hashes()
+            alphas = self.all_alphas()
+            self._conn.commit()
+            return trials, alphas
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+
     def save_bandit(self, snapshot_json: str) -> None:
         self._reject_write_ownership_conflict()
         self._require_runtime_mutation_schema()

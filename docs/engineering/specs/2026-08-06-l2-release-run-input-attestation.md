@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-4
+Roadmap slice: WP0 increments 1-5
 
 ## Problem
 
@@ -57,14 +57,25 @@ and the status file.  The worker clears prior in-memory attestation before loadi
 any mutable authority, and the launcher refuses a successful run without the exact
 paper-only safety declaration.
 
+`realtime_alpha_discovery` is the fifth required module and binds the first
+selection-bearing feature-to-candidate seam.  Its inputs include the parsed
+feature status, exact coverage summary, bounded executable-depth observations,
+actual PIT decision frames, the fixed research/gate policy, one transactionally
+frozen family-registry identity/feedback view, and—when trials are persisted—the
+transactionally frozen global experiment context.  Outputs bind the post-run
+family-registry authority, the exact search/candidate/provenance/evaluation
+artifacts written for the cycle, and the report file.  Both successful exploration
+and honest collection/block states are attestable; every attempt clears prior
+in-memory attestation before reading mutable state.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
 - It does not claim cross-host storage, WORM retention, external witnessing, or a
   signed container provenance.
 - Scheduled workers other than `alpha_production_workflow`,
-  `paper_multivenue_sor`, `realtime_alpha_execution_paper`, and
-  `binance_realtime_features` remain explicitly
+  `paper_multivenue_sor`, `realtime_alpha_execution_paper`,
+  `binance_realtime_features`, and `realtime_alpha_discovery` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are
   instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or

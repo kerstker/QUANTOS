@@ -14,6 +14,7 @@ separate forward-shadow adapter.  No maturity state is itself an Alpha pass.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -91,10 +92,134 @@ STRICT_WF_POSITIVE_FRAC = 0.75
 STRICT_REGIME_POSITIVE_FRAC = 0.75
 STRICT_MAX_DRAWDOWN = 0.15
 MAX_ACTIVE_ADAPTIVE_HYPOTHESES = 8
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
 class RealtimeAlphaWorkerError(RuntimeError):
     """The retained realtime research input or evidence store is invalid."""
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _frame_view_hash(
+    frames: Mapping[str, Sequence[RealtimeFrame]],
+) -> str:
+    digest = hashlib.sha256(b"realtime-decision-frame-view.v1\0")
+
+    def update(value: bytes) -> None:
+        digest.update(len(value).to_bytes(8, "big"))
+        digest.update(value)
+
+    for instrument, rows in sorted(frames.items()):
+        update(instrument.encode("utf-8"))
+        update(str(len(rows)).encode("ascii"))
+        for frame in rows:
+            update(
+                json.dumps(
+                    {
+                        "instrument_id": frame.instrument_id,
+                        "event_time_ms": frame.event_time_ms,
+                        "decision_time_ms": frame.decision_time_ms,
+                        "mid_price": frame.mid_price,
+                        "spread_bps": frame.spread_bps,
+                        "depth_imbalance_5": frame.depth_imbalance_5,
+                        "mark_basis_bps": frame.mark_basis_bps,
+                        "funding_rate": frame.funding_rate,
+                        "taker_imbalance_5s": frame.taker_imbalance_5s,
+                        "liquidation_imbalance_5s": (
+                            frame.liquidation_imbalance_5s
+                        ),
+                    },
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+            )
+    return digest.hexdigest()
+
+
+def _build_release_run_attestation(
+    report: Mapping[str, Any],
+    *,
+    input_hashes: Mapping[str, str],
+    output_hashes: Mapping[str, str],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["realtime_discovery_report_file"] = _sha256_file(output_path)
+    safety = report.get("safety")
+    safety = safety if isinstance(safety, Mapping) else {}
+    safety_contract = {
+        "paper_only": safety.get("paper_only"),
+        "live_allowed": safety.get("live_trading_enabled"),
+        "order_submission_allowed": safety.get("allow_order_submission"),
+        "credentials_accessed": safety.get("credentials_accessed"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    registry = report.get("registry")
+    registry = registry if isinstance(registry, Mapping) else {}
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and report.get("status")
+        in {
+            "RUNNING_EXPLORATORY",
+            "RUNNING_FORMAL_VALIDATION",
+            "COLLECTING_OR_BLOCKED",
+        }
+        and registry.get("chain_valid") is True
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety_contract == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "realtime_alpha_discovery",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy for the immutable L2 launcher."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _read_quality_status(path: str | Path) -> tuple[str, dict[str, Any]]:
@@ -388,9 +513,14 @@ def _capacity_report(
     admission: DataAdmissionReport,
     now_ms: int,
     policy: RealtimeAlphaPolicy,
+    observed_hashes: dict[str, str] | None = None,
 ):
     capacity_coverage = coverage.get(CAPACITY_FEATURE_ID)
     if capacity_coverage is None:
+        if observed_hashes is not None:
+            observed_hashes["executable_depth_view"] = stable_hash(
+                {"coverage": None, "hourly_depth": {}}
+            )
         return assess_executable_depth_capacity(
             {},
             history_span_ms=0,
@@ -408,6 +538,14 @@ def _capacity_report(
         start_ms=start_ms,
         end_ms=capacity_coverage.last_event_ms,
     )
+    if observed_hashes is not None:
+        observed_hashes["executable_depth_view"] = stable_hash(
+            {
+                "start_ms": start_ms,
+                "end_ms": capacity_coverage.last_event_ms,
+                "hourly_depth": hourly,
+            }
+        )
     return assess_executable_depth_capacity(
         hourly,
         history_span_ms=(
@@ -904,6 +1042,8 @@ def run_cycle(
     policy: RealtimeAlphaPolicy | None = None,
     persist_trials: bool = True,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
     effective_frame_cache_path = (
@@ -916,9 +1056,44 @@ def run_cycle(
         feature_version=FEATURE_VERSION,
     )
     research_policy_hash = realtime_research_policy_hash(research_policy)
+    input_hashes = {
+        "discovery_input_contract": stable_hash(
+            {
+                "schema_version": 1,
+                "as_of_ms": now,
+                "research_policy": research_policy,
+                "research_policy_hash": research_policy_hash,
+                "max_research_lookback_ms": MAX_RESEARCH_LOOKBACK_MS,
+                "capacity_lookback_ms": CAPACITY_LOOKBACK_MS,
+                "strict_dsr_min": STRICT_DSR_MIN,
+                "strict_pbo_max": STRICT_PBO_MAX,
+                "strict_holdout_sharpe_min": STRICT_HOLDOUT_SHARPE_MIN,
+                "strict_wf_positive_frac": STRICT_WF_POSITIVE_FRAC,
+                "strict_regime_positive_frac": STRICT_REGIME_POSITIVE_FRAC,
+                "strict_max_drawdown": STRICT_MAX_DRAWDOWN,
+                "max_active_adaptive_hypotheses": (
+                    MAX_ACTIVE_ADAPTIVE_HYPOTHESES
+                ),
+                "persist_trials": persist_trials,
+            }
+        )
+    }
+    output_hashes: dict[str, str] = {}
     base_hypotheses = default_realtime_hypotheses()
     quality_status, quality_payload = _read_quality_status(feature_status)
+    input_hashes["feature_status"] = stable_hash(quality_payload)
     coverage = coverage_from_store(source_store)
+    input_hashes["feature_coverage"] = stable_hash(
+        {
+            feature_id: {
+                "row_count": item.row_count,
+                "instruments": sorted(item.instruments),
+                "first_event_ms": item.first_event_ms,
+                "last_event_ms": item.last_event_ms,
+            }
+            for feature_id, item in sorted(coverage.items())
+        }
+    )
     admission = assess_data_admission(
         coverage, now_ms=now, quality_status=quality_status, policy=policy
     )
@@ -928,13 +1103,22 @@ def run_cycle(
         admission=admission,
         now_ms=now,
         policy=policy,
+        observed_hashes=input_hashes,
     )
     registry = AlphaFamilyRegistry(str(registry_db), create=True)
     exp_store: SqliteExperimentStore | None = None
     try:
-        if not registry.verify_chain():
-            raise RealtimeAlphaWorkerError("Alpha family registry chain is invalid")
-        registrations = registry.candidate_definitions()
+        try:
+            registry_authority_before, registrations, frozen_paper_runs = (
+                registry.discovery_snapshot()
+            )
+        except Exception as exc:
+            raise RealtimeAlphaWorkerError(
+                "Alpha family registry chain is invalid"
+            ) from exc
+        input_hashes["family_registry_authority_before"] = (
+            registry_authority_before
+        )
         existing_ids = {
             str(row.get("candidate_id"))
             for row in registrations
@@ -976,7 +1160,7 @@ def run_cycle(
         paper_runs = {
             item.candidate_id: [
                 run
-                for run in registry.paper_runs(item.candidate_id)
+                for run in frozen_paper_runs.get(item.candidate_id, ())
                 if run.get("status") == "ENGINEERING_SHADOW_REALIZED"
             ]
             for item in feedback_hypotheses
@@ -1041,6 +1225,7 @@ def run_cycle(
                 frame_cache_path=effective_frame_cache_path,
                 max_cache_lag_ms=policy.max_feature_age_ms,
             )
+            input_hashes["decision_frame_view"] = _frame_view_hash(frames)
             evaluations = {}
             for item in hypotheses:
                 lineage = lineage_by_id.get(item.candidate_id)
@@ -1059,12 +1244,15 @@ def run_cycle(
 
         exp_registry: ExperimentRegistry | None = None
         search_id: str | None = None
+        evaluation_run_ids: list[str] = []
         persistence_recorded_at = now
         catalog = AlphaCatalog()
         if evaluations and persist_trials:
             exp_store = SqliteExperimentStore(str(experiment_db), create=False)
             exp_registry = ExperimentRegistry(exp_store)
-            exp_registry.load_for_evaluation(catalog)
+            input_hashes["experiment_evaluation_context"] = (
+                exp_registry.load_for_evaluation(catalog)
+            )
             # `now` is the market-data decision cutoff, captured before frame
             # loading and evaluation.  Durable ledger events are written only
             # afterwards and must use the persistence wall clock; reusing the
@@ -1235,12 +1423,16 @@ def run_cycle(
                         {"candidate": row, "dataset_version": dataset_version}
                     ),
                 )
-                exp_registry.record_evaluation(
-                    evaluation,
-                    dataset_version=dataset_version,
-                    recorded_ts=persistence_recorded_at,
-                    search_id=search_id,
-                    config_hash=definitions[spec.candidate_id].definition_hash,
+                evaluation_run_ids.append(
+                    exp_registry.record_evaluation(
+                        evaluation,
+                        dataset_version=dataset_version,
+                        recorded_ts=persistence_recorded_at,
+                        search_id=search_id,
+                        config_hash=definitions[
+                            spec.candidate_id
+                        ].definition_hash,
+                    )
                 )
         if exp_registry is not None and search_id is not None:
             persistence_recorded_at = max(
@@ -1251,6 +1443,31 @@ def run_cycle(
                 search_id,
                 status="COMPLETED",
                 recorded_at=persistence_recorded_at,
+            )
+            assert exp_store is not None
+            config_hashes = [
+                definitions[item.candidate_id].definition_hash
+                for item in hypotheses
+            ]
+            output_hashes["experiment_search_artifacts"] = stable_hash(
+                {
+                    "search_events": exp_store.search_attempt_events(search_id),
+                    "search_candidates": exp_store.search_candidates(search_id),
+                    "trial_provenance": {
+                        config_hash: [
+                            row
+                            for row in exp_store.trial_provenance_for_config(
+                                config_hash
+                            )
+                            if row.get("research_session_id") == search_id
+                        ]
+                        for config_hash in sorted(config_hashes)
+                    },
+                    "evaluations": [
+                        exp_store.get_evaluation(run_id)
+                        for run_id in evaluation_run_ids
+                    ],
+                }
             )
 
         sorted_rows = sorted(
@@ -1268,6 +1485,9 @@ def run_cycle(
             remaining_gates.append("90D_COMMON_HISTORY_FOR_FORWARD_SHADOW")
         if not capacity.evidence_ready:
             remaining_gates.append("EXECUTABLE_DEPTH_CAPACITY_CALIBRATION")
+        output_hashes["family_registry_authority_after"] = (
+            registry.authority_hash()
+        )
         report = {
             "schema_version": 1,
             "generated_at_ms": now,
@@ -1333,7 +1553,7 @@ def run_cycle(
             "catalog_var_sr": catalog_var_sr,
             "registry": {
                 "path": _display_path(registry_db),
-                "chain_valid": registry.verify_chain(),
+                "chain_valid": True,
                 "event_count": registry.event_count(),
             },
             "remaining_gates": remaining_gates,
@@ -1345,9 +1565,16 @@ def run_cycle(
                 "allow_ai_direct_trading": False,
                 "promotion_eligible": False,
                 "credentials_accessed": False,
+                "broker_connectivity": False,
             },
         }
         atomic_write_json(str(output_path), report, indent=2)
+        _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+            report,
+            input_hashes=input_hashes,
+            output_hashes=output_hashes,
+            output_path=output_path,
+        )
         return report
     finally:
         if exp_store is not None:
@@ -1395,5 +1622,6 @@ __all__ = [
     "load_hourly_executable_depth",
     "load_bucketed_frames",
     "main",
+    "release_run_attestation",
     "run_cycle",
 ]

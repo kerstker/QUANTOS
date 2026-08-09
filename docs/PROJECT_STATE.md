@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Realtime Alpha Discovery 发布运行证明第五增量：**
+> `realtime_alpha_discovery` 已成为第五个强制 release-run attestation worker，补上首个
+> selection-bearing feature→candidate 接缝。输入绑定解析后的 feature 状态、精确 coverage、
+> bounded executable-depth 原始视图、实际 PIT 决策帧、固定研究/统计门政策，以及在单一 SQLite
+> 读快照中冻结的 family identity/engineering-feedback 视图；持久化试验时还绑定同一快照取得的
+> 全局 trial/历史收益上下文。输出绑定运行后 family-registry 权威、当轮 search/candidate/
+> provenance/evaluation 制品和报告文件。成功探索与诚实 collection/block 都只能证明本轮输入，
+> 入口先清空旧证明；paper-only 且 live/order/credentials/broker 全 false。WP0 仍未整体闭合。
+
 > **2026-08-09 WP0 Binance 实时特征发布运行证明第四增量：**
 > `binance_realtime_features` 已成为第四个强制 release-run attestation worker，并补上
 > 实时 Alpha 链的首个上游 data→feature 接缝。本轮证明绑定实际读取且已验链的公共 WebSocket

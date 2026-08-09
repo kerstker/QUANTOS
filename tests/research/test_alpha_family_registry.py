@@ -38,6 +38,10 @@ def test_registry_is_append_only_and_idempotent(tmp_path):
         assert len(definitions[0]["record_hash"]) == 64
         assert "evaluations" not in definitions[0]
         assert "paper_runs" not in definitions[0]
+        authority, frozen_definitions, paper_runs = reg.discovery_snapshot()
+        assert len(authority) == 64
+        assert frozen_definitions == definitions
+        assert paper_runs["family_test"][0]["run_id"] == "dry-1"
 
 
 def test_conflicting_candidate_content_is_rejected(tmp_path):
@@ -82,3 +86,48 @@ def test_concurrent_writers_serialize_chain_head_and_insert(tmp_path):
     with AlphaFamilyRegistry(str(path), create=False) as registry:
         assert registry.event_count() == writers
         assert registry.verify_chain()
+
+
+def test_discovery_snapshot_freezes_authority_definitions_and_feedback(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "families.db"
+    reader = AlphaFamilyRegistry(str(path), create=True)
+    reader.register_candidate(_candidate(), recorded_at=1)
+    writer = AlphaFamilyRegistry(str(path), create=False)
+    original_authority_hash = reader.authority_hash
+
+    def interleave_append():
+        authority = original_authority_hash()
+        second = dict(_candidate(), candidate_id="family_test_2")
+        assert writer.register_candidate(second, recorded_at=2)
+        return authority
+
+    monkeypatch.setattr(reader, "authority_hash", interleave_append)
+    try:
+        authority, definitions, paper_runs = reader.discovery_snapshot()
+        assert [row["candidate_id"] for row in definitions] == ["family_test"]
+        assert paper_runs == {"family_test": []}
+        assert authority != writer.authority_hash()
+    finally:
+        writer.close()
+        reader.close()
+
+
+def test_discovery_snapshot_rolls_back_on_unexpected_decode_failure(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(path), create=True) as registry:
+        registry.register_candidate(_candidate(), recorded_at=1)
+
+        def fail_decode():
+            raise ValueError("malformed candidate payload")
+
+        monkeypatch.setattr(registry, "candidate_definitions", fail_decode)
+        with pytest.raises(ValueError, match="malformed candidate payload"):
+            registry.discovery_snapshot()
+
+        assert not registry._conn.in_transaction

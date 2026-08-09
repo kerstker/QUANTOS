@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 
 import pytest
@@ -23,6 +24,7 @@ from tools.realtime_alpha_discovery import (
 )
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.alpha_family_registry import AlphaFamilyRegistry
+from tools import realtime_alpha_discovery as discovery_module
 
 
 def _feature_value(feature_id: str, instrument: str, timestamp: int, value: float) -> FeatureValue:
@@ -224,7 +226,11 @@ def test_bucket_loader_selects_latest_complete_snapshot_without_lookahead(tmp_pa
     assert frames["BTCUSDT"][0].mid_price == 120.0
 
 
-def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -> None:
+def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    discovery_module._LAST_RELEASE_RUN_ATTESTATION = None
     store_path = tmp_path / "features.db"
     end_ms = _write_store(store_path, buckets=40)
     status_path = tmp_path / "feature-status.json"
@@ -242,6 +248,8 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -
         min_evaluation_periods=2,
         min_cross_section=8,
     )
+    monkeypatch_commit = "a" * 40
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", monkeypatch_commit)
 
     report = run_cycle(
         source_store=store_path,
@@ -252,6 +260,7 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -
         policy=policy,
         persist_trials=False,
     )
+    attestation = discovery_module.release_run_attestation()
 
     assert report["status"] == "RUNNING_EXPLORATORY"
     assert report["autonomy"]["autonomous_search_running"] is True
@@ -271,10 +280,32 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -
         "allow_ai_direct_trading": False,
         "promotion_eligible": False,
         "credentials_accessed": False,
+        "broker_connectivity": False,
     }
     assert all(row["status"] == "EXPLORATORY_ONLY" for row in report["candidates"])
     assert all("REALTIME_HISTORY_BELOW_30D" in row["gate_reasons"] for row in report["candidates"])
     assert json.loads(output_path.read_text(encoding="utf-8"))["dataset_version"] == report["dataset_version"]
+    assert attestation is not None
+    assert attestation["complete"] is True
+    assert attestation["module"] == "realtime_alpha_discovery"
+    assert attestation["release_commit"] == monkeypatch_commit
+    assert attestation["input_hashes"]["feature_status"] == stable_hash(
+        json.loads(status_path.read_text(encoding="utf-8"))
+    )
+    assert attestation["input_hashes"]["decision_frame_view"]
+    assert attestation["input_hashes"]["executable_depth_view"]
+    assert attestation["input_hashes"]["family_registry_authority_before"]
+    assert attestation["output_hashes"]["family_registry_authority_after"]
+    assert attestation["output_hashes"]["realtime_discovery_report_file"] == (
+        hashlib.sha256(output_path.read_bytes()).hexdigest()
+    )
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
 
     repeated = run_cycle(
         source_store=store_path,
@@ -319,6 +350,7 @@ def test_persistent_cycle_uses_persistence_clock_after_expensive_as_of_evaluatio
     experiment_store.close()
     persistence_now = end_ms + 100_000
     monkeypatch.setattr(discovery_module.time, "time", lambda: persistence_now / 1_000)
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "b" * 40)
     policy = RealtimeAlphaPolicy(
         exploration_min_span_ms=60_000,
         validation_min_span_ms=3_600_000,
@@ -339,8 +371,12 @@ def test_persistent_cycle_uses_persistence_clock_after_expensive_as_of_evaluatio
         policy=policy,
         persist_trials=True,
     )
+    attestation = discovery_module.release_run_attestation()
 
     assert report["search_id"]
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["input_hashes"]["experiment_evaluation_context"]
+    assert attestation["output_hashes"]["experiment_search_artifacts"]
     verified = SqliteExperimentStore(str(experiment_db), create=False)
     starts = verified._conn.execute(
         "SELECT recorded_at FROM search_attempt_events WHERE status='STARTED' ORDER BY event_seq"
@@ -492,6 +528,7 @@ def test_cycle_turns_positive_realized_feedback_into_fresh_oos_challengers(tmp_p
 
 
 def test_cycle_rejects_tampered_feedback_registry_before_allocating_trials(tmp_path) -> None:
+    discovery_module._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
     store_path = tmp_path / "features.db"
     end_ms = _write_store(store_path, buckets=4)
     status_path = tmp_path / "feature-status.json"
@@ -536,3 +573,4 @@ def test_cycle_rejects_tampered_feedback_registry_before_allocating_trials(tmp_p
             policy=policy,
             persist_trials=False,
         )
+    assert discovery_module.release_run_attestation() is None

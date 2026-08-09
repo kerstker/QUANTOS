@@ -263,23 +263,78 @@ class AlphaFamilyRegistry:
 
     def verify_chain(self) -> bool:
         try:
+            self.authority_hash()
+            return True
+        except AlphaFamilyRegistryError:
+            return False
+
+    def authority_hash(self) -> str:
+        """Return the verified append-only family authority frontier."""
+        try:
             rows = self._conn.execute(
                 "SELECT event_seq,event_id,event_type,candidate_id,recorded_at,payload_json,"
                 "prev_record_hash,record_hash FROM alpha_family_events ORDER BY event_seq"
             ).fetchall()
             prev = ""
+            event_count = 0
             for row in rows:
                 if row["prev_record_hash"] != prev:
-                    return False
+                    raise AlphaFamilyRegistryError(
+                        "family registry authority is invalid"
+                    )
                 expected = _record_hash(event_id=row["event_id"], event_type=row["event_type"],
                                         candidate_id=row["candidate_id"], recorded_at=int(row["recorded_at"]),
                                         payload_json=row["payload_json"], prev_record_hash=prev)
                 if expected != row["record_hash"]:
-                    return False
+                    raise AlphaFamilyRegistryError(
+                        "family registry authority is invalid"
+                    )
                 prev = row["record_hash"]
-            return True
-        except (sqlite3.DatabaseError, KeyError, TypeError, ValueError):
-            return False
+                event_count += 1
+            return stable_hash(
+                {
+                    "schema_version": 1,
+                    "event_count": event_count,
+                    "chain_head": prev,
+                }
+            )
+        except AlphaFamilyRegistryError:
+            raise
+        except (sqlite3.DatabaseError, KeyError, TypeError, ValueError) as exc:
+            raise AlphaFamilyRegistryError(
+                "family registry authority is invalid"
+            ) from exc
+
+    def discovery_snapshot(
+        self,
+    ) -> tuple[str, list[dict], dict[str, list[dict]]]:
+        """Freeze candidate identities and feedback under one read snapshot."""
+        try:
+            self._conn.execute("BEGIN")
+            authority = self.authority_hash()
+            definitions = self.candidate_definitions()
+            paper_runs = {
+                str(row["candidate_id"]): self.paper_runs(
+                    str(row["candidate_id"])
+                )
+                for row in definitions
+            }
+            self._conn.commit()
+            return authority, definitions, paper_runs
+        except AlphaFamilyRegistryError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AlphaFamilyRegistryError(
+                "family registry discovery snapshot is unavailable"
+            ) from exc
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
 
     def event_count(self) -> int:
         return int(self._conn.execute("SELECT COUNT(*) AS n FROM alpha_family_events").fetchone()["n"])

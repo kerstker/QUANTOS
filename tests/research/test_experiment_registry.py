@@ -94,7 +94,10 @@ def test_load_for_evaluation_preserves_historical_definition_bound_returns():
     registry.save(source, now=1)
 
     catalog = AlphaCatalog()
-    registry.load_for_evaluation(catalog)
+    context_hash = registry.load_for_evaluation(catalog)
+    assert len(context_hash) == 64
+    repeated = AlphaCatalog()
+    assert registry.load_for_evaluation(repeated) == context_hash
     definition = AlphaDefinition(
         alpha_id="new",
         name="new",
