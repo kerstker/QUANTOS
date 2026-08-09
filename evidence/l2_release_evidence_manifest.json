@@ -2,22 +2,22 @@
   "artifact_count": 17,
   "artifact_sha256": {
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "c8b9cbb3e30c98cb8516bdc6b7161e8fe9f3e64b1a4b4d6bb2089511dd9cfcd9",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "c8fb517e9468ae37abdc65d0623875d188f952bad5e0e3105579c7b9e63df9a4",
-    "evidence/alpha_lifecycle_status.json": "fe0424ac0afa8c649f5a6816e40dac692049311daa41944138212839d06b8b4f",
-    "evidence/autonomy_readiness.json": "868736420c05460699eba21c144139466a331843deb335f011b6a439f56a16ec",
-    "evidence/chaos_recovery_status.json": "ab4d348f3e33e48653c198e5a63427125f8af0c947221d116866c4184f7c1465",
-    "evidence/factor_garden_status.json": "a92b54f223ea641c9d7496134c51a1d869353c16e1e94494fff07991024af53d",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "ffecfabbb1a0f3de4c1774258cb32814dbefc3140fb0fae0e55bb4734b4243d9",
+    "evidence/alpha_lifecycle_status.json": "f69c29808e7581ebbd7bc0eb03358135e66aaaa57662724c0675b29f33600766",
+    "evidence/autonomy_readiness.json": "a97a3269f6e292f9a07a9b477ef2d30c7717fc863bb03e7013b50c5b4985b986",
+    "evidence/chaos_recovery_status.json": "0fd8d22d0fe298e5bd5916b24b5146bc4fff030b64f8c9dc555fca96d63e162b",
+    "evidence/factor_garden_status.json": "51af1022796fc021edab2d1d04100e039f7a6a2976eb036d3c6d7a41b23bf0cd",
     "evidence/l2_backup_latest.json": "9189d15af3df812968dc8ed3b72cbe7a07ea1b131abfd3a0b7f8f401bfe1ff4f",
-    "evidence/mexc_integration_status.json": "58695ec6f71fb69ad067e122b969e7fa70668d4c1c9b69481eab328ef1bdb908",
-    "evidence/paper_shadow_status.json": "0695d583c70ca890a6baa7b31da7eba4da329cbc9e6e9086f75a94e51fbfd119",
+    "evidence/mexc_integration_status.json": "1622ffe3d2fc9c3a144462986dc42d3c4c3a8bf4da2dced47fa367230cd834b4",
+    "evidence/paper_shadow_status.json": "13d20dc98126b9f2d21a9c3a1b507f60d1ada5133e45dd213fbb57689dfb5287",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
-    "evidence/sbom.cdx.json": "4d4f264493e7f1cbe2314d55d2c10d49afdf00ca0f52688801232ef584bf83d5",
-    "evidence/supply_chain_baseline.json": "2e9c142ff04271c54bc021939f8749319f15a2d7cbedda28d76110a9453d0588",
-    "evidence/top_tier_assessment.json": "4a69982655bc9079fb06c0b5c044ad6c32144b1c3f37b4dd4b1edfeef4f22e2f",
-    "evidence/trial_ledger_integrity.json": "3a417804a43e67e93b4145e5b2570f4f669f17c57515f1ac4ac50bb88b8c09b7",
-    "evidence/validation_report.json": "c7e02d3efdee730b2b2358ab56310b51a37133176142e0654bad218403be312c",
+    "evidence/sbom.cdx.json": "c9ebbdfa925502179550b8796ef2bd489ffa713938f6e2467fa1d82c4066ff02",
+    "evidence/supply_chain_baseline.json": "b547c3db26c8db1fdb32304ba7216eb6cc5f0a28f0ca67bbcbb8548f1a62c27d",
+    "evidence/top_tier_assessment.json": "abec2163b9a00e84e7e9dd43a13f9f37a28443b4cc065cd850f8bc6df04e0a50",
+    "evidence/trial_ledger_integrity.json": "846058300f8a5bac8f0709c4b785bd258e44336e0189d4a79b3b2430d4f126ab",
+    "evidence/validation_report.json": "499eac1ee9075cc13f2a38afe678146382118d769f46c37713f8e1ffaa168126",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
-    "evidence/vulnerability/python_audit_latest.json": "244cfe82f2d613cd50d61259da60c1566824ab2435dfdfc824ffcdf430e050b6"
+    "evidence/vulnerability/python_audit_latest.json": "c3b07fc1e48758c2f1af7633fa4ab257fc137de9c84b13f06efd52a1e649e644"
   },
   "canonical_artifact_allowlist_version": "v2",
   "claims": {
@@ -35,9 +35,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1786292093377,
-    "run_id": "74188d2e8225d18c28287b2d6cb2d53bf3c3e8119d827da621267fea8b5b4ae8",
-    "source_commit": "a06f0bfae596dccf9230bec3b9b3c90dcda4cf43"
+    "generated_at": 1786297663579,
+    "run_id": "e67ab25600cf9caa5c15e6e229af9b8886ca7e73f7cf25399586d0c443cda4bd",
+    "source_commit": "2694c9bcdfe0550f156afeea93de3bcc3e5162b7"
   },
-  "validation_report_sha256": "c7e02d3efdee730b2b2358ab56310b51a37133176142e0654bad218403be312c"
+  "validation_report_sha256": "499eac1ee9075cc13f2a38afe678146382118d769f46c37713f8e1ffaa168126"
 }
