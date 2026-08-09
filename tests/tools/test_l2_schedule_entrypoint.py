@@ -528,6 +528,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
     assert REQUIRED_INPUT_ATTESTATION_MODULES == frozenset(
         {
             "alpha_production_workflow",
+            "binance_realtime_features",
             "paper_multivenue_sor",
             "realtime_alpha_execution_paper",
         }

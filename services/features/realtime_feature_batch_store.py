@@ -153,6 +153,25 @@ class RealtimeFeatureBatchStore:
         ).fetchone()
         return None if row is None else self._decode(row)
 
+    def latest_with_authority(self) -> tuple[str, dict[str, Any] | None]:
+        """Freeze the verified authority and latest checkpoint in one view."""
+        try:
+            self._conn.execute("BEGIN")
+            authority = self.authority_hash()
+            latest = self.latest()
+            self._conn.commit()
+            return authority, latest
+        except RealtimeFeatureBatchStoreError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise RealtimeFeatureBatchStoreError(
+                "batch journal snapshot is unavailable"
+            ) from exc
+
     def _decode(self, row: sqlite3.Row) -> dict[str, Any]:
         try:
             payload = json.loads(str(row["payload_json"]))
@@ -163,14 +182,25 @@ class RealtimeFeatureBatchStore:
         return payload
 
     def chain_valid(self) -> bool:
+        try:
+            self.authority_hash()
+            return True
+        except RealtimeFeatureBatchStoreError:
+            return False
+
+    def authority_hash(self) -> str:
+        """Return a hash only after verifying the append-only frontier."""
         previous = _GENESIS
+        row_count = 0
         try:
             for row in self._conn.execute(
                 "SELECT * FROM realtime_feature_batches ORDER BY seq"
             ):
                 self._decode(row)
                 if row["prev_hash"] != previous:
-                    return False
+                    raise RealtimeFeatureBatchStoreError(
+                        "batch journal authority is invalid"
+                    )
                 expected = _sha256(
                     {
                         "batch_id": row["batch_id"],
@@ -180,16 +210,28 @@ class RealtimeFeatureBatchStore:
                     }
                 )
                 if row["row_hash"] != expected:
-                    return False
+                    raise RealtimeFeatureBatchStoreError(
+                        "batch journal authority is invalid"
+                    )
                 previous = str(row["row_hash"])
-            return True
-        except (
-            RealtimeFeatureBatchStoreError,
-            sqlite3.DatabaseError,
-            TypeError,
-            ValueError,
-        ):
-            return False
+                row_count += 1
+            return _sha256(
+                {
+                    "schema_version": 1,
+                    "row_count": row_count,
+                    "chain_head": previous,
+                }
+            )
+        except RealtimeFeatureBatchStoreError as exc:
+            if str(exc) == "batch journal authority is invalid":
+                raise
+            raise RealtimeFeatureBatchStoreError(
+                "batch journal authority is invalid"
+            ) from exc
+        except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            raise RealtimeFeatureBatchStoreError(
+                "batch journal authority is invalid"
+            ) from exc
 
 
 __all__ = ["RealtimeFeatureBatchStore", "RealtimeFeatureBatchStoreError"]

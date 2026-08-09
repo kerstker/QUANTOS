@@ -2,7 +2,7 @@
 
 Date: 2026-08-06
 Readiness: `L2_DRY_RUN_ONLY`
-Roadmap slice: WP0 increments 1-3
+Roadmap slice: WP0 increments 1-4
 
 ## Problem
 
@@ -47,13 +47,24 @@ public routing snapshot when one is consumed.  Outputs bind the post-run executi
 ledger authority and report file.  `SAFE_BLOCKED` remains attestable with the inputs
 that were actually parsed; a new attempt always clears the previous attestation.
 
+`binance_realtime_features` is the fourth required module and closes the first
+upstream data-to-feature seam.  Its input set binds the exact verified public
+WebSocket snapshot bundle, the source-chain verification view, the pre-run
+feature-batch authority, the fixed materialization/drift contract, and the exact
+bounded PIT feature view used for drift calibration.  Its output set binds the
+append-only feature-batch authority, the append-only feature projection frontier,
+and the status file.  The worker clears prior in-memory attestation before loading
+any mutable authority, and the launcher refuses a successful run without the exact
+paper-only safety declaration.
+
 ## Boundaries
 
 - This is logical content attestation, not a copy of the entire mutable state root.
 - It does not claim cross-host storage, WORM retention, external witnessing, or a
   signed container provenance.
 - Scheduled workers other than `alpha_production_workflow`,
-  `paper_multivenue_sor`, and `realtime_alpha_execution_paper` remain explicitly
+  `paper_multivenue_sor`, `realtime_alpha_execution_paper`, and
+  `binance_realtime_features` remain explicitly
   `worker_attestation_required=false` until their real consumed-input contracts are
   instrumented in later WP0 slices.
 - No lifecycle promotion, credential access, broker connectivity, order submission, or

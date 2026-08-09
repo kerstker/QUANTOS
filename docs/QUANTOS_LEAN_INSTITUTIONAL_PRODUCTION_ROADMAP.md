@@ -162,12 +162,14 @@ Gate 只允许 `PASS / FAIL / ABSTAIN / PENDING`。AI 不能覆盖结果；材�
 退出条件：工作树可解释；调度运行的 commit/container/data/evidence 全部绑定；
 `assess_top_tier.py --check` 无漂移；旧诊断 Paper 明确标记，不能获得部署资格。
 
-状态（2026-08-09）：**输入/证据绑定前三个增量已实现，WP0 尚未闭合。** L2 release-run
+状态（2026-08-09）：**输入/证据绑定前四个增量已实现，WP0 尚未闭合。** L2 release-run
 receipt 已支持经 launcher 严格校验的 worker attestation；唯一候选权威
 `alpha_production_workflow`、公共双场所路由 `paper_multivenue_sor` 和承重接缝
-`realtime_alpha_execution_paper` 已成为强制模块。除候选证据与策略/链头外，现已绑定完整盘口
+`realtime_alpha_execution_paper`，以及上游公共 data→feature 接缝 `binance_realtime_features`
+已成为强制模块。除候选证据与策略/链头外，现已绑定完整盘口
 bundle/路由合同、事务冻结的 Signal Shadow 视图、特征与合约状态、执行前后账本权威、实际消费的
-路由快照和最终报告；缺失、不完整或安全声明漂移均 fail-closed。其余 worker 仍逐项待接入；
+路由快照和最终报告，并绑定实时特征实际消费的公共源快照/源链/漂移视图以及输出批次权威；
+缺失、不完整或安全声明漂移均 fail-closed。其余 worker 仍逐项待接入；
 container/SBOM 的同轮绑定、外部签名/WORM/独立见证和全量派生证据无漂移仍是 WP0 剩余项。
 
 ### WP1：唯一候选工作流

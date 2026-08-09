@@ -69,6 +69,7 @@ CALIBRATION_POLICY = DriftCalibrationPolicy(
     warn_quantile=0.95,
     block_quantile=0.99,
 )
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
 class BinanceRealtimeFeatureError(RuntimeError):
@@ -87,6 +88,118 @@ def _canonical(value: object) -> str:
 
 def _sha256(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _feature_input_contract_hash(*, source_row_limit: int) -> str:
+    return _sha256(
+        {
+            "schema_version": 1,
+            "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+            "complete_core_required": True,
+            "source_row_limit": source_row_limit,
+            "full_chain_audit_interval_ms": FULL_CHAIN_AUDIT_INTERVAL_MS,
+            "drift_history_limit": DRIFT_HISTORY_LIMIT,
+            "universe": [f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS],
+            "feature_ids": list(FEATURE_IDS),
+            "core_feature_ids": list(CORE_FEATURE_IDS),
+            "feature_version": FEATURE_VERSION,
+            "materializer_version": MATERIALIZER_VERSION,
+            "worker_version": WORKER_VERSION,
+            "calibration_policy": {
+                "baseline_window": CALIBRATION_POLICY.baseline_window,
+                "recent_window": CALIBRATION_POLICY.recent_window,
+                "stride": CALIBRATION_POLICY.stride,
+                "min_calibration_windows": (
+                    CALIBRATION_POLICY.min_calibration_windows
+                ),
+                "warn_quantile": CALIBRATION_POLICY.warn_quantile,
+                "block_quantile": CALIBRATION_POLICY.block_quantile,
+            },
+        }
+    )
+
+
+def _build_release_run_attestation(
+    status: dict[str, Any],
+    *,
+    input_hashes: dict[str, str],
+    output_hashes: dict[str, str],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    inputs = dict(sorted(input_hashes.items()))
+    outputs = dict(sorted(output_hashes.items()))
+    outputs["realtime_feature_status_file"] = _sha256_file(output_path)
+    safety = status.get("safety")
+    safety = safety if isinstance(safety, dict) else {}
+    safety_contract = {
+        "paper_only": safety.get("paper_only"),
+        "live_allowed": safety.get("live_trading"),
+        "order_submission_allowed": safety.get("order_submission"),
+        "credentials_accessed": safety.get("credentials"),
+        "broker_connectivity": safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    source = status.get("source")
+    source = source if isinstance(source, dict) else {}
+    batch = status.get("batch")
+    batch = batch if isinstance(batch, dict) else {}
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and status.get("status") == "PASS"
+        and source.get("source_chain_valid") is True
+        and batch.get("chain_valid") is True
+        and inputs
+        and outputs
+        and all(_is_sha256(value) for value in inputs.values())
+        and all(_is_sha256(value) for value in outputs.values())
+        and safety_contract == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "binance_realtime_features",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": inputs,
+        "output_hashes": outputs,
+        "safety": safety_contract,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy for the immutable L2 launcher."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _source_snapshots(
@@ -126,9 +239,9 @@ def _trusted_source_checkpoint(
     """Load the source-chain anchor from the verified feature batch journal."""
     batch_store = RealtimeFeatureBatchStore(batch_store_path, create=True)
     try:
-        if not batch_store.chain_valid():
-            raise BinanceRealtimeFeatureError("feature batch chain is invalid")
-        latest = batch_store.latest()
+        batch_authority, latest = batch_store.latest_with_authority()
+    except Exception as exc:
+        raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
     finally:
         batch_store.close()
     source = latest.get("source") if isinstance(latest, dict) else None
@@ -139,6 +252,7 @@ def _trusted_source_checkpoint(
             "checkpoint_row_hash": "",
             "full_verified_at_ms": None,
             "verification_mode": "FULL_BOOTSTRAP",
+            "batch_authority": batch_authority,
         }
     if not isinstance(checkpoint, dict) or checkpoint.get("schema_version") != 1:
         raise BinanceRealtimeFeatureError("source chain checkpoint is malformed")
@@ -163,12 +277,14 @@ def _trusted_source_checkpoint(
             "checkpoint_row_hash": "",
             "full_verified_at_ms": full_verified_at_ms,
             "verification_mode": "FULL_PERIODIC_AUDIT",
+            "batch_authority": batch_authority,
         }
     return {
         "checkpoint_seq": seq,
         "checkpoint_row_hash": row_hash,
         "full_verified_at_ms": full_verified_at_ms,
         "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+        "batch_authority": batch_authority,
     }
 
 
@@ -316,12 +432,21 @@ def execute(
     status_path: str = DEFAULT_STATUS,
     source_row_limit: int = SOURCE_ROW_LIMIT,
 ) -> dict[str, Any]:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     started_ns = time.perf_counter_ns()
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     trusted_checkpoint = _trusted_source_checkpoint(
         batch_store_path,
         now_ms=now,
     )
+    input_hashes = {
+        "feature_batch_authority_before": trusted_checkpoint["batch_authority"],
+        "feature_materialization_contract": _feature_input_contract_hash(
+            source_row_limit=source_row_limit
+        ),
+    }
+    output_hashes: dict[str, str] = {}
     source_store = BinanceRealtimeStore(source_store_path, create=False)
     try:
         snapshots, chain_verification = _source_snapshots(
@@ -333,6 +458,21 @@ def execute(
     finally:
         source_store.close()
     source_digest = _sha256(snapshots)
+    input_hashes["public_source_snapshot_bundle"] = source_digest
+    input_hashes["public_source_chain_view"] = _sha256(
+        {
+            "checkpoint": {
+                key: trusted_checkpoint[key]
+                for key in (
+                    "checkpoint_seq",
+                    "checkpoint_row_hash",
+                    "full_verified_at_ms",
+                    "verification_mode",
+                )
+            },
+            "verification": chain_verification,
+        }
+    )
     dataset_version = f"binance-realtime:{source_digest}"
     source_observed_at_ms = max(
         int(snapshot["observed_at_ms"]) for snapshot in snapshots
@@ -361,6 +501,9 @@ def execute(
         )
         row_count = feature_store.row_count()
         values_by_series = _feature_values(feature_store, as_of_ms=now)
+        input_hashes["drift_feature_view"] = _sha256(
+            {"as_of_ms": now, "values_by_series": values_by_series}
+        )
         calibration = calibrate_distribution_drift(
             values_by_series,
             policy=CALIBRATION_POLICY,
@@ -379,6 +522,26 @@ def execute(
             "read_scope": "TRAILING_ONLY",
             "archive_retention_unchanged": True,
         }
+        watermarks_after = _projection_watermarks(feature_store)
+        output_hashes["feature_projection_frontier"] = _sha256(
+            {
+                "schema_version": 1,
+                "feature_version": FEATURE_VERSION,
+                "materializer_version": MATERIALIZER_VERSION,
+                "retained_value_count": row_count,
+                "watermarks": {
+                    instrument_id: (
+                        None
+                        if cursor is None
+                        else {
+                            "knowledge_time_ms": cursor[0],
+                            "event_time_ms": cursor[1],
+                        }
+                    )
+                    for instrument_id, cursor in sorted(watermarks_after.items())
+                },
+            }
+        )
     finally:
         feature_store.close()
     if drift["structurally_ready"] is not True:
@@ -455,7 +618,10 @@ def execute(
     try:
         new_batch = batch_store.append(batch_payload)
         batch_count = batch_store.row_count()
-        batch_chain_valid = batch_store.chain_valid()
+        output_hashes["feature_batch_authority_after"] = (
+            batch_store.authority_hash()
+        )
+        batch_chain_valid = True
     finally:
         batch_store.close()
     if not batch_chain_valid:
@@ -519,9 +685,18 @@ def execute(
             "incremental_projection": True,
             "bounded_drift_read": True,
         },
-        "safety": batch_payload["safety"],
+        "safety": {
+            "paper_only": True,
+            **batch_payload["safety"],
+        },
     }
     atomic_write_json(status_path, status)
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        status,
+        input_hashes=input_hashes,
+        output_hashes=output_hashes,
+        output_path=status_path,
+    )
     return status
 
 
@@ -537,6 +712,7 @@ def main() -> int:
             "error_type": type(exc).__name__,
             "error": str(exc),
             "safety": {
+                "paper_only": True,
                 "diagnostic_only": True,
                 "load_bearing": False,
                 "private_access": False,

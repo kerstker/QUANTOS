@@ -81,6 +81,7 @@ _ATTESTABLE_EXIT_CODES = frozenset({0, 2})
 REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
     {
         "alpha_production_workflow",
+        "binance_realtime_features",
         "paper_multivenue_sor",
         "realtime_alpha_execution_paper",
     }

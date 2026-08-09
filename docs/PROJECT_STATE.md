@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Binance 实时特征发布运行证明第四增量：**
+> `binance_realtime_features` 已成为第四个强制 release-run attestation worker，并补上
+> 实时 Alpha 链的首个上游 data→feature 接缝。本轮证明绑定实际读取且已验链的公共 WebSocket
+> 快照 bundle、源链验证视图、运行前 feature-batch 权威、固定物化/漂移合同，以及校准实际消费的
+> bounded PIT 特征视图；输出绑定追加式 feature-batch 权威、特征投影前沿和状态文件。worker
+> 在读取任何可变权威前先清空旧证明，失败不能沿用上次 PASS；release commit、paper-only 和
+> live/order/credentials/broker 全 false 由 launcher 逐项 fail-closed。其余承重 worker 仍按真实
+> 消费合同逐个接入，WP0 尚未宣称整体闭合。
+
 > **2026-08-09 全量原始归档审计吞吐闭合：** 现场换版验收暴露
 > `QUANTOS_raw_archive_audit` 随归档增长已逼近并在最新一轮触及 2 小时任务上限；
 > 根因不是校验弱化需求，而是 62 万条 observation 重复重型解析同一批公共 source URI，

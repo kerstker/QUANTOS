@@ -1,4 +1,5 @@
 import ast
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,7 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     tmp_path,
     monkeypatch,
 ):
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
     monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
     source_path = tmp_path / "source.db"
     source = BinanceRealtimeStore(str(source_path), create=True)
@@ -73,14 +75,16 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         source.close()
 
     feature_path = tmp_path / "features.db"
+    status_path = tmp_path / "status.json"
     result = realtime.execute(
         now_ms=20_000,
         source_store_path=str(source_path),
         feature_store_path=str(feature_path),
         batch_store_path=str(tmp_path / "batches.db"),
-        status_path=str(tmp_path / "status.json"),
+        status_path=str(status_path),
         source_row_limit=601,
     )
+    attestation = realtime.release_run_attestation()
     assert result["status"] == "PASS"
     assert result["features"]["instrument_count"] == 2
     assert result["features"]["new_value_count"] == 2 * 300 * len(FEATURE_IDS)
@@ -107,6 +111,27 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     assert result["source"]["chain_verification"]["verified_suffix_rows"] == 601
     assert result["batch"]["chain_valid"] is True
     assert result["agent_input"]["automatic_action"] is False
+    assert attestation is not None
+    assert attestation["complete"] is True
+    assert attestation["module"] == "binance_realtime_features"
+    assert attestation["release_commit"] == "a" * 40
+    assert attestation["input_hashes"]["public_source_snapshot_bundle"] == (
+        result["source"]["snapshot_digest"]
+    )
+    assert attestation["input_hashes"]["feature_batch_authority_before"]
+    assert attestation["input_hashes"]["drift_feature_view"]
+    assert attestation["output_hashes"]["feature_batch_authority_after"]
+    assert attestation["output_hashes"]["feature_projection_frontier"]
+    assert attestation["output_hashes"]["realtime_feature_status_file"] == (
+        hashlib.sha256(status_path.read_bytes()).hexdigest()
+    )
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
 
     store = SqliteFeatureValueStore(str(feature_path))
     try:
@@ -143,6 +168,35 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     )
     assert periodic["verification_mode"] == "FULL_PERIODIC_AUDIT"
     assert periodic["checkpoint_seq"] == 0
+
+
+def test_execute_clears_stale_attestation_before_failed_run(
+    tmp_path,
+    monkeypatch,
+):
+    realtime._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+    finally:
+        source.close()
+
+    with pytest.raises(
+        realtime.BinanceRealtimeFeatureError,
+        match="missing instruments",
+    ):
+        realtime.execute(
+            now_ms=20_000,
+            source_store_path=str(source_path),
+            feature_store_path=str(tmp_path / "features.db"),
+            batch_store_path=str(tmp_path / "batches.db"),
+            status_path=str(tmp_path / "status.json"),
+            source_row_limit=1,
+        )
+
+    assert realtime.release_run_attestation() is None
 
 
 def test_incremental_projection_replays_from_minimum_feature_watermark(
