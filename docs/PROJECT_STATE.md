@@ -9,8 +9,14 @@
 > checkpoint with a 24-hour expiry. The stream now verifies that batch authority,
 > anchors the exact source row hash, and checks only the new suffix; missing,
 > malformed, expired, or mismatched checkpoints still force a full fail-closed
-> audit. A real-state read-only probe verified 42 new rows after seq 1,850,202 in
-> 0.017s with a valid chain. This changes only credential-free public market-data
+> audit. The same production probe exposed a second full scan in the 1.2M-event
+> durable depth-cursor chain. Its initial genesis audit now runs in an isolated
+> headless subprocess so it cannot starve WebSocket ingestion; after bootstrap,
+> each flush verifies only the exact suffix and requires the verified seq/hash to
+> equal the current cursor frontier before publication. Audit pending, invalid,
+> malformed, or stale-frontier states remain blocked. A real-state read-only source
+> probe verified 42 new rows after seq 1,850,202 in 0.017s with a valid chain.
+> This changes only credential-free public market-data
 > integrity throughput: private access, broker connectivity, order submission,
 > and live trading remain false. Production may consume the fix only through a
 > newly validated immutable release.

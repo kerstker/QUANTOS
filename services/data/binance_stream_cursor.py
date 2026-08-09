@@ -6,7 +6,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from services.data.binance_realtime_store import MAX_FUTURE_SKEW_MS
 
@@ -491,12 +491,58 @@ class StreamCursorStore:
             ).fetchone()[0]
         )
 
-    def verify_chain(self) -> dict[str, object]:
-        previous = _GENESIS
+    @staticmethod
+    def _validate_checkpoint(
+        checkpoint_seq: int,
+        checkpoint_row_hash: str,
+    ) -> None:
+        if (
+            isinstance(checkpoint_seq, bool)
+            or not isinstance(checkpoint_seq, int)
+            or checkpoint_seq < 0
+        ):
+            raise StreamCursorStoreError("cursor checkpoint sequence is invalid")
+        if checkpoint_seq == 0:
+            if checkpoint_row_hash != _GENESIS:
+                raise StreamCursorStoreError("cursor genesis checkpoint is invalid")
+        elif (
+            not isinstance(checkpoint_row_hash, str)
+            or len(checkpoint_row_hash) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in checkpoint_row_hash
+            )
+        ):
+            raise StreamCursorStoreError("cursor checkpoint hash is invalid")
+
+    def verify_chain_from(
+        self,
+        *,
+        checkpoint_seq: int = 0,
+        checkpoint_row_hash: str = _GENESIS,
+    ) -> dict[str, object]:
+        """Verify the cursor-chain suffix after an exact trusted anchor."""
+        previous = checkpoint_row_hash
         verified = 0
+        last_seq = checkpoint_seq
         try:
+            self._validate_checkpoint(checkpoint_seq, checkpoint_row_hash)
+            if checkpoint_seq > 0:
+                anchor = self._conn.execute(
+                    "SELECT row_hash FROM binance_stream_cursor_events WHERE seq=?",
+                    (checkpoint_seq,),
+                ).fetchone()
+                if (
+                    anchor is None
+                    or str(anchor["row_hash"]) != checkpoint_row_hash
+                ):
+                    raise StreamCursorStoreError(
+                        "cursor checkpoint anchor mismatch"
+                    )
             for row in self._conn.execute(
-                "SELECT * FROM binance_stream_cursor_events ORDER BY seq"
+                "SELECT * FROM binance_stream_cursor_events "
+                "WHERE seq>? ORDER BY seq",
+                (checkpoint_seq,),
             ):
                 self._decode(row)
                 if str(row["prev_hash"]) != previous:
@@ -511,19 +557,41 @@ class StreamCursorStore:
                 if str(row["row_hash"]) != expected:
                     raise StreamCursorStoreError("cursor row hash mismatch")
                 previous = str(row["row_hash"])
+                last_seq = int(row["seq"])
                 verified += 1
-            return {"valid": True, "verified_events": verified, "head": previous}
+            return {
+                "valid": True,
+                "anchor_seq": checkpoint_seq,
+                "verified_suffix_events": verified,
+                "verified_seq": last_seq,
+                "verified_row_hash": previous,
+            }
         except (StreamCursorStoreError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
             return {
                 "valid": False,
-                "verified_events": verified,
-                "head": previous,
+                "anchor_seq": checkpoint_seq,
+                "verified_suffix_events": verified,
+                "verified_seq": last_seq,
+                "verified_row_hash": previous,
                 "error": str(exc),
             }
+
+    def verify_chain(self) -> dict[str, object]:
+        verification = self.verify_chain_from()
+        result = {
+            "valid": verification["valid"],
+            "verified_events": verification["verified_suffix_events"],
+            "head": verification["verified_row_hash"],
+        }
+        if "error" in verification:
+            result["error"] = verification["error"]
+        return result
 
     def trading_watermark(
         self,
         required: Iterable[tuple[str, str]],
+        *,
+        chain_verification: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         normalized = tuple(
             sorted(
@@ -556,9 +624,30 @@ class StreamCursorStore:
                 blockers.append(f"{key}:{record.state.value}")
             else:
                 watermarks.append(min(record.event_time_ms, record.observed_at_ms))
-        chain = self.verify_chain()
-        if chain["valid"] is not True:
+        chain = (
+            self.verify_chain()
+            if chain_verification is None
+            else dict(chain_verification)
+        )
+        if chain.get("valid") is not True:
             blockers.append("CURSOR_CHAIN_INVALID")
+        elif chain_verification is not None:
+            frontier = self._conn.execute(
+                "SELECT seq,row_hash FROM binance_stream_cursor_events "
+                "ORDER BY seq DESC LIMIT 1"
+            ).fetchone()
+            try:
+                verified_seq = int(chain["verified_seq"])
+                verified_row_hash = str(chain["verified_row_hash"])
+            except (KeyError, TypeError, ValueError):
+                blockers.append("CURSOR_CHAIN_VERIFICATION_MALFORMED")
+            else:
+                if (
+                    frontier is None
+                    or verified_seq != int(frontier["seq"])
+                    or verified_row_hash != str(frontier["row_hash"])
+                ):
+                    blockers.append("CURSOR_CHAIN_UNVERIFIED_SUFFIX")
         return {
             "schema_version": 1,
             "publishable": not blockers,

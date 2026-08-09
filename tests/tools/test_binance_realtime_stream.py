@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ from tools.binance_realtime_stream import (
     _recover_depth_cursor,
     _recover_depth_cursor_async,
     _status,
+    _verify_cursor_chain_subprocess,
     _verify_store_chain,
     stream_urls,
 )
@@ -100,6 +102,70 @@ def test_chain_verification_resumes_from_trusted_checkpoint(tmp_path):
     assert verification["verified_seq"] == 2
 
 
+def test_cursor_chain_full_audit_runs_in_isolated_subprocess(tmp_path):
+    path = str(tmp_path / "stream.db")
+    cursor = StreamCursorStore(path, create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=99,
+            observed_at_ms=100,
+        )
+    finally:
+        cursor.close()
+
+    verification = _verify_cursor_chain_subprocess(path)
+
+    assert verification["valid"] is True
+    assert verification["anchor_seq"] == 0
+    assert verification["verified_suffix_events"] == 1
+    assert verification["verified_seq"] == 1
+
+
+def test_cursor_chain_subprocess_rejects_malformed_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        realtime.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="not-json",
+            returncode=0,
+        ),
+    )
+
+    with pytest.raises(BinanceStreamDataError, match="malformed output"):
+        _verify_cursor_chain_subprocess(str(tmp_path / "stream.db"))
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout"),
+    (
+        (0, '{"valid": false}'),
+        (1, '{"valid": true}'),
+    ),
+)
+def test_cursor_chain_subprocess_rejects_inconsistent_exit_status(
+    tmp_path,
+    monkeypatch,
+    returncode,
+    stdout,
+):
+    monkeypatch.setattr(
+        realtime.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=stdout,
+            returncode=returncode,
+        ),
+    )
+
+    with pytest.raises(BinanceStreamDataError, match="inconsistent result"):
+        _verify_cursor_chain_subprocess(str(tmp_path / "stream.db"))
+
+
 @pytest.mark.asyncio
 async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
     tmp_path,
@@ -141,6 +207,17 @@ async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
         await stop.wait()
 
     monkeypatch.setattr(realtime, "_verify_store_chain", verify)
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_subprocess",
+        lambda *_args, **_kwargs: {
+            "valid": True,
+            "anchor_seq": 0,
+            "verified_suffix_events": 0,
+            "verified_seq": 0,
+            "verified_row_hash": "",
+        },
+    )
     monkeypatch.setattr(realtime, "_consume", consume)
 
     status = await realtime.run_stream(

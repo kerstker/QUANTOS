@@ -14,8 +14,11 @@ import asyncio
 import json
 import math
 import os
+import subprocess
+import sys
 import time
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -52,6 +55,7 @@ FLUSH_SECONDS = 5.0
 MAX_STREAM_LAG_MS = 10_000
 CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
+CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 30 * 60.0
 
 
 class BinanceStreamDataError(RuntimeError):
@@ -797,6 +801,71 @@ def _verify_store_chain(
         verifier.close()
 
 
+def _verify_cursor_chain_local(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    verifier = StreamCursorStore(store_path)
+    try:
+        return dict(
+            verifier.verify_chain_from(
+                checkpoint_seq=checkpoint_seq,
+                checkpoint_row_hash=checkpoint_row_hash,
+            )
+        )
+    finally:
+        verifier.close()
+
+
+def _verify_cursor_chain_subprocess(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Run a potentially full cursor audit outside the WebSocket process GIL."""
+    command = [
+        sys.executable,
+        "-m",
+        "tools.binance_realtime_stream",
+        "--verify-cursor-chain",
+        "--store",
+        str(Path(store_path).resolve()),
+        "--cursor-checkpoint-seq",
+        str(checkpoint_seq),
+        "--cursor-checkpoint-row-hash",
+        checkpoint_row_hash,
+    ]
+    result = subprocess.run(
+        command,
+        cwd=str(Path(__file__).resolve().parents[1]),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS,
+    )
+    try:
+        verification = json.loads(result.stdout)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise BinanceStreamDataError(
+            "cursor chain verifier returned malformed output"
+        ) from exc
+    if not isinstance(verification, dict) or not isinstance(
+        verification.get("valid"), bool
+    ):
+        raise BinanceStreamDataError(
+            "cursor chain verifier returned an inconsistent result"
+        )
+    success = verification["valid"] is True
+    if (result.returncode == 0) != success:
+        raise BinanceStreamDataError(
+            "cursor chain verifier returned an inconsistent result"
+        )
+    return verification
+
+
 async def run_stream(
     *,
     tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
@@ -828,8 +897,22 @@ async def run_stream(
         now_ms=int(time.time() * 1_000),
         full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
     )
+    cursor_chain_checkpoint = {
+        "checkpoint_seq": 0,
+        "checkpoint_row_hash": "",
+    }
+    cursor_chain_verification: dict[str, Any] = {
+        "valid": False,
+        "anchor_seq": 0,
+        "verified_suffix_events": 0,
+        "verified_seq": 0,
+        "verified_row_hash": "",
+        "verification_mode": "FULL_SUBPROCESS_AUDIT_PENDING",
+        "error": "CURSOR_CHAIN_AUDIT_PENDING",
+    }
 
     async def flush_loop() -> None:
+        nonlocal cursor_chain_checkpoint, cursor_chain_verification
         nonlocal latest_status
         try:
             while time.monotonic() < deadline:
@@ -850,6 +933,29 @@ async def run_stream(
                         depth = state.latest[symbol].get("depth20")
                         if isinstance(depth, dict):
                             depth.update(_cursor_fields(recovered))
+                if cursor_chain_verification.get("valid") is True:
+                    cursor_chain_verification = _verify_cursor_chain_local(
+                        store_path,
+                        checkpoint_seq=int(
+                            cursor_chain_checkpoint["checkpoint_seq"]
+                        ),
+                        checkpoint_row_hash=str(
+                            cursor_chain_checkpoint["checkpoint_row_hash"]
+                        ),
+                    )
+                    cursor_chain_verification["verification_mode"] = (
+                        "INCREMENTAL_ON_FLUSH"
+                    )
+                    cursor_chain_verification["verified_at_ms"] = observed_at_ms
+                    if cursor_chain_verification.get("valid") is True:
+                        cursor_chain_checkpoint = {
+                            "checkpoint_seq": int(
+                                cursor_chain_verification["verified_seq"]
+                            ),
+                            "checkpoint_row_hash": str(
+                                cursor_chain_verification["verified_row_hash"]
+                            ),
+                        }
                 snapshots = state.snapshots(observed_at_ms)
                 for snapshot in snapshots.values():
                     store.append_snapshot(snapshot)
@@ -863,7 +969,8 @@ async def run_stream(
                     chain_verified_at_ms=chain_verified_at_ms,
                     chain_verification=chain_verification,
                     cursor_status=cursor_store.trading_watermark(
-                        (("depth20", symbol) for symbol in sorted(state.symbols))
+                        (("depth20", symbol) for symbol in sorted(state.symbols)),
+                        chain_verification=cursor_chain_verification,
                     ),
                 )
                 atomic_write_json(status_path, latest_status, indent=2)
@@ -915,12 +1022,30 @@ async def run_stream(
             except TimeoutError:
                 continue
 
+    async def bootstrap_cursor_chain() -> None:
+        nonlocal cursor_chain_checkpoint, cursor_chain_verification
+        verification = await asyncio.to_thread(
+            _verify_cursor_chain_subprocess,
+            store_path,
+            checkpoint_seq=0,
+            checkpoint_row_hash="",
+        )
+        verification["verification_mode"] = "FULL_SUBPROCESS_BOOTSTRAP"
+        verification["verified_at_ms"] = int(time.time() * 1_000)
+        cursor_chain_verification = verification
+        if verification.get("valid") is True:
+            cursor_chain_checkpoint = {
+                "checkpoint_seq": int(verification["verified_seq"]),
+                "checkpoint_row_hash": str(verification["verified_row_hash"]),
+            }
+
     try:
         await asyncio.gather(
             _consume("public", urls["public"], state=state, stop=stop, deadline=deadline),
             _consume("market", urls["market"], state=state, stop=stop, deadline=deadline),
             flush_loop(),
             verify_chain_loop(),
+            bootstrap_cursor_chain(),
         )
     finally:
         cursor_store.close()
@@ -937,7 +1062,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--store", default=DEFAULT_STORE)
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--batch-store", default=DEFAULT_BATCH_STORE)
+    parser.add_argument("--verify-cursor-chain", action="store_true")
+    parser.add_argument("--cursor-checkpoint-seq", type=int, default=0)
+    parser.add_argument("--cursor-checkpoint-row-hash", default="")
     args = parser.parse_args(argv)
+    if args.verify_cursor_chain:
+        verification = _verify_cursor_chain_local(
+            args.store,
+            checkpoint_seq=args.cursor_checkpoint_seq,
+            checkpoint_row_hash=args.cursor_checkpoint_row_hash,
+        )
+        print(json.dumps(verification, sort_keys=True, separators=(",", ":")))
+        return (
+            SCHEDULE_EXIT_SUCCESS
+            if verification.get("valid") is True
+            else SCHEDULE_EXIT_FAILURE
+        )
     try:
         status = asyncio.run(
             run_stream(

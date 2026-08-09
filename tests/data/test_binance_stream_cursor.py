@@ -67,6 +67,65 @@ def test_contiguous_cursor_is_persistent_idempotent_and_ignores_old_frames(tmp_p
         reopened.close()
 
 
+def test_cursor_chain_verification_resumes_from_exact_checkpoint(tmp_path) -> None:
+    store = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        _observe(store, first=10, final=12, previous=9, event_time_ms=1_000)
+        checkpoint = store.verify_chain_from()
+        _observe(store, first=13, final=15, previous=12, event_time_ms=1_100)
+
+        suffix = store.verify_chain_from(
+            checkpoint_seq=checkpoint["verified_seq"],
+            checkpoint_row_hash=checkpoint["verified_row_hash"],
+        )
+
+        assert suffix["valid"] is True
+        assert suffix["anchor_seq"] == 1
+        assert suffix["verified_suffix_events"] == 1
+        assert suffix["verified_seq"] == 2
+    finally:
+        store.close()
+
+
+def test_watermark_uses_supplied_cursor_chain_verification(tmp_path, monkeypatch) -> None:
+    store = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        _observe(store, first=10, final=12, previous=9, event_time_ms=1_000)
+        verification = store.verify_chain_from()
+
+        def full_scan_must_not_run():
+            raise AssertionError("watermark repeated a full cursor-chain scan")
+
+        monkeypatch.setattr(store, "verify_chain", full_scan_must_not_run)
+        watermark = store.trading_watermark(
+            (("depth20", "BTCUSDT"),),
+            chain_verification=verification,
+        )
+
+        assert watermark["publishable"] is True
+        assert watermark["chain"] == verification
+    finally:
+        store.close()
+
+
+def test_watermark_rejects_unverified_cursor_chain_suffix(tmp_path) -> None:
+    store = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        _observe(store, first=10, final=12, previous=9, event_time_ms=1_000)
+        stale = store.verify_chain_from()
+        _observe(store, first=13, final=15, previous=12, event_time_ms=1_100)
+
+        watermark = store.trading_watermark(
+            (("depth20", "BTCUSDT"),),
+            chain_verification=stale,
+        )
+
+        assert watermark["publishable"] is False
+        assert "CURSOR_CHAIN_UNVERIFIED_SUFFIX" in watermark["blockers"]
+    finally:
+        store.close()
+
+
 def test_gap_blocks_watermark_until_complete_rest_snapshot_recovery(tmp_path) -> None:
     store = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
     try:
