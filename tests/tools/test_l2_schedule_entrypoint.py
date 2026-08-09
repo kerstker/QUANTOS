@@ -528,6 +528,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
             "binance_realtime_features",
             "paper_multivenue_sor",
             "paper_order_preview",
+            "paper_research_risk_bundle",
             "realtime_alpha_discovery",
             "realtime_alpha_execution_paper",
             "realtime_alpha_formal_shadow",

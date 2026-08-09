@@ -36,7 +36,8 @@ separates release verification from worker outcome, so a verified release plus
 a non-zero worker exit is recorded as `release_verified=true`, `status=FAILED`.
 Receipt schema v2 also carries `worker_attestation_required`, `worker_attested`,
 the validated attestation document, and its canonical SHA-256. The unique
-`alpha_production_workflow`, the public-book `paper_multivenue_sor`, and
+`alpha_production_workflow`, the public-book `paper_multivenue_sor`, formal
+`paper_order_preview`, its `paper_research_risk_bundle` producer, and
 `realtime_alpha_execution_paper` are required: a successful or safe-blocked run
 without its exact release commit and complete logical input/output hashes fails
 closed. Alpha binds its evidence, policies, authority chain heads, and projection;
@@ -44,6 +45,9 @@ SOR binds its complete public cross-venue book bundle, routing contract, status
 artifact, and dry-run reproducibility hash. Realtime execution paper binds one
 transactionally frozen Signal Shadow view, parsed feature/contract status, pre/post
 execution-ledger authorities, any consumed routing snapshot, and its report.
+The research-risk producer binds the candidate universe and fixed risk contract,
+requires all source authorities (including SQLite WAL bytes) to remain identical
+across the computation, and binds the exact per-candidate input view plus output.
 Workers not yet instrumented remain explicit with
 `worker_attestation_required=false`; that is a migration boundary, not a claim
 that their mutable inputs are already release-bound.

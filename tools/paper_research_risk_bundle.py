@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -27,6 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from services.research.paper_trading.attested_store import AttestedForwardLedger
+from quantos.contracts.hashing import stable_hash
 from services.risk.research_risk.bundle import (
     BUNDLE_PROVENANCE,
     BUNDLE_SCHEMA_VERSION,
@@ -48,6 +50,201 @@ DEFAULT_OUTPUT = Path("data/cache/paper_research_risk_inputs.json")
 DEFAULT_PAPER_AUM_USD = 1_000_000.0
 MAX_FX_AGE_DAYS = 8
 REQUIRED_FORWARD_PERIODS = 8
+_LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while block := handle.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _path_content_identity(path: str | Path) -> dict[str, Any]:
+    """Bind authoritative bytes, including uncheckpointed SQLite WAL data."""
+    resolved = Path(path).resolve()
+    if not resolved.is_file():
+        return {
+            "path": os.path.normpath(str(resolved)),
+            "exists": False,
+        }
+    result: dict[str, Any] = {
+        "path": os.path.normpath(str(resolved)),
+        "exists": True,
+        "size": resolved.stat().st_size,
+        "sha256": _sha256_file(resolved),
+    }
+    wal = Path(str(resolved) + "-wal")
+    if wal.is_file():
+        result["wal"] = {
+            "size": wal.stat().st_size,
+            "sha256": _sha256_file(wal),
+        }
+    return result
+
+
+def _source_authority_view(paths: Mapping[str, str | Path]) -> dict[str, Any]:
+    return {
+        str(name): _path_content_identity(path)
+        for name, path in sorted(paths.items())
+    }
+
+
+def _source_authority_paths(
+    *,
+    forward_db: str | Path,
+    dataset_evidence: str | Path,
+    evaluations: str | Path,
+    forward_evaluations: str | Path,
+    forward_status: str | Path,
+    fx_db: str | Path,
+    maintenance: str | Path,
+) -> dict[str, str | Path]:
+    """Enumerate every mutable authority consumed by the production builder."""
+    return {
+        "crypto_funding_db": Path("data/cache/crypto_funding.db"),
+        "crypto_funding_rates": Path("data/cache/crypto_funding_rates.json"),
+        "crypto_funding_snapshot": Path("data/cache/crypto_funding_snapshot.json"),
+        "crypto_oi_metrics": Path("data/cache/crypto_oi_metrics.json"),
+        "dataset_evidence": dataset_evidence,
+        "experiment_registry": Path("data/cache/experiment_registry.db"),
+        "forward_evaluations": forward_evaluations,
+        "forward_ledger": forward_db,
+        "forward_status": forward_status,
+        "fx_authority": fx_db,
+        "macro_fred_db": Path("data/cache/macro_fred.db"),
+        "maintenance": maintenance,
+        "paper_evaluations": evaluations,
+    }
+
+
+def _source_view_complete(view: Mapping[str, Any]) -> bool:
+    if not view:
+        return False
+    for item in view.values():
+        if (
+            not isinstance(item, Mapping)
+            or item.get("exists") is not True
+            or not _is_sha256(item.get("sha256"))
+        ):
+            return False
+        wal = item.get("wal")
+        if wal is not None and (
+            not isinstance(wal, Mapping) or not _is_sha256(wal.get("sha256"))
+        ):
+            return False
+    return True
+
+
+def _risk_input_bundle_view(document: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        name: document.get(name)
+        for name in (
+            "schema_version",
+            "provenance",
+            "status",
+            "producer",
+            "producer_contract",
+            "dataset_version",
+            "config_hash",
+            "candidate_universe",
+            "alphas",
+            "missing_inputs",
+            "synthetic_defaults",
+            "execution_authority_granted",
+            "order_submission_allowed",
+        )
+    }
+
+
+def _build_release_run_attestation(
+    document: Mapping[str, Any],
+    *,
+    candidate_ids: Sequence[str],
+    contract: Mapping[str, Any],
+    source_before: Mapping[str, Any],
+    source_after: Mapping[str, Any],
+    output_path: str | Path,
+) -> dict[str, Any]:
+    release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
+    if isinstance(release_commit, str):
+        release_commit = release_commit.strip().lower()
+    input_hashes = {
+        "candidate_universe": stable_hash(list(candidate_ids)),
+        "paper_research_risk_contract": stable_hash(dict(contract)),
+        "risk_input_bundle_view": stable_hash(_risk_input_bundle_view(document)),
+        "source_authorities_before": stable_hash(dict(source_before)),
+    }
+    output_hashes = {
+        "paper_research_risk_bundle_file": _sha256_file(output_path),
+        "source_authorities_after": stable_hash(dict(source_after)),
+    }
+    raw_safety = document.get("safety")
+    raw_safety = raw_safety if isinstance(raw_safety, Mapping) else {}
+    safety = {
+        "paper_only": raw_safety.get("paper_only"),
+        "live_allowed": raw_safety.get("live_allowed"),
+        "order_submission_allowed": raw_safety.get("order_submission_allowed"),
+        "credentials_accessed": raw_safety.get("credentials_accessed"),
+        "broker_connectivity": raw_safety.get("broker_connectivity"),
+    }
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    rows = document.get("alphas")
+    complete = bool(
+        isinstance(release_commit, str)
+        and len(release_commit) == 40
+        and all(character in "0123456789abcdef" for character in release_commit)
+        and document.get("status") in {"READY", "PENDING"}
+        and document.get("producer") == "tools.paper_research_risk_bundle"
+        and document.get("synthetic_defaults") is False
+        and document.get("execution_authority_granted") is False
+        and document.get("order_submission_allowed") is False
+        and isinstance(rows, Mapping)
+        and set(rows) == set(candidate_ids)
+        and source_before == source_after
+        and _source_view_complete(source_before)
+        and all(_is_sha256(value) for value in input_hashes.values())
+        and all(_is_sha256(value) for value in output_hashes.values())
+        and safety == expected_safety
+    )
+    return {
+        "schema_version": 1,
+        "module": "paper_research_risk_bundle",
+        "release_commit": release_commit,
+        "complete": complete,
+        "input_hashes": dict(sorted(input_hashes.items())),
+        "output_hashes": dict(sorted(output_hashes.items())),
+        "safety": safety,
+    }
+
+
+def release_run_attestation() -> dict[str, Any] | None:
+    """Return a detached copy of the latest paper-risk release proof."""
+    if _LAST_RELEASE_RUN_ATTESTATION is None:
+        return None
+    return json.loads(
+        json.dumps(
+            _LAST_RELEASE_RUN_ATTESTATION,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
 
 
 def _config_hash() -> str:
@@ -1006,7 +1203,100 @@ def _write(path: Path, document: Mapping[str, Any]) -> None:
     temporary.replace(path)
 
 
+def run_bundle(
+    *,
+    forward_db: str | Path = DEFAULT_FORWARD_DB,
+    dataset_evidence: str | Path = DEFAULT_DATASET_EVIDENCE,
+    evaluations: str | Path = DEFAULT_EVALUATIONS,
+    forward_evaluations: str | Path = DEFAULT_FORWARD_EVALUATIONS,
+    forward_status: str | Path = DEFAULT_FORWARD_STATUS,
+    fx_db: str | Path = DEFAULT_FX_DB,
+    maintenance: str | Path = DEFAULT_MAINTENANCE,
+    paper_aum_usd: float = DEFAULT_PAPER_AUM_USD,
+    output: str | Path = DEFAULT_OUTPUT,
+    alpha_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Compute and publish one source-stable, release-attestable risk bundle."""
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
+    if alpha_ids is None:
+        from tools.paper_candidate_universe import paper_candidate_ids
+
+        selected = tuple(
+            paper_candidate_ids(
+                forward_status=str(forward_status),
+                evaluations=str(forward_evaluations),
+            )
+        )
+    else:
+        selected = tuple(alpha_ids)
+    if selected != tuple(dict.fromkeys(selected)) or not selected:
+        raise ValueError("alpha_ids must be a non-empty unique sequence")
+
+    source_paths = _source_authority_paths(
+        forward_db=forward_db,
+        dataset_evidence=dataset_evidence,
+        evaluations=evaluations,
+        forward_evaluations=forward_evaluations,
+        forward_status=forward_status,
+        fx_db=fx_db,
+        maintenance=maintenance,
+    )
+    source_before = _source_authority_view(source_paths)
+    built = build_automatic_research_risk_bundle(
+        forward_db=forward_db,
+        dataset_evidence=dataset_evidence,
+        evaluations=evaluations,
+        forward_evaluations=forward_evaluations,
+        forward_status=forward_status,
+        fx_db=fx_db,
+        maintenance=maintenance,
+        alpha_ids=selected,
+        paper_aum_usd=paper_aum_usd,
+    )
+    if not isinstance(built, Mapping):
+        raise RuntimeError("paper research-risk builder returned a non-object")
+    document = dict(built)
+    expected_safety = {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+    existing_safety = document.get("safety")
+    if existing_safety is not None and existing_safety != expected_safety:
+        raise RuntimeError("paper research-risk safety contract is invalid")
+    document["safety"] = expected_safety
+    output_path = Path(output)
+    _write(output_path, document)
+    source_after = _source_authority_view(source_paths)
+    contract = {
+        "schema_version": 1,
+        "paper_aum_usd": float(paper_aum_usd),
+        "max_fx_age_days": MAX_FX_AGE_DAYS,
+        "required_forward_periods": REQUIRED_FORWARD_PERIODS,
+        "required_input_fields": list(REQUIRED_INPUT_FIELDS),
+        "risk_config": dict(RiskConfig().__dict__),
+        "sources": {
+            name: os.path.normpath(str(Path(path).resolve()))
+            for name, path in sorted(source_paths.items())
+        },
+    }
+    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+        document,
+        candidate_ids=selected,
+        contract=contract,
+        source_before=source_before,
+        source_after=source_after,
+        output_path=output_path,
+    )
+    return document
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
     parser = argparse.ArgumentParser(description="Publish a fail-closed paper research-risk preflight")
     parser.add_argument("--forward-db", default=str(DEFAULT_FORWARD_DB))
     parser.add_argument("--dataset-evidence", default=str(DEFAULT_DATASET_EVIDENCE))
@@ -1019,9 +1309,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     args = parser.parse_args(argv)
     try:
-        from tools.paper_candidate_universe import paper_candidate_ids
-
-        document = build_automatic_research_risk_bundle(
+        document = run_bundle(
             forward_db=args.forward_db,
             dataset_evidence=args.dataset_evidence,
             evaluations=args.evaluations,
@@ -1029,13 +1317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             forward_status=args.forward_status,
             fx_db=args.fx_db,
             maintenance=args.maintenance,
-            alpha_ids=paper_candidate_ids(
-                forward_status=args.forward_status,
-                evaluations=args.forward_evaluations,
-            ),
             paper_aum_usd=args.paper_aum_usd,
+            output=args.output,
         )
-        _write(Path(args.output), document)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"paper research-risk bundle remains pending: {exc}", file=sys.stderr)
         return 1

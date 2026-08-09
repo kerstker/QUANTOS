@@ -391,3 +391,142 @@ def test_main_returns_failure_when_bundle_cannot_be_computed(
     monkeypatch.setattr(bundle, "build_automatic_research_risk_bundle", fail)
 
     assert bundle.main(["--output", str(tmp_path / "risk.json")]) == 1
+
+
+def test_main_attests_published_pending_bundle_and_exact_source_view(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import paper_candidate_universe
+
+    release_commit = "c" * 40
+    output = tmp_path / "risk.json"
+    document = {
+        "schema_version": bundle.BUNDLE_SCHEMA_VERSION,
+        "provenance": bundle.BUNDLE_PROVENANCE,
+        "status": "PENDING",
+        "producer": "tools.paper_research_risk_bundle",
+        "producer_contract": "REAL_PIT_INPUTS_NO_SYNTHETIC_DEFAULTS_DYNAMIC_FORWARD_GATE",
+        "dataset_version": "d" * 64,
+        "config_hash": "e" * 64,
+        "alphas": {
+            "challenger": {
+                "binding": {"alpha_id": "challenger"},
+                "missing_inputs": ["alpha_metadata"],
+                "status": "PENDING",
+            }
+        },
+        "missing_inputs": ["alpha_metadata"],
+        "synthetic_defaults": False,
+        "execution_authority_granted": False,
+        "order_submission_allowed": False,
+    }
+    source_view = {
+        "forward_ledger": {"exists": True, "sha256": "a" * 64},
+        "experiment_registry": {"exists": True, "sha256": "b" * 64},
+    }
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        lambda **_kwargs: ("challenger",),
+    )
+    monkeypatch.setattr(
+        bundle,
+        "build_automatic_research_risk_bundle",
+        lambda **_kwargs: document,
+    )
+    monkeypatch.setattr(bundle, "_source_authority_view", lambda _paths: source_view)
+
+    assert bundle.main(["--output", str(output)]) == 0
+
+    published = json.loads(output.read_text(encoding="utf-8"))
+    assert published["safety"]["paper_only"] is True
+    attestation = bundle.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is True
+    assert attestation["module"] == "paper_research_risk_bundle"
+    assert attestation["release_commit"] == release_commit
+    assert set(attestation["input_hashes"]) == {
+        "candidate_universe",
+        "paper_research_risk_contract",
+        "risk_input_bundle_view",
+        "source_authorities_before",
+    }
+    assert set(attestation["output_hashes"]) == {
+        "paper_research_risk_bundle_file",
+        "source_authorities_after",
+    }
+    assert attestation["safety"] == {
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "credentials_accessed": False,
+        "broker_connectivity": False,
+    }
+
+
+def test_main_failure_clears_prior_release_attestation(tmp_path, monkeypatch) -> None:
+    from tools import paper_candidate_universe
+
+    bundle._LAST_RELEASE_RUN_ATTESTATION = {"complete": True}
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        lambda **_kwargs: ("challenger",),
+    )
+
+    def fail(**_kwargs):
+        raise RuntimeError("broken evidence")
+
+    monkeypatch.setattr(bundle, "build_automatic_research_risk_bundle", fail)
+
+    assert bundle.main(["--output", str(tmp_path / "risk.json")]) == 1
+    assert bundle.release_run_attestation() is None
+
+
+def test_main_marks_attestation_incomplete_when_source_changes_mid_run(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import paper_candidate_universe
+
+    output = tmp_path / "risk.json"
+    document = {
+        "schema_version": bundle.BUNDLE_SCHEMA_VERSION,
+        "provenance": bundle.BUNDLE_PROVENANCE,
+        "status": "PENDING",
+        "producer": "tools.paper_research_risk_bundle",
+        "producer_contract": "REAL_PIT_INPUTS_NO_SYNTHETIC_DEFAULTS_DYNAMIC_FORWARD_GATE",
+        "dataset_version": "d" * 64,
+        "config_hash": "e" * 64,
+        "alphas": {"challenger": {"status": "PENDING"}},
+        "missing_inputs": ["alpha_metadata"],
+        "synthetic_defaults": False,
+        "execution_authority_granted": False,
+        "order_submission_allowed": False,
+    }
+    views = iter(
+        (
+            {"forward_ledger": {"exists": True, "sha256": "a" * 64}},
+            {"forward_ledger": {"exists": True, "sha256": "b" * 64}},
+        )
+    )
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "c" * 40)
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        lambda **_kwargs: ("challenger",),
+    )
+    monkeypatch.setattr(
+        bundle,
+        "build_automatic_research_risk_bundle",
+        lambda **_kwargs: document,
+    )
+    monkeypatch.setattr(bundle, "_source_authority_view", lambda _paths: next(views))
+
+    assert bundle.main(["--output", str(output)]) == 0
+    attestation = bundle.release_run_attestation()
+    assert attestation is not None
+    assert attestation["complete"] is False
+    assert (
+        attestation["input_hashes"]["source_authorities_before"]
+        != attestation["output_hashes"]["source_authorities_after"]
+    )

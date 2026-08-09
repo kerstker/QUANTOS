@@ -85,6 +85,7 @@ REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
         "binance_realtime_market",
         "paper_multivenue_sor",
         "paper_order_preview",
+        "paper_research_risk_bundle",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",

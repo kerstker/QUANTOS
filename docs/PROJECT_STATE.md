@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-09 WP0 Paper Research-Risk Bundle 发布运行证明第十增量：**
+> `paper_research_risk_bundle` 已接入强制 release-run attestation。证明绑定唯一候选全集、固定九引擎/
+> Paper AUM/FX 新鲜度/前向成熟度合同、运行前后逐字节一致的 13 类源权威（前向账本、静态与独立评估、
+> 前向状态、FX、维护、PIT 行情/OI/资金费/宏观库、实验注册表，SQLite 同时绑定未 checkpoint 的 WAL），
+> 以及最终逐候选风险输入视图和原子发布文件；任一源在计算中变化都会使证明不完整并被 launcher 拒绝。
+> `PENDING` 是可证明的业务阻断而非生产作业失败，缺失输入仍逐项保留，绝不由默认金额或合成风险数据
+> 填充。真实 `H:\QUANTOS_STATE` 开发冒烟完成 37 个候选、`PENDING`、4 input + 2 output hashes，安全
+> 五项全通过；253 项关联回归通过，仍须全量门禁和新不可变发布的正式周期复验。上一增量 Paper Preview
+> 已在不可变发布 `b81335d` 正式运行：receipt
+> `1786253517162-58444-paper_order_preview.json` 为预期 `FAILED/NONZERO_EXIT/exit=2`（业务
+> SAFE_BLOCKED 的统一外层记录）、`worker_attested=true`，9 input + 2 output hashes；37 个候选均被
+> 工作流/证据门阻断，0 意图、0 订单，Paper 账本前后权威哈希一致且无凭证、broker 或 live 权限。
+
 > **2026-08-09 WP0 Formal Paper Order Preview 发布运行证明第九增量：**
 > `paper_order_preview` 已接入强制 release-run attestation。证明绑定唯一候选全集、固定
 > Paper sizing/risk/时钟合同、实际 mark 视图、工作流准入、逐候选前向决策查询、九引擎 bundle
@@ -7,8 +20,8 @@
 > 运行后追加式 Paper 账本权威和最终报告。业务 `paper_preview_ready=false` 仍是诚实阻断，证明完整
 > 只表示“本轮输入和阻断可复核”，不等于候选、九引擎或模拟成交通过。公共实时行情已在不可变
 > 发布 `49de569` 连续两轮正式通过：14/14 标的、0 失败、39,433+ 行且链有效，3 input +
-> 3 output hashes、`worker_attested=true`。Paper Preview 增量已通过 327 项相关回归，仍须新
-> 不可变发布的正式 SAFE_BLOCKED/PASS 周期复验；始终无凭证、broker、订单或 live 权限。
+> 3 output hashes、`worker_attested=true`。Paper Preview 增量已通过 327 项相关回归，并已由上方
+> `b81335d` 不可变发布完成正式 SAFE_BLOCKED 周期复验；始终无凭证、broker、订单或 live 权限。
 
 > **2026-08-09 WP0 Binance Public Realtime Market 发布运行证明第八增量：**
 > `binance_realtime_market` 已接入强制 release-run attestation。输入绑定完整公共 REST
