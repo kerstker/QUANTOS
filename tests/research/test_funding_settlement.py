@@ -3,10 +3,14 @@ from __future__ import annotations
 import pytest
 
 from services.research.funding_settlement import (
+    DAY_MS,
     HOUR_MS,
+    SETTLEMENT_INTERVAL_MS,
+    WEEKLY_SETTLEMENT_COUNT,
     FundingSettlementError,
     SettlementObservation,
     build_settlement_periods,
+    build_weekly_carry_periods,
 )
 
 
@@ -90,3 +94,69 @@ def test_builder_fails_closed_below_minimum_cross_section() -> None:
             mode="buffered_rank",
             min_cross_section=10,
         )
+
+
+def _weekly_history():
+    monday_ms = 4 * DAY_MS + 10 * 7 * DAY_MS
+    start_ms = monday_ms - (WEEKLY_SETTLEMENT_COUNT - 1) * SETTLEMENT_INTERVAL_MS
+    result = {}
+    for column in range(10):
+        instrument = f"S{column:02d}USDT"
+        base_rate = (column + 1) * 0.00001
+        rows = []
+        for index in range(2 * WEEKLY_SETTLEMENT_COUNT):
+            settlement_time = start_ms + index * SETTLEMENT_INTERVAL_MS
+            rate = base_rate
+            # This rate settles after entry.  It belongs in realized cashflow,
+            # never in the formation signal at the Monday decision.
+            if column == 0 and settlement_time == monday_ms + SETTLEMENT_INTERVAL_MS:
+                rate = 0.001
+            rows.append(
+                SettlementObservation(
+                    instrument_id=instrument,
+                    settlement_time_ms=settlement_time,
+                    decision_time_ms=settlement_time + HOUR_MS,
+                    settled_rate=rate,
+                    decision_mark_price=100.0 + column,
+                )
+            )
+        result[instrument] = rows
+    return monday_ms, result
+
+
+def test_weekly_carry_uses_trailing_21_rates_and_next_21_cashflows() -> None:
+    monday_ms, history = _weekly_history()
+
+    periods = build_weekly_carry_periods(history)
+
+    assert len(periods) == 1
+    period = periods[0]
+    assert period.event_time == monday_ms + HOUR_MS
+    index = period.instruments.index("S00USDT")
+    assert period.signals[index] == pytest.approx(-0.00001)
+    expected_cashflow = 0.001 + (WEEKLY_SETTLEMENT_COUNT - 1) * 0.00001
+    assert period.forward_returns[index] == pytest.approx(-expected_cashflow)
+
+
+def test_weekly_carry_has_one_fixed_monday_schedule_and_no_overlap() -> None:
+    monday_ms, history = _weekly_history()
+    for rows in history.values():
+        final = rows[-1]
+        for offset in range(1, WEEKLY_SETTLEMENT_COUNT + 1):
+            settlement_time = final.settlement_time_ms + offset * SETTLEMENT_INTERVAL_MS
+            rows.append(
+                SettlementObservation(
+                    instrument_id=final.instrument_id,
+                    settlement_time_ms=settlement_time,
+                    decision_time_ms=settlement_time + HOUR_MS,
+                    settled_rate=final.settled_rate,
+                    decision_mark_price=final.decision_mark_price,
+                )
+            )
+
+    periods = build_weekly_carry_periods(history)
+
+    assert [period.event_time for period in periods] == [
+        monday_ms + HOUR_MS,
+        monday_ms + 7 * DAY_MS + HOUR_MS,
+    ]

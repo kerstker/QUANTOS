@@ -12,6 +12,7 @@ network, promotion, or order authority.
 from __future__ import annotations
 
 import math
+import statistics
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -20,7 +21,11 @@ from services.alpha.panel_backtest import PanelPeriod
 
 
 HOUR_MS = 3_600_000
+DAY_MS = 24 * HOUR_MS
 SETTLEMENT_INTERVAL_MS = 8 * HOUR_MS
+WEEKLY_SETTLEMENT_COUNT = 21
+WEEK_MS = 7 * DAY_MS
+MONDAY_UTC_OFFSET_MS = 4 * DAY_MS
 
 
 class FundingSettlementError(ValueError):
@@ -261,10 +266,97 @@ def build_settlement_periods(
     return tuple(periods)
 
 
+def build_weekly_carry_periods(
+    history: Mapping[str, Sequence[SettlementObservation]],
+    *,
+    min_cross_section: int = 10,
+) -> tuple[PanelPeriod, ...]:
+    """Build the single fixed weekly funding-carry research schedule.
+
+    Decisions occur only after the Monday 00:00 UTC settlement has a completed
+    01:00 mark bar.  The signal is the negative mean of the 21 already-settled
+    rates ending at that Monday.  The non-overlapping label holds to the next
+    Monday decision mark and includes exactly the next 21 settled funding cash
+    flows.  There is no weekday, horizon, window, quantile, or direction grid.
+    """
+    if (
+        isinstance(min_cross_section, bool)
+        or not isinstance(min_cross_section, int)
+        or min_cross_section < 2
+    ):
+        raise FundingSettlementError("min_cross_section must be at least two")
+
+    normalized = _validated_history(history)
+    event_times = sorted(
+        event_time
+        for event_time in {
+            item for rows in normalized.values() for item in rows
+        }
+        if (event_time - MONDAY_UTC_OFFSET_MS) % WEEK_MS == 0
+    )
+    periods: list[PanelPeriod] = []
+    for event_time in event_times:
+        formation_times = tuple(
+            event_time - offset * SETTLEMENT_INTERVAL_MS
+            for offset in range(WEEKLY_SETTLEMENT_COUNT - 1, -1, -1)
+        )
+        cashflow_times = tuple(
+            event_time + offset * SETTLEMENT_INTERVAL_MS
+            for offset in range(1, WEEKLY_SETTLEMENT_COUNT + 1)
+        )
+        future_time = cashflow_times[-1]
+        required_times = formation_times + cashflow_times
+        available = [
+            instrument
+            for instrument, rows in normalized.items()
+            if all(required_time in rows for required_time in required_times)
+        ]
+        if len(available) < min_cross_section:
+            continue
+
+        selected = tuple(sorted(available))
+        signals: list[float] = []
+        forward_returns: list[float] = []
+        for instrument in selected:
+            rows = normalized[instrument]
+            current = rows[event_time]
+            future = rows[future_time]
+            trailing_rate = statistics.fmean(
+                float(rows[item].settled_rate) for item in formation_times
+            )
+            realized_funding = sum(
+                float(rows[item].settled_rate) for item in cashflow_times
+            )
+            signals.append(-trailing_rate)
+            forward_returns.append(
+                float(future.decision_mark_price)
+                / float(current.decision_mark_price)
+                - 1.0
+                - realized_funding
+            )
+        periods.append(
+            PanelPeriod(
+                instruments=selected,
+                signals=tuple(signals),
+                forward_returns=tuple(forward_returns),
+                event_time=event_time + HOUR_MS,
+            )
+        )
+
+    if not periods:
+        raise FundingSettlementError("no causal weekly carry periods clear breadth")
+    return tuple(periods)
+
+
 __all__ = [
+    "DAY_MS",
     "FundingSettlementError",
     "HOUR_MS",
+    "MONDAY_UTC_OFFSET_MS",
     "SETTLEMENT_INTERVAL_MS",
     "SettlementObservation",
+    "WEEKLY_SETTLEMENT_COUNT",
+    "WEEK_MS",
     "build_settlement_periods",
+    "build_weekly_carry_periods",
 ]
