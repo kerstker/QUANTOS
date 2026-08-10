@@ -34,8 +34,11 @@ def _panel(n_periods: int = 64, n_instruments: int = 12) -> FieldPanel:
 
 
 def test_fast_family_is_fixed_three_day_and_distinct_from_weekly_identity() -> None:
-    fast, evidence, mappings = driver.build_candidate_batch(_panel())
-    weekly, _weekly_evidence, weekly_mappings = common.build_candidate_batch(_panel())
+    panel = _panel()
+    for row in range(5, 11):
+        panel.matrices["top_ls"][row] = [None] * len(panel.instruments)
+    fast, evidence, mappings = driver.build_candidate_batch(panel)
+    weekly, _weekly_evidence, weekly_mappings = common.build_candidate_batch(panel)
 
     assert driver.FWD_HORIZON == 3
     assert driver.PERIODS_PER_YEAR == 122
@@ -53,6 +56,17 @@ def test_fast_family_is_fixed_three_day_and_distinct_from_weekly_identity() -> N
         mapping["definition_hash"] for mapping in mappings.values()
     }.isdisjoint(
         mapping["definition_hash"] for mapping in weekly_mappings.values()
+    )
+    fast_calendars = [
+        tuple(period.event_time for period in periods)
+        for _definition, periods in fast
+    ]
+    assert len(set(fast_calendars)) == 1
+    assert all(
+        later - earlier >= driver.FWD_HORIZON * 86_400_000
+        for earlier, later in zip(
+            fast_calendars[0], fast_calendars[0][1:]
+        )
     )
 
 
@@ -90,4 +104,3 @@ def test_fast_run_registers_complete_family_and_never_grants_testnet(
     assert document["decision"]["forward_admission_allowed"] is False
     assert document["decision"]["testnet_eligible"] is False
     assert document["safety"]["order_submission_allowed"] is False
-

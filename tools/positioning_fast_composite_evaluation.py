@@ -31,6 +31,9 @@ EVALUATION_CONTRACT = {
     "candidate_expression": ax.serialize(
         common.POSITIONING_COMPOSITE_EXPRESSION
     ),
+    "shared_calendar": True,
+    "shared_calendar_rule": "first_common_then_minimum_3d_spacing",
+    "shared_calendar_step_ms": FWD_HORIZON * 86_400_000,
     "parameter_scan": False,
 }
 FALSIFICATION_CRITERIA = (
@@ -47,6 +50,7 @@ def build_candidate_batch(panel):
         fwd_horizon=FWD_HORIZON,
         evaluation_contract=EVALUATION_CONTRACT,
         id_prefix="positioning_fast3d",
+        shared_calendar_step_ms=FWD_HORIZON * 86_400_000,
     )
 
 
@@ -79,6 +83,7 @@ def run(
             "consensus expression at one pre-registered three-day horizon; no scan."
         ),
         falsification_criteria=FALSIFICATION_CRITERIA,
+        shared_calendar_step_ms=FWD_HORIZON * 86_400_000,
     )
 
 

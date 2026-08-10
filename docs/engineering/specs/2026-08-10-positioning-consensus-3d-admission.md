@@ -1,6 +1,6 @@
 # Three-day positioning-consensus formal admission
 
-Status: **PRE-REGISTERED / NOT YET EVALUATED**  
+Status: **PRE-REGISTERED SHARED-CALENDAR CORRECTION / NOT YET EVALUATED**  
 Date: 2026-08-10
 
 ## Why this is a new counted hypothesis
@@ -32,6 +32,19 @@ the existing `crypto_oi_majors_pit` universe, the existing realistic panel
 cost model, and `periods_per_year = 122`. There is no horizon, quantile,
 expression, universe, or cost scan in this experiment.
 
+The family calendar is common by construction: first build every candidate on
+all causal daily rows, intersect exact `event_time` values across all three,
+then retain the first common row and each later common row at least 72 hours
+after the previous decision. Missing top-trader blocks therefore create one
+shared gap; they cannot independently reset each candidate's three-day phase.
+
+An initial implementation incorrectly applied non-overlap separately to each
+candidate. The real 2022 top-trader gaps left only two exact timestamps common
+to all three, so PBO failed closed as `OVERFIT_NOT_ASSESSED`. That immutable
+attempt is retained as `positioning_fast_composite_evaluation_pre_alignment`
+and is not rewritten. The shared-calendar rule changes the evaluation contract
+and definition hashes; its three corrected definitions count as new trials.
+
 ## Required evidence
 
 The existing production evaluator remains authoritative. Admission requires a
@@ -45,4 +58,3 @@ Even a historical `PASS` allows only the independent forward-paper admission
 step. It does not itself authorize Testnet intent generation, credential use,
 execution-service startup, Mainnet, Micro-Live, real capital, or order
 submission.
-

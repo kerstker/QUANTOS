@@ -156,6 +156,7 @@ def build_candidate_batch(
     fwd_horizon: int = FWD_HORIZON,
     evaluation_contract: Mapping[str, Any] = EVALUATION_CONTRACT,
     id_prefix: str = "positioning",
+    shared_calendar_step_ms: int | None = None,
 ) -> tuple[list, dict[str, dict], dict[str, dict]]:
     """Build all controls/candidate on one PIT panel without observing results."""
     if (
@@ -168,6 +169,12 @@ def build_candidate_batch(
         raise TypeError("evaluation_contract must be a mapping")
     if not isinstance(id_prefix, str) or not id_prefix.strip():
         raise ValueError("id_prefix must be non-empty")
+    if shared_calendar_step_ms is not None and (
+        isinstance(shared_calendar_step_ms, bool)
+        or not isinstance(shared_calendar_step_ms, int)
+        or shared_calendar_step_ms <= 0
+    ):
+        raise ValueError("shared_calendar_step_ms must be a positive integer")
     candidates = []
     evidence: dict[str, dict[str, bool | None]] = {}
     mappings: dict[str, dict[str, Any]] = {}
@@ -183,7 +190,7 @@ def build_candidate_batch(
             signal,
             panel,
             fwd_horizon=fwd_horizon,
-            non_overlapping=True,
+            non_overlapping=shared_calendar_step_ms is None,
         )
         candidates.append((definition, periods))
         evidence[definition.alpha_id] = {
@@ -197,6 +204,32 @@ def build_candidate_batch(
             "factor_ids": list(definition.factor_ids),
             "economic_hypothesis": ECONOMIC_HYPOTHESES[alias],
         }
+    if shared_calendar_step_ms is not None:
+        by_candidate: list[dict[int, Any]] = []
+        for _candidate_definition, periods in candidates:
+            if any(period.event_time is None for period in periods):
+                raise RuntimeError("shared positioning calendar requires event_time")
+            by_time = {int(period.event_time): period for period in periods}
+            if len(by_time) != len(periods):
+                raise RuntimeError("positioning calendar contains duplicate event_time")
+            by_candidate.append(by_time)
+        common_times = sorted(set.intersection(*(set(item) for item in by_candidate)))
+        selected_times: list[int] = []
+        for event_time in common_times:
+            if (
+                not selected_times
+                or event_time - selected_times[-1] >= shared_calendar_step_ms
+            ):
+                selected_times.append(event_time)
+        if not selected_times:
+            raise RuntimeError("positioning family has no shared causal calendar")
+        candidates = [
+            (
+                definition,
+                tuple(by_candidate[index][event_time] for event_time in selected_times),
+            )
+            for index, (definition, _periods) in enumerate(candidates)
+        ]
     return candidates, evidence, mappings
 
 
@@ -288,6 +321,7 @@ def _run_positioning_spec(
     parent_hypothesis: str,
     search_space: str,
     falsification_criteria: Sequence[str],
+    shared_calendar_step_ms: int | None = None,
 ) -> dict[str, Any]:
     if not isinstance(source_commit, str) or _COMMIT.fullmatch(source_commit) is None:
         raise ValueError("source_commit must be a lowercase 40-character git commit")
@@ -300,6 +334,7 @@ def _run_positioning_spec(
         fwd_horizon=fwd_horizon,
         evaluation_contract=evaluation_contract,
         id_prefix=id_prefix,
+        shared_calendar_step_ms=shared_calendar_step_ms,
     )
     observed_at = int(
         recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
@@ -426,6 +461,7 @@ def run(
             "crowd/top consensus expression; no parameter sweep."
         ),
         falsification_criteria=FALSIFICATION_CRITERIA,
+        shared_calendar_step_ms=None,
     )
 
 
