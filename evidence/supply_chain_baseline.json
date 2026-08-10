@@ -577,9 +577,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786318352010,
-    "run_id": "9b73b7000790bf2ade4e008f162ff2119df6676e1ffb79c2871854470393840b",
-    "source_commit": "b860f51298baa682c2a6c9e4ce03d0b558e47d18"
+    "generated_at": 1786319876730,
+    "run_id": "08b49c9e4ed39ffed0fc418056c1f91dbd3149381fc5133a8215b17f04670089",
+    "source_commit": "ab39db954ec7dc1f6b9705b633866eecd0e87238"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
