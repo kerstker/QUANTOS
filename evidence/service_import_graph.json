@@ -649,17 +649,17 @@
           "path": "services/intelligence/evolutionary_search.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.alpha.catalog",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 12,
+          "line": 13,
           "module": "services.alpha.config",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 13,
+          "line": 14,
           "module": "services.alpha.evaluator",
           "path": "services/intelligence/registered_candidate_batch.py"
         }
@@ -742,22 +742,22 @@
           "path": "services/intelligence/mcts_search.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.research",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.research.experiment_registry.registry",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 16,
+          "line": 17,
           "module": "services.research.research_budget",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 21,
+          "line": 22,
           "module": "services.research.trial_provenance",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
@@ -1004,6 +1004,11 @@
           "line": 13,
           "module": "services.alpha.panel_backtest",
           "path": "services/research/fundamental_factors.py"
+        },
+        {
+          "line": 19,
+          "module": "services.alpha.panel_backtest",
+          "path": "services/research/funding_settlement.py"
         },
         {
           "line": 16,
@@ -1330,7 +1335,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "b2a1f47b42fd344ce296c45afb6ec676a8fb5aa3612f22b1846645e5768a2614",
+  "graph_sha256": "982c96aa95c23896f4168c24cf9347cf84bf702e7552603266f5a05d3202bf43",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1368,7 +1373,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 463,
+  "source_file_count": 464,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
