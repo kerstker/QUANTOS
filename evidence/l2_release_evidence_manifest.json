@@ -1,21 +1,21 @@
 {
   "artifact_count": 17,
   "artifact_sha256": {
-    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "964873f4511ebbe2e31e168a1e08dba89148d64baa4eb93326c6976dbb83fe07",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "8e06949e52a888a949684e6aa6d4eb8e82204ecb144de051f9296c9af6825140",
-    "evidence/alpha_lifecycle_status.json": "7d9b7b58c4d5f9d2a59a1405db98f059b4e6a70abab4eae4c0fc447bbdb58df4",
-    "evidence/autonomy_readiness.json": "edc249d9d91cb7a0b04b93924e4f2b12a55c60bf507e8d6d4041e4db32b73e4c",
-    "evidence/chaos_recovery_status.json": "5c883f8b58b5a7f825c0301ad3d8dc95dceeac11067004c25f3020358df3a4d2",
-    "evidence/factor_garden_status.json": "378ffa94dc81ac1a32b50a61c9ce0933a459f672fde231d21db609da608bd625",
-    "evidence/l2_backup_latest.json": "9189d15af3df812968dc8ed3b72cbe7a07ea1b131abfd3a0b7f8f401bfe1ff4f",
-    "evidence/mexc_integration_status.json": "695b61af12715f3336ce8737ed1c90da72df6db0094b03f00d92c347b2606bd5",
-    "evidence/paper_shadow_status.json": "a439e73ceff0d5971dfbb6821a6f9668be5b2ffe758a3614b1ca99cee45d2c39",
+    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "89f8f7d3e0242ee25f6e3850955e42018475be01c0fdfc1b4ddd1ce1992694ad",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "0b1265a5ad277f22a1b5ec48a6582ef5b17d88f16cb4665d4f0c5430d7a5cd40",
+    "evidence/alpha_lifecycle_status.json": "4de0fd52e5a6610de2e1330f4c7d45cbcb5db7bdfb062b94be4227a2a56442dc",
+    "evidence/autonomy_readiness.json": "c29668af3b9ba008fc1ff73241b4609741b932262b46bfe249be2cc1f1ffad81",
+    "evidence/chaos_recovery_status.json": "51f8ad42f9c6aacaa98d7374e467a45d819ba8aab9959e44a382808e44e580bc",
+    "evidence/factor_garden_status.json": "a1b289668f4e215a71990683b44b9accd47d9d4db5293982251790a6713d00f6",
+    "evidence/l2_backup_latest.json": "e22a96eb2ca8ca859734186c6ecfe811d60b7b4c53b8f7c0bdf4cd6d6ea82dab",
+    "evidence/mexc_integration_status.json": "96520aa0660464a07efdaf300302a6672327b3009a4652c7964c6878560778bb",
+    "evidence/paper_shadow_status.json": "4113a99b0459c04d3cf400509ce38613c50e0d188385c2134685a4e3b763decf",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
     "evidence/sbom.cdx.json": "c9ebbdfa925502179550b8796ef2bd489ffa713938f6e2467fa1d82c4066ff02",
-    "evidence/supply_chain_baseline.json": "43a7e1705a557ceefbdcecf9158944e1a12cd52e0f6246cd9bf1f8b7ba59657c",
-    "evidence/top_tier_assessment.json": "a766f4126d988e2b879b8b7bca9ab46c2312ee65fd6a126d0d480e67f6a09d98",
-    "evidence/trial_ledger_integrity.json": "325c243aae9e8c6ecebe86e04efb6b55a128580574d7e8fc85885f13fe130392",
-    "evidence/validation_report.json": "b038be6a74025bdb4c60424f2a3b5850604f3940986a435d8f9bb09b256c7488",
+    "evidence/supply_chain_baseline.json": "96e53021ae48d54a6ce9b2c1c9b119f542b379d0f11ef3c639734e7c80c420a4",
+    "evidence/top_tier_assessment.json": "3f84a74053380fa4cbd2e786be74dbb5ba96f493a704115f019df6b9d9c2a781",
+    "evidence/trial_ledger_integrity.json": "52eb12b569374e55cae8607f506d0f423c1829727f0adf39cf2f3f95dd77d3f8",
+    "evidence/validation_report.json": "fa428d86827efc24a13738564abb6bc539cc50911145483af65c6c51b94fe885",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
     "evidence/vulnerability/python_audit_latest.json": "c3b07fc1e48758c2f1af7633fa4ab257fc137de9c84b13f06efd52a1e649e644"
   },
@@ -35,9 +35,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1786347335714,
-    "run_id": "0560f0d7d6ec5df6c93823d29c300d084b49219de02bfe425ae109b2ff251ada",
-    "source_commit": "725afb006c2932616f210af6e91d11b19b9a9128"
+    "generated_at": 1786361090618,
+    "run_id": "87fd72d28bb9d039749bacf12d6e74d76626699374d10efd8677a8dc55f284fd",
+    "source_commit": "33f4297952c85d795ecacec66864dd161cbc3205"
   },
-  "validation_report_sha256": "b038be6a74025bdb4c60424f2a3b5850604f3940986a435d8f9bb09b256c7488"
+  "validation_report_sha256": "fa428d86827efc24a13738564abb6bc539cc50911145483af65c6c51b94fe885"
 }
