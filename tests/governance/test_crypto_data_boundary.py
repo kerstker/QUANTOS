@@ -20,6 +20,9 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # Exact public funding-settlement events + completed post-event
              # mark hours; keyless/read-only, with no account or order path.
              os.path.join(_ROOT, "tools", "binance_funding_settlement_fetch.py"),
+             # Public USD-M quarterly mark history for the pre-registered
+             # perpetual/quarterly calendar-basis pressure test.
+             os.path.join(_ROOT, "tools", "calendar_basis_research.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_market.py"),
              os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
@@ -112,6 +115,10 @@ _EXTRA_ALLOWED_BY_FILE = {
     "binance_funding_fetch.py": {"math"},
     "binance_funding_settlement_fetch.py": {
         "argparse", "collections", "math", "pathlib", "quantos", "typing"
+    },
+    "calendar_basis_research.py": {
+        "argparse", "calendar", "collections", "datetime", "math", "pathlib",
+        "quantos", "re", "statistics", "typing"
     },
     "binance_perp_mark_fetch.py": {"math"},
     "binance_realtime_market.py": {
