@@ -66,6 +66,11 @@
       "role": "data_refresh_history"
     },
     {
+      "relative_path": "data/cache/mft_testnet_soak.db",
+      "required": false,
+      "role": "mft_testnet_soak_evidence_authority"
+    },
+    {
       "relative_path": "data/cache/paper_candidate_registry.db",
       "required": false,
       "role": "factory_candidate_admission"
@@ -86,26 +91,25 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 43321,
+  "backup_elapsed_ms": 133926,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
-  "file_count": 17,
+  "file_count": 18,
   "history_authoritative": true,
-  "history_event_hash": "bf6d548c6589ba3b3602502f60ce8ebff24ea10ebe3a93e2dd4ea48577b9aee9",
-  "history_event_seq": 86,
+  "history_event_hash": "d77750c952bae81a45641c6283ff5e2940768132dd4c94e5a961828acf5772a9",
+  "history_event_seq": 94,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
     "data/cache/approvals.db",
     "data/cache/identity_authorization.db",
-    "data/cache/mft_testnet_soak.db",
     "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1786184779047,
+  "observed_at_ms": 1786358807820,
   "required_source_count": 12,
-  "restore_elapsed_ms": 13250,
+  "restore_elapsed_ms": 33065,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,
