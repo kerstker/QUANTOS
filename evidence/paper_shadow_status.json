@@ -3,12 +3,12 @@
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "ab39db954ec7dc1f6b9705b633866eecd0e87238",
+  "commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786320887104,
+  "generated_at_ms": 1786323845556,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "edffa1f2f1192ea89aa3c8abec65c72ca7324d05e5a319d30363bb4fc3f7b9e4",
+  "input_hash": "f3b524584869077caa17b2ff5384a80340d16855a91e8d5dbe696f5e6c648b9c",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": false,
@@ -49,7 +49,7 @@
     "tests/research": {
       "exists": true,
       "file_count": 159,
-      "files_sha256": "96136c912652eb862c4687276af62698e8ecfbcf913714752e1ab03970079305",
+      "files_sha256": "1cae7bd8cea118846ac418f564fbfc74775b1d6e52f1290391e04abe418129d5",
       "kind": "python_directory"
     }
   },
@@ -88,9 +88,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "ab39db954ec7dc1f6b9705b633866eecd0e87238",
+    "head_commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
     "overall_status": "PASS",
-    "reported_commit": "ab39db954ec7dc1f6b9705b633866eecd0e87238",
+    "reported_commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
     "reported_validate_script_sha256": "45724535024b1852b0c55a547f4cdf9841d218fe6bd58d4cdf3db045200919ba",
     "selection_scope": "ALL",
     "validate_script_sha256": "45724535024b1852b0c55a547f4cdf9841d218fe6bd58d4cdf3db045200919ba"
