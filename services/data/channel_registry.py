@@ -63,6 +63,17 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "取每日最后一个 5 分钟指标；不把实时 OI 冒充历史 OI。",
     ),
     DataChannelSpec(
+        "bybit_linear_positioning", "Bybit", "bybit_linear",
+        "bybit_positioning_metrics", "daily", "1d",
+        ("open_interest", "buy_ratio", "sell_ratio", "long_short_ratio"),
+        "data/cache/bybit_positioning_metrics.json", "REAL_HISTORY",
+        ("crowd_reversal", "cross_exchange", "event_regime"),
+        72, "public_rest",
+        "Official public linear-perpetual OI and broad-account long/short history; "
+        "cursor-paginated, source-timestamped, and restricted to completed UTC days. "
+        "It is a research input, never account or Testnet admission evidence.",
+    ),
+    DataChannelSpec(
         "binance_usdm_realtime_complete", "Binance", "binance_usdm",
         "binance_realtime_market", "5m", "1m/5m/snapshot",
         (
