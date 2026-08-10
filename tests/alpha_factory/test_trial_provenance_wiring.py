@@ -240,6 +240,55 @@ def test_batch_writes_trial_record_per_candidate(monkeypatch) -> None:
     assert registry.trial_provenance_chain_valid() is True
 
 
+def test_registered_batch_uses_explicit_evaluation_quantile(monkeypatch) -> None:
+    registry = _registry()
+    observed: dict[str, float] = {}
+
+    def fake_run(self, received, **_kwargs):
+        observed["quantile"] = self.evaluator.quantile
+        return {
+            "report": {definition.alpha_id: {"state": None} for definition, _ in received},
+            "human_review_queue": [],
+        }
+
+    monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", fake_run)
+    (_dsl, _serialized, _expr), pool = _batch_candidates()
+    batch_module.run_registered_candidate_batch(
+        pool,
+        registry=registry,
+        search_id="batch-explicit-quantile",
+        search_kind="CURATED_CANDIDATE_BATCH",
+        search_source="tests.alpha_factory",
+        dataset_version="dataset-v1",
+        recorded_at=100,
+        quantile=0.3,
+    )
+
+    assert observed == {"quantile": 0.3}
+
+
+@pytest.mark.parametrize("bad_quantile", (False, 0.0, -0.1, 0.51, float("nan")))
+def test_registered_batch_rejects_invalid_quantile_before_ledger(
+    bad_quantile,
+) -> None:
+    registry = _registry()
+    (_dsl, _serialized, _expr), pool = _batch_candidates()
+
+    with pytest.raises(ValueError, match="quantile"):
+        batch_module.run_registered_candidate_batch(
+            pool,
+            registry=registry,
+            search_id="batch-invalid-quantile",
+            search_kind="CURATED_CANDIDATE_BATCH",
+            search_source="tests.alpha_factory",
+            dataset_version="dataset-v1",
+            recorded_at=100,
+            quantile=bad_quantile,
+        )
+
+    assert registry.search_attempt_events("batch-invalid-quantile") == []
+
+
 def test_batch_hypothesis_and_code_hash_flow(monkeypatch) -> None:
     registry = _registry()
     dsl, _result = _run_batch(

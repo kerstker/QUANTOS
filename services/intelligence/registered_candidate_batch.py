@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import math
 from typing import Any
 
 from quantos.contracts.alpha import AlphaDefinition
@@ -136,6 +137,7 @@ def run_registered_candidate_batch(
     recorded_at: int,
     stale_search_timeout_ms: int | None = None,
     periods_per_year: int = 252,
+    quantile: float = 0.2,
     config: AlphaFactoryConfig | None = None,
     evidence: Mapping[str, Mapping[str, Any]] | None = None,
     audit_log=None,
@@ -152,6 +154,9 @@ def run_registered_candidate_batch(
     Candidate hashes enter both the append-only search ledger and the global
     trial population in one transaction before the catalog or evaluator can
     observe the batch. Caller-supplied time keeps the composition deterministic.
+    ``quantile`` fixes the long/short tail fraction for both catalog observations
+    and batch PBO; callers that override it must bind the same value into their
+    immutable candidate/evaluation contract.
 
     W10 (spec §14.1/§14.2): when ``budget`` is provided, the batch FIRST checks
     the declared ResearchBudget and refuses with ``BudgetExhausted`` once
@@ -199,6 +204,14 @@ def run_registered_candidate_batch(
         or periods_per_year <= 0
     ):
         raise ValueError("periods_per_year must be a positive integer")
+    if (
+        isinstance(quantile, bool)
+        or not isinstance(quantile, (int, float))
+        or not math.isfinite(float(quantile))
+        or not 0.0 < float(quantile) <= 0.5
+    ):
+        raise ValueError("quantile must be finite and in (0, 0.5]")
+    quantile = float(quantile)
     if evidence is not None and not isinstance(evidence, Mapping):
         raise TypeError("evidence must be a mapping or None")
     if hypothesis_by_candidate is not None and not isinstance(
@@ -300,6 +313,7 @@ def run_registered_candidate_batch(
         evaluator = AlphaEvaluator(
             catalog,
             config,
+            quantile=quantile,
             periods_per_year=periods_per_year,
         )
         loop = ResearchAgentLoop(

@@ -47,6 +47,7 @@ DEFAULT_OUTPUT = Path("evidence/paper_alpha_evaluations.json")
 DEFAULT_FORWARD_OUTPUT = Path("data/cache/forward_alpha_evaluations.json")
 FWD_HORIZON = 7
 PERIODS_PER_YEAR = 52
+PAPER_QUANTILE = 0.3
 DATASET_CONTRACT = {
     "driver": "paper_alpha_evaluation.v1",
     "fwd_horizon": FWD_HORIZON,
@@ -63,6 +64,9 @@ PAPER_EVALUATION_CONTRACT = {
     **DATASET_CONTRACT,
     "funding_accrual": "complete_rows_after_decision_through_horizon.v1",
     "panel_backtest_contract": PANEL_BACKTEST_CONTRACT,
+    "quantile_by_alpha": {
+        alpha_id: PAPER_QUANTILE for alpha_id in PAPER_RETURN_BASIS
+    },
     "return_basis_by_alpha": PAPER_RETURN_BASIS,
 }
 FORWARD_EVALUATION_CONTRACT = "forward_candidate_independent_evaluation.v1"
@@ -166,6 +170,7 @@ def build_paper_candidates(panel) -> tuple[list, dict[str, dict], dict[str, dict
             "deployed_alpha_id": deployed,
             "research_alpha_id": research_id,
             "definition_hash": definition_hash,
+            "quantile": PAPER_QUANTILE,
             "return_basis": return_basis,
         }
     by_id = {definition.alpha_id: definition for definition, _ in candidates}
@@ -397,6 +402,7 @@ def run(
             dataset_version=dataset_version,
             recorded_at=observed_at,
             periods_per_year=PERIODS_PER_YEAR,
+            quantile=PAPER_QUANTILE,
             config=AlphaFactoryConfig(compute_regime_evidence=True),
             evidence=leakage_evidence,
         )

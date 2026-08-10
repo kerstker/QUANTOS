@@ -129,6 +129,7 @@ def test_run_freezes_search_clock_after_expensive_candidate_assembly(
     def run_batch(*_args, **kwargs):
         order.append("batch")
         assert kwargs["recorded_at"] == 123
+        assert kwargs["quantile"] == driver.PAPER_QUANTILE
         return {"recorded_run_ids": []}
 
     monkeypatch.setattr("tools.crypto_oi_research.build_panel", build_panel)
