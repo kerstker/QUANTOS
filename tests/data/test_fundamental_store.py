@@ -46,3 +46,24 @@ def test_ingest_good_and_bad(tmp_path):
     rep = ingest_fundamentals_csv(str(p), s)
     assert rep.rows_read == 5 and rep.added == 2 and len(rep.rejected) == 3
     assert s.latest_as_of("eps", "AAA", 20240601).value == 1.5
+
+
+def test_add_many_is_atomic_and_idempotent():
+    s = SqliteFundamentalStore(":memory:", create=True)
+    values = (
+        _fv("tvl", "ETH", 100, 200, 1.0),
+        _fv("tvl", "SOL", 100, 200, 2.0),
+    )
+
+    assert s.add_many(values) == 2
+    assert s.add_many(values) == 0
+    assert [row.instrument_id for row in s.as_of("tvl", "ETH", 200)] == ["ETH"]
+
+
+def test_add_many_rejects_malformed_batch_without_partial_write():
+    s = SqliteFundamentalStore(":memory:", create=True)
+
+    with pytest.raises(DataStoreError, match="atomic batch insert failed"):
+        s.add_many((_fv("tvl", "ETH", 100, 200, 1.0), object()))
+
+    assert s.as_of("tvl", "ETH", 200) == []

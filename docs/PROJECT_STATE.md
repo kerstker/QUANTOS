@@ -2278,3 +2278,31 @@ retained operational drills have not been deployed. Therefore
 `NOT_TOP_TIER` at 15/22, and all L2/live/order/credential safety boundaries are
 unchanged. Design:
 [`engineering/specs/2026-08-10-l2-internal-identity-design.md`](engineering/specs/2026-08-10-l2-internal-identity-design.md).
+
+# 2026-08-11 DefiLlama TVL forward-vintage accumulation
+
+The independent DefiLlama chain-TVL channel now preserves one honestly
+knowable, sufficiently broad completed-day cross-section per public fetch in
+`data/cache/defillama_tvl_vintages.db`.  It stores the completed UTC day as
+`event_time` and the actual observation time as `knowledge_time`; later
+observations remain bitemporal restatements and the retrospective history is
+never backfilled as if it had been known earlier.  Atomic batch writes,
+idempotency, minimum breadth, source-contract checks, and early formal-gate
+blocking are tested.
+
+A real keyless/public smoke run retained 19 assets for the 2026-08-09 UTC
+completed day.  The existing formal evaluator now stops on the accurate
+`not PIT-admissible for formal trial registration` reason before loading other
+price inputs or registering trials.  The historical JSON remains diagnostic;
+this new forward store starts with one day and is not mature Alpha evidence.
+
+The immutable L2 schedule contract includes a daily 09:30 local-time,
+ten-minute-bounded `defillama_tvl_forward_refresh` worker.  Registration still
+requires a clean, verified release; this development checkout does not bypass
+that gate.  The irreplaceable forward store is optional in encrypted backup
+source contract v6 so a new installation can exist before its first fetch, but
+an existing store is included in restore verification.
+
+Formal Alpha eligibility therefore remains **zero**.  No Testnet intent,
+execution service, seven-day soak, credential access, broker connection, or
+order submission was started.

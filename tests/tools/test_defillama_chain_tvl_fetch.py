@@ -130,3 +130,111 @@ def test_snapshot_reports_exact_chain_coverage() -> None:
     assert snapshot["assets"]["BNB"]["first_date"] is None
     assert snapshot["pit_admissible_for_promotion"] is False
     assert snapshot["revision_policy"] == "RETROSPECTIVE_REVISABLE_NO_VINTAGES"
+
+
+def test_forward_vintage_selects_only_latest_sufficiently_broad_day() -> None:
+    snapshot = dl.build_snapshot(
+        {
+            "ETH": {"chain": "Ethereum", "tvl": {T0: 100.0, T0 + DAY_MS: 110.0}},
+            "BNB": {"chain": "BSC", "tvl": {T0: 50.0}},
+            "SOL": {"chain": "Solana", "tvl": {T0 + DAY_MS: 25.0}},
+        },
+        fetched_at_ms=T0 + 2 * DAY_MS,
+    )
+
+    values = dl.forward_vintage_values(snapshot, min_instruments=2)
+
+    assert [(row.instrument_id, row.event_time, row.knowledge_time, row.value) for row in values] == [
+        ("ETH", T0 + DAY_MS, T0 + 2 * DAY_MS, 110.0),
+        ("SOL", T0 + DAY_MS, T0 + 2 * DAY_MS, 25.0),
+    ]
+    assert {row.feature_id for row in values} == {dl.FORWARD_TVL_FEATURE_ID}
+
+
+def test_forward_vintage_retains_later_restatement(tmp_path) -> None:
+    db_path = tmp_path / "tvl_vintages.db"
+    first = dl.build_snapshot(
+        {
+            "ETH": {"chain": "Ethereum", "tvl": {T0: 100.0}},
+            "SOL": {"chain": "Solana", "tvl": {T0: 25.0}},
+        },
+        fetched_at_ms=T0 + DAY_MS,
+    )
+    revised = dl.build_snapshot(
+        {
+            "ETH": {"chain": "Ethereum", "tvl": {T0: 101.0}},
+            "SOL": {"chain": "Solana", "tvl": {T0: 25.0}},
+        },
+        fetched_at_ms=T0 + 2 * DAY_MS,
+    )
+
+    assert dl.record_forward_vintage(first, str(db_path), min_instruments=2) == 2
+    assert dl.record_forward_vintage(first, str(db_path), min_instruments=2) == 0
+    assert dl.record_forward_vintage(revised, str(db_path), min_instruments=2) == 2
+
+    from services.data.fundamental_store import SqliteFundamentalStore
+
+    store = SqliteFundamentalStore(str(db_path))
+    first_known = store.latest_as_of(
+        dl.FORWARD_TVL_FEATURE_ID, "ETH", T0 + DAY_MS
+    )
+    revised_known = store.latest_as_of(
+        dl.FORWARD_TVL_FEATURE_ID, "ETH", T0 + 2 * DAY_MS
+    )
+    assert first_known is not None and first_known.value == 100.0
+    assert revised_known is not None and revised_known.value == 101.0
+    assert len(store.as_of(dl.FORWARD_TVL_FEATURE_ID, "ETH", T0 + 2 * DAY_MS)) == 2
+    store.close()
+
+
+def test_forward_vintage_fails_closed_on_thin_or_noncanonical_snapshot() -> None:
+    snapshot = dl.build_snapshot(
+        {"ETH": {"chain": "Ethereum", "tvl": {T0: 100.0}}},
+        fetched_at_ms=T0 + DAY_MS,
+    )
+    with pytest.raises(dl.DefiLlamaFetchError, match="breadth"):
+        dl.forward_vintage_values(snapshot, min_instruments=2)
+
+    snapshot["pit_admissible_for_promotion"] = True
+    with pytest.raises(dl.DefiLlamaFetchError, match="snapshot contract"):
+        dl.forward_vintage_values(snapshot, min_instruments=1)
+
+
+def test_main_writes_diagnostic_snapshot_and_forward_vintage(
+    tmp_path, monkeypatch
+) -> None:
+    out = tmp_path / "defillama_chain_tvl.json"
+    db_path = tmp_path / "defillama_tvl_vintages.db"
+    assets = tuple(f"A{index:02d}" for index in range(10))
+    series = {
+        asset: {"chain": f"Chain {asset}", "tvl": {T0 + DAY_MS: 100.0 + index}}
+        for index, asset in enumerate(assets)
+    }
+    monkeypatch.setattr(dl, "fetch_history", lambda **_kwargs: series)
+    monkeypatch.setattr(dl.time, "time", lambda: (T0 + 2 * DAY_MS) / 1000)
+
+    snapshot = dl.main(
+        [
+            "--out",
+            str(out),
+            "--archive-root",
+            str(tmp_path / "raw"),
+            "--vintage-db",
+            str(db_path),
+            "--sleep",
+            "0",
+        ]
+    )
+
+    assert out.exists()
+    assert db_path.exists()
+    assert snapshot["pit_admissible_for_promotion"] is False
+
+    from services.data.fundamental_store import SqliteFundamentalStore
+
+    store = SqliteFundamentalStore(str(db_path))
+    assert sum(
+        len(store.as_of(dl.FORWARD_TVL_FEATURE_ID, asset, T0 + 2 * DAY_MS))
+        for asset in assets
+    ) == 10
+    store.close()

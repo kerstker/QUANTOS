@@ -683,6 +683,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "binance_realtime_stream",
             "candidate_portfolio_evidence",
             "crypto_factory_loop",
+            "defillama_tvl_forward_refresh",
             "dry_run_candidate_multi",
             "domain_event_ops",
             "domain_event_seal",

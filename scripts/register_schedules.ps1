@@ -266,6 +266,10 @@ $candidatePortfolioEvidenceTrigger = New-ScheduledTaskTrigger -Daily -DaysInterv
 $forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:00"
 $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Monday -At "09:05"
+# DefiLlama exposes no historical vintages.  Capture one new public, keyless
+# completed-day TVL cross-section every morning so a real PIT history begins
+# accumulating without credentials or any venue/order capability.
+$defillamaTvlForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:30"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
   -RepetitionInterval (New-TimeSpan -Minutes 15)
 $schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
@@ -377,6 +381,8 @@ Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 35)
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
   -Trigger $maintenanceTrigger
+Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama_tvl_forward_refresh" `
+  -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
   -Trigger $eventOpsTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdog" `

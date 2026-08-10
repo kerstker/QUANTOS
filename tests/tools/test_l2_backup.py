@@ -80,6 +80,17 @@ def test_mft_testnet_soak_evidence_is_an_optional_backup_source():
     assert source.required is False
 
 
+def test_defillama_forward_vintages_are_an_optional_backup_source():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path == "data/cache/defillama_tvl_vintages.db"
+    )
+
+    assert source.role == "defillama_tvl_forward_vintages"
+    assert source.required is False
+
+
 @pytest.mark.parametrize(
     ("relative_path", "role"),
     [

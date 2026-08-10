@@ -106,6 +106,26 @@ def test_retrospective_history_blocks_before_trial_registration(monkeypatch) -> 
         driver.run(source_commit="a" * 40)
 
 
+def test_real_retrospective_artifact_blocks_before_loading_price_inputs(
+    tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "defillama.json"
+    source.write_text(json.dumps(_snapshot(_panel())), encoding="utf-8")
+
+    import tools.crypto_oi_research as price_inputs
+
+    monkeypatch.setattr(
+        price_inputs,
+        "build_panel",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("price inputs must not load for a non-PIT source")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="not PIT-admissible"):
+        driver.run(source_commit="a" * 40, source_snapshot=source)
+
+
 def test_candidate_batch_has_shared_no_overlap_calendar() -> None:
     candidates, evidence, mappings = driver.build_candidate_batch(_attached_panel())
     assert len(candidates) == 3

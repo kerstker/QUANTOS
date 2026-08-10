@@ -14,7 +14,7 @@ import csv
 import math
 import sqlite3
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterable, Optional
 
 from quantos.contracts.feature import FeatureValue
 from .persistent_store import DataStoreError
@@ -67,6 +67,48 @@ class SqliteFundamentalStore:
             (fv.feature_id, fv.instrument_id, fv.event_time, fv.knowledge_time, fv.value))
         self._conn.commit()
         return cur.rowcount == 1
+
+    def add_many(self, values: Iterable[FeatureValue]) -> int:
+        """Insert a bitemporal batch in one SQLite transaction.
+
+        Primary-key repeats are idempotent no-ops.  A malformed value or
+        database failure rolls the entire batch back rather than leaving a
+        partial cross-section behind.
+        """
+        self._require_schema()
+        batch = tuple(values)
+        try:
+            rows = []
+            for fv in batch:
+                if not isinstance(fv, FeatureValue):
+                    raise TypeError(
+                        f"expected FeatureValue, got {type(fv).__name__}"
+                    )
+                rows.append(
+                    (
+                        fv.feature_id,
+                        fv.instrument_id,
+                        fv.event_time,
+                        fv.knowledge_time,
+                        fv.value,
+                    )
+                )
+            before = self._conn.total_changes
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO fundamentals"
+                "(feature_id, instrument_id, event_time, knowledge_time, value)"
+                " VALUES (?,?,?,?,?)",
+                rows,
+            )
+            inserted = self._conn.total_changes - before
+            self._conn.commit()
+            return inserted
+        except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            self._conn.rollback()
+            raise DataStoreError(f"atomic batch insert failed: {exc}") from exc
+
+    def close(self) -> None:
+        self._conn.close()
 
     def _row_to_fv(self, r) -> FeatureValue:
         return FeatureValue(feature_id=r["feature_id"], instrument_id=r["instrument_id"],

@@ -14,6 +14,8 @@ import time
 import urllib.error
 import urllib.parse
 
+from quantos.contracts.feature import FeatureValue
+from services.data.fundamental_store import SqliteFundamentalStore
 from services.data.raw_archive import DEFAULT_RAW_ARCHIVE, archive_json_response
 from tools.cache_io import atomic_write_json
 from tools.coingecko_fetch import _http_get_json
@@ -24,8 +26,13 @@ HOST = "https://api.llama.fi"
 CATALOG_ENDPOINT = "/v2/chains"
 HISTORY_ENDPOINT = "/v2/historicalChainTvl"
 DEFAULT_OUTPUT = os.path.join("data", "cache", "defillama_chain_tvl.json")
+DEFAULT_VINTAGE_DB = os.path.join(
+    "data", "cache", "defillama_tvl_vintages.db"
+)
 SOURCE_NAME = "DefiLlama Free API chain TVL"
 SOURCE_BOUNDARY = "DefiLlama Free API / no authentication"
+FORWARD_TVL_FEATURE_ID = "defillama_chain_tvl_forward_vintage"
+MIN_FORWARD_VINTAGE_INSTRUMENTS = 10
 
 # Fixed from the official chain catalog before historical values were fetched.
 # Each asset is unique and exists in the local Binance PIT research universe.
@@ -264,6 +271,96 @@ def build_snapshot(series, *, fetched_at_ms: int) -> dict:
     }
 
 
+def forward_vintage_values(
+    snapshot: dict, *, min_instruments: int = MIN_FORWARD_VINTAGE_INSTRUMENTS
+) -> tuple[FeatureValue, ...]:
+    """Project one honestly knowable TVL cross-section from a fresh snapshot.
+
+    The provider's retrospective history is never backfilled.  Only the latest
+    completed day with sufficient breadth is recorded, with the actual fetch
+    time as knowledge_time.  Later observations of the same event day become
+    retained restatements through the bitemporal primary key.
+    """
+    if min_instruments <= 0:
+        raise ValueError("min_instruments must be positive")
+    if not isinstance(snapshot, dict) or (
+        snapshot.get("source") != SOURCE_NAME
+        or snapshot.get("provenance")
+        != "REAL_DEFILLAMA_FREE_CHAIN_TVL_HISTORY"
+        or snapshot.get("revision_policy")
+        != "RETROSPECTIVE_REVISABLE_NO_VINTAGES"
+        or snapshot.get("pit_admissible_for_promotion") is not False
+    ):
+        raise DefiLlamaFetchError("unexpected DefiLlama snapshot contract")
+    try:
+        fetched_at_ms = int(snapshot["fetched_at_ms"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise DefiLlamaFetchError("invalid snapshot fetch time") from exc
+    if fetched_at_ms <= 0:
+        raise DefiLlamaFetchError("invalid snapshot fetch time")
+    current_day = (fetched_at_ms // DAY_MS) * DAY_MS
+    series = snapshot.get("series")
+    if not isinstance(series, dict):
+        raise DefiLlamaFetchError("unexpected DefiLlama snapshot contract")
+
+    by_day: dict[int, dict[str, float]] = {}
+    for raw_asset, row in series.items():
+        asset = str(raw_asset).strip().upper()
+        values = row.get("tvl") if isinstance(row, dict) else None
+        if not asset or not isinstance(values, dict):
+            continue
+        for raw_day, raw_value in values.items():
+            try:
+                day = int(raw_day)
+                value = float(raw_value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if (
+                day < 0
+                or day % DAY_MS != 0
+                or day >= current_day
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                continue
+            by_day.setdefault(day, {})[asset] = value
+
+    eligible_days = [
+        day for day, values in by_day.items() if len(values) >= min_instruments
+    ]
+    if not eligible_days:
+        raise DefiLlamaFetchError(
+            "forward vintage breadth below " f"{min_instruments} instruments"
+        )
+    event_time = max(eligible_days)
+    return tuple(
+        FeatureValue(
+            feature_id=FORWARD_TVL_FEATURE_ID,
+            instrument_id=asset,
+            event_time=event_time,
+            knowledge_time=fetched_at_ms,
+            value=value,
+        )
+        for asset, value in sorted(by_day[event_time].items())
+    )
+
+
+def record_forward_vintage(
+    snapshot: dict,
+    db_path: str = DEFAULT_VINTAGE_DB,
+    *,
+    min_instruments: int = MIN_FORWARD_VINTAGE_INSTRUMENTS,
+) -> int:
+    values = forward_vintage_values(snapshot, min_instruments=min_instruments)
+    parent = os.path.dirname(os.path.abspath(db_path))
+    os.makedirs(parent, exist_ok=True)
+    store = SqliteFundamentalStore(db_path, create=True)
+    try:
+        return store.add_many(values)
+    finally:
+        store.close()
+
+
 def main(argv=None) -> dict:
     parser = argparse.ArgumentParser(
         description="Fetch DefiLlama Free API completed daily chain TVL history"
@@ -271,6 +368,7 @@ def main(argv=None) -> dict:
     parser.add_argument("--days", type=int, default=2400)
     parser.add_argument("--out", default=DEFAULT_OUTPUT)
     parser.add_argument("--archive-root", default=DEFAULT_RAW_ARCHIVE)
+    parser.add_argument("--vintage-db", default=DEFAULT_VINTAGE_DB)
     parser.add_argument("--sleep", type=float, default=0.25)
     args = parser.parse_args(argv)
     now_ms = int(time.time() * 1000)
@@ -283,9 +381,14 @@ def main(argv=None) -> dict:
     )
     snapshot = build_snapshot(series, fetched_at_ms=now_ms)
     atomic_write_json(args.out, snapshot, indent=2)
+    vintage_rows = record_forward_vintage(snapshot, args.vintage_db)
     for asset, meta in sorted(snapshot["assets"].items()):
         print(f"{asset}: chain={meta['chain']} tvl_days={meta['days']}", flush=True)
     print(f"snapshot -> {args.out}", flush=True)
+    print(
+        f"forward vintage rows added={vintage_rows} -> {args.vintage_db}",
+        flush=True,
+    )
     return snapshot
 
 
@@ -295,8 +398,13 @@ if __name__ == "__main__":
 
 __all__ = [
     "CHAIN_ASSET_MAP",
+    "DEFAULT_VINTAGE_DB",
     "DefiLlamaFetchError",
+    "FORWARD_TVL_FEATURE_ID",
+    "MIN_FORWARD_VINTAGE_INSTRUMENTS",
     "build_snapshot",
     "fetch_history",
+    "forward_vintage_values",
     "parse_tvl_rows",
+    "record_forward_vintage",
 ]

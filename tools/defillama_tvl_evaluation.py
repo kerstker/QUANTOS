@@ -17,7 +17,6 @@ entitlement remains a separate human review.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import re
@@ -136,13 +135,9 @@ def _positive_series(raw: object, *, asset: str) -> dict[int, float]:
     return result
 
 
-def attach_chain_tvl(
-    panel,
+def _require_retrospective_snapshot_contract(
     snapshot: Mapping[str, Any],
-    *,
-    min_instruments: int = MIN_CROSS_SECTION,
-    min_common_rows: int = MIN_COMMON_ROWS,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     if snapshot.get("schema_version") != 1:
         raise RuntimeError("unsupported DefiLlama snapshot schema")
     if snapshot.get("provenance") != "REAL_DEFILLAMA_FREE_CHAIN_TVL_HISTORY":
@@ -156,6 +151,17 @@ def attach_chain_tvl(
     source_series = snapshot.get("series")
     if not isinstance(source_series, Mapping):
         raise RuntimeError("DefiLlama series is missing")
+    return source_series
+
+
+def attach_chain_tvl(
+    panel,
+    snapshot: Mapping[str, Any],
+    *,
+    min_instruments: int = MIN_CROSS_SECTION,
+    min_common_rows: int = MIN_COMMON_ROWS,
+) -> dict[str, Any]:
+    source_series = _require_retrospective_snapshot_contract(snapshot)
     close = panel.matrices.get("close")
     if not isinstance(close, list):
         raise RuntimeError("base panel has no close matrix")
@@ -211,14 +217,13 @@ def load_panel(source_snapshot: str | Path = DEFAULT_SOURCE) -> tuple[Any, dict,
         snapshot = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("DefiLlama artifact is invalid JSON") from exc
-    series = snapshot.get("series")
-    if not isinstance(series, Mapping):
-        raise RuntimeError("DefiLlama artifact has no series")
-    from tools.crypto_oi_research import build_panel
-
-    panel, _instruments = build_panel(only=tuple(str(asset).upper() for asset in series))
-    coverage = attach_chain_tvl(panel, snapshot)
-    return panel, coverage, hashlib.sha256(payload).hexdigest()
+    _require_retrospective_snapshot_contract(snapshot)
+    # This loader's only real source contract is explicitly retrospective.
+    # Reject it before loading the price/OI panel or registering any trial.
+    raise RuntimeError(
+        "DefiLlama history is retrospective/revisable and not PIT-admissible "
+        "for formal trial registration"
+    )
 
 
 def _field_ids(expression: object) -> tuple[str, ...]:
