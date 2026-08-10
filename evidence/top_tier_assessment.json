@@ -661,6 +661,11 @@
               "role": "data_quality_admission"
             },
             {
+              "relative_path": "data/cache/defillama_stablecoin_vintages.db",
+              "required": false,
+              "role": "defillama_stablecoin_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/defillama_tvl_vintages.db",
               "required": false,
               "role": "defillama_tvl_forward_vintages"
@@ -746,7 +751,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 6
+          "version": 7
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -820,6 +825,11 @@
               "role": "data_quality_admission"
             },
             {
+              "relative_path": "data/cache/defillama_stablecoin_vintages.db",
+              "required": false,
+              "role": "defillama_stablecoin_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/defillama_tvl_vintages.db",
               "required": false,
               "role": "defillama_tvl_forward_vintages"
@@ -905,7 +915,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 6
+          "version": 7
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1559,9 +1569,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786384898479,
-    "run_id": "9f57b1e5b692f2666c005bb181d9cd645818478b89a4936fb35b0f845cbd64da",
-    "source_commit": "348d5bd60a0f0b64f75f433be377a9b206c4bd0f"
+    "generated_at": 1786396126057,
+    "run_id": "0dbce9e1ff6ca07b8eea27eaf28c1d4c45f7e155512fe5dcdf4880de39425100",
+    "source_commit": "f9faadc7859f852def53e20cfa134c36d3617ed4"
   },
   "verdict": "NOT_TOP_TIER"
 }
