@@ -74,6 +74,18 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "It is a research input, never account or Testnet admission evidence.",
     ),
     DataChannelSpec(
+        "coinmetrics_community_onchain", "Coin Metrics Community", "onchain",
+        "coinmetrics_onchain", "daily", "1d",
+        ("active_addresses", "transaction_count", "mvrv"),
+        "data/cache/coinmetrics_onchain.json", "REAL_HISTORY",
+        ("onchain_activity", "onchain_value", "event_regime"),
+        72, "public_rest_noncommercial",
+        "Keyless Community API history for nine native crypto networks and the "
+        "three fields exposed by the current Community entitlement. CC BY-NC "
+        "license: L2 non-commercial research only; commercial deployment requires "
+        "separate entitlement review and cannot inherit this channel automatically.",
+    ),
+    DataChannelSpec(
         "binance_usdm_realtime_complete", "Binance", "binance_usdm",
         "binance_realtime_market", "5m", "1m/5m/snapshot",
         (

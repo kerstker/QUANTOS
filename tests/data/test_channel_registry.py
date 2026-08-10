@@ -16,6 +16,10 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert bybit_positioning.availability == "REAL_HISTORY"
     assert bybit_positioning.endpoint_class == "public_rest"
     assert "long_short_ratio" in bybit_positioning.fields
+    onchain = spec_by_channel("coinmetrics_community_onchain")
+    assert onchain.availability == "REAL_HISTORY"
+    assert onchain.endpoint_class == "public_rest_noncommercial"
+    assert set(onchain.fields) == {"active_addresses", "transaction_count", "mvrv"}
     assert spec_by_channel("cross_exchange_book").availability == "REAL_SNAPSHOT"
 
 
