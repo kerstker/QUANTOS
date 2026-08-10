@@ -16,9 +16,9 @@
     "path": "evidence/alpha_lifecycle_cockpit.json",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
+  "commit": "d34adf921abf2b8f63de8a57444b2a8a0af9948a",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786323845556,
+  "generated_at_ms": 1786325404254,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
@@ -28,7 +28,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "5ab488b1dcfb7871d813ed3e67516aa204765c1d2ae33ab094bf828da3dfbde7",
+  "input_hash": "44427f1a2680f67ade2a950b3e7147dea48eb5fa86da89eb141df920d296100e",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -75,7 +75,7 @@
     "tests/alpha_factory": {
       "exists": true,
       "file_count": 11,
-      "files_sha256": "ecb609265d86cf41237cce542cbca4c9dbf36cac9edf56431439acbb2e67a553",
+      "files_sha256": "563cbfd64c28f5e0f2ba98251c3655b4c616b15ad9d68ad070706318f44dd6a0",
       "kind": "python_directory"
     },
     "tests/lifecycle": {
@@ -98,9 +98,9 @@
   "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
     "current": true,
-    "head_commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
+    "head_commit": "d34adf921abf2b8f63de8a57444b2a8a0af9948a",
     "overall_status": "PASS",
-    "reported_commit": "2a2e01b42f72626a02fbf08f291c770c7792ff9c",
+    "reported_commit": "d34adf921abf2b8f63de8a57444b2a8a0af9948a",
     "reported_validate_script_sha256": "45724535024b1852b0c55a547f4cdf9841d218fe6bd58d4cdf3db045200919ba",
     "selection_scope": "ALL",
     "validate_script_sha256": "45724535024b1852b0c55a547f4cdf9841d218fe6bd58d4cdf3db045200919ba"
