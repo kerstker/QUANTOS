@@ -976,6 +976,11 @@
           "path": "services/research/alpha_pipeline.py"
         },
         {
+          "line": 19,
+          "module": "services.alpha.panel_backtest",
+          "path": "services/research/carry_pnl.py"
+        },
+        {
           "line": 18,
           "module": "services.alpha.catalog",
           "path": "services/research/experiment_registry/registry.py"
@@ -1325,7 +1330,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "abded9eba4be6ce382dd25ee7bfaa6a40fbafcc214ebbf2a9b443f9568e7959b",
+  "graph_sha256": "6b75785773c3255ec83b7f669f781ed896f9d369d6e64b5bcf668f1f60d31fa9",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
