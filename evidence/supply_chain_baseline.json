@@ -326,7 +326,7 @@
     "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json": "e1b6f7bf04fb23860f91523f7957a97bf24fa5e4f214fa1f4f55c310b938c8f7",
     "evidence/external_sigstore/2026-07-31-admission/trusted-root.json": "a7752f49a4ae0076c5b85eace5bfbb6f58b6cb0dec31ba71803f25d20987d12e",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
-    "evidence/service_import_graph.json": "a031e10c69c5627739d5583237c385a2c907a939ebd041e04c1c2f3ac7ab7958",
+    "evidence/service_import_graph.json": "a23c3e855623644214ae12a42f939e4817b38855ca27b1f36fcd177ed9af37ce",
     "evidence/vulnerability/actions_osv_latest.json": "5e6c4156af5b647808dbcbe845baa3702656809bc7b77fa0bf0cc0fa64071335",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
     "evidence/vulnerability/npm_audit_latest.json": "c61e2558facedddd33ad031799f5e87af9b74159637a984a5f45eec3e6d80057",
@@ -577,9 +577,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786338588809,
-    "run_id": "21068c139bc33e46dd154720007c574854f9e7c05d5af8c2fe5c8f89b9bb0ced",
-    "source_commit": "ad23588761ed76367bcba758e4945f748b66c603"
+    "generated_at": 0,
+    "run_id": "c4b6c331a129488a06fc67360483981415764324ac760274ad2aad3b68a47a2f",
+    "source_commit": "32bac9fe0a6b1822eee6bea067c73fe866d24d0f"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
