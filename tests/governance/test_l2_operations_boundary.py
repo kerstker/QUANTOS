@@ -76,6 +76,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "defillama_tvl_forward_vintages",
             False,
         ),
+        "data/cache/defillama_stablecoin_vintages.db": (
+            "defillama_stablecoin_forward_vintages",
+            False,
+        ),
         "data/cache/domain_event_projection.db": ("domain_event_projection", True),
         "data/cache/domain_events.db": ("domain_event_authority", True),
         "data/cache/dry_run.db": ("dry_run_ledger", True),

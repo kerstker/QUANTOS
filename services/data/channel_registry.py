@@ -101,6 +101,51 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "snapshots can become PIT evidence.",
     ),
     DataChannelSpec(
+        "defillama_global_stablecoin_supply", "DefiLlama", "onchain",
+        "global_stablecoin_supply", "daily", "1d",
+        ("usd_stablecoin_supply", "supply_growth", "supply_acceleration"),
+        "data/cache/defillama_stablecoin_supply.json", "REAL_DIAGNOSTIC",
+        ("liquidity_impulse", "event_regime"),
+        48, "public_rest",
+        "Keyless global totalCirculatingUSD.peggedUSD history. Historical rows are "
+        "retrospective and revisable without vintages, so they are association-only; "
+        "a separate daily bitemporal forward-vintage store starts honest PIT accumulation.",
+    ),
+    DataChannelSpec(
+        "hyperliquid_public_perp", "Hyperliquid", "hyperliquid_perp",
+        "hyperliquid_public_market", "1h->daily + snapshot", "1h/1d/snapshot",
+        (
+            "funding_rate", "premium", "mark_price", "oracle_price",
+            "open_interest", "day_notional_volume", "predicted_funding",
+        ),
+        "data/cache/hyperliquid_public_market.json", "REAL_HISTORY",
+        (
+            "funding_basis", "cross_exchange", "crowd_reversal",
+            "liquidity_microstructure", "event_regime",
+        ),
+        24, "public_rest",
+        "Official keyless POST /info market data. Historical hourly funding is "
+        "retained only as complete 24-settlement UTC days; current public asset "
+        "contexts and Binance/Bybit/Hyperliquid predicted funding are snapshots. "
+        "No wallet, account, signature, credential or order surface is used.",
+    ),
+    DataChannelSpec(
+        "cftc_tff_crypto_positioning", "U.S. CFTC", "cme_futures",
+        "traders_in_financial_futures_futures_only", "weekly", "1w",
+        (
+            "open_interest_contracts", "leveraged_money_net_pct",
+            "asset_manager_net_pct", "dealer_net_pct",
+            "other_reportable_net_pct", "nonreportable_net_pct",
+        ),
+        "data/cache/cftc_tff_crypto.json", "REAL_HISTORY",
+        ("institutional_positioning", "crowd_reversal", "event_regime"),
+        24 * 8, "public_rest",
+        "Official keyless CFTC TFF Futures-Only history for the canonical CME BTC "
+        "and cash-settled ETH contracts. Report dates and research knowledge dates "
+        "are separate: rows wait seven calendar days and enter only on a strictly "
+        "later close. Micro/discontinued duplicate contracts are excluded.",
+    ),
+    DataChannelSpec(
         "binance_usdm_realtime_complete", "Binance", "binance_usdm",
         "binance_realtime_market", "5m", "1m/5m/snapshot",
         (

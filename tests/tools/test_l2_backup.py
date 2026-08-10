@@ -91,6 +91,17 @@ def test_defillama_forward_vintages_are_an_optional_backup_source():
     assert source.required is False
 
 
+def test_defillama_stablecoin_forward_vintages_are_an_optional_backup_source():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path == "data/cache/defillama_stablecoin_vintages.db"
+    )
+
+    assert source.role == "defillama_stablecoin_forward_vintages"
+    assert source.required is False
+
+
 @pytest.mark.parametrize(
     ("relative_path", "role"),
     [

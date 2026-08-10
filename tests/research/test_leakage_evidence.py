@@ -3,8 +3,10 @@ a peeking compute is caught (False), and an unassessable window is honestly None
 from quantos.contracts.data import Bar
 from quantos.contracts.feature import FeatureValue
 from services.research.leakage_evidence import (
-    leakage_ok_over_times, signal_compute_fn, signal_leakage_ok, volume_leakage_ok,
+    leakage_ok_over_times, panel_expression_leakage_ok, signal_compute_fn,
+    signal_leakage_ok, volume_leakage_ok,
 )
+from services.research.alpha_expression import FieldPanel
 
 
 def _bars(closes, inst="BTC"):
@@ -52,3 +54,28 @@ def test_trailing_volume_op_is_leakage_ok():
             for i, (c, v) in enumerate(zip(closes, vols))]
     # a VOLUME_OP reads only trailing (closes, volumes) -> PIT-safe at every sampled decision time.
     assert volume_leakage_ok("vol_momentum", 3, bars, target_times=[5, 6, 7]) is True
+
+
+def test_trailing_panel_expression_is_prefix_invariant():
+    panel = FieldPanel(
+        ("BTC", "ETH"), tuple(range(1, 9)),
+        {"funding": [[float(row), float(row + 1)] for row in range(8)]},
+    )
+    expression = ("cs_rank", ("ts_delta", ("field", "funding"), 2))
+
+    assert panel_expression_leakage_ok(expression, panel, [3, 4, 5]) is True
+
+
+def test_peeking_panel_evaluator_is_caught():
+    panel = FieldPanel(
+        ("BTC", "ETH"), tuple(range(1, 9)),
+        {"funding": [[float(row), float(row + 10)] for row in range(8)]},
+    )
+
+    def peeking(_expr, candidate_panel):
+        matrix = candidate_panel.matrices["funding"]
+        return [matrix[min(row + 1, len(matrix) - 1)] for row in range(len(matrix))]
+
+    assert panel_expression_leakage_ok(
+        ("field", "funding"), panel, [3, 4, 5], evaluate_fn=peeking,
+    ) is False

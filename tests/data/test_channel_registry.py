@@ -26,10 +26,30 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert set(defillama.fields) == {
         "chain_tvl_usd", "chain_tvl_growth", "chain_tvl_acceleration",
     }
+    stablecoins = spec_by_channel("defillama_global_stablecoin_supply")
+    assert stablecoins.availability == "REAL_DIAGNOSTIC"
+    assert stablecoins.endpoint_class == "public_rest"
+    assert "supply_acceleration" in stablecoins.fields
     assert spec_by_channel("cross_exchange_book").availability == "REAL_SNAPSHOT"
+    hyperliquid = spec_by_channel("hyperliquid_public_perp")
+    assert hyperliquid.availability == "REAL_HISTORY"
+    assert hyperliquid.endpoint_class == "public_rest"
+    assert {
+        "funding_rate", "premium", "mark_price", "oracle_price",
+        "open_interest", "day_notional_volume",
+    } <= set(hyperliquid.fields)
+    cftc = spec_by_channel("cftc_tff_crypto_positioning")
+    assert cftc.availability == "REAL_HISTORY"
+    assert cftc.endpoint_class == "public_rest"
+    assert {
+        "leveraged_money_net_pct", "asset_manager_net_pct", "dealer_net_pct",
+    } <= set(cftc.fields)
 
 
 def test_family_lookup_does_not_promote_diagnostic_data():
     rows = channels_for_family("volatility_risk_premium")
     assert [row.channel_id for row in rows] == ["deribit_options_vol"]
     assert rows[0].availability == "REAL_DIAGNOSTIC"
+    assert [row.channel_id for row in channels_for_family("institutional_positioning")] == [
+        "cftc_tff_crypto_positioning"
+    ]

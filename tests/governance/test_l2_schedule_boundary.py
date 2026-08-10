@@ -44,13 +44,16 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",
         "candidate_portfolio_evidence",
+        "cftc_tff_forward_refresh",
         "defillama_tvl_forward_refresh",
+        "defillama_stablecoin_forward_refresh",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
         "external_heartbeat",
         "dry_run_candidate_multi",
+        "hyperliquid_public_forward_refresh",
         "forward_track_advance",
         "gonogo_report",
         "alpha_paper_cycle",
@@ -76,6 +79,9 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_alpha_lifecycle_cockpit" in source
     assert "QUANTOS_candidate_portfolio_evidence" in source
     assert "QUANTOS_defillama_tvl_forward_refresh" in source
+    assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
+    assert "QUANTOS_hyperliquid_public_forward_refresh" in source
+    assert "QUANTOS_cftc_tff_forward_refresh" in source
     assert "QUANTOS_paper_operational_evidence" in source
     assert "QUANTOS_realtime_alpha_execution_paper" in source
     assert "QUANTOS_backup" in source
@@ -111,6 +117,18 @@ def test_defillama_forward_vintage_refresh_is_daily_and_bounded():
         r'-Module "defillama_tvl_forward_refresh".*?\n\s*'
         r'-Trigger \$defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit '
         r'\(New-TimeSpan -Minutes 10\)',
+        source,
+    )
+    assert re.search(
+        r'\$defillamaStablecoinForwardRefreshTrigger\s*=\s*'
+        r'New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:40"',
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" '
+        r'-Module "defillama_stablecoin_forward_refresh".*?\n\s*'
+        r'-Trigger \$defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit '
+        r'\(New-TimeSpan -Minutes 5\)',
         source,
     )
 

@@ -74,6 +74,17 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # chain-to-asset mapping, no account or order capability.
              os.path.join(_ROOT, "tools", "defillama_chain_tvl_fetch.py"),
              os.path.join(_ROOT, "tools", "defillama_tvl_forward_refresh.py"),
+             os.path.join(_ROOT, "tools", "defillama_stablecoin_fetch.py"),
+             os.path.join(_ROOT, "tools", "defillama_stablecoin_forward_refresh.py"),
+             # Hyperliquid public info endpoint: market-wide funding/premium/OI,
+             # historical funding and cross-venue predicted funding. Keyless,
+             # account-free and order-free; no signing or exchange SDK.
+             os.path.join(_ROOT, "tools", "hyperliquid_public_fetch.py"),
+             os.path.join(_ROOT, "tools", "hyperliquid_public_forward_refresh.py"),
+             # CFTC official Socrata TFF Futures-Only history for canonical CME
+             # BTC/ETH contracts; keyless/read-only, no account or order path.
+             os.path.join(_ROOT, "tools", "cftc_tff_fetch.py"),
+             os.path.join(_ROOT, "tools", "cftc_tff_forward_refresh.py"),
              # MEXC 集成两个门外工具(2026-07-27,Phase 8 M1 补登记——审计发现的既有缺口,
              # binance_readonly_smoke 在册而这两个不在):klines 公开行情抓取器(无 key 只读)
              # 与 mainnet 只读首验(人工执行,3 个只读 GET,绝不下单)——同一条只读数据边界钉住。
@@ -172,6 +183,12 @@ _EXTRA_ALLOWED_BY_FILE = {
     # account, or order capability.
     "defillama_chain_tvl_fetch.py": {"math", "argparse", "quantos"},
     "defillama_tvl_forward_refresh.py": {"quantos"},
+    "defillama_stablecoin_fetch.py": {"argparse", "math", "quantos"},
+    "defillama_stablecoin_forward_refresh.py": {"quantos"},
+    "hyperliquid_public_fetch.py": {"argparse", "math"},
+    "hyperliquid_public_forward_refresh.py": {"quantos"},
+    "cftc_tff_fetch.py": {"argparse", "datetime", "math"},
+    "cftc_tff_forward_refresh.py": {"quantos"},
     # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用
     # tools/coingecko_fetch._http_get_json 的 urllib,已在 _ALLOWED_FETCHER 内)。
     "mexc_klines_fetch.py": {"argparse"},

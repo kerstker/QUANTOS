@@ -270,6 +270,16 @@ $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
 # completed-day TVL cross-section every morning so a real PIT history begins
 # accumulating without credentials or any venue/order capability.
 $defillamaTvlForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:30"
+# Stablecoin history is likewise revisable.  Persist one new global supply
+# vintage each morning after the chain-TVL snapshot; public/keyless and L2-only.
+$defillamaStablecoinForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:40"
+# Third-venue public funding/premium history is immutable and can be merged
+# incrementally.  Refresh daily without wallet/account/order authority.
+$hyperliquidPublicForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:50"
+# CFTC TFF positions are weekly.  Tuesday morning is deliberately one full
+# week after the report date used by the research knowledge-time policy.
+$cftcTffForwardRefreshTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Tuesday -At "10:10"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
   -RepetitionInterval (New-TimeSpan -Minutes 15)
 $schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
@@ -383,6 +393,12 @@ Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_swe
   -Trigger $maintenanceTrigger
 Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama_tvl_forward_refresh" `
   -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" -Module "defillama_stablecoin_forward_refresh" `
+  -Trigger $defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-L2Task -Name "QUANTOS_hyperliquid_public_forward_refresh" -Module "hyperliquid_public_forward_refresh" `
+  -Trigger $hyperliquidPublicForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-L2Task -Name "QUANTOS_cftc_tff_forward_refresh" -Module "cftc_tff_forward_refresh" `
+  -Trigger $cftcTffForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
   -Trigger $eventOpsTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdog" `

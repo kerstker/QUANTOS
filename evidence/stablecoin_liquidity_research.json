@@ -1,0 +1,833 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RETROSPECTIVE_ASSOCIATION_DIAGNOSTIC",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at_ms": 1786393727149,
+  "pre_registration": {
+    "family": "defillama_global_stablecoin_liquidity_v1",
+    "date": "2026-08-11",
+    "trial_count_planned": 6,
+    "historical_data_class": "RETROSPECTIVE_REVISABLE_NO_VINTAGES",
+    "formal_registry_eligible": false,
+    "search_space": "Exactly six weekly Monday observations: 7d and 30d growth momentum/reversal, 90d growth momentum, and 30d acceleration momentum; 365d z-score, 7d horizon.",
+    "variants": [
+      {
+        "id": "stable_supply_growth_7d_mom",
+        "lookback_days": 7,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "A one-week stablecoin liquidity impulse may precede crypto demand."
+      },
+      {
+        "id": "stable_supply_growth_7d_rev",
+        "lookback_days": 7,
+        "transform": "growth",
+        "direction": -1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "The fixed opposite-direction control tests whether issuance follows rather than leads price."
+      },
+      {
+        "id": "stable_supply_growth_30d_mom",
+        "lookback_days": 30,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "A monthly stablecoin expansion may support a persistent risk-on regime."
+      },
+      {
+        "id": "stable_supply_growth_30d_rev",
+        "lookback_days": 30,
+        "transform": "growth",
+        "direction": -1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "The fixed monthly reversal control tests reactive issuance."
+      },
+      {
+        "id": "stable_supply_growth_90d_mom",
+        "lookback_days": 90,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "Quarterly dollar-liquidity expansion may be the slower crypto cycle driver."
+      },
+      {
+        "id": "stable_supply_accel_30d_mom",
+        "lookback_days": 30,
+        "transform": "acceleration",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "Acceleration of monthly stablecoin growth may matter more than its level."
+      }
+    ]
+  },
+  "dataset": {
+    "snapshot": "H:\\QUANTOS_STATE\\data\\cache\\defillama_stablecoin_supply.json",
+    "price_db": "H:\\QUANTOS_STATE\\data\\cache\\crypto_funding.db",
+    "revision_policy": "RETROSPECTIVE_REVISABLE_NO_VINTAGES"
+  },
+  "results": {
+    "stable_supply_growth_7d_mom": {
+      "spec": {
+        "id": "stable_supply_growth_7d_mom",
+        "lookback_days": 7,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "A one-week stablecoin liquidity impulse may precede crypto demand."
+      },
+      "n_periods": 399,
+      "primary": {
+        "n_periods": 399,
+        "mean_net_return": 0.000542866578725483,
+        "t_stat": 0.34304748532913215,
+        "net_sharpe": 0.12384242973751597,
+        "total_return": 0.017501131686711302,
+        "max_drawdown": 0.45397029774749487,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.11599297539709778,
+        "per_year_mean": {
+          "2020": -0.0006532805664152264,
+          "2021": -0.001559157745321544,
+          "2022": 0.0030653365432268213,
+          "2023": 0.0032305855291414674,
+          "2024": -0.0022742754695862615,
+          "2025": -0.0020142924778934887,
+          "2026": 0.008870870993880491
+        },
+        "side_mean": {
+          "long": 0.002961020444877213,
+          "short": -0.0007215879238042385
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 399,
+        "mean_net_return": 0.00025215736720393466,
+        "t_stat": 0.1594227863729936,
+        "net_sharpe": 0.057552688955040836,
+        "total_return": -0.09383501013631457,
+        "max_drawdown": 0.48730224654638277,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.23198595079419557,
+        "per_year_mean": {
+          "2020": -0.0008150451388268645,
+          "2021": -0.0018266268638576662,
+          "2022": 0.0028886006154492877,
+          "2023": 0.0028892271361040576,
+          "2024": -0.002758369237170903,
+          "2025": -0.0024339213816322067,
+          "2026": 0.008531023325414286
+        },
+        "side_mean": {
+          "long": 0.00257898617211134,
+          "short": -0.0009645431910873423
+        }
+      },
+      "lagged": {
+        "n_periods": 398,
+        "mean_net_return": 1.1495381884091645e-05,
+        "t_stat": 0.007569730894462333,
+        "net_sharpe": 0.0027361542456842518,
+        "total_return": -0.16391983447164626,
+        "max_drawdown": 0.5863861076503207,
+        "turnover": 115.73890936510462,
+        "average_turnover": 0.29080127981182063,
+        "total_cost": 0.11573890936510461,
+        "per_year_mean": {
+          "2020": -0.00010808486281744307,
+          "2021": -0.011912427879970702,
+          "2022": 0.0037669482678418112,
+          "2023": 0.008916959169699912,
+          "2024": 0.0002517618774412276,
+          "2025": -0.0015470335943154776,
+          "2026": 0.0014375224239220514
+        },
+        "side_mean": {
+          "long": 0.0025257793082517693,
+          "short": -0.001308262847665226
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 399,
+        "mean_net_return": -0.0011242850017685797,
+        "t_stat": -0.7095480717258474,
+        "net_sharpe": -0.25615158535207005,
+        "total_return": -0.4781846012158504,
+        "max_drawdown": 0.5757628987036627,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.11599297539709778,
+        "per_year_mean": {
+          "2020": 0.00032975142159194965,
+          "2021": 0.0010242195082493001,
+          "2022": -0.0034188083987818857,
+          "2023": -0.003913302315216286,
+          "2024": 0.001306087934416979,
+          "2025": 0.001175034670416054,
+          "2026": -0.009550566330812905
+        },
+        "side_mean": {
+          "long": 0.00023567738923803127,
+          "short": -0.0037250889904089594
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": true,
+        "survives_one_week_lag": true,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 3,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "stable_supply_growth_7d_rev": {
+      "spec": {
+        "id": "stable_supply_growth_7d_rev",
+        "lookback_days": 7,
+        "transform": "growth",
+        "direction": -1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "The fixed opposite-direction control tests whether issuance follows rather than leads price."
+      },
+      "n_periods": 399,
+      "primary": {
+        "n_periods": 399,
+        "mean_net_return": -0.0011242850017685797,
+        "t_stat": -0.7095480717258474,
+        "net_sharpe": -0.25615158535207005,
+        "total_return": -0.4781846012158504,
+        "max_drawdown": 0.5757628987036627,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.11599297539709778,
+        "per_year_mean": {
+          "2020": 0.00032975142159194965,
+          "2021": 0.0010242195082493001,
+          "2022": -0.0034188083987818857,
+          "2023": -0.003913302315216286,
+          "2024": 0.001306087934416979,
+          "2025": 0.001175034670416054,
+          "2026": -0.009550566330812905
+        },
+        "side_mean": {
+          "long": 0.00023567738923803127,
+          "short": -0.0037250889904089594
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 399,
+        "mean_net_return": -0.001414994213290128,
+        "t_stat": -0.8923233364249155,
+        "net_sharpe": -0.32213467470348467,
+        "total_return": -0.535615231878905,
+        "max_drawdown": 0.6085397470734976,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.23198595079419557,
+        "per_year_mean": {
+          "2020": 0.00016798684918031148,
+          "2021": 0.0007567503897131779,
+          "2022": -0.0035955443265594184,
+          "2023": -0.004254660708253696,
+          "2024": 0.0008219941668323372,
+          "2025": 0.0007554057666773356,
+          "2026": -0.009890413999279112
+        },
+        "side_mean": {
+          "long": -7.277878045072569e-06,
+          "short": -0.0041071232631748325
+        }
+      },
+      "lagged": {
+        "n_periods": 398,
+        "mean_net_return": -0.0005930979415077329,
+        "t_stat": -0.3908077169675487,
+        "net_sharpe": -0.14126132209127615,
+        "total_return": -0.34224659811970215,
+        "max_drawdown": 0.7229520396550555,
+        "turnover": 115.73890936510462,
+        "average_turnover": 0.29080127981182063,
+        "total_cost": 0.11573890936510461,
+        "per_year_mean": {
+          "2020": -0.00021769595449594318,
+          "2021": 0.011376544978305396,
+          "2022": -0.004119685548069431,
+          "2023": -0.00957355061221053,
+          "2024": -0.0012285613198926802,
+          "2025": 0.0006917821505049725,
+          "2026": -0.0021050164666093596
+        },
+        "side_mean": {
+          "long": 0.0008224374530584824,
+          "short": -0.0032898478537835155
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 399,
+        "mean_net_return": 0.000542866578725483,
+        "t_stat": 0.34304748532913215,
+        "net_sharpe": 0.12384242973751597,
+        "total_return": 0.017501131686711302,
+        "max_drawdown": 0.45397029774749487,
+        "turnover": 115.99297539709778,
+        "average_turnover": 0.2907092115215483,
+        "total_cost": 0.11599297539709778,
+        "per_year_mean": {
+          "2020": -0.0006532805664152264,
+          "2021": -0.001559157745321544,
+          "2022": 0.0030653365432268213,
+          "2023": 0.0032305855291414674,
+          "2024": -0.0022742754695862615,
+          "2025": -0.0020142924778934887,
+          "2026": 0.008870870993880491
+        },
+        "side_mean": {
+          "long": 0.002961020444877213,
+          "short": -0.0007215879238042385
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_week_lag": false,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": false
+      },
+      "falsification_passes": 0,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "stable_supply_growth_30d_mom": {
+      "spec": {
+        "id": "stable_supply_growth_30d_mom",
+        "lookback_days": 30,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "A monthly stablecoin expansion may support a persistent risk-on regime."
+      },
+      "n_periods": 396,
+      "primary": {
+        "n_periods": 396,
+        "mean_net_return": 0.0018692781470855734,
+        "t_stat": 0.9138510286792821,
+        "net_sharpe": 0.33115360246358455,
+        "total_return": 0.5090358538502819,
+        "max_drawdown": 0.5530978356064224,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.048120871977742334,
+        "per_year_mean": {
+          "2020": -0.0016428026934131642,
+          "2021": -0.004258130745911379,
+          "2022": 0.008587821700224195,
+          "2023": 0.007762756570761665,
+          "2024": 0.0025484697478839213,
+          "2025": -0.0022026141821708577,
+          "2026": 0.008779606619514433
+        },
+        "side_mean": {
+          "long": 0.0057116663314749315,
+          "short": -0.0003504281745736177
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 396,
+        "mean_net_return": 0.0017477607936064261,
+        "t_stat": 0.8544353870488842,
+        "net_sharpe": 0.30962306504434306,
+        "total_return": 0.43818724323294655,
+        "max_drawdown": 0.5581386916434845,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.09624174395548467,
+        "per_year_mean": {
+          "2020": -0.001738321242571912,
+          "2021": -0.0043722786912425765,
+          "2022": 0.008524854563458804,
+          "2023": 0.00761464001650154,
+          "2024": 0.0023972962599058283,
+          "2025": -0.0023761401613656215,
+          "2026": 0.008641478838029163
+        },
+        "side_mean": {
+          "long": 0.0055378139924087705,
+          "short": -0.0004417121698451275
+        }
+      },
+      "lagged": {
+        "n_periods": 395,
+        "mean_net_return": 0.0024881983951978767,
+        "t_stat": 1.1950577444486394,
+        "net_sharpe": 0.4336027367301963,
+        "total_return": 0.9018705416730122,
+        "max_drawdown": 0.5631070803623448,
+        "turnover": 47.98334066914871,
+        "average_turnover": 0.12147681182062965,
+        "total_cost": 0.04798334066914871,
+        "per_year_mean": {
+          "2020": -0.0013530500781716213,
+          "2021": -0.004916520315141436,
+          "2022": 0.009386091892007816,
+          "2023": 0.00939403923317784,
+          "2024": 0.004695801926192189,
+          "2025": -0.0006659368554329838,
+          "2026": 0.006279967550167989
+        },
+        "side_mean": {
+          "long": 0.006713502550442681,
+          "short": 3.7521985155890623e-05
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 396,
+        "mean_net_return": -0.002112312854043868,
+        "t_stat": -1.0326458273746228,
+        "net_sharpe": -0.3742014563339823,
+        "total_return": -0.6905686117160542,
+        "max_drawdown": 0.7977271971312243,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.048120871977742334,
+        "per_year_mean": {
+          "2020": 0.0014517655950956692,
+          "2021": 0.004029834855248987,
+          "2022": -0.00871375597375498,
+          "2023": -0.008058989679281916,
+          "2024": -0.0028508167238401045,
+          "2025": 0.0018555622237813288,
+          "2026": -0.009055862182484973
+        },
+        "side_mean": {
+          "long": 0.00016786018403059803,
+          "short": -0.006059371009607253
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": true,
+        "survives_one_week_lag": true,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 3,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "stable_supply_growth_30d_rev": {
+      "spec": {
+        "id": "stable_supply_growth_30d_rev",
+        "lookback_days": 30,
+        "transform": "growth",
+        "direction": -1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "The fixed monthly reversal control tests reactive issuance."
+      },
+      "n_periods": 396,
+      "primary": {
+        "n_periods": 396,
+        "mean_net_return": -0.002112312854043868,
+        "t_stat": -1.0326458273746228,
+        "net_sharpe": -0.3742014563339823,
+        "total_return": -0.6905686117160542,
+        "max_drawdown": 0.7977271971312243,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.048120871977742334,
+        "per_year_mean": {
+          "2020": 0.0014517655950956692,
+          "2021": 0.004029834855248987,
+          "2022": -0.00871375597375498,
+          "2023": -0.008058989679281916,
+          "2024": -0.0028508167238401045,
+          "2025": 0.0018555622237813288,
+          "2026": -0.009055862182484973
+        },
+        "side_mean": {
+          "long": 0.00016786018403059803,
+          "short": -0.006059371009607253
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 396,
+        "mean_net_return": -0.0022338302075230153,
+        "t_stat": -1.0920203884813893,
+        "net_sharpe": -0.39571710734070703,
+        "total_return": -0.7051568524200155,
+        "max_drawdown": 0.8041649251455992,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.09624174395548467,
+        "per_year_mean": {
+          "2020": 0.0013562470459369215,
+          "2021": 0.003915686909917789,
+          "2022": -0.00877672311052037,
+          "2023": -0.008207106233542042,
+          "2024": -0.003001990211818197,
+          "2025": 0.001682036244586565,
+          "2026": -0.009193989963970244
+        },
+        "side_mean": {
+          "long": 7.657618875908809e-05,
+          "short": -0.006233223348673414
+        }
+      },
+      "lagged": {
+        "n_periods": 395,
+        "mean_net_return": -0.002731152018839136,
+        "t_stat": -1.3112942569798434,
+        "net_sharpe": -0.47577682428004686,
+        "total_return": -0.7598461356019433,
+        "max_drawdown": 0.8488415573364909,
+        "turnover": 47.98334066914871,
+        "average_turnover": 0.12147681182062965,
+        "total_cost": 0.04798334066914871,
+        "per_year_mean": {
+          "2020": 0.0011608490703033914,
+          "2021": 0.0046869400018114266,
+          "2022": -0.009511526643468597,
+          "2023": -0.009687155726388352,
+          "2024": -0.004986406358162685,
+          "2025": 0.0003160763654145681,
+          "2026": -0.00656930605445265
+        },
+        "side_mean": {
+          "long": -0.00021971999719233346,
+          "short": -0.007061207228575003
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 396,
+        "mean_net_return": 0.0018692781470855734,
+        "t_stat": 0.9138510286792821,
+        "net_sharpe": 0.33115360246358455,
+        "total_return": 0.5090358538502819,
+        "max_drawdown": 0.5530978356064224,
+        "turnover": 48.12087197774233,
+        "average_turnover": 0.1215173534791473,
+        "total_cost": 0.048120871977742334,
+        "per_year_mean": {
+          "2020": -0.0016428026934131642,
+          "2021": -0.004258130745911379,
+          "2022": 0.008587821700224195,
+          "2023": 0.007762756570761665,
+          "2024": 0.0025484697478839213,
+          "2025": -0.0022026141821708577,
+          "2026": 0.008779606619514433
+        },
+        "side_mean": {
+          "long": 0.0057116663314749315,
+          "short": -0.0003504281745736177
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_week_lag": false,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": false
+      },
+      "falsification_passes": 0,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "stable_supply_growth_90d_mom": {
+      "spec": {
+        "id": "stable_supply_growth_90d_mom",
+        "lookback_days": 90,
+        "transform": "growth",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "Quarterly dollar-liquidity expansion may be the slower crypto cycle driver."
+      },
+      "n_periods": 387,
+      "primary": {
+        "n_periods": 387,
+        "mean_net_return": 0.002266499605250774,
+        "t_stat": 1.004729438888841,
+        "net_sharpe": 0.3682945707592415,
+        "total_return": 0.6425091168035946,
+        "max_drawdown": 0.6141334944573167,
+        "turnover": 24.116065636546026,
+        "average_turnover": 0.06231541508151428,
+        "total_cost": 0.024116065636546027,
+        "per_year_mean": {
+          "2020": -0.0009728816499910872,
+          "2021": -0.00473481249493232,
+          "2022": 0.00763007959491343,
+          "2023": 0.008136698313711367,
+          "2024": 0.0069320113740731605,
+          "2025": -0.004214392690904213,
+          "2026": 0.008287386707344222
+        },
+        "side_mean": {
+          "long": 0.007368630979560459,
+          "short": -0.0006578927678291681
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 387,
+        "mean_net_return": 0.0022041841901692593,
+        "t_stat": 0.9769199658818414,
+        "net_sharpe": 0.3581007041044726,
+        "total_return": 0.6031488002095198,
+        "max_drawdown": 0.6152581883602143,
+        "turnover": 24.116065636546026,
+        "average_turnover": 0.06231541508151428,
+        "total_cost": 0.04823213127309205,
+        "per_year_mean": {
+          "2020": -0.0010272639861818717,
+          "2021": -0.004820639137751284,
+          "2022": 0.007596934546631539,
+          "2023": 0.008082670580882677,
+          "2024": 0.006870109183848362,
+          "2025": -0.00430989003804451,
+          "2026": 0.008232296267854733
+        },
+        "side_mean": {
+          "long": 0.007292517414520136,
+          "short": -0.0007122994872025839
+        }
+      },
+      "lagged": {
+        "n_periods": 386,
+        "mean_net_return": 0.0021557088078231514,
+        "t_stat": 0.9489913022078152,
+        "net_sharpe": 0.3483134552755622,
+        "total_return": 0.5640148962406581,
+        "max_drawdown": 0.6424966598580064,
+        "turnover": 24.08102835215756,
+        "average_turnover": 0.06238608381387969,
+        "total_cost": 0.02408102835215756,
+        "per_year_mean": {
+          "2020": 0.0003076264478431574,
+          "2021": -0.007852142966410536,
+          "2022": 0.007991528632879892,
+          "2023": 0.008302398677156849,
+          "2024": 0.006808748761381827,
+          "2025": -0.004609487900496889,
+          "2026": 0.008091199595955839
+        },
+        "side_mean": {
+          "long": 0.005809769144432799,
+          "short": 5.275979777433311e-05
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 387,
+        "mean_net_return": -0.0023911304354138027,
+        "t_stat": -1.060370004180282,
+        "net_sharpe": -0.3886902288515093,
+        "total_return": -0.7313298335176068,
+        "max_drawdown": 0.8307315155734307,
+        "turnover": 24.116065636546026,
+        "average_turnover": 0.06231541508151428,
+        "total_cost": 0.024116065636546027,
+        "per_year_mean": {
+          "2020": 0.0008641169776095188,
+          "2021": 0.00456315920929439,
+          "2022": -0.0076963696914772095,
+          "2023": -0.008244753779368749,
+          "2024": -0.007055815754522757,
+          "2025": 0.00402339799662362,
+          "2026": -0.008397567586323198
+        },
+        "side_mean": {
+          "long": 0.0005490793290823374,
+          "short": -0.0075208581096411105
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": true,
+        "survives_one_week_lag": true,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 3,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "stable_supply_accel_30d_mom": {
+      "spec": {
+        "id": "stable_supply_accel_30d_mom",
+        "lookback_days": 30,
+        "transform": "acceleration",
+        "direction": 1.0,
+        "z_window_days": 365,
+        "horizon_days": 7,
+        "rationale": "Acceleration of monthly stablecoin growth may matter more than its level."
+      },
+      "n_periods": 392,
+      "primary": {
+        "n_periods": 392,
+        "mean_net_return": -0.0003546167527910685,
+        "t_stat": -0.2352972444761868,
+        "net_sharpe": -0.0856989457913349,
+        "total_return": -0.26668263909191514,
+        "max_drawdown": 0.42238090365661785,
+        "turnover": 75.04242669393197,
+        "average_turnover": 0.19143476197431625,
+        "total_cost": 0.07504242669393198,
+        "per_year_mean": {
+          "2020": -0.0011529361858045896,
+          "2021": -0.0010579641255184654,
+          "2022": 0.0011145047047606744,
+          "2023": 0.0011850850890407075,
+          "2024": -0.0033487724531366283,
+          "2025": 0.00012204905407032044,
+          "2026": 0.002800354737534588
+        },
+        "side_mean": {
+          "long": 8.107926993983203e-05,
+          "short": -0.0008084667764690899
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 392,
+        "mean_net_return": -0.0005460515147653849,
+        "t_stat": -0.36219248757120237,
+        "net_sharpe": -0.13191618298587665,
+        "total_return": -0.3198499986382636,
+        "max_drawdown": 0.4515004773565423,
+        "turnover": 75.04242669393197,
+        "average_turnover": 0.19143476197431625,
+        "total_cost": 0.15008485338786395,
+        "per_year_mean": {
+          "2020": -0.001272884994892983,
+          "2021": -0.0012191329321482097,
+          "2022": 0.0009646672067773209,
+          "2023": 0.0009332463827273984,
+          "2024": -0.0036529568189043833,
+          "2025": -9.195581712704797e-05,
+          "2026": 0.0025867003468720237
+        },
+        "side_mean": {
+          "long": -9.741809573711886e-05,
+          "short": -0.0010133779929198288
+        }
+      },
+      "lagged": {
+        "n_periods": 391,
+        "mean_net_return": 0.0014114394795456979,
+        "t_stat": 0.8695522561334522,
+        "net_sharpe": 0.3171093002998426,
+        "total_return": 0.42821056196909546,
+        "max_drawdown": 0.28512920628533134,
+        "turnover": 74.78323386137771,
+        "average_turnover": 0.19126146767615781,
+        "total_cost": 0.07478323386137771,
+        "per_year_mean": {
+          "2020": -0.0012328980634198291,
+          "2021": 0.00022268746089945129,
+          "2022": 0.00838221587091716,
+          "2023": 0.0024599602306439867,
+          "2024": -0.00048535754377946786,
+          "2025": 0.0013985695168410616,
+          "2026": 0.001759602418032543
+        },
+        "side_mean": {
+          "long": 0.0022535010987555877,
+          "short": 0.000538677697135448
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 392,
+        "mean_net_return": -2.8252771157563882e-05,
+        "t_stat": -0.01875657896412157,
+        "net_sharpe": -0.00683144015330713,
+        "total_return": -0.1738954303714676,
+        "max_drawdown": 0.28016331509587544,
+        "turnover": 75.04242669393197,
+        "average_turnover": 0.19143476197431625,
+        "total_cost": 0.07504242669393198,
+        "per_year_mean": {
+          "2020": 0.000913038567627803,
+          "2021": 0.0007356265122589778,
+          "2022": -0.0014141797007273809,
+          "2023": -0.001688762501667326,
+          "2024": 0.002740403721601118,
+          "2025": -0.0005500587964650577,
+          "2026": -0.0032276635188597164
+        },
+        "side_mean": {
+          "long": 0.00039864434356761324,
+          "short": -0.000438074001293734
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_week_lag": true,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 2,
+      "association_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    }
+  },
+  "promising_associations": [],
+  "candidates": [],
+  "safety": {
+    "public_data_only": true,
+    "credentials_accessed": false,
+    "order_submission_allowed": false,
+    "promotion_eligible": false,
+    "testnet_intent_generated": false
+  },
+  "honesty": {
+    "historical_rows_are_not_pit": true,
+    "formal_trial_registration_skipped": true,
+    "forward_vintage_required_for_admission": true,
+    "notes": [
+      "Historical associations can prioritize forward monitoring but cannot establish Alpha admission.",
+      "The fetcher separately records one real bitemporal vintage per refresh."
+    ]
+  }
+}

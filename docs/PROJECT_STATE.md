@@ -2306,3 +2306,50 @@ an existing store is included in restore verification.
 Formal Alpha eligibility therefore remains **zero**.  No Testnet intent,
 execution service, seven-day soak, credential access, broker connection, or
 order submission was started.
+
+# 2026-08-11 independent public-data Alpha expansion
+
+Three public, keyless and mutually different data axes were acquired and
+tested under fixed, pre-result search contracts.  None produced an admissible
+Alpha, and the negative results are retained rather than direction/window
+tuned after inspection.
+
+- **Hyperliquid third-venue perpetuals:** 14/14 forward-universe assets have
+  365 complete UTC funding/premium days (exactly 24 hourly settlements/day),
+  plus current public mark/oracle/OI/notional context and three-venue predicted
+  funding.  Six fixed Binance/Bybit/Hyperliquid variants produced zero
+  candidates.  The strongest weak control was venue-spread continuation
+  (non-overlapping h7 t=1.99, dry-run VT Sharpe=0.58), below every admission
+  bar.  A discovered calendar-anchor defect in batch PBO was fixed: all family
+  members now share one Monday-UTC grid, future-prefix leakage evidence is
+  computed, and the formal evaluator retains PBO=0.657.  All six now return
+  explicit FAIL (DSR/PBO/OOS/walk-forward/regime reasons as applicable), not an
+  error or unassessed pass.
+- **CFTC institutional positioning:** the official TFF Futures-Only feed
+  yielded 434 CME BTC and 278 CME cash-settled ETH weekly observations after a
+  conservative report-date + 7-day knowledge delay.  Six fixed leveraged
+  money/asset-manager/relative-positioning variants produced zero diagnostic
+  leads; the best was BTC leveraged-money reversal (t=1.10, net Sharpe=0.40).
+  All six trials are in the durable global experiment population.  The formal
+  evaluator sees the honest two-leg breadth and blocks on THIN_COVERAGE; no
+  synthetic instruments were added to evade the gate.
+- **Global stablecoin liquidity:** DefiLlama returned 3,176 completed daily
+  global USD stablecoin supply observations.  Because the provider exposes
+  retrospective revisions without historical vintages, six fixed liquidity
+  impulse variants were association diagnostics only and were not admitted to
+  the formal candidate registry.  All six failed; the strongest 90-day supply
+  growth association had t=1.01 and net Sharpe=0.37.  The first real bitemporal
+  forward supply vintage was retained separately so honest evidence can begin
+  accumulating from now onward.
+
+The immutable L2 scheduling contract now contains bounded refresh workers for
+daily Hyperliquid incremental history, weekly CFTC TFF history, and daily
+stablecoin forward vintages.  The Hyperliquid merge was exercised against the
+real 365-day snapshot (14/14 assets, zero conflicts).  Schedule registration
+still requires a clean verified release and was not bypassed from this checkout.
+The irreplaceable stablecoin vintage database is optional in encrypted backup
+source contract v7 and participates in restore verification once present.
+
+Formal Alpha eligibility remains **zero**.  No Testnet intent, execution
+service, seven-day soak, credential access, account query, broker connection or
+order submission was started.

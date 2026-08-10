@@ -115,3 +115,66 @@ def volume_compute_fn(op: str, window: int, *, feature_id: str = "f") -> Compute
 def volume_leakage_ok(op: str, window: int, bars: Sequence[Bar], target_times: Sequence[int]) -> Optional[bool]:
     """Convenience: build the VOLUME_OP ComputeFn and assess leakage over the sampled decision times."""
     return leakage_ok_over_times(volume_compute_fn(op, window), bars, target_times)
+
+
+def panel_expression_leakage_ok(
+    expr,
+    panel,
+    target_rows: Sequence[int],
+    *,
+    evaluate_fn=None,
+    tolerance: float = 1e-12,
+) -> Optional[bool]:
+    """Check a FieldPanel expression by full-history versus prefix invariance.
+
+    Funding/OI/premium expressions cannot be represented as OHLCV ``Bar``
+    ComputeFns.  Their exact analogue is to evaluate the expression on the full
+    PIT panel and on a panel truncated at each decision row.  Any future read
+    changes the decision-row value and returns False.  Unassessable input stays
+    None so the evaluator remains fail closed.
+    """
+    if not math.isfinite(float(tolerance)) or tolerance < 0.0:
+        raise ValueError("tolerance must be finite and non-negative")
+    from services.research import alpha_expression as ax
+
+    evaluator = ax.evaluate if evaluate_fn is None else evaluate_fn
+    try:
+        full = evaluator(expr, panel)
+    except Exception:
+        return None
+    assessed = False
+    for raw_row in sorted(set(target_rows)):
+        if isinstance(raw_row, bool) or not isinstance(raw_row, int):
+            continue
+        if raw_row < 0 or raw_row >= len(panel.event_times):
+            continue
+        prefix = ax.FieldPanel(
+            panel.instruments,
+            panel.event_times[: raw_row + 1],
+            {
+                name: matrix[: raw_row + 1]
+                for name, matrix in panel.matrices.items()
+            },
+        )
+        try:
+            prefix_row = evaluator(expr, prefix)[-1]
+            full_row = full[raw_row]
+        except Exception:
+            continue
+        if len(prefix_row) != len(full_row):
+            return False
+        assessed = True
+        for prefix_value, full_value in zip(prefix_row, full_row):
+            if prefix_value is None or full_value is None:
+                if prefix_value is not full_value:
+                    return False
+                continue
+            try:
+                left, right = float(prefix_value), float(full_value)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if not math.isfinite(left) or not math.isfinite(right):
+                return False
+            if abs(left - right) > tolerance:
+                return False
+    return True if assessed else None

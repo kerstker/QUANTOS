@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  6,
+                                                                                   "version":  7,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -574,6 +574,11 @@
                                                                                                        "relative_path":  "data/cache/data_quality_admission.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "data_quality_admission"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/defillama_stablecoin_vintages.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "defillama_stablecoin_forward_vintages"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/defillama_tvl_vintages.db",
@@ -698,7 +703,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  6,
+                                                                                   "version":  7,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -724,6 +729,11 @@
                                                                                                        "relative_path":  "data/cache/data_quality_admission.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "data_quality_admission"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/defillama_stablecoin_vintages.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "defillama_stablecoin_forward_vintages"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/defillama_tvl_vintages.db",
