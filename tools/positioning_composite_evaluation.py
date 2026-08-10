@@ -119,9 +119,15 @@ def _field_ids(expression: object) -> tuple[str, ...]:
     return tuple(sorted(fields))
 
 
-def _definition(alias: str, expression: tuple) -> tuple[AlphaDefinition, str]:
+def _definition(
+    alias: str,
+    expression: tuple,
+    *,
+    evaluation_contract: Mapping[str, Any] = EVALUATION_CONTRACT,
+    id_prefix: str = "positioning",
+) -> tuple[AlphaDefinition, str]:
     params = {
-        "evaluation_contract": stable_hash(EVALUATION_CONTRACT),
+        "evaluation_contract": stable_hash(evaluation_contract),
         "expr": ax.serialize(expression),
     }
     seed = AlphaDefinition(
@@ -131,7 +137,7 @@ def _definition(alias: str, expression: tuple) -> tuple[AlphaDefinition, str]:
         universe="crypto_oi_majors_pit",
         params=params,
     )
-    research_id = f"positioning_{alias}_{seed.definition_hash[:16]}"
+    research_id = f"{id_prefix}_{alias}_{seed.definition_hash[:16]}"
     definition = AlphaDefinition(
         alpha_id=research_id,
         name=alias,
@@ -144,18 +150,39 @@ def _definition(alias: str, expression: tuple) -> tuple[AlphaDefinition, str]:
     return definition, seed.definition_hash
 
 
-def build_candidate_batch(panel) -> tuple[list, dict[str, dict], dict[str, dict]]:
+def build_candidate_batch(
+    panel,
+    *,
+    fwd_horizon: int = FWD_HORIZON,
+    evaluation_contract: Mapping[str, Any] = EVALUATION_CONTRACT,
+    id_prefix: str = "positioning",
+) -> tuple[list, dict[str, dict], dict[str, dict]]:
     """Build all controls/candidate on one PIT panel without observing results."""
+    if (
+        isinstance(fwd_horizon, bool)
+        or not isinstance(fwd_horizon, int)
+        or fwd_horizon <= 0
+    ):
+        raise ValueError("fwd_horizon must be a positive integer")
+    if not isinstance(evaluation_contract, Mapping):
+        raise TypeError("evaluation_contract must be a mapping")
+    if not isinstance(id_prefix, str) or not id_prefix.strip():
+        raise ValueError("id_prefix must be non-empty")
     candidates = []
     evidence: dict[str, dict[str, bool | None]] = {}
     mappings: dict[str, dict[str, Any]] = {}
     for alias, expression in CANDIDATE_EXPRESSIONS.items():
-        definition, definition_hash = _definition(alias, expression)
+        definition, definition_hash = _definition(
+            alias,
+            expression,
+            evaluation_contract=evaluation_contract,
+            id_prefix=id_prefix,
+        )
         signal = ax.evaluate(expression, panel)
         periods = ax.panel_to_periods(
             signal,
             panel,
-            fwd_horizon=FWD_HORIZON,
+            fwd_horizon=fwd_horizon,
             non_overlapping=True,
         )
         candidates.append((definition, periods))
@@ -244,12 +271,23 @@ def _decision(evaluation: Mapping[str, Any] | None) -> dict[str, bool]:
     }
 
 
-def run(
+def _run_positioning_spec(
     *,
-    output: str | Path = DEFAULT_OUTPUT,
+    output: str | Path,
     recorded_at: int | None = None,
     source_commit: str,
     panel=None,
+    fwd_horizon: int,
+    periods_per_year: int,
+    evaluation_contract: Mapping[str, Any],
+    source: str,
+    search_kind: str,
+    data_source: str,
+    schema_version: str,
+    id_prefix: str,
+    parent_hypothesis: str,
+    search_space: str,
+    falsification_criteria: Sequence[str],
 ) -> dict[str, Any]:
     if not isinstance(source_commit, str) or _COMMIT.fullmatch(source_commit) is None:
         raise ValueError("source_commit must be a lowercase 40-character git commit")
@@ -257,17 +295,22 @@ def run(
         from tools.crypto_oi_research import build_panel
 
         panel, _instruments = build_panel()
-    candidates, leakage_evidence, mappings = build_candidate_batch(panel)
+    candidates, leakage_evidence, mappings = build_candidate_batch(
+        panel,
+        fwd_horizon=fwd_horizon,
+        evaluation_contract=evaluation_contract,
+        id_prefix=id_prefix,
+    )
     observed_at = int(
         recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
     )
     dataset_version = field_panel_dataset_version(
         panel,
-        source_versions=EVALUATION_CONTRACT,
+        source_versions=evaluation_contract,
     )
     search_id = make_search_id(
-        source=SOURCE,
-        search_kind=SEARCH_KIND,
+        source=source,
+        search_kind=search_kind,
         dataset_version=dataset_version,
         recorded_at=observed_at,
         params={
@@ -279,7 +322,7 @@ def run(
         max_trials=len(CANDIDATE_EXPRESSIONS),
         max_feature_count=2,
         max_parameter_dimensions=2,
-        allowed_data_sources=(DATA_SOURCE,),
+        allowed_data_sources=(data_source,),
         stopping_rules={"max_trials": len(CANDIDATE_EXPRESSIONS)},
     )
     with production_experiment_registry() as registry:
@@ -287,23 +330,17 @@ def run(
             candidates,
             registry=registry,
             search_id=search_id,
-            search_kind=SEARCH_KIND,
-            search_source=SOURCE,
+            search_kind=search_kind,
+            search_source=source,
             dataset_version=dataset_version,
             recorded_at=observed_at,
-            periods_per_year=PERIODS_PER_YEAR,
+            periods_per_year=periods_per_year,
             config=AlphaFactoryConfig(compute_regime_evidence=True),
             evidence=leakage_evidence,
             budget=budget,
-            parent_hypothesis=(
-                "Distinct participant-positioning cohorts may combine into a more "
-                "stable cross-sectional unwind premium than either cohort alone."
-            ),
-            search_space=(
-                "Exactly two canonical controls and one fixed equal-standardized "
-                "crowd/top consensus expression; no parameter sweep."
-            ),
-            data_source=DATA_SOURCE,
+            parent_hypothesis=parent_hypothesis,
+            search_space=search_space,
+            data_source=data_source,
             uses_locked_oos=False,
             hypothesis_by_candidate={
                 mapping["research_alpha_id"]: stable_hash(
@@ -335,7 +372,7 @@ def run(
     complete = all(row["status"] == "VERIFIED" for row in rows.values())
     candidate_evaluation = evaluations.get("positioning_consensus")
     document = {
-        "schema_version": "positioning_composite_evaluation.v1",
+        "schema_version": schema_version,
         "readiness": "L2_DRY_RUN_ONLY",
         "generated_at": observed_at,
         "source_commit": source_commit,
@@ -343,7 +380,7 @@ def run(
         "search_id": search_id,
         "status": "VERIFIED" if complete else "PENDING",
         "research_budget": budget.metadata(),
-        "falsification_criteria": list(FALSIFICATION_CRITERIA),
+        "falsification_criteria": list(falsification_criteria),
         "family": rows,
         "decision": _decision(candidate_evaluation),
         "safety": {
@@ -358,6 +395,38 @@ def run(
     }
     atomic_write_json(str(output), document, indent=2)
     return document
+
+
+def run(
+    *,
+    output: str | Path = DEFAULT_OUTPUT,
+    recorded_at: int | None = None,
+    source_commit: str,
+    panel=None,
+) -> dict[str, Any]:
+    return _run_positioning_spec(
+        output=output,
+        recorded_at=recorded_at,
+        source_commit=source_commit,
+        panel=panel,
+        fwd_horizon=FWD_HORIZON,
+        periods_per_year=PERIODS_PER_YEAR,
+        evaluation_contract=EVALUATION_CONTRACT,
+        source=SOURCE,
+        search_kind=SEARCH_KIND,
+        data_source=DATA_SOURCE,
+        schema_version="positioning_composite_evaluation.v1",
+        id_prefix="positioning",
+        parent_hypothesis=(
+            "Distinct participant-positioning cohorts may combine into a more "
+            "stable cross-sectional unwind premium than either cohort alone."
+        ),
+        search_space=(
+            "Exactly two canonical controls and one fixed equal-standardized "
+            "crowd/top consensus expression; no parameter sweep."
+        ),
+        falsification_criteria=FALSIFICATION_CRITERIA,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -388,6 +457,7 @@ __all__ = [
     "DATA_SOURCE",
     "DEFAULT_OUTPUT",
     "POSITIONING_COMPOSITE_EXPRESSION",
+    "_run_positioning_spec",
     "build_candidate_batch",
     "run",
 ]
