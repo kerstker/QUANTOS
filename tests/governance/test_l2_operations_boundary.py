@@ -72,6 +72,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         ),
         "data/cache/data_quality_admission.db": ("data_quality_admission", True),
         "data/cache/deployment_state.db": ("deployment_state", False),
+        "data/cache/defillama_tvl_vintages.db": (
+            "defillama_tvl_forward_vintages",
+            False,
+        ),
         "data/cache/domain_event_projection.db": ("domain_event_projection", True),
         "data/cache/domain_events.db": ("domain_event_authority", True),
         "data/cache/dry_run.db": ("dry_run_ledger", True),
