@@ -1006,7 +1006,7 @@
           "path": "services/research/fundamental_factors.py"
         },
         {
-          "line": 19,
+          "line": 20,
           "module": "services.alpha.panel_backtest",
           "path": "services/research/funding_settlement.py"
         },
@@ -1335,7 +1335,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "982c96aa95c23896f4168c24cf9347cf84bf702e7552603266f5a05d3202bf43",
+  "graph_sha256": "52c292d4a6b81cfab46387869352f835af45cd3e3f62608a14c8de52a83804d9",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1373,7 +1373,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 464,
+  "source_file_count": 465,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
