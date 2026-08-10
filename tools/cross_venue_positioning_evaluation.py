@@ -48,7 +48,7 @@ PERIODS_PER_YEAR = 52
 EVALUATION_QUANTILE = 0.3
 DATA_SOURCE = "crypto_oi_pit_panel+bybit_positioning_metrics.json"
 SOURCE = "tools.cross_venue_positioning_evaluation"
-SEARCH_KIND = "PREREGISTERED_CROSS_VENUE_POSITIONING_V1"
+SEARCH_KIND = "PREREGISTERED_CROSS_VENUE_POSITIONING_V2"
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -108,7 +108,7 @@ FALSIFICATION_CRITERIA = (
 )
 
 EVALUATION_CONTRACT = {
-    "driver": "cross_venue_positioning_evaluation.v1",
+    "driver": "cross_venue_positioning_evaluation.v2",
     "fwd_horizon": FWD_HORIZON,
     "non_overlapping": True,
     "periods_per_year": PERIODS_PER_YEAR,
@@ -117,6 +117,11 @@ EVALUATION_CONTRACT = {
     "selection_population": list(CANDIDATE_EXPRESSIONS),
     "selection_rule": "highest_net_sharpe_among_verified_formal_pass_then_alias_order.v1",
     "parameter_scan": False,
+    "shared_decision_calendar": True,
+    "decision_calendar_rule": (
+        "first family-common row with >=2 tradable instruments, then the next "
+        "family-common row at least seven panel rows later"
+    ),
     "bybit_event_contract": (
         "completed UTC-day public historical records only; unfinished day excluded"
     ),
@@ -268,19 +273,69 @@ def _definition(alias: str, expression: tuple) -> tuple[AlphaDefinition, str]:
     return definition, seed.definition_hash
 
 
+def _shared_decision_rows(signals: Sequence[list], panel) -> tuple[int, ...]:
+    """Choose one no-overlap row calendar shared by the complete family."""
+    price = panel.matrices["close"]
+    eligible = []
+    for row_index in range(len(panel.event_times) - FWD_HORIZON):
+        forward_index = row_index + FWD_HORIZON
+        family_ready = True
+        for signal in signals:
+            survivors = 0
+            for column, value in enumerate(signal[row_index]):
+                p0 = price[row_index][column]
+                p1 = price[forward_index][column]
+                if (
+                    value is not None
+                    and math.isfinite(value)
+                    and p0 is not None
+                    and p1 is not None
+                    and p0 > 0
+                ):
+                    survivors += 1
+            if survivors < 2:
+                family_ready = False
+                break
+        if family_ready:
+            eligible.append(row_index)
+
+    selected = []
+    for row_index in eligible:
+        if not selected or row_index - selected[-1] >= FWD_HORIZON:
+            selected.append(row_index)
+    if len(selected) < 4:
+        raise RuntimeError("shared decision calendar has fewer than four periods")
+    return tuple(selected)
+
+
 def build_candidate_batch(panel) -> tuple[list, dict[str, dict], dict[str, dict]]:
     candidates = []
     evidence: dict[str, dict[str, bool | None]] = {}
     mappings: dict[str, dict[str, Any]] = {}
+    prepared = []
     for alias, expression in CANDIDATE_EXPRESSIONS.items():
         definition, definition_hash = _definition(alias, expression)
         signal = ax.evaluate(expression, panel)
+        prepared.append((alias, expression, definition, definition_hash, signal))
+    decision_rows = _shared_decision_rows(
+        [item[4] for item in prepared],
+        panel,
+    )
+    decision_row_set = set(decision_rows)
+    expected_calendar = tuple(int(panel.event_times[row]) for row in decision_rows)
+    for alias, expression, definition, definition_hash, signal in prepared:
+        masked_signal = [
+            list(row) if row_index in decision_row_set else [None] * len(row)
+            for row_index, row in enumerate(signal)
+        ]
         periods = ax.panel_to_periods(
-            signal,
+            masked_signal,
             panel,
             fwd_horizon=FWD_HORIZON,
-            non_overlapping=True,
+            non_overlapping=False,
         )
+        if tuple(period.event_time for period in periods) != expected_calendar:
+            raise RuntimeError("candidate period calendar drifted from shared calendar")
         candidates.append((definition, periods))
         evidence[definition.alpha_id] = {
             "leakage_ok": compute_leakage_ok(expression, panel)
@@ -501,7 +556,7 @@ def run(
     }
     complete = all(row["status"] == "VERIFIED" for row in rows.values())
     document = {
-        "schema_version": "cross_venue_positioning_evaluation.v1",
+        "schema_version": "cross_venue_positioning_evaluation.v2",
         "readiness": "L2_DRY_RUN_ONLY",
         "generated_at": observed_at,
         "source_commit": source_commit,

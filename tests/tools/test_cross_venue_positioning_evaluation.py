@@ -113,6 +113,12 @@ def test_build_candidate_batch_registers_all_trials_before_results() -> None:
     for definition, periods in candidates:
         assert periods
         assert evidence[definition.alpha_id]["leakage_ok"] is True
+    calendars = [tuple(period.event_time for period in periods) for _definition, periods in candidates]
+    assert all(calendar == calendars[0] for calendar in calendars[1:])
+    assert all(
+        right - left >= driver.FWD_HORIZON * DAY_MS
+        for left, right in zip(calendars[0], calendars[0][1:])
+    )
     disagreement = next(
         definition
         for definition, _periods in candidates
@@ -150,6 +156,7 @@ def test_registered_run_is_research_only_with_closed_budget(tmp_path, monkeypatc
     assert captured["budget"].max_trials == 4
     assert captured["budget"].max_feature_count == 2
     assert captured["uses_locked_oos"] is False
+    assert driver.EVALUATION_CONTRACT["shared_decision_calendar"] is True
     assert document["status"] == "PENDING"
     assert document["decision"]["testnet_eligible"] is False
     assert document["safety"]["credentials_accessed"] is False
