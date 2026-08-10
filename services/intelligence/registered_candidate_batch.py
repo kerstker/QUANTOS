@@ -7,6 +7,7 @@ import math
 from typing import Any
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
@@ -139,6 +140,7 @@ def run_registered_candidate_batch(
     periods_per_year: int = 252,
     quantile: float = 0.2,
     config: AlphaFactoryConfig | None = None,
+    cost: CostModel | None = None,
     evidence: Mapping[str, Mapping[str, Any]] | None = None,
     audit_log=None,
     budget: ResearchBudget | None = None,
@@ -198,6 +200,8 @@ def run_registered_candidate_batch(
         )
     if config is not None and not isinstance(config, AlphaFactoryConfig):
         raise TypeError("config must be an AlphaFactoryConfig or None")
+    if cost is not None and not isinstance(cost, CostModel):
+        raise TypeError("cost must be a CostModel or None")
     if (
         isinstance(periods_per_year, bool)
         or not isinstance(periods_per_year, int)
@@ -315,6 +319,7 @@ def run_registered_candidate_batch(
             config,
             quantile=quantile,
             periods_per_year=periods_per_year,
+            cost=cost,
         )
         loop = ResearchAgentLoop(
             catalog=catalog,

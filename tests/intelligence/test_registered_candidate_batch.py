@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.cost import CostModel
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.intelligence import registered_candidate_batch as batch_module
@@ -98,6 +99,53 @@ def test_candidate_pool_is_durable_before_agent_scoring(monkeypatch) -> None:
         row["status"]
         for row in registry.search_attempt_events("registered-batch")
     ] == ["STARTED", "COMPLETED"]
+
+
+def test_registered_batch_passes_explicit_cost_contract_to_evaluator(monkeypatch) -> None:
+    registry = _registry()
+    candidates = _candidates(2)
+    expected = CostModel(fee_bps=4.0, slippage_bps=2.0, impact_coef=0.0)
+    captured = {}
+
+    def capture_evaluator(_catalog, _config, *, quantile, periods_per_year, cost):
+        captured.update(
+            cost=cost,
+            quantile=quantile,
+            periods_per_year=periods_per_year,
+        )
+        return object()
+
+    def no_score(self, received, **_kwargs):
+        assert tuple(received) == candidates
+        return {
+            "report": {
+                definition.alpha_id: {"state": None}
+                for definition, _periods in candidates
+            },
+            "human_review_queue": [],
+        }
+
+    monkeypatch.setattr(batch_module, "AlphaEvaluator", capture_evaluator)
+    monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", no_score)
+
+    batch_module.run_registered_candidate_batch(
+        candidates,
+        registry=registry,
+        search_id="explicit-cost-batch",
+        search_kind="CURATED_CANDIDATE_BATCH",
+        search_source="tests.intelligence",
+        dataset_version="dataset-v1",
+        recorded_at=101,
+        periods_per_year=1_095,
+        quantile=0.2,
+        cost=expected,
+    )
+
+    assert captured == {
+        "cost": expected,
+        "quantile": 0.2,
+        "periods_per_year": 1_095,
+    }
 
 
 def test_failed_agent_run_retains_candidates_and_failed_terminal(monkeypatch) -> None:

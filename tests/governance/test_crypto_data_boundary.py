@@ -17,6 +17,9 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_1m_fetch.py"),   # 1m 分钟线抓取器(2026-07-09)
              os.path.join(_ROOT, "tools", "binance_perp_mark_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
+             # Exact public funding-settlement events + completed post-event
+             # mark hours; keyless/read-only, with no account or order path.
+             os.path.join(_ROOT, "tools", "binance_funding_settlement_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_market.py"),
              os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
@@ -107,6 +110,9 @@ _EXTRA_ALLOWED_BY_FILE = {
     # 纯 stdlib 有限数校验；只用于拒绝 NaN/Inf 源观测，不增加网络/交易/凭证能力。
     "coingecko_fetch.py": {"math"},
     "binance_funding_fetch.py": {"math"},
+    "binance_funding_settlement_fetch.py": {
+        "argparse", "collections", "math", "pathlib", "quantos", "typing"
+    },
     "binance_perp_mark_fetch.py": {"math"},
     "binance_realtime_market.py": {
         "collections", "hashlib", "math", "pathlib", "quantos", "typing"
