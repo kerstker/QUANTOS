@@ -4,7 +4,10 @@ shorts positive-funding names). This makes that the alpha's return series so the
 metrics reflect the REAL carry yield, not just price prediction. PIT-safe (signal<=t, P&L uses
 funding[t+1]). Deterministic."""
 import services.research.alpha_expression as ax
-from services.research.carry_pnl import economic_return_series
+from services.research.carry_pnl import (
+    economic_return_series,
+    funding_adjusted_periods,
+)
 
 
 def _panel():
@@ -62,6 +65,41 @@ def test_invalid_quantile_fails_closed():
         except ValueError:
             raised = True
         assert raised, bad
+
+
+def test_funding_adjusted_periods_accrue_every_holding_window_cashflow():
+    instruments = ("A", "B", "C", "D")
+    close = [[100.0] * 4 for _ in range(7)]
+    funding_row = (-0.002, -0.001, 0.001, 0.002)
+    funding = [list(funding_row) for _ in range(7)]
+    panel = ax.FieldPanel(
+        instruments,
+        tuple(range(7)),
+        {"close": close, "funding": funding},
+    )
+    signal = [[-value for value in funding_row] for _ in range(7)]
+
+    periods = funding_adjusted_periods(
+        signal,
+        panel,
+        fwd_horizon=2,
+        non_overlapping=True,
+    )
+
+    assert [period.event_time for period in periods] == [0, 2, 4]
+    assert periods[0].forward_returns == tuple(-2.0 * value for value in funding_row)
+
+
+def test_funding_adjusted_periods_fail_closed_without_funding_authority():
+    panel, base = _panel()
+    del panel.matrices["funding"]
+
+    raised = False
+    try:
+        funding_adjusted_periods(_signal(base), panel)
+    except ValueError:
+        raised = True
+    assert raised
 
 
 def test_no_rng_or_wallclock_import():

@@ -56,6 +56,48 @@ def test_build_paper_candidates_uses_content_addressed_research_identities() -> 
         assert "leakage_ok" in evidence[definition.alpha_id]
 
 
+def test_build_paper_candidates_evaluates_carry_on_funding_adjusted_payoff() -> None:
+    panel = _panel()
+    candidates, _evidence, mappings = driver.build_paper_candidates(panel)
+    by_research_id = {definition.alpha_id: periods for definition, periods in candidates}
+    carry_periods = by_research_id[mappings["carry_oi_majors"]["research_alpha_id"]]
+    crowd_periods = by_research_id[mappings["crowd_contra"]["research_alpha_id"]]
+    specs = {deployed: expression for deployed, _name, expression, _fields in driver._paper_specs()}
+
+    price_only_carry = driver.ax.panel_to_periods(
+        driver.ax.evaluate(specs["carry_oi_majors"], panel),
+        panel,
+        fwd_horizon=driver.FWD_HORIZON,
+        non_overlapping=True,
+    )
+    price_only_crowd = driver.ax.panel_to_periods(
+        driver.ax.evaluate(specs["crowd_contra"], panel),
+        panel,
+        fwd_horizon=driver.FWD_HORIZON,
+        non_overlapping=True,
+    )
+
+    assert mappings["carry_oi_majors"]["return_basis"] == "PRICE_PLUS_FUNDING"
+    assert mappings["crowd_contra"]["return_basis"] == "PRICE"
+    assert carry_periods != price_only_carry
+    assert crowd_periods == price_only_crowd
+
+    first = carry_periods[0]
+    row = panel.event_times.index(first.event_time)
+    for instrument, observed in zip(first.instruments, first.forward_returns, strict=True):
+        column = panel.instruments.index(instrument)
+        price_return = (
+            panel.matrices["close"][row + driver.FWD_HORIZON][column]
+            / panel.matrices["close"][row][column]
+            - 1.0
+        )
+        accrued_funding = sum(
+            panel.matrices["funding"][future_row][column]
+            for future_row in range(row + 1, row + driver.FWD_HORIZON + 1)
+        )
+        assert observed == price_return - accrued_funding
+
+
 def test_evaluation_dataset_version_binds_contract_and_panel() -> None:
     panel = _panel()
     baseline = driver.evaluation_dataset_version(panel)

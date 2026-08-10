@@ -32,6 +32,7 @@ from services.intelligence.registered_candidate_batch import (
     run_registered_candidate_batch,
 )
 from services.research import alpha_expression as ax
+from services.research.carry_pnl import funding_adjusted_periods
 from services.research.expression_leakage import compute_leakage_ok
 from tools.cache_io import atomic_write_json
 from tools.crypto_oi_verify import CROWD_CONTRA, TOP_CONTRA
@@ -53,6 +54,17 @@ DATASET_CONTRACT = {
     "periods_per_year": PERIODS_PER_YEAR,
 }
 PANEL_BACKTEST_CONTRACT = "sorted_cost_accumulation.v1"
+PAPER_RETURN_BASIS = {
+    "carry_oi_majors": "PRICE_PLUS_FUNDING",
+    "crowd_contra": "PRICE",
+    "top_contra": "PRICE",
+}
+PAPER_EVALUATION_CONTRACT = {
+    **DATASET_CONTRACT,
+    "funding_accrual": "complete_rows_after_decision_through_horizon.v1",
+    "panel_backtest_contract": PANEL_BACKTEST_CONTRACT,
+    "return_basis_by_alpha": PAPER_RETURN_BASIS,
+}
 FORWARD_EVALUATION_CONTRACT = "forward_candidate_independent_evaluation.v1"
 FORWARD_PERIOD_SAMPLING = "global_panel_calendar_non_overlapping.v1"
 
@@ -90,10 +102,7 @@ def _research_identity(
     factor_ids: tuple[str, ...],
 ) -> tuple[str, str]:
     evaluation_contract = stable_hash(
-        {
-            **DATASET_CONTRACT,
-            "panel_backtest_contract": PANEL_BACKTEST_CONTRACT,
-        }
+        PAPER_EVALUATION_CONTRACT
     )
     definition = AlphaDefinition(
         alpha_id=deployed_alpha_id,
@@ -120,12 +129,7 @@ def build_paper_candidates(panel) -> tuple[list, dict[str, dict], dict[str, dict
             expression=expression,
             factor_ids=factor_ids,
         )
-        evaluation_contract = stable_hash(
-            {
-                **DATASET_CONTRACT,
-                "panel_backtest_contract": PANEL_BACKTEST_CONTRACT,
-            }
-        )
+        evaluation_contract = stable_hash(PAPER_EVALUATION_CONTRACT)
         definition = AlphaDefinition(
             alpha_id=research_id,
             name=name,
@@ -137,12 +141,23 @@ def build_paper_candidates(panel) -> tuple[list, dict[str, dict], dict[str, dict
             },
         )
         matrix = ax.evaluate(expression, panel)
-        periods = ax.panel_to_periods(
-            matrix,
-            panel,
-            fwd_horizon=FWD_HORIZON,
-            non_overlapping=True,
-        )
+        return_basis = PAPER_RETURN_BASIS.get(deployed)
+        if return_basis == "PRICE_PLUS_FUNDING":
+            periods = funding_adjusted_periods(
+                matrix,
+                panel,
+                fwd_horizon=FWD_HORIZON,
+                non_overlapping=True,
+            )
+        elif return_basis == "PRICE":
+            periods = ax.panel_to_periods(
+                matrix,
+                panel,
+                fwd_horizon=FWD_HORIZON,
+                non_overlapping=True,
+            )
+        else:
+            raise ValueError(f"unknown paper return basis for {deployed}")
         candidates.append((definition, periods))
         evidence[research_id] = {
             "leakage_ok": compute_leakage_ok(expression, panel)
@@ -151,6 +166,7 @@ def build_paper_candidates(panel) -> tuple[list, dict[str, dict], dict[str, dict
             "deployed_alpha_id": deployed,
             "research_alpha_id": research_id,
             "definition_hash": definition_hash,
+            "return_basis": return_basis,
         }
     by_id = {definition.alpha_id: definition for definition, _ in candidates}
     for mapping in mappings.values():
@@ -161,6 +177,13 @@ def build_paper_candidates(panel) -> tuple[list, dict[str, dict], dict[str, dict
 
 
 def evaluation_dataset_version(panel) -> str:
+    return field_panel_dataset_version(
+        panel,
+        source_versions=PAPER_EVALUATION_CONTRACT,
+    )
+
+
+def forward_evaluation_dataset_version(panel) -> str:
     return field_panel_dataset_version(panel, source_versions=DATASET_CONTRACT)
 
 
@@ -361,7 +384,7 @@ def run(
         search_kind="PAPER_ALPHA_EXACT_EVALUATION",
         dataset_version=dataset_version,
         recorded_at=observed_at,
-        params=DATASET_CONTRACT,
+        params=PAPER_EVALUATION_CONTRACT,
     )
 
     with production_experiment_registry() as registry:
@@ -443,7 +466,7 @@ def run_forward(
 
     panel, _ = build_panel()
     candidates, leakage_evidence, mappings = build_forward_candidates(panel)
-    dataset_version = evaluation_dataset_version(panel)
+    dataset_version = forward_evaluation_dataset_version(panel)
     observed_at = int(
         recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
     )

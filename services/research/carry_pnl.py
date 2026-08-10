@@ -16,6 +16,8 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
+from services.alpha.panel_backtest import PanelPeriod
+
 from .alpha_expression import _dims
 
 
@@ -64,3 +66,82 @@ def economic_return_series(signal, panel, *, fwd_horizon: int = 1, quantile: flo
                     ret += -wi * f1                                # funding collected over the holding day
         out.append(ret)
     return out
+
+
+def funding_adjusted_periods(
+    signal,
+    panel,
+    *,
+    fwd_horizon: int = 1,
+    price_field: str = "close",
+    funding_field: str = "funding",
+    non_overlapping: bool = False,
+) -> list[PanelPeriod]:
+    """Build evaluator periods on the executable perp payoff.
+
+    A per-name label is the long-position payoff over the holding window:
+    ``price[t+h] / price[t] - 1 - sum(funding[t+1:t+h])``.  The panel
+    backtester applies signed cross-sectional weights, so short legs receive
+    the opposite price and funding payoff automatically.  Every funding cell
+    in the holding window is required; a missing/non-finite observation drops
+    that instrument instead of being fabricated as zero.
+    """
+    if isinstance(fwd_horizon, bool) or not isinstance(fwd_horizon, int):
+        raise TypeError("fwd_horizon must be an integer")
+    if fwd_horizon < 1:
+        raise ValueError("fwd_horizon must be positive")
+    if price_field not in panel.matrices:
+        raise ValueError(f"price authority is missing: {price_field}")
+    if funding_field not in panel.matrices:
+        raise ValueError(f"funding authority is missing: {funding_field}")
+
+    prices = panel.matrices[price_field]
+    funding = panel.matrices[funding_field]
+    rows, instruments = _dims(signal)
+    periods: list[PanelPeriod] = []
+    last_kept_row: int | None = None
+    for row in range(rows - fwd_horizon):
+        if (
+            non_overlapping
+            and last_kept_row is not None
+            and row - last_kept_row < fwd_horizon
+        ):
+            continue
+        future_row = row + fwd_horizon
+        names: list[str] = []
+        signals: list[float] = []
+        payoffs: list[float] = []
+        for column in range(instruments):
+            alpha_value = signal[row][column]
+            start_price = prices[row][column]
+            end_price = prices[future_row][column]
+            if (
+                alpha_value is None
+                or not math.isfinite(alpha_value)
+                or start_price is None
+                or end_price is None
+                or start_price <= 0
+            ):
+                continue
+            rates = [
+                funding[accrual_row][column]
+                for accrual_row in range(row + 1, future_row + 1)
+            ]
+            if any(rate is None or not math.isfinite(rate) for rate in rates):
+                continue
+            names.append(panel.instruments[column])
+            signals.append(float(alpha_value))
+            payoffs.append(
+                float(end_price / start_price - 1.0 - math.fsum(rates))
+            )
+        if len(names) >= 2:
+            periods.append(
+                PanelPeriod(
+                    tuple(names),
+                    tuple(signals),
+                    tuple(payoffs),
+                    event_time=int(panel.event_times[row]),
+                )
+            )
+            last_kept_row = row
+    return periods
