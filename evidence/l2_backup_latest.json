@@ -21,6 +21,11 @@
       "role": "data_quality_admission"
     },
     {
+      "relative_path": "data/cache/defillama_tvl_vintages.db",
+      "required": false,
+      "role": "defillama_tvl_forward_vintages"
+    },
+    {
       "relative_path": "data/cache/deployment_state.db",
       "required": false,
       "role": "deployment_state"
@@ -91,14 +96,14 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 133926,
+  "backup_elapsed_ms": 186047,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
-  "file_count": 18,
+  "file_count": 19,
   "history_authoritative": true,
-  "history_event_hash": "d77750c952bae81a45641c6283ff5e2940768132dd4c94e5a961828acf5772a9",
-  "history_event_seq": 94,
+  "history_event_hash": "ba6eb964fdc16914d52f4e068a1599edacec069852581b85d3c3c6e70534fbd5",
+  "history_event_seq": 96,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
@@ -107,9 +112,9 @@
     "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1786358807820,
+  "observed_at_ms": 1786384600294,
   "required_source_count": 12,
-  "restore_elapsed_ms": 33065,
+  "restore_elapsed_ms": 40562,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,
@@ -143,6 +148,11 @@
         "relative_path": "data/cache/data_quality_admission.db",
         "required": true,
         "role": "data_quality_admission"
+      },
+      {
+        "relative_path": "data/cache/defillama_tvl_vintages.db",
+        "required": false,
+        "role": "defillama_tvl_forward_vintages"
       },
       {
         "relative_path": "data/cache/deployment_state.db",
@@ -225,9 +235,9 @@
         "role": "vendor_delivery_history_authority"
       }
     ],
-    "version": 5
+    "version": 6
   },
-  "source_contract_sha256": "7f445792d1506e9a1ed95ee35fa4f52bb56d27455cbf248f5d39a73b12097b6e",
+  "source_contract_sha256": "fdc4c7af19168abcf4053eba90fd2a25b4ad46bbe511e4ead2f04f60ca9b396c",
   "source_contract_verified": true,
   "sqlite_integrity_verified": true,
   "verdict": "PASS"

@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "domain": "reliability_operations",
-      "passed": 1,
+      "passed": 0,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -661,6 +661,11 @@
               "role": "data_quality_admission"
             },
             {
+              "relative_path": "data/cache/defillama_tvl_vintages.db",
+              "required": false,
+              "role": "defillama_tvl_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/deployment_state.db",
               "required": false,
               "role": "deployment_state"
@@ -741,7 +746,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 5
+          "version": 6
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -761,25 +766,13 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
+      "detail": "invalid expected source contract: source contract version must be 2, 3, 4, or 5",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "tools/l2_scheduler_watchdog.py",
-        "tools/external_heartbeat.py",
-        "tools/domain_event_seal.py",
-        "tools/restore_drill.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/tools/test_l2_scheduler_watchdog.py",
-        "tests/tools/test_external_heartbeat.py",
-        "tests/tools/test_domain_event_seal.py",
-        "tests/governance/test_l2_operations_boundary.py",
-        "evidence/l2_backup_latest.json"
-      ],
+      "evidence": [],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -789,7 +782,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "UNVERIFIED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -827,6 +820,11 @@
               "role": "data_quality_admission"
             },
             {
+              "relative_path": "data/cache/defillama_tvl_vintages.db",
+              "required": false,
+              "role": "defillama_tvl_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/deployment_state.db",
               "required": false,
               "role": "deployment_state"
@@ -907,7 +905,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 5
+          "version": 6
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -933,20 +931,11 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history checker arguments are incomplete",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "services/governance/l2_restore_history.py",
-        "services/governance/l2_restore_checkpoint.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/governance/test_l2_restore_history.py",
-        "tests/governance/test_l2_restore_checkpoint.py",
-        "tests/governance/test_l2_restore_top_tier.py",
-        "data/cache/l2_restore_history.db"
-      ],
+      "evidence": [],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -958,7 +947,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "UNVERIFIED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1560,19 +1549,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 1,
+    "failed": 0,
     "manual_evidence_required": 0,
     "partial": 6,
-    "passed": 15,
+    "passed": 14,
     "red_lines_failed": 3,
     "total": 22,
-    "unverified": 0
+    "unverified": 2
   },
   "validation": {
     "current": true,
-    "generated_at": 1786360022590,
-    "run_id": "87fd72d28bb9d039749bacf12d6e74d76626699374d10efd8677a8dc55f284fd",
-    "source_commit": "33f4297952c85d795ecacec66864dd161cbc3205"
+    "generated_at": 1786384898479,
+    "run_id": "9f57b1e5b692f2666c005bb181d9cd645818478b89a4936fb35b0f845cbd64da",
+    "source_commit": "348d5bd60a0f0b64f75f433be377a9b206c4bd0f"
   },
   "verdict": "NOT_TOP_TIER"
 }
