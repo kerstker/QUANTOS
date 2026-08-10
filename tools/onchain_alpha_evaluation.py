@@ -43,7 +43,11 @@ FWD_HORIZON = 7
 ACTIVITY_WINDOW = 30
 PERIODS_PER_YEAR = 52
 EVALUATION_QUANTILE = 0.3
-MIN_CROSS_SECTION = 5
+# The formal evaluator's breadth floor is not source-adjustable. Coin Metrics
+# Community currently exposes only nine assets, so a real load blocks before
+# trial registration instead of creating a family that can only receive
+# THIN_COVERAGE. Callers may still attach five names for diagnostic work.
+MIN_CROSS_SECTION = AlphaFactoryConfig().min_breadth
 MIN_COMMON_ROWS = 730
 DATA_SOURCE = "crypto_price_pit_panel+coinmetrics_onchain.json"
 SOURCE = "tools.onchain_alpha_evaluation"

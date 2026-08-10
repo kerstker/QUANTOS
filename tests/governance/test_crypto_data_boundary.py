@@ -64,6 +64,9 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # Coin Metrics Community 公开链上日频指标；无 key、只读、非商业研究许可，
              # 严格限制分页 host，不具账户或交易能力。
              os.path.join(_ROOT, "tools", "coinmetrics_onchain_fetch.py"),
+             # DefiLlama Free API chain TVL history; public/keyless, exact
+             # chain-to-asset mapping, no account or order capability.
+             os.path.join(_ROOT, "tools", "defillama_chain_tvl_fetch.py"),
              # MEXC 集成两个门外工具(2026-07-27,Phase 8 M1 补登记——审计发现的既有缺口,
              # binance_readonly_smoke 在册而这两个不在):klines 公开行情抓取器(无 key 只读)
              # 与 mainnet 只读首验(人工执行,3 个只读 GET,绝不下单)——同一条只读数据边界钉住。
@@ -150,6 +153,7 @@ _EXTRA_ALLOWED_BY_FILE = {
     "bybit_klines_fetch.py": {"math", "argparse"},
     "bybit_positioning_fetch.py": {"math", "argparse"},
     "coinmetrics_onchain_fetch.py": {"math", "argparse", "datetime"},
+    "defillama_chain_tvl_fetch.py": {"math", "argparse"},
     # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用
     # tools/coingecko_fetch._http_get_json 的 urllib,已在 _ALLOWED_FETCHER 内)。
     "mexc_klines_fetch.py": {"argparse"},

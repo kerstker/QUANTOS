@@ -15,6 +15,7 @@ T0 = (1_700_000_000_000 // DAY_MS) * DAY_MS
 INSTRUMENTS = (
     "ADAUSDT", "BCHUSDT", "BTCUSDT", "DOGEUSDT",
     "ETCUSDT", "ETHUSDT", "LTCUSDT", "XLMUSDT",
+    "XRPUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT",
 )
 
 
@@ -71,6 +72,7 @@ def _attached_panel() -> FieldPanel:
 
 
 def test_family_is_fixed_and_contains_no_parameter_scan() -> None:
+    assert driver.MIN_CROSS_SECTION == 10
     assert tuple(driver.CANDIDATE_EXPRESSIONS) == (
         "network_activity_growth",
         "network_value",

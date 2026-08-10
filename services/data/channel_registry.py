@@ -83,7 +83,22 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "Keyless Community API history for nine native crypto networks and the "
         "three fields exposed by the current Community entitlement. CC BY-NC "
         "license: L2 non-commercial research only; commercial deployment requires "
-        "separate entitlement review and cannot inherit this channel automatically.",
+        "separate entitlement review and cannot inherit this channel automatically. "
+        "The current nine-asset breadth is below the formal alpha gate minimum of ten, "
+        "so this channel is diagnostic unless the Community entitlement widens.",
+    ),
+    DataChannelSpec(
+        "defillama_free_chain_tvl", "DefiLlama Free API", "onchain",
+        "defillama_chain_tvl", "daily", "1d",
+        ("chain_tvl_usd", "chain_tvl_growth", "chain_tvl_acceleration"),
+        "data/cache/defillama_chain_tvl.json", "REAL_DIAGNOSTIC",
+        ("onchain_activity", "onchain_value", "event_regime"),
+        72, "public_rest",
+        "Official keyless Free API chain TVL history with a pinned 19-chain-to-asset "
+        "mapping. Public research input only; deployment entitlement is a separate "
+        "human review and this channel never grants Testnet admission. Historical "
+        "values are retrospective/revisable with no vintages, so only forward "
+        "snapshots can become PIT evidence.",
     ),
     DataChannelSpec(
         "binance_usdm_realtime_complete", "Binance", "binance_usdm",

@@ -20,6 +20,12 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert onchain.availability == "REAL_HISTORY"
     assert onchain.endpoint_class == "public_rest_noncommercial"
     assert set(onchain.fields) == {"active_addresses", "transaction_count", "mvrv"}
+    defillama = spec_by_channel("defillama_free_chain_tvl")
+    assert defillama.availability == "REAL_DIAGNOSTIC"
+    assert defillama.endpoint_class == "public_rest"
+    assert set(defillama.fields) == {
+        "chain_tvl_usd", "chain_tvl_growth", "chain_tvl_acceleration",
+    }
     assert spec_by_channel("cross_exchange_book").availability == "REAL_SNAPSHOT"
 
 
