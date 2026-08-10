@@ -1,5 +1,22 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-10 Alpha 正式准入复核（Task 39 保持锁定）：** 本轮按预注册口径完成三条
+> 相互独立的候选路径，均未取得正式 PASS。① Binance 交割合约/永续的 calendar-basis
+> 收敛假说在 26 个合约、156 周上为 `FALSIFIED`（净 Sharpe -0.177，双倍成本后仍负）；
+> ② 三日 positioning consensus 修复了候选间 PBO 日历不一致后，在 458 个统一周期上
+> `VERIFIED/FAIL`（候选净 Sharpe 2.395、DSR 0.00227、PBO 0，正式样本 n=457）；
+> ③ 从旧搜索冻结的 14 个 volume-acceleration finalist 以同一 2206 日历、6bps 成本、
+> 完整 leakage/regime/walk-forward/DSR/PBO 门重放，14/14 `FAIL`；预选 subject 的净
+> Sharpe 0.724、DSR 4.23e-46、PBO 0.257，当前全局试验数 2751。旧高 DSR 不能在
+> 完整家族和当前 multiple-testing 权威下复现。本轮没有调低阈值、成本或改窗追结果，
+> 也没有为失败候选补造前向信用。正式 eligible 仍为 0：未生成 Testnet intent，未启动
+> 执行服务或七天 soak，未读取凭证、连接私有账户或提交订单。下一条诚实路径是取得新的
+> 独立观测/数据面并预注册新假说；在此之前 `OPERATIONAL_SOAK_PENDING` 和
+> `L2_DRY_RUN_ONLY` 保持不变。设计与复核记录见
+> `docs/engineering/specs/2026-08-10-binance-calendar-basis-alpha.md`、
+> `docs/engineering/specs/2026-08-10-positioning-consensus-3d-admission.md`、
+> `docs/engineering/specs/2026-08-10-volume-acceleration-confirmatory-admission.md`。
+
 > **2026-08-09 Binance public realtime chain verification scaling:** production
 > observation on the 1.85M-row public snapshot authority showed the stream
 > worker repeatedly starting from genesis, consuming a CPU core for minutes and
