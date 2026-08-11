@@ -502,10 +502,10 @@
     "tests/tools/test_external_model_provider.py": "1429ebf1966dccfe46486645a307998f48ad2426ff012c3836e6f18c33ef2e02",
     "tests/tools/test_l2_backup.py": "e8a5455786178b985e1f9b9f71900a5dc0147edf922822910da9e970555d89a2",
     "tests/tools/test_l2_schedule_entrypoint.py": "1347a5cfeba6a3d60fdc284d3b9c8449877be6f534603121229b81d5cdaf506a",
-    "tests/tools/test_l2_scheduler_watchdog.py": "04f90f63f0fcdf649d2506e4660dcdc50374177b2fba344938ece3df119a79bb",
+    "tests/tools/test_l2_scheduler_watchdog.py": "8a109baff8d5375615a64f1778305dd02cf31c578da316e3f48567c8a51fd63a",
     "tests/tools/test_mft_testnet_soak.py": "491e1e8773cac4d469773d4aea79d32cae73af3843ee64ca75e8be5f1ab7bf3f",
     "tests/tools/test_paper_order_preview.py": "4a76c9c4cc700aacf7b136ba5cd8364f64e6bd4993df10ef1d32e72d3569ad6c",
-    "tests/tools/test_realtime_alpha_discovery.py": "cf47d3592544752b4cc4c3f1beee740d11eb6d9d2cc86d000b9bcda9d89e078d",
+    "tests/tools/test_realtime_alpha_discovery.py": "8a340dcb3c9079cd6edd93f551e1935d01559527ac17feb4d340df2a723ab921",
     "tests/tools/test_realtime_alpha_execution_paper.py": "14c1ce6360964144cc416179235bb3ffe1314eedcc25c61e9bb5d918f506cf66",
     "tests/tools/test_realtime_alpha_forward_shadow.py": "e00aec1ff0464a1c996cc4783e9af1cd4ee5db592dc909ba971a2599ab5797bd",
     "tests/tools/test_reproducible_source_bundle.py": "b6993076a825ed0ad7b7c3b09cca761312bf13d9af4810e7ba32e19a69b86681",
@@ -532,7 +532,7 @@
     "tools/kill_switch_events.py": "4ee21fe060d7de4bac1c3b93e8e6abe929b9bdf9f9cfcdb0b761631c55193fb2",
     "tools/l2_backup.py": "8dec7ba78f15272a7f2fd061786e8ee7184fd7cc77e99a8c61acac7c9880b583",
     "tools/l2_schedule_entrypoint.py": "187d7b439830a10cb117ace31981bbe9236089a29bb601053436a04f40ce2d6d",
-    "tools/l2_scheduler_watchdog.py": "084bdf8e03fe58304451e176af5262ba104d042fbf8428847505b1c133157328",
+    "tools/l2_scheduler_watchdog.py": "41d38db9cb3c2c8627fb5b4f176b23c65c392d89fa73afb231b917b892509a56",
     "tools/live_backup.py": "df70aaaeefebf0485ba95764f192afa6875695ad00a8bdbdd30c31c6d65fb750",
     "tools/live_data_refresh.py": "a7dc785ae3e0ecccabf6966e8dfaa6d115bdab4c0b989c55eafdfeec68aa0768",
     "tools/live_kill_switch_reset.py": "677d3c61bc7632bf9e04f185ce755734c817d5976da958b43dc1b507bdf6b0c6",
@@ -542,7 +542,7 @@
     "tools/mft_testnet_soak.py": "6a4ebf39073f8e2ee23b92c59c99132e4e211bbb74ce16c3760d4a5d35c2b611",
     "tools/paper_order_preview.py": "f8ef0181648c3ad7eaeaffd2120254f13a23440f3640655516eab3e1d6aae3f9",
     "tools/provision_artifact_admission_authority.py": "4f5c70d0064e8027ab2e6babbe5067920bdeea56e3c658437a1c7a3be4cb15e8",
-    "tools/realtime_alpha_discovery.py": "2bcfb5e37738f7390c9cf2570ebe2e2f31d971832005bfa641dbdc7fd418b902",
+    "tools/realtime_alpha_discovery.py": "aafc6b8e26c9708e92676dc0a3e6cb9e820a96a6181b1e529c8a2f43f645c2d3",
     "tools/realtime_alpha_execution_paper.py": "4cefbfa876a9378752b0daaa7494244a8b211b7d0733057eb2e45b5a5543cd38",
     "tools/realtime_alpha_forward_shadow.py": "87f1d514631d793f4ebf049841223d35c9537f6d548e186160879f66c1eb850a",
     "tools/restore_drill.py": "954b3405348d2d8e95dbd7bdde07205c38799fca667c70c4aeafe67d1e4962dd",
@@ -577,9 +577,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786473831060,
-    "run_id": "44439b76220f24bb4c9f1277f55f45a1d25d22bd85a4bcc70d66f12c70f99a64",
-    "source_commit": "83c5fb154aa1c0682fd91a16671ad3e5675a305a"
+    "generated_at": 1786482712209,
+    "run_id": "57c45baddd9df3d5448a81b02683804c458fcdf46edd01c82c80a4b18485450e",
+    "source_commit": "6ad62de278b110fefc1a457e965a05a5b7001332"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
