@@ -113,6 +113,36 @@ def test_pytest_child_does_not_inherit_canonical_identity(tmp_path):
     assert json.loads(report_path.read_text(encoding="utf-8"))["overall_status"] == "PASS"
 
 
+def test_subset_evidence_child_does_not_claim_canonical_identity(tmp_path):
+    validate = _load_validate_module()
+    report_path = tmp_path / "validation.json"
+    check_file = tmp_path / "check_subset_environment.py"
+    check_file.write_text(
+        "import os\n"
+        "assert 'QUANTOS_VALIDATION_RUN_ID' not in os.environ\n"
+        "assert 'QUANTOS_VALIDATION_SOURCE_COMMIT' not in os.environ\n"
+        "assert 'QUANTOS_VALIDATION_STARTED_AT_MS' not in os.environ\n",
+        encoding="utf-8",
+    )
+    checks = [
+        (
+            "synthetic-evidence:current",
+            [sys.executable, str(check_file)],
+            str(ROOT),
+        )
+    ]
+
+    result = validate.run(
+        stages=["synthetic-evidence:current"],
+        json_report=str(report_path),
+        timeout_seconds=2,
+        checks=checks,
+    )
+
+    assert result == 0
+    assert json.loads(report_path.read_text(encoding="utf-8"))["overall_status"] == "PASS"
+
+
 def test_pytest_phase13_child_inherits_canonical_identity():
     validate = _load_validate_module()
     validate._VALIDATION_ENV = {

@@ -967,12 +967,25 @@ def run(*, stages=None, json_report: str = DEFAULT_REPORT,
             f"{source_commit}:{started_at_ms}".encode("utf-8")
         ).hexdigest()
     global _VALIDATION_ENV
-    _VALIDATION_ENV = {
-        **os.environ,
-        "QUANTOS_VALIDATION_RUN_ID": validation_run_id,
-        "QUANTOS_VALIDATION_SOURCE_COMMIT": source_commit,
-        "QUANTOS_VALIDATION_STARTED_AT_MS": str(started_at_ms),
-    }
+    if selection_scope == "ALL":
+        _VALIDATION_ENV = {
+            **os.environ,
+            "QUANTOS_VALIDATION_RUN_ID": validation_run_id,
+            "QUANTOS_VALIDATION_SOURCE_COMMIT": source_commit,
+            "QUANTOS_VALIDATION_STARTED_AT_MS": str(started_at_ms),
+        }
+    else:
+        # A subset run is diagnostic and read-only; it is not the canonical
+        # validation run that produced tracked evidence.  Passing its
+        # short-lived identity to evidence checks makes a correctly bound
+        # artifact fail solely because the operator selected ``--stage``.
+        # Strip even inherited values so standalone ``:current`` checks use
+        # their persisted binding and the repository's stable source anchor.
+        _VALIDATION_ENV = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in _CANONICAL_ENV_KEYS
+        }
     if selection_scope == "SUBSET":
         # Subset validation is deliberately read-only and preserves the
         # operator-requested order.
