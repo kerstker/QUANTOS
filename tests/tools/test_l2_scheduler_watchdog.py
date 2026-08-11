@@ -239,6 +239,7 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
 
     assert systemic.module == "binance_systemic_risk"
     assert systemic.max_age_ms == 90 * 60_000
+    assert systemic.partial_results == frozenset({2})
     assert rpi.module == "binance_rpi_depth"
     assert rpi.max_age_ms == 3 * 3_600_000
 

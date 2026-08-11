@@ -23,6 +23,7 @@ from urllib.parse import urlencode, urlsplit
 
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.data.binance_systemic_store import BinanceSystemicStore
@@ -1278,7 +1279,11 @@ def main() -> int:
         f"inserted={sum(status['store']['inserted'].values())}",
         f"chain={status['store']['chain_valid']}",
     )
-    return SCHEDULE_EXIT_SUCCESS if status["complete"] else SCHEDULE_EXIT_FAILURE
+    return (
+        SCHEDULE_EXIT_SUCCESS
+        if status["complete"]
+        else SCHEDULE_EXIT_SAFE_BLOCKED
+    )
 
 
 if __name__ == "__main__":

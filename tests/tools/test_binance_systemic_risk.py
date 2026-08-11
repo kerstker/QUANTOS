@@ -689,6 +689,37 @@ def test_refresh_obeys_persisted_ban_without_network_calls(tmp_path):
     assert "/futures/data/basis" in status["errors"]["BTC"]["message"]
 
 
+def test_main_classifies_completed_fail_closed_refresh_as_safe_blocked(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        systemic,
+        "run_refresh",
+        lambda: {
+            "verdict": "BLOCK",
+            "complete": False,
+            "coverage": {"complete": 0, "requested": 14},
+            "store": {"inserted": {}, "chain_valid": True},
+        },
+    )
+
+    assert systemic.main() == 2
+
+
+def test_main_keeps_unhandled_refresh_failure_as_execution_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        systemic,
+        "run_refresh",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(systemic, "DEFAULT_STATUS", str(tmp_path / "status.json"))
+
+    assert systemic.main() == 1
+
+
 def test_rate_limiter_retains_maximum_binance_used_weight_headers():
     responses = iter(
         (

@@ -135,7 +135,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         "binance_realtime_market", 15 * 60_000
     ),
     "QUANTOS_binance_systemic_risk": ExpectedTask(
-        "binance_systemic_risk", 90 * 60_000
+        "binance_systemic_risk",
+        90 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
     "QUANTOS_binance_rpi_depth": ExpectedTask(
         "binance_rpi_depth", 3 * _HOUR_MS
