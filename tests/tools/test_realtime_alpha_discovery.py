@@ -126,6 +126,50 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     assert all(values == (5_000_000.0,) for values in capacity.values())
 
 
+def test_coverage_reads_compact_series_metadata_not_the_feature_archive(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_path = tmp_path / "features.db"
+    _write_store(store_path, instruments=10, buckets=24)
+    original_connect = discovery_module.sqlite3.connect
+
+    def archive_denied_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+
+        def authorize(action, arg1, _arg2, _database, _trigger):
+            if action == sqlite3.SQLITE_READ and arg1 == "feature_values":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        connection.set_authorizer(authorize)
+        return connection
+
+    monkeypatch.setattr(discovery_module.sqlite3, "connect", archive_denied_connect)
+
+    coverage = coverage_from_store(store_path)
+
+    assert set(coverage) == set(FEATURE_IDS)
+    assert all(item.row_count == 240 for item in coverage.values())
+    assert all(len(item.instruments) == 10 for item in coverage.values())
+
+
+def test_coverage_rejects_inconsistent_series_metadata(tmp_path) -> None:
+    store_path = tmp_path / "features.db"
+    _write_store(store_path, instruments=10, buckets=24)
+    connection = sqlite3.connect(store_path)
+    connection.execute(
+        "UPDATE feature_value_series_metadata SET row_count=row_count+1 "
+        "WHERE feature_id=? AND feature_version=? AND instrument_id=?",
+        (FEATURE_IDS[0], FEATURE_VERSION, "S00USDT"),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(RealtimeAlphaWorkerError, match="metadata is inconsistent"):
+        coverage_from_store(store_path)
+
+
 def test_bucket_cache_refreshes_when_source_advances_within_allowed_lag(tmp_path) -> None:
     store_path = tmp_path / "features.db"
     first_end_ms = _write_store(store_path, instruments=10, buckets=24)

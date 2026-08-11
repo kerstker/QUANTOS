@@ -77,6 +77,44 @@ BEGIN
 END
 """
 
+_SERIES_METADATA_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS feature_value_series_metadata (
+    feature_id       TEXT NOT NULL,
+    feature_version  TEXT NOT NULL,
+    instrument_id    TEXT NOT NULL,
+    row_count        INTEGER NOT NULL CHECK (row_count > 0),
+    first_event_time INTEGER NOT NULL,
+    last_event_time  INTEGER NOT NULL,
+    PRIMARY KEY (feature_id, feature_version, instrument_id),
+    CHECK (first_event_time <= last_event_time)
+) WITHOUT ROWID
+"""
+_SERIES_METADATA_TRIGGER_SQL = """
+CREATE TRIGGER IF NOT EXISTS feature_values_series_after_insert
+AFTER INSERT ON feature_values
+BEGIN
+    INSERT INTO feature_value_series_metadata (
+        feature_id,
+        feature_version,
+        instrument_id,
+        row_count,
+        first_event_time,
+        last_event_time
+    ) VALUES (
+        NEW.feature_id,
+        NEW.feature_version,
+        NEW.instrument_id,
+        1,
+        NEW.event_time,
+        NEW.event_time
+    )
+    ON CONFLICT(feature_id, feature_version, instrument_id) DO UPDATE SET
+        row_count = row_count + 1,
+        first_event_time = MIN(first_event_time, NEW.event_time),
+        last_event_time = MAX(last_event_time, NEW.event_time);
+END
+"""
+
 
 class SqliteFeatureValueStore:
     def __init__(self, path: str, *, create: bool = False) -> None:
@@ -96,6 +134,7 @@ class SqliteFeatureValueStore:
                 self._conn.executescript(_SCHEMA)
                 self._conn.commit()
                 self._ensure_row_count_metadata_locked()
+                self._ensure_series_metadata_locked()
 
     def _ensure_row_count_metadata_locked(self) -> None:
         """Install an exact persistent insert counter under one write transaction.
@@ -157,6 +196,85 @@ class SqliteFeatureValueStore:
             self._conn.rollback()
             raise DataStoreError(
                 f"feature value row-count metadata migration failed: {exc}"
+            ) from exc
+
+    def _ensure_series_metadata_locked(self) -> None:
+        """Install exact per-series coverage metadata under one transaction.
+
+        Discovery needs exact counts and first/last event times, but repeatedly
+        aggregating the append-only multi-million-row archive starves the
+        realtime writer.  Existing stores pay one grouped bootstrap; the
+        trigger then advances the compact authority in the same transaction as
+        each successful top-level insert.  Duplicate ``INSERT OR IGNORE`` rows
+        do not fire it.
+        """
+
+        def metadata_table_exists() -> bool:
+            return self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table'"
+                " AND name='feature_value_series_metadata'"
+            ).fetchone() is not None
+
+        def require_consistent_metadata() -> None:
+            expected_row = self._conn.execute(
+                "SELECT row_count FROM feature_value_store_metadata"
+                " WHERE singleton_id=1"
+            ).fetchone()
+            if expected_row is None:
+                raise DataStoreError("feature value row-count metadata missing")
+            observed = self._conn.execute(
+                "SELECT COALESCE(SUM(row_count),0),"
+                " COUNT(*),MIN(row_count),"
+                " SUM(CASE WHEN first_event_time>last_event_time THEN 1 ELSE 0 END)"
+                " FROM feature_value_series_metadata"
+            ).fetchone()
+            if observed is None:
+                raise DataStoreError("feature value series metadata missing")
+            expected_count = int(expected_row[0])
+            observed_count = int(observed[0])
+            series_count = int(observed[1])
+            minimum_count = observed[2]
+            invalid_bounds = int(observed[3] or 0)
+            if (
+                observed_count != expected_count
+                or (series_count > 0 and int(minimum_count) <= 0)
+                or invalid_bounds
+            ):
+                raise DataStoreError("feature value series metadata is inconsistent")
+
+        try:
+            if metadata_table_exists():
+                require_consistent_metadata()
+                trigger_exists = self._conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='trigger'"
+                    " AND name='feature_values_series_after_insert'"
+                ).fetchone()
+                if trigger_exists is not None:
+                    return
+
+            self._conn.execute("BEGIN IMMEDIATE")
+            if metadata_table_exists():
+                require_consistent_metadata()
+            else:
+                self._conn.execute(_SERIES_METADATA_TABLE_SQL)
+                self._conn.execute(
+                    "INSERT INTO feature_value_series_metadata ("
+                    "feature_id,feature_version,instrument_id,row_count,"
+                    "first_event_time,last_event_time) "
+                    "SELECT feature_id,feature_version,instrument_id,COUNT(*),"
+                    "MIN(event_time),MAX(event_time) FROM feature_values "
+                    "GROUP BY feature_id,feature_version,instrument_id"
+                )
+                require_consistent_metadata()
+            self._conn.execute(_SERIES_METADATA_TRIGGER_SQL)
+            self._conn.commit()
+        except DataStoreError:
+            self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            self._conn.rollback()
+            raise DataStoreError(
+                f"feature value series metadata migration failed: {exc}"
             ) from exc
 
     def _require_schema(self) -> None:

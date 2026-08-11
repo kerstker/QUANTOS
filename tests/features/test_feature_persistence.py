@@ -323,6 +323,63 @@ def test_value_store_row_count_bootstraps_existing_archive_exactly(tmp_path):
     assert store.row_count() == 3
 
 
+def test_value_store_series_coverage_bootstraps_and_tracks_exactly(tmp_path):
+    path = os.path.join(str(tmp_path), "legacy-series-coverage.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE feature_values (
+            feature_id TEXT NOT NULL,
+            feature_version TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            event_time INTEGER NOT NULL,
+            knowledge_time INTEGER NOT NULL,
+            value REAL,
+            PRIMARY KEY (
+                feature_id,
+                feature_version,
+                instrument_id,
+                event_time,
+                knowledge_time
+            )
+        );
+        """
+    )
+    conn.executemany(
+        "INSERT INTO feature_values VALUES (?,?,?,?,?,?)",
+        [
+            ("mom_10", "v1", "BTC", 100, 100, 0.5),
+            ("mom_10", "v1", "BTC", 200, 200, 0.7),
+            ("mom_10", "v1", "ETH", 150, 150, 0.6),
+            ("value", "v2", "BTC", 50, 50, 1.0),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteFeatureValueStore(path, create=True)
+    rows = store._conn.execute(
+        "SELECT feature_id,feature_version,instrument_id,row_count,"
+        "first_event_time,last_event_time FROM feature_value_series_metadata "
+        "ORDER BY feature_id,feature_version,instrument_id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("mom_10", "v1", "BTC", 2, 100, 200),
+        ("mom_10", "v1", "ETH", 1, 150, 150),
+        ("value", "v2", "BTC", 1, 50, 50),
+    ]
+
+    assert store.add(_fv(300, 300, 0.9), version="v1") is True
+    assert store.add(_fv(300, 300, 9.9), version="v1") is False
+    updated = store._conn.execute(
+        "SELECT row_count,first_event_time,last_event_time "
+        "FROM feature_value_series_metadata "
+        "WHERE feature_id='mom_10' AND feature_version='v1' "
+        "AND instrument_id='BTC'"
+    ).fetchone()
+    assert tuple(updated) == (3, 100, 300)
+
+
 def test_value_store_daily_row_count_does_not_scan_feature_archive(
     tmp_path,
     monkeypatch,
@@ -350,6 +407,24 @@ def test_value_store_daily_row_count_does_not_scan_feature_archive(
     assert not any(
         "COUNT(*) FROM FEATURE_VALUES" in statement for statement in normalized
     )
+    assert not any(
+        "GROUP BY FEATURE_ID,FEATURE_VERSION,INSTRUMENT_ID" in statement
+        for statement in normalized
+    )
+
+
+def test_value_store_series_metadata_inconsistency_fails_closed(tmp_path):
+    path = os.path.join(str(tmp_path), "inconsistent-series.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store.add(_fv(100, 100, 0.5), version="v1")
+    store._conn.execute(
+        "UPDATE feature_value_series_metadata SET row_count=row_count+1"
+    )
+    store._conn.commit()
+    store.close()
+
+    with pytest.raises(DataStoreError, match="series metadata is inconsistent"):
+        SqliteFeatureValueStore(path, create=True)
 
 
 def test_value_store_row_count_metadata_missing_fails_closed(tmp_path):

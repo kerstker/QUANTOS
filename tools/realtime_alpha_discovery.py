@@ -240,35 +240,64 @@ def coverage_from_store(path: str | Path) -> dict[str, FeatureCoverage]:
         connection = sqlite3.connect(f"file:{resolved}?mode=ro", uri=True)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA query_only=ON")
-        table = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='feature_values'"
-        ).fetchone()
-        if table is None:
+        tables = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                "('feature_values','feature_value_store_metadata',"
+                "'feature_value_series_metadata')"
+            )
+        }
+        if "feature_values" not in tables:
             raise RealtimeAlphaWorkerError("realtime feature store is uninitialized")
+        if not {
+            "feature_value_store_metadata",
+            "feature_value_series_metadata",
+        }.issubset(tables):
+            raise RealtimeAlphaWorkerError(
+                "realtime feature series metadata is unavailable"
+            )
+        exact_row = connection.execute(
+            "SELECT row_count FROM feature_value_store_metadata WHERE singleton_id=1"
+        ).fetchone()
+        series_row = connection.execute(
+            "SELECT COALESCE(SUM(row_count),0) FROM feature_value_series_metadata"
+        ).fetchone()
+        if (
+            exact_row is None
+            or series_row is None
+            or int(exact_row[0]) != int(series_row[0])
+        ):
+            raise RealtimeAlphaWorkerError(
+                "realtime feature series metadata is inconsistent"
+            )
+        placeholders = ",".join("?" for _ in FEATURE_IDS)
+        rows = connection.execute(
+            "SELECT feature_id,instrument_id,row_count,first_event_time,"
+            "last_event_time FROM feature_value_series_metadata "
+            f"WHERE feature_version=? AND feature_id IN ({placeholders}) "
+            "ORDER BY feature_id,instrument_id",
+            (FEATURE_VERSION, *FEATURE_IDS),
+        ).fetchall()
+        grouped: dict[str, list[sqlite3.Row]] = {}
+        for row in rows:
+            grouped.setdefault(str(row["feature_id"]), []).append(row)
         result: dict[str, FeatureCoverage] = {}
         for feature_id in FEATURE_IDS:
-            summary = connection.execute(
-                "SELECT COUNT(*) AS n,MIN(event_time) AS first_event,"
-                "MAX(event_time) AS last_event FROM feature_values "
-                "WHERE feature_id=? AND feature_version=?",
-                (feature_id, FEATURE_VERSION),
-            ).fetchone()
-            if summary is None or int(summary["n"] or 0) == 0:
+            series = grouped.get(feature_id, [])
+            if not series:
                 continue
-            instruments = frozenset(
-                str(row["instrument_id"])
-                for row in connection.execute(
-                    "SELECT DISTINCT instrument_id FROM feature_values "
-                    "WHERE feature_id=? AND feature_version=? ORDER BY instrument_id",
-                    (feature_id, FEATURE_VERSION),
+            counts = [int(row["row_count"]) for row in series]
+            if any(count <= 0 for count in counts):
+                raise RealtimeAlphaWorkerError(
+                    "realtime feature series metadata is invalid"
                 )
-            )
             result[feature_id] = FeatureCoverage(
                 feature_id=feature_id,
-                row_count=int(summary["n"]),
-                instruments=instruments,
-                first_event_ms=int(summary["first_event"]),
-                last_event_ms=int(summary["last_event"]),
+                row_count=sum(counts),
+                instruments=frozenset(str(row["instrument_id"]) for row in series),
+                first_event_ms=min(int(row["first_event_time"]) for row in series),
+                last_event_ms=max(int(row["last_event_time"]) for row in series),
             )
         return result
     except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
