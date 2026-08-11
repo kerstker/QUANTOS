@@ -149,9 +149,9 @@
   "actions_all_sha_pinned": true,
   "actions_vulnerability_count": 0,
   "actions_vulnerability_evidence_ref": "evidence/vulnerability/actions_osv_latest.json",
-  "actions_vulnerability_evidence_sha256": "d214f94808b1ebc8427814d9d61e8c04c378816a17735c21a08b331c721e0170",
+  "actions_vulnerability_evidence_sha256": "b4c099e9293934d40d95f74db93501e9eced7ecb0b66c364b2da3e7691676600",
   "actions_vulnerability_evidence_status": "VERIFIED_EXTERNAL_ZERO_KNOWN",
-  "actions_vulnerability_observed_at": 1786460780,
+  "actions_vulnerability_observed_at": 1786473727,
   "artifact_admission_active_policy_count": 0,
   "artifact_admission_active_receipt_key_count": 0,
   "artifact_admission_allow_cas_status": "EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED",
@@ -291,7 +291,7 @@
   "manifest_sha256": {
     ".gitattributes": "c8a87c174f9da8aa58090b4fd68a638682ace6224217f0f9677b841bd32a4da8",
     ".github/workflows/sigstore-evidence.yml": "7d00e50a34d9150f3797e6838a0173b2251e6a0a1fa407177a21058742b3a18e",
-    ".github/workflows/validate.yml": "721679ae3cc66dad289d488f7b4ef78f4b2c5c0641693dd22a41ffd770f77d01",
+    ".github/workflows/validate.yml": "2c211ffe411e1cd78bdc9e91a199f8df6c5b942e29aac82e95726b33e50a4048",
     "apps/research-console/package-lock.json": "18fc65359246c5770f5de6bc0ae71463c06f92ce817f40fd4a0fd986e3b79bcb",
     "apps/research-console/package.json": "f3216376491155a9a0fe13d949a26050dc0aed00612313a8c4a140ab44323e02",
     "apps/research-console/src/lib/types/research.ts": "aedc2e311496d3458c0d9dc93461f6bb130130b7183906adbf2b52ac0e7c5b22",
@@ -327,7 +327,7 @@
     "evidence/external_sigstore/2026-07-31-admission/trusted-root.json": "a7752f49a4ae0076c5b85eace5bfbb6f58b6cb0dec31ba71803f25d20987d12e",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
     "evidence/service_import_graph.json": "965514864c28c228d9dbe42338653aa277b97c33a0e50cb62184a8d88f1cc10e",
-    "evidence/vulnerability/actions_osv_latest.json": "d214f94808b1ebc8427814d9d61e8c04c378816a17735c21a08b331c721e0170",
+    "evidence/vulnerability/actions_osv_latest.json": "b4c099e9293934d40d95f74db93501e9eced7ecb0b66c364b2da3e7691676600",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
     "evidence/vulnerability/npm_audit_latest.json": "c61e2558facedddd33ad031799f5e87af9b74159637a984a5f45eec3e6d80057",
     "evidence/vulnerability/python_audit_latest.json": "edab51346d8c7c14a817ae0fca9ea0e69f1687050c37bbae8d6076f07528c4c8",
@@ -577,9 +577,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1786467677780,
-    "run_id": "a338d5020143a80564f71279ed46f0426f823b7106a5fc7f81b83a85f09c8400",
-    "source_commit": "2ae9f1d97e004fa1d6f4544c1ad252cbd6dbc81e"
+    "generated_at": 0,
+    "run_id": "b0843212082f4a5867f823afaee0a5fc096dc096cfb2abca08397bf200c70d95",
+    "source_commit": "83c5fb154aa1c0682fd91a16671ad3e5675a305a"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
