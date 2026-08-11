@@ -347,9 +347,12 @@ def test_http_contract_is_get_only_and_never_exposes_mutation_capabilities(tmp_p
     assert snapshot["safety"]["reset_capability"] is False
     assert snapshot["safety"]["approve_capability"] is False
 
-    mft_routes = [
-        route
-        for route in app.routes
-        if getattr(route, "path", "").startswith("/api/v1/console/mft-execution")
-    ]
-    assert {method for route in mft_routes for method in route.methods} == {"GET"}
+    mft_paths = {
+        route: set(path_item)
+        for route, path_item in app.openapi()["paths"].items()
+        if route.startswith("/api/v1/console/mft-execution")
+    }
+    assert mft_paths == {
+        "/api/v1/console/mft-execution": {"get"},
+        "/api/v1/console/mft-execution/delta": {"get"},
+    }

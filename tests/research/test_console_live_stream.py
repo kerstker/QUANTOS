@@ -54,13 +54,9 @@ def test_watch_token_changes_without_reading_snapshot_contents(tmp_path):
 
 
 def test_dry_run_event_stream_is_registered_get_only():
-    routes = [
-        route
-        for route in app.routes
-        if getattr(route, "path", None) == "/api/v1/console/stream/dry-run"
-    ]
-    assert len(routes) == 1
-    assert routes[0].methods == {"GET"}
+    path_item = app.openapi()["paths"]["/api/v1/console/stream/dry-run"]
+
+    assert set(path_item) == {"get"}
 
 
 def test_mft_stream_notice_is_metadata_only_and_never_an_execution_surface():
@@ -84,13 +80,9 @@ def test_mft_stream_notice_is_metadata_only_and_never_an_execution_surface():
 
 
 def test_mft_event_stream_is_registered_get_only():
-    routes = [
-        route
-        for route in app.routes
-        if getattr(route, "path", None) == "/api/v1/console/stream/mft-execution"
-    ]
-    assert len(routes) == 1
-    assert routes[0].methods == {"GET"}
+    path_item = app.openapi()["paths"]["/api/v1/console/stream/mft-execution"]
+
+    assert set(path_item) == {"get"}
 
 
 @pytest.mark.asyncio

@@ -173,3 +173,13 @@ def test_repository_ci_contract_uses_hash_lock_and_both_coverage_gates() -> None
             "branches": 63.0,
         },
     }
+
+
+def test_all_validation_jobs_checkout_the_reviewed_head_with_full_history() -> None:
+    workflow = (REPO / ".github/workflows/validate.yml").read_text(encoding="utf-8")
+    checkout = "uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+    reviewed_head = "ref: ${{ github.event.pull_request.head.sha || github.sha }}"
+
+    assert workflow.count(checkout) == 3
+    assert workflow.count(reviewed_head) == 3
+    assert workflow.count("fetch-depth: 0") == 3

@@ -115,7 +115,7 @@ def test_phase13_dirty_state_allowlisted_symlink_is_unsafe(
 
     def symlink_lstat(path):
         result = real_lstat(path)
-        if Path(path).resolve() == report.resolve():
+        if os.path.abspath(os.fspath(path)) == os.path.abspath(os.fspath(report)):
             return SimpleNamespace(st_mode=stat.S_IFLNK | 0o777)
         return result
 
