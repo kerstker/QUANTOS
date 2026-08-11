@@ -462,7 +462,7 @@ def run_scheduled_module(
                 "scheduled module produced an ambiguous exit code"
             )
         attestation_fn = getattr(module, "release_run_attestation", None)
-        if callable(attestation_fn):
+        if callable(attestation_fn) and result in _ATTESTABLE_EXIT_CODES:
             try:
                 attestation, attestation_sha256 = _validate_worker_attestation(
                     module_name,

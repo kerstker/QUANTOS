@@ -244,6 +244,32 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
     assert rpi.max_age_ms == 3 * 3_600_000
 
 
+def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
+    expected = {
+        "QUANTOS_defillama_tvl_forward_refresh": (
+            "defillama_tvl_forward_refresh",
+            2 * 86_400_000,
+        ),
+        "QUANTOS_defillama_stablecoin_forward_refresh": (
+            "defillama_stablecoin_forward_refresh",
+            2 * 86_400_000,
+        ),
+        "QUANTOS_hyperliquid_public_forward_refresh": (
+            "hyperliquid_public_forward_refresh",
+            2 * 86_400_000,
+        ),
+        "QUANTOS_cftc_tff_forward_refresh": (
+            "cftc_tff_forward_refresh",
+            9 * 86_400_000,
+        ),
+    }
+
+    assert {
+        name: (EXPECTED_TASKS[name].module, EXPECTED_TASKS[name].max_age_ms)
+        for name in expected
+    } == expected
+
+
 def test_resident_binance_stream_exit_is_stale_within_three_paper_cadences():
     stream = EXPECTED_TASKS["QUANTOS_binance_realtime_stream"]
 

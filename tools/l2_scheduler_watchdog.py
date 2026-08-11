@@ -117,6 +117,18 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
+    "QUANTOS_defillama_tvl_forward_refresh": ExpectedTask(
+        "defillama_tvl_forward_refresh", 2 * _DAY_MS
+    ),
+    "QUANTOS_defillama_stablecoin_forward_refresh": ExpectedTask(
+        "defillama_stablecoin_forward_refresh", 2 * _DAY_MS
+    ),
+    "QUANTOS_hyperliquid_public_forward_refresh": ExpectedTask(
+        "hyperliquid_public_forward_refresh", 2 * _DAY_MS
+    ),
+    "QUANTOS_cftc_tff_forward_refresh": ExpectedTask(
+        "cftc_tff_forward_refresh", 9 * _DAY_MS
+    ),
     "QUANTOS_domain_event_ops": ExpectedTask(
         "domain_event_ops", 3 * _HOUR_MS, frozenset({2})
     ),

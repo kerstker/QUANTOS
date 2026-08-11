@@ -64,6 +64,22 @@ def test_store_rejects_conflicting_identity_and_future_event_time(tmp_path):
         store.close()
 
 
+def test_existing_store_reopens_as_read_only_consumer(tmp_path):
+    path = str(tmp_path / "binance.db")
+    writer = BinanceRealtimeStore(path, create=True)
+    try:
+        assert writer.append_snapshot(_snapshot()) is True
+        reader = BinanceRealtimeStore(path, create=False)
+        try:
+            assert reader.latest("BTCUSDT")["observed_at_ms"] == 2_000
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                reader.append_snapshot(_snapshot(3_000))
+        finally:
+            reader.close()
+    finally:
+        writer.close()
+
+
 def test_verified_recent_rows_advances_from_trusted_checkpoint(tmp_path):
     store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
     try:

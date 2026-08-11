@@ -513,7 +513,9 @@ def test_required_worker_attestation_is_validated_and_hash_bound(
         release_verifier=_accept_release,
         release_evidence_verifier=_accept_release_evidence,
         importer=lambda _name: module,
-        on_worker_attested=lambda document, digest: observed.append((document, digest)),
+        on_worker_attested=lambda document, digest: observed.append(
+            (document, digest)
+        ),
     ) == 0
 
     assert observed[0][0] == _worker_attestation(module_name)
@@ -536,6 +538,27 @@ def test_required_worker_rejects_malformed_input_hash(tmp_path: Path) -> None:
             release_evidence_verifier=_accept_release_evidence,
             importer=lambda _name: module,
         )
+
+
+def test_required_worker_fatal_exit_preserves_result_without_attestation(
+    tmp_path: Path,
+) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root, result=1)
+    module.release_run_attestation = lambda: None
+    observed = []
+
+    assert run_scheduled_module(
+        "binance_realtime_features",
+        code_root=code_root,
+        expected_release_commit=COMMIT,
+        release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
+        importer=lambda _name: module,
+        on_worker_attested=lambda document, digest: observed.append((document, digest)),
+    ) == 1
+
+    assert observed == []
 
 
 def test_release_identity_verifies_clean_head_without_optional_git_locks(

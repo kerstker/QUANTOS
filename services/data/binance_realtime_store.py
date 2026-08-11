@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 
@@ -13,6 +14,7 @@ class BinanceRealtimeStoreError(RuntimeError):
 
 
 MAX_FUTURE_SKEW_MS = 30_000
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
 _GENESIS = ""
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS binance_market_snapshots (
@@ -58,7 +60,21 @@ class BinanceRealtimeStore:
     """Durable public-market observations with idempotency and tamper evidence."""
 
     def __init__(self, path: str, *, create: bool = False) -> None:
-        self._conn = sqlite3.connect(path)
+        try:
+            if create:
+                self._conn = sqlite3.connect(
+                    path,
+                    timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
+                )
+            else:
+                read_only_uri = f"{Path(path).resolve().as_uri()}?mode=ro"
+                self._conn = sqlite3.connect(
+                    read_only_uri,
+                    uri=True,
+                    timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
+                )
+        except sqlite3.Error as exc:
+            raise BinanceRealtimeStoreError("snapshot store is unreadable") from exc
         self._conn.row_factory = sqlite3.Row
         if create:
             self._conn.execute("PRAGMA journal_mode=WAL")
