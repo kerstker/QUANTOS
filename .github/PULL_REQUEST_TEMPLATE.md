@@ -1,24 +1,34 @@
-<!-- 标题用中文,格式 type(scope): 摘要 ,如 feat(research/alpha): … -->
+## Purpose
 
-## 这个 PR 做了什么 / 为什么
+<!-- What problem does this solve, and why is this change needed now? -->
 
-<!-- 一句话说清意图,以及为什么需要它 -->
+## Scope
 
-## 改动范围
+<!-- Main modules/files. State explicitly what is out of scope. -->
 
-<!-- 列出主要文件/模块;契约类改动请说明 TS 类型与契约测试是否同改 -->
+## Evidence
 
-## 自查清单(逐项打勾)
+<!-- Failing test first, focused regression, full gate, screenshots, or machine artifacts. -->
 
-- [ ] **tests-first**:新行为先有失败测试,再实现;未隐藏/删除任何失败测试
-- [ ] **门禁绿**:本地 `python scripts/validate.py` 全部通过
-- [ ] **前端**(如改动):`npm run typecheck && npm run build && npm test` 通过
-- [ ] **安全红线未破**:实盘开关恒关、纯 stdlib、确定性、失败关闭、网络只在 `tools/`、未提交任何密钥、未引入券商/CTP/FIX SDK、未绕过风控门、无前视/未来数据
-- [ ] **容器化未破**:非人类 actor 仍不可达 APPROVED;评估仍走未改动的 `ResearchAgentLoop`
-- [ ] **契约两侧同改**(如改了 console API 返回结构):TS `*Payload` 类型 + `test_console_api_contract.py` 同提交
-- [ ] **最小安全改动**:范围聚焦,无夹带无关重构
-- [ ] 提交信息中文,结尾保留 `Co-Authored-By` 署名行
+- [ ] New behavior was test-first, or this is documentation/generated evidence only.
+- [ ] `python scripts/check_repository_hygiene.py` passes when layout/public docs changed.
+- [ ] `python scripts/validate.py` passes, or the exact blocker is documented.
+- [ ] Frontend changes pass typecheck, ESLint, tests, and build.
+- [ ] API contract changes update backend, TypeScript consumers, and contract tests together.
 
-## 备注 / 风险 / 后续待办
+## Safety review
 
-<!-- 可选:已知限制、留下的"口子"、需要人工决策的点 -->
+- [ ] L2 flags remain safe; Mainnet and AI-directed trading are not enabled.
+- [ ] No secret, credential, passphrase, signed mandate, raw runtime data, or authority database is included.
+- [ ] No approval, attestation, risk, kill-switch, reconciliation, or audit boundary is weakened.
+- [ ] Missing/stale/malformed/timeout/429/empty evidence still fails closed.
+- [ ] Network access remains isolated to approved read-only tools or the guarded live adapter boundary.
+- [ ] Point-in-time and no-lookahead behavior is preserved.
+
+## Operational impact
+
+<!-- Migration, rollback, schedule, deployment, data freshness, or monitoring impact. Use “none” explicitly. -->
+
+## Remaining risks and blockers
+
+<!-- A green test is not the same as candidate admission or trading authority. -->

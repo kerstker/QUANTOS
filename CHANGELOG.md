@@ -5,6 +5,12 @@
 
 ## [未发布] - Unreleased
 
+### 变更(仓库治理,2026-08-11)
+- 重建 GitHub 首页、贡献指南、安全策略、文档导航和部署说明，统一为当前
+  `L2_DRY_RUN_ONLY` 三层实况；删除过期完成报告、误提交文本碎片和 60 个分散空壳标记。
+- 新增 fail-closed 仓库整洁检查与默认只预览的安全清理工具；凭证、权威数据库、原始数据和依赖目录
+  均在保护范围外。GitHub 模板、CODEOWNERS、分支保护文档和 Makefile 同步到当前 CI/模块边界。
+
 ### 新增(工程/流程)
 - 机构级开发流程落地:升级 CI(并发取消、最小权限、pip/npm 缓存、显式步骤名)、
   Dependabot(pip/npm/actions 周更)、`.editorconfig`、`CONTRIBUTING.md`、`SECURITY.md`、

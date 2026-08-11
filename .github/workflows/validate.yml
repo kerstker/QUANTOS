@@ -37,6 +37,8 @@ jobs:
       - name: Install frontend dependencies for the canonical gate
         working-directory: apps/research-console
         run: npm ci
+      - name: Verify repository layout and public documentation
+        run: python scripts/check_repository_hygiene.py
       - name: Fail-closed validation gate
         run: python scripts/validate.py        # offline + deterministic: needs no secrets/network
 

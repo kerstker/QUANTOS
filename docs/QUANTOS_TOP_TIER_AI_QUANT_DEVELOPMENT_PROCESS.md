@@ -10,7 +10,7 @@
 
 | 文档 | 作用 |
 |---|---|
-| `docs/QUANTOS_DOCUMENTATION_CONTROL_CENTER.md` | 文档控制中心，管理全部 PRD/ADR/Runbook/API/验收文档状态 |
+| `docs/README.md` | 当前文档权威顺序、导航、生命周期和归档规则 |
 | `docs/QUANTOS_L2_5_RESEARCH_PLATFORM_HARDENING_BACKLOG.md` | L2.5 研究平台硬化执行 Backlog |
 
 ## 1. 当前系统定位

@@ -2353,3 +2353,21 @@ source contract v7 and participates in restore verification once present.
 Formal Alpha eligibility remains **zero**.  No Testnet intent, execution
 service, seven-day soak, credential access, account query, broker connection or
 order submission was started.
+
+## 2026-08-11 — repository governance and operator experience
+
+The repository shell was consolidated without changing trading behavior or
+research results.  The GitHub landing page, contribution/security guidance,
+deployment guide, local research-stack runbook, issue/PR templates, CODEOWNERS,
+and documentation index now describe the same three-layer operating reality:
+L2 research/dry-run is the default, Testnet exists behind explicit evidence and
+human gates, and Mainnet remains structurally blocked.
+
+Sixty distributed `PLANNED.md` placeholders were replaced by the central
+scaffold register in `docs/PLANNED_SCAFFOLDS.md`; obsolete completion snapshots
+and an accidental root text fragment were removed.  Historical decisions remain
+available through Git history.  Repository hygiene is now machine-checked in CI
+and the pre-commit hook, while the new workspace cleaner is dry-run by default
+and explicitly excludes `key/`, authoritative `data/`, `.git/`, and dependency
+directories.  The cleanup does not alter Alpha admission: formal eligibility
+remains **zero**, so no Testnet execution or soak was started by this work.

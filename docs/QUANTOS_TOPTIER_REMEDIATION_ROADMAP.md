@@ -103,7 +103,7 @@
 > **生成:** 2026-07-01,多代理并行对标(8 维;4 维由工作流深度对标 + web 检索,4 维由 2026-06-29 基线报告 + 本会话更新补齐)。
 > **对标对象:** 顶级 AI 量化(RenTech / Two Sigma / Citadel / HRT / Jane Street + 现代 ML 基金)。
 > **打分基准:** 作为「研究/干跑平台」(非「能赚钱的实盘基金」)——两套基准差数量级,下文区分。
-> **配套:** [`QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md`](QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md)(基线)、[`QUANTOS_SYSTEM_AUDIT_REPORT.md`](../QUANTOS_SYSTEM_AUDIT_REPORT.md)(L2 审计)、[`PROJECT_STATE.md`](PROJECT_STATE.md)。
+> **配套:** [`QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md`](QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md)(历史基线)、[`evidence/top_tier_assessment.json`](../evidence/top_tier_assessment.json)(当前机器评估)、[`PROJECT_STATE.md`](PROJECT_STATE.md)(实施记录)。
 > **本文用途:** 这是**活的开发路线**——`§3 L2-safe 修补路线`按 impact/effort 排好序,从 rank #1 起逐项开发。
 
 ## 1. 一句话总判

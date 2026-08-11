@@ -1,42 +1,68 @@
-# 安全策略(SECURITY)
+# Security Policy
 
-QUANTOS 是**安全关键**系统。这里的"安全"有两层含义:**信息安全**(密钥/凭证)与
-**交易安全**(绝不发生未经人工审批的实盘行为)。两者都不可妥协。
+QUANTOS has two security domains: protection of credentials and protection against unauthorized trading. Both fail closed.
 
-## 就绪等级
+## Supported security posture
 
-当前:**L2_DRY_RUN_ONLY** —— 只做研究与干跑模拟。**无实盘、无券商连接、无真实凭证。**
+The supported repository posture is `L2_DRY_RUN_ONLY`.
 
-## 不可让的安全不变量(机器强制)
+- Research, backtest, dry-run, paper, and explicitly approved Testnet workflows may exist.
+- Mainnet, real capital, AI-directed trading, and unapproved order submission are blocked.
+- Testnet connectivity is not evidence that a strategy is admitted and is not permission to use Mainnet.
 
-- 实盘相关开关恒为关:`LIVE_TRADING_ENABLED=false`、`REAL_BROKER_ENABLED=false`、
-  `ALLOW_ORDER_SUBMISSION=false`、`ALLOW_AI_DIRECT_TRADING=false`、`REQUIRE_HUMAN_APPROVAL=true`。
-- 实盘在没有**人工多步审批**时必须**不可能发生**。
-- 不提交任何密钥/券商凭证;不引入券商/CTP/FIX SDK;不绕过/削弱风控门;不使用未来数据(无前视)。
-- AI/自动代理永远不下实盘单、不接触凭证;非人类 actor 永不可达 `APPROVED`。
-- 网络访问只允许在 `tools/`(门禁不跑);`services/` 整棵树零网络 import。
+The default flags remain:
 
-这些由治理扫描器(`apps/research-console/scripts/run_paper_to_live_governance_check.py`)和
-`tests/governance/` 在每次门禁与每个 PR 上自动检查。
+```text
+LIVE_TRADING_ENABLED=false
+REAL_BROKER_ENABLED=false
+ALLOW_ORDER_SUBMISSION=false
+ALLOW_AI_DIRECT_TRADING=false
+REQUIRE_HUMAN_APPROVAL=true
+```
 
-## 密钥处理
+## Credential handling
 
-- API key 只从环境变量 `COINGECKO_API_KEY` 或被 gitignore 的 `key/coinkey.txt` 读取。
-- 密钥**绝不**打印、记录日志或提交。`key/` 目录与 `*coinkey*` 已被 `.gitignore` 排除;仓库自带版本化
-  git 钩子(`scripts/git-hooks/pre-commit`)会在暂存区出现 `key/` 路径文件或疑似 API key 模式时拒绝提交,
-  并顺带跑一次治理扫描器。**这是每台开发机需要各自主动装一次的本地机制**(git 本身不会在 clone 时
-  自动启用钩子):`bash scripts/install-hooks.sh`(同时装上 `pre-push`——推送前跑一次完整 `scripts/validate.py`
-  门禁)。装好后用 `git config --get core.hooksPath` 确认输出 `scripts/git-hooks`。
+- Keep credentials, API keys, passphrases, tokens, attestations, and signed mandates outside Git.
+- Use environment variables or the ignored local `key/` directory only when an approved operator workflow explicitly requires them.
+- Never paste credential values into issues, pull requests, chat transcripts, logs, test fixtures, screenshots, or evidence JSON.
+- Never enumerate or print the contents of `key/` during routine diagnostics.
+- Runtime databases and raw market data belong under ignored state roots such as `data/cache/`, not in commits.
+- Public-data keys must be read-only. Account, withdrawal, transfer, or custody permissions are outside the research boundary.
 
-## 漏洞/安全问题上报
+The repository hooks reject tracked secret paths and common credential patterns. Install them on each workstation:
 
-发现安全问题(尤其是任何可能绕过上述不变量、或可能泄露凭证的路径):
+```bash
+sh scripts/install-hooks.sh
+git config --get core.hooksPath
+```
 
-- **不要**开公开 issue 公布细节。
-- 私下联系仓库所有者(见 `.github/CODEOWNERS`),或通过 GitHub 的私密安全公告
-  (Security advisories)上报。
-- 请附:复现步骤、影响范围、以及它触及了哪条不变量。
+Hooks are defense in depth; they do not replace review, secret scanning, or credential rotation after exposure.
 
-## 支持范围
+## Trading and governance boundary
 
-仅维护 `main` 分支。安全修复以补丁形式合入 `main`,并同步到 `master`。
+- Non-human actors cannot approve candidates, reset protected kill-switch state, access credentials, or authorize Mainnet orders.
+- Strategy intent is separate from risk permission.
+- Attestation, validation, mandate, pre-trade risk, ledger, confirmation, reconciliation, and audit controls must not be bypassed.
+- Missing, stale, malformed, empty, timed-out, rate-limited, or unknown evidence is a rejection—not a successful review.
+- `services/` is a network-free deterministic core. Reviewed read-only acquisition belongs in `tools/`; exchange adapters remain isolated under `live/`.
+- Point-in-time and knowledge-time contracts are security controls against lookahead.
+
+These boundaries are enforced by `tests/governance/`, dedicated live/Testnet boundary tests, the governance scanner, supply-chain evidence, and `scripts/validate.py`.
+
+## Vulnerability reporting
+
+Do not disclose a suspected bypass or credential exposure in a public issue.
+
+Use GitHub's private security advisory flow for this repository or contact the owner listed in [.github/CODEOWNERS](.github/CODEOWNERS). Include:
+
+- affected commit and component;
+- reproduction steps using non-secret/test data;
+- expected and observed fail-closed behavior;
+- which invariant is affected;
+- suggested containment if known.
+
+If a credential may have been exposed, revoke and rotate it first. Do not wait for a code fix.
+
+## Scope
+
+Security fixes target `main`. Historical branches, archived evidence, generated reports, and local worktrees are not separate supported releases.

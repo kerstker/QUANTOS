@@ -1,35 +1,35 @@
 ---
-name: Bug 报告
-about: 报告一个缺陷或异常行为
+name: Bug report
+about: Report reproducible incorrect behavior without disclosing secrets
 title: "fix: "
 labels: ["bug"]
 ---
 
-## 现象
+## Observed behavior
 
-<!-- 发生了什么,期望是什么 -->
+## Expected behavior
 
-## 复现步骤
+## Reproduction
 
 1.
 2.
 3.
 
-## 门禁/测试输出
+## Environment
 
-<!-- 贴 `python scripts/validate.py` 或相关测试的失败输出 -->
+- Commit:
+- Branch:
+- OS:
+- Python / Node version:
 
-```
-（粘贴日志）
-```
+## Evidence
 
-## 环境
+<!-- Include a minimal redacted traceback or focused test. Do not paste tokens, keys, mandates, account data, or private runtime paths. -->
 
-- 提交(`git rev-parse --short HEAD`):
-- 操作系统 / Python 版本:
+## Safety impact
 
-## 是否触及安全不变量?
+- [ ] Possible credential exposure or governance/trading bypass
+- [ ] Possible lookahead, stale-evidence acceptance, or fail-open behavior
+- [ ] No known safety impact
 
-<!-- 如果这个 bug 可能让实盘开关、容器化、风控门、密钥处理出问题,务必勾选并优先处理 -->
-
-- [ ] 这个 bug 可能影响安全红线(若是,按 SECURITY.md 私下上报,不要公开细节)
+If either of the first two boxes applies, stop and use the private process in `SECURITY.md`; do not disclose exploit details here.

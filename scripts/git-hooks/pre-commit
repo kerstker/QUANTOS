@@ -1,5 +1,5 @@
 #!/bin/sh
-# QUANTOS pre-commit:快速检查(治理扫描 + 密钥防呆)。完整门禁在 pre-push。
+# QUANTOS pre-commit:快速检查(仓库整洁 + 治理扫描 + 密钥防呆)。完整门禁在 pre-push。
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 
@@ -18,6 +18,9 @@ if git diff --cached -U0 --no-color \
   exit 1
 fi
 
-# 3) 治理扫描器(快、离线)
+# 3) 仓库布局与公开文档(快、离线)
+python "$ROOT/scripts/check_repository_hygiene.py"
+
+# 4) 治理扫描器(快、离线)
 python "$ROOT/apps/research-console/scripts/run_paper_to_live_governance_check.py"
-echo "✓ pre-commit:治理扫描 + 密钥防呆 通过"
+echo "✓ pre-commit:仓库整洁 + 治理扫描 + 密钥防呆 通过"

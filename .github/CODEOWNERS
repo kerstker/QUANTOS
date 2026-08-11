@@ -9,8 +9,17 @@
 /services/risk/                     @kerstker
 /services/intelligence/             @kerstker
 /services/alpha/                    @kerstker
+/services/governance/               @kerstker
+/services/deployment/               @kerstker
+/live/                              @kerstker
+/config/                            @kerstker
+/deploy/                            @kerstker
 /tests/governance/                  @kerstker
 /scripts/validate.py                @kerstker
+/scripts/register_schedules.ps1     @kerstker
+/tools/l2_schedule_entrypoint.py    @kerstker
+/tools/l2_backup.py                 @kerstker
 /.github/                           @kerstker
+/AGENTS.md                          @kerstker
 /CLAUDE.md                          @kerstker
 /SECURITY.md                        @kerstker

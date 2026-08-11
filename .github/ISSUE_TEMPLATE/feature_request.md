@@ -1,25 +1,27 @@
 ---
-name: 功能/改进提案
-about: 提议一个新功能、因子方法或系统增强
+name: Feature or improvement
+about: Propose a bounded research, platform, documentation, or operations change
 title: "feat: "
 labels: ["enhancement"]
 ---
 
-## 想解决的问题
+## Problem
 
-<!-- 现在缺什么、痛点是什么 -->
+## Proposed outcome
 
-## 提议方案
+## Scope and non-goals
 
-<!-- 打算怎么做;若是因子方法,说明它在"发现→去冗余→不自欺验证"里的位置 -->
+## Evidence and acceptance criteria
 
-## 安全/确定性影响
+## Safety and data review
 
-- [ ] 纯 stdlib,不引入三方依赖
-- [ ] 确定性(无 RNG / 无墙钟)
-- [ ] 网络若需要,只在 `tools/`(门禁外)
-- [ ] 不触碰实盘开关 / 容器化 / 风控门 / 凭证
+- [ ] Preserves `L2_DRY_RUN_ONLY`
+- [ ] Does not grant candidate admission, Mainnet, or AI trading authority
+- [ ] Uses point-in-time/no-lookahead semantics where applicable
+- [ ] Keeps missing, stale, malformed, empty, timed-out, and rate-limited evidence fail-closed
+- [ ] Adds no secret or runtime authority artifact to Git
+- [ ] Keeps network access in an approved boundary
 
-<!-- 如需破上述任一条(如引入 ML/GPU、LLM 生成器、新数据源密钥),这属于需要人来拍板的"口子",请明确说明 -->
+## Alternatives
 
-## 替代方案 / 备注
+## Operational or deployment impact

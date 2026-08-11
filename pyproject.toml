@@ -1,13 +1,9 @@
-# QUANTOS - Python toolchain & dependency manifest (Phase 0.5 baseline).
+# QUANTOS Python toolchain and dependency manifest.
 #
-# NOTE: pytest is intentionally NOT configured here ([tool.pytest.ini_options]
-# is omitted on purpose). The repository currently has two distinct `services`
-# package trees (repo-root services/ and apps/research-console/services/) that
-# collide in a single pytest process. Adding a pytest config block here would
-# force pytest's rootdir to the repo root and re-break the apps/research-console
-# suite. Until the trees are unified (tracked for Phase 1), the canonical way to
-# run tests is `python scripts/validate.py`, which runs each suite group from
-# its correct working directory.
+# Pytest selection intentionally remains owned by scripts/validate.py. The
+# canonical gate combines generated-evidence checks, governance scanning,
+# grouped backend/live suites, frontend checks, and readiness refreshes; a bare
+# pytest invocation is therefore not equivalent release evidence.
 
 [project]
 name = "quantos"

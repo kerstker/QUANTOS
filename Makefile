@@ -1,27 +1,53 @@
-# QUANTOS 常用任务。Windows 用户在 Git Bash 中运行,或直接用 README/CONTRIBUTING 里的等价命令。
-.PHONY: help gate governance test frontend api hooks
+PYTHON ?= python
+CONSOLE_DIR := apps/research-console
+
+.PHONY: help install install-frontend hygiene clean clean-apply governance validate test frontend api console-status hooks
 
 help:
-	@echo "QUANTOS make targets:"
-	@echo "  make gate        完整失败关闭门禁(治理扫描 + 全部 pytest)"
-	@echo "  make governance  只跑治理扫描器"
-	@echo "  make frontend    研究控制台 typecheck + build + test"
-	@echo "  make api         起只读 console API(127.0.0.1:8400)"
-	@echo "  make hooks       安装本地 git 钩子(pre-commit + pre-push)"
+	@echo "QUANTOS targets"
+	@echo "  make install          Install pinned Python development dependencies"
+	@echo "  make install-frontend Install pinned console dependencies"
+	@echo "  make hygiene          Check repository layout and curated documentation"
+	@echo "  make clean            Preview disposable local artifacts"
+	@echo "  make clean-apply      Remove disposable local artifacts (never key/data/node_modules)"
+	@echo "  make governance       Run the paper-to-live governance scanner"
+	@echo "  make validate         Run the canonical fail-closed gate"
+	@echo "  make frontend         Typecheck, lint, test, and build the console"
+	@echo "  make api              Start the read-only API on 127.0.0.1:8400"
+	@echo "  make console-status   Inspect the managed local research stack"
+	@echo "  make hooks            Install repository Git hooks"
 
-gate:
-	python scripts/validate.py
+install:
+	$(PYTHON) -m pip install -r requirements-dev.txt
+
+install-frontend:
+	cd $(CONSOLE_DIR) && npm ci
+
+hygiene:
+	$(PYTHON) scripts/check_repository_hygiene.py
+
+clean:
+	$(PYTHON) scripts/clean_workspace.py
+
+clean-apply:
+	$(PYTHON) scripts/clean_workspace.py --apply
 
 governance:
-	python apps/research-console/scripts/run_paper_to_live_governance_check.py
+	$(PYTHON) apps/research-console/scripts/run_paper_to_live_governance_check.py
 
-test: gate
+validate:
+	$(PYTHON) scripts/validate.py
+
+test: validate
 
 frontend:
-	cd apps/research-console && npm ci && npm run typecheck && npm run build && npm test
+	cd $(CONSOLE_DIR) && npm run typecheck && npm run eslint && npm test && npm run build
 
 api:
-	python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
+	$(PYTHON) -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
+
+console-status:
+	$(PYTHON) -m tools.local_console_stack status
 
 hooks:
 	sh scripts/install-hooks.sh

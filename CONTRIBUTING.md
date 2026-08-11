@@ -1,72 +1,94 @@
-# 贡献指南(QUANTOS)
+# Contributing to QUANTOS
 
-> 本项目是**安全关键的 AI 量化研究平台**,就绪等级 **L2_DRY_RUN_ONLY**(只研究 + 干跑模拟)。
-> 所有改动都必须守住下面的安全红线,并通过单一门禁。叙述用中文,代码标识符用英文。
+QUANTOS is a safety-critical quantitative research platform. Contributions are welcome only when they preserve `L2_DRY_RUN_ONLY`, fail closed, and keep research evidence separate from trading permission.
 
-## 1. 安全红线(不可让 —— 机器强制)
+## Before changing code
 
-- `LIVE_TRADING_ENABLED=false`、`REAL_BROKER_ENABLED=false`、`ALLOW_ORDER_SUBMISSION=false`、
-  `ALLOW_AI_DIRECT_TRADING=false`、`REQUIRE_HUMAN_APPROVAL=true`。实盘必须在没有人工多步审批时**不可能发生**。
-- **纯 Python 标准库**:不引入 numpy/scipy/torch/pandas/ccxt 等三方依赖。
-- **确定性**:不用随机数、不读墙钟时间;前端新代码不用 `Date.now` / `Math.random`。
-- **失败关闭**:异常一律保守拒绝,绝不"出错就放行"。
-- **网络只在门禁外**:网络访问只允许出现在 `tools/`(门禁不跑);`services/` 整棵树**零网络 import**。
-- **不提交任何密钥/凭证**;不引入券商/CTP/FIX SDK;不绕过或削弱风控门;不使用未来数据(无前视)。
-- **容器化**:非人类 AGENT actor 永不可达 `APPROVED`;一切评估走未改动的 `ResearchAgentLoop`。
+Read, in order:
 
-违反以上任意一条,治理扫描器(governance scanner)与 `tests/governance/` 会让门禁直接红掉。
+1. [AGENTS.md](AGENTS.md)
+2. [docs/README.md](docs/README.md)
+3. [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md)
+4. The closest domain tests and any linked design/spec document
 
-## 2. 开发流程
+Do not use an old roadmap or audit snapshot as current truth merely because it is detailed.
 
-1. **先写测试(tests-first)**:新行为先有失败测试,再实现。
-2. **最小安全改动**:一次只做一件事;绝不隐藏或删除失败的测试。
-3. **本地跑门禁**(绿了才提交):
+## Development workflow
 
-   ```bash
-   python scripts/validate.py          # 治理扫描 + 全部 pytest(contracts/governance/research/trading)
-   ```
+1. Confirm the working tree and branch. Preserve unrelated changes.
+2. For new behavior, write a focused failing test first.
+3. Make the smallest safe implementation change.
+4. Run the focused suite with `py -3.14 -m pytest <paths>` on the Windows workstation.
+5. Run repository hygiene and governance checks.
+6. Run the canonical full gate before publication.
+7. Update current documentation and generated evidence when their contracts require it.
 
-   隔离单跑某个测试时,从仓库根设 `PYTHONPATH=.`(Windows Git Bash:`PYTHONPATH=/h/code/QUANTOS`)。
-4. **前端**(改了 `apps/research-console` 才需要):
-
-   ```bash
-   cd apps/research-console && npm ci && npm run typecheck && npm run build && npm test
-   ```
-5. **契约两侧同改**:改 console API 的返回结构,必须同时改 TS 的 `*Payload` 类型与
-   `tests/research/test_console_api_contract.py`,在同一个提交里。
-
-## 3. 分支与提交
-
-- 主干:`main`(受保护)。`master` 与 `main` 保持同步(`git branch -f main master`)。
-- 开新分支干活:`feat/xxx`、`fix/xxx`、`docs/xxx`、`chore/xxx`。
-- 提交信息:**中文**,采用 `type(scope): 摘要` 前缀(`feat` / `fix` / `docs` / `test` / `refactor` / `chore`)。
-- 每条提交结尾保留协作署名行:
-
-  ```
-  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  ```
-
-## 4. 本地 git 钩子(可选但推荐)
+Canonical gate:
 
 ```bash
-make hooks            # 或:sh scripts/install-hooks.sh
+# Windows workstation
+py -3.14 scripts/validate.py
+
+# Portable / CI
+python scripts/validate.py
 ```
 
-装好后:`pre-commit` 跑治理扫描 + 密钥防呆;`pre-push` 跑完整 `validate.py`。
-确属误报时可 `git commit --no-verify`,但需人工复核后再用。
+Do not use bare `pytest` as final evidence. The canonical gate owns test grouping, generated-artifact checks, frontend validation, and governance scans.
 
-## 5. Pull Request
+## Safety rules
 
-- PR 必须通过 CI 的 `validate`(后端门禁 + 前端)两个检查,并至少 1 人评审通过才可合并到 `main`。
-- 按 PR 模板逐项自查(安全红线、tests-first、门禁绿、无密钥、契约两侧同改)。
-- 大改动(新子系统/破坏性变更)先开 issue 或设计文档(`docs/engineering/specs/`)对齐再动手。
+- Keep `LIVE_TRADING_ENABLED`, `REAL_BROKER_ENABLED`, `ALLOW_ORDER_SUBMISSION`, and `ALLOW_AI_DIRECT_TRADING` false; keep `REQUIRE_HUMAN_APPROVAL` true.
+- Never commit secrets, broker credentials, raw runtime data, SQLite authorities, passphrases, or signed mandates.
+- Never weaken approval, risk, attestation, kill-switch, reconciliation, or audit boundaries to make a test pass.
+- Never treat missing, stale, malformed, timed-out, rate-limited, or self-reported evidence as approval.
+- Keep `services/` network-free. Public-data networking belongs in reviewed `tools/` fetchers and must remain read-only.
+- Use point-in-time data and explicit knowledge-time semantics; no lookahead.
+- Deterministic research may use pinned scientific dependencies. Randomness, clocks, and I/O must be controlled at boundaries and recorded where applicable.
+- AI/non-human actors may research and recommend; they may not approve, handle credentials, or place Mainnet orders.
 
-## 6. 常用命令速查
+## Backend and frontend contracts
+
+When a console API payload changes, update all three in one commit:
+
+- the backend response;
+- the TypeScript payload type/consumer;
+- `tests/research/test_console_api_contract.py` and relevant frontend tests.
+
+Frontend checks:
 
 ```bash
-make gate            # 完整门禁
-make governance      # 只跑治理扫描
-make frontend        # 前端 typecheck + build + test
-make api             # 起只读 console API(:8400)
-make hooks           # 安装本地 git 钩子
+cd apps/research-console
+npm ci
+npm run typecheck
+npm run eslint
+npm test
+npm run build
 ```
+
+## Documentation rules
+
+- Keep GitHub-facing and operator-facing instructions concise and current.
+- Put durable current guidance in the locations listed by [docs/README.md](docs/README.md).
+- Put dated design intent under `docs/engineering/specs/` and implementation plans under `docs/engineering/plans/`.
+- Treat `docs/audit/`, `docs/reports/`, and older dated roadmaps as snapshots unless explicitly marked living.
+- Do not create one `PLANNED.md` file per empty future directory. Update [docs/PLANNED_SCAFFOLDS.md](docs/PLANNED_SCAFFOLDS.md) instead.
+- Run `python scripts/check_repository_hygiene.py` after changing curated docs or repository layout.
+
+## Branches, commits, and pull requests
+
+- Default branch: `main`.
+- New Codex branches use the `codex/` prefix; conventional `feat/`, `fix/`, `docs/`, and `chore/` branches are also accepted for human workflows.
+- Use concise conventional commit subjects, for example `docs: simplify repository entrypoints`.
+- Keep commits intentional; do not combine generated evidence, unrelated refactors, and product behavior without a clear reason.
+- Pull requests must explain scope, risks, evidence, and any remaining blockers.
+- Required CI jobs are the backend gate, backend coverage floor, and frontend gate.
+
+Install the optional repository hooks with:
+
+```bash
+sh scripts/install-hooks.sh
+```
+
+## Reporting security issues
+
+Do not open a public issue for a possible credential leak or governance bypass. Follow [SECURITY.md](SECURITY.md).

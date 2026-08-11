@@ -1,14 +1,10 @@
-# === QUANTOS .gitignore (per QUANTOS_MASTER_BLUEPRINT.md §3) ===
-
-# Dependencies
+# Dependencies and build output
 node_modules/
-
-# Build / dist artifacts
 dist/
 build/
 *.tsbuildinfo
 
-# Python envs & caches
+# Python environments, caches, and coverage
 .venv/
 venv/
 __pycache__/
@@ -16,35 +12,35 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-coverage/
 .coverage
 .coverage.*
+coverage/
 coverage.json
 
-# Tooling caches / local state
+# Local tool state and review scratch space
 .vite/
-.benchmarks/
-.claude/worktrees/
-.worktrees/
-.codex/
 .playwright-cli/
 playwright-report/
 test-results/
 .runtime/
-# Read-only partial validation runs are local diagnostics. Only the canonical
-# full report at evidence/validation_report.json is retained as release evidence.
-evidence/validation_report_subset.json
+.codex/
+.codex_tmp/
+.claude/worktrees/
+.claude/adjudication-*/
+.worktrees/
+.tmp-*/
+*.tmp
+*.bak
+*.orig
+*.rej
 
-# Generated presentation workspace (canonical decks live under docs/)
-QUANTOS_Roadshow/
-
-# Logs & temp
+# Logs and local diagnostics
 logs/
 *.log
-*.tmp
 *.cache
+evidence/validation_report_subset.json
 
-# Data artifacts (never commit raw data / generated research output)
+# Runtime data and generated research output
 *.parquet
 *.csv
 *.db
@@ -55,14 +51,16 @@ data/raw/
 data/cache/
 data/backup/
 
-# Secrets / live config (must never be committed — see blueprint §1.1, §5.2, §14)
+# Generated presentation workspaces; canonical assets live under docs/
+QUANTOS_Roadshow/
+
+# Secrets and machine-local configuration
 .env
 .env.*
 !apps/research-console/.env.localhost
 config/live.yaml
 *.secret.yaml
 *.secret.yml
-# API keys (read-only data keys live here; NEVER commit — read at runtime from env or this dir)
 key/
 *.key
 coinkey*

@@ -41,18 +41,19 @@ git push origin master      # 可选:把 master 也推上去
 
 > 注意:`main` 才是受保护主干。保持 `main == master`:`git branch -f main master` 后再 `git push origin main`。
 
-## 3. 替换 CODEOWNERS 占位符
+## 3. 核对 CODEOWNERS
 
-编辑 `.github/CODEOWNERS`,把所有 `@OWNER` 换成**你的 GitHub 用户名**(如 `@yourname`),
-然后提交推送。否则自动请求评审不会生效。
+`.github/CODEOWNERS` 当前使用 `@kerstker`。仓库转移所有者或团队后，必须在同一变更中更新全部 owner，
+否则安全关键路径不会自动请求正确评审。
 
 ## 4. 开启分支保护(让红线变成"硬规则")
 
 **方式 A — 网页:** 仓库 → Settings → Branches → Add branch ruleset / protection rule,目标 `main`:
 
 - ✅ Require a pull request before merging(至少 1 个 Approval)
-- ✅ Require status checks to pass before merging → 勾选这两个检查:
+- ✅ Require status checks to pass before merging → 勾选这三个检查:
   - `backend gate (governance scanner + all test suites)`
+  - `backend coverage regression floor`
   - `frontend (typecheck + build + test)`
 - ✅ Require branches to be up to date before merging
 - ✅ Require conversation resolution before merging
@@ -65,6 +66,7 @@ gh api -X PUT repos/<你的用户名>/QUANTOS/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
   -f "required_status_checks[strict]=true" \
   -f "required_status_checks[contexts][]=backend gate (governance scanner + all test suites)" \
+  -f "required_status_checks[contexts][]=backend coverage regression floor" \
   -f "required_status_checks[contexts][]=frontend (typecheck + build + test)" \
   -f "enforce_admins=true" \
   -f "required_pull_request_reviews[required_approving_review_count]=1" \
@@ -72,7 +74,7 @@ gh api -X PUT repos/<你的用户名>/QUANTOS/branches/main/protection \
 ```
 
 > 状态检查的名字必须和 CI 里 job 的 `name:` 完全一致(见 `.github/workflows/validate.yml`)。
-> 第一次 PR 跑过一次 CI 后,这两个检查名才会出现在可勾选列表里。
+> 第一次 PR 跑过一次 CI 后,这些检查名才会出现在可勾选列表里。
 
 ## 5. 装本地 git 钩子(可选但推荐)
 
