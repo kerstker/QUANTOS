@@ -2,20 +2,20 @@
   "artifact_count": 17,
   "artifact_sha256": {
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "30e989b79c30925a326a1791a5ee29e03306551c10e7b77551fc63fd94f4061d",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "41917f52b8413b15e4f11aa21133d4b79fe244bc448ba5097f2a8433c221f16b",
-    "evidence/alpha_lifecycle_status.json": "b06d8503c5f0aff8296942e324d56e3e3acea27b3b7fc0097c98ff9696ea17ed",
-    "evidence/autonomy_readiness.json": "8bba9d744b4a4efeacfbc0fc8534daf7e3687052a9023d4f914683d88ac614c0",
-    "evidence/chaos_recovery_status.json": "cb383b1b6fa4fc6d9d0374ee02f8634b809a4b6e128d1f026e09c5fab62e58fa",
-    "evidence/factor_garden_status.json": "4c219c6013871be555d832723ffdf8fa6432a06bbdb18d74720c730b5a0e632d",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "86a10e0a1159d47bb6683383b889cb51dc3b3719028d8d58e39592030b1292fc",
+    "evidence/alpha_lifecycle_status.json": "b41f124bbd377da35b8c164189806c86848aeea89312c2482861b6a497911871",
+    "evidence/autonomy_readiness.json": "c0d4b16d53f1e034ae4775adcb275a00fccc012d0e634d329d81cbaf290a046d",
+    "evidence/chaos_recovery_status.json": "b8dc2bdf4b57574ad73942db552b50adb35c94d3a1ba74681bbb49afd58ec0ab",
+    "evidence/factor_garden_status.json": "890e91b7dc052bd516b9d7954d694939498b6cc90a0fa4b78585467fcd44cb52",
     "evidence/l2_backup_latest.json": "0d8bb0e7de8cdbf54df8acd22fe8a792be64fab2822b14cadec1ddc6bea54a96",
-    "evidence/mexc_integration_status.json": "4e391e5faf555988b65435543660536cbed80ba0fe84e822ed76070062fa32fa",
-    "evidence/paper_shadow_status.json": "5b975268242d345c1c66091145fc72ed8e947906a8b4a035964561a6d51afd21",
+    "evidence/mexc_integration_status.json": "a9e8c0129784e6dbfe31e6921c465388387882c29c28b528359b7284e15b7752",
+    "evidence/paper_shadow_status.json": "3ad5790d5ab513f29571d6e422a269954091773ba15aa6d8377eb269ecee26b4",
     "evidence/reproducibility/container_build_latest.json": "76a6f40ec606270cbfe73ae2b0c167f85c37a2168a691ebfc547a8b947fad856",
     "evidence/sbom.cdx.json": "c9ebbdfa925502179550b8796ef2bd489ffa713938f6e2467fa1d82c4066ff02",
-    "evidence/supply_chain_baseline.json": "3a0898412e2415dafa7df161f01297f5336e57cd0a70d6dca3369d8f4c623d05",
-    "evidence/top_tier_assessment.json": "365fd512e600c4985437c25de4b0d7192e4a1d21cd4c9973fbf9be5bc710646f",
-    "evidence/trial_ledger_integrity.json": "0e219c5ae8f50420bc5df03996bc4920f54a41b6c7808ecf7a5591a9ea6a149e",
-    "evidence/validation_report.json": "cc3b36f594a67908868d00dd28a4cc364d43a9129b3e6b71b0c531fe668a4bdf",
+    "evidence/supply_chain_baseline.json": "63db95cad9521dd84e21ab1d90aa4cb18dc87bab0539d321c17d5d0bc32a3142",
+    "evidence/top_tier_assessment.json": "735e4ecbfcceb0060bf3ec4048ed7632c5e0d49f3ea0c26aac61123a595f0f94",
+    "evidence/trial_ledger_integrity.json": "1a2ff0bd47f5c82a40743f200292f73b70c223f860a293c9bc403e5e543395e7",
+    "evidence/validation_report.json": "07ef3c8506311bf550b2abc97d71e2e388f42ebd86e2169851cc80af6fefdcb6",
     "evidence/vulnerability/container_trivy_latest.json": "6e6dd06e2ce17cdbf32e76cbcf9e628a9c64bbf63c7d7aa32dbf0f2da88e0793",
     "evidence/vulnerability/python_audit_latest.json": "edab51346d8c7c14a817ae0fca9ea0e69f1687050c37bbae8d6076f07528c4c8"
   },
@@ -35,9 +35,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1786469403883,
-    "run_id": "a338d5020143a80564f71279ed46f0426f823b7106a5fc7f81b83a85f09c8400",
-    "source_commit": "2ae9f1d97e004fa1d6f4544c1ad252cbd6dbc81e"
+    "generated_at": 1786475553145,
+    "run_id": "44439b76220f24bb4c9f1277f55f45a1d25d22bd85a4bcc70d66f12c70f99a64",
+    "source_commit": "83c5fb154aa1c0682fd91a16671ad3e5675a305a"
   },
-  "validation_report_sha256": "cc3b36f594a67908868d00dd28a4cc364d43a9129b3e6b71b0c531fe668a4bdf"
+  "validation_report_sha256": "07ef3c8506311bf550b2abc97d71e2e388f42ebd86e2169851cc80af6fefdcb6"
 }
