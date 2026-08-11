@@ -67,6 +67,22 @@ def test_batch_journal_detects_tamper(tmp_path):
         reopened.close()
 
 
+def test_existing_batch_store_reopens_as_read_only_consumer(tmp_path):
+    path = str(tmp_path / "batches.db")
+    writer = RealtimeFeatureBatchStore(path, create=True)
+    try:
+        assert writer.append(_batch()) is True
+        reader = RealtimeFeatureBatchStore(path, create=False)
+        try:
+            assert reader.latest()["batch_id"] == "batch-1"
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                reader.append(_batch("batch-2"))
+        finally:
+            reader.close()
+    finally:
+        writer.close()
+
+
 def test_latest_authority_and_checkpoint_share_one_read_snapshot(
     tmp_path,
     monkeypatch,
@@ -74,7 +90,7 @@ def test_latest_authority_and_checkpoint_share_one_read_snapshot(
     path = tmp_path / "batches.db"
     reader = RealtimeFeatureBatchStore(str(path), create=True)
     reader.append(_batch())
-    writer = RealtimeFeatureBatchStore(str(path))
+    writer = RealtimeFeatureBatchStore(str(path), create=True)
     original_authority_hash = reader.authority_hash
 
     def interleave_append():

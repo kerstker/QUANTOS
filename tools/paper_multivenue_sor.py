@@ -32,6 +32,9 @@ from services.execution.simulated_sor import (
     VenueBook,
     route_simulated_intent,
 )
+from services.features.realtime_feature_batch_store import (
+    trusted_source_chain_checkpoint,
+)
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (
     AccountRiskState,
@@ -52,6 +55,9 @@ BINANCE_BASE_URL = "https://fapi.binance.com"
 DEFAULT_BINANCE_STORE = os.path.join(
     "data", "cache", "binance_realtime_stream.db"
 )
+DEFAULT_FEATURE_BATCH_STORE = os.path.join(
+    "data", "cache", "binance_realtime_feature_batches.db"
+)
 DEFAULT_BOOK_STORE = os.path.join(
     "data", "cache", "cross_venue_order_books.db"
 )
@@ -65,6 +71,7 @@ TARGET_NOTIONAL = Decimal("1000")
 MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
 MAX_FUTURE_SKEW_MS = 30_000
+FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60_000
 FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
     "binance_usdm": Decimal("5"),
@@ -324,6 +331,16 @@ def _build_release_run_attestation(
     bundle_quality = (
         bundle_quality if isinstance(bundle_quality, Mapping) else {}
     )
+    source_chain = bundle.get("source_chain")
+    source_chain = source_chain if isinstance(source_chain, Mapping) else {}
+    source_checkpoint = source_chain.get("checkpoint")
+    source_checkpoint = (
+        source_checkpoint if isinstance(source_checkpoint, Mapping) else {}
+    )
+    source_verification = source_chain.get("verification")
+    source_verification = (
+        source_verification if isinstance(source_verification, Mapping) else {}
+    )
     routing_contract = {
         "paper_instruments": list(PAPER_INSTRUMENTS),
         "canary_instruments": list(INSTRUMENTS),
@@ -339,6 +356,7 @@ def _build_release_run_attestation(
     input_hashes = {
         "public_cross_venue_book_bundle": _canonical_sha256(bundle),
         "public_cross_venue_books": snapshot_id,
+        "public_source_chain_view": _canonical_sha256(source_chain),
         "routing_input_contract": _canonical_sha256(routing_contract),
     }
     output_hashes = {
@@ -375,6 +393,9 @@ def _build_release_run_attestation(
         and bundle_quality.get("private_access") is False
         and bundle_quality.get("broker_connectivity") is False
         and bundle_quality.get("order_submission") is False
+        and source_verification.get("valid") is True
+        and source_checkpoint.get("verification_mode")
+        in {"FULL_EXPLICIT", "INCREMENTAL_FROM_TRUSTED_BATCH"}
         and isinstance(books, list)
         and _is_sha256(snapshot_id)
         and _snapshot_id(books) == snapshot_id
@@ -407,6 +428,76 @@ def release_run_attestation() -> dict[str, Any] | None:
     )
 
 
+def _trusted_source_checkpoint(path: str, *, now_ms: int) -> dict[str, Any]:
+    """Require the fresh full-audit anchor published by the feature worker."""
+    if not Path(path).is_file():
+        raise PaperMultiVenueSORError("trusted source chain checkpoint is unavailable")
+    try:
+        checkpoint = trusted_source_chain_checkpoint(
+            path,
+            now_ms=now_ms,
+            full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
+            create=False,
+        )
+    except Exception as exc:
+        raise PaperMultiVenueSORError(
+            "trusted source chain checkpoint is invalid"
+        ) from exc
+    if checkpoint.get("checkpoint_seq") == 0:
+        raise PaperMultiVenueSORError(
+            "trusted source chain checkpoint requires a full audit"
+        )
+    return checkpoint
+
+
+def _verify_source_chain(
+    store: BinanceRealtimeStore,
+    checkpoint: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if checkpoint is None:
+        checkpoint_seq = 0
+        checkpoint_row_hash = ""
+        checkpoint_view: dict[str, Any] = {
+            "checkpoint_seq": 0,
+            "checkpoint_row_hash": "",
+            "full_verified_at_ms": None,
+            "verification_mode": "FULL_EXPLICIT",
+            "batch_authority": None,
+        }
+    else:
+        checkpoint_seq = checkpoint.get("checkpoint_seq")
+        checkpoint_row_hash = checkpoint.get("checkpoint_row_hash")
+        if (
+            isinstance(checkpoint_seq, bool)
+            or not isinstance(checkpoint_seq, int)
+            or checkpoint_seq <= 0
+            or not isinstance(checkpoint_row_hash, str)
+        ):
+            raise PaperMultiVenueSORError(
+                "trusted source chain checkpoint is malformed"
+            )
+        checkpoint_view = {
+            key: checkpoint.get(key)
+            for key in (
+                "checkpoint_seq",
+                "checkpoint_row_hash",
+                "full_verified_at_ms",
+                "verification_mode",
+                "batch_authority",
+            )
+        }
+    verification = store.verify_chain_from(
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
+    if verification.get("valid") is not True:
+        raise PaperMultiVenueSORError("Binance realtime chain is invalid")
+    return {
+        "checkpoint": checkpoint_view,
+        "verification": verification,
+    }
+
+
 def collect_books(
     *,
     binance_store_path: str,
@@ -414,6 +505,7 @@ def collect_books(
     http_get: Callable[[str], object] = _http_get_json,
     clock_ms: Callable[[], int] | None = None,
     instruments: Sequence[str] = INSTRUMENTS,
+    source_chain_checkpoint: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, tuple[VenueBook, VenueBook]], dict[str, Any]]:
     read_clock = (
         (lambda: int(time.time() * 1000))
@@ -422,8 +514,7 @@ def collect_books(
     )
     store = BinanceRealtimeStore(binance_store_path, create=False)
     try:
-        if not store.chain_valid():
-            raise PaperMultiVenueSORError("Binance realtime chain is invalid")
+        source_chain = _verify_source_chain(store, source_chain_checkpoint)
         # Full-chain verification can take materially longer than the public
         # quote freshness window on a large authority store.  Re-anchor the
         # collection clock after verification so Binance and Bybit are selected
@@ -519,6 +610,7 @@ def collect_books(
         "fee_policy_version": FEE_POLICY_VERSION,
         "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
         "binance_sources": dict(sorted(binance_sources.items())),
+        "source_chain": source_chain,
         "books": rows,
         "quality": {
             "complete": True,
@@ -538,6 +630,7 @@ def refresh_persisted_routing_snapshot(
     *,
     now_ms: int | None = None,
     binance_store_path: str = DEFAULT_BINANCE_STORE,
+    feature_batch_store_path: str | None = DEFAULT_FEATURE_BATCH_STORE,
     book_store_path: str = DEFAULT_BOOK_STORE,
     http_get: Callable[[str], object] = _http_get_json,
     clock_ms: Callable[[], int] | None = None,
@@ -551,12 +644,18 @@ def refresh_persisted_routing_snapshot(
     dry-run evidence remain the caller's responsibility.
     """
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    source_chain_checkpoint = (
+        None
+        if feature_batch_store_path is None
+        else _trusted_source_checkpoint(feature_batch_store_path, now_ms=now)
+    )
     books, bundle = collect_books(
         binance_store_path=binance_store_path,
         now_ms=now,
         http_get=http_get,
         clock_ms=clock_ms,
         instruments=instruments,
+        source_chain_checkpoint=source_chain_checkpoint,
     )
     Path(book_store_path).parent.mkdir(parents=True, exist_ok=True)
     book_store = CrossVenueOrderBookStore(book_store_path, create=True)
@@ -788,6 +887,7 @@ def execute(
     *,
     now_ms: int | None = None,
     binance_store_path: str = DEFAULT_BINANCE_STORE,
+    feature_batch_store_path: str | None = DEFAULT_FEATURE_BATCH_STORE,
     book_store_path: str = DEFAULT_BOOK_STORE,
     dry_run_store_path: str = DEFAULT_DRY_RUN_STORE,
     status_path: str = DEFAULT_STATUS,
@@ -798,6 +898,7 @@ def execute(
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
     books, bundle, _appended, book_rows = refresh_persisted_routing_snapshot(
         binance_store_path=binance_store_path,
+        feature_batch_store_path=feature_batch_store_path,
         book_store_path=book_store_path,
         now_ms=now,
         http_get=http_get,

@@ -212,13 +212,13 @@ class BinanceRealtimeStore:
         if as_of_ms is None:
             query = (
                 "SELECT * FROM binance_market_snapshots WHERE instrument_id=? "
-                "ORDER BY seq DESC"
+                "ORDER BY observed_at_ms DESC"
             )
             args = (str(instrument_id).upper(),)
         else:
             query = (
                 "SELECT * FROM binance_market_snapshots WHERE instrument_id=? "
-                "AND observed_at_ms<=? ORDER BY seq DESC"
+                "AND observed_at_ms<=? ORDER BY observed_at_ms DESC"
             )
             args = (str(instrument_id).upper(), as_of_ms)
         rows = self._conn.execute(query, args)

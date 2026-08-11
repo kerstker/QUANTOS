@@ -6,6 +6,7 @@ import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.cross_venue_order_book_store import CrossVenueOrderBookStore
+from services.features.realtime_feature_batch_store import RealtimeFeatureBatchStore
 import tools.paper_multivenue_sor as paper_sor
 from tools.paper_multivenue_sor import (
     INSTRUMENTS,
@@ -241,6 +242,69 @@ def test_collect_books_reanchors_snapshot_time_after_chain_verification(tmp_path
     assert bundle["quality"]["binance_rest_failover_used"] is False
 
 
+def test_collect_books_verifies_only_suffix_from_trusted_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    first_ms = 2_000_000
+    second_ms = first_ms + 1_000
+    instrument_id = "BTCUSDT"
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        store.append_snapshot(_binance_snapshot(instrument_id, "60000", first_ms))
+        anchor = store.verify_chain_from(
+            checkpoint_seq=0,
+            checkpoint_row_hash="",
+        )
+        store.append_snapshot(_binance_snapshot(instrument_id, "60000", second_ms))
+    finally:
+        store.close()
+
+    checkpoint = {
+        "checkpoint_seq": anchor["verified_seq"],
+        "checkpoint_row_hash": anchor["verified_row_hash"],
+        "full_verified_at_ms": first_ms,
+        "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+        "batch_authority": {"chain_valid": True, "batch_count": 1},
+    }
+    calls = []
+    original_verify = BinanceRealtimeStore.verify_chain_from
+
+    def verify_suffix(self, *, checkpoint_seq, checkpoint_row_hash):
+        calls.append((checkpoint_seq, checkpoint_row_hash))
+        return original_verify(
+            self,
+            checkpoint_seq=checkpoint_seq,
+            checkpoint_row_hash=checkpoint_row_hash,
+        )
+
+    monkeypatch.setattr(BinanceRealtimeStore, "verify_chain_from", verify_suffix)
+    monkeypatch.setattr(
+        BinanceRealtimeStore,
+        "chain_valid",
+        lambda _self: pytest.fail("trusted consumers must not rescan from genesis"),
+    )
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=second_ms,
+        http_get=lambda _url: _bybit_payload(
+            instrument_id,
+            "60000",
+            second_ms,
+        ),
+        clock_ms=lambda: second_ms,
+        instruments=(instrument_id,),
+        source_chain_checkpoint=checkpoint,
+    )
+
+    assert set(books) == {instrument_id}
+    assert calls == [(anchor["verified_seq"], anchor["verified_row_hash"])]
+    assert bundle["source_chain"]["verification"]["verified_suffix_rows"] == 1
+    assert bundle["source_chain"]["verification"]["valid"] is True
+
+
 def test_collect_books_uses_visible_binance_rest_failover_when_stream_is_stale(
     tmp_path,
 ):
@@ -343,10 +407,33 @@ def test_refresh_persisted_routing_snapshot_only_appends_public_books(tmp_path):
     try:
         for instrument_id, base in bases.items():
             realtime.append_snapshot(_binance_snapshot(instrument_id, base, now_ms))
+        anchor = realtime.verify_chain_from(
+            checkpoint_seq=0,
+            checkpoint_row_hash="",
+        )
     finally:
         realtime.close()
 
     book_path = tmp_path / "books.db"
+    batch_path = tmp_path / "feature_batches.db"
+    batches = RealtimeFeatureBatchStore(str(batch_path), create=True)
+    try:
+        batches.append(
+            {
+                "batch_id": "test-feature-batch",
+                "observed_at_ms": now_ms,
+                "source": {
+                    "chain_checkpoint": {
+                        "schema_version": 1,
+                        "verified_seq": anchor["verified_seq"],
+                        "verified_row_hash": anchor["verified_row_hash"],
+                        "full_verified_at_ms": now_ms,
+                    }
+                },
+            }
+        )
+    finally:
+        batches.close()
 
     def fake_get(url: str):
         instrument_id = next(item for item in bases if item in url)
@@ -355,6 +442,7 @@ def test_refresh_persisted_routing_snapshot_only_appends_public_books(tmp_path):
     _books, bundle, appended, row_count = refresh_persisted_routing_snapshot(
         now_ms=now_ms,
         binance_store_path=str(realtime_path),
+        feature_batch_store_path=str(batch_path),
         book_store_path=str(book_path),
         http_get=fake_get,
         clock_ms=lambda: now_ms,
@@ -371,6 +459,71 @@ def test_refresh_persisted_routing_snapshot_only_appends_public_books(tmp_path):
         now_ms=now_ms,
     )
     assert snapshot_id == bundle["snapshot_id"]
+
+
+def test_refresh_persisted_routing_snapshot_rejects_missing_checkpoint_before_network(
+    tmp_path,
+):
+    calls = []
+
+    def unexpected_http(url: str):
+        calls.append(url)
+        pytest.fail("checkpoint rejection must happen before public HTTP")
+
+    with pytest.raises(PaperMultiVenueSORError, match="checkpoint is unavailable"):
+        refresh_persisted_routing_snapshot(
+            now_ms=2_000_000,
+            binance_store_path=str(tmp_path / "binance.db"),
+            feature_batch_store_path=str(tmp_path / "missing-feature-batches.db"),
+            book_store_path=str(tmp_path / "books.db"),
+            http_get=unexpected_http,
+            instruments=("BTCUSDT",),
+        )
+
+    assert calls == []
+
+
+def test_refresh_persisted_routing_snapshot_rejects_stale_checkpoint_before_network(
+    tmp_path,
+):
+    now_ms = paper_sor.FULL_CHAIN_AUDIT_INTERVAL_MS + 2_000_000
+    batch_path = tmp_path / "feature-batches.db"
+    batches = RealtimeFeatureBatchStore(str(batch_path), create=True)
+    try:
+        batches.append(
+            {
+                "batch_id": "stale-feature-batch",
+                "observed_at_ms": 2_000_000,
+                "source": {
+                    "chain_checkpoint": {
+                        "schema_version": 1,
+                        "verified_seq": 1,
+                        "verified_row_hash": "a" * 64,
+                        "full_verified_at_ms": 2_000_000,
+                    }
+                },
+            }
+        )
+    finally:
+        batches.close()
+
+    calls = []
+
+    def unexpected_http(url: str):
+        calls.append(url)
+        pytest.fail("checkpoint rejection must happen before public HTTP")
+
+    with pytest.raises(PaperMultiVenueSORError, match="requires a full audit"):
+        refresh_persisted_routing_snapshot(
+            now_ms=now_ms,
+            binance_store_path=str(tmp_path / "binance.db"),
+            feature_batch_store_path=str(batch_path),
+            book_store_path=str(tmp_path / "books.db"),
+            http_get=unexpected_http,
+            instruments=("BTCUSDT",),
+        )
+
+    assert calls == []
 
 
 def test_persisted_routing_snapshot_rejects_unapproved_public_source(tmp_path):
@@ -433,6 +586,22 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
         "binance_sources": {
             instrument_id: "BINANCE_PUBLIC_USDM_WEBSOCKET"
             for instrument_id in paper_sor.PAPER_INSTRUMENTS
+        },
+        "source_chain": {
+            "checkpoint": {
+                "checkpoint_seq": 1,
+                "checkpoint_row_hash": "b" * 64,
+                "full_verified_at_ms": 2_000_000,
+                "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+                "batch_authority": "d" * 64,
+            },
+            "verification": {
+                "valid": True,
+                "anchor_seq": 1,
+                "verified_suffix_rows": 0,
+                "verified_seq": 1,
+                "verified_row_hash": "b" * 64,
+            },
         },
         "books": rows,
         "quality": {
@@ -497,6 +666,9 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
     assert attestation["input_hashes"]["public_cross_venue_books"] == status[
         "snapshot_id"
     ]
+    assert attestation["input_hashes"]["public_source_chain_view"] == (
+        paper_sor._canonical_sha256(bundle["source_chain"])
+    )
     assert attestation["output_hashes"]["dry_run_reproducibility"] == "c" * 64
     assert attestation["output_hashes"]["paper_sor_status_file"] == hashlib.sha256(
         status_path.read_bytes()

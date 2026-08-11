@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import sqlite3
 from collections.abc import Mapping
 from typing import Any
@@ -13,6 +14,7 @@ class RealtimeFeatureBatchStoreError(RuntimeError):
 
 
 _GENESIS = ""
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS realtime_feature_batches (
   seq              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +57,21 @@ class RealtimeFeatureBatchStore:
     """Append-only chain binding source snapshots to a materialized batch."""
 
     def __init__(self, path: str, *, create: bool = False) -> None:
-        self._conn = sqlite3.connect(path)
+        try:
+            if create:
+                self._conn = sqlite3.connect(
+                    path,
+                    timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
+                )
+            else:
+                read_only_uri = f"{Path(path).resolve().as_uri()}?mode=ro"
+                self._conn = sqlite3.connect(
+                    read_only_uri,
+                    uri=True,
+                    timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
+                )
+        except sqlite3.Error as exc:
+            raise RealtimeFeatureBatchStoreError("batch store is unreadable") from exc
         self._conn.row_factory = sqlite3.Row
         if create:
             self._conn.execute("PRAGMA journal_mode=WAL")
@@ -239,6 +255,7 @@ def trusted_source_chain_checkpoint(
     *,
     now_ms: int,
     full_chain_audit_interval_ms: int,
+    create: bool = True,
 ) -> dict[str, Any]:
     """Load a source-chain checkpoint from the verified batch authority.
 
@@ -256,7 +273,9 @@ def trusted_source_chain_checkpoint(
         or full_chain_audit_interval_ms <= 0
     ):
         raise ValueError("checkpoint timing policy is invalid")
-    store = RealtimeFeatureBatchStore(path, create=True)
+    if not isinstance(create, bool):
+        raise ValueError("checkpoint store mode is invalid")
+    store = RealtimeFeatureBatchStore(path, create=create)
     try:
         batch_authority, latest = store.latest_with_authority()
     finally:

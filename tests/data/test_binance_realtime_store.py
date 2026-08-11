@@ -80,6 +80,28 @@ def test_existing_store_reopens_as_read_only_consumer(tmp_path):
         writer.close()
 
 
+def test_latest_for_provider_uses_observation_time_not_append_order(tmp_path):
+    store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
+    try:
+        newest = _snapshot(3_000)
+        newest["provider"] = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        delayed_older = _snapshot(2_000)
+        delayed_older["provider"] = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        assert store.append_snapshot(newest) is True
+        assert store.append_snapshot(delayed_older) is True
+
+        selected = store.latest_for_provider(
+            "BTCUSDT",
+            "BINANCE_PUBLIC_USDM_WEBSOCKET",
+            as_of_ms=3_000,
+        )
+
+        assert selected is not None
+        assert selected["observed_at_ms"] == 3_000
+    finally:
+        store.close()
+
+
 def test_verified_recent_rows_advances_from_trusted_checkpoint(tmp_path):
     store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
     try:
