@@ -196,7 +196,34 @@ py -3.14 -m pytest tests/governance/ -x -q
 ```bash
 python scripts/validate.py
 ```
-**状态**: 🔄 正在运行 pytest 阶段（后台任务 bqcj64tok）
+**结果**: ⚠️ **25/27 PASS, 2 FAIL** (pytest 阶段磁盘空间不足)
+
+**通过 (25/27)**:
+- ✅ Python audit evidence
+- ✅ NPM audit evidence  
+- ✅ Actions OSV evidence
+- ✅ Container Trivy + reproducibility
+- ✅ Event schema catalog
+- ✅ Service import graph
+- ✅ Artifact admission authority
+- ✅ Model risk history
+- ✅ Crowding calibration evidence
+- ✅ Feature distribution drift evidence
+- ✅ Backup evidence
+- ✅ Risk recovery drill
+- ✅ Governance scanner
+- ✅ Supply chain baseline (refresh + current)
+- ✅ Top-tier assessment (refresh + artifacts)
+- ✅ Frontend (typecheck, eslint, tests, production build)
+- ✅ Phase 13 readiness (refresh, current, tests)
+
+**失败 (2/27)**:
+- ❌ pytest: all suites — `OSError: [Errno 28] No space left on device` (1 failed, 684 passed)
+- ❌ pytest: live execution stack — `OSError: [Errno 28] No space left on device` (1 failed, 684 passed)
+
+**根本原因**: 磁盘 98% 已用，仅剩 23GB。pytest 写入临时文件/日志时空间耗尽。
+
+**代码质量**: 所有非磁盘相关的验证阶段通过，代码修复本身正确。
 
 ---
 
@@ -223,12 +250,13 @@ python scripts/validate.py
 
 ## 后续步骤
 
-1. ✅ **等待测试完成** — 后台测试正在运行
-2. **运行完整验证** — `python scripts/validate.py`
-3. **重新评估 alpha** — `python -m tools.paper_alpha_evaluation`（验证 P1-1 修复效果）
-4. **操作性任务** — 重启 Task Scheduler `QUANTOS_binance_realtime_features`
-5. **用户决策** — P2-2 和 P2-3 需要明确方向
+1. ✅ **代码修复完成** — 所有 P0-P1-P2 修复已实施并提交
+2. ⚠️ **验证受磁盘空间限制** — 25/27 阶段通过，2 个 pytest 失败因磁盘空间不足
+3. 🔧 **清理磁盘空间** — 删除临时文件/旧 artifacts，释放空间后重新运行验证
+4. **重新评估 alpha** — `python -m tools.paper_alpha_evaluation`（验证 P1-1 DSR 修复效果）
+5. **操作性任务** — 重启 Task Scheduler `QUANTOS_binance_realtime_features`
+6. **用户决策** — P2-2 和 P2-3 需要明确方向
 
 ---
 
-**结论**: 所有代码层面的 P0-P1-P2 修复已完成并提交。系统从结构性阻塞状态解除，DSR 试验计数污染已修复，关键安全守卫已增强。
+**结论**: 所有代码层面的 P0-P1-P2 修复已完成并提交 (14 commits, HEAD fa5f00f)。验证套件 25/27 阶段通过，2 个 pytest 失败是环境问题（磁盘空间不足），非代码缺陷。系统已从结构性阻塞状态解除，DSR 试验计数污染已修复，关键安全守卫已增强。
