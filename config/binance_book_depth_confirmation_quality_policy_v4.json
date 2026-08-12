@@ -1,0 +1,48 @@
+{
+  "schema_version": 4,
+  "policy_id": "binance_book_depth_hourly_estimator_quality_v4",
+  "status": "FROZEN_BEFORE_CONFIRMATION_OUTCOME",
+  "confirmation_study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "source_quality_diagnostic": "evidence/binance_book_depth_confirmation_quality_diagnostic.json",
+  "source_quality_diagnostic_commit": "b946cf7b0f27381cca6a42d75251da2e8e75072b",
+  "source_quality_diagnostic_git_blob_sha256": "7179651cf935d9bac8ef7835554ce62190da1e1c3511d2e4c03448acca674de0",
+  "outcome_access_before_freeze": false,
+  "estimator": "HOURLY_P10_DEPTH_CURVE",
+  "coverage_decision": {
+    "daily_total_snapshot_floor_is_admission_gate": false,
+    "daily_total_snapshot_count_is_retained_diagnostic": true,
+    "all_24_utc_hours_required": true,
+    "minimum_hourly_snapshot_count": 96,
+    "minimum_hourly_coverage_ratio": 0.8,
+    "reason": "The stored signal is one p10 estimate per UTC hour. Requiring every consumed hour to retain at least 80 percent of nominal observations directly bounds estimator support; an additional daily aggregate floor can reject a day even when every consumed hour is better supported than the hourly floor and therefore does not measure the estimator's actual input quality."
+  },
+  "unchanged_hard_gates": {
+    "official_archive_checksum_required": true,
+    "exact_symmetric_depth_levels_required": true,
+    "maximum_inverted_snapshot_ratio": 0.002,
+    "all_hours_must_align_to_checksum_verified_mark_prices": true,
+    "maximum_mark_alignment_deviation_ratio": 0.01,
+    "network_or_timeout_is_excludable": false,
+    "checksum_mismatch_is_excludable": false,
+    "unexpected_exception_is_excludable": false
+  },
+  "window_day_count": 90,
+  "minimum_complete_day_ratio": 0.9,
+  "minimum_complete_days": 81,
+  "minimum_confirmation_decisions": 80,
+  "maximum_quality_excluded_days": 9,
+  "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+  "terminal_acceptance": {
+    "all_90_days_must_be_processed": true,
+    "complete_days_must_meet_ratio": true,
+    "actual_adjacent_24h_decisions_must_meet_minimum": true,
+    "quality_excluded_days_are_never_imputed": true,
+    "thresholds_may_not_change_after_outcome": true
+  },
+  "authorization": {
+    "formal_admission": false,
+    "forward_credit": false,
+    "testnet": false,
+    "order_submission": false
+  }
+}
