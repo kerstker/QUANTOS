@@ -2,6 +2,8 @@
 
 This tool exposes no single-party reset path. It remains an L2 local governance
 workflow: no broker, order, credential, or network capability is introduced.
+
+P1-4 fix: approval flow now persists to approvals.db (append-only audit trail).
 """
 from __future__ import annotations
 
@@ -14,9 +16,13 @@ from live.governance.kill_switch_store import (
 )
 from quantos.contracts.alpha import Actor, ActorKind
 from services.governance.approval import approve, consume, open_request, review
+from services.governance.approval_store import ApprovalStore
 from services.risk.pre_trade.kill_switch_runtime import reset_with_grant_and_record
 from tools.kill_switch_events import dispatch_and_project_kill_switch_events
 from tools.live_track_advance import _VENUES, _venue_paths
+
+
+_APPROVAL_DB = "data/cache/approvals.db"
 
 
 def _human(name: str) -> Actor:
@@ -45,6 +51,8 @@ def main() -> None:
 
     paths = _venue_paths(_VENUES[args.venue]["suffix"])
     store = open_authoritative_kill_switch_store(paths["kill_switch"])
+    approval_store = ApprovalStore(_APPROVAL_DB, create=True)
+
     try:
         state = store.load_state()
         if not state.tripped:
@@ -61,27 +69,38 @@ def main() -> None:
 
         now = int(time.time() * 1000)
         executor = _human(args.executor or args.approver)
+
+        # Multi-party approval flow with durable persistence
+        request_id = f"reset-{args.incident_id}-{now}"
         request = open_request(
-            f"reset-{args.incident_id}",
+            request_id,
             args.incident_id,
             _human(args.requester),
             at=now,
         )
-        request = review(request, _human(args.reviewer), at=now)
-        request = approve(request, _human(args.approver), at=now)
-        request = consume(request, args.incident_id, executor, at=now)
+        approval_store.append_step(request_id, request.steps[-1])
 
+        request = review(request, _human(args.reviewer), at=now + 1)
+        approval_store.append_step(request_id, request.steps[-1])
+
+        request = approve(request, _human(args.approver), at=now + 2)
+        approval_store.append_step(request_id, request.steps[-1])
+
+        request = consume(request, args.incident_id, executor, at=now + 3)
+        approval_store.append_step(request_id, request.steps[-1])
+
+        # Only reset AFTER successful approval persistence
         state = reset_with_grant_and_record(
             store,
             executor,
             request,
-            at=now,
+            at=now + 3,
         )
         write_kill_switch_json_mirror(paths["kill_switch"], state)
         delivery = dispatch_and_project_kill_switch_events(
             store,
             state_path=paths["kill_switch"],
-            now=now,
+            now=now + 3,
             worker_id="kill-switch-reset-domain-event-projection",
         )
     finally:
