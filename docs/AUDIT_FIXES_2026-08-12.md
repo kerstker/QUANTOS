@@ -6,9 +6,9 @@
 
 **Worktree**: `H:\code\QUANTOS\.claude\worktrees\wave1-hourly-alpha`  
 **分支**: `wave1-hourly-alpha-paper`  
-**当前 HEAD**: `1c6f8405`  
-**修复 commits**: 12 个 (adaabbe8..1c6f8405)  
-**状态**: ✅ 所有代码修复已实施并提交，治理测试通过 (1044 passed)
+**当前 HEAD**: `1470189`  
+**修复 commits**: 14 个 (adaabbe8..1470189)  
+**状态**: ✅ 所有代码修复已实施并提交，治理测试 1089/1090 通过 (1 个失败是磁盘空间问题)
 
 ## P0 修复（关键，立即）
 
@@ -173,11 +173,30 @@ py -3.14 -m pytest tests/governance/ tests/alpha/test_evaluator.py \
 - 初次运行发现 `service_import_graph.json` 过期（代码变更后未重新生成）
 - 重新生成后所有测试通过
 
+### 第二轮测试（Console API 修复）
+**问题**: P1-3 路由重排序时意外截断了 `_realtime_alpha_autonomy_payload()` 函数
+**修复**: 
+- 从 git history 恢复完整函数 (810-1060 行)
+- 移除测试中已废弃的 `/realtime-alpha-status` 路由
+- 重新生成 Phase 13 artifacts
+
+**Commits**: `45bf5c6`, `47a93ab`, `1470189`
+
+### 第三轮测试（治理全套）
+```bash
+py -3.14 -m pytest tests/governance/ -x -q
+```
+**结果**: ✅ **1089 passed, 1 failed** (620.05s)
+- 1 个失败是 `test_supply_chain_builder_binds_temp_repo_head_when_binding_absent`
+- 失败原因: `[WinError 112]` 磁盘空间不足 (98% 已用，仅剩 23GB)
+- 测试需要复制 `node_modules`，但磁盘空间不足
+- **这是环境问题，不是代码问题**
+
 ### 完整验证（27 phases）
 ```bash
 python scripts/validate.py
 ```
-**状态**: 🔄 正在运行（后台任务 bqbyta2ob）
+**状态**: 🔄 正在运行 pytest 阶段（后台任务 bqcj64tok）
 
 ---
 
