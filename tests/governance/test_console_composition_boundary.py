@@ -26,6 +26,7 @@ _ARTIFACT_SNAPSHOT_ROUTES = {
     "/api/v1/console/lance-1m-validation",
     "/api/v1/console/live-trading",
     "/api/v1/console/research-findings",
+    "/realtime-alpha-status",
 }
 
 _REGISTRY_SNAPSHOT_ROUTES = {
