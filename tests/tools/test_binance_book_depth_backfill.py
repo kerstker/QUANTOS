@@ -96,7 +96,9 @@ def test_backfill_stops_on_first_failed_day_and_records_failure(tmp_path):
     assert payload["formal_forward_credit"] is False
 
 
-def _confirmation_contract(start_day: int, frozen_at: int) -> dict:
+def _confirmation_contract(
+    start_day: int, frozen_at: int, *, day_count: int = 2
+) -> dict:
     return {
         "study_id": "confirmation-test",
         "status": "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS",
@@ -104,11 +106,13 @@ def _confirmation_contract(start_day: int, frozen_at: int) -> dict:
         "universe": list(backfill.UNIVERSE),
         "confirmation_window": {
             "start_day_ms": start_day,
-            "end_exclusive_ms": start_day + 2 * DAY_MS,
-            "day_count": 2,
+            "end_exclusive_ms": start_day + day_count * DAY_MS,
+            "day_count": day_count,
             "relation_to_exploration": "STRICTLY_EARLIER_NON_OVERLAPPING",
-            "exploration_start_exclusive_ms": start_day + 2 * DAY_MS,
+            "exploration_start_exclusive_ms": start_day + day_count * DAY_MS,
         },
+        "minimum_decisions": 1,
+        "horizon_hours": 24,
         "frozen_unseen_window_evidence": {
             "observed_at_ms": frozen_at,
             "dataset_observation_count": 0,
@@ -125,6 +129,24 @@ def _quality_policy(maximum: int = 2) -> dict:
         "confirmation_study_id": "confirmation-test",
         "maximum_quality_excluded_days": maximum,
         "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+    }
+
+
+def _capacity_policy(*, day_count: int = 3, minimum_decisions: int = 1) -> dict:
+    return {
+        **_quality_policy(maximum=1),
+        "schema_version": 3,
+        "window_day_count": day_count,
+        "minimum_complete_day_ratio": 2 / 3,
+        "minimum_complete_days": 2,
+        "minimum_confirmation_decisions": minimum_decisions,
+        "terminal_acceptance": {
+            "all_90_days_must_be_processed": True,
+            "complete_days_must_meet_ratio": True,
+            "actual_adjacent_24h_decisions_must_meet_minimum": True,
+            "quality_excluded_days_are_never_imputed": True,
+            "thresholds_may_not_change_after_outcome": True,
+        },
     }
 
 
@@ -269,6 +291,15 @@ def test_real_confirmation_contract_matches_immutable_commit() -> None:
     assert v2_contract["frozen_unseen_window_evidence"]["dataset_observation_count"] == 0
     assert v2_policy["maximum_quality_excluded_days"] == 12
 
+    v3_contract_digest, v3_contract, v3_policy_digest, v3_policy = (
+        backfill._verify_confirmation_v3_contracts()
+    )
+    assert len(v3_contract_digest) == len(v3_policy_digest) == 64
+    assert v3_contract["schema_version"] == 1
+    assert v3_policy["schema_version"] == 3
+    assert v3_policy["minimum_complete_days"] == 81
+    assert v3_policy["minimum_confirmation_decisions"] == 80
+
 
 def test_backfill_excludes_only_bounded_structured_quality_rejections(tmp_path):
     store_path = str(tmp_path / "depth.db")
@@ -339,3 +370,123 @@ def test_backfill_fifth_quality_rejection_blocks(tmp_path):
     status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
     assert status["failure_type"] == "QUALITY_EXCLUSION_LIMIT_EXCEEDED"
     assert status["quality_excluded_day_count"] == 5
+
+
+def test_capacity_policy_requires_complete_days_and_real_adjacent_decisions(
+    tmp_path,
+):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    contract = _confirmation_contract(DAY, OBSERVED, day_count=3)
+    contract["frozen_unseen_window_evidence"]["authority_head_seq"] = head["seq"]
+    contract["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head[
+        "row_hash"
+    ]
+
+    def refresh(instruments, days, **kwargs):
+        if days[0] == DAY + 2 * DAY_MS:
+            raise BinanceBookDepthQualityRejected(
+                ({
+                    "instrument_id": instruments[0],
+                    "day_ms": days[0],
+                    "day": "test-day",
+                    "reason": "quality rejection",
+                    "book_depth_checksum_verified": True,
+                    "mark_price_checksum_verified": True,
+                },)
+            )
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_contract_backfill(
+        contract=contract,
+        observed_at_ms=OBSERVED + 1,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        refresh=refresh,
+        quality_policy=_capacity_policy(),
+    )
+
+    assert result["status"] == "PASS"
+    assert result["data_capacity_status"] == "PASS"
+    assert result["complete_day_count"] == 2
+    assert result["complete_day_ratio"] == 2 / 3
+    assert result["actual_adjacent_24h_decision_count"] == 1
+
+
+def test_capacity_policy_blocks_disconnected_days_before_outcome_access(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    contract = _confirmation_contract(DAY, OBSERVED, day_count=3)
+    contract["frozen_unseen_window_evidence"]["authority_head_seq"] = head["seq"]
+    contract["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head[
+        "row_hash"
+    ]
+
+    def refresh(instruments, days, **kwargs):
+        if days[0] == DAY + DAY_MS:
+            raise BinanceBookDepthQualityRejected(
+                ({
+                    "instrument_id": instruments[0],
+                    "day_ms": days[0],
+                    "day": "test-day",
+                    "reason": "quality rejection",
+                    "book_depth_checksum_verified": True,
+                    "mark_price_checksum_verified": True,
+                },)
+            )
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    with __import__("pytest").raises(
+        backfill.BookDepthBackfillError, match="statistical capacity"
+    ):
+        backfill.run_contract_backfill(
+            contract=contract,
+            observed_at_ms=OBSERVED + 1,
+            store_path=store_path,
+            status_path=str(tmp_path / "status.json"),
+            refresh=refresh,
+            quality_policy=_capacity_policy(),
+        )
+
+    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "FAIL"
+    assert status["failure_type"] == "INSUFFICIENT_CONFIRMATION_DATA_CAPACITY"
+    assert status["complete_day_count"] == 2
+    assert status["actual_adjacent_24h_decision_count"] == 0
+    assert status["confirmation_outcome_accessed"] is False

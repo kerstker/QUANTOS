@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import time
@@ -47,6 +48,12 @@ DEFAULT_CONFIRMATION_QUALITY_POLICY_V2 = (
     ROOT / "config" / "binance_book_depth_confirmation_quality_policy_v2.json"
 )
 CONFIRMATION_V2_COMMIT = "4e3206e87f4cd47b8161a39b97badb2e8a868f85"
+DEFAULT_CONFIRMATION_QUALITY_POLICY_V3 = (
+    ROOT / "config" / "binance_book_depth_confirmation_quality_policy_v3.json"
+)
+CONFIRMATION_QUALITY_POLICY_V3_COMMIT = (
+    "80bfd5fe1373cffd0ec21c5cd7c42c81c8866d0d"
+)
 UNIVERSE = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 
 
@@ -138,6 +145,21 @@ def _verify_confirmation_v2_contracts() -> tuple[str, dict, str, dict]:
     return contract_sha, contract, policy_sha, policy
 
 
+def _verify_confirmation_v3_contracts() -> tuple[str, dict, str, dict]:
+    contract_sha, contract = _verify_confirmation_contract(
+        DEFAULT_CONFIRMATION_CONTRACT
+    )
+    policy_sha, policy = _verify_committed_json(
+        DEFAULT_CONFIRMATION_QUALITY_POLICY_V3,
+        commit=CONFIRMATION_QUALITY_POLICY_V3_COMMIT,
+        repository_path=(
+            "config/binance_book_depth_confirmation_quality_policy_v3.json"
+        ),
+        label="v3 confirmation quality policy",
+    )
+    return contract_sha, contract, policy_sha, policy
+
+
 def _day_complete(store_path: str, day_ms: int, universe: Sequence[str]) -> bool:
     path = Path(store_path)
     if not path.is_file():
@@ -164,6 +186,73 @@ def _day_complete(store_path: str, day_ms: int, universe: Sequence[str]) -> bool
         and all(row.get("external_price_alignment") == "PASS" for row in rows)
         and all(row.get("dataset") == DATASET for row in rows)
     )
+
+
+def _confirmation_capacity(
+    *,
+    store_path: str,
+    start_day_ms: int,
+    end_exclusive_ms: int,
+    universe: Sequence[str],
+    horizon_hours: int,
+) -> dict[str, object]:
+    """Count exact source capacity without reading signals, prices, or returns."""
+    store = BinanceSystemicStore(store_path)
+    try:
+        rows = store.range_observations(
+            DATASET,
+            start_event_time_ms=start_day_ms + 1,
+            end_event_time_ms=end_exclusive_ms + 1,
+            instruments=universe,
+        )
+    finally:
+        store.close()
+    by_day: dict[int, list[dict[str, object]]] = {}
+    by_time: dict[int, set[str]] = {}
+    for row in rows:
+        event_time_ms = int(row["event_time_ms"])
+        day_ms = (event_time_ms - 1) // DAY_MS * DAY_MS
+        by_day.setdefault(day_ms, []).append(row)
+        by_time.setdefault(event_time_ms, set()).add(str(row["instrument_id"]))
+    selected = set(universe)
+    complete_days: list[int] = []
+    for day_ms in range(start_day_ms, end_exclusive_ms, DAY_MS):
+        day_rows = by_day.get(day_ms, [])
+        counts = Counter(str(row["instrument_id"]) for row in day_rows)
+        expected_times = {day_ms + hour * HOUR_MS for hour in range(1, 25)}
+        if (
+            len(day_rows) == len(universe) * 24
+            and set(counts) == selected
+            and all(counts[instrument] == 24 for instrument in universe)
+            and {int(row["event_time_ms"]) for row in day_rows} == expected_times
+            and all(
+                row.get("external_price_alignment") == "PASS"
+                and row.get("dataset") == DATASET
+                for row in day_rows
+            )
+        ):
+            complete_days.append(day_ms)
+    horizon_ms = horizon_hours * HOUR_MS
+    decision_times = tuple(
+        event_time_ms
+        for event_time_ms in sorted(by_time)
+        if event_time_ms % horizon_ms == 0
+        and by_time[event_time_ms] == selected
+        and by_time.get(event_time_ms + horizon_ms) == selected
+    )
+    return {
+        "complete_day_count": len(complete_days),
+        "complete_day_ratio": len(complete_days)
+        / ((end_exclusive_ms - start_day_ms) // DAY_MS),
+        "actual_adjacent_24h_decision_count": len(decision_times),
+        "first_capacity_decision_event_time_ms": (
+            decision_times[0] if decision_times else None
+        ),
+        "last_capacity_decision_event_time_ms": (
+            decision_times[-1] if decision_times else None
+        ),
+        "confirmation_outcome_accessed": False,
+    }
 
 
 def run_backfill(
@@ -362,6 +451,27 @@ def run_contract_backfill(
     start_day_ms = int(window["start_day_ms"])
     end_exclusive_ms = int(window["end_exclusive_ms"])
     day_count = int(window["day_count"])
+    capacity_policy = int(quality_policy.get("schema_version", 1)) == 3
+    if capacity_policy:
+        terminal = quality_policy.get("terminal_acceptance")
+        minimum_complete_ratio = float(
+            quality_policy["minimum_complete_day_ratio"]
+        )
+        minimum_complete_days = int(quality_policy["minimum_complete_days"])
+        minimum_decisions = int(quality_policy["minimum_confirmation_decisions"])
+        if (
+            quality_policy.get("window_day_count") != day_count
+            or not 0 < minimum_complete_ratio <= 1
+            or minimum_complete_days < math.ceil(day_count * minimum_complete_ratio)
+            or minimum_complete_days > day_count
+            or minimum_decisions != int(contract["minimum_decisions"])
+            or not isinstance(terminal, dict)
+            or not terminal
+            or not all(value is True for value in terminal.values())
+        ):
+            raise BookDepthBackfillError(
+                "confirmation statistical capacity policy is invalid"
+            )
     schema_version = int(contract.get("schema_version", 1))
     if schema_version == 1:
         relation_valid = (
@@ -453,6 +563,35 @@ def run_contract_backfill(
         "confirmation_window_start_ms": start_day_ms,
         "confirmation_window_end_exclusive_ms": end_exclusive_ms,
     }
+    if capacity_policy:
+        capacity = _confirmation_capacity(
+            store_path=store_path,
+            start_day_ms=start_day_ms,
+            end_exclusive_ms=end_exclusive_ms,
+            universe=selected,
+            horizon_hours=int(contract["horizon_hours"]),
+        )
+        capacity_pass = (
+            result["processed_day_count"] == day_count
+            and int(capacity["complete_day_count"]) >= minimum_complete_days
+            and float(capacity["complete_day_ratio"]) >= minimum_complete_ratio
+            and int(capacity["actual_adjacent_24h_decision_count"])
+            >= minimum_decisions
+        )
+        bound_result.update(capacity)
+        bound_result["data_capacity_status"] = "PASS" if capacity_pass else "FAIL"
+        bound_result["minimum_complete_days"] = minimum_complete_days
+        bound_result["minimum_complete_day_ratio"] = minimum_complete_ratio
+        bound_result["minimum_confirmation_decisions"] = minimum_decisions
+        if not capacity_pass:
+            bound_result["status"] = "FAIL"
+            bound_result["failure_type"] = (
+                "INSUFFICIENT_CONFIRMATION_DATA_CAPACITY"
+            )
+            atomic_write_json(status_path, bound_result, indent=2)
+            raise BookDepthBackfillError(
+                "confirmation statistical capacity is insufficient"
+            )
     atomic_write_json(status_path, bound_result, indent=2)
     return bound_result
 
@@ -520,10 +659,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Use the exact immutable second confirmation contract and policy",
     )
+    parser.add_argument(
+        "--confirmation-contract-v3",
+        action="store_true",
+        help=(
+            "Use the first immutable confirmation contract with the frozen "
+            "statistical-capacity quality policy"
+        ),
+    )
     args = parser.parse_args(argv)
-    if args.confirmation_contract and args.confirmation_contract_v2:
+    if sum(
+        bool(value)
+        for value in (
+            args.confirmation_contract,
+            args.confirmation_contract_v2,
+            args.confirmation_contract_v3,
+        )
+    ) > 1:
         parser.error("confirmation contract entrypoints are mutually exclusive")
     now_ms = int(time.time() * 1000)
+    if args.confirmation_contract_v3:
+        contract_sha256, contract, quality_policy_sha256, quality_policy = (
+            _verify_confirmation_v3_contracts()
+        )
+        result = run_contract_backfill(
+            contract=contract,
+            observed_at_ms=now_ms,
+            store_path=args.store,
+            archive_root=args.archive_root,
+            status_path=args.status,
+            max_workers=args.workers,
+            contract_commit=CONFIRMATION_COMMIT,
+            contract_sha256=contract_sha256,
+            quality_policy=quality_policy,
+            quality_policy_commit=CONFIRMATION_QUALITY_POLICY_V3_COMMIT,
+            quality_policy_sha256=quality_policy_sha256,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.confirmation_contract_v2:
         contract_sha256, contract, quality_policy_sha256, quality_policy = (
             _verify_confirmation_v2_contracts()
@@ -589,11 +762,13 @@ __all__ = [
     "BookDepthBackfillError",
     "CONFIRMATION_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_COMMIT",
+    "CONFIRMATION_QUALITY_POLICY_V3_COMMIT",
     "CONFIRMATION_V2_COMMIT",
     "DEFAULT_CONFIRMATION_CONTRACT",
     "DEFAULT_CONFIRMATION_CONTRACT_V2",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V2",
+    "DEFAULT_CONFIRMATION_QUALITY_POLICY_V3",
     "DEFAULT_STATUS",
     "UNIVERSE",
     "main",
