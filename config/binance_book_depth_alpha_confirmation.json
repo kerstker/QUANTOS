@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "status": "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS",
+  "source_exploration_evidence": "evidence/binance_book_depth_alpha_exploration.json",
+  "source_exploration_commit": "aa7937252a04077dd9dd91286c8acc238b272cdc",
+  "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+  "candidate_id": "depth_imbalance_1p0_continuation_4h_v1",
+  "direction": -1,
+  "horizon_hours": 24,
+  "confirmation_window": {
+    "start_day_inclusive_utc": "2026-02-12",
+    "start_day_ms": 1770854400000,
+    "end_day_inclusive_utc": "2026-05-12",
+    "end_exclusive_ms": 1778630400000,
+    "day_count": 90,
+    "relation_to_exploration": "STRICTLY_EARLIER_NON_OVERLAPPING",
+    "exploration_start_exclusive_ms": 1778630400000
+  },
+  "frozen_unseen_window_evidence": {
+    "observed_at_ms": 1786503617509,
+    "dataset_observation_count": 0,
+    "authority_head_seq": 30576,
+    "authority_head_row_hash": "08f90e8da906b7a2a321ab4731659e51c5f9115d6d280b37f402eddc3881a1d0",
+    "authority_chain_valid": true
+  },
+  "universe": [
+    "ADAUSDT",
+    "ATOMUSDT",
+    "AVAXUSDT",
+    "BCHUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "UNIUSDT",
+    "XRPUSDT"
+  ],
+  "long_count": 3,
+  "short_count": 3,
+  "one_way_cost_bps_per_unit_turnover": 6.0,
+  "cost_stress_multiplier": 2.0,
+  "annualization_periods": 365.0,
+  "minimum_decisions": 80,
+  "required_gates": {
+    "net_sharpe_minimum": 1.0,
+    "net_mean_return_minimum": 0.0,
+    "double_cost_net_sharpe_minimum": 0.0,
+    "rank_ic_mean_minimum": 0.0,
+    "rank_ic_t_stat_minimum": 2.0,
+    "positive_chronological_thirds_minimum": 2,
+    "maximum_single_instrument_gross_pnl_fraction": 0.35
+  },
+  "multiple_testing": {
+    "global_trial_count_after_exploration": 2823,
+    "confirmation_adds_new_trial": false,
+    "reason": "exact frozen exploration trial is re-evaluated on untouched data"
+  },
+  "post_confirmation_policy": {
+    "pass_requires_formal_validation_dag": true,
+    "confirmation_pass_is_formal_admission": false,
+    "confirmation_pass_is_forward_credit": false,
+    "confirmation_pass_authorizes_testnet": false,
+    "missing_or_invalid_data_policy": "FAIL_CLOSED"
+  }
+}
