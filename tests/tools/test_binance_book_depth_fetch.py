@@ -11,6 +11,9 @@ from services.data.binance_systemic_store import BinanceSystemicStore
 from tools.binance_book_depth_fetch import (
     BinanceBookDepthArchiveUnavailable,
     BinanceBookDepthFetchError,
+    EXPECTED_HOURLY_SNAPSHOTS,
+    MINIMUM_HOURLY_COVERAGE_RATIO,
+    MINIMUM_HOURLY_SNAPSHOTS,
     book_depth_url,
     mark_price_1m_url,
     refresh_latest_available_days,
@@ -21,6 +24,12 @@ from tools.binance_book_depth_fetch import (
 DAY_MS = 1_786_320_000_000
 OBSERVED_MS = DAY_MS + 2 * 86_400_000
 LEVELS = (-5.0, -4.0, -3.0, -2.0, -1.0, -0.2, 0.2, 1.0, 2.0, 3.0, 4.0, 5.0)
+
+
+def test_default_hourly_coverage_is_fixed_at_eighty_percent_of_nominal() -> None:
+    assert EXPECTED_HOURLY_SNAPSHOTS == 120
+    assert MINIMUM_HOURLY_COVERAGE_RATIO == 0.80
+    assert MINIMUM_HOURLY_SNAPSHOTS == 96
 
 
 def _archive() -> bytes:
