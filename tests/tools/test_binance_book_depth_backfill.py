@@ -261,6 +261,14 @@ def test_real_confirmation_contract_matches_immutable_commit() -> None:
     assert len(policy_digest) == 64
     assert policy["maximum_quality_excluded_days"] == 4
 
+    v2_contract_digest, v2_contract, v2_policy_digest, v2_policy = (
+        backfill._verify_confirmation_v2_contracts()
+    )
+    assert len(v2_contract_digest) == len(v2_policy_digest) == 64
+    assert v2_contract["schema_version"] == 2
+    assert v2_contract["frozen_unseen_window_evidence"]["dataset_observation_count"] == 0
+    assert v2_policy["maximum_quality_excluded_days"] == 12
+
 
 def test_backfill_excludes_only_bounded_structured_quality_rejections(tmp_path):
     store_path = str(tmp_path / "depth.db")

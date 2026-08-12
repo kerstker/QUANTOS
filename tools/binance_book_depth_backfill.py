@@ -40,6 +40,13 @@ DEFAULT_CONFIRMATION_QUALITY_POLICY = (
     ROOT / "config" / "binance_book_depth_confirmation_quality_policy.json"
 )
 CONFIRMATION_QUALITY_POLICY_COMMIT = "b0f2be401adcb50545efd88d8b403124af21dbbc"
+DEFAULT_CONFIRMATION_CONTRACT_V2 = (
+    ROOT / "config" / "binance_book_depth_alpha_confirmation_v2.json"
+)
+DEFAULT_CONFIRMATION_QUALITY_POLICY_V2 = (
+    ROOT / "config" / "binance_book_depth_confirmation_quality_policy_v2.json"
+)
+CONFIRMATION_V2_COMMIT = "4e3206e87f4cd47b8161a39b97badb2e8a868f85"
 UNIVERSE = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 
 
@@ -47,14 +54,15 @@ class BookDepthBackfillError(RuntimeError):
     """A contract-bound historical backfill cannot be proven safe to run."""
 
 
-def _verify_confirmation_contract(path: str | Path) -> tuple[str, dict[str, object]]:
+def _verify_committed_json(
+    path: str | Path, *, commit: str, repository_path: str, label: str
+) -> tuple[str, dict[str, object]]:
     contract_path = Path(path)
     raw = contract_path.read_bytes()
-    repository_path = "config/binance_book_depth_alpha_confirmation.json"
     try:
         payload = json.loads(raw)
         committed_blob = subprocess.run(
-            ["git", "rev-parse", f"{CONFIRMATION_COMMIT}:{repository_path}"],
+            ["git", "rev-parse", f"{commit}:{repository_path}"],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -70,14 +78,14 @@ def _verify_confirmation_contract(path: str | Path) -> tuple[str, dict[str, obje
             timeout=30,
         ).stdout.strip()
         committed = subprocess.run(
-            ["git", "show", f"{CONFIRMATION_COMMIT}:{repository_path}"],
+            ["git", "show", f"{commit}:{repository_path}"],
             cwd=ROOT,
             check=True,
             capture_output=True,
             timeout=30,
         ).stdout
         subprocess.run(
-            ["git", "merge-base", "--is-ancestor", CONFIRMATION_COMMIT, "HEAD"],
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -85,48 +93,49 @@ def _verify_confirmation_contract(path: str | Path) -> tuple[str, dict[str, obje
         )
     except (OSError, subprocess.SubprocessError, UnicodeError, json.JSONDecodeError) as exc:
         raise BookDepthBackfillError(
-            "immutable confirmation contract cannot be verified"
+            f"immutable {label} cannot be verified"
         ) from exc
     if not isinstance(payload, dict) or committed_blob != worktree_blob:
         raise BookDepthBackfillError(
-            "confirmation contract differs from immutable commit"
+            f"{label} differs from immutable commit"
         )
     return hashlib.sha256(committed).hexdigest(), payload
+
+
+def _verify_confirmation_contract(path: str | Path) -> tuple[str, dict[str, object]]:
+    return _verify_committed_json(
+        path,
+        commit=CONFIRMATION_COMMIT,
+        repository_path="config/binance_book_depth_alpha_confirmation.json",
+        label="confirmation contract",
+    )
 
 
 def _verify_confirmation_quality_policy(
     path: str | Path,
 ) -> tuple[str, dict[str, object]]:
-    policy_path = Path(path)
-    raw = policy_path.read_bytes()
-    repository_path = "config/binance_book_depth_confirmation_quality_policy.json"
-    try:
-        payload = json.loads(raw)
-        committed_blob = subprocess.run(
-            ["git", "rev-parse", f"{CONFIRMATION_QUALITY_POLICY_COMMIT}:{repository_path}"],
-            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        worktree_blob = subprocess.run(
-            ["git", "hash-object", "--path", repository_path, str(policy_path)],
-            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        committed = subprocess.run(
-            ["git", "show", f"{CONFIRMATION_QUALITY_POLICY_COMMIT}:{repository_path}"],
-            cwd=ROOT, check=True, capture_output=True, timeout=30,
-        ).stdout
-        subprocess.run(
-            ["git", "merge-base", "--is-ancestor", CONFIRMATION_QUALITY_POLICY_COMMIT, "HEAD"],
-            cwd=ROOT, check=True, capture_output=True, timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError, UnicodeError, json.JSONDecodeError) as exc:
-        raise BookDepthBackfillError(
-            "immutable confirmation quality policy cannot be verified"
-        ) from exc
-    if not isinstance(payload, dict) or committed_blob != worktree_blob:
-        raise BookDepthBackfillError(
-            "confirmation quality policy differs from immutable commit"
-        )
-    return hashlib.sha256(committed).hexdigest(), payload
+    return _verify_committed_json(
+        path,
+        commit=CONFIRMATION_QUALITY_POLICY_COMMIT,
+        repository_path="config/binance_book_depth_confirmation_quality_policy.json",
+        label="confirmation quality policy",
+    )
+
+
+def _verify_confirmation_v2_contracts() -> tuple[str, dict, str, dict]:
+    contract_sha, contract = _verify_committed_json(
+        DEFAULT_CONFIRMATION_CONTRACT_V2,
+        commit=CONFIRMATION_V2_COMMIT,
+        repository_path="config/binance_book_depth_alpha_confirmation_v2.json",
+        label="v2 confirmation contract",
+    )
+    policy_sha, policy = _verify_committed_json(
+        DEFAULT_CONFIRMATION_QUALITY_POLICY_V2,
+        commit=CONFIRMATION_V2_COMMIT,
+        repository_path="config/binance_book_depth_confirmation_quality_policy_v2.json",
+        label="v2 confirmation quality policy",
+    )
+    return contract_sha, contract, policy_sha, policy
 
 
 def _day_complete(store_path: str, day_ms: int, universe: Sequence[str]) -> bool:
@@ -353,15 +362,30 @@ def run_contract_backfill(
     start_day_ms = int(window["start_day_ms"])
     end_exclusive_ms = int(window["end_exclusive_ms"])
     day_count = int(window["day_count"])
+    schema_version = int(contract.get("schema_version", 1))
+    if schema_version == 1:
+        relation_valid = (
+            window.get("relation_to_exploration")
+            == "STRICTLY_EARLIER_NON_OVERLAPPING"
+            and end_exclusive_ms
+            == int(window["exploration_start_exclusive_ms"])
+        )
+    elif schema_version == 2:
+        relation_valid = (
+            window.get("relation_to_prior_confirmation")
+            == "STRICTLY_EARLIER_NON_OVERLAPPING"
+            and end_exclusive_ms
+            == int(window["prior_confirmation_start_exclusive_ms"])
+        )
+    else:
+        relation_valid = False
     if (
         start_day_ms < 0
         or start_day_ms % DAY_MS
         or end_exclusive_ms != start_day_ms + day_count * DAY_MS
         or day_count < 1
         or day_count > 365
-        or window.get("relation_to_exploration")
-        != "STRICTLY_EARLIER_NON_OVERLAPPING"
-        or end_exclusive_ms != int(window["exploration_start_exclusive_ms"])
+        or not relation_valid
     ):
         raise BookDepthBackfillError("confirmation window is invalid")
     selected = tuple(str(value).upper().strip() for value in contract["universe"])  # type: ignore[index]
@@ -491,8 +515,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         const=str(DEFAULT_CONFIRMATION_CONTRACT),
         help="Use the exact immutable confirmation window instead of latest N days",
     )
+    parser.add_argument(
+        "--confirmation-contract-v2",
+        action="store_true",
+        help="Use the exact immutable second confirmation contract and policy",
+    )
     args = parser.parse_args(argv)
+    if args.confirmation_contract and args.confirmation_contract_v2:
+        parser.error("confirmation contract entrypoints are mutually exclusive")
     now_ms = int(time.time() * 1000)
+    if args.confirmation_contract_v2:
+        contract_sha256, contract, quality_policy_sha256, quality_policy = (
+            _verify_confirmation_v2_contracts()
+        )
+        result = run_contract_backfill(
+            contract=contract,
+            observed_at_ms=now_ms,
+            store_path=args.store,
+            archive_root=args.archive_root,
+            status_path=args.status,
+            max_workers=args.workers,
+            contract_commit=CONFIRMATION_V2_COMMIT,
+            contract_sha256=contract_sha256,
+            quality_policy=quality_policy,
+            quality_policy_commit=CONFIRMATION_V2_COMMIT,
+            quality_policy_sha256=quality_policy_sha256,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.confirmation_contract:
         contract_sha256, contract = _verify_confirmation_contract(
             args.confirmation_contract
@@ -539,8 +589,11 @@ __all__ = [
     "BookDepthBackfillError",
     "CONFIRMATION_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_COMMIT",
+    "CONFIRMATION_V2_COMMIT",
     "DEFAULT_CONFIRMATION_CONTRACT",
+    "DEFAULT_CONFIRMATION_CONTRACT_V2",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY",
+    "DEFAULT_CONFIRMATION_QUALITY_POLICY_V2",
     "DEFAULT_STATUS",
     "UNIVERSE",
     "main",
