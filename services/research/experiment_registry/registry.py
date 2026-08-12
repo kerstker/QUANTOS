@@ -295,7 +295,7 @@ class ExperimentRegistry:
         return self._store.event_outbox_chain_valid()
 
     def load_into(self, catalog: AlphaCatalog) -> None:
-        trials = tuple(self._store.all_trial_hashes())  # raises ExperimentStoreError if uninit
+        trials = tuple(self._store.alpha_hypothesis_trial_hashes())  # raises ExperimentStoreError if uninit
         rows = []
         try:
             for r in self._store.all_alphas():
@@ -316,7 +316,7 @@ class ExperimentRegistry:
     def load_for_evaluation(self, catalog: AlphaCatalog) -> str:
         """Load trial/statistical context without stale lifecycle identities."""
         trial_rows, alpha_rows = self._store.evaluation_context_snapshot()
-        trials = tuple(trial_rows)
+        trials = tuple(self._store.alpha_hypothesis_trial_hashes())
         historical_returns = {}
         historical_pvalues = {}
         historical_definition_hashes = {}

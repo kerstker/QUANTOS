@@ -874,7 +874,28 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
 # The compact diagnostic routes live in their own bounded module.  Including
 # the child router keeps one public artifact surface while preserving the
 # read-only, GET-only boundary checked by governance.
-router.routes.extend(diagnostic_router.routes)
+
+
+@router.get(
+    "/realtime-alpha-status",
+    response_model=dict,
+    tags=["artifact"],
+)
+def read_realtime_alpha_status() -> dict:
+    """Real-time autonomous alpha status — forward shadow + execution paper."""
+    artifact_path = Path("data/cache/realtime_alpha_status.json")
+    try:
+        with open(artifact_path, encoding="utf-8") as f:
+            artifact = json.load(f)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        artifact = None
+
+    empty = {
+        "schema_version": "realtime_alpha_status.v1",
+        "status": "NO_SNAPSHOT",
+        "readiness": "L2_DRY_RUN_ONLY",
+        "remaining_gates": [
+            "AUTONOMY_SNAPSHOT_MISSING",
             "90D_COMMON_HISTORY_FOR_FORWARD_SHADOW",
             "EXECUTABLE_DEPTH_CAPACITY_CALIBRATION",
         ],
@@ -2502,3 +2523,11 @@ def _gonogo_payload() -> Dict:
 @router.get("/api/v1/console/gonogo")
 async def gonogo() -> Dict:
     return _gonogo_payload()
+
+
+# The compact diagnostic routes live in their own bounded module.  Including
+# the child router keeps one public artifact surface while preserving the
+# read-only, GET-only boundary checked by governance.
+# IMPORTANT: This must be at the END so FastAPI first-match-wins doesn't
+# let the diagnostic (no-attestation) routes shadow the attested ones.
+router.routes.extend(diagnostic_router.routes)

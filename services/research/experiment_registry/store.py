@@ -2122,6 +2122,45 @@ class SqliteExperimentStore:
         self._require_schema()
         return [r["config_hash"] for r in self._conn.execute("SELECT config_hash FROM trials")]
 
+    def alpha_hypothesis_trial_hashes(self) -> tuple[str, ...]:
+        """Return trial hashes from alpha-hypothesis searches only, excluding
+        tuning grids and gate perturbations from the DSR denominator.
+
+        Falls back to all_trial_hashes() if no search registration metadata exists
+        (e.g., tests or legacy direct saves).
+        """
+        self._require_schema()
+
+        # Non-hypothesis search kinds that should NOT count toward DSR trial inflation
+        _NON_HYPOTHESIS_SEARCH_KINDS = frozenset({
+            "ROBUST_CRYPTO_GRID",
+            "PROMOTION_GATE_PERTURBATION",
+        })
+
+        # Check if search_candidates has any data
+        candidate_count = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM search_candidates"
+        ).fetchone()["n"]
+
+        if candidate_count == 0:
+            # No search metadata exists -> fall back to all trials
+            # (legacy path for tests and direct registry.save())
+            return tuple(sorted(r["config_hash"] for r in self._conn.execute(
+                "SELECT config_hash FROM trials"
+            )))
+
+        # Filter trials by search_kind via search_candidates
+        rows = self._conn.execute("""
+            SELECT DISTINCT c.config_hash
+            FROM search_candidates c
+            INNER JOIN search_attempt_events e ON c.search_id = e.search_id
+            WHERE e.search_kind NOT IN ({})
+        """.format(",".join("?" * len(_NON_HYPOTHESIS_SEARCH_KINDS))),
+            tuple(_NON_HYPOTHESIS_SEARCH_KINDS)
+        ).fetchall()
+
+        return tuple(sorted(r["config_hash"] for r in rows))
+
     def upsert_alpha(
         self,
         alpha_id: str,

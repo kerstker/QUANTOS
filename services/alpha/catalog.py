@@ -169,7 +169,7 @@ class AlphaCatalog:
     def returns(self, alpha_id: str) -> tuple[float, ...]:
         return self._returns.get(alpha_id, ())
 
-    def evidence(self, alpha_id: str):
+    def evidence(self, alpha_id: str, *, scope_trial_hashes: Optional[frozenset] = None):
         """Mint replayable catalog-wide DSR evidence for one current alpha.
 
         The catalog owns both the monotonic trial ledger and all exact OOS return
@@ -177,6 +177,10 @@ class AlphaCatalog:
         local trial-count/variance override.  Historical observations are keyed
         by their definition hash; a current re-evaluation replaces the matching
         historical observation rather than double-counting the same hypothesis.
+
+        ``scope_trial_hashes``: when provided, only these trials count toward DSR
+        denominator (filters out tuning grids / perturbations). The subject's own
+        trial is always included even if absent from the scope.
         """
 
         if alpha_id not in self._defs or alpha_id not in self._returns:
@@ -222,10 +226,22 @@ class AlphaCatalog:
         from services.validation.catalog_evidence import create_catalog_evidence
 
         definition_hash = self._defs[alpha_id].definition_hash
+
+        # Apply scope filter if provided
+        if scope_trial_hashes is not None:
+            scoped = frozenset(scope_trial_hashes) & frozenset(self._evidence_trials)
+            # Always include the subject's own trial even if absent from scope
+            subject_trial_id = f"research_session#{alpha_id}#trial"
+            if subject_trial_id not in scoped and subject_trial_id in self._evidence_trials:
+                scoped = scoped | {subject_trial_id}
+            effective_trials = tuple(sorted(scoped))
+        else:
+            effective_trials = tuple(sorted(self._evidence_trials))
+
         return create_catalog_evidence(
             subject_id=alpha_id,
             subject_definition_hash=definition_hash,
-            trial_definition_hashes=tuple(sorted(self._evidence_trials)),
+            trial_definition_hashes=effective_trials,
             return_series_by_definition=return_series_by_definition,
         )
 
