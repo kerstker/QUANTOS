@@ -1,7 +1,7 @@
 {
   "dataset": {
     "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
-    "bundle_sha256": "5bcc6d1089532129ff9d67e3ae6d03facf43f3f76fb3f0f219a2f3af9e331701",
+    "bundle_sha256": "960c6de33a3ae5f3bf6cc14c973aeacd099e429367fe93d9d13701d37b62c77d",
     "instruments": [
       "AAVE",
       "ADA",
@@ -28,18 +28,18 @@
       "XLM",
       "XRP"
     ],
-    "manifest_sha256": "ef4b8403832f988b8a4c12c11f8e8f71fdd6a19a11054b3cd8faa5c283429d61",
-    "max_period": 1784764800000,
+    "manifest_sha256": "835ad3fbd1b18d3c8b1b38cd7041ffb804bd4f08ec14c943fe1fa8605c129838",
+    "max_period": 1785974400000,
     "min_period": 1642636800000,
-    "row_count": 236,
+    "row_count": 238,
     "source_sha256": {
-      "data/cache/crypto_funding.db": "b2976593beafc8fb2c4f278e3bde7c220646ea96225488c5b45adb310fe74fda",
-      "data/cache/crypto_funding_rates.json": "7dc18e9c4359ae0e5d96593eba5af0dc27585e8404695458edf7d0969743d713",
+      "data/cache/crypto_funding.db": "024645cc4e0931f4684f6609a00318af764ede104288fd704ea92c018799afc7",
+      "data/cache/crypto_funding_rates.json": "9ffb23f93863b71db6c8f94fda8f8413273a4a4a617c01b2ab35305d499c4635",
       "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
-      "data/cache/crypto_oi_metrics.json": "9d60f9d69d4d56acee80afa24630873e6d29135c9a92aba49bf4f5392d8423aa"
+      "data/cache/crypto_oi_metrics.json": "01be1a969761b1b98244d19cb717514fce4f0007f94bedab4e14a242f1835e45"
     }
   },
-  "evidence_sha256": "dad7d572d72cef7737dae2050bd2879fee9da6b6d83c346a0364d99418711081",
+  "evidence_sha256": "7296407c9b70d3699a3c00aebb3f402a27f9ea973d952c2c02f8345c73fed5a0",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
     "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
@@ -47,7 +47,7 @@
     "tools/crowding_metric_research.py": "f7bbe196e34f43fd882f44677073b6039a70769bdd2b22938997fb87fc14c297",
     "tools/dry_run_crowd_contra_multi.py": "1bf04d044c2eb5913788f25e824053b0a850327b91b2556a2db4d2b1a1dbc885",
     "tools/dry_run_crowd_contra_signal_adapter_multi.py": "e87ec50ae01442ef82f36b2baa51abd5279c5b348de40e6b4cdaa5e912e1e2ad",
-    "tools/live_track_advance.py": "c46306bb2ebc9e7536b800690ccc36990e8bfcbc0a02530d7d4b918c056fa8b1"
+    "tools/live_track_advance.py": "dfdf4ade6c7144fa2bbdf59e9e4a9e676a4e1a294fa12f6ca135f54d0bc08795"
   },
   "limitations": [
     "Sensitivity replay is historical and not causal proof of loss prevention.",
@@ -76,29 +76,29 @@
     "absolute_statistics": {
       "short_max_z": {
         "max": 5.870804,
-        "mean": 1.494444,
+        "mean": 1.481445,
         "min": -0.501008,
-        "n": 235,
-        "p10": 0.214209,
-        "p50": 1.373901,
+        "n": 237,
+        "p10": 0.176098,
+        "p50": 1.373667,
         "p90": 2.905214
       },
       "short_mean_z": {
         "max": 3.775822,
-        "mean": 0.402556,
+        "mean": 0.396077,
         "min": -1.078983,
-        "n": 235,
+        "n": 237,
         "p10": -0.435172,
-        "p50": 0.300424,
+        "p50": 0.29742,
         "p90": 1.344697
       },
       "short_raw_gls": {
         "max": 6.583925,
-        "mean": 3.286298,
+        "mean": 3.280425,
         "min": 1.987949,
-        "n": 236,
+        "n": 238,
         "p10": 2.504247,
-        "p50": 3.230152,
+        "p50": 3.214022,
         "p90": 4.150884
       }
     },
@@ -128,10 +128,10 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.088983,
+        "block_rate": 0.088235,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 215
+        "n_warn": 217
       },
       "live": {
         "block_periods": [
@@ -157,76 +157,76 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.088983,
+        "block_rate": 0.088235,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 215
+        "n_warn": 217
       }
     },
     "max_name_weight": {
       "max": 0.125,
-      "mean": 0.073219,
+      "mean": 0.073654,
       "min": 0.071429,
-      "n": 236,
+      "n": 238,
       "p10": 0.071429,
       "p50": 0.071429,
       "p90": 0.083333
     },
-    "max_period": 1784764800000,
+    "max_period": 1785974400000,
     "min_period": 1642636800000,
-    "n_periods": 236,
+    "n_periods": 238,
     "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
     "rank_statistics": {
       "dry_run_average": {
         "max": 0.5,
         "mean": 0.5,
         "min": 0.5,
-        "n": 236,
+        "n": 238,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.5
       },
       "dry_run_long": {
         "max": 0.307692,
-        "mean": 0.231404,
+        "mean": 0.23126,
         "min": 0.214286,
-        "n": 236,
+        "n": 238,
         "p10": 0.227273,
         "p50": 0.230769,
         "p90": 0.230769
       },
       "dry_run_short": {
         "max": 0.785714,
-        "mean": 0.768596,
+        "mean": 0.76874,
         "min": 0.692308,
-        "n": 236,
+        "n": 238,
         "p10": 0.769231,
         "p50": 0.769231,
         "p90": 0.772727
       },
       "live_average": {
         "max": 0.65528,
-        "mean": 0.50278,
+        "mean": 0.502757,
         "min": 0.5,
-        "n": 236,
+        "n": 238,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.503106
       },
       "live_long": {
         "max": 0.440994,
-        "mean": 0.136305,
+        "mean": 0.136129,
         "min": 0.115385,
-        "n": 236,
+        "n": 238,
         "p10": 0.130435,
         "p50": 0.130435,
         "p90": 0.142857
       },
       "live_short": {
         "max": 0.884615,
-        "mean": 0.869256,
+        "mean": 0.869385,
         "min": 0.857143,
-        "n": 236,
+        "n": 238,
         "p10": 0.868421,
         "p50": 0.869565,
         "p90": 0.869565
@@ -236,35 +236,35 @@
     "z_threshold_sensitivity": {
       "2.0": {
         "block_periods_equal": true,
-        "block_rate": 0.258475,
+        "block_rate": 0.256303,
         "dry_n_block": 61,
         "live_n_block": 61,
         "n_block": 61
       },
       "2.5": {
         "block_periods_equal": true,
-        "block_rate": 0.161017,
+        "block_rate": 0.159664,
         "dry_n_block": 38,
         "live_n_block": 38,
         "n_block": 38
       },
       "3.0": {
         "block_periods_equal": true,
-        "block_rate": 0.088983,
+        "block_rate": 0.088235,
         "dry_n_block": 21,
         "live_n_block": 21,
         "n_block": 21
       },
       "3.5": {
         "block_periods_equal": true,
-        "block_rate": 0.038136,
+        "block_rate": 0.037815,
         "dry_n_block": 9,
         "live_n_block": 9,
         "n_block": 9
       },
       "4.0": {
         "block_periods_equal": true,
-        "block_rate": 0.021186,
+        "block_rate": 0.021008,
         "dry_n_block": 5,
         "live_n_block": 5,
         "n_block": 5
