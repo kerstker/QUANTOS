@@ -36,6 +36,22 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _observation_digest(observations: Sequence[dict]) -> str:
+    digest = hashlib.sha256()
+    for observation in observations:
+        digest.update(
+            json.dumps(
+                observation,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def _git(*args: str) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -46,6 +62,25 @@ def _git(*args: str) -> str:
         timeout=30,
     )
     return result.stdout.strip()
+
+
+def _require_clean_source() -> str:
+    head = _git("rev-parse", "HEAD")
+    try:
+        tracked = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD", "--"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise BookDepthResearchError("source cleanliness cannot be verified") from exc
+    if tracked.returncode != 0:
+        raise BookDepthResearchError(
+            "research must run from a clean tracked source commit"
+        )
+    return head
 
 
 def _verify_preregistration(contract_path: Path) -> tuple[str, str, dict]:
@@ -90,6 +125,7 @@ def run_research(
     generated_at_ms: int | None = None,
 ) -> dict:
     now_ms = int(time.time() * 1000) if generated_at_ms is None else generated_at_ms
+    source_commit = _require_clean_source()
     registration_commit, contract_sha256, contract = _verify_preregistration(
         Path(contract_path)
     )
@@ -113,6 +149,9 @@ def run_research(
         )
         if not store.chain_valid():
             raise BookDepthResearchError("book-depth authority chain is invalid")
+        authority_head = store.authority_head()
+        if authority_head is None:
+            raise BookDepthResearchError("book-depth authority is empty")
     finally:
         store.close()
     observed_days = len(
@@ -132,7 +171,10 @@ def run_research(
             "required_common_days": int(contract["minimum_common_days"]),
             "preregistration_commit": registration_commit,
             "preregistration_sha256": contract_sha256,
-            "source_commit": _git("rev-parse", "HEAD"),
+            "source_commit": source_commit,
+            "input_observation_count": len(observations),
+            "input_observation_sha256": _observation_digest(list(observations)),
+            "authority_head": authority_head,
             "formal_admission": False,
             "forward_credit": False,
             "testnet_authorized": False,
@@ -149,7 +191,10 @@ def run_research(
             "observed_common_days": observed_days,
             "preregistration_commit": registration_commit,
             "preregistration_sha256": contract_sha256,
-            "source_commit": _git("rev-parse", "HEAD"),
+            "source_commit": source_commit,
+            "input_observation_count": len(observations),
+            "input_observation_sha256": _observation_digest(list(observations)),
+            "authority_head": authority_head,
             "safety": _safety(),
         }
     atomic_write_json(str(output_path), result, indent=2)

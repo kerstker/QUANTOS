@@ -325,6 +325,23 @@ class BinanceSystemicStore:
             ).fetchone()
         return int(row[0])
 
+    def authority_head(self) -> dict[str, object] | None:
+        """Return the append-only chain frontier without exposing mutable state."""
+        try:
+            row = self._conn.execute(
+                "SELECT seq,row_hash FROM binance_systemic_observations "
+                "ORDER BY seq DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise BinanceSystemicStoreError(
+                "systemic authority head is unreadable"
+            ) from exc
+        return (
+            None
+            if row is None
+            else {"seq": int(row["seq"]), "row_hash": str(row["row_hash"])}
+        )
+
     def chain_valid(self) -> bool:
         previous = _GENESIS
         try:

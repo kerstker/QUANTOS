@@ -51,6 +51,7 @@ def test_driver_reports_insufficient_history_without_evaluating(tmp_path, monkey
         lambda _path: (research.PREREGISTRATION_COMMIT, "a" * 64, contract),
     )
     monkeypatch.setattr(research, "_git", lambda *_args: "b" * 40)
+    monkeypatch.setattr(research, "_require_clean_source", lambda: "b" * 40)
 
     result = research.run_research(
         store_path=store_path,
@@ -62,6 +63,9 @@ def test_driver_reports_insufficient_history_without_evaluating(tmp_path, monkey
     assert result["observed_common_days"] == 2
     assert result["formal_admission"] is False
     assert result["testnet_authorized"] is False
+    assert result["input_observation_count"] == 672
+    assert len(result["input_observation_sha256"]) == 64
+    assert result["authority_head"]["seq"] == 672
     assert json.loads(output.read_text(encoding="utf-8")) == result
 
 

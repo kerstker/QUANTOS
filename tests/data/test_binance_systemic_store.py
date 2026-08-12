@@ -35,6 +35,8 @@ def test_store_is_idempotent_hash_chained_and_pit_readable(tmp_path):
         assert store.latest("adl_risk", "BTCUSDT", as_of_ms=1999) is None
         assert store.latest("adl_risk", "BTCUSDT", as_of_ms=2000)["value"] == "MEDIUM"
         assert store.chain_valid() is True
+        assert store.authority_head()["seq"] == 2
+        assert len(store.authority_head()["row_hash"]) == 64
     finally:
         store.close()
 
