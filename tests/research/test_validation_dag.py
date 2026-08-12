@@ -405,6 +405,7 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
         {"candidate_id": "alpha-1", "definition": {"name": "candidate-1", "version": 1}},
     )
     definition_hashes=tuple(_digest({"canonical_definition": _canonical(item["definition"])}) for item in definitions)
+    missing_history_definition_hash = "c" * 64
     registered = register_leakage_compute(
         "tests.registered_compute:1", compute, exact_definition_id=definition_hashes[0]
     )
@@ -414,10 +415,22 @@ def test_production_adapters_full_pass_calls_every_engine(tmp_path, monkeypatch)
     policy = ValidationPolicy()
     panel["oos"]["candidate_id"] = "alpha-0"
     panel["oos"]["candidate_index"] = 0
-    context=ValidationContext(None, panel, policy, "a" * 64, "b" * 64, policy.digest, 100, effective_definition_ids=definition_hashes)
+    context=ValidationContext(
+        None,
+        panel,
+        policy,
+        "a" * 64,
+        "b" * 64,
+        policy.digest,
+        100,
+        effective_trial_count=3,
+        effective_definition_ids=definition_hashes + (missing_history_definition_hash,),
+    )
     stage_results=[stage.evaluate(context) for stage in production_adapters()]
     oos_result=next(result for result in stage_results if result.stage == "oos")
     assert oos_result.outcome == "PASS", (oos_result.reason, dict(oos_result.evidence))
+    assert oos_result.evidence["catalog_evidence"]["trial_count"] == 3
+    assert len(oos_result.evidence["catalog_evidence"]["return_observations"]) == 2
     assert all(result.outcome == "PASS" for result in stage_results)
     candidate=Candidate("a" * 64, "f" * 64, definition_hashes[0], policy.digest)
     with TrialLedger(str(tmp_path / "production.db")) as ledger:

@@ -298,10 +298,12 @@ class OOSValidationAdapter(_TypedAdapter):
                 if not isinstance(item,Mapping) or set(item) != {"candidate_id","definition"} or item["candidate_id"] != ids[pos]: raise ValueError("PBO definition ordering mismatch")
                 definition_hashes.append(_digest({"canonical_definition":_canonical(item["definition"])}))
             if tuple(definition_hashes) != tuple(x["pbo_candidate_definition_hashes"]): raise ValueError("PBO definition hash mismatch")
-            frozen_definitions=set(context.effective_definition_ids)
-            if not frozen_definitions or frozen_definitions != set(definition_hashes): raise ValueError("OOS population does not match frozen trial set")
+            frozen_definition_ids=tuple(context.effective_definition_ids)
+            frozen_definitions=set(frozen_definition_ids)
+            comparable_definitions=set(definition_hashes)
+            if not frozen_definitions or not comparable_definitions <= frozen_definitions: raise ValueError("OOS population is absent from frozen trial set")
             return_population=x["return_series_by_definition"]
-            if not isinstance(return_population,Mapping) or set(return_population) != frozen_definitions: raise ValueError("catalog return population mismatch")
+            if not isinstance(return_population,Mapping) or set(return_population) != comparable_definitions: raise ValueError("catalog return population mismatch")
             oos_indices=tuple(sorted({index for _, test in wf for index in test}))
             if len(oos_indices) < 2: raise ValueError("insufficient OOS observations for FDR")
             pmap={}; fdr_statistics={}
@@ -332,16 +334,16 @@ class OOSValidationAdapter(_TypedAdapter):
             if type(candidate_index) is not int or not 0 <= candidate_index < len(ids): raise ValueError("invalid candidate index")
             subject_definition_hash=definition_hashes[candidate_index]
             if tuple(x["returns"]) != tuple(return_population.get(subject_definition_hash, ())): raise ValueError("subject returns do not match catalog population")
-            catalog_evidence=create_catalog_evidence(subject_id=candidate_id,subject_definition_hash=subject_definition_hash,trial_definition_hashes=definition_hashes,return_series_by_definition=return_population)
+            catalog_evidence=create_catalog_evidence(subject_id=candidate_id,subject_definition_hash=subject_definition_hash,trial_definition_hashes=frozen_definition_ids,return_series_by_definition=return_population)
             if not verify_catalog_evidence(catalog_evidence): raise ValueError("catalog evidence verification failed")
             if context.effective_trial_count is not None and catalog_evidence.trial_count != context.effective_trial_count: raise ValueError("catalog trial count does not match frozen ledger")
             dsr=catalog_evidence.deflated_sharpe
             candidate_exact=getattr(context.candidate,"exact_definition_id",None)
             if candidate_id != ids[candidate_index] or (candidate_exact is not None and candidate_exact != definition_hashes[candidate_index]): raise ValueError("PBO candidate identity mismatch")
             pbo_returns=x["pbo_return_series_by_definition"]
-            if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != frozen_definitions: raise ValueError("PBO return population mismatch")
+            if not isinstance(pbo_returns,Mapping) or set(pbo_returns) != comparable_definitions: raise ValueError("PBO return population mismatch")
             knowledge_by_definition=x["knowledge_times_by_definition"]
-            if not isinstance(knowledge_by_definition,Mapping) or set(knowledge_by_definition) != frozen_definitions:
+            if not isinstance(knowledge_by_definition,Mapping) or set(knowledge_by_definition) != comparable_definitions:
                 raise ValueError("OOS knowledge-time population mismatch")
             for definition_hash in definition_hashes:
                 timestamped=tuple(pbo_returns[definition_hash])
