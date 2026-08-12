@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "artifact": "QUANTOS_727_FACTOR_GARDEN_STATUS",
-  "generated_at_ms": 1786543972821,
-  "commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+  "generated_at_ms": 1786544254813,
+  "commit": "1330f3821a84b5348960f594a2e62bf919308837",
   "readiness": "L2_DRY_RUN_ONLY",
   "status": "NOT_READY",
   "blockers": [
@@ -21,7 +21,7 @@
     "selection_scope": "ALL",
     "overall_status": "PASS",
     "reported_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-    "head_commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+    "head_commit": "1330f3821a84b5348960f594a2e62bf919308837",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
   },
