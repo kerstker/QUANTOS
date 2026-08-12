@@ -7,6 +7,7 @@ import pytest
 from services.research.book_depth_alpha import (
     BookDepthAlphaError,
     candidate_signals,
+    evaluate_exploration,
     evaluate_registered_candidates,
 )
 
@@ -145,3 +146,80 @@ def test_registered_diagnostic_rejects_unaligned_or_incomplete_input() -> None:
 
     with pytest.raises(BookDepthAlphaError, match="no exact common"):
         evaluate_registered_candidates([observation], _contract())
+
+
+def _exploration_contract() -> dict:
+    candidates = [item["candidate_id"] for item in _contract()["candidates"]]
+    return {
+        "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+        "candidate_ids": candidates,
+        "directions": [1, -1],
+        "horizon_hours": [4, 8],
+        "long_count": 3,
+        "short_count": 3,
+        "one_way_cost_bps_per_unit_turnover": 6.0,
+        "cost_stress_multiplier": 2.0,
+        "minimum_decisions": 20,
+        "trial_count": 24,
+        "selection_policy": {
+            "net_sharpe_minimum": 1.0,
+            "double_cost_net_sharpe_minimum": 0.0,
+            "rank_ic_absolute_t_stat_minimum": 2.0,
+            "positive_chronological_thirds_minimum": 2,
+            "maximum_single_instrument_gross_pnl_fraction": 0.35,
+        },
+    }
+
+
+def test_exploration_counts_complete_grid_and_cannot_authorize() -> None:
+    observations = []
+    prices = {instrument: 100.0 for instrument in INSTRUMENTS}
+    for decision in range(101):
+        step = decision * 4
+        event_time = step * HOUR_MS
+        for index, instrument in enumerate(INSTRUMENTS):
+            observations.append(
+                _observation(
+                    event_time,
+                    instrument,
+                    index,
+                    step,
+                    price=prices[instrument],
+                )
+            )
+        for index, instrument in enumerate(INSTRUMENTS):
+            primary_score = _score(index, decision, 0)
+            noise = 0.001 * math.sin(decision * 0.91 + index * 1.73)
+            prices[instrument] *= 1.0 + 0.02 * primary_score + noise
+
+    result = evaluate_exploration(
+        observations, _contract(), _exploration_contract()
+    )
+
+    assert result["trial_count"] == result["multiple_testing_trial_increment"] == 24
+    assert len(result["trials"]) == 24
+    assert result["status"] in {"LEAD_SELECTED", "NO_LEAD"}
+    assert result["confirmation_required"] is True
+    assert result["formal_admission"] is False
+    assert result["forward_credit"] is False
+    assert result["testnet_authorized"] is False
+    assert result["order_submission_authorized"] is False
+    plus = result["trials"][
+        "depth_imbalance_0p2_continuation_4h_v1|direction=+1|horizon=4h"
+    ]
+    minus = result["trials"][
+        "depth_imbalance_0p2_continuation_4h_v1|direction=-1|horizon=4h"
+    ]
+    assert plus["net"]["net_sharpe"] > minus["net"]["net_sharpe"]
+
+
+def test_exploration_rejects_grid_or_candidate_drift() -> None:
+    contract = _exploration_contract()
+    contract["trial_count"] = 23
+    with pytest.raises(BookDepthAlphaError, match="trial count"):
+        evaluate_exploration([], _contract(), contract)
+
+    contract = _exploration_contract()
+    contract["candidate_ids"] = list(reversed(contract["candidate_ids"]))
+    with pytest.raises(BookDepthAlphaError, match="candidate population"):
+        evaluate_exploration([], _contract(), contract)
