@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "study_id": "binance_usdm_book_depth_curve_alpha_v1",
+  "status": "PRE_REGISTERED_NOT_EVALUATED",
+  "registered_source_commit_required": true,
+  "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+  "history_days": 90,
+  "universe": [
+    "ADAUSDT",
+    "ATOMUSDT",
+    "AVAXUSDT",
+    "BCHUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "UNIUSDT",
+    "XRPUSDT"
+  ],
+  "decision_interval_hours": 4,
+  "forward_horizon_hours": 4,
+  "long_count": 3,
+  "short_count": 3,
+  "one_way_cost_bps_per_unit_turnover": 6.0,
+  "cost_stress_multiplier": 2.0,
+  "annualization_periods": 2190,
+  "locked_oos_fraction": 0.3333333333333333,
+  "minimum_common_days": 60,
+  "minimum_locked_decisions": 100,
+  "primary_candidate_id": "depth_imbalance_0p2_continuation_4h_v1",
+  "candidates": [
+    {
+      "candidate_id": "depth_imbalance_0p2_continuation_4h_v1",
+      "formula": "(bid_notional_p10_0.2-ask_notional_p10_0.2)/(bid_notional_p10_0.2+ask_notional_p10_0.2)"
+    },
+    {
+      "candidate_id": "depth_imbalance_1p0_continuation_4h_v1",
+      "formula": "(bid_notional_p10_1-ask_notional_p10_1)/(bid_notional_p10_1+ask_notional_p10_1)"
+    },
+    {
+      "candidate_id": "depth_imbalance_5p0_continuation_4h_v1",
+      "formula": "(bid_notional_p10_5-ask_notional_p10_5)/(bid_notional_p10_5+ask_notional_p10_5)"
+    },
+    {
+      "candidate_id": "depth_near_minus_far_continuation_4h_v1",
+      "formula": "imbalance_0.2-imbalance_5"
+    },
+    {
+      "candidate_id": "depth_near_concentration_skew_4h_v1",
+      "formula": "log((bid_notional_p10_0.2/bid_notional_p10_5)/(ask_notional_p10_0.2/ask_notional_p10_5))"
+    },
+    {
+      "candidate_id": "depth_curve_mean_imbalance_4h_v1",
+      "formula": "mean(imbalance_0.2,imbalance_1,imbalance_2,imbalance_3,imbalance_4,imbalance_5)"
+    }
+  ],
+  "primary_required_gates": {
+    "locked_net_sharpe_minimum": 1.0,
+    "locked_rank_ic_mean_minimum": 0.0,
+    "locked_rank_ic_t_stat_minimum": 2.0,
+    "positive_chronological_thirds_minimum": 2,
+    "double_cost_net_sharpe_minimum": 0.0,
+    "maximum_single_instrument_gross_pnl_fraction": 0.35
+  },
+  "honesty": {
+    "retrospective_history_is_forward_credit": false,
+    "diagnostic_pass_is_formal_admission": false,
+    "diagnostic_pass_authorizes_testnet": false,
+    "missing_or_invalid_data_policy": "FAIL_CLOSED",
+    "secondary_candidate_may_replace_primary": false
+  }
+}
