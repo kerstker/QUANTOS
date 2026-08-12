@@ -656,6 +656,11 @@
               "role": "artifact_admission_authority"
             },
             {
+              "relative_path": "data/cache/binance_book_depth_archive.db",
+              "required": false,
+              "role": "binance_book_depth_archive_authority"
+            },
+            {
               "relative_path": "data/cache/data_quality_admission.db",
               "required": true,
               "role": "data_quality_admission"
@@ -751,7 +756,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 7
+          "version": 8
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -820,6 +825,11 @@
               "role": "artifact_admission_authority"
             },
             {
+              "relative_path": "data/cache/binance_book_depth_archive.db",
+              "required": false,
+              "role": "binance_book_depth_archive_authority"
+            },
+            {
               "relative_path": "data/cache/data_quality_admission.db",
               "required": true,
               "role": "data_quality_admission"
@@ -915,7 +925,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 7
+          "version": 8
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1569,9 +1579,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786494053873,
-    "run_id": "7b1d5f5afedda9b97f0f4d05855670a8ecdeb382312e2559c54b19cbbf664fd4",
-    "source_commit": "973f620245dd8e8ab1aaab6371bf4228d109e3d2"
+    "generated_at": 1786518222904,
+    "run_id": "e6d28aeff4aba2d72594068dcc2448df0a9db8dc5797ac4f060b8d393367ab04",
+    "source_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890"
   },
   "verdict": "NOT_TOP_TIER"
 }
