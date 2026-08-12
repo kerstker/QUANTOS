@@ -112,7 +112,15 @@ def _confirmation_contract(
             "exploration_start_exclusive_ms": start_day + day_count * DAY_MS,
         },
         "minimum_decisions": 1,
+        "candidate_id": "candidate",
+        "direction": -1,
         "horizon_hours": 24,
+        "long_count": 3,
+        "short_count": 3,
+        "one_way_cost_bps_per_unit_turnover": 6.0,
+        "cost_stress_multiplier": 2.0,
+        "annualization_periods": 365.0,
+        "required_gates": {"net_sharpe_minimum": 1.0},
         "frozen_unseen_window_evidence": {
             "observed_at_ms": frozen_at,
             "dataset_observation_count": 0,
@@ -173,6 +181,59 @@ def _v4_capacity_policy(*, day_count: int = 3, minimum_decisions: int = 1) -> di
             "checksum_mismatch_is_excludable": False,
             "unexpected_exception_is_excludable": False,
         },
+    }
+
+
+def _supplement_contract(start_day: int, frozen_at: int) -> dict:
+    parent = _confirmation_contract(start_day + 7 * DAY_MS, frozen_at)
+    return {
+        "study_id": "confirmation-supplement-test",
+        "status": "PRE_REGISTERED_BEFORE_SUPPLEMENT_DATA_ACCESS",
+        "parent_confirmation_study_id": parent["study_id"],
+        "dataset_id": DATASET,
+        "candidate_id": "candidate",
+        "direction": -1,
+        "horizon_hours": 24,
+        "long_count": parent["long_count"],
+        "short_count": parent["short_count"],
+        "one_way_cost_bps_per_unit_turnover": parent[
+            "one_way_cost_bps_per_unit_turnover"
+        ],
+        "cost_stress_multiplier": parent["cost_stress_multiplier"],
+        "annualization_periods": parent["annualization_periods"],
+        "required_gates": parent["required_gates"],
+        "supplement_window": {
+            "start_day_ms": start_day,
+            "end_exclusive_ms": start_day + 7 * DAY_MS,
+            "day_count": 7,
+            "relation_to_parent_confirmation": (
+                "IMMEDIATELY_PRECEDING_NON_OVERLAPPING"
+            ),
+            "parent_confirmation_start_ms": start_day + 7 * DAY_MS,
+        },
+        "frozen_unseen_window_evidence": {
+            "observed_at_ms": frozen_at,
+            "dataset_observation_count": 0,
+            "authority_head_seq": 1,
+            "authority_head_row_hash": "",
+            "authority_chain_valid": True,
+        },
+        "universe": list(backfill.UNIVERSE),
+        "parent_capacity_decisions": 1,
+        "minimum_combined_decisions": 2,
+        "terminal_policy": {
+            "all_7_days_must_be_processed": True,
+            "no_date_or_period_selection": True,
+            "combined_actual_adjacent_24h_decisions_must_meet_minimum": True,
+            "quality_excluded_days_are_never_imputed": True,
+            "parent_and_supplement_are_evaluated_as_one_chronological_sample": True,
+            "missing_or_invalid_data_policy": "FAIL_CLOSED",
+            "pass_requires_formal_validation_dag": True,
+            "pass_is_formal_admission": False,
+            "pass_is_forward_credit": False,
+            "pass_authorizes_testnet": False,
+        },
+        "_parent_contract": parent,
     }
 
 
@@ -573,4 +634,112 @@ def test_capacity_policy_blocks_disconnected_days_before_outcome_access(tmp_path
     assert status["failure_type"] == "INSUFFICIENT_CONFIRMATION_DATA_CAPACITY"
     assert status["complete_day_count"] == 2
     assert status["actual_adjacent_24h_decision_count"] == 0
+    assert status["confirmation_outcome_accessed"] is False
+
+
+def test_supplement_backfill_requires_frozen_head_and_combined_capacity(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        seed.append_many(_rows(DAY + 7 * DAY_MS, OBSERVED))
+        seed.append_many(_rows(DAY + 8 * DAY_MS, OBSERVED))
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    supplement = _supplement_contract(DAY, OBSERVED)
+    supplement["frozen_unseen_window_evidence"]["authority_head_seq"] = head[
+        "seq"
+    ]
+    supplement["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head[
+        "row_hash"
+    ]
+    parent = supplement.pop("_parent_contract")
+
+    def refresh(instruments, days, **kwargs):
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_supplement_backfill(
+        supplement=supplement,
+        parent_contract=parent,
+        quality_policy=_v4_capacity_policy(day_count=2),
+        observed_at_ms=OBSERVED + 1,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        refresh=refresh,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["supplement_processed_day_count"] == 7
+    assert result["parent_actual_adjacent_24h_decision_count"] == 1
+    assert result["combined_actual_adjacent_24h_decision_count"] == 8
+    assert result["minimum_combined_decisions"] == 2
+    assert result["confirmation_outcome_accessed"] is False
+
+
+def test_supplement_backfill_blocks_when_combined_capacity_stays_short(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        seed.append_many(_rows(DAY + 7 * DAY_MS, OBSERVED))
+        seed.append_many(_rows(DAY + 8 * DAY_MS, OBSERVED))
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    supplement = _supplement_contract(DAY, OBSERVED)
+    supplement["minimum_combined_decisions"] = 9
+    supplement["frozen_unseen_window_evidence"]["authority_head_seq"] = head[
+        "seq"
+    ]
+    supplement["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head[
+        "row_hash"
+    ]
+    parent = supplement.pop("_parent_contract")
+
+    def refresh(instruments, days, **kwargs):
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    with __import__("pytest").raises(
+        backfill.BookDepthBackfillError, match="combined statistical capacity"
+    ):
+        backfill.run_supplement_backfill(
+            supplement=supplement,
+            parent_contract=parent,
+            quality_policy=_v4_capacity_policy(day_count=2),
+            observed_at_ms=OBSERVED + 1,
+            store_path=store_path,
+            status_path=str(tmp_path / "status.json"),
+            refresh=refresh,
+        )
+
+    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "FAIL"
+    assert status["failure_type"] == "INSUFFICIENT_COMBINED_CONFIRMATION_CAPACITY"
     assert status["confirmation_outcome_accessed"] is False

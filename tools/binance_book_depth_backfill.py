@@ -60,6 +60,12 @@ DEFAULT_CONFIRMATION_QUALITY_POLICY_V4 = (
 CONFIRMATION_QUALITY_POLICY_V4_COMMIT = (
     "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30"
 )
+DEFAULT_CONFIRMATION_SUPPLEMENT = (
+    ROOT / "config" / "binance_book_depth_alpha_confirmation_supplement_v1.json"
+)
+CONFIRMATION_SUPPLEMENT_COMMIT = (
+    "831222f363a8b54a25d3b9cb34a5ab0d5d548864"
+)
 UNIVERSE = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 
 
@@ -189,6 +195,26 @@ def _verify_confirmation_v4_contracts() -> tuple[str, dict, str, dict]:
             "v4 source quality diagnostic binding is invalid"
         )
     return contract_sha, contract, policy_sha, policy
+
+
+def _verify_confirmation_supplement_contracts(
+) -> tuple[str, dict, str, dict, str, dict]:
+    supplement_sha, supplement = _verify_committed_json(
+        DEFAULT_CONFIRMATION_SUPPLEMENT,
+        commit=CONFIRMATION_SUPPLEMENT_COMMIT,
+        repository_path=(
+            "config/binance_book_depth_alpha_confirmation_supplement_v1.json"
+        ),
+        label="confirmation capacity supplement",
+    )
+    parent_sha, parent, policy_sha, policy = _verify_confirmation_v4_contracts()
+    _verify_committed_json(
+        ROOT / str(supplement["source_capacity_block_evidence"]),
+        commit=str(supplement["source_capacity_block_commit"]),
+        repository_path=str(supplement["source_capacity_block_evidence"]),
+        label="supplement source capacity block",
+    )
+    return supplement_sha, supplement, parent_sha, parent, policy_sha, policy
 
 
 def _day_complete(store_path: str, day_ms: int, universe: Sequence[str]) -> bool:
@@ -674,6 +700,225 @@ def run_contract_backfill(
     return bound_result
 
 
+def run_supplement_backfill(
+    *,
+    supplement: dict[str, object],
+    parent_contract: dict[str, object],
+    quality_policy: dict[str, object],
+    observed_at_ms: int,
+    store_path: str = DEFAULT_STORE,
+    archive_root: str = DEFAULT_RAW_ARCHIVE,
+    status_path: str = DEFAULT_STATUS,
+    max_workers: int = 4,
+    refresh: Callable[..., dict[str, object]] = refresh_book_depth_days,
+    supplement_commit: str | None = None,
+    supplement_sha256: str | None = None,
+    parent_contract_commit: str | None = None,
+    parent_contract_sha256: str | None = None,
+    quality_policy_commit: str | None = None,
+    quality_policy_sha256: str | None = None,
+) -> dict[str, object]:
+    """Backfill a frozen capacity supplement without accessing Alpha outcomes."""
+    if supplement.get("status") != "PRE_REGISTERED_BEFORE_SUPPLEMENT_DATA_ACCESS":
+        raise BookDepthBackfillError("confirmation supplement is not pre-registered")
+    if parent_contract.get("status") != "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS":
+        raise BookDepthBackfillError("parent confirmation contract is invalid")
+    if (
+        supplement.get("parent_confirmation_study_id")
+        != parent_contract.get("study_id")
+        or supplement.get("dataset_id") != parent_contract.get("dataset_id")
+    ):
+        raise BookDepthBackfillError("supplement parent binding is invalid")
+    identity_fields = (
+        "candidate_id",
+        "direction",
+        "horizon_hours",
+        "universe",
+        "long_count",
+        "short_count",
+        "one_way_cost_bps_per_unit_turnover",
+        "cost_stress_multiplier",
+        "annualization_periods",
+        "required_gates",
+    )
+    if any(supplement.get(field) != parent_contract.get(field) for field in identity_fields):
+        raise BookDepthBackfillError("supplement trial identity drifted")
+    window = supplement.get("supplement_window")
+    unseen = supplement.get("frozen_unseen_window_evidence")
+    parent_window = parent_contract.get("confirmation_window")
+    terminal = supplement.get("terminal_policy")
+    if not all(
+        isinstance(value, dict)
+        for value in (window, unseen, parent_window, terminal)
+    ):
+        raise BookDepthBackfillError("supplement window evidence is missing")
+    window = dict(window)  # type: ignore[arg-type]
+    unseen = dict(unseen)  # type: ignore[arg-type]
+    parent_window = dict(parent_window)  # type: ignore[arg-type]
+    terminal = dict(terminal)  # type: ignore[arg-type]
+    start_day_ms = int(window["start_day_ms"])
+    end_exclusive_ms = int(window["end_exclusive_ms"])
+    day_count = int(window["day_count"])
+    parent_start_ms = int(parent_window["start_day_ms"])
+    parent_end_ms = int(parent_window["end_exclusive_ms"])
+    if (
+        start_day_ms < 0
+        or start_day_ms % DAY_MS
+        or end_exclusive_ms != start_day_ms + day_count * DAY_MS
+        or end_exclusive_ms != parent_start_ms
+        or window.get("parent_confirmation_start_ms") != parent_start_ms
+        or window.get("relation_to_parent_confirmation")
+        != "IMMEDIATELY_PRECEDING_NON_OVERLAPPING"
+        or day_count != 7
+        or terminal.get("all_7_days_must_be_processed") is not True
+        or terminal.get("no_date_or_period_selection") is not True
+        or terminal.get("combined_actual_adjacent_24h_decisions_must_meet_minimum")
+        is not True
+        or terminal.get("quality_excluded_days_are_never_imputed") is not True
+        or terminal.get("parent_and_supplement_are_evaluated_as_one_chronological_sample")
+        is not True
+        or terminal.get("missing_or_invalid_data_policy") != "FAIL_CLOSED"
+        or terminal.get("pass_requires_formal_validation_dag") is not True
+        or terminal.get("pass_is_formal_admission") is not False
+        or terminal.get("pass_is_forward_credit") is not False
+        or terminal.get("pass_authorizes_testnet") is not False
+    ):
+        raise BookDepthBackfillError("confirmation supplement policy is invalid")
+    if (
+        not isinstance(quality_policy, dict)
+        or int(quality_policy.get("schema_version", 0)) != 4
+        or quality_policy.get("confirmation_study_id") != parent_contract.get("study_id")
+        or quality_policy.get("window_day_count") != int(parent_window["day_count"])
+        or quality_policy.get("minimum_confirmation_decisions")
+        != int(parent_contract["minimum_decisions"])
+    ):
+        raise BookDepthBackfillError("supplement quality policy binding is invalid")
+    coverage = quality_policy.get("coverage_decision")
+    hard = quality_policy.get("unchanged_hard_gates")
+    if (
+        not isinstance(coverage, dict)
+        or coverage.get("daily_total_snapshot_floor_is_admission_gate") is not False
+        or coverage.get("all_24_utc_hours_required") is not True
+        or coverage.get("minimum_hourly_snapshot_count") != 96
+        or not isinstance(hard, dict)
+        or hard.get("official_archive_checksum_required") is not True
+        or hard.get("exact_symmetric_depth_levels_required") is not True
+        or hard.get("maximum_inverted_snapshot_ratio") != 0.002
+        or hard.get("all_hours_must_align_to_checksum_verified_mark_prices") is not True
+        or hard.get("maximum_mark_alignment_deviation_ratio") != 0.01
+        or hard.get("network_or_timeout_is_excludable") is not False
+        or hard.get("checksum_mismatch_is_excludable") is not False
+        or hard.get("unexpected_exception_is_excludable") is not False
+    ):
+        raise BookDepthBackfillError("supplement hard quality gates are invalid")
+    selected = tuple(str(value).upper().strip() for value in supplement["universe"])  # type: ignore[index]
+    if len(selected) != len(set(selected)) or set(selected) != set(UNIVERSE):
+        raise BookDepthBackfillError("supplement universe is not the fixed 14")
+    frozen_at_ms = int(unseen["observed_at_ms"])
+    if int(observed_at_ms) <= frozen_at_ms:
+        raise BookDepthBackfillError("supplement time does not postdate pre-registration")
+    path = Path(store_path)
+    if not path.is_file():
+        raise BookDepthBackfillError("supplement requires the frozen authority store")
+    store = BinanceSystemicStore(str(path))
+    try:
+        existing = store.range_observations(
+            DATASET,
+            start_event_time_ms=start_day_ms + 1,
+            end_event_time_ms=end_exclusive_ms + 1,
+            instruments=selected,
+        )
+        if not store.chain_valid():
+            raise BookDepthBackfillError("book-depth authority chain is invalid")
+        current_head = store.authority_head()
+    finally:
+        store.close()
+    frozen_head = {
+        "seq": int(unseen["authority_head_seq"]),
+        "row_hash": str(unseen["authority_head_row_hash"]),
+    }
+    if not existing:
+        if int(unseen["dataset_observation_count"]) != 0 or current_head != frozen_head:
+            raise BookDepthBackfillError("unseen supplement authority binding drifted")
+    else:
+        if any(int(row["knowledge_time_ms"]) < frozen_at_ms for row in existing):
+            raise BookDepthBackfillError("supplement window was observed before freeze")
+        existing_days = {
+            (int(row["event_time_ms"]) - 1) // DAY_MS * DAY_MS
+            for row in existing
+        }
+        if any(not _day_complete(store_path, day_ms, selected) for day_ms in existing_days):
+            raise BookDepthBackfillError("partial supplement day blocks resume")
+    result = run_backfill(
+        days=day_count,
+        closed_day_ms=end_exclusive_ms - DAY_MS,
+        observed_at_ms=int(observed_at_ms),
+        store_path=store_path,
+        archive_root=archive_root,
+        status_path=status_path,
+        universe=selected,
+        max_workers=max_workers,
+        refresh=refresh,
+        maximum_quality_excluded_days=day_count,
+        minimum_snapshots_per_archive=1,
+    )
+    parent_capacity = _confirmation_capacity(
+        store_path=store_path,
+        start_day_ms=parent_start_ms,
+        end_exclusive_ms=parent_end_ms,
+        universe=selected,
+        horizon_hours=int(parent_contract["horizon_hours"]),
+    )
+    combined_capacity = _confirmation_capacity(
+        store_path=store_path,
+        start_day_ms=start_day_ms,
+        end_exclusive_ms=parent_end_ms,
+        universe=selected,
+        horizon_hours=int(parent_contract["horizon_hours"]),
+    )
+    parent_decisions = int(parent_capacity["actual_adjacent_24h_decision_count"])
+    combined_decisions = int(combined_capacity["actual_adjacent_24h_decision_count"])
+    expected_parent_decisions = int(supplement["parent_capacity_decisions"])
+    minimum_combined_decisions = int(supplement["minimum_combined_decisions"])
+    if parent_decisions != expected_parent_decisions:
+        raise BookDepthBackfillError("parent confirmation capacity drifted")
+    bound_result = {
+        **result,
+        "mode": "L2_CONTRACT_BOUND_CONFIRMATION_CAPACITY_SUPPLEMENT",
+        "supplement_study_id": supplement["study_id"],
+        "supplement_commit": supplement_commit,
+        "supplement_sha256": supplement_sha256,
+        "parent_contract_commit": parent_contract_commit,
+        "parent_contract_sha256": parent_contract_sha256,
+        "quality_policy_commit": quality_policy_commit,
+        "quality_policy_sha256": quality_policy_sha256,
+        "supplement_frozen_at_ms": frozen_at_ms,
+        "preexisting_supplement_observations": len(existing),
+        "supplement_window_start_ms": start_day_ms,
+        "supplement_window_end_exclusive_ms": end_exclusive_ms,
+        "supplement_processed_day_count": result["processed_day_count"],
+        "parent_actual_adjacent_24h_decision_count": parent_decisions,
+        "combined_actual_adjacent_24h_decision_count": combined_decisions,
+        "minimum_combined_decisions": minimum_combined_decisions,
+        "confirmation_outcome_accessed": False,
+        "formal_validation_started": False,
+        "formal_admission": False,
+        "forward_credit": False,
+        "testnet_authorized": False,
+        "order_submission_authorized": False,
+    }
+    if combined_decisions < minimum_combined_decisions:
+        bound_result["status"] = "FAIL"
+        bound_result["failure_type"] = "INSUFFICIENT_COMBINED_CONFIRMATION_CAPACITY"
+        atomic_write_json(status_path, bound_result, indent=2)
+        raise BookDepthBackfillError(
+            "combined statistical capacity is insufficient"
+        )
+    bound_result["combined_data_capacity_status"] = "PASS"
+    atomic_write_json(status_path, bound_result, indent=2)
+    return bound_result
+
+
 def _safety() -> dict[str, bool]:
     return {
         "paper_only": True,
@@ -753,6 +998,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "estimator-aligned quality policy"
         ),
     )
+    parser.add_argument(
+        "--confirmation-supplement-v1",
+        action="store_true",
+        help="Use the frozen seven-day confirmation capacity supplement",
+    )
     args = parser.parse_args(argv)
     if sum(
         bool(value)
@@ -761,10 +1011,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.confirmation_contract_v2,
             args.confirmation_contract_v3,
             args.confirmation_contract_v4,
+            args.confirmation_supplement_v1,
         )
     ) > 1:
         parser.error("confirmation contract entrypoints are mutually exclusive")
     now_ms = int(time.time() * 1000)
+    if args.confirmation_supplement_v1:
+        (
+            supplement_sha256,
+            supplement,
+            parent_sha256,
+            parent,
+            quality_policy_sha256,
+            quality_policy,
+        ) = _verify_confirmation_supplement_contracts()
+        result = run_supplement_backfill(
+            supplement=supplement,
+            parent_contract=parent,
+            quality_policy=quality_policy,
+            observed_at_ms=now_ms,
+            store_path=args.store,
+            archive_root=args.archive_root,
+            status_path=args.status,
+            max_workers=args.workers,
+            supplement_commit=CONFIRMATION_SUPPLEMENT_COMMIT,
+            supplement_sha256=supplement_sha256,
+            parent_contract_commit=CONFIRMATION_COMMIT,
+            parent_contract_sha256=parent_sha256,
+            quality_policy_commit=CONFIRMATION_QUALITY_POLICY_V4_COMMIT,
+            quality_policy_sha256=quality_policy_sha256,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.confirmation_contract_v4:
         contract_sha256, contract, quality_policy_sha256, quality_policy = (
             _verify_confirmation_v4_contracts()
@@ -870,6 +1148,7 @@ __all__ = [
     "CONFIRMATION_QUALITY_POLICY_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_V3_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_V4_COMMIT",
+    "CONFIRMATION_SUPPLEMENT_COMMIT",
     "CONFIRMATION_V2_COMMIT",
     "DEFAULT_CONFIRMATION_CONTRACT",
     "DEFAULT_CONFIRMATION_CONTRACT_V2",
@@ -877,9 +1156,11 @@ __all__ = [
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V2",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V3",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V4",
+    "DEFAULT_CONFIRMATION_SUPPLEMENT",
     "DEFAULT_STATUS",
     "UNIVERSE",
     "main",
     "run_backfill",
     "run_contract_backfill",
+    "run_supplement_backfill",
 ]
