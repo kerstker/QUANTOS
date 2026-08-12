@@ -284,6 +284,22 @@ def test_confirmation_applies_fixed_gates_and_cannot_authorize() -> None:
     assert result["formal_admission"] is False
     assert result["forward_credit"] is False
     assert result["testnet_authorized"] is False
+    assert "period_evidence" not in result
+
+    auditable = evaluate_confirmation(
+        observations, _confirmation_contract(), include_period_evidence=True
+    )
+    assert len(auditable["period_evidence"]) == auditable["decision_count"]
+    assert auditable["period_evidence"][0]["event_time_ms"] == 0
+    assert set(auditable["period_evidence"][0]) == {
+        "event_time_ms",
+        "gross_return",
+        "turnover",
+        "net_return",
+        "double_cost_net_return",
+        "rank_ic",
+        "instrument_contributions",
+    }
 
 
 def test_confirmation_rejects_insufficient_or_unaligned_input() -> None:

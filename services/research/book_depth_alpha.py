@@ -637,8 +637,16 @@ def evaluate_exploration(
 def evaluate_confirmation(
     observations: Sequence[Mapping[str, Any]],
     contract: Mapping[str, Any],
+    *,
+    include_period_evidence: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate the single frozen trial on its untouched confirmation window."""
+    """Evaluate the single frozen trial on its untouched confirmation window.
+
+    ``include_period_evidence`` is an additive audit surface for the one official
+    confirmation driver.  It exposes the already-computed period records so a
+    later formal validation stage can consume the exact frozen result without
+    evaluating the confirmation window a second time.
+    """
     universe = tuple(str(value) for value in contract["universe"])
     candidate_id = str(contract["candidate_id"])
     direction = int(contract["direction"])
@@ -804,7 +812,7 @@ def evaluate_confirmation(
             <= float(gates["maximum_single_instrument_gross_pnl_fraction"])
         ),
     }
-    return {
+    result = {
         "status": "PASS" if all(checks.values()) else "FAIL",
         "mode": "STRICTLY_UNSEEN_PRE_REGISTERED_CONFIRMATION",
         "candidate_id": candidate_id,
@@ -828,6 +836,9 @@ def evaluate_confirmation(
         "testnet_authorized": False,
         "order_submission_authorized": False,
     }
+    if include_period_evidence:
+        result["period_evidence"] = periods
+    return result
 
 
 __all__ = [
