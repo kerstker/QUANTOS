@@ -19,6 +19,7 @@ from collections.abc import Callable, Sequence
 from services.data.binance_book_depth_archive import DATASET, DAY_MS, HOUR_MS
 from services.data.binance_systemic_store import BinanceSystemicStore
 from tools.binance_book_depth_fetch import (
+    BinanceBookDepthQualityRejected,
     DEFAULT_RAW_ARCHIVE,
     DEFAULT_STORE,
     refresh_book_depth_days,
@@ -35,6 +36,10 @@ DEFAULT_CONFIRMATION_CONTRACT = (
     ROOT / "config" / "binance_book_depth_alpha_confirmation.json"
 )
 CONFIRMATION_COMMIT = "7b208c08e4161099b20ebbea8d6a6c76b9521a1b"
+DEFAULT_CONFIRMATION_QUALITY_POLICY = (
+    ROOT / "config" / "binance_book_depth_confirmation_quality_policy.json"
+)
+CONFIRMATION_QUALITY_POLICY_COMMIT = "b0f2be401adcb50545efd88d8b403124af21dbbc"
 UNIVERSE = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 
 
@@ -89,6 +94,41 @@ def _verify_confirmation_contract(path: str | Path) -> tuple[str, dict[str, obje
     return hashlib.sha256(committed).hexdigest(), payload
 
 
+def _verify_confirmation_quality_policy(
+    path: str | Path,
+) -> tuple[str, dict[str, object]]:
+    policy_path = Path(path)
+    raw = policy_path.read_bytes()
+    repository_path = "config/binance_book_depth_confirmation_quality_policy.json"
+    try:
+        payload = json.loads(raw)
+        committed_blob = subprocess.run(
+            ["git", "rev-parse", f"{CONFIRMATION_QUALITY_POLICY_COMMIT}:{repository_path}"],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        worktree_blob = subprocess.run(
+            ["git", "hash-object", "--path", repository_path, str(policy_path)],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        committed = subprocess.run(
+            ["git", "show", f"{CONFIRMATION_QUALITY_POLICY_COMMIT}:{repository_path}"],
+            cwd=ROOT, check=True, capture_output=True, timeout=30,
+        ).stdout
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", CONFIRMATION_QUALITY_POLICY_COMMIT, "HEAD"],
+            cwd=ROOT, check=True, capture_output=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError, json.JSONDecodeError) as exc:
+        raise BookDepthBackfillError(
+            "immutable confirmation quality policy cannot be verified"
+        ) from exc
+    if not isinstance(payload, dict) or committed_blob != worktree_blob:
+        raise BookDepthBackfillError(
+            "confirmation quality policy differs from immutable commit"
+        )
+    return hashlib.sha256(committed).hexdigest(), payload
+
+
 def _day_complete(store_path: str, day_ms: int, universe: Sequence[str]) -> bool:
     path = Path(store_path)
     if not path.is_file():
@@ -128,6 +168,7 @@ def run_backfill(
     universe: Sequence[str] = UNIVERSE,
     max_workers: int = 4,
     refresh: Callable[..., dict[str, object]] = refresh_book_depth_days,
+    maximum_quality_excluded_days: int = 0,
 ) -> dict[str, object]:
     if (
         isinstance(days, bool)
@@ -140,6 +181,13 @@ def run_backfill(
         or closed_day_ms % DAY_MS
     ):
         raise ValueError("backfill window is invalid")
+    if (
+        isinstance(maximum_quality_excluded_days, bool)
+        or not isinstance(maximum_quality_excluded_days, int)
+        or maximum_quality_excluded_days < 0
+        or maximum_quality_excluded_days > days
+    ):
+        raise ValueError("quality exclusion policy is invalid")
     selected = tuple(str(value).upper().strip() for value in universe)
     if len(selected) != 14 or len(set(selected)) != 14:
         raise ValueError("backfill requires the fixed 14-symbol universe")
@@ -148,6 +196,7 @@ def run_backfill(
     )
     completed = skipped = inserted_hours = 0
     processed_days: list[int] = []
+    quality_exclusions: list[dict[str, object]] = []
     for day_ms in selected_days:
         if _day_complete(store_path, day_ms, selected):
             skipped += 1
@@ -166,6 +215,45 @@ def run_backfill(
                 raise RuntimeError("backfill day lacks external price alignment")
             if not _day_complete(store_path, day_ms, selected):
                 raise RuntimeError("backfill day is not an exact authority grid")
+        except BinanceBookDepthQualityRejected as exc:
+            quality_exclusions.append(
+                {"day_ms": day_ms, "failures": [dict(item) for item in exc.failures]}
+            )
+            if len(quality_exclusions) > maximum_quality_excluded_days:
+                failure = _progress_report(
+                    observed_at_ms=observed_at_ms,
+                    requested_days=days,
+                    completed_days=completed,
+                    skipped_days=skipped,
+                    inserted_hours=inserted_hours,
+                    processed_days=processed_days,
+                    status="FAIL",
+                    quality_exclusions=quality_exclusions,
+                    maximum_quality_excluded_days=maximum_quality_excluded_days,
+                )
+                failure["failed_day_ms"] = day_ms
+                failure["failure_type"] = "QUALITY_EXCLUSION_LIMIT_EXCEEDED"
+                atomic_write_json(status_path, failure, indent=2)
+                raise BookDepthBackfillError(
+                    "confirmation quality exclusion limit exceeded"
+                ) from exc
+            processed_days.append(day_ms)
+            atomic_write_json(
+                status_path,
+                _progress_report(
+                    observed_at_ms=observed_at_ms,
+                    requested_days=days,
+                    completed_days=completed,
+                    skipped_days=skipped,
+                    inserted_hours=inserted_hours,
+                    processed_days=processed_days,
+                    status="RUNNING",
+                    quality_exclusions=quality_exclusions,
+                    maximum_quality_excluded_days=maximum_quality_excluded_days,
+                ),
+                indent=2,
+            )
+            continue
         except Exception as exc:
             failure = {
                 "schema_version": 1,
@@ -178,6 +266,9 @@ def run_backfill(
                 "skipped_complete_days": skipped,
                 "failed_day_ms": day_ms,
                 "failure_type": type(exc).__name__,
+                "quality_excluded_day_count": len(quality_exclusions),
+                "quality_exclusions": quality_exclusions,
+                "maximum_quality_excluded_days": maximum_quality_excluded_days,
                 "formal_forward_credit": False,
                 "safety": _safety(),
             }
@@ -196,6 +287,8 @@ def run_backfill(
                 inserted_hours=inserted_hours,
                 processed_days=processed_days,
                 status="RUNNING",
+                quality_exclusions=quality_exclusions,
+                maximum_quality_excluded_days=maximum_quality_excluded_days,
             ),
             indent=2,
         )
@@ -207,6 +300,8 @@ def run_backfill(
         inserted_hours=inserted_hours,
         processed_days=processed_days,
         status="PASS",
+        quality_exclusions=quality_exclusions,
+        maximum_quality_excluded_days=maximum_quality_excluded_days,
     )
     atomic_write_json(status_path, result, indent=2)
     return result
@@ -223,6 +318,9 @@ def run_contract_backfill(
     refresh: Callable[..., dict[str, object]] = refresh_book_depth_days,
     contract_commit: str | None = None,
     contract_sha256: str | None = None,
+    quality_policy: dict[str, object] | None = None,
+    quality_policy_commit: str | None = None,
+    quality_policy_sha256: str | None = None,
 ) -> dict[str, object]:
     """Backfill only the immutable unseen confirmation window.
 
@@ -234,6 +332,18 @@ def run_contract_backfill(
     """
     if contract.get("status") != "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS":
         raise BookDepthBackfillError("confirmation contract is not pre-registered")
+    if not isinstance(quality_policy, dict):
+        raise BookDepthBackfillError("confirmation quality policy is missing")
+    if (
+        quality_policy.get("status") != "FROZEN_BEFORE_CONFIRMATION_OUTCOME"
+        or quality_policy.get("confirmation_study_id") != contract.get("study_id")
+        or quality_policy.get("exclusion_unit")
+        != "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS"
+    ):
+        raise BookDepthBackfillError("confirmation quality policy is invalid")
+    maximum_quality_excluded_days = int(
+        quality_policy["maximum_quality_excluded_days"]
+    )
     if contract.get("dataset_id") != DATASET:
         raise BookDepthBackfillError("confirmation dataset is invalid")
     window = contract.get("confirmation_window")
@@ -304,6 +414,7 @@ def run_contract_backfill(
         universe=selected,
         max_workers=max_workers,
         refresh=refresh,
+        maximum_quality_excluded_days=maximum_quality_excluded_days,
     )
     bound_result = {
         **result,
@@ -311,6 +422,8 @@ def run_contract_backfill(
         "contract_study_id": contract["study_id"],
         "contract_commit": contract_commit,
         "contract_sha256": contract_sha256,
+        "quality_policy_commit": quality_policy_commit,
+        "quality_policy_sha256": quality_policy_sha256,
         "contract_frozen_at_ms": frozen_at_ms,
         "preexisting_confirmation_observations": len(existing),
         "confirmation_window_start_ms": start_day_ms,
@@ -339,6 +452,8 @@ def _progress_report(
     inserted_hours: int,
     processed_days: Sequence[int],
     status: str,
+    quality_exclusions: Sequence[dict[str, object]] = (),
+    maximum_quality_excluded_days: int = 0,
 ) -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -351,6 +466,9 @@ def _progress_report(
         "skipped_complete_days": skipped_days,
         "inserted_hours": inserted_hours,
         "processed_day_count": len(processed_days),
+        "quality_excluded_day_count": len(quality_exclusions),
+        "quality_exclusions": list(quality_exclusions),
+        "maximum_quality_excluded_days": maximum_quality_excluded_days,
         "first_processed_day_ms": min(processed_days) if processed_days else None,
         "last_processed_day_ms": max(processed_days) if processed_days else None,
         "formal_forward_credit": False,
@@ -379,6 +497,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         contract_sha256, contract = _verify_confirmation_contract(
             args.confirmation_contract
         )
+        quality_policy_sha256, quality_policy = _verify_confirmation_quality_policy(
+            DEFAULT_CONFIRMATION_QUALITY_POLICY
+        )
         result = run_contract_backfill(
             contract=contract,
             observed_at_ms=now_ms,
@@ -388,6 +509,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_workers=args.workers,
             contract_commit=CONFIRMATION_COMMIT,
             contract_sha256=contract_sha256,
+            quality_policy=quality_policy,
+            quality_policy_commit=CONFIRMATION_QUALITY_POLICY_COMMIT,
+            quality_policy_sha256=quality_policy_sha256,
         )
         print(json.dumps(result, sort_keys=True))
         return 0
@@ -414,7 +538,9 @@ if __name__ == "__main__":
 __all__ = [
     "BookDepthBackfillError",
     "CONFIRMATION_COMMIT",
+    "CONFIRMATION_QUALITY_POLICY_COMMIT",
     "DEFAULT_CONFIRMATION_CONTRACT",
+    "DEFAULT_CONFIRMATION_QUALITY_POLICY",
     "DEFAULT_STATUS",
     "UNIVERSE",
     "main",

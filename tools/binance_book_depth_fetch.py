@@ -57,6 +57,21 @@ class BinanceBookDepthArchiveUnavailable(BinanceBookDepthFetchError):
     """The requested completed-day archive has not been published."""
 
 
+class BinanceBookDepthQualityRejected(BinanceBookDepthFetchError):
+    """Checksum-valid public archives failed a parser/alignment quality gate."""
+
+    def __init__(self, failures: Sequence[dict[str, object]]) -> None:
+        normalized = tuple(dict(item) for item in failures)
+        if not normalized:
+            raise ValueError("quality rejection requires at least one failure")
+        self.failures = normalized
+        detail = "; ".join(
+            f"{item['instrument_id']}/{item['day']}:{item['reason']}"
+            for item in normalized
+        )
+        super().__init__(f"checksum-valid book-depth quality rejection: {detail}")
+
+
 def _day_string(day_ms: int) -> str:
     return time.strftime("%Y-%m-%d", time.gmtime(day_ms / 1000))
 
@@ -254,8 +269,19 @@ def refresh_book_depth_days(
                 mark_archive_sha256=actual_mark,
             )
         except BinanceBookDepthArchiveError as exc:
-            raise BinanceBookDepthArchiveError(
-                f"{instrument_id}/{_day_string(day_ms)}: {exc}"
+            raise BinanceBookDepthQualityRejected(
+                (
+                    {
+                        "instrument_id": instrument_id,
+                        "day_ms": day_ms,
+                        "day": _day_string(day_ms),
+                        "reason": str(exc),
+                        "book_depth_archive_sha256": actual,
+                        "mark_price_archive_sha256": actual_mark,
+                        "book_depth_checksum_verified": True,
+                        "mark_price_checksum_verified": True,
+                    },
+                )
             ) from exc
         return (
             instrument_id,
@@ -274,18 +300,49 @@ def refresh_book_depth_days(
         for instrument_id in selected_instruments
         for day_ms in selected_days
     )
+    fetched_items: list[tuple] = []
+    failures: list[Exception] = []
     try:
         if max_workers == 1:
-            fetched = tuple(fetch_one(identity) for identity in identities)
+            for identity in identities:
+                try:
+                    fetched_items.append(fetch_one(identity))
+                except Exception as exc:
+                    failures.append(exc)
         else:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                fetched = tuple(executor.map(fetch_one, identities))
-    except BinanceBookDepthFetchError:
-        raise
-    except (BinanceBookDepthArchiveError, OSError, ValueError) as exc:
+                futures = tuple(
+                    executor.submit(fetch_one, identity) for identity in identities
+                )
+                for future in futures:
+                    try:
+                        fetched_items.append(future.result())
+                    except Exception as exc:
+                        failures.append(exc)
+    except (OSError, ValueError) as exc:
         raise BinanceBookDepthFetchError(
             f"book-depth refresh failed closed: {exc}"
         ) from exc
+    if failures:
+        non_quality = tuple(
+            exc
+            for exc in failures
+            if not isinstance(exc, BinanceBookDepthQualityRejected)
+        )
+        if non_quality:
+            first = non_quality[0]
+            if isinstance(first, BinanceBookDepthFetchError):
+                raise first
+            raise BinanceBookDepthFetchError(
+                f"book-depth refresh failed closed: {first}"
+            ) from first
+        quality_failures = tuple(
+            detail
+            for exc in failures
+            for detail in exc.failures  # type: ignore[union-attr]
+        )
+        raise BinanceBookDepthQualityRejected(quality_failures)
+    fetched = tuple(fetched_items)
 
     archived = []
     all_observations = []
@@ -521,6 +578,7 @@ if __name__ == "__main__":
 __all__ = [
     "BinanceBookDepthFetchError",
     "BinanceBookDepthArchiveUnavailable",
+    "BinanceBookDepthQualityRejected",
     "DEFAULT_RAW_ARCHIVE",
     "DEFAULT_STATUS",
     "DEFAULT_STORE",

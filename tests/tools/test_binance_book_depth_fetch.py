@@ -11,6 +11,7 @@ from services.data.binance_systemic_store import BinanceSystemicStore
 from tools.binance_book_depth_fetch import (
     BinanceBookDepthArchiveUnavailable,
     BinanceBookDepthFetchError,
+    BinanceBookDepthQualityRejected,
     EXPECTED_HOURLY_SNAPSHOTS,
     MINIMUM_HOURLY_COVERAGE_RATIO,
     MINIMUM_HOURLY_SNAPSHOTS,
@@ -139,6 +140,36 @@ def test_refresh_rejects_checksum_mismatch_before_parsing(tmp_path) -> None:
             minimum_hourly_snapshots=1,
             require_all_hours=False,
         )
+
+
+def test_refresh_surfaces_checksum_verified_quality_rejection(tmp_path) -> None:
+    raw = _archive()
+    mark_raw = _mark_archive()
+
+    def get(path: str) -> bytes:
+        return _successful_get(path, depth_raw=raw, mark_raw=mark_raw)
+
+    with pytest.raises(BinanceBookDepthQualityRejected) as caught:
+        refresh_book_depth_days(
+            ("BTCUSDT",),
+            (DAY_MS,),
+            observed_at_ms=OBSERVED_MS,
+            store_path=str(tmp_path / "book_depth.db"),
+            archive_root=str(tmp_path / "raw"),
+            http_get_bytes=get,
+            max_workers=1,
+            minimum_snapshots_per_archive=2,
+            minimum_hourly_snapshots=1,
+            require_all_hours=False,
+        )
+
+    assert len(caught.value.failures) == 1
+    failure = caught.value.failures[0]
+    assert failure["instrument_id"] == "BTCUSDT"
+    assert failure["day_ms"] == DAY_MS
+    assert failure["book_depth_checksum_verified"] is True
+    assert failure["mark_price_checksum_verified"] is True
+    assert "minimum snapshot count" in failure["reason"]
 
 
 def test_refresh_rejects_mark_price_checksum_mismatch_before_alignment(tmp_path) -> None:

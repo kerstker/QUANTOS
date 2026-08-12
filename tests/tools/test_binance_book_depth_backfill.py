@@ -5,6 +5,7 @@ import json
 from services.data.binance_book_depth_archive import DATASET, DAY_MS, HOUR_MS
 from services.data.binance_systemic_store import BinanceSystemicStore
 from tools import binance_book_depth_backfill as backfill
+from tools.binance_book_depth_fetch import BinanceBookDepthQualityRejected
 
 
 DAY = 1_786_320_000_000
@@ -118,6 +119,15 @@ def _confirmation_contract(start_day: int, frozen_at: int) -> dict:
     }
 
 
+def _quality_policy(maximum: int = 2) -> dict:
+    return {
+        "status": "FROZEN_BEFORE_CONFIRMATION_OUTCOME",
+        "confirmation_study_id": "confirmation-test",
+        "maximum_quality_excluded_days": maximum,
+        "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+    }
+
+
 def test_contract_backfill_requires_frozen_empty_head_then_exact_window(tmp_path):
     store_path = str(tmp_path / "depth.db")
     seed = BinanceSystemicStore(store_path, create=True)
@@ -158,6 +168,7 @@ def test_contract_backfill_requires_frozen_empty_head_then_exact_window(tmp_path
         status_path=str(tmp_path / "status.json"),
         max_workers=1,
         refresh=refresh,
+        quality_policy=_quality_policy(),
     )
 
     assert calls == [DAY, DAY + DAY_MS]
@@ -206,6 +217,7 @@ def test_contract_backfill_accepts_the_same_frozen_universe_in_contract_order(
         store_path=store_path,
         status_path=str(tmp_path / "status.json"),
         refresh=refresh,
+        quality_policy=_quality_policy(),
     )
 
     assert result["status"] == "PASS"
@@ -226,6 +238,7 @@ def test_contract_backfill_rejects_pre_freeze_observations(tmp_path):
             observed_at_ms=OBSERVED + 1,
             store_path=store_path,
             status_path=str(tmp_path / "status.json"),
+            quality_policy=_quality_policy(),
         )
     except backfill.BookDepthBackfillError as exc:
         assert "observed before freeze" in str(exc)
@@ -241,3 +254,80 @@ def test_real_confirmation_contract_matches_immutable_commit() -> None:
     assert len(digest) == 64
     assert payload["status"] == "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS"
     assert payload["frozen_unseen_window_evidence"]["dataset_observation_count"] == 0
+
+    policy_digest, policy = backfill._verify_confirmation_quality_policy(
+        backfill.DEFAULT_CONFIRMATION_QUALITY_POLICY
+    )
+    assert len(policy_digest) == 64
+    assert policy["maximum_quality_excluded_days"] == 4
+
+
+def test_backfill_excludes_only_bounded_structured_quality_rejections(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    calls = []
+
+    def refresh(instruments, days, **kwargs):
+        calls.append(days[0])
+        if len(calls) == 1:
+            raise BinanceBookDepthQualityRejected(
+                ({
+                    "instrument_id": instruments[0],
+                    "day_ms": days[0],
+                    "day": "test-day",
+                    "reason": "below daily quality floor",
+                    "book_depth_checksum_verified": True,
+                    "mark_price_checksum_verified": True,
+                },)
+            )
+        store = BinanceSystemicStore(kwargs["store_path"], create=True)
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_backfill(
+        days=2,
+        closed_day_ms=DAY + DAY_MS,
+        observed_at_ms=OBSERVED,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        refresh=refresh,
+        maximum_quality_excluded_days=1,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["quality_excluded_day_count"] == 1
+    assert result["quality_exclusions"][0]["day_ms"] == DAY
+    assert result["processed_day_count"] == 2
+
+
+def test_backfill_fifth_quality_rejection_blocks(tmp_path):
+    def reject(instruments, days, **_kwargs):
+        raise BinanceBookDepthQualityRejected(
+            ({
+                "instrument_id": instruments[0],
+                "day_ms": days[0],
+                "day": "test-day",
+                "reason": "quality rejection",
+                "book_depth_checksum_verified": True,
+                "mark_price_checksum_verified": True,
+            },)
+        )
+
+    with __import__("pytest").raises(
+        backfill.BookDepthBackfillError, match="exclusion limit"
+    ):
+        backfill.run_backfill(
+            days=5,
+            closed_day_ms=DAY + 4 * DAY_MS,
+            observed_at_ms=OBSERVED,
+            store_path=str(tmp_path / "depth.db"),
+            status_path=str(tmp_path / "status.json"),
+            refresh=reject,
+            maximum_quality_excluded_days=4,
+        )
+
+    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+    assert status["failure_type"] == "QUALITY_EXCLUSION_LIMIT_EXCEEDED"
+    assert status["quality_excluded_day_count"] == 5
