@@ -1,5 +1,20 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-12 book-depth 盲确认终局（Task 39 继续锁定）：** 丢失的确认数据权威没有被
+> 伪造回填。系统从冻结的 97 天 Binance Data Vision 公共、无密钥、checksum-verified
+> 源重建一条明确不同于旧链的新权威：97/97 天处理、91 天完整、冻结的 6 天质量排除、
+> 30,576 条观测、84 个相邻 24h 决策，链校验通过；Alpha 结果在重建 PASS 前从未访问。
+> 结果前又冻结了正式 validation DAG 的全局试验计数、负向控制和阈值，并修复 DAG
+> 对缺失可比收益历史的错误要求：缺失历史现在仍按独立 trial 全额计入 DSR 惩罚，绝不
+> 因缺证据获得折扣。随后唯一一次确认得到 `FAIL`：净 Sharpe 0.637、双倍成本净 Sharpe
+> -0.389、rank-IC t=0.469、仅 1/3 时间段盈利；只有净均值、IC 符号和单币集中度通过。
+> 结果已不可变落在 `evidence/binance_book_depth_alpha_confirmation.json`，再次运行被拒绝；
+> 正式 DAG 没有启动，formal eligible 仍为 0，未生成 Testnet intent、未启动执行服务或
+> 七天 soak，未读凭证、未连私有账户、未提交订单。既有 calendar-basis、3d positioning
+> consensus、volume-acceleration 与本次 book-depth 均已诚实失败，不能重跑或降门槛。
+> 下一条研究路径必须来自新的独立观察/数据面；当前优先方向是 Binance 官方公开、无密钥
+> 的 RPI/主动买卖订单流，但其历史尚需从预注册后的自然时间积累，不能事后制造前向信用。
+
 > **2026-08-10 Alpha 正式准入复核（Task 39 保持锁定）：** 本轮按预注册口径完成三条
 > 相互独立的候选路径，均未取得正式 PASS。① Binance 交割合约/永续的 calendar-basis
 > 收敛假说在 26 个合约、156 周上为 `FALSIFIED`（净 Sharpe -0.177，双倍成本后仍负）；
