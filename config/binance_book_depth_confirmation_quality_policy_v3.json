@@ -1,0 +1,32 @@
+{
+  "schema_version": 3,
+  "policy_id": "binance_book_depth_confirmation_statistical_capacity_v3",
+  "status": "FROZEN_BEFORE_CONFIRMATION_OUTCOME",
+  "confirmation_study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "source_blocked_evidence": [
+    "evidence/binance_book_depth_confirmation_window1_blocked.json",
+    "evidence/binance_book_depth_confirmation_window2_blocked.json"
+  ],
+  "outcome_access_before_freeze": false,
+  "window_day_count": 90,
+  "minimum_complete_day_ratio": 0.90,
+  "minimum_complete_days": 81,
+  "minimum_confirmation_decisions": 80,
+  "maximum_quality_excluded_days": 9,
+  "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+  "eligible_exclusion": {
+    "requires_official_checksum_pass": true,
+    "requires_parser_or_alignment_quality_rejection": true,
+    "network_or_timeout_is_excludable": false,
+    "checksum_mismatch_is_excludable": false,
+    "unexpected_exception_is_excludable": false
+  },
+  "terminal_acceptance": {
+    "all_90_days_must_be_processed": true,
+    "complete_days_must_meet_ratio": true,
+    "actual_adjacent_24h_decisions_must_meet_minimum": true,
+    "quality_excluded_days_are_never_imputed": true,
+    "thresholds_may_not_change_after_outcome": true
+  },
+  "rationale": "The original confirmation contract already requires at least 80 actual 24h decisions. This policy makes source quality subordinate to that statistical capacity: at least 81 of 90 full cross-section days and at least 80 real adjacent-day decisions must exist after exclusions. It does not infer eligibility from an arbitrary exclusion count alone."
+}
