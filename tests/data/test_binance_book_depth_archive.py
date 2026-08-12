@@ -8,7 +8,9 @@ import pytest
 
 from services.data.binance_book_depth_archive import (
     BinanceBookDepthArchiveError,
+    align_with_mark_price,
     parse_book_depth_archive,
+    parse_mark_price_1m_archive,
 )
 
 
@@ -61,6 +63,25 @@ def _archive_many(*, inverted_indices: set[int]) -> bytes:
     return buffer.getvalue()
 
 
+def _mark_archive(*, missing_minute: int | None = None, price: float = 100.0) -> bytes:
+    rows = [
+        "open_time,open,high,low,close,volume,close_time,quote_volume,count,"
+        "taker_buy_volume,taker_buy_quote_volume,ignore"
+    ]
+    for minute in range(1_440):
+        if minute == missing_minute:
+            continue
+        open_time = DAY_MS + minute * 60_000
+        rows.append(
+            f"{open_time},{price},{price},{price},{price},0,"
+            f"{open_time + 59_999},0,60,0,0,0"
+        )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("BTCUSDT-1m-2026-08-10.csv", "\n".join(rows))
+    return buffer.getvalue()
+
+
 def test_parse_archive_builds_hourly_bitemporal_observations() -> None:
     observations = parse_book_depth_archive(
         _archive(),
@@ -72,7 +93,9 @@ def test_parse_archive_builds_hourly_bitemporal_observations() -> None:
 
     assert len(observations) == 2
     first = observations[0]
-    assert first["dataset"] == "binance_usdm_book_depth_curve_hourly"
+    assert first["dataset"] == (
+        "binance_usdm_book_depth_curve_hourly_unaligned_staging"
+    )
     assert first["event_time_ms"] == DAY_MS + 3_600_000
     assert first["knowledge_time_ms"] == OBSERVED_MS
     assert first["source_archive_sha256"] == "a" * 64
@@ -147,4 +170,63 @@ def test_parse_archive_rejects_inversion_above_quarantine_bound() -> None:
             archive_sha256="e" * 64,
             minimum_snapshot_count=1_000,
             max_inverted_snapshot_ratio=0.001,
+        )
+
+
+def test_parse_mark_archive_and_align_every_depth_hour() -> None:
+    observations = parse_book_depth_archive(
+        _archive(),
+        instrument_id="BTCUSDT",
+        expected_day_ms=DAY_MS,
+        observed_at_ms=OBSERVED_MS,
+        archive_sha256="f" * 64,
+    )
+    references = parse_mark_price_1m_archive(
+        _mark_archive(),
+        instrument_id="BTCUSDT",
+        expected_day_ms=DAY_MS,
+    )
+    aligned = align_with_mark_price(
+        observations,
+        references,
+        mark_archive_sha256="1" * 64,
+    )
+
+    assert len(references) == 24
+    assert aligned[0]["external_price_alignment"] == "PASS"
+    assert aligned[0]["dataset"] == "binance_usdm_book_depth_curve_hourly_v2"
+    assert aligned[0]["external_price_reference"]["deviation_ratio"] == 0.0
+    assert aligned[0]["external_price_reference"]["source_archive_sha256"] == (
+        "1" * 64
+    )
+
+
+def test_parse_mark_archive_rejects_incomplete_minute_grid() -> None:
+    with pytest.raises(BinanceBookDepthArchiveError, match="exact completed 1m"):
+        parse_mark_price_1m_archive(
+            _mark_archive(missing_minute=500),
+            instrument_id="BTCUSDT",
+            expected_day_ms=DAY_MS,
+        )
+
+
+def test_alignment_rejects_midpoint_outside_principled_bound() -> None:
+    observations = parse_book_depth_archive(
+        _archive(),
+        instrument_id="BTCUSDT",
+        expected_day_ms=DAY_MS,
+        observed_at_ms=OBSERVED_MS,
+        archive_sha256="2" * 64,
+    )
+    references = parse_mark_price_1m_archive(
+        _mark_archive(price=90.0),
+        instrument_id="BTCUSDT",
+        expected_day_ms=DAY_MS,
+    )
+
+    with pytest.raises(BinanceBookDepthArchiveError, match="alignment bound"):
+        align_with_mark_price(
+            observations,
+            references,
+            mark_archive_sha256="3" * 64,
         )

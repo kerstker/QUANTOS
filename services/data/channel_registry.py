@@ -147,7 +147,7 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
     ),
     DataChannelSpec(
         "binance_usdm_book_depth_archive", "Binance Data Vision", "binance_usdm",
-        "binance_usdm_book_depth_curve_hourly", "daily", "30s->1h",
+        "binance_usdm_book_depth_curve_hourly_v2", "daily", "30s->1h",
         (
             "bid_depth_curve_p10", "ask_depth_curve_p10",
             "bid_notional_curve_p10", "ask_notional_curve_p10",
@@ -160,8 +160,10 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "research universe. Historical exchange events are retrospective and "
         "become known only at actual fetch time; formal_forward_credit is false. "
         "At most 0.1% isolated implicit-cross snapshots may be quarantined with "
-        "exact timestamps and a degraded verdict. Independent mark-price alignment "
-        "is currently UNASSESSED, so this channel remains diagnostic and cannot "
+        "exact timestamps and a degraded verdict. Every hour is independently "
+        "aligned to the median of 60 checksum-verified official 1m mark closes "
+        "within an uncalibrated-principled 1% bound. The channel remains diagnostic "
+        "until forward vintages mature and cannot "
         "grant Alpha, Shadow, Testnet, or order admission.",
     ),
     DataChannelSpec(

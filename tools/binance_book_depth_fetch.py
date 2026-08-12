@@ -22,7 +22,9 @@ from services.data.binance_book_depth_archive import (
     BinanceBookDepthArchiveError,
     DATASET,
     DAY_MS,
+    align_with_mark_price,
     parse_book_depth_archive,
+    parse_mark_price_1m_archive,
 )
 from services.data.binance_systemic_store import BinanceSystemicStore
 from services.data.raw_archive import archive_response
@@ -60,6 +62,19 @@ def book_depth_url(instrument_id: str, day_ms: int) -> str:
     return (
         f"/data/futures/um/daily/bookDepth/{symbol}/"
         f"{symbol}-bookDepth-{day}.zip"
+    )
+
+
+def mark_price_1m_url(instrument_id: str, day_ms: int) -> str:
+    symbol = str(instrument_id).upper().strip()
+    if not symbol.endswith("USDT") or not symbol[:-4].isalnum():
+        raise ValueError("instrument_id must be an uppercase-compatible USDT symbol")
+    if isinstance(day_ms, bool) or not isinstance(day_ms, int) or day_ms < 0 or day_ms % DAY_MS:
+        raise ValueError("day_ms must be a UTC day boundary")
+    day = _day_string(day_ms)
+    return (
+        f"/data/futures/um/daily/markPriceKlines/{symbol}/1m/"
+        f"{symbol}-1m-{day}.zip"
     )
 
 
@@ -184,6 +199,27 @@ def refresh_book_depth_days(
             raise BinanceBookDepthFetchError(
                 f"checksum mismatch for {instrument_id}/{_day_string(day_ms)}"
             )
+        mark_path = mark_price_1m_url(instrument_id, day_ms)
+        mark_raw = _request_bytes(
+            mark_path,
+            http_get_bytes=http_get_bytes,
+            max_attempts=max_attempts,
+            retry_sleep_seconds=retry_sleep_seconds,
+        )
+        expected_mark = _checksum(
+            _request_bytes(
+                mark_path + ".CHECKSUM",
+                http_get_bytes=http_get_bytes,
+                max_attempts=max_attempts,
+                retry_sleep_seconds=retry_sleep_seconds,
+            )
+        )
+        actual_mark = hashlib.sha256(mark_raw).hexdigest()
+        if actual_mark != expected_mark:
+            raise BinanceBookDepthFetchError(
+                "mark-price checksum mismatch for "
+                f"{instrument_id}/{_day_string(day_ms)}"
+            )
         try:
             observations = parse_book_depth_archive(
                 raw,
@@ -194,11 +230,31 @@ def refresh_book_depth_days(
                 minimum_snapshot_count=minimum_snapshots_per_archive,
                 max_inverted_snapshot_ratio=max_inverted_snapshot_ratio,
             )
+            hourly_marks = parse_mark_price_1m_archive(
+                mark_raw,
+                instrument_id=instrument_id,
+                expected_day_ms=day_ms,
+            )
+            observations = align_with_mark_price(
+                observations,
+                hourly_marks,
+                mark_archive_sha256=actual_mark,
+            )
         except BinanceBookDepthArchiveError as exc:
             raise BinanceBookDepthArchiveError(
                 f"{instrument_id}/{_day_string(day_ms)}: {exc}"
             ) from exc
-        return instrument_id, day_ms, path, raw, actual, observations
+        return (
+            instrument_id,
+            day_ms,
+            path,
+            raw,
+            actual,
+            mark_path,
+            mark_raw,
+            actual_mark,
+            observations,
+        )
 
     identities = tuple(
         (instrument_id, day_ms)
@@ -221,7 +277,18 @@ def refresh_book_depth_days(
     archived = []
     all_observations = []
     quarantined_snapshots = 0
-    for instrument_id, day_ms, path, raw, actual, observations in fetched:
+    maximum_alignment_deviation = 0.0
+    for (
+        instrument_id,
+        day_ms,
+        path,
+        raw,
+        actual,
+        mark_path,
+        mark_raw,
+        actual_mark,
+        observations,
+    ) in fetched:
         archive_snapshot_count = int(observations[0]["archive_snapshot_count"])
         archive_quarantined_count = int(
             observations[0]["archive_quarantined_snapshot_count"]
@@ -251,6 +318,36 @@ def refresh_book_depth_days(
                     "historical_events_are_not_forward_vintages": True,
                 },
             )
+        )
+        archived.append(
+            archive_response(
+                root=archive_root,
+                payload=mark_raw,
+                source_uri=HOST + mark_path,
+                provider="Binance Data Vision USD-M markPriceKlines 1m",
+                dataset_id="binance_usdm_mark_price_1m_alignment",
+                instrument_id=instrument_id,
+                observed_at_ms=observed_at_ms,
+                representation="HTTP_BODY_BYTES",
+                parse_diagnostics={
+                    "status": "ACCEPTED",
+                    "event_time_ms": day_ms,
+                    "input_rows": 1_440,
+                    "accepted_rows": 1_440,
+                    "rejected_rows": 0,
+                    "duplicate_rows": 0,
+                    "checksum_verified": True,
+                    "source_archive_sha256": actual_mark,
+                    "alignment_consumer_dataset": DATASET,
+                },
+            )
+        )
+        maximum_alignment_deviation = max(
+            maximum_alignment_deviation,
+            max(
+                float(observation["external_price_reference"]["deviation_ratio"])
+                for observation in observations
+            ),
         )
         all_observations.extend(observations)
 
@@ -283,7 +380,10 @@ def refresh_book_depth_days(
         "quarantined_snapshot_count": quarantined_snapshots,
         "knowledge_policy": "OBSERVED_AT_FETCH_NOT_RETROACTIVE",
         "formal_forward_credit": False,
-        "external_price_alignment": "UNASSESSED",
+        "external_price_alignment": "PASS",
+        "maximum_price_alignment_deviation_ratio": maximum_alignment_deviation,
+        "maximum_price_alignment_bound_ratio": 0.01,
+        "price_alignment_calibration": "UNCALIBRATED_PRINCIPLED",
         "safety": {
             "paper_only": True,
             "credentials_accessed": False,
@@ -411,6 +511,7 @@ __all__ = [
     "HOST",
     "MAX_INVERTED_SNAPSHOT_RATIO",
     "book_depth_url",
+    "mark_price_1m_url",
     "main",
     "refresh_latest_available_days",
     "refresh_book_depth_days",

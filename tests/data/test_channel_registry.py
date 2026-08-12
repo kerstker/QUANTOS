@@ -48,7 +48,7 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert book_depth.availability == "REAL_DIAGNOSTIC"
     assert book_depth.endpoint_class == "public_archive"
     assert "bounded_quality_quarantine" in book_depth.fields
-    assert "UNASSESSED" in book_depth.notes
+    assert "checksum-verified official 1m mark closes" in book_depth.notes
 
 
 def test_family_lookup_does_not_promote_diagnostic_data():
