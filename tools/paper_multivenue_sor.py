@@ -803,18 +803,19 @@ def run_canary(
         instrument_id: float(sign * TARGET_NOTIONAL / Decimal(str(aum)))
         for instrument_id, sign in signs.items()
     }
+    # P2-1 fix: realistic limits (paper SOR is still a canary test, not production gate)
     limits = RiskLimits(
         allowed_instruments=frozenset(INSTRUMENTS),
         allowed_accounts=frozenset({"paper"}),
         default_max_position_qty=10**9,
         max_order_notional=10**6,
-        fat_finger_qty=10**9,
+        fat_finger_qty=1000,  # 1000 coins (was 10**9)
         max_gross_exposure=10**7,
         max_net_exposure=10**7,
-        max_leverage=100.0,
+        max_leverage=5.0,  # 5x (was 100.0)
         max_single_name_pct=1.0,
         max_turnover=10.0,
-        max_participation_rate=1.0,
+        max_participation_rate=0.10,  # 10% (was 1.0 = 100%)
         max_instrument_vol=5.0,
         daily_loss_limit=10**7,
         max_drawdown=1.0,
@@ -836,7 +837,7 @@ def run_canary(
                 known=True,
                 reference_price=prices[intent.instrument_id],
                 market_open=True,
-                price_as_of=now_ms,
+                price_as_of=decided_ts,  # P2-1 fix: use decision time, not now (was now_ms)
                 est_daily_volume=10**12,
                 instrument_vol=0.8,
             ),
