@@ -38,6 +38,34 @@ def _archive(symbol: str, snapshots_by_hour: tuple[int, ...]) -> bytes:
     return buffer.getvalue()
 
 
+def _mark_archive(symbol: str, price: float = 100.0) -> bytes:
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+    writer.writerow(
+        (
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume", "count", "taker_buy_volume",
+            "taker_buy_quote_volume", "ignore",
+        )
+    )
+    for minute in range(1_440):
+        open_time = DAY + minute * 60_000
+        writer.writerow(
+            (
+                open_time, price, price, price, price, 0,
+                open_time + 59_999, 0, 0, 0, 0, 0,
+            )
+        )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            f"{symbol}-1m-"
+            f"{datetime.fromtimestamp(DAY / 1_000, timezone.utc):%Y-%m-%d}.csv",
+            stream.getvalue(),
+        )
+    return buffer.getvalue()
+
+
 def test_quality_diagnostic_reports_daily_and_hourly_coverage_separately() -> None:
     symbol = "BTCUSDT"
     raw = _archive(symbol, (2,) * 23 + (1,))
@@ -70,3 +98,41 @@ def test_quality_diagnostic_reports_daily_and_hourly_coverage_separately() -> No
     assert day["minimum_hour_snapshot_count"] == 1
     assert day["instruments_with_hour_below_floor"] == 1
     assert day["total_hours_below_floor"] == 24
+
+
+def test_quality_diagnostic_can_measure_mark_alignment_without_candidate_data() -> None:
+    symbol = "BTCUSDT"
+    raw = _archive(symbol, (1,) * 24)
+    mark_raw = _mark_archive(symbol)
+    depth_digest = hashlib.sha256(raw).hexdigest()
+    mark_digest = hashlib.sha256(mark_raw).hexdigest()
+    depth_path = book_depth_url(symbol, DAY)
+    from tools.binance_book_depth_fetch import mark_price_1m_url
+
+    mark_path = mark_price_1m_url(symbol, DAY)
+
+    def get(requested: str) -> bytes:
+        values = {
+            depth_path: raw,
+            depth_path + ".CHECKSUM": f"{depth_digest} file.zip\n".encode(),
+            mark_path: mark_raw,
+            mark_path + ".CHECKSUM": f"{mark_digest} file.zip\n".encode(),
+        }
+        return values[requested]
+
+    report = diagnostic.diagnose_days(
+        days=(DAY,),
+        observed_at_ms=DAY + DAY_MS + 1,
+        universe=(symbol,),
+        max_workers=1,
+        http_get_bytes=get,
+        include_mark_alignment=True,
+    )
+
+    assert report["mark_prices_accessed"] is True
+    assert report["candidate_signals_accessed"] is False
+    assert report["candidate_returns_accessed"] is False
+    row = report["archives"][0]
+    assert row["mark_price_checksum_verified"] is True
+    assert row["hours_above_mark_alignment_bound"] == 0
+    assert len(row["hourly_mark_alignment"]) == 24

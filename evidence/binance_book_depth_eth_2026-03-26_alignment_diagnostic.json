@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "mode": "L2_PUBLIC_ARCHIVE_QUALITY_ONLY",
+  "observed_at_ms": 1786509300000,
+  "day_count": 1,
+  "instrument_count": 1,
+  "hourly_floor": 96,
+  "days": [
+    {
+      "day_ms": 1774483200000,
+      "instrument_count": 1,
+      "minimum_archive_snapshot_count": 2590,
+      "maximum_archive_snapshot_count": 2590,
+      "minimum_hour_snapshot_count": 101,
+      "instruments_missing_any_hour": 0,
+      "instruments_with_hour_below_floor": 0,
+      "total_hours_below_floor": 0
+    }
+  ],
+  "archives": [
+    {
+      "day_ms": 1774483200000,
+      "instrument_id": "ETHUSDT",
+      "checksum_verified": true,
+      "archive_sha256": "05b34c1b8577f300b09b640b6ac77ea367a0c6d7ed45b11c075ca4bbbb4fb5fe",
+      "archive_snapshot_count": 2590,
+      "hour_count": 24,
+      "minimum_hour_snapshot_count": 101,
+      "hours_below_hourly_floor": 0,
+      "confirmation_outcome_accessed": false,
+      "mark_price_checksum_verified": true,
+      "mark_price_archive_sha256": "2aa89b273e8221084f1d9a8a9b7ab4e08d5b314a7c593c88571299ecb26ff2eb",
+      "maximum_mark_deviation_ratio": 0.01102020273923565,
+      "hours_above_mark_alignment_bound": 1,
+      "hourly_mark_alignment": [
+        {
+          "event_time_ms": 1774486800000,
+          "implicit_mid_price_median": 2168.5497922072764,
+          "mark_price_median": 2165.890771315,
+          "deviation_ratio": 0.0012276800508558441
+        },
+        {
+          "event_time_ms": 1774490400000,
+          "implicit_mid_price_median": 2166.095384155558,
+          "mark_price_median": 2164.270346845,
+          "deviation_ratio": 0.0008432575501569955
+        },
+        {
+          "event_time_ms": 1774494000000,
+          "implicit_mid_price_median": 2154.399961361776,
+          "mark_price_median": 2152.09,
+          "deviation_ratio": 0.0010733572303091433
+        },
+        {
+          "event_time_ms": 1774497600000,
+          "implicit_mid_price_median": 2152.0844008839454,
+          "mark_price_median": 2149.9449999999997,
+          "deviation_ratio": 0.0009950956345142108
+        },
+        {
+          "event_time_ms": 1774501200000,
+          "implicit_mid_price_median": 2152.5450522655365,
+          "mark_price_median": 2150.7758333350002,
+          "deviation_ratio": 0.0008225956899436003
+        },
+        {
+          "event_time_ms": 1774504800000,
+          "implicit_mid_price_median": 2141.5833806268647,
+          "mark_price_median": 2140.1949999999997,
+          "deviation_ratio": 0.0006487168818098355
+        },
+        {
+          "event_time_ms": 1774508400000,
+          "implicit_mid_price_median": 2120.560928081469,
+          "mark_price_median": 2120.4878023250003,
+          "deviation_ratio": 3.44853464322184e-05
+        },
+        {
+          "event_time_ms": 1774512000000,
+          "implicit_mid_price_median": 2120.366275988986,
+          "mark_price_median": 2120.183244185,
+          "deviation_ratio": 8.632829473021616e-05
+        },
+        {
+          "event_time_ms": 1774515600000,
+          "implicit_mid_price_median": 2118.281205137595,
+          "mark_price_median": 2117.63,
+          "deviation_ratio": 0.0003075160144099031
+        },
+        {
+          "event_time_ms": 1774519200000,
+          "implicit_mid_price_median": 2090.0725676249317,
+          "mark_price_median": 2113.3622480599997,
+          "deviation_ratio": 0.01102020273923565
+        },
+        {
+          "event_time_ms": 1774522800000,
+          "implicit_mid_price_median": 2077.3384273445363,
+          "mark_price_median": 2077.475,
+          "deviation_ratio": 6.573973475667528e-05
+        },
+        {
+          "event_time_ms": 1774526400000,
+          "implicit_mid_price_median": 2069.803913896524,
+          "mark_price_median": 2070.05506589,
+          "deviation_ratio": 0.00012132623794142119
+        },
+        {
+          "event_time_ms": 1774530000000,
+          "implicit_mid_price_median": 2070.326958447612,
+          "mark_price_median": 2070.568015505,
+          "deviation_ratio": 0.00011642073845574282
+        },
+        {
+          "event_time_ms": 1774533600000,
+          "implicit_mid_price_median": 2075.6555062052394,
+          "mark_price_median": 2076.835,
+          "deviation_ratio": 0.0005679285040750344
+        },
+        {
+          "event_time_ms": 1774537200000,
+          "implicit_mid_price_median": 2077.17692262784,
+          "mark_price_median": 2077.68199225,
+          "deviation_ratio": 0.00024309284291034453
+        },
+        {
+          "event_time_ms": 1774540800000,
+          "implicit_mid_price_median": 2065.6488352962433,
+          "mark_price_median": 2065.7122499999996,
+          "deviation_ratio": 3.0698711186071436e-05
+        },
+        {
+          "event_time_ms": 1774544400000,
+          "implicit_mid_price_median": 2065.6543938196355,
+          "mark_price_median": 2065.38510465,
+          "deviation_ratio": 0.00013038206241990232
+        },
+        {
+          "event_time_ms": 1774548000000,
+          "implicit_mid_price_median": 2064.333991325271,
+          "mark_price_median": 2064.573151165,
+          "deviation_ratio": 0.00011583984786103304
+        },
+        {
+          "event_time_ms": 1774551600000,
+          "implicit_mid_price_median": 2044.7081856807597,
+          "mark_price_median": 2043.435,
+          "deviation_ratio": 0.0006230615022057234
+        },
+        {
+          "event_time_ms": 1774555200000,
+          "implicit_mid_price_median": 2045.5834602901812,
+          "mark_price_median": 2044.63836434,
+          "deviation_ratio": 0.0004622313493986918
+        },
+        {
+          "event_time_ms": 1774558800000,
+          "implicit_mid_price_median": 2066.9626360629836,
+          "mark_price_median": 2069.4546928649997,
+          "deviation_ratio": 0.0012042094038628422
+        },
+        {
+          "event_time_ms": 1774562400000,
+          "implicit_mid_price_median": 2067.8579236554524,
+          "mark_price_median": 2068.64756977,
+          "deviation_ratio": 0.0003817209495163987
+        },
+        {
+          "event_time_ms": 1774566000000,
+          "implicit_mid_price_median": 2063.8306869348235,
+          "mark_price_median": 2063.8174883700003,
+          "deviation_ratio": 6.395219004354054e-06
+        },
+        {
+          "event_time_ms": 1774569600000,
+          "implicit_mid_price_median": 2059.9623440467412,
+          "mark_price_median": 2059.850399225,
+          "deviation_ratio": 5.434609318401746e-05
+        }
+      ]
+    }
+  ],
+  "mark_prices_accessed": true,
+  "candidate_signals_accessed": false,
+  "candidate_returns_accessed": false,
+  "confirmation_outcome_accessed": false,
+  "safety": {
+    "public_market_data_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

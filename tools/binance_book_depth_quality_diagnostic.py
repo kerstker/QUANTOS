@@ -12,13 +12,17 @@ import hashlib
 import json
 from collections.abc import Callable, Iterable, Sequence
 
-from services.data.binance_book_depth_archive import parse_book_depth_archive
+from services.data.binance_book_depth_archive import (
+    parse_book_depth_archive,
+    parse_mark_price_1m_archive,
+)
 from tools.binance_book_depth_fetch import (
     MAX_INVERTED_SNAPSHOT_RATIO,
     MINIMUM_HOURLY_SNAPSHOTS,
     _checksum,
     _http_get_bytes,
     book_depth_url,
+    mark_price_1m_url,
 )
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.cache_io import atomic_write_json
@@ -33,6 +37,7 @@ def diagnose_archive(
     day_ms: int,
     observed_at_ms: int,
     http_get_bytes: Callable[[str], bytes] = _http_get_bytes,
+    include_mark_alignment: bool = False,
 ) -> dict[str, object]:
     path = book_depth_url(instrument_id, day_ms)
     raw = http_get_bytes(path)
@@ -52,7 +57,7 @@ def diagnose_archive(
         max_inverted_snapshot_ratio=MAX_INVERTED_SNAPSHOT_RATIO,
     )
     hourly_counts = tuple(int(row["snapshot_count"]) for row in observations)
-    return {
+    result: dict[str, object] = {
         "day_ms": day_ms,
         "instrument_id": instrument_id,
         "checksum_verified": True,
@@ -67,6 +72,48 @@ def diagnose_archive(
         ),
         "confirmation_outcome_accessed": False,
     }
+    if include_mark_alignment:
+        mark_path = mark_price_1m_url(instrument_id, day_ms)
+        mark_raw = http_get_bytes(mark_path)
+        expected_mark = _checksum(http_get_bytes(mark_path + ".CHECKSUM"))
+        actual_mark = hashlib.sha256(mark_raw).hexdigest()
+        if actual_mark != expected_mark:
+            raise RuntimeError("mark-price diagnostic checksum mismatch")
+        references = parse_mark_price_1m_archive(
+            mark_raw,
+            instrument_id=instrument_id,
+            expected_day_ms=day_ms,
+        )
+        deviations = tuple(
+            {
+                "event_time_ms": int(row["event_time_ms"]),
+                "implicit_mid_price_median": float(
+                    row["implicit_mid_price_median"]
+                ),
+                "mark_price_median": float(references[int(row["event_time_ms"])]),
+                "deviation_ratio": abs(
+                    float(row["implicit_mid_price_median"])
+                    - float(references[int(row["event_time_ms"])])
+                )
+                / float(references[int(row["event_time_ms"])]),
+            }
+            for row in observations
+        )
+        result.update(
+            {
+                "mark_price_checksum_verified": True,
+                "mark_price_archive_sha256": actual_mark,
+                "maximum_mark_deviation_ratio": max(
+                    float(row["deviation_ratio"]) for row in deviations
+                ),
+                "hours_above_mark_alignment_bound": sum(
+                    float(row["deviation_ratio"]) > 0.01
+                    for row in deviations
+                ),
+                "hourly_mark_alignment": deviations,
+            }
+        )
+    return result
 
 
 def diagnose_days(
@@ -76,6 +123,7 @@ def diagnose_days(
     universe: Sequence[str] = UNIVERSE,
     max_workers: int = 4,
     http_get_bytes: Callable[[str], bytes] = _http_get_bytes,
+    include_mark_alignment: bool = False,
 ) -> dict[str, object]:
     selected_days = tuple(sorted(set(int(day) for day in days)))
     selected_universe = tuple(sorted(set(str(value) for value in universe)))
@@ -93,6 +141,7 @@ def diagnose_days(
             day_ms=identity[1],
             observed_at_ms=observed_at_ms,
             http_get_bytes=http_get_bytes,
+            include_mark_alignment=include_mark_alignment,
         )
 
     if max_workers == 1:
@@ -136,7 +185,7 @@ def diagnose_days(
         "hourly_floor": MINIMUM_HOURLY_SNAPSHOTS,
         "days": day_reports,
         "archives": archives,
-        "mark_prices_accessed": False,
+        "mark_prices_accessed": include_mark_alignment,
         "candidate_signals_accessed": False,
         "candidate_returns_accessed": False,
         "confirmation_outcome_accessed": False,
@@ -155,12 +204,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--day-ms", type=int, action="append", required=True)
     parser.add_argument("--observed-at-ms", type=int, required=True)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--instrument", action="append")
+    parser.add_argument("--include-mark-alignment", action="store_true")
     parser.add_argument("--output")
     args = parser.parse_args(argv)
     result = diagnose_days(
         days=args.day_ms,
         observed_at_ms=args.observed_at_ms,
+        universe=args.instrument or UNIVERSE,
         max_workers=args.workers,
+        include_mark_alignment=args.include_mark_alignment,
     )
     if args.output:
         atomic_write_json(args.output, result, indent=2)
