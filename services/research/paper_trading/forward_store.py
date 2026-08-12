@@ -812,6 +812,10 @@ class ForwardLedger:
         signals: Optional[Mapping[str, float]] = None,
         source: str = FORWARD_L2_DECISION_SOURCE,
     ) -> bool:
+        if recorded_at < decided_ts:
+            raise ForwardLedgerError(
+                f"recorded_at ({recorded_at}) precedes decided_ts ({decided_ts})"
+            )
         if not weights:
             raise ForwardLedgerError("refusing to record an empty-weights decision (fail-closed)")
         normalized_weights = {key: float(value) for key, value in sorted(weights.items())}

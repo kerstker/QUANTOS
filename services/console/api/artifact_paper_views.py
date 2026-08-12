@@ -100,11 +100,6 @@ _LEGACY_DIAGNOSTIC_PAPER_IDS = frozenset(
     {"carry_oi_majors", "crowd_contra", "top_contra"}
 )
 
-# The compact diagnostic routes live in their own bounded module.  Including
-# the child router keeps one public artifact surface while preserving the
-# read-only, GET-only boundary checked by governance.
-router.routes.extend(diagnostic_router.routes)
-
 
 def _load_json_snapshot(path: str) -> Any:
     if os.path.exists(path):
@@ -872,6 +867,14 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         "registry": {"chain_valid": False, "event_count": 0},
         "remaining_gates": [
             "30D_COMMON_HISTORY_FOR_FORMAL_VALIDATION",
+        ],
+    }
+
+
+# The compact diagnostic routes live in their own bounded module.  Including
+# the child router keeps one public artifact surface while preserving the
+# read-only, GET-only boundary checked by governance.
+router.routes.extend(diagnostic_router.routes)
             "90D_COMMON_HISTORY_FOR_FORWARD_SHADOW",
             "EXECUTABLE_DEPTH_CAPACITY_CALIBRATION",
         ],

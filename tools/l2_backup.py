@@ -527,6 +527,72 @@ def restore_l2_batch(
         shutil.rmtree(stage_root, ignore_errors=True)
 
 
+def _prune_old_snapshots(
+    backup_root: Path,
+    *,
+    keep_count: int = 30,
+    keep_days: int = 90,
+    now_ms: int | None = None,
+) -> dict:
+    """Remove old backup snapshots, keeping the most recent keep_count and all
+    snapshots younger than keep_days. Returns pruning statistics."""
+    if not backup_root.is_dir():
+        return {
+            "pruned_count": 0,
+            "retained_count": 0,
+            "reason": "backup_root_not_directory",
+        }
+
+    observed_at_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    cutoff_ms = observed_at_ms - (keep_days * 86_400_000)
+
+    snapshots = []
+    for entry in backup_root.iterdir():
+        if not entry.is_dir():
+            continue
+        # Snapshot naming: YYYYMMDDTHHMMSSZ
+        if len(entry.name) == 16 and entry.name.endswith("Z"):
+            try:
+                # Parse the timestamp from the directory name
+                timestamp = datetime.strptime(entry.name, "%Y%m%dT%H%M%SZ")
+                timestamp_ms = int(timestamp.replace(tzinfo=timezone.utc).timestamp() * 1000)
+                snapshots.append((timestamp_ms, entry))
+            except (ValueError, OSError):
+                continue
+
+    if not snapshots:
+        return {
+            "pruned_count": 0,
+            "retained_count": 0,
+            "reason": "no_snapshots_found",
+        }
+
+    snapshots.sort(reverse=True)
+
+    to_prune = []
+    for idx, (timestamp_ms, entry) in enumerate(snapshots):
+        # Keep if: within keep_count most recent OR younger than cutoff
+        if idx >= keep_count and timestamp_ms < cutoff_ms:
+            to_prune.append(entry)
+
+    pruned_count = 0
+    for entry in to_prune:
+        try:
+            shutil.rmtree(entry)
+            pruned_count += 1
+        except OSError:
+            pass
+
+    return {
+        "pruned_count": pruned_count,
+        "retained_count": len(snapshots) - pruned_count,
+        "total_found": len(snapshots),
+        "keep_count": keep_count,
+        "keep_days": keep_days,
+        "cutoff_ms": cutoff_ms,
+    }
+
+
 def run_l2_backup(
     *,
     repo_root: str | Path,
@@ -612,6 +678,10 @@ def run_l2_backup(
                 sources=source_specs,
             )
         os.replace(stage, final_batch)
+
+        # Prune old snapshots after successful backup
+        prune_result = _prune_old_snapshots(destination, now_ms=observed_at_ms)
+
         elapsed_ms = int(round((time.perf_counter() - started) * 1000))
         result = {
             "schema_version": 1,
@@ -651,6 +721,7 @@ def run_l2_backup(
             "max_rpo_ms": max_rpo_ms,
             "rpo_met": verification["rpo_met"],
             "backup_elapsed_ms": elapsed_ms,
+            "prune_result": prune_result,
         }
         if _publish_compatibility:
             resolved_evidence = (

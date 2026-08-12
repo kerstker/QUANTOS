@@ -1497,18 +1497,22 @@ def main() -> None:
         if flatten_target is not None:
             flatten = compute_flatten_orders(venue_positions, prices,
                                              target_gross_exposure=flatten_target)
-            emergency = submit_emergency_flatten(
-                flatten_orders=flatten, positions=venue_positions, prices=prices, venue=venue,
-                ledger=write_ledger, audit=audit, now=now,
-                poll_sleep=lambda: time.sleep(1.0))
-            emergency_summary = {
-                "target_gross": flatten_target, "n_submitted": len(emergency.submitted),
-                "n_rejected": len(emergency.rejected), "n_errors": len(emergency.errors),
-                "n_ledger_write_errors": len(emergency.ledger_write_errors)}
-            alerts.append(f"EMERGENCY FLATTEN ({'SUBMIT' if submit else 'PREVIEW'}): "
-                          f"target_gross=${flatten_target:.2f} "
-                          f"submitted={len(emergency.submitted)} rejected={len(emergency.rejected)} "
-                          f"errors={len(emergency.errors)}")
+            try:
+                emergency = submit_emergency_flatten(
+                    flatten_orders=flatten, positions=venue_positions, prices=prices, venue=venue,
+                    ledger=write_ledger, audit=audit, now=now,
+                    poll_sleep=lambda: time.sleep(1.0))
+                emergency_summary = {
+                    "target_gross": flatten_target, "n_submitted": len(emergency.submitted),
+                    "n_rejected": len(emergency.rejected), "n_errors": len(emergency.errors),
+                    "n_ledger_write_errors": len(emergency.ledger_write_errors)}
+                alerts.append(f"EMERGENCY FLATTEN ({'SUBMIT' if submit else 'PREVIEW'}): "
+                              f"target_gross=${flatten_target:.2f} "
+                              f"submitted={len(emergency.submitted)} rejected={len(emergency.rejected)} "
+                              f"errors={len(emergency.errors)}")
+            except Exception as exc:
+                alerts.append(f"EMERGENCY_FLATTEN_BLOCKED_MAINNET: {type(exc).__name__}: {exc}")
+                emergency_summary = {"error": str(exc), "error_type": type(exc).__name__}
         else:
             alerts.append("no auto-flatten (data-quality breach only) — manual review required")
         emit(alerts, context="live_track", now_ms=now)
