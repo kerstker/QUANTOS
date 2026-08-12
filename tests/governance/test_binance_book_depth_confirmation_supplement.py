@@ -51,3 +51,29 @@ def test_capacity_supplement_keeps_the_exact_frozen_trial_and_gates() -> None:
     assert terminal["no_date_or_period_selection"] is True
     assert terminal["quality_excluded_days_are_never_imputed"] is True
     assert terminal["pass_authorizes_testnet"] is False
+
+
+def test_capacity_supplement_evidence_passes_data_only_before_outcome() -> None:
+    evidence = json.loads(
+        (
+            ROOT
+            / "evidence"
+            / "binance_book_depth_confirmation_capacity_supplement.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert evidence["status"] == "PASS"
+    assert evidence["requested_days"] == evidence["processed_days"] == 7
+    assert evidence["complete_days"] == 6
+    assert evidence["quality_excluded_day_count"] == 1
+    assert evidence["all_exclusions_checksum_verified"] is True
+    assert evidence["parent_actual_adjacent_24h_decision_count"] == 79
+    assert evidence["combined_actual_adjacent_24h_decision_count"] == 84
+    assert evidence["minimum_combined_decisions"] == 80
+    assert evidence["combined_data_capacity_status"] == "PASS"
+    assert evidence["confirmation_return_accessed"] is False
+    assert evidence["confirmation_metrics_computed"] is False
+    assert evidence["formal_validation_started"] is False
+    assert evidence["formal_admission"] is False
+    assert evidence["testnet_authorized"] is False
+    assert evidence["authority"]["chain_valid"] is True
