@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "policy_id": "binance_book_depth_confirmation_quality_exclusion_v1",
+  "status": "FROZEN_BEFORE_CONFIRMATION_OUTCOME",
+  "confirmation_study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "window_day_count": 90,
+  "maximum_quality_excluded_days": 4,
+  "minimum_confirmation_decisions": 80,
+  "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+  "eligible_exclusion": {
+    "requires_official_checksum_pass": true,
+    "requires_parser_or_alignment_quality_rejection": true,
+    "network_or_timeout_is_excludable": false,
+    "checksum_mismatch_is_excludable": false,
+    "unexpected_exception_is_excludable": false
+  },
+  "continuation_policy": {
+    "quality_rejected_day_is_not_written": true,
+    "quality_rejected_day_is_recorded": true,
+    "fifth_quality_rejected_day_blocks": true,
+    "thresholds_may_not_change_after_outcome": true
+  },
+  "rationale": "At 24h cadence, four isolated missing UTC days can remove at most eight of 89 possible decisions, leaving at least 81 and preserving the pre-registered minimum of 80. Whole-day cross-section exclusion prevents selective instrument imputation or lower-quality admission."
+}

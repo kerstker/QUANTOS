@@ -46,3 +46,15 @@ was two per day (0.0752%). The old 0.1% cap was an uncalibrated round number.
 The new 0.2% cap has a direct robust-statistics interpretation: no more than 2%
 of the observations feeding a p10 tail estimate may be removed. Four of 2,791
 passes; six of 2,791 fails. All other quality gates remain unchanged.
+
+The next quality-only pass found `ADAUSDT / 2026-03-26` with 2,590 official
+checksum-verified snapshots, two below the unchanged 90% daily floor of 2,592.
+All 24 hours and all 24 mark references existed, the minimum hour retained 101
+valid snapshots, and no inversion was present. The daily floor is deliberately
+not lowered to fit this file. Instead, the separately frozen confirmation
+quality policy excludes the entire UTC day across all 14 instruments whenever
+any one instrument fails an existing parser or alignment quality gate. At most
+four such days may be excluded: four isolated gaps remove at most eight of the
+89 possible 24-hour decisions, leaving at least 81 versus the pre-registered
+minimum 80. A fifth quality-rejected day blocks the study. Network failures,
+timeouts, checksum mismatches and unexpected errors are never excludable.
