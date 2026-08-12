@@ -224,3 +224,7 @@ class ApprovalStore:
             if header is None:
                 return None
             return self._summary_row(request_id, header)
+
+    def close(self) -> None:
+        with self._lock:
+            self._c.close()

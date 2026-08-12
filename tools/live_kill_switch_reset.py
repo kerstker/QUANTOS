@@ -78,16 +78,16 @@ def main() -> None:
             _human(args.requester),
             at=now,
         )
-        approval_store.append_step(request_id, request.steps[-1])
+        approval_store.save(request, kind="KILL_SWITCH_RESET", now=now)
 
         request = review(request, _human(args.reviewer), at=now + 1)
-        approval_store.append_step(request_id, request.steps[-1])
+        approval_store.save(request, now=now + 1)
 
         request = approve(request, _human(args.approver), at=now + 2)
-        approval_store.append_step(request_id, request.steps[-1])
+        approval_store.save(request, now=now + 2)
 
         request = consume(request, args.incident_id, executor, at=now + 3)
-        approval_store.append_step(request_id, request.steps[-1])
+        approval_store.save(request, now=now + 3)
 
         # Only reset AFTER successful approval persistence
         state = reset_with_grant_and_record(
@@ -105,6 +105,7 @@ def main() -> None:
         )
     finally:
         store.close()
+        approval_store.close()
 
     print(
         f"kill-switch for {args.venue} (incident {args.incident_id}) reset via "

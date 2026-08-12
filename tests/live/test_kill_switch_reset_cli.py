@@ -27,6 +27,11 @@ def _tripped_state(incident_id="trip-1"):
     return ks.state.model_copy(update={"incident_id": incident_id})
 
 
+@pytest.fixture(autouse=True)
+def _isolated_approval_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(reset_tool, "_APPROVAL_DB", str(tmp_path / "approvals.db"))
+
+
 def test_reset_requires_three_distinct_people(tmp_path, monkeypatch):
     path = str(tmp_path / "ks.json")
     save_kill_switch_state(path, _tripped_state())
@@ -53,6 +58,7 @@ def test_reset_rejects_incident_id_mismatch(tmp_path, monkeypatch):
 
 def test_reset_succeeds_with_three_distinct_people_and_matching_incident(tmp_path, monkeypatch):
     path = str(tmp_path / "ks.json")
+    approval_path = str(tmp_path / "approvals.db")
     save_kill_switch_state(path, _tripped_state(incident_id="trip-1"))
     monkeypatch.setattr(reset_tool, "_venue_paths", lambda suffix: {"kill_switch": path})
     monkeypatch.setattr(sys, "argv", [
@@ -83,6 +89,49 @@ def test_reset_succeeds_with_three_distinct_people_and_matching_incident(tmp_pat
         assert bus.chain_valid()
     finally:
         bus.close()
+
+    approval_store = reset_tool.ApprovalStore(approval_path, create=False)
+    try:
+        rows = approval_store.list_requests(kind="KILL_SWITCH_RESET")
+        assert len(rows) == 1
+        assert rows[0]["subject_id"] == "trip-1"
+        assert rows[0]["state"] == "CONSUMED"
+        assert rows[0]["actors"] == ["alice", "bob", "carol", "carol"]
+        assert len(approval_store.load(rows[0]["request_id"]).steps) == 4
+    finally:
+        approval_store.close()
+
+
+def test_reset_persistence_failure_does_not_reset_kill_switch(tmp_path, monkeypatch):
+    path = str(tmp_path / "ks.json")
+    save_kill_switch_state(path, _tripped_state(incident_id="trip-1"))
+    monkeypatch.setattr(reset_tool, "_venue_paths", lambda suffix: {"kill_switch": path})
+
+    class FailingApprovalStore:
+        def __init__(self, *_args, **_kwargs):
+            self.calls = 0
+            self.closed = False
+
+        def save(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("approval persistence failed")
+
+        def close(self):
+            self.closed = True
+
+    approval_store = FailingApprovalStore()
+    monkeypatch.setattr(reset_tool, "ApprovalStore", lambda *_args, **_kwargs: approval_store)
+    monkeypatch.setattr(sys, "argv", [
+        "prog", "--venue", "binance", "--incident-id", "trip-1",
+        "--requester", "alice", "--reviewer", "bob", "--approver", "carol",
+    ])
+
+    with pytest.raises(RuntimeError, match="approval persistence failed"):
+        reset_tool.main()
+
+    assert load_kill_switch_state(path).tripped is True
+    assert approval_store.closed is True
 
 
 def test_reset_is_a_noop_when_not_tripped(tmp_path, monkeypatch, capsys):

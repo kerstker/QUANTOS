@@ -127,3 +127,10 @@ def test_list_requests_and_summary(store):
     s = store.get_summary("r1")
     assert s is not None and s["subject_id"] == SUBJECT and s["kind"] == "ALPHA_PROMOTION"
     assert store.get_summary("missing") is None
+
+
+def test_close_releases_connection(tmp_path):
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    store.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        store.list_requests()

@@ -67,7 +67,7 @@ DEFAULT_STATUS = os.path.join(
 )
 INSTRUMENTS = ("DOGEUSDT", "XRPUSDT", "ADAUSDT", "DOTUSDT")
 PAPER_INSTRUMENTS = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
-TARGET_NOTIONAL = Decimal("1000")
+TARGET_NOTIONAL = Decimal("100")
 MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
 MAX_FUTURE_SKEW_MS = 30_000
@@ -807,9 +807,9 @@ def run_canary(
     limits = RiskLimits(
         allowed_instruments=frozenset(INSTRUMENTS),
         allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10**9,
-        max_order_notional=10**6,
-        fat_finger_qty=1000,  # 1000 coins (was 10**9)
+        default_max_position_qty=1000,
+        max_order_notional=float(TARGET_NOTIONAL * Decimal("1.01")),
+        fat_finger_qty=1000,
         max_gross_exposure=10**7,
         max_net_exposure=10**7,
         max_leverage=5.0,  # 5x (was 100.0)
@@ -837,7 +837,7 @@ def run_canary(
                 known=True,
                 reference_price=prices[intent.instrument_id],
                 market_open=True,
-                price_as_of=decided_ts,  # P2-1 fix: use decision time, not now (was now_ms)
+                price_as_of=books[intent.instrument_id][0].observed_at_ms,
                 est_daily_volume=10**12,
                 instrument_vol=0.8,
             ),

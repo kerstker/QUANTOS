@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -209,6 +210,90 @@ def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
     assert all(
         route["status"] == "COMPLETE" for route in run.detail["routing"]
     )
+    assert run.rejected_reasons == []
+
+
+def test_canary_pretrade_gate_rejects_stale_public_books(tmp_path):
+    now_ms = 2_000_000
+    bases = {
+        "DOGEUSDT": "0.20",
+        "XRPUSDT": "0.50",
+        "ADAUSDT": "0.40",
+        "DOTUSDT": "2.00",
+    }
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        for instrument_id, base in bases.items():
+            store.append_snapshot(_binance_snapshot(instrument_id, base, now_ms))
+    finally:
+        store.close()
+
+    def fake_get(url: str):
+        instrument_id = next(item for item in INSTRUMENTS if item in url)
+        return _bybit_payload(instrument_id, bases[instrument_id], now_ms)
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+    )
+    stale_at = now_ms - MAX_QUOTE_AGE_MS - 1
+    stale_books = {
+        instrument_id: tuple(
+            replace(book, observed_at_ms=stale_at) for book in venue_books
+        )
+        for instrument_id, venue_books in books.items()
+    }
+
+    run = run_canary(
+        now_ms=now_ms,
+        books=stale_books,
+        snapshot_id=bundle["snapshot_id"],
+    )
+
+    assert run.n_approved == 0
+    assert run.rejected_reasons == ["MARKET_CLOSED"] * 4
+
+
+def test_canary_quantity_limit_remains_fail_closed(tmp_path, monkeypatch):
+    now_ms = 2_000_000
+    bases = {
+        "DOGEUSDT": "0.20",
+        "XRPUSDT": "0.50",
+        "ADAUSDT": "0.40",
+        "DOTUSDT": "2.00",
+    }
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        for instrument_id, base in bases.items():
+            store.append_snapshot(_binance_snapshot(instrument_id, base, now_ms))
+    finally:
+        store.close()
+
+    def fake_get(url: str):
+        instrument_id = next(item for item in INSTRUMENTS if item in url)
+        return _bybit_payload(instrument_id, bases[instrument_id], now_ms)
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+    )
+    monkeypatch.setattr(paper_sor, "TARGET_NOTIONAL", Decimal("2100"))
+
+    run = paper_sor.run_canary(
+        now_ms=now_ms,
+        books=books,
+        snapshot_id=bundle["snapshot_id"],
+    )
+
+    assert run.n_approved == 0
+    assert run.n_rejected == 4
+    assert run.rejected_reasons.count("ORDER_SIZE_EXCEEDED") == 4
 
 
 def test_collect_books_reanchors_snapshot_time_after_chain_verification(tmp_path):
