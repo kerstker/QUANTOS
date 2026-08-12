@@ -37,6 +37,8 @@ DEFAULT_STORE = os.path.join("data", "cache", "binance_book_depth_archive.db")
 DEFAULT_STATUS = os.path.join("data", "cache", "binance_book_depth_archive_status.json")
 DEFAULT_RAW_ARCHIVE = os.path.join("data", "cache", "raw_market_data")
 EXPECTED_SNAPSHOTS_PER_DAY = 2_880
+MINIMUM_SNAPSHOTS_PER_DAY = 2_592
+MINIMUM_HOURLY_SNAPSHOTS = 100
 MAX_INVERTED_SNAPSHOT_RATIO = 0.001
 
 
@@ -157,7 +159,9 @@ def refresh_book_depth_days(
     max_workers: int = 4,
     max_attempts: int = 4,
     retry_sleep_seconds: float = 0.5,
-    minimum_snapshots_per_archive: int = EXPECTED_SNAPSHOTS_PER_DAY,
+    minimum_snapshots_per_archive: int = MINIMUM_SNAPSHOTS_PER_DAY,
+    minimum_hourly_snapshots: int = MINIMUM_HOURLY_SNAPSHOTS,
+    require_all_hours: bool = True,
     max_inverted_snapshot_ratio: float = MAX_INVERTED_SNAPSHOT_RATIO,
 ) -> dict[str, object]:
     """Fetch, verify, parse, archive and atomically publish requested days."""
@@ -228,6 +232,8 @@ def refresh_book_depth_days(
                 observed_at_ms=observed_at_ms,
                 archive_sha256=actual,
                 minimum_snapshot_count=minimum_snapshots_per_archive,
+                minimum_hourly_snapshot_count=minimum_hourly_snapshots,
+                require_all_hours=require_all_hours,
                 max_inverted_snapshot_ratio=max_inverted_snapshot_ratio,
             )
             hourly_marks = parse_mark_price_1m_archive(
@@ -407,7 +413,9 @@ def refresh_latest_available_days(
     max_workers: int = 4,
     max_attempts: int = 4,
     retry_sleep_seconds: float = 0.5,
-    minimum_snapshots_per_archive: int = EXPECTED_SNAPSHOTS_PER_DAY,
+    minimum_snapshots_per_archive: int = MINIMUM_SNAPSHOTS_PER_DAY,
+    minimum_hourly_snapshots: int = MINIMUM_HOURLY_SNAPSHOTS,
+    require_all_hours: bool = True,
     max_inverted_snapshot_ratio: float = MAX_INVERTED_SNAPSHOT_RATIO,
 ) -> dict[str, object]:
     """Publish the newest common consecutive archive window.
@@ -446,6 +454,8 @@ def refresh_latest_available_days(
                 max_attempts=max_attempts,
                 retry_sleep_seconds=retry_sleep_seconds,
                 minimum_snapshots_per_archive=minimum_snapshots_per_archive,
+                minimum_hourly_snapshots=minimum_hourly_snapshots,
+                require_all_hours=require_all_hours,
                 max_inverted_snapshot_ratio=max_inverted_snapshot_ratio,
             )
         except BinanceBookDepthArchiveUnavailable:
@@ -510,6 +520,8 @@ __all__ = [
     "EXPECTED_SNAPSHOTS_PER_DAY",
     "HOST",
     "MAX_INVERTED_SNAPSHOT_RATIO",
+    "MINIMUM_HOURLY_SNAPSHOTS",
+    "MINIMUM_SNAPSHOTS_PER_DAY",
     "book_depth_url",
     "mark_price_1m_url",
     "main",

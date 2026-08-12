@@ -76,6 +76,8 @@ def test_refresh_verifies_checksum_archives_source_and_is_idempotent(tmp_path) -
         http_get_bytes=get,
         max_workers=1,
         minimum_snapshots_per_archive=1,
+        minimum_hourly_snapshots=1,
+        require_all_hours=False,
     )
     replay = refresh_book_depth_days(
         ("BTCUSDT",),
@@ -86,6 +88,8 @@ def test_refresh_verifies_checksum_archives_source_and_is_idempotent(tmp_path) -
         http_get_bytes=get,
         max_workers=1,
         minimum_snapshots_per_archive=1,
+        minimum_hourly_snapshots=1,
+        require_all_hours=False,
     )
 
     assert report["status"] == "PASS"
@@ -123,6 +127,8 @@ def test_refresh_rejects_checksum_mismatch_before_parsing(tmp_path) -> None:
             http_get_bytes=get,
             max_workers=1,
             minimum_snapshots_per_archive=1,
+            minimum_hourly_snapshots=1,
+            require_all_hours=False,
         )
 
 
@@ -145,6 +151,8 @@ def test_refresh_rejects_mark_price_checksum_mismatch_before_alignment(tmp_path)
             http_get_bytes=get,
             max_workers=1,
             minimum_snapshots_per_archive=1,
+            minimum_hourly_snapshots=1,
+            require_all_hours=False,
         )
 
 
@@ -179,6 +187,8 @@ def test_latest_available_refresh_falls_back_only_on_archive_unavailable(tmp_pat
         http_get_bytes=get,
         max_workers=1,
         minimum_snapshots_per_archive=1,
+        minimum_hourly_snapshots=1,
+        require_all_hours=False,
     )
 
     assert report["archive_days_ms"] == [DAY_MS]
@@ -207,6 +217,8 @@ def test_latest_available_refresh_does_not_mask_checksum_failure(tmp_path) -> No
             http_get_bytes=get,
             max_workers=1,
             minimum_snapshots_per_archive=1,
+            minimum_hourly_snapshots=1,
+            require_all_hours=False,
         )
 
 
@@ -236,6 +248,8 @@ def test_refresh_retries_transient_transport_failures_with_a_bound(tmp_path) -> 
         max_attempts=3,
         retry_sleep_seconds=0,
         minimum_snapshots_per_archive=1,
+        minimum_hourly_snapshots=1,
+        require_all_hours=False,
     )
 
     assert report["status"] == "PASS"
@@ -261,6 +275,8 @@ def test_refresh_fails_after_bounded_transient_retries(tmp_path) -> None:
             max_attempts=3,
             retry_sleep_seconds=0,
             minimum_snapshots_per_archive=1,
+            minimum_hourly_snapshots=1,
+            require_all_hours=False,
         )
 
     assert attempts["count"] == 3

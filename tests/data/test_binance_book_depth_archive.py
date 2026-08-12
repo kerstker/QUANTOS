@@ -230,3 +230,24 @@ def test_alignment_rejects_midpoint_outside_principled_bound() -> None:
             references,
             mark_archive_sha256="3" * 64,
         )
+
+
+def test_archive_requires_all_hours_and_minimum_hourly_coverage() -> None:
+    with pytest.raises(BinanceBookDepthArchiveError, match="all 24 UTC hours"):
+        parse_book_depth_archive(
+            _archive(),
+            instrument_id="BTCUSDT",
+            expected_day_ms=DAY_MS,
+            observed_at_ms=OBSERVED_MS,
+            archive_sha256="4" * 64,
+            require_all_hours=True,
+        )
+    with pytest.raises(BinanceBookDepthArchiveError, match="minimum accepted"):
+        parse_book_depth_archive(
+            _archive(),
+            instrument_id="BTCUSDT",
+            expected_day_ms=DAY_MS,
+            observed_at_ms=OBSERVED_MS,
+            archive_sha256="5" * 64,
+            minimum_hourly_snapshot_count=3,
+        )

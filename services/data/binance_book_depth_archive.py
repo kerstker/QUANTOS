@@ -128,6 +128,8 @@ def parse_book_depth_archive(
     observed_at_ms: int,
     archive_sha256: str,
     minimum_snapshot_count: int = 1,
+    minimum_hourly_snapshot_count: int = 1,
+    require_all_hours: bool = False,
     max_inverted_snapshot_ratio: float = 0.0,
 ) -> tuple[dict[str, Any], ...]:
     """Parse one verified daily ZIP into deterministic hourly curve summaries."""
@@ -154,6 +156,10 @@ def parse_book_depth_archive(
         isinstance(minimum_snapshot_count, bool)
         or not isinstance(minimum_snapshot_count, int)
         or minimum_snapshot_count < 1
+        or isinstance(minimum_hourly_snapshot_count, bool)
+        or not isinstance(minimum_hourly_snapshot_count, int)
+        or minimum_hourly_snapshot_count < 1
+        or not isinstance(require_all_hours, bool)
         or isinstance(max_inverted_snapshot_ratio, bool)
         or not isinstance(max_inverted_snapshot_ratio, (int, float))
         or not math.isfinite(float(max_inverted_snapshot_ratio))
@@ -223,6 +229,20 @@ def parse_book_depth_archive(
         raise BinanceBookDepthArchiveError(
             "all book-depth snapshots were quarantined"
         )
+    expected_hours = {
+        expected_day_ms + hour * HOUR_MS for hour in range(24)
+    }
+    if require_all_hours and set(hourly) != expected_hours:
+        raise BinanceBookDepthArchiveError(
+            "book-depth archive does not cover all 24 UTC hours"
+        )
+    if any(
+        len(samples) < minimum_hourly_snapshot_count
+        for samples in hourly.values()
+    ):
+        raise BinanceBookDepthArchiveError(
+            "book-depth hour is below the minimum accepted snapshot count"
+        )
 
     observations: list[dict[str, Any]] = []
     for hour_start, samples in sorted(hourly.items()):
@@ -266,6 +286,7 @@ def parse_book_depth_archive(
                 "knowledge_time_ms": observed_at_ms,
                 "snapshot_count": len(samples),
                 "archive_snapshot_count": len(snapshots),
+                "archive_snapshot_coverage_ratio": len(snapshots) / 2_880.0,
                 "archive_quarantined_snapshot_count": quarantined_count,
                 "hour_quarantined_snapshot_count": len(
                     quarantined_by_hour.get(hour_start, ())
@@ -275,6 +296,15 @@ def parse_book_depth_archive(
                     if quarantined_count
                     else "PASS"
                 ),
+                "coverage_policy": {
+                    "minimum_archive_snapshot_count": minimum_snapshot_count,
+                    "minimum_hourly_accepted_snapshot_count": (
+                        minimum_hourly_snapshot_count
+                    ),
+                    "all_24_utc_hours_required": require_all_hours,
+                    "expected_nominal_snapshot_count": 2_880,
+                    "calibration": "UNCALIBRATED_PRINCIPLED_P10_COVERAGE",
+                },
                 "external_price_alignment": "UNASSESSED",
                 "quarantine_policy": {
                     "reason": "IMPLICIT_BID_ASK_INVERSION",
