@@ -38,11 +38,13 @@ from tools.cache_io import atomic_write_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_STORE = Path("data") / "cache" / "binance_book_depth_archive.db"
-DEFAULT_EXPERIMENT_DB = Path("data") / "cache" / "experiment_registry.db"
+DEFAULT_STORE = (
+    ROOT / ".runtime" / "book-depth-confirmation" / "binance_book_depth_archive.db"
+)
 DEFAULT_RECOVERED_EXPERIMENT_DB = (
     ROOT / ".runtime" / "book-depth-confirmation" / "experiment_registry.db"
 )
+DEFAULT_EXPERIMENT_DB = DEFAULT_RECOVERED_EXPERIMENT_DB
 DEFAULT_OUTPUT = ROOT / "evidence" / "binance_book_depth_alpha_confirmation.json"
 
 DEFAULT_CONFIRMATION = ROOT / "config" / "binance_book_depth_alpha_confirmation.json"
@@ -67,6 +69,12 @@ DEFAULT_CAPACITY_PASS = (
 DEFAULT_REGISTRY_RECOVERY_EVIDENCE = (
     ROOT / "evidence" / "binance_book_depth_experiment_registry_recovery.json"
 )
+DEFAULT_AUTHORITY_RECOVERY_EVIDENCE = (
+    ROOT / "evidence" / "binance_book_depth_confirmation_authority_recovery.json"
+)
+DEFAULT_FORMAL_VALIDATION_CONTRACT = (
+    ROOT / "config" / "binance_book_depth_formal_validation_v1.json"
+)
 
 CONFIRMATION_COMMIT = "7b208c08e4161099b20ebbea8d6a6c76b9521a1b"
 QUALITY_POLICY_COMMIT = "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30"
@@ -76,6 +84,8 @@ EXPLORATION_EVIDENCE_COMMIT = "aa7937252a04077dd9dd91286c8acc238b272cdc"
 CAPACITY_BLOCK_COMMIT = "b0a3722b64f872b368ca05c2763aac35b372d728"
 CAPACITY_PASS_COMMIT = "143c417dd673c7bbbdb6f4f9748525a638753ecc"
 REGISTRY_RECOVERY_COMMIT = "5e903e7c4ce1d358157014055a9d525da8e29a0b"
+AUTHORITY_RECOVERY_COMMIT = "1ef1cb6acb6dc42b3055e86fce81fb9e3e25a4eb"
+FORMAL_VALIDATION_CONTRACT_COMMIT = "09f0678cde8c917501aa34f4f3a3e4c96d7bb030"
 
 
 class BookDepthConfirmationError(RuntimeError):
@@ -138,6 +148,16 @@ def _verify_immutable_artifacts() -> dict[str, dict[str, Any]]:
             REGISTRY_RECOVERY_COMMIT,
             "evidence/binance_book_depth_experiment_registry_recovery.json",
         ),
+        "authority_recovery": (
+            DEFAULT_AUTHORITY_RECOVERY_EVIDENCE,
+            AUTHORITY_RECOVERY_COMMIT,
+            "evidence/binance_book_depth_confirmation_authority_recovery.json",
+        ),
+        "formal_validation_contract": (
+            DEFAULT_FORMAL_VALIDATION_CONTRACT,
+            FORMAL_VALIDATION_CONTRACT_COMMIT,
+            "config/binance_book_depth_formal_validation_v1.json",
+        ),
     }
     artifacts: dict[str, dict[str, Any]] = {}
     for name, (path, commit, repository_path) in specs.items():
@@ -163,6 +183,8 @@ def _validate_artifact_graph(artifacts: Mapping[str, Mapping[str, Any]]) -> None
     capacity_block = artifacts["capacity_block"]["payload"]
     capacity_pass = artifacts["capacity_pass"]["payload"]
     registry_recovery = artifacts["registry_recovery"]["payload"]
+    authority_recovery = artifacts["authority_recovery"]["payload"]
+    formal_validation = artifacts["formal_validation_contract"]["payload"]
 
     if (
         confirmation.get("status")
@@ -318,6 +340,39 @@ def _validate_artifact_graph(artifacts: Mapping[str, Mapping[str, Any]]) -> None
         or registry_recovery.get("testnet_authorized") is not False
     ):
         raise BookDepthConfirmationError("recovered experiment registry binding is invalid")
+    authorization = formal_validation.get("authorization")
+    trial_population = formal_validation.get("trial_population")
+    if (
+        authority_recovery.get("status") != "PASS"
+        or authority_recovery.get("mode")
+        != "NEW_AUTHORITY_CHAIN_FROM_EXACT_PUBLIC_SOURCE_RECONSTRUCTION"
+        or authority_recovery.get("source_facts_exactly_reproduced") is not True
+        or authority_recovery.get("alpha_outcome_accessed") is not False
+        or authority_recovery.get("confirmation_metrics_computed") is not False
+        or authority_recovery.get("actual_adjacent_24h_decision_count")
+        != capacity_pass.get("combined_actual_adjacent_24h_decision_count")
+        or authority_recovery.get("new_authority", {}).get("chain_valid") is not True
+        or authority_recovery.get("new_authority", {}).get("claims_old_chain_identity")
+        is not False
+        or formal_validation.get("status")
+        != "FROZEN_BEFORE_CONFIRMATION_OUTCOME_ACCESS"
+        or formal_validation.get("subject", {}).get("candidate_id")
+        != confirmation.get("candidate_id")
+        or formal_validation.get("subject", {}).get("direction")
+        != confirmation.get("direction")
+        or formal_validation.get("subject", {}).get("horizon_hours")
+        != confirmation.get("horizon_hours")
+        or not isinstance(trial_population, Mapping)
+        or trial_population.get("experiment_registry_trial_count")
+        != exploration_registry.get("global_trial_count_after")
+        or trial_population.get(
+            "all_registry_trials_count_even_without_comparable_return_histories"
+        )
+        is not True
+        or not isinstance(authorization, Mapping)
+        or any(value is not False for value in authorization.values())
+    ):
+        raise BookDepthConfirmationError("formal validation precommit binding is invalid")
 
 
 def _verify_registry(
@@ -390,12 +445,11 @@ def _load_bound_input(
 ) -> tuple[tuple[dict[str, Any], ...], dict[str, Any]]:
     confirmation = artifacts["confirmation"]["payload"]
     supplement = artifacts["supplement"]["payload"]
-    capacity_block = artifacts["capacity_block"]["payload"]
     capacity_pass = artifacts["capacity_pass"]["payload"]
+    authority_recovery = artifacts["authority_recovery"]["payload"]
     parent_window = confirmation["confirmation_window"]
     supplement_window = supplement["supplement_window"]
     start_ms = int(supplement_window["start_day_ms"])
-    supplement_end_ms = int(supplement_window["end_exclusive_ms"])
     end_ms = int(parent_window["end_exclusive_ms"])
     universe = tuple(str(value) for value in confirmation["universe"])
     store = BinanceSystemicStore(str(store_path))
@@ -411,37 +465,29 @@ def _load_bound_input(
         dataset_row_count = store.row_count(DATASET)
     finally:
         store.close()
+    new_authority = authority_recovery.get("new_authority")
+    if not isinstance(new_authority, Mapping):
+        raise BookDepthConfirmationError("reconstructed authority binding is missing")
     expected_head = {
-        "seq": int(capacity_pass["authority"]["head_seq"]),
-        "row_hash": str(capacity_pass["authority"]["head_row_hash"]),
+        "seq": int(new_authority["head_seq"]),
+        "row_hash": str(new_authority["head_row_hash"]),
     }
     if (
         not chain_valid
         or authority_head != expected_head
-        or dataset_row_count != int(capacity_pass["authority"]["dataset_row_count"])
+        or dataset_row_count != int(new_authority["dataset_row_count"])
     ):
-        raise BookDepthConfirmationError("book-depth authority drifted after capacity PASS")
-    expected_observation_count = (
-        int(capacity_pass["complete_days"])
-        + int(capacity_block["complete_stored_days"])
-    ) * len(universe) * 24
+        raise BookDepthConfirmationError("reconstructed book-depth authority drifted")
+    expected_observation_count = int(authority_recovery["input_observation_count"])
     if len(observations) != expected_observation_count:
         raise BookDepthConfirmationError("combined confirmation observations drifted")
-    parent_frozen_at = int(
-        confirmation["frozen_unseen_window_evidence"]["observed_at_ms"]
-    )
-    supplement_frozen_at = int(
-        supplement["frozen_unseen_window_evidence"]["observed_at_ms"]
-    )
+    recovery_knowledge_time = int(authority_recovery["knowledge_time_ms"])
     for row in observations:
-        event_time_ms = int(row["event_time_ms"])
-        minimum_knowledge_time = (
-            supplement_frozen_at
-            if event_time_ms <= supplement_end_ms
-            else parent_frozen_at
-        )
-        if int(row["knowledge_time_ms"]) < minimum_knowledge_time:
-            raise BookDepthConfirmationError("confirmation input predates its freeze")
+        if (
+            int(row["knowledge_time_ms"]) != recovery_knowledge_time
+            or int(row["forward_eligible_from_ms"]) != recovery_knowledge_time
+        ):
+            raise BookDepthConfirmationError("reconstructed input knowledge time drifted")
     capacity = _confirmation_capacity(
         store_path=str(store_path),
         start_day_ms=start_ms,
@@ -538,6 +584,12 @@ def run_confirmation(
         "immutable_bindings": _bindings(artifacts),
         **input_binding,
         "period_evidence_sha256": hashlib.sha256(period_bytes).hexdigest(),
+        "formal_validation_contract_commit": artifacts[
+            "formal_validation_contract"
+        ]["commit"],
+        "formal_validation_contract_sha256": artifacts[
+            "formal_validation_contract"
+        ]["sha256"],
         "experiment_registry": registry,
         "confirmation_evaluated_once": True,
         "formal_validation_started": False,

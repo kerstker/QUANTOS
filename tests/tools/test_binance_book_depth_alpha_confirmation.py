@@ -36,6 +36,12 @@ def _artifacts(contract: dict) -> dict:
             "repository_path": "supplement.json",
             "payload": supplement,
         },
+        "formal_validation_contract": {
+            "commit": "f" * 40,
+            "sha256": "f" * 64,
+            "repository_path": "formal-validation.json",
+            "payload": {},
+        },
     }
 
 
@@ -107,6 +113,8 @@ def test_driver_evaluates_once_after_all_bindings_and_never_authorizes(
     assert result["confirmation_evaluated_once"] is True
     assert len(result["period_evidence"]) == 4
     assert len(result["period_evidence_sha256"]) == 64
+    assert result["formal_validation_contract_commit"] == "f" * 40
+    assert result["formal_validation_contract_sha256"] == "f" * 64
     assert result["formal_validation_started"] is False
     assert result["formal_admission"] is False
     assert result["forward_credit"] is False
@@ -158,3 +166,16 @@ def test_real_immutable_artifact_graph_is_valid() -> None:
     assert artifacts["capacity_pass"]["payload"]["status"] == "PASS"
     assert artifacts["capacity_pass"]["payload"]["confirmation_return_accessed"] is False
     assert artifacts["supplement"]["payload"]["minimum_combined_decisions"] == 80
+    assert artifacts["authority_recovery"]["payload"]["status"] == "PASS"
+    assert artifacts["formal_validation_contract"]["payload"]["status"] == (
+        "FROZEN_BEFORE_CONFIRMATION_OUTCOME_ACCESS"
+    )
+    assert confirmation.DEFAULT_STORE == (
+        confirmation.ROOT
+        / ".runtime"
+        / "book-depth-confirmation"
+        / "binance_book_depth_archive.db"
+    )
+    assert confirmation.DEFAULT_EXPERIMENT_DB == (
+        confirmation.DEFAULT_RECOVERED_EXPERIMENT_DB
+    )
