@@ -6,9 +6,9 @@
 
 **Worktree**: `H:\code\QUANTOS\.claude\worktrees\wave1-hourly-alpha`  
 **分支**: `wave1-hourly-alpha-paper`  
-**当前 HEAD**: `c9bc2c33`  
-**修复 commits**: 10 个 (adaabbe8..c9bc2c33)  
-**状态**: ✅ 所有代码修复已实施并提交
+**当前 HEAD**: `1c6f8405`  
+**修复 commits**: 12 个 (adaabbe8..1c6f8405)  
+**状态**: ✅ 所有代码修复已实施并提交，治理测试通过 (1044 passed)
 
 ## P0 修复（关键，立即）
 
@@ -164,15 +164,20 @@ price_as_of=decided_ts        # 使用决策时间，非当前墙钟
 
 ## 测试状态
 
-**当前运行**: 
+### 第一轮测试（治理 + 核心修复）
 ```bash
 py -3.14 -m pytest tests/governance/ tests/alpha/test_evaluator.py \
     tests/research/test_experiment_registry.py -x -q
 ```
+**结果**: ✅ **1044 passed** (317.27s)
+- 初次运行发现 `service_import_graph.json` 过期（代码变更后未重新生成）
+- 重新生成后所有测试通过
 
-**预期结果**: 所有测试通过（待后台任务完成确认）
-
-**完整验证**: 待测试完成后运行 `python scripts/validate.py`
+### 完整验证（27 phases）
+```bash
+python scripts/validate.py
+```
+**状态**: 🔄 正在运行（后台任务 bqbyta2ob）
 
 ---
 
