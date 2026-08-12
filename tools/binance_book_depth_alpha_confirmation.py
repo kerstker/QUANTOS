@@ -40,6 +40,9 @@ from tools.cache_io import atomic_write_json
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STORE = Path("data") / "cache" / "binance_book_depth_archive.db"
 DEFAULT_EXPERIMENT_DB = Path("data") / "cache" / "experiment_registry.db"
+DEFAULT_RECOVERED_EXPERIMENT_DB = (
+    ROOT / ".runtime" / "book-depth-confirmation" / "experiment_registry.db"
+)
 DEFAULT_OUTPUT = ROOT / "evidence" / "binance_book_depth_alpha_confirmation.json"
 
 DEFAULT_CONFIRMATION = ROOT / "config" / "binance_book_depth_alpha_confirmation.json"
@@ -61,6 +64,9 @@ DEFAULT_CAPACITY_BLOCK = (
 DEFAULT_CAPACITY_PASS = (
     ROOT / "evidence" / "binance_book_depth_confirmation_capacity_supplement.json"
 )
+DEFAULT_REGISTRY_RECOVERY_EVIDENCE = (
+    ROOT / "evidence" / "binance_book_depth_experiment_registry_recovery.json"
+)
 
 CONFIRMATION_COMMIT = "7b208c08e4161099b20ebbea8d6a6c76b9521a1b"
 QUALITY_POLICY_COMMIT = "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30"
@@ -69,6 +75,7 @@ EXPLORATION_CONTRACT_COMMIT = "074cf6022db87ba6d11d6ed25f092b9ccaa5315f"
 EXPLORATION_EVIDENCE_COMMIT = "aa7937252a04077dd9dd91286c8acc238b272cdc"
 CAPACITY_BLOCK_COMMIT = "b0a3722b64f872b368ca05c2763aac35b372d728"
 CAPACITY_PASS_COMMIT = "143c417dd673c7bbbdb6f4f9748525a638753ecc"
+REGISTRY_RECOVERY_COMMIT = "5e903e7c4ce1d358157014055a9d525da8e29a0b"
 
 
 class BookDepthConfirmationError(RuntimeError):
@@ -126,6 +133,11 @@ def _verify_immutable_artifacts() -> dict[str, dict[str, Any]]:
             CAPACITY_PASS_COMMIT,
             "evidence/binance_book_depth_confirmation_capacity_supplement.json",
         ),
+        "registry_recovery": (
+            DEFAULT_REGISTRY_RECOVERY_EVIDENCE,
+            REGISTRY_RECOVERY_COMMIT,
+            "evidence/binance_book_depth_experiment_registry_recovery.json",
+        ),
     }
     artifacts: dict[str, dict[str, Any]] = {}
     for name, (path, commit, repository_path) in specs.items():
@@ -150,6 +162,7 @@ def _validate_artifact_graph(artifacts: Mapping[str, Mapping[str, Any]]) -> None
     exploration = artifacts["exploration_evidence"]["payload"]
     capacity_block = artifacts["capacity_block"]["payload"]
     capacity_pass = artifacts["capacity_pass"]["payload"]
+    registry_recovery = artifacts["registry_recovery"]["payload"]
 
     if (
         confirmation.get("status")
@@ -269,6 +282,42 @@ def _validate_artifact_graph(artifacts: Mapping[str, Mapping[str, Any]]) -> None
         exploration.get("trial_count", -1)
     ):
         raise BookDepthConfirmationError("exploration population size drifted")
+    exploration_registry = exploration.get("experiment_registry")
+    if (
+        not isinstance(exploration_registry, Mapping)
+        or registry_recovery.get("status") != "PASS"
+        or registry_recovery.get("mode")
+        != "VERIFIED_L2_BASELINE_PLUS_IMMUTABLE_SEARCH_REGISTRATION_REPLAY"
+        or registry_recovery.get("exploration_contract_commit")
+        != artifacts["exploration_contract"]["commit"]
+        or registry_recovery.get("exploration_contract_sha256")
+        != artifacts["exploration_contract"]["sha256"]
+        or registry_recovery.get("exploration_evidence_commit")
+        != artifacts["exploration_evidence"]["commit"]
+        or registry_recovery.get("exploration_evidence_sha256")
+        != artifacts["exploration_evidence"]["sha256"]
+        or registry_recovery.get("search_id")
+        != exploration_registry.get("search_id")
+        or registry_recovery.get("search_identity")
+        != exploration_registry.get("search_identity")
+        or registry_recovery.get("candidate_count")
+        != exploration_registry.get("candidate_count")
+        or registry_recovery.get("global_trial_count_before")
+        != exploration_registry.get("global_trial_count_before")
+        or registry_recovery.get("global_trial_count_after")
+        != exploration_registry.get("global_trial_count_after")
+        or registry_recovery.get("global_trial_count_delta")
+        != exploration_registry.get("global_trial_count_delta")
+        or registry_recovery.get("search_history_valid") is not True
+        or registry_recovery.get("trial_provenance_chain_valid") is not True
+        or registry_recovery.get("oos_access_chain_valid") is not True
+        or registry_recovery.get("sqlite_integrity") != "ok"
+        or registry_recovery.get("alpha_outcome_accessed") is not False
+        or registry_recovery.get("market_observations_accessed") is not False
+        or registry_recovery.get("formal_admission") is not False
+        or registry_recovery.get("testnet_authorized") is not False
+    ):
+        raise BookDepthConfirmationError("recovered experiment registry binding is invalid")
 
 
 def _verify_registry(
