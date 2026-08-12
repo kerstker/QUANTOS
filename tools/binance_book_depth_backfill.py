@@ -54,6 +54,12 @@ DEFAULT_CONFIRMATION_QUALITY_POLICY_V3 = (
 CONFIRMATION_QUALITY_POLICY_V3_COMMIT = (
     "80bfd5fe1373cffd0ec21c5cd7c42c81c8866d0d"
 )
+DEFAULT_CONFIRMATION_QUALITY_POLICY_V4 = (
+    ROOT / "config" / "binance_book_depth_confirmation_quality_policy_v4.json"
+)
+CONFIRMATION_QUALITY_POLICY_V4_COMMIT = (
+    "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30"
+)
 UNIVERSE = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 
 
@@ -157,6 +163,31 @@ def _verify_confirmation_v3_contracts() -> tuple[str, dict, str, dict]:
         ),
         label="v3 confirmation quality policy",
     )
+    return contract_sha, contract, policy_sha, policy
+
+
+def _verify_confirmation_v4_contracts() -> tuple[str, dict, str, dict]:
+    contract_sha, contract = _verify_confirmation_contract(
+        DEFAULT_CONFIRMATION_CONTRACT
+    )
+    policy_sha, policy = _verify_committed_json(
+        DEFAULT_CONFIRMATION_QUALITY_POLICY_V4,
+        commit=CONFIRMATION_QUALITY_POLICY_V4_COMMIT,
+        repository_path=(
+            "config/binance_book_depth_confirmation_quality_policy_v4.json"
+        ),
+        label="v4 confirmation quality policy",
+    )
+    diagnostic_sha, _ = _verify_committed_json(
+        ROOT / str(policy["source_quality_diagnostic"]),
+        commit=str(policy["source_quality_diagnostic_commit"]),
+        repository_path=str(policy["source_quality_diagnostic"]),
+        label="v4 source quality diagnostic",
+    )
+    if diagnostic_sha != policy.get("source_quality_diagnostic_git_blob_sha256"):
+        raise BookDepthBackfillError(
+            "v4 source quality diagnostic binding is invalid"
+        )
     return contract_sha, contract, policy_sha, policy
 
 
@@ -267,6 +298,7 @@ def run_backfill(
     max_workers: int = 4,
     refresh: Callable[..., dict[str, object]] = refresh_book_depth_days,
     maximum_quality_excluded_days: int = 0,
+    minimum_snapshots_per_archive: int | None = None,
 ) -> dict[str, object]:
     if (
         isinstance(days, bool)
@@ -286,6 +318,15 @@ def run_backfill(
         or maximum_quality_excluded_days > days
     ):
         raise ValueError("quality exclusion policy is invalid")
+    if (
+        minimum_snapshots_per_archive is not None
+        and (
+            isinstance(minimum_snapshots_per_archive, bool)
+            or not isinstance(minimum_snapshots_per_archive, int)
+            or minimum_snapshots_per_archive < 1
+        )
+    ):
+        raise ValueError("archive snapshot floor override is invalid")
     selected = tuple(str(value).upper().strip() for value in universe)
     if len(selected) != 14 or len(set(selected)) != 14:
         raise ValueError("backfill requires the fixed 14-symbol universe")
@@ -301,14 +342,17 @@ def run_backfill(
             processed_days.append(day_ms)
             continue
         try:
-            report = refresh(
-                selected,
-                (day_ms,),
-                observed_at_ms=observed_at_ms,
-                store_path=store_path,
-                archive_root=archive_root,
-                max_workers=max_workers,
-            )
+            refresh_kwargs: dict[str, object] = {
+                "observed_at_ms": observed_at_ms,
+                "store_path": store_path,
+                "archive_root": archive_root,
+                "max_workers": max_workers,
+            }
+            if minimum_snapshots_per_archive is not None:
+                refresh_kwargs["minimum_snapshots_per_archive"] = (
+                    minimum_snapshots_per_archive
+                )
+            report = refresh(selected, (day_ms,), **refresh_kwargs)
             if report.get("external_price_alignment") != "PASS":
                 raise RuntimeError("backfill day lacks external price alignment")
             if not _day_complete(store_path, day_ms, selected):
@@ -451,7 +495,9 @@ def run_contract_backfill(
     start_day_ms = int(window["start_day_ms"])
     end_exclusive_ms = int(window["end_exclusive_ms"])
     day_count = int(window["day_count"])
-    capacity_policy = int(quality_policy.get("schema_version", 1)) == 3
+    policy_schema_version = int(quality_policy.get("schema_version", 1))
+    capacity_policy = policy_schema_version in {3, 4}
+    minimum_snapshots_per_archive = None
     if capacity_policy:
         terminal = quality_policy.get("terminal_acceptance")
         minimum_complete_ratio = float(
@@ -472,6 +518,34 @@ def run_contract_backfill(
             raise BookDepthBackfillError(
                 "confirmation statistical capacity policy is invalid"
             )
+    if policy_schema_version == 4:
+        coverage = quality_policy.get("coverage_decision")
+        hard_gates = quality_policy.get("unchanged_hard_gates")
+        if (
+            not isinstance(coverage, dict)
+            or coverage.get("daily_total_snapshot_floor_is_admission_gate")
+            is not False
+            or coverage.get("daily_total_snapshot_count_is_retained_diagnostic")
+            is not True
+            or coverage.get("all_24_utc_hours_required") is not True
+            or coverage.get("minimum_hourly_snapshot_count") != 96
+            or coverage.get("minimum_hourly_coverage_ratio") != 0.8
+            or not isinstance(hard_gates, dict)
+            or hard_gates.get("official_archive_checksum_required") is not True
+            or hard_gates.get("exact_symmetric_depth_levels_required") is not True
+            or hard_gates.get("maximum_inverted_snapshot_ratio") != 0.002
+            or hard_gates.get(
+                "all_hours_must_align_to_checksum_verified_mark_prices"
+            ) is not True
+            or hard_gates.get("maximum_mark_alignment_deviation_ratio") != 0.01
+            or hard_gates.get("network_or_timeout_is_excludable") is not False
+            or hard_gates.get("checksum_mismatch_is_excludable") is not False
+            or hard_gates.get("unexpected_exception_is_excludable") is not False
+        ):
+            raise BookDepthBackfillError(
+                "confirmation estimator-aligned quality policy is invalid"
+            )
+        minimum_snapshots_per_archive = 1
     schema_version = int(contract.get("schema_version", 1))
     if schema_version == 1:
         relation_valid = (
@@ -549,6 +623,7 @@ def run_contract_backfill(
         max_workers=max_workers,
         refresh=refresh,
         maximum_quality_excluded_days=maximum_quality_excluded_days,
+        minimum_snapshots_per_archive=minimum_snapshots_per_archive,
     )
     bound_result = {
         **result,
@@ -583,6 +658,9 @@ def run_contract_backfill(
         bound_result["minimum_complete_days"] = minimum_complete_days
         bound_result["minimum_complete_day_ratio"] = minimum_complete_ratio
         bound_result["minimum_confirmation_decisions"] = minimum_decisions
+        bound_result["daily_total_snapshot_floor_is_admission_gate"] = (
+            minimum_snapshots_per_archive is None
+        )
         if not capacity_pass:
             bound_result["status"] = "FAIL"
             bound_result["failure_type"] = (
@@ -667,6 +745,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "statistical-capacity quality policy"
         ),
     )
+    parser.add_argument(
+        "--confirmation-contract-v4",
+        action="store_true",
+        help=(
+            "Use the first immutable confirmation contract with the frozen "
+            "estimator-aligned quality policy"
+        ),
+    )
     args = parser.parse_args(argv)
     if sum(
         bool(value)
@@ -674,10 +760,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.confirmation_contract,
             args.confirmation_contract_v2,
             args.confirmation_contract_v3,
+            args.confirmation_contract_v4,
         )
     ) > 1:
         parser.error("confirmation contract entrypoints are mutually exclusive")
     now_ms = int(time.time() * 1000)
+    if args.confirmation_contract_v4:
+        contract_sha256, contract, quality_policy_sha256, quality_policy = (
+            _verify_confirmation_v4_contracts()
+        )
+        result = run_contract_backfill(
+            contract=contract,
+            observed_at_ms=now_ms,
+            store_path=args.store,
+            archive_root=args.archive_root,
+            status_path=args.status,
+            max_workers=args.workers,
+            contract_commit=CONFIRMATION_COMMIT,
+            contract_sha256=contract_sha256,
+            quality_policy=quality_policy,
+            quality_policy_commit=CONFIRMATION_QUALITY_POLICY_V4_COMMIT,
+            quality_policy_sha256=quality_policy_sha256,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.confirmation_contract_v3:
         contract_sha256, contract, quality_policy_sha256, quality_policy = (
             _verify_confirmation_v3_contracts()
@@ -763,12 +869,14 @@ __all__ = [
     "CONFIRMATION_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_COMMIT",
     "CONFIRMATION_QUALITY_POLICY_V3_COMMIT",
+    "CONFIRMATION_QUALITY_POLICY_V4_COMMIT",
     "CONFIRMATION_V2_COMMIT",
     "DEFAULT_CONFIRMATION_CONTRACT",
     "DEFAULT_CONFIRMATION_CONTRACT_V2",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V2",
     "DEFAULT_CONFIRMATION_QUALITY_POLICY_V3",
+    "DEFAULT_CONFIRMATION_QUALITY_POLICY_V4",
     "DEFAULT_STATUS",
     "UNIVERSE",
     "main",

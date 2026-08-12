@@ -150,6 +150,32 @@ def _capacity_policy(*, day_count: int = 3, minimum_decisions: int = 1) -> dict:
     }
 
 
+def _v4_capacity_policy(*, day_count: int = 3, minimum_decisions: int = 1) -> dict:
+    return {
+        **_capacity_policy(
+            day_count=day_count, minimum_decisions=minimum_decisions
+        ),
+        "schema_version": 4,
+        "coverage_decision": {
+            "daily_total_snapshot_floor_is_admission_gate": False,
+            "daily_total_snapshot_count_is_retained_diagnostic": True,
+            "all_24_utc_hours_required": True,
+            "minimum_hourly_snapshot_count": 96,
+            "minimum_hourly_coverage_ratio": 0.8,
+        },
+        "unchanged_hard_gates": {
+            "official_archive_checksum_required": True,
+            "exact_symmetric_depth_levels_required": True,
+            "maximum_inverted_snapshot_ratio": 0.002,
+            "all_hours_must_align_to_checksum_verified_mark_prices": True,
+            "maximum_mark_alignment_deviation_ratio": 0.01,
+            "network_or_timeout_is_excludable": False,
+            "checksum_mismatch_is_excludable": False,
+            "unexpected_exception_is_excludable": False,
+        },
+    }
+
+
 def test_contract_backfill_requires_frozen_empty_head_then_exact_window(tmp_path):
     store_path = str(tmp_path / "depth.db")
     seed = BinanceSystemicStore(store_path, create=True)
@@ -299,6 +325,64 @@ def test_real_confirmation_contract_matches_immutable_commit() -> None:
     assert v3_policy["schema_version"] == 3
     assert v3_policy["minimum_complete_days"] == 81
     assert v3_policy["minimum_confirmation_decisions"] == 80
+
+    v4_contract_digest, v4_contract, v4_policy_digest, v4_policy = (
+        backfill._verify_confirmation_v4_contracts()
+    )
+    assert len(v4_contract_digest) == len(v4_policy_digest) == 64
+    assert v4_contract["schema_version"] == 1
+    assert v4_policy["schema_version"] == 4
+    assert v4_policy["coverage_decision"][
+        "daily_total_snapshot_floor_is_admission_gate"
+    ] is False
+
+
+def test_v4_contract_scopes_daily_floor_retirement_to_its_frozen_entrypoint(
+    tmp_path,
+):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    contract = _confirmation_contract(DAY, OBSERVED)
+    contract["frozen_unseen_window_evidence"]["authority_head_seq"] = head["seq"]
+    contract["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head[
+        "row_hash"
+    ]
+    calls = []
+
+    def refresh(instruments, days, **kwargs):
+        calls.append(kwargs.get("minimum_snapshots_per_archive"))
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_contract_backfill(
+        contract=contract,
+        observed_at_ms=OBSERVED + 1,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        refresh=refresh,
+        quality_policy=_v4_capacity_policy(day_count=2),
+    )
+
+    assert result["status"] == "PASS"
+    assert result["daily_total_snapshot_floor_is_admission_gate"] is False
+    assert calls == [1, 1]
 
 
 def test_backfill_excludes_only_bounded_structured_quality_rejections(tmp_path):
