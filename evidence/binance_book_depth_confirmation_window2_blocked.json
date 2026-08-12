@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786506903112,
+  "status": "BLOCKED_BEFORE_OUTCOME",
+  "reason_code": "HISTORICAL_CURVE_SCHEMA_INCOMPATIBLE",
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v2",
+  "confirmation_contract_commit": "4e3206e87f4cd47b8161a39b97badb2e8a868f85",
+  "quality_policy_commit": "4e3206e87f4cd47b8161a39b97badb2e8a868f85",
+  "backfill_status_sha256": "3555980b68a82f1e535c201323524ecf08c025432dbed1fb7fcc038c02bbddee",
+  "requested_days": 120,
+  "complete_stored_days": 0,
+  "stored_observation_count": 0,
+  "quality_excluded_day_count": 13,
+  "maximum_quality_excluded_days": 12,
+  "first_rejected_day_ms": 1760486400000,
+  "last_rejected_day_ms": 1761523200000,
+  "all_14_instruments_rejected_each_day": true,
+  "all_exclusions_checksum_verified": true,
+  "common_rejection_reason": "snapshot does not contain the exact symmetric depth levels",
+  "confirmation_return_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "authority_head": {
+    "seq": 50400,
+    "row_hash": "66910ac9176bd71fa5fab8992e9a9282049ef643f17ce7598cfb363cf35c5a5e"
+  },
+  "authority_chain_valid": true,
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}
