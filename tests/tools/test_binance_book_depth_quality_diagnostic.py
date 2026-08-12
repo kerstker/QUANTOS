@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import csv
+from datetime import datetime, timezone
+import hashlib
+import io
+import zipfile
+
+from services.data.binance_book_depth_archive import DAY_MS
+from tools import binance_book_depth_quality_diagnostic as diagnostic
+from tools.binance_book_depth_fetch import book_depth_url
+
+
+DAY = 1_786_320_000_000
+
+
+def _archive(symbol: str, snapshots_by_hour: tuple[int, ...]) -> bytes:
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+    writer.writerow(("timestamp", "percentage", "depth", "notional"))
+    for hour, count in enumerate(snapshots_by_hour):
+        for index in range(count):
+            timestamp = datetime.fromtimestamp(
+                (DAY + hour * 3_600_000 + index * 1_000) / 1_000,
+                tz=timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            for level in (-0.2, -1, -2, -3, -4, -5, 0.2, 1, 2, 3, 4, 5):
+                depth = 100 + abs(level)
+                price = 99 if level < 0 else 101
+                writer.writerow((timestamp, level, depth, depth * price))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            f"{symbol}-bookDepth-"
+            f"{datetime.fromtimestamp(DAY / 1_000, timezone.utc):%Y-%m-%d}.csv",
+            stream.getvalue(),
+        )
+    return buffer.getvalue()
+
+
+def test_quality_diagnostic_reports_daily_and_hourly_coverage_separately() -> None:
+    symbol = "BTCUSDT"
+    raw = _archive(symbol, (2,) * 23 + (1,))
+    digest = hashlib.sha256(raw).hexdigest()
+    path = book_depth_url(symbol, DAY)
+
+    def get(requested: str) -> bytes:
+        if requested == path:
+            return raw
+        if requested == path + ".CHECKSUM":
+            return f"{digest}  archive.zip\n".encode()
+        raise AssertionError(requested)
+
+    report = diagnostic.diagnose_days(
+        days=(DAY,),
+        observed_at_ms=DAY + DAY_MS + 1,
+        universe=(symbol,),
+        max_workers=1,
+        http_get_bytes=get,
+    )
+
+    assert report["confirmation_outcome_accessed"] is False
+    assert report["mark_prices_accessed"] is False
+    assert report["candidate_signals_accessed"] is False
+    assert report["candidate_returns_accessed"] is False
+    assert report["safety"]["credentials_accessed"] is False
+    day = report["days"][0]
+    assert day["minimum_archive_snapshot_count"] == 47
+    assert day["instruments_missing_any_hour"] == 0
+    assert day["minimum_hour_snapshot_count"] == 1
+    assert day["instruments_with_hour_below_floor"] == 1
+    assert day["total_hours_below_floor"] == 24
