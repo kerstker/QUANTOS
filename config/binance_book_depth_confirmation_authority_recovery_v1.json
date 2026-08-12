@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "recovery_id": "binance_book_depth_confirmation_authority_recovery_v1",
+  "status": "FROZEN_BEFORE_RECONSTRUCTION_OR_OUTCOME_ACCESS",
+  "reason_code": "LOCAL_CONFIRMATION_AUTHORITY_FILE_LOST_AFTER_CAPACITY_PASS",
+  "old_authority": {
+    "capacity_pass_evidence": "evidence/binance_book_depth_confirmation_capacity_supplement.json",
+    "capacity_pass_commit": "143c417dd673c7bbbdb6f4f9748525a638753ecc",
+    "dataset_row_count": 60816,
+    "head_seq": 61152,
+    "head_row_hash": "15270ff476d19526369489f6133ff5490b59975e7622fea5ea8a7dd13216cb66",
+    "recoverable": false,
+    "claim_new_chain_equals_old_chain": false
+  },
+  "source_contracts": {
+    "confirmation_contract_commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+    "quality_policy_v4_commit": "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30",
+    "supplement_contract_commit": "831222f363a8b54a25d3b9cb34a5ab0d5d548864",
+    "parent_capacity_block_commit": "b0a3722b64f872b368ca05c2763aac35b372d728",
+    "capacity_pass_commit": "143c417dd673c7bbbdb6f4f9748525a638753ecc"
+  },
+  "reconstruction": {
+    "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+    "provider": "BINANCE_DATA_VISION_PUBLIC_USDM",
+    "source_transport": "PUBLIC_HTTPS_NO_CREDENTIAL",
+    "official_checksum_required": true,
+    "mark_price_checksum_required": true,
+    "start_day_inclusive_utc": "2026-02-05",
+    "start_day_ms": 1770249600000,
+    "end_day_inclusive_utc": "2026-05-12",
+    "end_exclusive_ms": 1778630400000,
+    "day_count": 97,
+    "universe": [
+      "ADAUSDT",
+      "ATOMUSDT",
+      "AVAXUSDT",
+      "BCHUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "DOTUSDT",
+      "ETHUSDT",
+      "LINKUSDT",
+      "LTCUSDT",
+      "SOLUSDT",
+      "UNIUSDT",
+      "XRPUSDT"
+    ],
+    "quality_policy": "ESTIMATOR_ALIGNED_V4_UNCHANGED",
+    "observed_at_policy": "ONE_NEW_FETCH_TIME_AFTER_THIS_CONTRACT_COMMIT",
+    "new_authority_chain_required": true,
+    "old_chain_identity_must_not_be_claimed": true
+  },
+  "exact_acceptance": {
+    "complete_day_count": 91,
+    "excluded_day_count": 6,
+    "excluded_days_ms": [
+      1770336000000,
+      1774483200000,
+      1775606400000,
+      1776297600000,
+      1776816000000,
+      1776988800000
+    ],
+    "parent_complete_day_count": 85,
+    "supplement_complete_day_count": 6,
+    "actual_adjacent_24h_decision_count": 84,
+    "accepted_observation_count": 30576,
+    "all_97_days_must_be_processed": true,
+    "excluded_days_are_never_imputed": true,
+    "any_mismatch_blocks_before_alpha_outcome": true
+  },
+  "authorization": {
+    "alpha_outcome_access_before_recovery_pass": false,
+    "formal_validation": false,
+    "formal_admission": false,
+    "forward_credit": false,
+    "testnet": false,
+    "order_submission": false
+  }
+}
