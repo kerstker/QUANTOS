@@ -395,11 +395,24 @@ def execute(
     global _LAST_RELEASE_RUN_ATTESTATION
     _LAST_RELEASE_RUN_ATTESTATION = None
     started_ns = time.perf_counter_ns()
+    stage_started_ns = started_ns
+    stage_elapsed_ms: dict[str, int] = {}
+
+    def finish_stage(name: str) -> None:
+        nonlocal stage_started_ns
+        finished_ns = time.perf_counter_ns()
+        stage_elapsed_ms[name] = max(
+            0,
+            (finished_ns - stage_started_ns) // 1_000_000,
+        )
+        stage_started_ns = finished_ns
+
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     trusted_checkpoint = _trusted_source_checkpoint(
         batch_store_path,
         now_ms=now,
     )
+    finish_stage("trusted_source_checkpoint")
     input_hashes = {
         "feature_batch_authority_before": trusted_checkpoint["batch_authority"],
         "feature_materialization_contract": _feature_input_contract_hash(
@@ -417,6 +430,7 @@ def execute(
         )
     finally:
         source_store.close()
+    finish_stage("source_snapshot_load")
     source_digest = _sha256(snapshots)
     input_hashes["public_source_snapshot_bundle"] = source_digest
     input_hashes["public_source_chain_view"] = _sha256(
@@ -437,6 +451,7 @@ def execute(
     source_observed_at_ms = max(
         int(snapshot["observed_at_ms"]) for snapshot in snapshots
     )
+    finish_stage("source_contract_hashing")
 
     Path(feature_store_path).parent.mkdir(parents=True, exist_ok=True)
     feature_store = SqliteFeatureValueStore(feature_store_path, create=True)
@@ -451,6 +466,7 @@ def execute(
             for snapshot in eligible_snapshots
             for feature in project_snapshot(snapshot)
         ]
+        finish_stage("feature_projection")
         inserted = feature_store.add_many(
             projected,
             version=FEATURE_VERSION,
@@ -460,7 +476,9 @@ def execute(
             quality_verdict="SOURCE_CHAIN_VERIFIED_COMPLETE_CORE",
         )
         row_count = feature_store.row_count()
+        finish_stage("feature_store_append")
         values_by_series = _feature_values(feature_store, as_of_ms=now)
+        finish_stage("drift_history_read")
         input_hashes["drift_feature_view"] = _sha256(
             {"as_of_ms": now, "values_by_series": values_by_series}
         )
@@ -482,6 +500,7 @@ def execute(
             "read_scope": "TRAILING_ONLY",
             "archive_retention_unchanged": True,
         }
+        finish_stage("drift_calibration_and_assessment")
         watermarks_after = _projection_watermarks(feature_store)
         output_hashes["feature_projection_frontier"] = _sha256(
             {
@@ -502,6 +521,7 @@ def execute(
                 },
             }
         )
+        finish_stage("projection_frontier")
     finally:
         feature_store.close()
     if drift["structurally_ready"] is not True:
@@ -584,12 +604,21 @@ def execute(
         batch_chain_valid = True
     finally:
         batch_store.close()
+    finish_stage("batch_journal")
     if not batch_chain_valid:
         raise BinanceRealtimeFeatureError("feature batch chain is invalid")
 
+    completed_at_ms = (
+        int(time.time() * 1_000) if now_ms is None else int(now_ms)
+    )
+    if completed_at_ms < now:
+        raise BinanceRealtimeFeatureError(
+            "realtime feature completion clock precedes start clock"
+        )
+
     status = {
         "schema_version": 2,
-        "generated_at_ms": now,
+        "generated_at_ms": completed_at_ms,
         "status": "PASS",
         "mode": "L2_REALTIME_FEATURE_DIAGNOSTIC",
         "source": {
@@ -638,6 +667,9 @@ def execute(
             "promotion_authority": False,
         },
         "runtime": {
+            "started_at_ms": now,
+            "completed_at_ms": completed_at_ms,
+            "stage_elapsed_ms": stage_elapsed_ms,
             "elapsed_ms": max(
                 0,
                 (time.perf_counter_ns() - started_ns) // 1_000_000,

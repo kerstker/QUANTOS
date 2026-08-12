@@ -24,6 +24,7 @@ def _write_statuses(tmp_path, now: int) -> tuple[object, object]:
                 "status": "PASS",
                 "generated_at_ms": now,
                 "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": now},
             }
         ),
         encoding="utf-8",
@@ -315,6 +316,38 @@ def test_routing_refresh_failure_remains_safe_blocked(tmp_path, monkeypatch) -> 
     assert report["routing"]["snapshot_refresh"]["succeeded"] is False
     assert "public venue unavailable" in report["routing"]["snapshot_refresh"]["error"]
     assert "routing snapshot refresh failed" in report["errors"]["rt-candidate"]
+
+
+def test_recent_feature_status_cannot_freshen_stale_source_watermark(tmp_path) -> None:
+    now = 2_000_000
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, now)
+    feature.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "generated_at_ms": now,
+                "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_cycle(
+        shadow_store_path=shadow,
+        feature_status_path=feature,
+        market_status_path=market,
+        execution_store_path=tmp_path / "execution.db",
+        output_path=tmp_path / "execution.json",
+        now_ms=now,
+    )
+
+    assert report["status"] == "SAFE_BLOCKED"
+    assert "SOURCE_WATERMARK_STALE" in report["errors"]["_system"]
+    assert report["cycle"]["new_executions"] == 0
+    assert not (tmp_path / "execution.db").exists()
 
 
 def test_post_admission_backlog_replays_in_timestamp_order(tmp_path, monkeypatch) -> None:

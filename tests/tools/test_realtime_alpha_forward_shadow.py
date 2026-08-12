@@ -306,6 +306,45 @@ def test_unsafe_handoff_writes_fresh_safe_blocked_evidence(tmp_path) -> None:
     assert not (tmp_path / "shadow.db").exists()
 
 
+def test_recent_status_cannot_freshen_stale_source_watermark(tmp_path) -> None:
+    now = 2_000_000
+    spec = default_realtime_hypotheses()[0]
+    discovery = tmp_path / "discovery.json"
+    discovery.write_text(json.dumps(_discovery(now, eligible=True)), encoding="utf-8")
+    feature_status = tmp_path / "feature-status.json"
+    feature_status.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "generated_at_ms": now,
+                "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(registry_path), create=True) as registry:
+        registry.register_candidate(spec.as_dict(), recorded_at=now - 1)
+
+    report = run_cycle(
+        discovery_path=discovery,
+        feature_status_path=feature_status,
+        feature_store_path=tmp_path / "features.db",
+        family_registry_path=registry_path,
+        shadow_store_path=tmp_path / "shadow.db",
+        output_path=tmp_path / "shadow.json",
+        now_ms=now,
+    )
+
+    assert report["status"] == "SAFE_BLOCKED"
+    assert report["feature_input"]["ready"] is False
+    assert report["feature_input"]["freshness"]["reason"] == (
+        "SOURCE_WATERMARK_STALE"
+    )
+    assert report["cycle"]["new_decisions"] == 0
+
+
 def test_admitted_track_survives_restart_and_current_gate_regression(
     tmp_path, monkeypatch
 ) -> None:
@@ -320,6 +359,7 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
                 "status": "PASS",
                 "generated_at_ms": base,
                 "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": base},
             }
         ),
         encoding="utf-8",
@@ -449,6 +489,7 @@ def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
                 "status": "PASS",
                 "generated_at_ms": base,
                 "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": base},
             }
         ),
         encoding="utf-8",
@@ -548,6 +589,7 @@ def test_formal_shadow_is_separate_and_not_feedback_authority(
                 "status": "PASS",
                 "generated_at_ms": base,
                 "batch": {"chain_valid": True},
+                "source": {"last_observed_at_ms": base},
             }
         ),
         encoding="utf-8",

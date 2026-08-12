@@ -33,6 +33,7 @@ from services.execution.realtime_engineering_paper_store import (
 )
 from services.execution.simulated_sor import SORPolicy, route_simulated_intent
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
+from services.features.realtime_status import assess_realtime_feature_freshness
 from tools.cache_io import atomic_write_json
 from tools.paper_multivenue_sor import (
     DEFAULT_BINANCE_STORE,
@@ -257,17 +258,14 @@ def _feature_status(
     status = _read_object(path, "realtime feature status")
     if observed_hashes is not None:
         observed_hashes["realtime_feature_status"] = stable_hash(status)
-    generated = status.get("generated_at_ms")
-    batch = status.get("batch")
-    if (
-        status.get("status") != "PASS"
-        or type(generated) is not int
-        or not 0 <= now_ms - generated <= MAX_STATUS_AGE_MS
-        or not isinstance(batch, Mapping)
-        or batch.get("chain_valid") is not True
-    ):
+    freshness = assess_realtime_feature_freshness(
+        status,
+        now_ms=now_ms,
+        max_age_ms=MAX_STATUS_AGE_MS,
+    )
+    if not freshness.ready:
         raise RealtimeAlphaExecutionPaperError(
-            "realtime feature evidence is stale or unsafe"
+            "realtime feature evidence is stale or unsafe: " + freshness.reason
         )
     return status
 

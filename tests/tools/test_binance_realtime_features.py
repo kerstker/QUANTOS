@@ -170,6 +170,54 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     assert periodic["checkpoint_seq"] == 0
 
 
+def test_live_execute_publishes_completion_clock_not_start_clock(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        for index in range(300):
+            for ticker in ("AAA", "BBB"):
+                source.append_snapshot(_snapshot(f"{ticker}USDT", index))
+    finally:
+        source.close()
+
+    wall_times = iter((20.0, 1_220.0))
+    monkeypatch.setattr(realtime.time, "time", lambda: next(wall_times))
+
+    result = realtime.execute(
+        source_store_path=str(source_path),
+        feature_store_path=str(tmp_path / "features.db"),
+        batch_store_path=str(tmp_path / "batches.db"),
+        status_path=str(tmp_path / "status.json"),
+        source_row_limit=600,
+    )
+
+    assert result["generated_at_ms"] == 1_220_000
+    assert result["runtime"]["started_at_ms"] == 20_000
+    assert result["runtime"]["completed_at_ms"] == 1_220_000
+    assert result["runtime"]["completed_at_ms"] - result["runtime"]["started_at_ms"] == (
+        20 * 60_000
+    )
+    assert set(result["runtime"]["stage_elapsed_ms"]) == {
+        "trusted_source_checkpoint",
+        "source_snapshot_load",
+        "source_contract_hashing",
+        "feature_projection",
+        "feature_store_append",
+        "drift_history_read",
+        "drift_calibration_and_assessment",
+        "projection_frontier",
+        "batch_journal",
+    }
+    assert all(
+        elapsed >= 0
+        for elapsed in result["runtime"]["stage_elapsed_ms"].values()
+    )
+
+
 def test_execute_clears_stale_attestation_before_failed_run(
     tmp_path,
     monkeypatch,

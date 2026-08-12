@@ -39,6 +39,7 @@ from services.research.realtime_alpha_discovery import (
     realize_forward_paper_decision,
 )
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
+from services.features.realtime_status import assess_realtime_feature_freshness
 from tools.cache_io import atomic_write_json
 from tools.realtime_alpha_discovery import (
     load_bucketed_frames,
@@ -489,11 +490,14 @@ def _feature_status_ready(
     path: str | Path,
     *,
     now_ms: int,
-) -> tuple[bool, dict[str, Any], str]:
+) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:
     try:
         raw = Path(path).read_bytes()
     except FileNotFoundError:
-        return False, {}, stable_hash({"exists": False})
+        return False, {}, stable_hash({"exists": False}), {
+            "ready": False,
+            "reason": "STATUS_FILE_MISSING",
+        }
     except OSError as exc:
         return False, {}, stable_hash(
             {
@@ -501,23 +505,20 @@ def _feature_status_ready(
                 "readable": False,
                 "error_type": type(exc).__name__,
             }
-        )
+        ), {"ready": False, "reason": "STATUS_FILE_UNREADABLE"}
     digest = hashlib.sha256(raw).hexdigest()
     try:
         status = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return False, {}, digest
+        return False, {}, digest, {"ready": False, "reason": "STATUS_JSON_INVALID"}
     if not isinstance(status, dict):
-        return False, {}, digest
-    generated = status.get("generated_at_ms")
-    ready = bool(
-        status.get("status") == "PASS"
-        and type(generated) is int
-        and 0 <= now_ms - generated <= MAX_FEATURE_STATUS_AGE_MS
-        and isinstance(status.get("batch"), Mapping)
-        and status["batch"].get("chain_valid") is True
+        return False, {}, digest, {"ready": False, "reason": "STATUS_NOT_OBJECT"}
+    freshness = assess_realtime_feature_freshness(
+        status,
+        now_ms=now_ms,
+        max_age_ms=MAX_FEATURE_STATUS_AGE_MS,
     )
-    return ready, status, digest
+    return freshness.ready, status, digest, freshness.as_dict()
 
 
 def _common_latest_frames(
@@ -797,7 +798,7 @@ def run_cycle(
     new_decisions = 0
     new_realizations = 0
     tracks: dict[str, dict[str, Any]] = {}
-    feature_ready, feature_status, feature_status_hash = _feature_status_ready(
+    feature_ready, feature_status, feature_status_hash, feature_freshness = _feature_status_ready(
         feature_status_path, now_ms=now
     )
     input_hashes["feature_status_file"] = feature_status_hash
@@ -1102,6 +1103,12 @@ def run_cycle(
             "ready": feature_ready,
             "status": feature_status.get("status"),
             "generated_at_ms": feature_status.get("generated_at_ms"),
+            "source_last_observed_at_ms": (
+                feature_status.get("source", {}).get("last_observed_at_ms")
+                if isinstance(feature_status.get("source"), Mapping)
+                else None
+            ),
+            "freshness": feature_freshness,
         },
         "cycle": {
             "new_admissions": new_admissions,
