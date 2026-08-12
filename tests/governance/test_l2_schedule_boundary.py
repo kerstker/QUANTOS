@@ -229,6 +229,37 @@ def test_schedule_registration_quiesces_old_release_instances_before_force_repla
     assert "orphaned L2 worker did not stop before release registration" in source
 
 
+def test_schedule_registration_quiesces_owned_descendants_and_cursor_verifier_orphans():
+    source = _source()
+    disable = re.search(
+        r"function Disable-TaskIfPresent \{(.*?)\n\}",
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert disable is not None
+    body = disable.group(1)
+    assert "Get-L2OwnedProcesses -Module $Module" in body
+    assert "ParentProcessId" in source
+    assert "CreationDate" in source
+    assert '$cursorStore = Join-Path $stateRoot "data\\cache\\binance_realtime_stream.db"' in source
+    assert (
+        "-m tools.binance_realtime_stream --verify-cursor-chain "
+        "--store $cursorStore --cursor-checkpoint-seq"
+    ) in source
+    assert source.count(
+        '$process.Name -in @("python.exe", "pythonw.exe")'
+    ) >= 2
+    assert "*tools.binance_realtime_stream*" not in source
+    assert body.index("Get-L2OwnedProcesses -Module $Module") < body.index(
+        'if ($null -eq $task)'
+    )
+    assert body.index("Disable-ScheduledTask -TaskName $Name") < body.index(
+        "Stop-ScheduledTask -TaskName $Name"
+    )
+    assert "owned L2 subprocess did not stop before release registration" in source
+
+
 def test_schedule_registration_separates_release_code_from_mutable_state():
     source = _source()
     assert "$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot \"..\")).Path" in source

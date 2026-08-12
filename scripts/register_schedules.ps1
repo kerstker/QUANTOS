@@ -76,18 +76,89 @@ $l2Principal = New-ScheduledTaskPrincipal `
   -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
   -LogonType S4U -RunLevel Limited
 
+function Get-L2OwnedProcesses {
+  param([Parameter(Mandatory = $true)][string]$Module)
+
+  if ([string]::IsNullOrWhiteSpace($Module)) {
+    return @()
+  }
+  $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+  $workerPattern = "*l2_schedule_entrypoint.py* ${Module} --release-commit *"
+  $owned = @{}
+  foreach ($process in $processes) {
+    if (
+      $process.Name -in @("python.exe", "pythonw.exe") -and
+      -not [string]::IsNullOrWhiteSpace($process.CommandLine) -and
+      $process.CommandLine -like $workerPattern
+    ) {
+      $owned[[int]$process.ProcessId] = $process
+    }
+  }
+
+  # Capture the complete process tree while the approved release launcher is
+  # still present.  Task Scheduler can stop its WindowsApps shim before the
+  # real interpreter and its subprocesses have quiesced.
+  do {
+    $added = $false
+    $parentIds = @($owned.Keys)
+    foreach ($process in $processes) {
+      $processId = [int]$process.ProcessId
+      if (
+        -not $owned.ContainsKey($processId) -and
+        $parentIds -contains [int]$process.ParentProcessId
+      ) {
+        $owned[$processId] = $process
+        $added = $true
+      }
+    }
+  } while ($added)
+
+  if ($Module -eq "binance_realtime_stream") {
+    # The initial cursor authority audit deliberately runs in an isolated
+    # subprocess.  Once its launcher has exited it is no longer discoverable
+    # through ParentProcessId, so bind the only allowed orphan signature to the
+    # exact public cursor store under the operator-selected state root.
+    $cursorStore = Join-Path $stateRoot "data\cache\binance_realtime_stream.db"
+    $cursorVerifierPattern = "*-m tools.binance_realtime_stream --verify-cursor-chain --store $cursorStore --cursor-checkpoint-seq * --cursor-checkpoint-row-hash *"
+    $quotedCursorVerifierPattern = "*-m tools.binance_realtime_stream --verify-cursor-chain --store `"$cursorStore`" --cursor-checkpoint-seq * --cursor-checkpoint-row-hash *"
+    foreach ($process in $processes) {
+      if (
+        $process.Name -in @("python.exe", "pythonw.exe") -and
+        -not [string]::IsNullOrWhiteSpace($process.CommandLine) -and
+        (
+          $process.CommandLine -like $cursorVerifierPattern -or
+          $process.CommandLine -like $quotedCursorVerifierPattern
+        )
+      ) {
+        $owned[[int]$process.ProcessId] = $process
+      }
+    }
+  }
+  return @($owned.Values)
+}
+
 function Disable-TaskIfPresent {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
     [string]$Module
   )
 
+  $ownedBeforeStop = @()
+  if (-not [string]::IsNullOrWhiteSpace($Module)) {
+    $ownedBeforeStop = @(Get-L2OwnedProcesses -Module $Module)
+  }
   $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+  $taskWasRunning = $false
   if ($null -eq $task) {
     Write-Host "${Name}: not present"
-    return
+  } else {
+    $taskWasRunning = $task.State -eq "Running"
+    # Disable first so a trigger cannot create a new process between the
+    # quiescence scan and force replacement.
+    Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+    Write-Host "${Name}: disabled before L2 registration"
   }
-  if ($task.State -eq "Running") {
+  if ($taskWasRunning) {
     Stop-ScheduledTask -TaskName $Name -ErrorAction Stop
     $stopDeadline = (Get-Date).AddSeconds(30)
     do {
@@ -100,42 +171,64 @@ function Disable-TaskIfPresent {
     Write-Host "${Name}: stopped before release registration"
   }
   if (-not [string]::IsNullOrWhiteSpace($Module)) {
-    # WindowsApps pythonw is a launcher shim. Task Scheduler can report Ready
-    # after stopping the shim while the real interpreter remains orphaned and
-    # keeps mutable SQLite/lock files open. Match only the approved L2 launcher
-    # plus the exact module, terminate those descendants, and verify quiescence.
-    $workerPattern = "*l2_schedule_entrypoint.py* ${Module} --release-commit *"
-    $workers = @(
-      Get-CimInstance Win32_Process -ErrorAction Stop |
-        Where-Object { $_.CommandLine -like $workerPattern }
-    )
-    foreach ($worker in $workers) {
-      # The scheduled shim and its interpreter can finish between CIM
-      # enumeration and Stop-Process.  Treat that specific disappearance as
-      # quiesced; the mandatory re-scan below still fails closed when any
-      # matching process survives (including access-denied failures).
-      Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue
+    # Merge descendants captured before Stop-ScheduledTask with a fresh scan.
+    # The identity includes CreationDate so a rapidly reused PID is never
+    # mistaken for the worker that registration observed.
+    $workersByIdentity = @{}
+    $ownedAfterStop = @()
+    if ($taskWasRunning -or $ownedBeforeStop.Count -ne 0) {
+      $ownedAfterStop = @(Get-L2OwnedProcesses -Module $Module)
     }
+    foreach ($worker in @($ownedBeforeStop) + @($ownedAfterStop)) {
+      $identity = "$($worker.ProcessId)|$($worker.CreationDate.ToUniversalTime().Ticks)"
+      $workersByIdentity[$identity] = $worker
+    }
+    $workers = @($workersByIdentity.Values)
     $workerDeadline = (Get-Date).AddSeconds(30)
     do {
-      $remainingWorkers = @(
-        Get-CimInstance Win32_Process -ErrorAction Stop |
-          Where-Object { $_.CommandLine -like $workerPattern }
-      )
+      $remainingByIdentity = @{}
+      foreach ($worker in $workers) {
+        $current = @(
+          Get-CimInstance Win32_Process `
+            -Filter "ProcessId = $($worker.ProcessId)" `
+            -ErrorAction SilentlyContinue
+        )
+        if (
+          $current.Count -ne 0 -and
+          $current[0].CreationDate -eq $worker.CreationDate
+        ) {
+          $identity = "$($worker.ProcessId)|$($worker.CreationDate.ToUniversalTime().Ticks)"
+          $remainingByIdentity[$identity] = $current[0]
+        }
+      }
+      foreach ($worker in @(Get-L2OwnedProcesses -Module $Module)) {
+        $identity = "$($worker.ProcessId)|$($worker.CreationDate.ToUniversalTime().Ticks)"
+        $remainingByIdentity[$identity] = $worker
+        $workersByIdentity[$identity] = $worker
+      }
+      $workers = @($workersByIdentity.Values)
+      $remainingWorkers = @($remainingByIdentity.Values)
       if ($remainingWorkers.Count -eq 0) {
         break
+      }
+      foreach ($worker in $remainingWorkers) {
+        Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue
       }
       Start-Sleep -Milliseconds 200
     } while ((Get-Date) -lt $workerDeadline)
     if ($remainingWorkers.Count -ne 0) {
-      throw "${Name}: orphaned L2 worker did not stop before release registration"
+      throw (
+        "${Name}: owned L2 subprocess did not stop before release registration; " +
+        "orphaned L2 worker did not stop before release registration"
+      )
     }
     if ($workers.Count -ne 0) {
-      Write-Host "${Name}: stopped $($workers.Count) orphaned L2 worker process(es)"
+      Write-Host "${Name}: stopped $($workers.Count) owned L2 worker process(es)"
     }
   }
-  Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
-  Write-Host "${Name}: disabled before L2 registration"
+  if ($null -eq $task) {
+    return
+  }
 }
 
 function Get-UserOrMachineEnvironmentValue {
