@@ -1,9 +1,86 @@
 {
-  "block_reasons": [
-    "LEDGER_ABSENT"
-  ],
-  "commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
+  "schema_version": 2,
+  "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
+  "generated_at_ms": 1786543972821,
+  "commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generator_sha256": "ed05a3e0000aa3ef05f2807acfac3344d3af4e5381447d5893b1e12c923e8310",
+  "inputs": {
+    "data/cache/experiment_registry.db": {
+      "kind": "file",
+      "exists": false,
+      "size_bytes": null,
+      "sha256": null
+    },
+    "services/research/experiment_registry/store.py": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 111487,
+      "sha256": "155938e695eefe0220126aba357be1cad9c050dabe215061080521504475c9ab"
+    },
+    "services/research/trial_provenance.py": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 18243,
+      "sha256": "7b1d1b8d7f90e310c2dae6cf5ca3e509eb4c638eebe255017e048bca4807dcd6"
+    }
+  },
+  "input_hash": "967d2a1310787a2eecf42dac00ec9d9cff5a70d4889c5beffc9a46384d2b7e71",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "ledger": {
+    "path": "data/cache/experiment_registry.db",
+    "exists": false,
+    "sha256": null,
+    "sqlite_integrity": null,
+    "user_version": null,
+    "row_counts": {
+      "trials": 0,
+      "evaluations": 0,
+      "search_attempt_events": 0,
+      "search_candidates": 0,
+      "search_evaluations": 0,
+      "trial_provenance": 0,
+      "trial_oos_access": 0
+    },
+    "append_only_guards": {
+      "trials": "UNKNOWN",
+      "evaluations": "UNKNOWN",
+      "search_attempt_events": "UNKNOWN",
+      "search_candidates": "UNKNOWN",
+      "search_evaluations": "UNKNOWN",
+      "trial_provenance": "UNKNOWN",
+      "trial_oos_access": "UNKNOWN"
+    }
+  },
+  "provenance": {
+    "table_present": false,
+    "chain_valid": false,
+    "chain_head": null,
+    "attempts_recorded": 0,
+    "configs_with_provenance": 0,
+    "bare_trials": 0,
+    "coverage_ratio": 0.0,
+    "max_oos_peek_count": null,
+    "actor_type_counts": {},
+    "status_counts": {},
+    "reason": "LEDGER_ABSENT"
+  },
+  "oos_access": {
+    "table_present": false,
+    "chain_valid": false,
+    "chain_head": null,
+    "accesses_recorded": 0,
+    "trials_with_access": 0,
+    "reason": "LEDGER_ABSENT"
+  },
   "family_multiple_testing": {
     "available": true,
     "exported": [
@@ -13,134 +90,46 @@
       "family_adjusted_trial_count",
       "marginal_ir"
     ],
-    "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
-    "wired_into_promotion_gate": true
-  },
-  "generated_at_ms": 1786524437646,
-  "generator_sha256": "ed05a3e0000aa3ef05f2807acfac3344d3af4e5381447d5893b1e12c923e8310",
-  "input_hash": "291210fc21d7ec43496cc384c8fa1c78296730c3d4e2ea8634a3ff12f1d5ee45",
-  "inputs": {
-    "data/cache/experiment_registry.db": {
-      "exists": false,
-      "kind": "file",
-      "sha256": null,
-      "size_bytes": null
-    },
-    "services/research/experiment_registry/store.py": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "a9f932c027bb4409cf8b8faa862848f7f362c20c7c4b92500dc8278e6f1367e5",
-      "size_bytes": 109883
-    },
-    "services/research/trial_provenance.py": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "7b1d1b8d7f90e310c2dae6cf5ca3e509eb4c638eebe255017e048bca4807dcd6",
-      "size_bytes": 18243
-    }
-  },
-  "ledger": {
-    "append_only_guards": {
-      "evaluations": "UNKNOWN",
-      "search_attempt_events": "UNKNOWN",
-      "search_candidates": "UNKNOWN",
-      "search_evaluations": "UNKNOWN",
-      "trial_oos_access": "UNKNOWN",
-      "trial_provenance": "UNKNOWN",
-      "trials": "UNKNOWN"
-    },
-    "exists": false,
-    "path": "data/cache/experiment_registry.db",
-    "row_counts": {
-      "evaluations": 0,
-      "search_attempt_events": 0,
-      "search_candidates": 0,
-      "search_evaluations": 0,
-      "trial_oos_access": 0,
-      "trial_provenance": 0,
-      "trials": 0
-    },
-    "sha256": null,
-    "sqlite_integrity": null,
-    "user_version": null
-  },
-  "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
-  "oos_access": {
-    "accesses_recorded": 0,
-    "chain_head": null,
-    "chain_valid": false,
-    "reason": "LEDGER_ABSENT",
-    "table_present": false,
-    "trials_with_access": 0
-  },
-  "open_gaps": [
-    {
-      "detail": "The authority ledger is absent in this checkout. Integrity, append-only guards, provenance, and OOS access cannot be verified.",
-      "id": "TRIAL_LEDGER_ABSENT",
-      "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
-      "state": "BLOCKED"
-    }
-  ],
-  "provenance": {
-    "actor_type_counts": {},
-    "attempts_recorded": 0,
-    "bare_trials": 0,
-    "chain_head": null,
-    "chain_valid": false,
-    "configs_with_provenance": 0,
-    "coverage_ratio": 0.0,
-    "max_oos_peek_count": null,
-    "reason": "LEDGER_ABSENT",
-    "status_counts": {},
-    "table_present": false
+    "wired_into_promotion_gate": true,
+    "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY"
   },
   "provenance_wiring": {
     "available": true,
+    "registry_record_api": true,
     "entries": {
-      "alpha_family_discovery": {
-        "code_hash_pin": false,
-        "definition_binding": true,
-        "hypothesis_binding": false,
-        "wired": true
-      },
-      "crypto_robust_optimization": {
-        "code_hash_pin": false,
-        "definition_binding": true,
-        "hypothesis_binding": false,
-        "wired": true
-      },
       "run_alpha_factory": {
-        "code_hash_pin": true,
+        "wired": true,
         "hypothesis_binding": true,
-        "wired": true
+        "code_hash_pin": true
       },
       "run_registered_candidate_batch": {
-        "code_hash_pin": true,
+        "wired": true,
         "hypothesis_binding": true,
-        "wired": true
+        "code_hash_pin": true
       },
       "run_research_session": {
+        "wired": true,
+        "hypothesis_binding": false,
         "code_hash_pin": false,
         "definition_binding": true,
+        "oos_access_binding": true
+      },
+      "alpha_family_discovery": {
+        "wired": true,
         "hypothesis_binding": false,
-        "oos_access_binding": true,
-        "wired": true
+        "code_hash_pin": false,
+        "definition_binding": true
+      },
+      "crypto_robust_optimization": {
+        "wired": true,
+        "hypothesis_binding": false,
+        "code_hash_pin": false,
+        "definition_binding": true
       }
     },
-    "registry_record_api": true,
-    "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
-    "wired_entry_count": 5
+    "wired_entry_count": 5,
+    "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE"
   },
-  "readiness": "L2_DRY_RUN_ONLY",
-  "safety_flags": {
-    "ALLOW_AI_DIRECT_TRADING": false,
-    "ALLOW_ORDER_SUBMISSION": false,
-    "LIVE_TRADING_ENABLED": false,
-    "REAL_BROKER_ENABLED": false,
-    "REQUIRE_HUMAN_APPROVAL": true
-  },
-  "safety_verdict": "PASS",
-  "schema_version": 2,
   "trial_record_fields_required": [
     "trial_id",
     "parent_trial_id",
@@ -173,5 +162,16 @@
     "prev_hash",
     "entry_hash"
   ],
-  "verdict": "BLOCKED"
+  "verdict": "BLOCKED",
+  "open_gaps": [
+    {
+      "id": "TRIAL_LEDGER_ABSENT",
+      "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
+      "state": "BLOCKED",
+      "detail": "The authority ledger is absent in this checkout. Integrity, append-only guards, provenance, and OOS access cannot be verified."
+    }
+  ],
+  "block_reasons": [
+    "LEDGER_ABSENT"
+  ]
 }

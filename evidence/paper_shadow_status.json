@@ -1,99 +1,99 @@
 {
+  "schema_version": 1,
   "artifact": "QUANTOS_727_PAPER_SHADOW_STATUS",
+  "generated_at_ms": 1786543972821,
+  "commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "status": "READY_FOR_SHADOW",
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786524437646,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
-  "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "52f2b83be278862446eed24359c83c9e4a1df83d872f5335f4bf8cff35876cf3",
-  "inputs": {
-    "data/cache/paper_health_10k.json": {
-      "exists": false,
-      "kind": "file",
-      "sha256": null,
-      "size_bytes": null
-    },
-    "docs/QUANTOS_727.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
-      "size_bytes": 43031
-    },
-    "docs/engineering/specs/2026-07-27-shadow-phase7-design.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "f9ac960a7a11a56863778a23f6724d6dd72e948752281e2f9402e5114ffd1750",
-      "size_bytes": 22476
-    },
-    "evidence/alpha_paper_cycle.json": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c",
-      "size_bytes": 7855
-    },
-    "evidence/shadow_status.json": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "6bdbeb50c8bfa13846c8973c5543297306a4b740b3458b0f3086222a4ec18f5c",
-      "size_bytes": 1216
-    },
-    "tests/live": {
-      "exists": true,
-      "file_count": 68,
-      "files_sha256": "d3b79c30d386f74e941dc571e5c74134b41614a4ea55992074305849df8b13ec",
-      "kind": "python_directory"
-    },
-    "tests/research": {
-      "exists": true,
-      "file_count": 164,
-      "files_sha256": "7e7bebef5892c02355f541c644e068f9d2f284314df613ef22367ad3bdab44f8",
-      "kind": "python_directory"
-    }
-  },
-  "paper": {
-    "blockers": [
-      "PAPER_EVIDENCE_MALFORMED"
-    ],
-    "forward_evidence": {},
-    "paper_mark_ready": null,
-    "paper_preview_ready": null,
-    "paper_ready": false,
-    "status": "NOT_READY"
-  },
-  "readiness": "L2_DRY_RUN_ONLY",
   "safety_flags": {
-    "ALLOW_AI_DIRECT_TRADING": false,
-    "ALLOW_ORDER_SUBMISSION": false,
     "LIVE_TRADING_ENABLED": false,
     "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
     "REQUIRE_HUMAN_APPROVAL": true
   },
   "safety_verdict": "PASS",
-  "schema_version": 1,
-  "shadow": {
-    "chain_valid": true,
-    "observation_count": 14,
-    "outbox_chain_valid": true,
-    "safety": {
-      "credentials_accessed": false,
-      "order_path_touched": false,
-      "public_market_data_only": true
-    },
-    "shadow_ready": true,
-    "status": "READY_FOR_SHADOW"
-  },
-  "status": "READY_FOR_SHADOW",
   "validation": {
-    "current": true,
-    "head_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
+    "current": false,
+    "selection_scope": "ALL",
     "overall_status": "PASS",
     "reported_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
-    "selection_scope": "ALL",
-    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
+    "head_commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
+    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
   },
-  "working_tree_dirty": false
+  "working_tree_dirty": false,
+  "inputs": {
+    "data/cache/paper_health_10k.json": {
+      "kind": "file",
+      "exists": false,
+      "size_bytes": null,
+      "sha256": null
+    },
+    "docs/QUANTOS_727.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 43031,
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706"
+    },
+    "docs/engineering/specs/2026-07-27-shadow-phase7-design.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 22476,
+      "sha256": "f9ac960a7a11a56863778a23f6724d6dd72e948752281e2f9402e5114ffd1750"
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 7855,
+      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c"
+    },
+    "evidence/shadow_status.json": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 1216,
+      "sha256": "6bdbeb50c8bfa13846c8973c5543297306a4b740b3458b0f3086222a4ec18f5c"
+    },
+    "tests/live": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 68,
+      "files_sha256": "d3b79c30d386f74e941dc571e5c74134b41614a4ea55992074305849df8b13ec"
+    },
+    "tests/research": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 164,
+      "files_sha256": "7e7bebef5892c02355f541c644e068f9d2f284314df613ef22367ad3bdab44f8"
+    }
+  },
+  "input_hash": "52f2b83be278862446eed24359c83c9e4a1df83d872f5335f4bf8cff35876cf3",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
+  "paper": {
+    "status": "NOT_READY",
+    "paper_ready": false,
+    "paper_mark_ready": null,
+    "paper_preview_ready": null,
+    "forward_evidence": {},
+    "blockers": [
+      "PAPER_EVIDENCE_MALFORMED"
+    ]
+  },
+  "shadow": {
+    "status": "READY_FOR_SHADOW",
+    "shadow_ready": true,
+    "observation_count": 14,
+    "chain_valid": true,
+    "outbox_chain_valid": true,
+    "safety": {
+      "public_market_data_only": true,
+      "credentials_accessed": false,
+      "order_path_touched": false
+    }
+  },
+  "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay."
 }

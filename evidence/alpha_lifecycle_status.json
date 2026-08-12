@@ -1,109 +1,111 @@
 {
-  "acceptance": {
-    "external_approval": false,
-    "live_authority": false,
-    "research_lifecycle": true
-  },
+  "schema_version": 1,
   "artifact": "QUANTOS_727_ALPHA_LIFECYCLE_STATUS",
-  "blockers": [],
+  "generated_at_ms": 1786543972821,
+  "commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "status": "NOT_READY",
+  "blockers": [
+    "FULL_VALIDATION_NOT_CURRENT_PASS"
+  ],
+  "safety_flags": {
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "validation": {
+    "current": false,
+    "selection_scope": "ALL",
+    "overall_status": "PASS",
+    "reported_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
+    "head_commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
+    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
+  },
+  "working_tree_dirty": false,
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 43031,
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706"
+    },
+    "docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 18708,
+      "sha256": "797534d21b5db2736346363ccf72e75d2488af503eaa012321e2b6ea8c23a4bd"
+    },
+    "evidence/alpha_lifecycle_cockpit.json": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 76958,
+      "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 7855,
+      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c"
+    },
+    "services/alpha": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 39,
+      "files_sha256": "330ee15d61a95d362d5d257c978060be22471a4c9b1bc4c925e40d6cdd93f049"
+    },
+    "services/alpha_factory": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "2012e8cda6cc11d3371127c69a77491b9d3f5a6c443e9272120e3553fbb4910e"
+    },
+    "tests/alpha": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 41,
+      "files_sha256": "4f2de689f61e2442633c1fbfdb2c1db9c68984b6d4d1f9a70642c8feb33c7907"
+    },
+    "tests/alpha_factory": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "563cbfd64c28f5e0f2ba98251c3655b4c616b15ad9d68ad070706318f44dd6a0"
+    },
+    "tests/lifecycle": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 4,
+      "files_sha256": "71553fd73bb6b92435341a948d8b5b9f5a06ce7f3db383193b24a248768cf555"
+    }
+  },
+  "input_hash": "525e7733514f2e7a271be9fa3b036a688a7e5da70190b0555ca3c9a76eeb3732",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "cockpit": {
+    "path": "evidence/alpha_lifecycle_cockpit.json",
+    "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63",
     "alpha_count": 20,
     "derived_stage_counts": {
       "DRY_RUN": 2,
       "LIVE_TRACK": 1,
       "PAPER_TRACKED": 17
-    },
-    "path": "evidence/alpha_lifecycle_cockpit.json",
-    "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
+    }
   },
-  "commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786524437646,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
-  "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
-    "degradation_pause_retirement": true,
+    "research_state_machine": true,
     "deployment_state_machine": true,
     "health_state_machine": true,
     "promotion_and_grant": true,
-    "research_state_machine": true
+    "degradation_pause_retirement": true
   },
-  "input_hash": "44427f1a2680f67ade2a950b3e7147dea48eb5fa86da89eb141df920d296100e",
-  "inputs": {
-    "docs/QUANTOS_727.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
-      "size_bytes": 43031
-    },
-    "docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "797534d21b5db2736346363ccf72e75d2488af503eaa012321e2b6ea8c23a4bd",
-      "size_bytes": 18708
-    },
-    "evidence/alpha_lifecycle_cockpit.json": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63",
-      "size_bytes": 76958
-    },
-    "evidence/alpha_paper_cycle.json": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c",
-      "size_bytes": 7855
-    },
-    "services/alpha": {
-      "exists": true,
-      "file_count": 39,
-      "files_sha256": "17fb1ac1893a32524f50a7cca50cfc4505b464a0f4f3b3843af44ef49de6d7d2",
-      "kind": "python_directory"
-    },
-    "services/alpha_factory": {
-      "exists": true,
-      "file_count": 11,
-      "files_sha256": "2012e8cda6cc11d3371127c69a77491b9d3f5a6c443e9272120e3553fbb4910e",
-      "kind": "python_directory"
-    },
-    "tests/alpha": {
-      "exists": true,
-      "file_count": 41,
-      "files_sha256": "4f2de689f61e2442633c1fbfdb2c1db9c68984b6d4d1f9a70642c8feb33c7907",
-      "kind": "python_directory"
-    },
-    "tests/alpha_factory": {
-      "exists": true,
-      "file_count": 11,
-      "files_sha256": "563cbfd64c28f5e0f2ba98251c3655b4c616b15ad9d68ad070706318f44dd6a0",
-      "kind": "python_directory"
-    },
-    "tests/lifecycle": {
-      "exists": true,
-      "file_count": 4,
-      "files_sha256": "71553fd73bb6b92435341a948d8b5b9f5a06ce7f3db383193b24a248768cf555",
-      "kind": "python_directory"
-    }
+  "acceptance": {
+    "research_lifecycle": false,
+    "external_approval": false,
+    "live_authority": false
   },
-  "readiness": "L2_DRY_RUN_ONLY",
-  "safety_flags": {
-    "ALLOW_AI_DIRECT_TRADING": false,
-    "ALLOW_ORDER_SUBMISSION": false,
-    "LIVE_TRADING_ENABLED": false,
-    "REAL_BROKER_ENABLED": false,
-    "REQUIRE_HUMAN_APPROVAL": true
-  },
-  "safety_verdict": "PASS",
-  "schema_version": 1,
-  "status": "READY_FOR_RESEARCH_AUTONOMY",
-  "validation": {
-    "current": true,
-    "head_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-    "overall_status": "PASS",
-    "reported_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
-    "selection_scope": "ALL",
-    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
-  },
-  "working_tree_dirty": false
+  "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible."
 }

@@ -1,67 +1,69 @@
 {
-  "acceptance": {
-    "live_authority": false,
-    "research_autonomy": true
-  },
+  "schema_version": 1,
   "artifact": "QUANTOS_727_AUTONOMY_READINESS",
-  "blockers": [],
-  "commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786524437646,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
-  "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders.",
-  "implementation": {
-    "autonomy_kernel": true,
-    "leader_lease_and_recovery": true,
-    "production_order_authority": false,
-    "workflow_event_policy_idempotency_scheduler": true
-  },
-  "input_hash": "4696dd97c7997a780a3c7371c994732dbce00c0c4241af20bc9c11cd7716c4f8",
-  "inputs": {
-    "docs/QUANTOS_727.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
-      "size_bytes": 43031
-    },
-    "docs/engineering/specs/2026-07-27-autonomy-kernel-design.md": {
-      "exists": true,
-      "kind": "file",
-      "sha256": "9c9279a054c6274f4ede70e2a48eb82d7eef1f337d99fa4da38648e085796745",
-      "size_bytes": 21552
-    },
-    "services/orchestration": {
-      "exists": true,
-      "file_count": 13,
-      "files_sha256": "18c6f6bf54244df52cab32db227d6b6328d15273b593be5a59a0d479fdea2b4b",
-      "kind": "python_directory"
-    },
-    "tests/orchestration": {
-      "exists": true,
-      "file_count": 11,
-      "files_sha256": "05c9a1c0cccf09fa6718daac0ac644c5b14091975fb45ef29cea88b71aad8648",
-      "kind": "python_directory"
-    }
-  },
+  "generated_at_ms": 1786543972821,
+  "commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
   "readiness": "L2_DRY_RUN_ONLY",
+  "status": "NOT_READY",
+  "blockers": [
+    "FULL_VALIDATION_NOT_CURRENT_PASS"
+  ],
   "safety_flags": {
-    "ALLOW_AI_DIRECT_TRADING": false,
-    "ALLOW_ORDER_SUBMISSION": false,
     "LIVE_TRADING_ENABLED": false,
     "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
     "REQUIRE_HUMAN_APPROVAL": true
   },
   "safety_verdict": "PASS",
-  "schema_version": 1,
-  "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
-    "current": true,
-    "head_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
+    "current": false,
+    "selection_scope": "ALL",
     "overall_status": "PASS",
     "reported_commit": "d2b34a23c4f30f52c1bc5f37a43a9af20cecc890",
-    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
-    "selection_scope": "ALL",
-    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
+    "head_commit": "0e4a6afe06d8dac0baf2237af6359317e97fb4ca",
+    "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
+    "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
   },
-  "working_tree_dirty": false
+  "working_tree_dirty": false,
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 43031,
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706"
+    },
+    "docs/engineering/specs/2026-07-27-autonomy-kernel-design.md": {
+      "kind": "file",
+      "exists": true,
+      "size_bytes": 21552,
+      "sha256": "9c9279a054c6274f4ede70e2a48eb82d7eef1f337d99fa4da38648e085796745"
+    },
+    "services/orchestration": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 13,
+      "files_sha256": "18c6f6bf54244df52cab32db227d6b6328d15273b593be5a59a0d479fdea2b4b"
+    },
+    "tests/orchestration": {
+      "kind": "python_directory",
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "05c9a1c0cccf09fa6718daac0ac644c5b14091975fb45ef29cea88b71aad8648"
+    }
+  },
+  "input_hash": "4696dd97c7997a780a3c7371c994732dbce00c0c4241af20bc9c11cd7716c4f8",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
+  "implementation": {
+    "autonomy_kernel": true,
+    "workflow_event_policy_idempotency_scheduler": true,
+    "leader_lease_and_recovery": true,
+    "production_order_authority": false
+  },
+  "acceptance": {
+    "research_autonomy": false,
+    "live_authority": false
+  },
+  "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders."
 }
