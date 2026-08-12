@@ -168,6 +168,49 @@ def test_contract_backfill_requires_frozen_empty_head_then_exact_window(tmp_path
     assert json.loads((tmp_path / "status.json").read_text(encoding="utf-8")) == result
 
 
+def test_contract_backfill_accepts_the_same_frozen_universe_in_contract_order(
+    tmp_path,
+):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [{
+                "dataset": "prior",
+                "instrument_id": "SYSTEM",
+                "event_time_ms": 1,
+                "knowledge_time_ms": 1,
+                "value": 1,
+            }]
+        )
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    contract = _confirmation_contract(DAY, OBSERVED)
+    contract["universe"] = list(reversed(contract["universe"]))
+    contract["frozen_unseen_window_evidence"]["authority_head_seq"] = head["seq"]
+    contract["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head["row_hash"]
+
+    def refresh(instruments, days, **kwargs):
+        assert tuple(instruments) == tuple(contract["universe"])
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_contract_backfill(
+        contract=contract,
+        observed_at_ms=OBSERVED + 1,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        refresh=refresh,
+    )
+
+    assert result["status"] == "PASS"
+
+
 def test_contract_backfill_rejects_pre_freeze_observations(tmp_path):
     store_path = str(tmp_path / "depth.db")
     store = BinanceSystemicStore(store_path, create=True)

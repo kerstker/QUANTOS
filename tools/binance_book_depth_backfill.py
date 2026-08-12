@@ -255,7 +255,7 @@ def run_contract_backfill(
     ):
         raise BookDepthBackfillError("confirmation window is invalid")
     selected = tuple(str(value).upper().strip() for value in contract["universe"])  # type: ignore[index]
-    if selected != UNIVERSE:
+    if len(selected) != len(set(selected)) or set(selected) != set(UNIVERSE):
         raise BookDepthBackfillError("confirmation universe is not the fixed 14")
     frozen_at_ms = int(unseen["observed_at_ms"])
     if int(observed_at_ms) <= frozen_at_ms:
