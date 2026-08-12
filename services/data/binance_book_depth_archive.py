@@ -163,7 +163,7 @@ def parse_book_depth_archive(
         or isinstance(max_inverted_snapshot_ratio, bool)
         or not isinstance(max_inverted_snapshot_ratio, (int, float))
         or not math.isfinite(float(max_inverted_snapshot_ratio))
-        or not 0 <= float(max_inverted_snapshot_ratio) <= 0.001
+        or not 0 <= float(max_inverted_snapshot_ratio) <= 0.002
     ):
         raise BinanceBookDepthArchiveError("snapshot quality policy is invalid")
     try:

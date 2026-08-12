@@ -43,7 +43,10 @@ MINIMUM_HOURLY_COVERAGE_RATIO = 0.80
 MINIMUM_HOURLY_SNAPSHOTS = int(
     EXPECTED_HOURLY_SNAPSHOTS * MINIMUM_HOURLY_COVERAGE_RATIO
 )
-MAX_INVERTED_SNAPSHOT_RATIO = 0.001
+# The hourly curve uses a p10 robust statistic.  Quarantined structural
+# inversions are capped at 2% of that tail mass (0.2% of all snapshots), so at
+# least 99.8% of the archive must remain structurally valid.
+MAX_INVERTED_SNAPSHOT_RATIO = 0.002
 
 
 class BinanceBookDepthFetchError(RuntimeError):

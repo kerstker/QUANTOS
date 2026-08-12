@@ -173,6 +173,32 @@ def test_parse_archive_rejects_inversion_above_quarantine_bound() -> None:
         )
 
 
+def test_parse_archive_accepts_at_most_two_percent_of_p10_tail_mass() -> None:
+    observations = parse_book_depth_archive(
+        _archive_many(inverted_indices={500, 501}),
+        instrument_id="BTCUSDT",
+        expected_day_ms=DAY_MS,
+        observed_at_ms=OBSERVED_MS,
+        archive_sha256="6" * 64,
+        minimum_snapshot_count=1_000,
+        max_inverted_snapshot_ratio=0.002,
+    )
+
+    assert sum(item["snapshot_count"] for item in observations) == 998
+    assert observations[0]["archive_quarantined_snapshot_count"] == 2
+
+    with pytest.raises(BinanceBookDepthArchiveError, match="quality policy"):
+        parse_book_depth_archive(
+            _archive_many(inverted_indices=set()),
+            instrument_id="BTCUSDT",
+            expected_day_ms=DAY_MS,
+            observed_at_ms=OBSERVED_MS,
+            archive_sha256="7" * 64,
+            minimum_snapshot_count=1_000,
+            max_inverted_snapshot_ratio=0.0021,
+        )
+
+
 def test_parse_mark_archive_and_align_every_depth_hour() -> None:
     observations = parse_book_depth_archive(
         _archive(),
