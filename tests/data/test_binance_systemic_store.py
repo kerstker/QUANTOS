@@ -143,3 +143,29 @@ def test_store_append_many_is_atomic_and_idempotent(tmp_path):
         assert store.chain_valid() is True
     finally:
         store.close()
+
+
+def test_store_reads_bounded_range_in_panel_order(tmp_path):
+    store = BinanceSystemicStore(str(tmp_path / "systemic.db"), create=True)
+    try:
+        rows = (
+            _observation(event_time_ms=1500, value="MEDIUM"),
+            {**_observation(event_time_ms=1000, value="ETH"), "instrument_id": "ETHUSDT"},
+            _observation(event_time_ms=1000, value="LOW"),
+        )
+        assert store.append_many(rows) == 3
+
+        selected = store.range_observations(
+            "adl_risk",
+            start_event_time_ms=900,
+            end_event_time_ms=1501,
+            instruments=("ethusdt", "btcusdt"),
+        )
+
+        assert [(row["event_time_ms"], row["instrument_id"]) for row in selected] == [
+            (1000, "BTCUSDT"),
+            (1000, "ETHUSDT"),
+            (1500, "BTCUSDT"),
+        ]
+    finally:
+        store.close()

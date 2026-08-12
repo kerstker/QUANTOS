@@ -265,6 +265,54 @@ class BinanceSystemicStore:
         value = row[0] if row is not None else None
         return None if value is None else int(value)
 
+    def range_observations(
+        self,
+        dataset: str,
+        *,
+        start_event_time_ms: int,
+        end_event_time_ms: int,
+        instruments: Iterable[str] | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        """Read one bounded event-time range in deterministic panel order."""
+        if (
+            isinstance(start_event_time_ms, bool)
+            or not isinstance(start_event_time_ms, int)
+            or isinstance(end_event_time_ms, bool)
+            or not isinstance(end_event_time_ms, int)
+            or start_event_time_ms < 0
+            or end_event_time_ms <= start_event_time_ms
+        ):
+            raise ValueError("event-time range is invalid")
+        selected = (
+            tuple(sorted({str(value).upper().strip() for value in instruments}))
+            if instruments is not None
+            else ()
+        )
+        if instruments is not None and (not selected or any(not value for value in selected)):
+            raise ValueError("instrument filter is invalid")
+        placeholders = ",".join("?" for _ in selected)
+        instrument_clause = (
+            f" AND instrument_id IN ({placeholders})" if selected else ""
+        )
+        try:
+            rows = self._conn.execute(
+                "SELECT * FROM binance_systemic_observations "
+                "WHERE dataset=? AND event_time_ms>=? AND event_time_ms<?"
+                + instrument_clause
+                + " ORDER BY event_time_ms, instrument_id, seq",
+                (
+                    str(dataset),
+                    start_event_time_ms,
+                    end_event_time_ms,
+                    *selected,
+                ),
+            ).fetchall()
+            return tuple(self._decode(row) for row in rows)
+        except sqlite3.DatabaseError as exc:
+            raise BinanceSystemicStoreError(
+                "systemic range query failed"
+            ) from exc
+
     def row_count(self, dataset: str | None = None) -> int:
         if dataset is None:
             row = self._conn.execute(
