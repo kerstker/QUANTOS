@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "study_id": "binance_usdm_book_depth_curve_exploration_v1",
+  "status": "FROZEN_BEFORE_EXPLORATION",
+  "source_evidence": "evidence/binance_book_depth_alpha_research.json",
+  "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+  "candidate_ids": [
+    "depth_imbalance_0p2_continuation_4h_v1",
+    "depth_imbalance_1p0_continuation_4h_v1",
+    "depth_imbalance_5p0_continuation_4h_v1",
+    "depth_near_minus_far_continuation_4h_v1",
+    "depth_near_concentration_skew_4h_v1",
+    "depth_curve_mean_imbalance_4h_v1"
+  ],
+  "directions": [1, -1],
+  "horizon_hours": [4, 8, 12, 24, 48],
+  "long_count": 3,
+  "short_count": 3,
+  "one_way_cost_bps_per_unit_turnover": 6.0,
+  "cost_stress_multiplier": 2.0,
+  "minimum_decisions": 40,
+  "trial_count": 60,
+  "selection_policy": {
+    "net_sharpe_minimum": 1.0,
+    "double_cost_net_sharpe_minimum": 0.0,
+    "rank_ic_absolute_t_stat_minimum": 2.0,
+    "positive_chronological_thirds_minimum": 2,
+    "maximum_single_instrument_gross_pnl_fraction": 0.35
+  },
+  "confirmation_policy": {
+    "required": true,
+    "history_relation": "STRICTLY_EARLIER_NON_OVERLAPPING_90D",
+    "selection_may_use_confirmation_data": false,
+    "formal_admission_from_exploration": false,
+    "testnet_authorized": false
+  }
+}
