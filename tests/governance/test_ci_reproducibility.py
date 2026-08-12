@@ -3,8 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
+
+import scripts.generate_ci_dependency_lock as lock_generator
+from scripts.generate_ci_dependency_lock import PYPI_INDEX, TARGETS
 
 from scripts.ci_reproducibility import (
     CiReproducibilityError,
@@ -173,6 +177,89 @@ def test_repository_ci_contract_uses_hash_lock_and_both_coverage_gates() -> None
             "branches": 63.0,
         },
     }
+
+
+def test_dependency_lock_targets_keep_amd64_and_arm64_separate() -> None:
+    assert PYPI_INDEX == "https://pypi.org/simple"
+    assert TARGETS == {
+        "linux-amd64": {
+            "platform_tag": "ubuntu_24_04_x86_64",
+            "pip_platforms": (
+                "manylinux_2_28_x86_64",
+                "manylinux_2_17_x86_64",
+                "manylinux2014_x86_64",
+            ),
+            "output": "requirements-ci.lock",
+        },
+        "linux-arm64": {
+            "platform_tag": "ubuntu_24_04_aarch64",
+            "pip_platforms": (
+                "manylinux_2_28_aarch64",
+                "manylinux_2_17_aarch64",
+                "manylinux2014_aarch64",
+            ),
+            "output": "requirements-ci-linux-aarch64.lock",
+        },
+    }
+
+
+@pytest.mark.parametrize("target_name", ("linux-amd64", "linux-arm64"))
+def test_dependency_lock_resolver_uses_ordered_target_platforms(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target_name: str,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(command, *, cwd, check):
+        observed.update(command=command, cwd=cwd, check=check)
+        report_path = Path(command[command.index("--report") + 1])
+        report_path.write_text(json.dumps(_report()), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(lock_generator.subprocess, "run", fake_run)
+    target = TARGETS[target_name]
+
+    report = lock_generator._generate_report(pip_platforms=target["pip_platforms"])
+
+    assert report == _report()
+    command = observed["command"]
+    platforms = [
+        command[index + 1]
+        for index, argument in enumerate(command)
+        if argument == "--platform"
+    ]
+    assert platforms == list(target["pip_platforms"])
+    assert command[command.index("--index-url") + 1] == PYPI_INDEX
+    assert observed["cwd"] == lock_generator.REPO
+    assert observed["check"] is False
+
+
+def test_arm64_default_output_does_not_overwrite_amd64_lock(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    amd64 = tmp_path / "requirements-ci.lock"
+    arm64 = tmp_path / "requirements-ci-linux-aarch64.lock"
+    amd64.write_text("amd64 sentinel\n", encoding="utf-8")
+    monkeypatch.setattr(lock_generator, "REPO", tmp_path)
+    monkeypatch.setattr(
+        lock_generator,
+        "_source_hashes",
+        lambda: {"requirements.txt": "a" * 64},
+    )
+    monkeypatch.setattr(lock_generator, "_generate_report", lambda **_kwargs: _report())
+
+    result = lock_generator.main(["--target", "linux-arm64"])
+
+    assert result == 0
+    assert amd64.read_text(encoding="utf-8") == "amd64 sentinel\n"
+    verify_lock_document(
+        arm64.read_text(encoding="utf-8"),
+        expected_source_hashes={"requirements.txt": "a" * 64},
+        required_python_version="3.12",
+        required_platform_tag="ubuntu_24_04_aarch64",
+    )
 
 
 def test_all_validation_jobs_checkout_the_reviewed_head_with_full_history() -> None:

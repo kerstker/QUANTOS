@@ -24,9 +24,28 @@ from scripts.ci_reproducibility import (  # noqa: E402
 
 
 PYTHON_TARGET = "3.12"
-PLATFORM_TARGET = "ubuntu_24_04_x86_64"
+PYPI_INDEX = "https://pypi.org/simple"
+TARGETS = {
+    "linux-amd64": {
+        "platform_tag": "ubuntu_24_04_x86_64",
+        "pip_platforms": (
+            "manylinux_2_28_x86_64",
+            "manylinux_2_17_x86_64",
+            "manylinux2014_x86_64",
+        ),
+        "output": "requirements-ci.lock",
+    },
+    "linux-arm64": {
+        "platform_tag": "ubuntu_24_04_aarch64",
+        "pip_platforms": (
+            "manylinux_2_28_aarch64",
+            "manylinux_2_17_aarch64",
+            "manylinux2014_aarch64",
+        ),
+        "output": "requirements-ci-linux-aarch64.lock",
+    },
+}
 SOURCE_FILES = ("requirements.txt", "requirements-dev.txt")
-DEFAULT_OUTPUT = REPO / "requirements-ci.lock"
 
 
 def _source_hashes() -> dict[str, str]:
@@ -36,7 +55,7 @@ def _source_hashes() -> dict[str, str]:
     }
 
 
-def _generate_report() -> dict[str, object]:
+def _generate_report(*, pip_platforms: tuple[str, ...]) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="quantos-ci-lock-") as temp_dir:
         report_path = Path(temp_dir) / "pip-report.json"
         command = [
@@ -47,6 +66,8 @@ def _generate_report() -> dict[str, object]:
             "--dry-run",
             "--ignore-installed",
             "--disable-pip-version-check",
+            "--index-url",
+            PYPI_INDEX,
             "--only-binary=:all:",
             "--python-version",
             PYTHON_TARGET,
@@ -54,17 +75,18 @@ def _generate_report() -> dict[str, object]:
             "cp",
             "--abi",
             "cp312",
-            "--platform",
-            "manylinux_2_28_x86_64",
-            "--platform",
-            "manylinux_2_17_x86_64",
-            "--platform",
-            "manylinux2014_x86_64",
             "--report",
             os.fspath(report_path),
             "-r",
             os.fspath(REPO / "requirements-dev.txt"),
         ]
+        platform_arguments = [
+            argument
+            for platform in pip_platforms
+            for argument in ("--platform", platform)
+        ]
+        report_position = command.index("--report")
+        command[report_position:report_position] = platform_arguments
         completed = subprocess.run(command, cwd=REPO, check=False)
         if completed.returncode != 0:
             raise CiReproducibilityError(
@@ -79,31 +101,36 @@ def _generate_report() -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--target", choices=tuple(TARGETS), default="linux-amd64")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
+        target = TARGETS[args.target]
+        output = args.output or REPO / str(target["output"])
+        platform_tag = str(target["platform_tag"])
+        pip_platforms = tuple(str(value) for value in target["pip_platforms"])
         source_hashes = _source_hashes()
         if args.check:
             verified = verify_lock_document(
-                args.output.read_text(encoding="utf-8"),
+                output.read_text(encoding="utf-8"),
                 expected_source_hashes=source_hashes,
                 required_python_version=PYTHON_TARGET,
-                required_platform_tag=PLATFORM_TARGET,
+                required_platform_tag=platform_tag,
             )
             print(f"CI dependency lock current: {verified.package_count} packages")
             return 0
         document = build_lock_document(
-            _generate_report(),
+            _generate_report(pip_platforms=pip_platforms),
             source_hashes=source_hashes,
             python_version=PYTHON_TARGET,
-            platform_tag=PLATFORM_TARGET,
+            platform_tag=platform_tag,
         )
-        args.output.write_text(document, encoding="utf-8", newline="\n")
+        output.write_text(document, encoding="utf-8", newline="\n")
         verified = verify_lock_document(
             document,
             expected_source_hashes=source_hashes,
             required_python_version=PYTHON_TARGET,
-            required_platform_tag=PLATFORM_TARGET,
+            required_platform_tag=platform_tag,
         )
         print(f"CI dependency lock generated: {verified.package_count} packages")
         return 0
