@@ -146,6 +146,25 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "later close. Micro/discontinued duplicate contracts are excluded.",
     ),
     DataChannelSpec(
+        "binance_usdm_book_depth_archive", "Binance Data Vision", "binance_usdm",
+        "binance_usdm_book_depth_curve_hourly", "daily", "30s->1h",
+        (
+            "bid_depth_curve_p10", "ask_depth_curve_p10",
+            "bid_notional_curve_p10", "ask_notional_curve_p10",
+            "implicit_mid_price_median", "bounded_quality_quarantine",
+        ),
+        "data/cache/binance_book_depth_archive.db", "REAL_DIAGNOSTIC",
+        ("liquidity_microstructure", "cross_exchange", "event_regime"),
+        72, "public_archive",
+        "Checksum-verified USD-M completed-day bookDepth curves for the 14-symbol "
+        "research universe. Historical exchange events are retrospective and "
+        "become known only at actual fetch time; formal_forward_credit is false. "
+        "At most 0.1% isolated implicit-cross snapshots may be quarantined with "
+        "exact timestamps and a degraded verdict. Independent mark-price alignment "
+        "is currently UNASSESSED, so this channel remains diagnostic and cannot "
+        "grant Alpha, Shadow, Testnet, or order admission.",
+    ),
+    DataChannelSpec(
         "binance_usdm_realtime_complete", "Binance", "binance_usdm",
         "binance_realtime_market", "5m", "1m/5m/snapshot",
         (

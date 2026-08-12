@@ -369,6 +369,11 @@ $defillamaStablecoinForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -Day
 # Third-venue public funding/premium history is immutable and can be merged
 # incrementally.  Refresh daily without wallet/account/order authority.
 $hyperliquidPublicForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:50"
+# Binance Data Vision publishes checksum sidecars for completed UTC-day
+# bookDepth archives.  Capture one immutable, public, keyless day each morning;
+# retrospective rows keep fetch-time knowledge and never receive backdated
+# forward credit.
+$binanceBookDepthForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "10:00"
 # CFTC TFF positions are weekly.  Tuesday morning is deliberately one full
 # week after the report date used by the research knowledge-time policy.
 $cftcTffForwardRefreshTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
@@ -490,6 +495,8 @@ Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" -Module "de
   -Trigger $defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_hyperliquid_public_forward_refresh" -Module "hyperliquid_public_forward_refresh" `
   -Trigger $hyperliquidPublicForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-L2Task -Name "QUANTOS_binance_book_depth_forward_refresh" -Module "binance_book_depth_forward_refresh" `
+  -Trigger $binanceBookDepthForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 Register-L2Task -Name "QUANTOS_cftc_tff_forward_refresh" -Module "cftc_tff_forward_refresh" `
   -Trigger $cftcTffForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `

@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Mapping
+from collections.abc import Iterable
 from typing import Any
 
 
@@ -59,7 +60,7 @@ def _event_content(observation: Mapping[str, Any]) -> dict[str, Any]:
     return {
         str(key): value
         for key, value in observation.items()
-        if key != "knowledge_time_ms"
+        if key not in {"knowledge_time_ms", "forward_eligible_from_ms"}
     }
 
 
@@ -123,67 +124,102 @@ class BinanceSystemicStore:
         return payload
 
     def append(self, observation: Mapping[str, Any]) -> bool:
-        payload = dict(observation)
-        dataset, instrument_id, event_time_ms, knowledge_time_ms = self._identity(
-            payload
-        )
-        payload_json = _canonical(payload)
-        payload_sha256 = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
-            existing = self._conn.execute(
-                "SELECT * FROM binance_systemic_observations "
-                "WHERE dataset=? AND instrument_id=? AND event_time_ms=?",
-                (dataset, instrument_id, event_time_ms),
-            ).fetchone()
-            if existing is not None:
-                if existing["payload_sha256"] == payload_sha256:
-                    self._conn.rollback()
-                    return False
-                existing_payload = self._decode(existing)
-                if _event_content(existing_payload) == _event_content(payload):
-                    # A later fetch of the same immutable exchange event has a
-                    # later receipt time. Preserve the earliest knowledge time
-                    # and treat the replay as idempotent.
-                    self._conn.rollback()
-                    return False
-                raise BinanceSystemicStoreError(
-                    "observation identity reused with different content: "
-                    f"{dataset}/{instrument_id}/{event_time_ms}"
-                )
-            previous = self._conn.execute(
-                "SELECT row_hash FROM binance_systemic_observations "
-                "ORDER BY seq DESC LIMIT 1"
-            ).fetchone()
-            prev_hash = _GENESIS if previous is None else str(previous["row_hash"])
-            row_hash = _sha256(
-                {
-                    "dataset": dataset,
-                    "instrument_id": instrument_id,
-                    "event_time_ms": event_time_ms,
-                    "knowledge_time_ms": knowledge_time_ms,
-                    "payload_sha256": payload_sha256,
-                    "prev_hash": prev_hash,
-                }
+        return self.append_many((observation,)) == 1
+
+    def append_many(self, observations: Iterable[Mapping[str, Any]]) -> int:
+        """Atomically append a deterministic batch of public observations.
+
+        Existing identical events (including a later receipt time for the same
+        immutable event content) are idempotent.  Any malformed or conflicting
+        member rolls the entire batch back, so a cross-sectional public archive
+        can never become partially authoritative.
+        """
+        prepared: list[tuple[dict[str, Any], str, str, int, int, str, str]] = []
+        for observation in observations:
+            payload = dict(observation)
+            dataset, instrument_id, event_time_ms, knowledge_time_ms = self._identity(
+                payload
             )
-            self._conn.execute(
-                "INSERT INTO binance_systemic_observations"
-                "(dataset,instrument_id,event_time_ms,knowledge_time_ms,"
-                "payload_json,payload_sha256,prev_hash,row_hash)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+            payload_json = _canonical(payload)
+            payload_sha256 = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+            prepared.append(
                 (
+                    payload,
                     dataset,
                     instrument_id,
                     event_time_ms,
                     knowledge_time_ms,
                     payload_json,
                     payload_sha256,
-                    prev_hash,
-                    row_hash,
-                ),
+                )
             )
+        inserted = 0
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            previous = self._conn.execute(
+                "SELECT row_hash FROM binance_systemic_observations "
+                "ORDER BY seq DESC LIMIT 1"
+            ).fetchone()
+            prev_hash = _GENESIS if previous is None else str(previous["row_hash"])
+            for (
+                payload,
+                dataset,
+                instrument_id,
+                event_time_ms,
+                knowledge_time_ms,
+                payload_json,
+                payload_sha256,
+            ) in prepared:
+                existing = self._conn.execute(
+                    "SELECT * FROM binance_systemic_observations "
+                    "WHERE dataset=? AND instrument_id=? AND event_time_ms=?",
+                    (dataset, instrument_id, event_time_ms),
+                ).fetchone()
+                if existing is not None:
+                    if existing["payload_sha256"] == payload_sha256:
+                        continue
+                    existing_payload = self._decode(existing)
+                    if _canonical(_event_content(existing_payload)) == _canonical(
+                        _event_content(payload)
+                    ):
+                        # A later fetch of the same immutable exchange event has
+                        # a later receipt time. Preserve the earliest knowledge
+                        # time and treat the replay as idempotent.
+                        continue
+                    raise BinanceSystemicStoreError(
+                        "observation identity reused with different content: "
+                        f"{dataset}/{instrument_id}/{event_time_ms}"
+                    )
+                row_hash = _sha256(
+                    {
+                        "dataset": dataset,
+                        "instrument_id": instrument_id,
+                        "event_time_ms": event_time_ms,
+                        "knowledge_time_ms": knowledge_time_ms,
+                        "payload_sha256": payload_sha256,
+                        "prev_hash": prev_hash,
+                    }
+                )
+                self._conn.execute(
+                    "INSERT INTO binance_systemic_observations"
+                    "(dataset,instrument_id,event_time_ms,knowledge_time_ms,"
+                    "payload_json,payload_sha256,prev_hash,row_hash)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        dataset,
+                        instrument_id,
+                        event_time_ms,
+                        knowledge_time_ms,
+                        payload_json,
+                        payload_sha256,
+                        prev_hash,
+                        row_hash,
+                    ),
+                )
+                prev_hash = row_hash
+                inserted += 1
             self._conn.commit()
-            return True
+            return inserted
         except Exception:
             if self._conn.in_transaction:
                 self._conn.rollback()

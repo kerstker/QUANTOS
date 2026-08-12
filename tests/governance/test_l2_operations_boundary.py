@@ -66,6 +66,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             True,
         ),
         "data/cache/approvals.db": ("approval_authority", False),
+        "data/cache/binance_book_depth_archive.db": (
+            "binance_book_depth_archive_authority",
+            False,
+        ),
         "data/cache/artifact_admission.db": (
             "artifact_admission_authority",
             False,

@@ -246,6 +246,10 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
 
 def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
     expected = {
+        "QUANTOS_binance_book_depth_forward_refresh": (
+            "binance_book_depth_forward_refresh",
+            2 * 86_400_000,
+        ),
         "QUANTOS_defillama_tvl_forward_refresh": (
             "defillama_tvl_forward_refresh",
             2 * 86_400_000,

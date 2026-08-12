@@ -44,6 +44,11 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert {
         "leveraged_money_net_pct", "asset_manager_net_pct", "dealer_net_pct",
     } <= set(cftc.fields)
+    book_depth = spec_by_channel("binance_usdm_book_depth_archive")
+    assert book_depth.availability == "REAL_DIAGNOSTIC"
+    assert book_depth.endpoint_class == "public_archive"
+    assert "bounded_quality_quarantine" in book_depth.fields
+    assert "UNASSESSED" in book_depth.notes
 
 
 def test_family_lookup_does_not_promote_diagnostic_data():

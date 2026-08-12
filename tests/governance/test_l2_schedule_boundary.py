@@ -37,6 +37,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "domain_event_ops",
         "domain_event_seal",
         "artifact_admission_seal",
+        "binance_book_depth_forward_refresh",
         "binance_realtime_market",
         "binance_systemic_risk",
         "binance_rpi_depth",
@@ -78,6 +79,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_candidate_dry_run" in source
     assert "QUANTOS_alpha_lifecycle_cockpit" in source
     assert "QUANTOS_candidate_portfolio_evidence" in source
+    assert "QUANTOS_binance_book_depth_forward_refresh" in source
     assert "QUANTOS_defillama_tvl_forward_refresh" in source
     assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
     assert "QUANTOS_hyperliquid_public_forward_refresh" in source
@@ -129,6 +131,22 @@ def test_defillama_forward_vintage_refresh_is_daily_and_bounded():
         r'-Module "defillama_stablecoin_forward_refresh".*?\n\s*'
         r'-Trigger \$defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit '
         r'\(New-TimeSpan -Minutes 5\)',
+        source,
+    )
+
+
+def test_binance_book_depth_forward_refresh_is_daily_and_bounded():
+    source = _source()
+    assert re.search(
+        r'\$binanceBookDepthForwardRefreshTrigger\s*=\s*'
+        r'New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "10:00"',
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_binance_book_depth_forward_refresh" '
+        r'-Module "binance_book_depth_forward_refresh".*?\n\s*'
+        r'-Trigger \$binanceBookDepthForwardRefreshTrigger -ExecutionTimeLimit '
+        r'\(New-TimeSpan -Minutes 30\)',
         source,
     )
 

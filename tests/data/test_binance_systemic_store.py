@@ -70,6 +70,45 @@ def test_store_deduplicates_same_event_received_again_later(tmp_path):
         store.close()
 
 
+def test_store_preserves_first_forward_eligibility_receipt_on_replay(tmp_path):
+    store = BinanceSystemicStore(str(tmp_path / "systemic.db"), create=True)
+    try:
+        first = {**_observation(), "forward_eligible_from_ms": 2000}
+        replay = {
+            **first,
+            "knowledge_time_ms": 2500,
+            "forward_eligible_from_ms": 2500,
+        }
+        assert store.append(first) is True
+        assert store.append(replay) is False
+        retained = store.latest("adl_risk", "BTCUSDT")
+        assert retained["knowledge_time_ms"] == 2000
+        assert retained["forward_eligible_from_ms"] == 2000
+    finally:
+        store.close()
+
+
+def test_store_receipt_replay_compares_canonical_json_semantics(tmp_path):
+    store = BinanceSystemicStore(str(tmp_path / "systemic.db"), create=True)
+    try:
+        first = {
+            **_observation(),
+            "forward_eligible_from_ms": 2000,
+            "quality": {"event_times_ms": (1000,)},
+        }
+        replay = {
+            **first,
+            "knowledge_time_ms": 2500,
+            "forward_eligible_from_ms": 2500,
+        }
+
+        assert store.append(first) is True
+        assert store.append(replay) is False
+        assert store.row_count() == 1
+    finally:
+        store.close()
+
+
 def test_store_rejects_future_knowledge_and_detects_tamper(tmp_path):
     path = str(tmp_path / "systemic.db")
     store = BinanceSystemicStore(path, create=True)
@@ -84,5 +123,23 @@ def test_store_rejects_future_knowledge_and_detects_tamper(tmp_path):
         )
         store._conn.commit()
         assert store.chain_valid() is False
+    finally:
+        store.close()
+
+
+def test_store_append_many_is_atomic_and_idempotent(tmp_path):
+    store = BinanceSystemicStore(str(tmp_path / "systemic.db"), create=True)
+    try:
+        batch = (
+            _observation(event_time_ms=1000, value="LOW"),
+            _observation(event_time_ms=1500, value="MEDIUM"),
+        )
+        assert store.append_many(batch) == 2
+        assert store.append_many(batch) == 0
+        invalid = {**_observation(event_time_ms=1800), "knowledge_time_ms": 100}
+        with pytest.raises(BinanceSystemicStoreError):
+            store.append_many((_observation(event_time_ms=1700), invalid))
+        assert store.row_count() == 2
+        assert store.chain_valid() is True
     finally:
         store.close()

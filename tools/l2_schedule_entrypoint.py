@@ -29,6 +29,7 @@ ALLOWED_L2_MODULES = frozenset(
         "alpha_production_workflow",
         "alpha_maintenance_sweep",
         "artifact_admission_seal",
+        "binance_book_depth_forward_refresh",
         "binance_realtime_market",
         "binance_systemic_risk",
         "binance_rpi_depth",

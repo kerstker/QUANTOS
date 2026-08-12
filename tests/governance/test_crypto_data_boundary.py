@@ -28,6 +28,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
              os.path.join(_ROOT, "tools", "binance_rpi_depth.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_stream.py"),
+             # Binance Data Vision USD-M bookDepth archives.  The collector
+             # verifies the official checksum, stores fetch-time knowledge,
+             # and the wrapper only roots outputs under L2 state.
+             os.path.join(_ROOT, "tools", "binance_book_depth_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_book_depth_forward_refresh.py"),
              # REST gap-fill(2026-07-26,消除 Data Vision 发布滞后的每日死窗):fapi 公共只读
              # markPriceKlines + futures/data 指标族,无 key、绝不下单——同一条边界钉住它。
              os.path.join(_ROOT, "tools", "binance_rest_gap_fill.py"),
@@ -147,6 +152,10 @@ _EXTRA_ALLOWED_BY_FILE = {
         "argparse", "asyncio", "collections", "math", "quantos", "typing",
         "websockets",
     },
+    "binance_book_depth_fetch.py": {
+        "argparse", "collections", "hashlib", "pathlib", "typing"
+    },
+    "binance_book_depth_forward_refresh.py": {"quantos"},
     # REST gap-fill:math 只做有限数校验(拒 NaN/Inf 源观测),不增加网络/交易/凭证能力。
     "binance_rest_gap_fill.py": {"math"},
     # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
