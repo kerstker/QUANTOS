@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from services.data.binance_book_depth_archive import DATASET, DAY_MS, HOUR_MS
 from services.data.binance_systemic_store import BinanceSystemicStore
 from tools import binance_book_depth_backfill as backfill
@@ -91,3 +93,108 @@ def test_backfill_stops_on_first_failed_day_and_records_failure(tmp_path):
     assert payload["status"] == "FAIL"
     assert payload["completed_days"] == 0
     assert payload["formal_forward_credit"] is False
+
+
+def _confirmation_contract(start_day: int, frozen_at: int) -> dict:
+    return {
+        "study_id": "confirmation-test",
+        "status": "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS",
+        "dataset_id": DATASET,
+        "universe": list(backfill.UNIVERSE),
+        "confirmation_window": {
+            "start_day_ms": start_day,
+            "end_exclusive_ms": start_day + 2 * DAY_MS,
+            "day_count": 2,
+            "relation_to_exploration": "STRICTLY_EARLIER_NON_OVERLAPPING",
+            "exploration_start_exclusive_ms": start_day + 2 * DAY_MS,
+        },
+        "frozen_unseen_window_evidence": {
+            "observed_at_ms": frozen_at,
+            "dataset_observation_count": 0,
+            "authority_head_seq": 1,
+            "authority_head_row_hash": "",
+            "authority_chain_valid": True,
+        },
+    }
+
+
+def test_contract_backfill_requires_frozen_empty_head_then_exact_window(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    seed = BinanceSystemicStore(store_path, create=True)
+    try:
+        seed.append_many(
+            [
+                {
+                    "dataset": "prior",
+                    "instrument_id": "SYSTEM",
+                    "event_time_ms": 1,
+                    "knowledge_time_ms": 1,
+                    "value": 1,
+                }
+            ]
+        )
+        head = seed.authority_head()
+    finally:
+        seed.close()
+    contract = _confirmation_contract(DAY, OBSERVED)
+    contract["frozen_unseen_window_evidence"]["authority_head_seq"] = head["seq"]
+    contract["frozen_unseen_window_evidence"]["authority_head_row_hash"] = head["row_hash"]
+    calls = []
+
+    def refresh(instruments, days, **kwargs):
+        calls.append(days[0])
+        store = BinanceSystemicStore(kwargs["store_path"])
+        try:
+            inserted = store.append_many(_rows(days[0], kwargs["observed_at_ms"]))
+        finally:
+            store.close()
+        return {"inserted_hours": inserted, "external_price_alignment": "PASS"}
+
+    result = backfill.run_contract_backfill(
+        contract=contract,
+        observed_at_ms=OBSERVED + 1,
+        store_path=store_path,
+        archive_root=str(tmp_path / "raw"),
+        status_path=str(tmp_path / "status.json"),
+        max_workers=1,
+        refresh=refresh,
+    )
+
+    assert calls == [DAY, DAY + DAY_MS]
+    assert result["status"] == "PASS"
+    assert result["mode"] == "L2_CONTRACT_BOUND_UNSEEN_CONFIRMATION_BACKFILL"
+    assert result["preexisting_confirmation_observations"] == 0
+    assert result["processed_day_count"] == 2
+    assert json.loads((tmp_path / "status.json").read_text(encoding="utf-8")) == result
+
+
+def test_contract_backfill_rejects_pre_freeze_observations(tmp_path):
+    store_path = str(tmp_path / "depth.db")
+    store = BinanceSystemicStore(store_path, create=True)
+    try:
+        store.append_many(_rows(DAY, OBSERVED - 1))
+    finally:
+        store.close()
+    contract = _confirmation_contract(DAY, OBSERVED)
+
+    try:
+        backfill.run_contract_backfill(
+            contract=contract,
+            observed_at_ms=OBSERVED + 1,
+            store_path=store_path,
+            status_path=str(tmp_path / "status.json"),
+        )
+    except backfill.BookDepthBackfillError as exc:
+        assert "observed before freeze" in str(exc)
+    else:
+        raise AssertionError("pre-freeze confirmation rows must be rejected")
+
+
+def test_real_confirmation_contract_matches_immutable_commit() -> None:
+    digest, payload = backfill._verify_confirmation_contract(
+        backfill.DEFAULT_CONFIRMATION_CONTRACT
+    )
+
+    assert len(digest) == 64
+    assert payload["status"] == "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS"
+    assert payload["frozen_unseen_window_evidence"]["dataset_observation_count"] == 0

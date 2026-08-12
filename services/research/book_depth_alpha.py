@@ -634,9 +634,206 @@ def evaluate_exploration(
     }
 
 
+def evaluate_confirmation(
+    observations: Sequence[Mapping[str, Any]],
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Evaluate the single frozen trial on its untouched confirmation window."""
+    universe = tuple(str(value) for value in contract["universe"])
+    candidate_id = str(contract["candidate_id"])
+    direction = int(contract["direction"])
+    horizon_hours = int(contract["horizon_hours"])
+    if direction not in {-1, 1} or horizon_hours < 1:
+        raise BookDepthAlphaError("confirmation trial identity is invalid")
+    horizon_ms = horizon_hours * 3_600_000
+    panel: dict[int, dict[str, Mapping[str, Any]]] = {}
+    for row in observations:
+        if row.get("dataset") != contract["dataset_id"]:
+            raise BookDepthAlphaError("unexpected dataset in confirmation input")
+        if row.get("external_price_alignment") != "PASS":
+            raise BookDepthAlphaError("unaligned price input is not admissible")
+        event_time = int(row["event_time_ms"])
+        instrument = str(row["instrument_id"])
+        if instrument not in universe:
+            raise BookDepthAlphaError("unexpected instrument in confirmation input")
+        if instrument in panel.setdefault(event_time, {}):
+            raise BookDepthAlphaError("duplicate panel observation")
+        panel[event_time][instrument] = row
+    times = tuple(
+        event_time
+        for event_time in sorted(panel)
+        if event_time % horizon_ms == 0
+        and set(panel[event_time]) == set(universe)
+        and set(panel.get(event_time + horizon_ms, {})) == set(universe)
+    )
+    if len(times) < int(contract["minimum_decisions"]):
+        raise BookDepthAlphaError("confirmation decision count is insufficient")
+
+    long_count = int(contract["long_count"])
+    short_count = int(contract["short_count"])
+    cost_rate = float(contract["one_way_cost_bps_per_unit_turnover"]) / 10_000.0
+    stress_multiplier = float(contract["cost_stress_multiplier"])
+    previous_weights = {instrument: 0.0 for instrument in universe}
+    periods: list[dict[str, Any]] = []
+    for event_time in times:
+        signals = {
+            instrument: direction
+            * candidate_signals(panel[event_time][instrument])[candidate_id]
+            for instrument in universe
+        }
+        next_time = event_time + horizon_ms
+        prices = {
+            instrument: _positive(
+                panel[event_time][instrument]["external_price_reference"][
+                    "reference_price"
+                ],
+                "decision mark price",
+            )
+            for instrument in universe
+        }
+        next_prices = {
+            instrument: _positive(
+                panel[next_time][instrument]["external_price_reference"][
+                    "reference_price"
+                ],
+                "realization mark price",
+            )
+            for instrument in universe
+        }
+        forward_returns = {
+            instrument: next_prices[instrument] / prices[instrument] - 1.0
+            for instrument in universe
+        }
+        weights = _weights(
+            signals, long_count=long_count, short_count=short_count
+        )
+        turnover = 0.5 * sum(
+            abs(weights[instrument] - previous_weights[instrument])
+            for instrument in universe
+        )
+        contributions = {
+            instrument: weights[instrument] * forward_returns[instrument]
+            for instrument in universe
+        }
+        gross_return = sum(contributions.values())
+        rank_ic = _correlation(
+            _average_ranks([signals[instrument] for instrument in universe]),
+            _average_ranks(
+                [forward_returns[instrument] for instrument in universe]
+            ),
+        )
+        if rank_ic is None:
+            raise BookDepthAlphaError("rank IC is undefined")
+        periods.append(
+            {
+                "event_time_ms": event_time,
+                "gross_return": gross_return,
+                "turnover": turnover,
+                "net_return": gross_return - turnover * cost_rate,
+                "double_cost_net_return": (
+                    gross_return - turnover * cost_rate * stress_multiplier
+                ),
+                "rank_ic": rank_ic,
+                "instrument_contributions": contributions,
+            }
+        )
+        previous_weights = weights
+
+    third_size = max(1, len(periods) // 3)
+    thirds = (
+        periods[:third_size],
+        periods[third_size : 2 * third_size],
+        periods[2 * third_size :],
+    )
+    positive_thirds = sum(
+        1
+        for section in thirds
+        if section
+        and math.prod(1.0 + row["net_return"] for row in section) > 1.0
+    )
+    absolute_contribution = {
+        instrument: sum(
+            abs(row["instrument_contributions"][instrument]) for row in periods
+        )
+        for instrument in universe
+    }
+    total_absolute_contribution = sum(absolute_contribution.values())
+    maximum_contribution_fraction = (
+        max(absolute_contribution.values()) / total_absolute_contribution
+        if total_absolute_contribution
+        else None
+    )
+    annualization = float(contract["annualization_periods"])
+    net_summary = _summary(
+        [row["net_return"] for row in periods], annualization
+    )
+    double_cost_summary = _summary(
+        [row["double_cost_net_return"] for row in periods], annualization
+    )
+    ic_summary = _ic_summary([row["rank_ic"] for row in periods])
+    gates = contract["required_gates"]
+    checks = {
+        "net_sharpe": (
+            net_summary["net_sharpe"] is not None
+            and net_summary["net_sharpe"] >= float(gates["net_sharpe_minimum"])
+        ),
+        "net_mean_return": (
+            net_summary["mean_return"] is not None
+            and net_summary["mean_return"] > float(gates["net_mean_return_minimum"])
+        ),
+        "double_cost": (
+            double_cost_summary["net_sharpe"] is not None
+            and double_cost_summary["net_sharpe"]
+            > float(gates["double_cost_net_sharpe_minimum"])
+        ),
+        "rank_ic_mean": (
+            ic_summary["mean_ic"] is not None
+            and ic_summary["mean_ic"] > float(gates["rank_ic_mean_minimum"])
+        ),
+        "rank_ic_t_stat": (
+            ic_summary["t_stat"] is not None
+            and ic_summary["t_stat"] >= float(gates["rank_ic_t_stat_minimum"])
+        ),
+        "chronological_thirds": (
+            positive_thirds
+            >= int(gates["positive_chronological_thirds_minimum"])
+        ),
+        "instrument_concentration": (
+            maximum_contribution_fraction is not None
+            and maximum_contribution_fraction
+            <= float(gates["maximum_single_instrument_gross_pnl_fraction"])
+        ),
+    }
+    return {
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "mode": "STRICTLY_UNSEEN_PRE_REGISTERED_CONFIRMATION",
+        "candidate_id": candidate_id,
+        "direction": direction,
+        "horizon_hours": horizon_hours,
+        "decision_count": len(periods),
+        "first_decision_event_time_ms": periods[0]["event_time_ms"],
+        "last_decision_event_time_ms": periods[-1]["event_time_ms"],
+        "net": net_summary,
+        "double_cost_net": double_cost_summary,
+        "rank_ic": ic_summary,
+        "positive_chronological_thirds": positive_thirds,
+        "maximum_single_instrument_gross_pnl_fraction": (
+            maximum_contribution_fraction
+        ),
+        "mean_turnover": statistics.fmean(row["turnover"] for row in periods),
+        "gate_checks": checks,
+        "formal_validation_dag_required": True,
+        "formal_admission": False,
+        "forward_credit": False,
+        "testnet_authorized": False,
+        "order_submission_authorized": False,
+    }
+
+
 __all__ = [
     "BookDepthAlphaError",
     "candidate_signals",
+    "evaluate_confirmation",
     "evaluate_exploration",
     "evaluate_registered_candidates",
 ]

@@ -7,6 +7,7 @@ import pytest
 from services.research.book_depth_alpha import (
     BookDepthAlphaError,
     candidate_signals,
+    evaluate_confirmation,
     evaluate_exploration,
     evaluate_registered_candidates,
 )
@@ -223,3 +224,74 @@ def test_exploration_rejects_grid_or_candidate_drift() -> None:
     contract["candidate_ids"] = list(reversed(contract["candidate_ids"]))
     with pytest.raises(BookDepthAlphaError, match="candidate population"):
         evaluate_exploration([], _contract(), contract)
+
+
+def _confirmation_contract() -> dict:
+    return {
+        "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+        "candidate_id": "depth_imbalance_0p2_continuation_4h_v1",
+        "direction": 1,
+        "horizon_hours": 4,
+        "universe": INSTRUMENTS,
+        "long_count": 3,
+        "short_count": 3,
+        "one_way_cost_bps_per_unit_turnover": 6.0,
+        "cost_stress_multiplier": 2.0,
+        "annualization_periods": 2190.0,
+        "minimum_decisions": 20,
+        "required_gates": {
+            "net_sharpe_minimum": 1.0,
+            "net_mean_return_minimum": 0.0,
+            "double_cost_net_sharpe_minimum": 0.0,
+            "rank_ic_mean_minimum": 0.0,
+            "rank_ic_t_stat_minimum": 2.0,
+            "positive_chronological_thirds_minimum": 2,
+            "maximum_single_instrument_gross_pnl_fraction": 0.35,
+        },
+    }
+
+
+def test_confirmation_applies_fixed_gates_and_cannot_authorize() -> None:
+    observations = []
+    prices = {instrument: 100.0 for instrument in INSTRUMENTS}
+    for decision in range(101):
+        step = decision * 4
+        event_time = step * HOUR_MS
+        for index, instrument in enumerate(INSTRUMENTS):
+            observations.append(
+                _observation(
+                    event_time,
+                    instrument,
+                    index,
+                    step,
+                    price=prices[instrument],
+                )
+            )
+        for index, instrument in enumerate(INSTRUMENTS):
+            score = _score(index, decision, 0)
+            noise = 0.001 * math.sin(decision * 0.91 + index * 1.73)
+            prices[instrument] *= 1.0 + 0.02 * score + noise
+
+    result = evaluate_confirmation(observations, _confirmation_contract())
+
+    assert result["status"] == "PASS"
+    assert result["decision_count"] == 100
+    assert result["net"]["net_sharpe"] > 1.0
+    assert result["double_cost_net"]["net_sharpe"] > 0.0
+    assert result["rank_ic"]["t_stat"] > 2.0
+    assert all(result["gate_checks"].values())
+    assert result["formal_validation_dag_required"] is True
+    assert result["formal_admission"] is False
+    assert result["forward_credit"] is False
+    assert result["testnet_authorized"] is False
+
+
+def test_confirmation_rejects_insufficient_or_unaligned_input() -> None:
+    contract = _confirmation_contract()
+    with pytest.raises(BookDepthAlphaError, match="decision count"):
+        evaluate_confirmation([], contract)
+    observation = _observation(0, INSTRUMENTS[0], 0, 0)
+    with pytest.raises(BookDepthAlphaError, match="unaligned"):
+        evaluate_confirmation(
+            [{**observation, "external_price_alignment": "UNASSESSED"}], contract
+        )
