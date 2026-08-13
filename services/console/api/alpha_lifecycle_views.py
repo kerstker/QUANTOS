@@ -18,21 +18,31 @@ lifecycle-SM state is persisted on disk.  L2_DRY_RUN_ONLY.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.console.api.common import with_snapshot_metadata
+from services.console.api.state_artifact import read_json_artifact
 
 
 router = APIRouter()
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_STATE_ROOT = runtime_state_root(cwd=_REPO_ROOT)
 _LIFECYCLE_FILENAME = "alpha_lifecycle_cockpit.json"
 _LIFECYCLE_ARTIFACT = os.path.join(_REPO_ROOT, "evidence", _LIFECYCLE_FILENAME)
+_STATE_ARTIFACT = os.path.join(
+    _STATE_ROOT, "evidence", _LIFECYCLE_FILENAME
+)
+_STATE_ROOT_CONFIGURED = bool(os.getenv("QUANTOS_STATE_ROOT", "").strip())
+
+_VALID = "VALID"
+_MISSING = "MISSING"
+_INVALID = "INVALID"
 
 _ABSENT_HONESTY_NOTE = (
     "alpha 生命周期证据尚未产出(evidence/alpha_lifecycle_cockpit.json 缺失)——先人工运行 "
@@ -50,41 +60,111 @@ _PRESENT_HONESTY_NOTE = (
 )
 
 
-def _artifact_candidates() -> list[str]:
-    candidates: list[str] = []
-    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
-    if state_root:
-        candidates.append(
-            os.path.join(os.path.abspath(state_root), "evidence", _LIFECYCLE_FILENAME)
+def _valid_artifact(data: object) -> bool:
+    return (
+        isinstance(data, dict)
+        and data.get("artifact") == "ALPHA_LIFECYCLE_COCKPIT"
+        and type(data.get("schema_version")) is int
+        and data["schema_version"] == 1
+        and type(data.get("generated_at_ms")) is int
+        and data["generated_at_ms"] >= 0
+        and data.get("readiness") == "L2_DRY_RUN_ONLY"
+        and isinstance(data.get("alphas"), list)
+        and all(isinstance(item, dict) for item in data["alphas"])
+        and isinstance(data.get("stage_legend"), dict)
+        and isinstance(data.get("honesty_note"), str)
+        and bool(data["honesty_note"].strip())
+    )
+
+
+def _read_candidate(
+    path: str, *, trusted_root: str | os.PathLike[str]
+) -> tuple[str, Optional[Dict[str, Any]]]:
+    status, data = read_json_artifact(path, trusted_root=trusted_root)
+    if status != _VALID:
+        return status, None
+    return (_VALID, data) if _valid_artifact(data) else (_INVALID, None)
+
+
+def _selection_from_state(status: str, artifact: Optional[Dict[str, Any]]):
+    if status == _VALID:
+        return artifact, "QUANTOS_STATE_ROOT", None, False
+    if status == _INVALID:
+        return None, "QUANTOS_STATE_ROOT", "STATE_SNAPSHOT_INVALID", True
+    return None
+
+
+def _select_artifact():
+    """Select one whole artifact; mutable state always outranks release evidence."""
+    distinct_state = _STATE_ROOT_CONFIGURED or (
+        os.path.normcase(os.path.abspath(_STATE_ARTIFACT))
+        != os.path.normcase(os.path.abspath(_LIFECYCLE_ARTIFACT))
+    )
+    if distinct_state:
+        state_status, state_artifact = _read_candidate(
+            _STATE_ARTIFACT, trusted_root=_STATE_ROOT
         )
-    candidates.append(_LIFECYCLE_ARTIFACT)
-    return list(dict.fromkeys(candidates))
+        selected = _selection_from_state(state_status, state_artifact)
+        if selected is not None:
+            return selected
+
+    release_status, release_artifact = _read_candidate(
+        _LIFECYCLE_ARTIFACT, trusted_root=_REPO_ROOT
+    )
+    if distinct_state:
+        # Do not return an immutable fallback if state appeared while it was read.
+        state_status, state_artifact = _read_candidate(
+            _STATE_ARTIFACT, trusted_root=_STATE_ROOT
+        )
+        selected = _selection_from_state(state_status, state_artifact)
+        if selected is not None:
+            return selected
+    if release_status == _VALID:
+        return release_artifact, "RELEASE_BASELINE", None, False
+    if release_status == _INVALID:
+        return None, "RELEASE_BASELINE", "RELEASE_SNAPSHOT_INVALID", False
+    return None, None, None, False
 
 
 def _load_artifact(path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Load the newest valid snapshot, preferring mutable L2 state when configured."""
-    candidates = [path] if path else _artifact_candidates()
-    valid: list[tuple[int, Dict[str, Any]]] = []
-    for target in candidates:
-        if not target or not os.path.exists(target):
-            continue
-        try:
-            with open(target, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception:
-            continue
-        if not isinstance(data, dict) or data.get("artifact") != "ALPHA_LIFECYCLE_COCKPIT":
-            continue
-        generated_at_ms = data.get("generated_at_ms")
-        sort_key = generated_at_ms if isinstance(generated_at_ms, int) else -1
-        valid.append((sort_key, data))
-    if not valid:
-        return None
-    return max(valid, key=lambda item: item[0])[1]
+    """Compatibility helper: load one strictly validated artifact."""
+    if path is None:
+        return _select_artifact()[0]
+    status, artifact = _read_candidate(path, trusted_root=_REPO_ROOT)
+    return artifact if status == _VALID else None
 
 
 def _alpha_lifecycle_payload() -> Dict[str, Any]:
-    artifact = _load_artifact()
+    artifact, artifact_provenance, error_reason, fallback_suppressed = _select_artifact()
+    selection_metadata = {
+        "artifact_provenance": artifact_provenance,
+        "snapshot_error_reason": error_reason,
+        "release_fallback_suppressed": fallback_suppressed,
+    }
+    if error_reason is not None:
+        suppressed_note = (
+            " release fallback suppressed because mutable state is present."
+            if fallback_suppressed
+            else ""
+        )
+        return {
+            "source": "BACKEND_COMPUTED_SNAPSHOT",
+            "read_only": True,
+            "api_version": "0.1.0",
+            "data_provenance": "UNAVAILABLE",
+            "snapshot_status": "UNAVAILABLE",
+            "snapshot_present": False,
+            "artifact": None,
+            "generated_at_ms": None,
+            "readiness": "L2_DRY_RUN_ONLY",
+            "alphas": [],
+            "stage_legend": {},
+            "honesty_note": (
+                f"{error_reason}: evidence artifact failed strict schema validation;"
+                f"{suppressed_note}"
+            ),
+            **selection_metadata,
+        }
     if artifact is None:
         return {
             "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -101,6 +181,7 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
             "alphas": [],
             "stage_legend": {},
             "honesty_note": _ABSENT_HONESTY_NOTE,
+            **selection_metadata,
         }
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -115,6 +196,7 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
         "alphas": artifact.get("alphas") or [],
         "stage_legend": artifact.get("stage_legend") or {},
         "honesty_note": _PRESENT_HONESTY_NOTE,
+        **selection_metadata,
     }
 
 

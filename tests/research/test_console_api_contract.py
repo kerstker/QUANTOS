@@ -1419,12 +1419,26 @@ def test_alpha_lifecycle_reads_mutable_l2_state_snapshot(monkeypatch, tmp_path):
     (evidence / "alpha_lifecycle_cockpit.json").write_text(
         json.dumps({
             "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+            "schema_version": 1,
             "generated_at_ms": 200,
+            "readiness": "L2_DRY_RUN_ONLY",
             "alphas": [{"alpha_id": "rt_test", "namespace": "REALTIME"}],
+            "stage_legend": {},
+            "honesty_note": "test evidence",
         }),
         encoding="utf-8",
     )
     monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(
+        alpha_lifecycle_views,
+        "_STATE_ROOT",
+        state_root,
+    )
+    monkeypatch.setattr(
+        alpha_lifecycle_views,
+        "_STATE_ARTIFACT",
+        str(evidence / "alpha_lifecycle_cockpit.json"),
+    )
     monkeypatch.setattr(
         alpha_lifecycle_views,
         "_LIFECYCLE_ARTIFACT",

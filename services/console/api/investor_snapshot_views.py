@@ -14,20 +14,30 @@ never grants any live capability.  L2_DRY_RUN_ONLY.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
+import string
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.console.api.common import with_snapshot_metadata
+from services.console.api.state_artifact import read_json_artifact
 
 
 router = APIRouter()
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_ARTIFACT = os.path.join(_REPO_ROOT, "evidence", "investor_snapshot.json")
+_STATE_ROOT = runtime_state_root(cwd=_REPO_ROOT)
+_FILENAME = "investor_snapshot.json"
+_ARTIFACT = os.path.join(_REPO_ROOT, "evidence", _FILENAME)
+_STATE_ARTIFACT = os.path.join(_STATE_ROOT, "evidence", _FILENAME)
+_STATE_ROOT_CONFIGURED = bool(os.getenv("QUANTOS_STATE_ROOT", "").strip())
+
+_VALID = "VALID"
+_MISSING = "MISSING"
+_INVALID = "INVALID"
 
 _ABSENT_HONESTY_NOTE = (
     "投资者/审计证据快照尚未产出(evidence/investor_snapshot.json 缺失)——先人工运行 "
@@ -46,22 +56,130 @@ _PRESENT_HONESTY_NOTE = (
 )
 
 
+def _non_negative_int_or_none(value: object) -> bool:
+    return value is None or (type(value) is int and value >= 0)
+
+
+def _valid_artifact(data: object) -> bool:
+    if not isinstance(data, dict):
+        return False
+    report_hash = data.get("report_snapshot_hash")
+    return (
+        data.get("artifact") == "INVESTOR_SNAPSHOT"
+        and type(data.get("schema_version")) is int
+        and data["schema_version"] == 1
+        and type(data.get("generated_at_ms")) is int
+        and data["generated_at_ms"] >= 0
+        and data.get("readiness") == "L2_DRY_RUN_ONLY"
+        and _non_negative_int_or_none(data.get("data_cutoff_ms"))
+        and isinstance(report_hash, str)
+        and len(report_hash) == 128
+        and all(character in string.hexdigits for character in report_hash)
+        and isinstance(data.get("hash_scheme"), dict)
+        and isinstance(data.get("portfolio_views"), dict)
+        and isinstance(data.get("summary"), dict)
+        and isinstance(data.get("venues"), list)
+        and all(isinstance(item, dict) for item in data["venues"])
+        and isinstance(data.get("amendments"), list)
+        and all(isinstance(item, dict) for item in data["amendments"])
+        and isinstance(data.get("unknown_fields"), list)
+        and all(isinstance(item, str) and bool(item.strip()) for item in data["unknown_fields"])
+        and isinstance(data.get("amendment_policy"), str)
+        and bool(data["amendment_policy"].strip())
+    )
+
+
+def _read_candidate(
+    path: str, *, trusted_root: str | os.PathLike[str]
+) -> tuple[str, Optional[Dict[str, Any]]]:
+    status, data = read_json_artifact(path, trusted_root=trusted_root)
+    if status != _VALID:
+        return status, None
+    return (_VALID, data) if _valid_artifact(data) else (_INVALID, None)
+
+
+def _selection_from_state(status: str, artifact: Optional[Dict[str, Any]]):
+    if status == _VALID:
+        return artifact, "QUANTOS_STATE_ROOT", None, False
+    if status == _INVALID:
+        return None, "QUANTOS_STATE_ROOT", "STATE_SNAPSHOT_INVALID", True
+    return None
+
+
+def _select_artifact():
+    distinct_state = _STATE_ROOT_CONFIGURED or (
+        os.path.normcase(os.path.abspath(_STATE_ARTIFACT))
+        != os.path.normcase(os.path.abspath(_ARTIFACT))
+    )
+    if distinct_state:
+        state_status, state_artifact = _read_candidate(
+            _STATE_ARTIFACT, trusted_root=_STATE_ROOT
+        )
+        selected = _selection_from_state(state_status, state_artifact)
+        if selected is not None:
+            return selected
+
+    release_status, release_artifact = _read_candidate(
+        _ARTIFACT, trusted_root=_REPO_ROOT
+    )
+    if distinct_state:
+        state_status, state_artifact = _read_candidate(
+            _STATE_ARTIFACT, trusted_root=_STATE_ROOT
+        )
+        selected = _selection_from_state(state_status, state_artifact)
+        if selected is not None:
+            return selected
+    if release_status == _VALID:
+        return release_artifact, "RELEASE_BASELINE", None, False
+    if release_status == _INVALID:
+        return None, "RELEASE_BASELINE", "RELEASE_SNAPSHOT_INVALID", False
+    return None, None, None, False
+
+
 def _load_artifact(path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    target = path or _ARTIFACT
-    if not os.path.exists(target):
-        return None
-    try:
-        with open(target, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return None
-    if not isinstance(data, dict) or data.get("artifact") != "INVESTOR_SNAPSHOT":
-        return None
-    return data
+    if path is None:
+        return _select_artifact()[0]
+    status, artifact = _read_candidate(path, trusted_root=_REPO_ROOT)
+    return artifact if status == _VALID else None
 
 
 def _investor_snapshot_payload() -> Dict[str, Any]:
-    artifact = _load_artifact()
+    artifact, artifact_provenance, error_reason, fallback_suppressed = _select_artifact()
+    selection_metadata = {
+        "artifact_provenance": artifact_provenance,
+        "snapshot_error_reason": error_reason,
+        "release_fallback_suppressed": fallback_suppressed,
+    }
+    if error_reason is not None:
+        suppressed_note = (
+            " release fallback suppressed because mutable state is present."
+            if fallback_suppressed
+            else ""
+        )
+        return {
+            "source": "BACKEND_COMPUTED_SNAPSHOT",
+            "read_only": True,
+            "api_version": "0.1.0",
+            "data_provenance": "UNAVAILABLE",
+            "snapshot_status": "UNAVAILABLE",
+            "snapshot_present": False,
+            "artifact": None,
+            "generated_at_ms": None,
+            "readiness": "L2_DRY_RUN_ONLY",
+            "data_cutoff_ms": None,
+            "report_snapshot_hash": None,
+            "hash_scheme": None,
+            "portfolio_views": None,
+            "summary": None,
+            "venues": [],
+            "amendments": [],
+            "unknown_fields": [],
+            "honesty_note": (
+                f"{error_reason}: evidence artifact failed strict schema validation;"
+                f"{suppressed_note}"
+            ),
+            **selection_metadata,
+        }
     if artifact is None:
         return {
             "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -83,6 +201,7 @@ def _investor_snapshot_payload() -> Dict[str, Any]:
             "amendments": [],
             "unknown_fields": [],
             "honesty_note": _ABSENT_HONESTY_NOTE,
+            **selection_metadata,
         }
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -103,6 +222,7 @@ def _investor_snapshot_payload() -> Dict[str, Any]:
         "amendments": artifact.get("amendments") or [],
         "unknown_fields": artifact.get("unknown_fields") or [],
         "honesty_note": _PRESENT_HONESTY_NOTE,
+        **selection_metadata,
     }
 
 
