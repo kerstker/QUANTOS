@@ -1,0 +1,45 @@
+[Unit]
+Description=QUANTOS L2 dry-run worker (%i)
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/deploy/systemd/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=quantos
+Group=quantos
+UMask=0077
+# The five non-negotiable flags are literal unit properties. Do not add an
+# EnvironmentFile here: systemd environment files override Environment= values
+# regardless of their textual order.
+Environment=LIVE_TRADING_ENABLED=false
+Environment=REAL_BROKER_ENABLED=false
+Environment=ALLOW_ORDER_SUBMISSION=false
+Environment=ALLOW_AI_DIRECT_TRADING=false
+Environment=REQUIRE_HUMAN_APPROVAL=true
+Environment=QUANTOS_L2_DRY_RUN_ONLY=true
+Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_STATE_ROOT=/srv/quantos/state
+WorkingDirectory=/srv/quantos/state
+ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python /opt/quantos/releases/__QUANTOS_RELEASE_SHA__/tools/l2_schedule_entrypoint.py %i --release-commit __QUANTOS_RELEASE_SHA__
+Restart=no
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+ReadWritePaths=/srv/quantos/state
+
+# This is an input template. It intentionally has no [Install] section and
+# cannot be enabled until the release renderer replaces __QUANTOS_RELEASE_SHA__.

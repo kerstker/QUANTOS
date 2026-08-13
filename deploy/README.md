@@ -7,7 +7,8 @@ QUANTOS does not have one monolithic “deploy everything” command. Deployment
 | Surface | Status | Network/order capability |
 |---|---|---|
 | Local research stack | Supported | Localhost console plus guarded research jobs; no exchange/order path |
-| Read-only console container | Supported and reproducibility-tested | Serves the GET-only API on 8400 |
+| Read-only console container (amd64) | Supported and reproducibility-tested | Serves the GET-only API on 8400 |
+| Read-only console container (ARM64) | Recipe ready; target-host evidence pending | Must pass native build, scan, smoke, and reproducibility gates before use |
 | L2 scheduled research/data jobs | Supported when explicitly registered | Approved public-data/research tools only |
 | Testnet execution/soak | Guarded, candidate-dependent | Testnet only; requires attestations, mandates, gates, and operations runbook |
 | Mainnet | Blocked at L2 | No authorized deployment |
@@ -17,10 +18,24 @@ QUANTOS does not have one monolithic “deploy everything” command. Deployment
 
 `console.Dockerfile` builds only the read-only API. Its build context excludes `key/`, `data/`, `live/`, tools, tests, and local environment files. The runtime is non-root and keeps all live flags disabled.
 
+`console.arm64.Dockerfile` is the equivalent additive recipe for native Linux
+ARM64 hosts. It pins the corresponding ARM64 base manifest and fails the build
+when BuildKit reports any other target architecture. Evidence retained for the
+amd64 recipe does not certify the ARM64 recipe; ARM64 build, scan, smoke, and
+reproducibility evidence must be generated independently on the target host.
+
 Build:
 
 ```bash
 docker build --file deploy/console.Dockerfile --tag quantos-console:l2 .
+```
+
+Native ARM64 build:
+
+```bash
+docker build --platform linux/arm64 \
+  --file deploy/console.arm64.Dockerfile \
+  --tag quantos-console:l2-arm64 .
 ```
 
 Run with a read-only filesystem:

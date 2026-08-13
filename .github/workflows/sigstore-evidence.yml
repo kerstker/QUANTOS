@@ -428,7 +428,7 @@ jobs:
               or seal.get("authority_mutated") is not False
               or type(seal.get("anchor_created")) is not bool
               or seal.get("destination_class")
-              not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+              not in {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"}
           ):
               raise SystemExit("artifact-admission local seal is invalid")
           receipt = {

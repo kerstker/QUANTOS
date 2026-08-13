@@ -80,7 +80,14 @@ _MANIFESTS = (
     "config/service_import_policy.json",
     "config/templates/live_mandate_binance_mainnet.json.template",
     "config/top_tier_requirements.json",
+    "deploy/console.arm64.Dockerfile",
     "deploy/console.Dockerfile",
+    "deploy/systemd/README.md",
+    "deploy/systemd/quantos-binance-realtime-stream.service",
+    "deploy/systemd/quantos-l2-watchdog.service",
+    "deploy/systemd/quantos-l2-watchdog.timer",
+    "deploy/systemd/quantos-l2@.service",
+    "deploy/systemd/quantos-l2@.timer",
     "evidence/service_import_graph.json",
     "evidence/event_schema_catalog.json",
     "pyproject.toml",
@@ -165,6 +172,7 @@ _MANIFESTS = (
     "tools/kill_switch_events.py",
     "tools/l2_backup.py",
     "tools/l2_schedule_entrypoint.py",
+    "tools/render_systemd_l2_units.py",
     "tools/l2_scheduler_watchdog.py",
     "tools/mft_testnet_soak.py",
     "tools/paper_order_preview.py",
@@ -266,6 +274,8 @@ _MANIFESTS = (
     "tests/governance/test_service_import_graph.py",
     "tests/governance/test_event_schema_catalog.py",
     "tests/governance/test_l2_schedule_boundary.py",
+    "tests/governance/test_arm64_container_boundary.py",
+    "tests/governance/test_systemd_l2_boundary.py",
     "tests/governance/test_l2_operations_boundary.py",
     "tests/governance/test_top_tier_assessment.py",
     "tests/governance/test_supply_chain_evidence.py",
@@ -409,7 +419,7 @@ def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
             != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
             or document.get("authority_mutated") is not False
             or document.get("destination_class")
-            not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+            not in {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"}
             or document.get("external_signature_verified") is not False
             or document.get("worm_retention_verified") is not False
             or not isinstance(document.get("anchor_path"), str)

@@ -153,6 +153,26 @@ def test_heartbeat_drops_unrecognized_destination_class(tmp_path):
     assert payload["components"]["backup"]["destination_class"] == ""
 
 
+def test_heartbeat_preserves_posix_separate_filesystem_destination(tmp_path):
+    backup = tmp_path / "backup.json"
+    _write_status(
+        backup,
+        {"verdict": "PASS", "destination_class": "SEPARATE_FILESYSTEM"},
+    )
+
+    payload = build_heartbeat_payload(
+        now_ms=1,
+        scheduler_status_path=tmp_path / "scheduler.json",
+        event_status_path=tmp_path / "event.json",
+        backup_status_path=backup,
+    )
+
+    assert (
+        payload["components"]["backup"]["destination_class"]
+        == "SEPARATE_FILESYSTEM"
+    )
+
+
 def test_heartbeat_drops_unrecognized_worker_identity_policy(tmp_path):
     event = tmp_path / "event.json"
     _write_status(

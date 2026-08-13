@@ -1,8 +1,8 @@
 """Encrypted, restore-verified backup for QUANTOS L2 authority state.
 
 The scheduled path is deliberately fail closed: it requires a strong external
-passphrase and a destination on another volume or a UNC path. Broker keys and
-the ``key/`` tree are outside the source allowlist.
+passphrase and a destination on another volume/filesystem or a UNC path. Broker
+keys and the ``key/`` tree are outside the source allowlist.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from pathlib import Path, PurePosixPath
 import secrets
 import shutil
 import sqlite3
+import stat
+import sys
 import tempfile
 import time
 from typing import Iterable
@@ -39,6 +41,9 @@ from tools.restore_drill import RestoreDrillError, run_restore_drill
 
 
 PASSPHRASE_ENV = "QUANTOS_BACKUP_PASSPHRASE"
+PASSPHRASE_FILE_ENV = "QUANTOS_BACKUP_PASSPHRASE_FILE"
+CREDENTIALS_DIRECTORY_ENV = "CREDENTIALS_DIRECTORY"
+SYSTEMD_PASSPHRASE_CREDENTIAL = "l2-backup-passphrase"
 DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
@@ -56,6 +61,37 @@ SQLITE_BACKUP_WRITER_YIELD_SECONDS = 0.002
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
 _SNAPSHOT_METHODS = frozenset({"SQLITE_ONLINE_BACKUP", "STABLE_FILE_READ", "EMPTY_DB_PLACEHOLDER"})
+_EXTERNAL_DESTINATION_CLASSES = frozenset(
+    {"OFF_HOST_UNC", "SEPARATE_VOLUME", "SEPARATE_FILESYSTEM"}
+)
+_MAX_PASSPHRASE_FILE_BYTES = 4_096
+_PERSISTENT_LINUX_FILESYSTEMS = frozenset(
+    {
+        "bcachefs",
+        "btrfs",
+        "ceph",
+        "cifs",
+        "ext2",
+        "ext3",
+        "ext4",
+        "f2fs",
+        "fuseblk",
+        "glusterfs",
+        "jfs",
+        "lustre",
+        "nfs",
+        "nfs4",
+        "ntfs",
+        "ntfs3",
+        "reiserfs",
+        "smb3",
+        "xfs",
+        "zfs",
+    }
+)
+_NON_DURABLE_LINUX_SOURCES = frozenset(
+    {"", "-", "none", "overlay", "proc", "ramfs", "rootfs", "sysfs", "tmpfs"}
+)
 
 
 class L2BackupError(RuntimeError):
@@ -228,15 +264,333 @@ def _is_within(path: Path, parent: Path) -> bool:
     return True
 
 
+def _is_posix_platform() -> bool:
+    return os.name == "posix"
+
+
+def _filesystem_device_id(path: os.PathLike[str] | str) -> int:
+    """Return ``st_dev`` for a path or its nearest existing parent."""
+
+    candidate = Path(os.fspath(path))
+    while True:
+        try:
+            return candidate.stat().st_dev
+        except FileNotFoundError:
+            parent = candidate.parent
+            if parent == candidate:
+                raise
+            candidate = parent
+
+
+def _decode_mountinfo_path(value: str) -> str:
+    """Decode only the four escapes defined for Linux mountinfo fields."""
+
+    escapes = {
+        r"\040": " ",
+        r"\011": "\t",
+        r"\012": "\n",
+        r"\134": "\\",
+    }
+    decoded: list[str] = []
+    offset = 0
+    while offset < len(value):
+        if value[offset] != "\\":
+            decoded.append(value[offset])
+            offset += 1
+            continue
+        encoded = value[offset : offset + 4]
+        replacement = escapes.get(encoded)
+        if replacement is None:
+            raise ValueError("unsupported mountinfo escape")
+        decoded.append(replacement)
+        offset += 4
+    return "".join(decoded)
+
+
+def _filesystem_device_numbers(device_id: int) -> tuple[int, int] | None:
+    """Return the platform major/minor pair for a Linux ``st_dev`` value."""
+
+    major = getattr(os, "major", None)
+    minor = getattr(os, "minor", None)
+    if not callable(major) or not callable(minor):
+        return None
+    try:
+        return int(major(device_id)), int(minor(device_id))
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+
+
+def _mount_provenance_from_lines(
+    path: PurePosixPath,
+    device_numbers: tuple[int, int],
+    lines: Iterable[str],
+) -> tuple[str, str] | None:
+    """Return the deepest matching mount's ``(source, fstype)``."""
+
+    if (
+        not path.is_absolute()
+        or len(device_numbers) != 2
+        or any(type(number) is not int or number < 0 for number in device_numbers)
+    ):
+        return None
+    best: tuple[int, int, str, str] | None = None
+    for index, line in enumerate(lines):
+        before, separator, after = line.partition(" - ")
+        fields = before.split()
+        trailing = after.split()
+        if not separator or len(fields) < 6 or len(trailing) < 3:
+            return None
+        device_fields = fields[2].split(":", 1)
+        try:
+            row_device = tuple(int(field) for field in device_fields)
+            mount_point = PurePosixPath(_decode_mountinfo_path(fields[4]))
+            source = _decode_mountinfo_path(trailing[1])
+        except (TypeError, ValueError):
+            return None
+        if (
+            len(row_device) != 2
+            or any(number < 0 for number in row_device)
+            or not mount_point.is_absolute()
+        ):
+            return None
+        if row_device != device_numbers:
+            continue
+        try:
+            path.relative_to(mount_point)
+        except ValueError:
+            continue
+        candidate = (
+            len(mount_point.parts),
+            index,
+            source,
+            trailing[0].casefold(),
+        )
+        if best is None or candidate[:2] > best[:2]:
+            best = candidate
+    return None if best is None else (best[2], best[3])
+
+
+def _resolved_posix_path(path: os.PathLike[str] | str) -> PurePosixPath:
+    return PurePosixPath(os.fspath(Path(path).resolve(strict=True)))
+
+
+def _read_linux_mountinfo_lines() -> tuple[str, ...] | None:
+    """Read one coherent-enough mount table snapshot without invoking a shell."""
+
+    if not _is_posix_platform() or not sys.platform.startswith("linux"):
+        return None
+    try:
+        return tuple(
+            Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+        )
+    except (OSError, UnicodeError):
+        return None
+
+
+def _posix_destination_is_durable(
+    repo_root: Path,
+    destination_root: Path,
+    *,
+    repo_device_id: int | None = None,
+    destination_device_id: int | None = None,
+) -> bool:
+    """Prove a distinct Linux mount source backed by a durable filesystem."""
+
+    if not _is_posix_platform():
+        return True
+    if not sys.platform.startswith("linux"):
+        # Keep the pre-hardening POSIX behavior on platforms without mountinfo.
+        return True
+    try:
+        repo_device_id = (
+            _filesystem_device_id(repo_root)
+            if repo_device_id is None
+            else repo_device_id
+        )
+        destination_device_id = (
+            _filesystem_device_id(destination_root)
+            if destination_device_id is None
+            else destination_device_id
+        )
+        repo_path = _resolved_posix_path(repo_root)
+        destination_path = _resolved_posix_path(destination_root)
+    except (OSError, TypeError, ValueError):
+        return False
+    if repo_device_id == destination_device_id:
+        return False
+    repo_device_numbers = _filesystem_device_numbers(repo_device_id)
+    destination_device_numbers = _filesystem_device_numbers(destination_device_id)
+    lines = _read_linux_mountinfo_lines()
+    if (
+        repo_device_numbers is None
+        or destination_device_numbers is None
+        or lines is None
+    ):
+        return False
+    repo_provenance = _mount_provenance_from_lines(
+        repo_path, repo_device_numbers, lines
+    )
+    destination_provenance = _mount_provenance_from_lines(
+        destination_path, destination_device_numbers, lines
+    )
+    if repo_provenance is None or destination_provenance is None:
+        return False
+    repo_source, _repo_filesystem_type = repo_provenance
+    source, filesystem_type = destination_provenance
+    if filesystem_type not in _PERSISTENT_LINUX_FILESYSTEMS:
+        return False
+    # Anonymous or synthetic sources are not an independently durable target.
+    return bool(
+        source
+        and source.casefold() not in _NON_DURABLE_LINUX_SOURCES
+        and repo_source
+        and source != repo_source
+    )
+
+
 def classify_destination(repo_root: Path, destination_root: Path) -> str:
-    raw = os.fspath(destination_root)
-    if raw.startswith("\\\\") or raw.startswith("//"):
+    destination_drive = destination_root.drive.casefold()
+    if destination_drive.startswith("\\\\"):
         return "OFF_HOST_UNC"
     repo_drive = repo_root.drive.casefold()
-    destination_drive = destination_root.drive.casefold()
     if repo_drive and destination_drive and repo_drive != destination_drive:
         return "SEPARATE_VOLUME"
+    if not repo_drive and not destination_drive:
+        try:
+            repo_device_id = _filesystem_device_id(repo_root)
+            destination_device_id = _filesystem_device_id(destination_root)
+            if repo_device_id != destination_device_id and _posix_destination_is_durable(
+                repo_root,
+                destination_root,
+                repo_device_id=repo_device_id,
+                destination_device_id=destination_device_id,
+            ):
+                return "SEPARATE_FILESYSTEM"
+        except OSError:
+            # An unprovable filesystem boundary is local-only, never external.
+            pass
     return "LOCAL_ONLY"
+
+
+def _assert_destination_boundary(
+    *, repo_root: Path, destination_root: Path, expected_class: str
+) -> None:
+    """Re-prove the destination immediately around every publication step."""
+
+    try:
+        metadata = destination_root.lstat()
+        resolved = destination_root.resolve(strict=True)
+    except OSError:
+        raise L2BackupError("backup destination boundary is unavailable") from None
+    if not stat.S_ISDIR(metadata.st_mode) or destination_root.is_symlink():
+        raise L2BackupError("backup destination boundary is invalid")
+    if _is_within(resolved, repo_root):
+        raise L2BackupError("backup destination boundary changed")
+    current_class = classify_destination(repo_root, resolved)
+    if current_class != expected_class:
+        raise L2BackupError("backup destination boundary changed")
+
+
+def _validate_passphrase_file_mode(mode: int) -> None:
+    if mode & 0o077:
+        raise L2BackupError(
+            "backup passphrase file permissions must be owner-only"
+        )
+
+
+def _read_passphrase_file(path_value: str | os.PathLike[str]) -> str:
+    """Read a small immutable-looking secret file without exposing its identity."""
+
+    try:
+        path = Path(path_value)
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or path.is_symlink():
+            raise L2BackupError(
+                "backup passphrase file must be a regular non-symlink file"
+            )
+        if _is_posix_platform():
+            _validate_passphrase_file_mode(before.st_mode)
+        if before.st_size > _MAX_PASSPHRASE_FILE_BYTES:
+            raise L2BackupError("backup passphrase file is invalid")
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(os.fspath(path), flags)
+        try:
+            opened = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_dev != before.st_dev
+                or opened.st_ino != before.st_ino
+                or opened.st_size != before.st_size
+            ):
+                raise L2BackupError("backup passphrase file is invalid")
+            if _is_posix_platform():
+                _validate_passphrase_file_mode(opened.st_mode)
+            content = os.read(descriptor, _MAX_PASSPHRASE_FILE_BYTES + 1)
+            after = os.fstat(descriptor)
+            if (
+                len(content) > _MAX_PASSPHRASE_FILE_BYTES
+                or len(content) != opened.st_size
+                or after.st_size != opened.st_size
+                or after.st_mtime_ns != opened.st_mtime_ns
+            ):
+                raise L2BackupError("backup passphrase file is invalid")
+        finally:
+            os.close(descriptor)
+        passphrase = content.decode("utf-8")
+        if passphrase.endswith("\r\n"):
+            passphrase = passphrase[:-2]
+        elif passphrase.endswith("\n"):
+            passphrase = passphrase[:-1]
+        if "\n" in passphrase or "\r" in passphrase or "\x00" in passphrase:
+            raise L2BackupError("backup passphrase file is invalid")
+        try:
+            _check_passphrase_strength(passphrase)
+        except Exception:
+            raise L2BackupError(
+                "backup passphrase file must contain a strong passphrase"
+            ) from None
+        return passphrase
+    except L2BackupError:
+        raise
+    except (OSError, TypeError, ValueError, UnicodeError):
+        raise L2BackupError("backup passphrase file is unavailable or invalid") from None
+
+
+def resolve_backup_passphrase(
+    *,
+    environment_passphrase: str | None,
+    passphrase_file: str | os.PathLike[str] | None,
+) -> str:
+    """Resolve exactly one secret source without putting identity in errors."""
+
+    environment_configured = environment_passphrase is not None
+    file_configured = passphrase_file is not None
+    if environment_configured == file_configured:
+        raise L2BackupError(
+            "configure exactly one backup passphrase source (environment or file)"
+        )
+    if file_configured:
+        return _read_passphrase_file(passphrase_file)
+    try:
+        _check_passphrase_strength(environment_passphrase)
+    except Exception:
+        raise L2BackupError(
+            "backup passphrase environment source must contain a strong passphrase"
+        ) from None
+    return environment_passphrase
+
+
+def _default_passphrase_file() -> str | None:
+    explicit = os.environ.get(PASSPHRASE_FILE_ENV)
+    if explicit is not None:
+        return explicit
+    credentials_directory = os.environ.get(CREDENTIALS_DIRECTORY_ENV)
+    if not credentials_directory:
+        return None
+    return os.fspath(
+        Path(credentials_directory) / SYSTEMD_PASSPHRASE_CREDENTIAL
+    )
 
 
 def _validate_destination(
@@ -248,13 +602,22 @@ def _validate_destination(
     if not destination_root.is_absolute():
         raise L2BackupError("backup destination must be an absolute path")
     resolved_repo = repo_root.resolve()
-    resolved_destination = destination_root.resolve(strict=False)
+    try:
+        metadata = destination_root.lstat()
+        resolved_destination = destination_root.resolve(strict=True)
+    except OSError:
+        raise L2BackupError(
+            "backup destination must be a pre-existing directory"
+        ) from None
+    if not stat.S_ISDIR(metadata.st_mode) or destination_root.is_symlink():
+        raise L2BackupError("backup destination must be a non-symlink directory")
     if _is_within(resolved_destination, resolved_repo):
         raise L2BackupError("backup destination must be outside the QUANTOS workspace")
     destination_class = classify_destination(resolved_repo, resolved_destination)
     if destination_class == "LOCAL_ONLY" and not allow_local_destination:
         raise L2BackupError(
-            "scheduled L2 backup requires a separate volume or UNC destination; "
+            "scheduled L2 backup requires a separate volume or UNC destination "
+            "(a separate filesystem is accepted on POSIX); "
             "local-only output is allowed only with the explicit development opt-out"
         )
     return resolved_destination, destination_class
@@ -627,7 +990,11 @@ def run_l2_backup(
     if final_batch.exists():
         raise L2BackupError(f"backup batch already exists: {final_batch}")
 
-    destination.mkdir(parents=True, exist_ok=True)
+    _assert_destination_boundary(
+        repo_root=root,
+        destination_root=destination,
+        expected_class=destination_class,
+    )
     stage = destination / f".{stamp}.partial-{os.getpid()}-{secrets.token_hex(4)}"
     stage.mkdir()
     entries: list[dict] = []
@@ -677,7 +1044,19 @@ def run_l2_backup(
                 now_ms=observed_at_ms,
                 sources=source_specs,
             )
+        _assert_destination_boundary(
+            repo_root=root,
+            destination_root=destination,
+            expected_class=destination_class,
+        )
+        if stage.parent.resolve(strict=True) != destination:
+            raise L2BackupError("backup staging boundary changed")
         os.replace(stage, final_batch)
+        _assert_destination_boundary(
+            repo_root=root,
+            destination_root=destination,
+            expected_class=destination_class,
+        )
 
         # Prune old snapshots after successful backup
         prune_result = _prune_old_snapshots(destination, now_ms=observed_at_ms)
@@ -690,7 +1069,7 @@ def run_l2_backup(
             "observed_at_ms": observed_at_ms,
             "batch_dir": os.fspath(final_batch),
             "destination_class": destination_class,
-            "external_destination_verified": destination_class in {"OFF_HOST_UNC", "SEPARATE_VOLUME"},
+            "external_destination_verified": destination_class in _EXTERNAL_DESTINATION_CLASSES,
             "encrypted": True,
             "file_count": len(entries),
             # Compatibility count only; the v2 contract and digest are authoritative.
@@ -1096,9 +1475,20 @@ def main() -> None:
     parser.add_argument("--rto-ms", type=int, default=DEFAULT_RTO_MS)
     parser.add_argument("--max-rpo-ms", type=int, default=DEFAULT_MAX_RPO_MS)
     parser.add_argument("--allow-local-destination", action="store_true")
+    parser.add_argument(
+        "--passphrase-file",
+        default=_default_passphrase_file(),
+        help=(
+            "Read the backup passphrase from a protected file; mutually exclusive "
+            f"with {PASSPHRASE_ENV}"
+        ),
+    )
     args = parser.parse_args()
-    passphrase = os.environ.get(PASSPHRASE_ENV)
     try:
+        passphrase = resolve_backup_passphrase(
+            environment_passphrase=os.environ.get(PASSPHRASE_ENV),
+            passphrase_file=args.passphrase_file,
+        )
         result = run_recorded_l2_backup(
             repo_root=args.repo_root,
             destination_root=args.dest,

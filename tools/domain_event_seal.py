@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import tempfile
 import time
@@ -27,6 +28,7 @@ from services.governance.external_evidence import (
     evaluate_continuity,
 )
 from tools.cache_io import atomic_write_json
+from tools.l2_backup import classify_destination
 
 
 DESTINATION_ENV = "QUANTOS_EVENT_SEAL_DEST"
@@ -62,25 +64,40 @@ def _validate_destination(
     if not destination_root.is_absolute():
         raise DomainEventSealError("seal destination must be absolute")
     resolved_repo = repo_root.resolve()
-    destination = destination_root.resolve(strict=False)
+    try:
+        metadata = destination_root.lstat()
+        destination = destination_root.resolve(strict=True)
+    except OSError:
+        raise DomainEventSealError(
+            "seal destination must be a pre-existing directory"
+        ) from None
+    if not stat.S_ISDIR(metadata.st_mode) or destination_root.is_symlink():
+        raise DomainEventSealError("seal destination must be a non-symlink directory")
     if _is_within(destination, resolved_repo):
         raise DomainEventSealError("seal destination must be outside the workspace")
-    raw = os.fspath(destination_root)
-    if raw.startswith("\\\\") or raw.startswith("//"):
-        destination_class = "OFF_HOST_UNC"
-    elif (
-        resolved_repo.drive
-        and destination.drive
-        and resolved_repo.drive.casefold() != destination.drive.casefold()
-    ):
-        destination_class = "SEPARATE_VOLUME"
-    else:
-        destination_class = "LOCAL_ONLY"
+    destination_class = classify_destination(resolved_repo, destination)
     if destination_class == "LOCAL_ONLY" and not allow_local_destination:
         raise DomainEventSealError(
-            "event seal requires a separate volume or UNC destination"
+            "event seal requires a separate volume or UNC destination "
+            "(a separate filesystem is accepted on POSIX)"
         )
     return destination, destination_class
+
+
+def _assert_destination_boundary(
+    *, repo_root: Path, destination: Path, expected_class: str
+) -> None:
+    try:
+        metadata = destination.lstat()
+        resolved = destination.resolve(strict=True)
+    except OSError:
+        raise DomainEventSealError("seal destination boundary is unavailable") from None
+    if not stat.S_ISDIR(metadata.st_mode) or destination.is_symlink():
+        raise DomainEventSealError("seal destination boundary is invalid")
+    if _is_within(resolved, repo_root.resolve()):
+        raise DomainEventSealError("seal destination boundary changed")
+    if classify_destination(repo_root.resolve(), resolved) != expected_class:
+        raise DomainEventSealError("seal destination boundary changed")
 
 
 def _evaluate_snapshot(event_path: Path, evaluator: Callable[[DurableEventBus], object]):
@@ -187,7 +204,11 @@ def export_event_authority_seal(
     }
     anchor_bytes = _canonical_bytes(anchor_document)
     anchor_name = f"event-authority-{commitment['overall_hash']}.json"
-    destination.mkdir(parents=True, exist_ok=True)
+    _assert_destination_boundary(
+        repo_root=root,
+        destination=destination,
+        expected_class=destination_class,
+    )
     anchor_path = destination / anchor_name
     anchor_created = False
     try:
@@ -205,6 +226,11 @@ def export_event_authority_seal(
             raise DomainEventSealError(
                 "create-once anchor collision or tampering detected"
             )
+    _assert_destination_boundary(
+        repo_root=root,
+        destination=destination,
+        expected_class=destination_class,
+    )
 
     result = {
         "schema_version": 1,

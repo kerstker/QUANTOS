@@ -144,6 +144,15 @@ def _begin(store: L2RestoreHistoryStore, attempt: RestoreAttempt):
     return store.begin_attempt(attempt, expected_head=store.authority_head())
 
 
+def test_restore_proof_accepts_posix_separate_filesystem_destination():
+    proof = _proof(
+        source_contract_sha256="a" * 64,
+        destination_class="SEPARATE_FILESYSTEM",
+    )
+
+    assert proof.destination_class == "SEPARATE_FILESYSTEM"
+
+
 def _complete(
     store: L2RestoreHistoryStore,
     attempt_record,

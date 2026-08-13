@@ -23,6 +23,7 @@ def test_create_once_external_anchor_and_verify_extension(tmp_path):
     authority = repo / "authority.db"
     _authority(authority)
     destination = tmp_path / "external"
+    destination.mkdir()
     evidence = repo / "evidence.json"
 
     first = export_artifact_admission_seal(
@@ -65,6 +66,7 @@ def test_anchor_tampering_is_rejected(tmp_path):
     repo.mkdir()
     authority = repo / "authority.db"
     _authority(authority)
+    (tmp_path / "external").mkdir()
     result = export_artifact_admission_seal(
         repo_root=repo,
         authority_path=authority,

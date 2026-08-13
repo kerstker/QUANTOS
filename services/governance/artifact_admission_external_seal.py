@@ -248,7 +248,8 @@ def verify_artifact_admission_external_seal(
         == "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
         and seal.get("authority_mutated") is False
         and type(seal.get("anchor_created")) is bool
-        and seal.get("destination_class") in {"SEPARATE_VOLUME", "OFF_HOST_UNC"},
+        and seal.get("destination_class")
+        in {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"},
         "local seal contract is invalid",
     )
     _require(

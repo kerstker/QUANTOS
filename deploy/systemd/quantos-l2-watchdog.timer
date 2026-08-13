@@ -1,0 +1,13 @@
+[Unit]
+Description=QUANTOS L2 systemd metadata watchdog timer
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/deploy/systemd/README.md
+
+[Timer]
+OnBootSec=5m
+OnUnitInactiveSec=15m
+Persistent=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=quantos-l2-watchdog.service
+
+# Input template: deliberately not installable. The renderer appends metadata.

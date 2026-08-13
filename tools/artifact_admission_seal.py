@@ -27,6 +27,7 @@ from tools.cache_io import atomic_write_json
 from tools.domain_event_seal import (
     DomainEventSealError,
     _canonical_bytes,
+    _assert_destination_boundary,
     _sha256,
     _validate_destination,
 )
@@ -238,7 +239,14 @@ def export_artifact_admission_seal(
         "artifact-admission-authority-"
         f"{commitment['overall_hash']}.json"
     )
-    destination.mkdir(parents=True, exist_ok=True)
+    try:
+        _assert_destination_boundary(
+            repo_root=root,
+            destination=destination,
+            expected_class=destination_class,
+        )
+    except DomainEventSealError as exc:
+        raise ArtifactAdmissionSealError(str(exc)) from exc
     anchor_path = destination / anchor_name
     anchor_created = False
     try:
@@ -258,6 +266,14 @@ def export_artifact_admission_seal(
             raise ArtifactAdmissionSealError(
                 "create-once artifact-admission anchor collision detected"
             )
+    try:
+        _assert_destination_boundary(
+            repo_root=root,
+            destination=destination,
+            expected_class=destination_class,
+        )
+    except DomainEventSealError as exc:
+        raise ArtifactAdmissionSealError(str(exc)) from exc
     result = {
         "schema_version": 1,
         "operation_verdict": "PASS",

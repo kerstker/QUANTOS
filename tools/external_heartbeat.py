@@ -112,6 +112,7 @@ def build_heartbeat_payload(
     if destination_class not in {
         "OFF_HOST_UNC",
         "SEPARATE_VOLUME",
+        "SEPARATE_FILESYSTEM",
         "LOCAL_ONLY",
     }:
         destination_class = ""

@@ -336,7 +336,7 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     ] in (
         {"GITHUB_ACTIONS_REKOR"}
         if external_chain_head_verified
-        else {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+        else {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"}
     )
     assert evidence[
         "artifact_admission_decision_history_external_signature_verified"

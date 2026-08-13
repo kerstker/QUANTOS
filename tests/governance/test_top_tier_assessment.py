@@ -415,6 +415,11 @@ def test_l2_backup_checker_requires_external_encrypted_restore_verified_evidence
     report = assess_repository(tmp_path, registry)
     assert report["requirements"][0]["status"] == "PASS"
 
+    payload["destination_class"] = "SEPARATE_FILESYSTEM"
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "PASS"
+
 
 def test_l2_backup_checker_accepts_v3_v4_and_v5_source_contracts(tmp_path):
     """The checker must accept every released source-contract version.

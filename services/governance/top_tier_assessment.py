@@ -2406,7 +2406,11 @@ def _l2_backup_evidence(
 
     external = document.get("external_destination_verified") is True
     destination_class = document.get("destination_class")
-    if not external or destination_class not in {"OFF_HOST_UNC", "SEPARATE_VOLUME"}:
+    if not external or destination_class not in {
+        "OFF_HOST_UNC",
+        "SEPARATE_VOLUME",
+        "SEPARATE_FILESYSTEM",
+    }:
         return _result(
             "PARTIAL",
             "M2",
@@ -3079,7 +3083,7 @@ def _supply_chain_baseline_evidence(
             or document.get(
                 "artifact_admission_decision_history_external_destination_class"
             )
-            not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+            not in {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"}
             or document.get(
                 "artifact_admission_decision_history_external_signature_verified"
             )

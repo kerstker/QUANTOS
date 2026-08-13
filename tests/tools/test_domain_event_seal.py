@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import tools.domain_event_seal as domain_event_seal
 
 from quantos.contracts.events import Event
 from services.monitoring.event_bus import DurableEventBus
@@ -37,6 +38,7 @@ def test_external_seal_anchor_is_create_once_idempotent_and_non_mutating(tmp_pat
     _seed_authority(authority)
     before = authority.read_bytes()
     destination = tmp_path / "external-seals"
+    destination.mkdir()
     evidence = repo / "evidence" / "domain_event_seal_latest.json"
 
     first = export_event_authority_seal(
@@ -116,6 +118,7 @@ def test_external_seal_refuses_to_overwrite_tampered_existing_anchor(tmp_path):
     authority.parent.mkdir(parents=True)
     _seed_authority(authority)
     destination = tmp_path / "external-seals"
+    destination.mkdir()
     evidence = repo / "evidence.json"
     result = export_event_authority_seal(
         repo_root=repo,
@@ -158,11 +161,37 @@ def test_external_seal_missing_authority_does_not_create_destination(tmp_path):
     assert not destination.exists()
 
 
+def test_external_seal_destination_must_preexist_and_rejects_symlink(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with pytest.raises(DomainEventSealError, match="pre-existing directory"):
+        domain_event_seal._validate_destination(
+            repo_root=repo,
+            destination_root=tmp_path / "missing",
+            allow_local_destination=True,
+        )
+
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - locked-down Windows host
+        pytest.skip(f"symlink creation unavailable: {exc.__class__.__name__}")
+    with pytest.raises(DomainEventSealError, match="non-symlink"):
+        domain_event_seal._validate_destination(
+            repo_root=repo,
+            destination_root=link,
+            allow_local_destination=True,
+        )
+
+
 def test_external_seal_requires_unc_or_separate_volume_by_default(tmp_path):
     repo = tmp_path / "repo"
     authority = repo / "data" / "cache" / "domain_events.db"
     authority.parent.mkdir(parents=True)
     _seed_authority(authority)
+    (tmp_path / "same-volume").mkdir()
 
     with pytest.raises(DomainEventSealError, match="separate volume or UNC"):
         export_event_authority_seal(

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import sqlite3
 import threading
 import time
+import sys
 
 import pytest
 
@@ -16,6 +18,8 @@ from tools.l2_backup import (
     DEFAULT_SOURCES,
     L2BackupError,
     SOURCE_CONTRACT_VERSION,
+    classify_destination,
+    resolve_backup_passphrase,
     restore_l2_batch,
     run_recorded_l2_backup,
     run_l2_backup,
@@ -24,6 +28,559 @@ from tools.live_backup import decrypt_bytes, decrypt_file, encrypt_bytes, encryp
 
 
 PASSPHRASE = "institutional-backup-test-passphrase"
+
+
+def test_destination_classification_preserves_windows_unc_and_volume_semantics():
+    assert classify_destination(
+        PureWindowsPath("C:/QUANTOS"), PureWindowsPath("//backup-host/quantos")
+    ) == "OFF_HOST_UNC"
+    assert classify_destination(
+        PureWindowsPath("C:/QUANTOS"), PureWindowsPath("D:/quantos-backup")
+    ) == "SEPARATE_VOLUME"
+
+
+def test_posix_double_slash_is_not_misclassified_as_windows_unc(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_filesystem_device_id", lambda _path: 10)
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("//tmp/backup")
+    ) == "LOCAL_ONLY"
+
+
+def test_destination_classification_uses_posix_filesystem_devices(monkeypatch):
+    devices = {"/srv/quantos": 10, "/mnt/backup/quantos": 20}
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_id",
+        lambda path: devices[os.fspath(path)],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_posix_destination_is_durable",
+        lambda _repo, _destination, **_kwargs: True,
+    )
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("/mnt/backup/quantos")
+    ) == "SEPARATE_FILESYSTEM"
+
+
+def test_destination_classification_rejects_non_durable_posix_filesystem(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_id",
+        lambda path: 10 if os.fspath(path) == "/srv/quantos" else 20,
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_posix_destination_is_durable",
+        lambda _repo, _destination, **_kwargs: False,
+    )
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("/dev/shm/quantos-backup")
+    ) == "LOCAL_ONLY"
+
+
+def test_mount_provenance_selects_deepest_mount():
+    mountinfo = (
+        "24 1 8:1 / / rw - ext4 /dev/root rw\n"
+        "25 24 8:2 / /mnt/backup rw - xfs /dev/nvme1n1p1 rw\n"
+    )
+    assert l2_backup_module._mount_provenance_from_lines(
+        PurePosixPath("/mnt/backup/quantos"),
+        (8, 2),
+        mountinfo.splitlines(),
+    ) == (
+        "/dev/nvme1n1p1",
+        "xfs",
+    )
+
+
+def test_mount_provenance_requires_matching_major_minor():
+    mountinfo = (
+        "24 1 8:1 / / rw - ext4 /dev/root rw\n"
+        "25 24 8:3 / /mnt/backup rw - xfs /dev/wrong rw\n"
+    )
+
+    assert l2_backup_module._mount_provenance_from_lines(
+        PurePosixPath("/mnt/backup/quantos"),
+        (8, 2),
+        mountinfo.splitlines(),
+    ) is None
+
+
+def test_mount_provenance_decodes_only_defined_mountinfo_escapes():
+    mountinfo = (
+        r"25 24 8:2 / /mnt/back\040up rw - xfs /dev/disk\134by-id\134backup rw"
+        "\n"
+    )
+
+    assert l2_backup_module._mount_provenance_from_lines(
+        PurePosixPath("/mnt/back up/quantos"),
+        (8, 2),
+        mountinfo.splitlines(),
+    ) == (r"/dev/disk\by-id\backup", "xfs")
+    with pytest.raises(ValueError, match="unsupported mountinfo escape"):
+        l2_backup_module._decode_mountinfo_path(r"/mnt/not-defined\141")
+
+
+@pytest.mark.parametrize(
+    ("encoded", "decoded"),
+    (
+        (r"\040", " "),
+        (r"\011", "\t"),
+        (r"\012", "\n"),
+        (r"\134", "\\"),
+    ),
+)
+def test_mountinfo_decoder_accepts_exactly_defined_escapes(encoded, decoded):
+    assert l2_backup_module._decode_mountinfo_path(f"left{encoded}right") == (
+        f"left{decoded}right"
+    )
+
+
+def test_mount_provenance_rejects_malformed_table_fail_closed():
+    assert l2_backup_module._mount_provenance_from_lines(
+        PurePosixPath("/mnt/backup/quantos"),
+        (8, 2),
+        ("malformed",),
+    ) is None
+
+
+def test_linux_durability_uses_one_mountinfo_snapshot_and_device_identity(
+    monkeypatch,
+):
+    mountinfo = (
+        "24 1 8:1 / /srv/quantos rw - ext4 /dev/nvme0n1p1 rw",
+        "25 24 8:2 / /mnt/backup rw - xfs /dev/nvme1n1p1 rw",
+    )
+    calls = 0
+
+    def read_mountinfo():
+        nonlocal calls
+        calls += 1
+        return mountinfo
+
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (8, 2)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module, "_read_linux_mountinfo_lines", read_mountinfo
+    )
+
+    assert l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    ("filesystem_type", "source"),
+    (("nfs4", "storage.example:/quantos"), ("cifs", "//nas/quantos")),
+)
+def test_linux_durability_accepts_allowlisted_network_filesystem(
+    monkeypatch, filesystem_type, source
+):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (0, 43)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_read_linux_mountinfo_lines",
+        lambda: (
+            "24 1 8:1 / /srv/quantos rw - ext4 /dev/root rw",
+            f"25 24 0:43 / /mnt/backup rw - {filesystem_type} {source} rw",
+        ),
+    )
+
+    assert l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+
+
+@pytest.mark.parametrize("filesystem_type", ("tmpfs", "ramfs", "proc", "overlay"))
+def test_posix_durability_rejects_volatile_or_pseudo_filesystems(
+    monkeypatch, filesystem_type
+):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (0, 42)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_read_linux_mountinfo_lines",
+        lambda: (
+            "24 1 8:1 / /srv/quantos rw - ext4 /dev/root rw",
+            f"25 24 0:42 / /mnt/backup rw - {filesystem_type} synthetic rw",
+        ),
+    )
+
+    assert not l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+
+
+def test_posix_durability_rejects_unknown_filesystem_type(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (8, 2)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_read_linux_mountinfo_lines",
+        lambda: (
+            "24 1 8:1 / /srv/quantos rw - ext4 /dev/root rw",
+            "25 24 8:2 / /mnt/backup rw - future-pseudofs remote rw",
+        ),
+    )
+
+    assert not l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+
+
+@pytest.mark.parametrize("source", ("none", "overlay", "tmpfs", "proc"))
+def test_posix_durability_rejects_synthetic_source(monkeypatch, source):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (8, 2)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_read_linux_mountinfo_lines",
+        lambda: (
+            "24 1 8:1 / /srv/quantos rw - ext4 /dev/root rw",
+            f"25 24 8:2 / /mnt/backup rw - ext4 {source} rw",
+        ),
+    )
+
+    assert not l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+
+
+def test_posix_durability_requires_distinct_mount_source(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (8, 2)}[device_id],
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_read_linux_mountinfo_lines",
+        lambda: (
+            "24 1 8:1 / /srv/quantos rw - ext4 /dev/nvme0n1p2 rw",
+            "25 24 8:2 / /mnt/backup rw - ext4 /dev/nvme0n1p2 rw",
+        ),
+    )
+
+    assert not l2_backup_module._posix_destination_is_durable(
+        PurePosixPath("/srv/quantos"),
+        PurePosixPath("/mnt/backup"),
+        repo_device_id=10,
+        destination_device_id=20,
+    )
+
+
+def test_non_linux_posix_preserves_device_boundary_semantics(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_id",
+        lambda path: 10 if os.fspath(path) == "/srv/quantos" else 20,
+    )
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("/mnt/backup")
+    ) == "SEPARATE_FILESYSTEM"
+
+
+def test_linux_mountinfo_failure_is_local_only(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: True)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_id",
+        lambda path: 10 if os.fspath(path) == "/srv/quantos" else 20,
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_resolved_posix_path",
+        lambda path: PurePosixPath(os.fspath(path)),
+    )
+    monkeypatch.setattr(
+        l2_backup_module,
+        "_filesystem_device_numbers",
+        lambda device_id: {10: (8, 1), 20: (8, 2)}[device_id],
+    )
+    monkeypatch.setattr(l2_backup_module, "_read_linux_mountinfo_lines", lambda: None)
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("/mnt/backup")
+    ) == "LOCAL_ONLY"
+
+
+def test_destination_classification_keeps_same_posix_filesystem_local(monkeypatch):
+    monkeypatch.setattr(l2_backup_module, "_filesystem_device_id", lambda _path: 10)
+
+    assert classify_destination(
+        PurePosixPath("/srv/quantos"), PurePosixPath("/srv/quantos-backup")
+    ) == "LOCAL_ONLY"
+
+
+def test_filesystem_device_id_uses_nearest_existing_parent(tmp_path):
+    missing = tmp_path / "not-created" / "nested" / "backup"
+
+    assert l2_backup_module._filesystem_device_id(missing) == tmp_path.stat().st_dev
+
+
+def test_backup_destination_must_preexist_and_rejects_symlink(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with pytest.raises(L2BackupError, match="pre-existing directory"):
+        l2_backup_module._validate_destination(
+            repo,
+            tmp_path / "missing",
+            allow_local_destination=True,
+        )
+
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - locked-down Windows host
+        pytest.skip(f"symlink creation unavailable: {exc.__class__.__name__}")
+    with pytest.raises(L2BackupError, match="non-symlink"):
+        l2_backup_module._validate_destination(
+            repo,
+            link,
+            allow_local_destination=True,
+        )
+
+
+def test_backup_rechecks_destination_before_publish(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    state = repo / "data" / "cache" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("state", encoding="utf-8")
+    destination = tmp_path / "backup"
+    destination.mkdir()
+    calls = 0
+    real_classify = l2_backup_module.classify_destination
+
+    def drifting_classification(repo_root, destination_root):
+        nonlocal calls
+        calls += 1
+        if calls >= 3:
+            return "SEPARATE_FILESYSTEM"
+        return real_classify(repo_root, destination_root)
+
+    monkeypatch.setattr(
+        l2_backup_module,
+        "classify_destination",
+        drifting_classification,
+    )
+    with pytest.raises(L2BackupError, match="boundary changed"):
+        run_l2_backup(
+            repo_root=repo,
+            destination_root=destination,
+            passphrase=PASSPHRASE,
+            sources=(BackupSource("data/cache/state.json", "state", required=True),),
+            allow_local_destination=True,
+            now_ms=1_784_044_800_000,
+        )
+    assert not any(path.name.startswith("2026") for path in destination.iterdir())
+
+
+def test_passphrase_file_is_loaded_without_terminal_newline(tmp_path, monkeypatch):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text(PASSPHRASE + "\n", encoding="utf-8")
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+
+    assert resolve_backup_passphrase(
+        environment_passphrase=None,
+        passphrase_file=secret,
+    ) == PASSPHRASE
+
+
+def test_passphrase_sources_are_strictly_mutually_exclusive(tmp_path):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text(PASSPHRASE, encoding="utf-8")
+
+    with pytest.raises(L2BackupError, match="exactly one") as raised:
+        resolve_backup_passphrase(
+            environment_passphrase=PASSPHRASE,
+            passphrase_file=secret,
+        )
+    assert PASSPHRASE not in str(raised.value)
+    assert str(secret) not in str(raised.value)
+
+
+def test_passphrase_file_must_be_regular_and_not_a_symlink(tmp_path, monkeypatch):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text(PASSPHRASE, encoding="utf-8")
+    link = tmp_path / "backup.passphrase.link"
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:  # pragma: no cover - unusual locked-down Windows host
+        pytest.skip(f"symlink creation unavailable: {exc.__class__.__name__}")
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+
+    with pytest.raises(L2BackupError, match="regular non-symlink") as raised:
+        resolve_backup_passphrase(
+            environment_passphrase=None,
+            passphrase_file=link,
+        )
+    assert str(link) not in str(raised.value)
+
+
+def test_posix_passphrase_file_rejects_group_or_other_permissions():
+    with pytest.raises(L2BackupError, match="owner-only"):
+        l2_backup_module._validate_passphrase_file_mode(0o100640)
+
+
+def test_passphrase_file_rejects_empty_or_weak_secret_without_leaking_path(
+    tmp_path, monkeypatch
+):
+    secret = tmp_path / "do-not-expose-this-path.passphrase"
+    secret.write_text("short\n", encoding="utf-8")
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+
+    with pytest.raises(L2BackupError, match="strong passphrase") as raised:
+        resolve_backup_passphrase(
+            environment_passphrase=None,
+            passphrase_file=secret,
+        )
+    assert str(secret) not in str(raised.value)
+    assert "short" not in str(raised.value)
+
+
+def test_main_accepts_passphrase_file_argument(tmp_path, monkeypatch, capsys):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text(PASSPHRASE + "\n", encoding="utf-8")
+    captured = {}
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+    monkeypatch.delenv(l2_backup_module.PASSPHRASE_ENV, raising=False)
+    monkeypatch.delenv(l2_backup_module.PASSPHRASE_FILE_ENV, raising=False)
+    monkeypatch.setattr(
+        l2_backup_module,
+        "run_recorded_l2_backup",
+        lambda **kwargs: captured.update(kwargs) or {"verdict": "PASS"},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "l2_backup.py",
+            "--dest",
+            str(tmp_path / "backup"),
+            "--passphrase-file",
+            str(secret),
+        ],
+    )
+
+    l2_backup_module.main()
+
+    assert captured["passphrase"] == PASSPHRASE
+    assert json.loads(capsys.readouterr().out)["verdict"] == "PASS"
+
+
+def test_systemd_credential_directory_supplies_default_passphrase_file(
+    tmp_path, monkeypatch, capsys
+):
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    secret = credentials / "l2-backup-passphrase"
+    secret.write_text(PASSPHRASE, encoding="utf-8")
+    captured = {}
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+    monkeypatch.delenv(l2_backup_module.PASSPHRASE_ENV, raising=False)
+    monkeypatch.delenv(l2_backup_module.PASSPHRASE_FILE_ENV, raising=False)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+    monkeypatch.setattr(
+        l2_backup_module,
+        "run_recorded_l2_backup",
+        lambda **kwargs: captured.update(kwargs) or {"verdict": "PASS"},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["l2_backup.py", "--dest", str(tmp_path / "backup")],
+    )
+
+    l2_backup_module.main()
+
+    assert captured["passphrase"] == PASSPHRASE
+    assert json.loads(capsys.readouterr().out)["verdict"] == "PASS"
 
 
 def test_default_backup_sources_require_data_quality_admission_authority():
@@ -216,6 +773,7 @@ def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path
     database = repo / "data" / "cache" / "authority.db"
     status = repo / "data" / "cache" / "l2_backup_status.json"
     evidence = repo / "evidence" / "l2_backup_latest.json"
+    (tmp_path / "backup").mkdir()
     connection = _seed_sqlite(database)
     state = repo / "data" / "cache" / "state.json"
     state.write_text(json.dumps({"marker": "sensitive-state-marker"}), encoding="utf-8")
@@ -295,6 +853,7 @@ def test_l2_backup_missing_required_source_fails_without_publishing(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     destination = tmp_path / "backup"
+    destination.mkdir()
 
     with pytest.raises(L2BackupError, match="required backup source is missing"):
         run_l2_backup(
@@ -307,7 +866,7 @@ def test_l2_backup_missing_required_source_fails_without_publishing(tmp_path):
             allow_local_destination=True,
         )
 
-    assert not destination.exists()
+    assert not any(destination.iterdir())
     assert not (repo / "evidence.json").exists()
     assert not (repo / "status.json").exists()
 
@@ -317,6 +876,7 @@ def test_l2_backup_rejects_sources_outside_allowlisted_roots(tmp_path):
     secret = repo / "key" / "broker_secret.json"
     secret.parent.mkdir(parents=True)
     secret.write_text("must-not-be-backed-up", encoding="utf-8")
+    (tmp_path / "backup").mkdir()
 
     with pytest.raises(L2BackupError, match="allowlisted backup roots"):
         run_l2_backup(
@@ -335,6 +895,7 @@ def test_l2_backup_requires_external_destination_without_explicit_local_optout(t
     state = repo / "data" / "cache" / "state.json"
     state.parent.mkdir(parents=True)
     state.write_text("state", encoding="utf-8")
+    (tmp_path / "backup").mkdir()
 
     with pytest.raises(L2BackupError, match="separate volume or UNC"):
         run_l2_backup(
@@ -352,6 +913,7 @@ def test_l2_backup_rejects_corrupt_nonempty_sqlite_source(tmp_path):
     database = repo / "data" / "cache" / "authority.db"
     database.parent.mkdir(parents=True)
     database.write_bytes(b"not-a-sqlite-database")
+    (tmp_path / "backup").mkdir()
 
     with pytest.raises(L2BackupError, match="not a valid SQLite database"):
         run_l2_backup(
@@ -387,6 +949,7 @@ def _contract_batch(tmp_path) -> tuple[Path, tuple[BackupSource, ...], int]:
         BackupSource("data/cache/second.json", "second_authority", required=False),
     )
     now_ms = 1_784_044_800_000
+    (tmp_path / "backup").mkdir(exist_ok=True)
     result = run_l2_backup(
         repo_root=repo,
         destination_root=tmp_path / "backup",
@@ -489,6 +1052,7 @@ def _seed_recorded_state(repo: Path) -> None:
 def test_recorded_backup_commits_pass_before_sanitized_compatibility_projection(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     _seed_recorded_state(repo)
+    (tmp_path / "external-backup").mkdir()
     monkeypatch.setattr(
         l2_backup_module,
         "classify_destination",
@@ -631,6 +1195,7 @@ def test_restore_rejects_semantically_tampered_restore_history_database(tmp_path
             required=True,
         ),
     )
+    (tmp_path / "backup").mkdir()
     result = run_l2_backup(
         repo_root=repo,
         destination_root=tmp_path / "backup",

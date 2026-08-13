@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sqlite3
 
+import pytest
+
 import tools.l2_scheduler_watchdog as watchdog
 from services.governance.l2_restore_history import (
     L2RestoreHistoryStore,
@@ -14,7 +16,9 @@ from services.governance.l2_restore_history import (
 )
 from tools.l2_scheduler_watchdog import (
     EXPECTED_TASKS,
+    SchedulerInspectionError,
     TaskSnapshot,
+    collect_systemd_units,
     collect_windows_tasks,
     evaluate_schedule,
     read_restore_history_health,
@@ -57,7 +61,7 @@ def _healthy_snapshot(
         last_run_ms=NOW_MS - min(spec.max_age_ms // 2, 3_600_000),
         last_result=0,
         next_run_ms=NOW_MS + 3_600_000,
-        execute="C:/Python/python.exe",
+        execute=f"/opt/quantos/venvs/{RELEASE_COMMIT}/bin/python",
         arguments=_launcher_arguments(release, spec.module),
         working_directory=str(repo),
     )
@@ -172,6 +176,98 @@ def _history_store(repo: Path) -> L2RestoreHistoryStore:
     return L2RestoreHistoryStore(str(path), create=True, clock_ms=lambda: NOW_MS)
 
 
+def test_backup_configuration_accepts_strong_owner_only_passphrase_file(
+    tmp_path, monkeypatch
+):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text("institutional-backup-passphrase\n", encoding="utf-8")
+    (tmp_path / "external").mkdir()
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE", raising=False)
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE_FILE", raising=False)
+    monkeypatch.setattr(watchdog, "_configured_environment_value", lambda _name: None)
+    monkeypatch.setattr(watchdog.l2_backup, "_is_posix_platform", lambda: False)
+    monkeypatch.setattr(
+        watchdog.l2_backup,
+        "classify_destination",
+        lambda *_args: "SEPARATE_FILESYSTEM",
+    )
+
+    assert watchdog.backup_configuration_ready(
+        repo_root=tmp_path / "repo",
+        passphrase_file=str(secret),
+        destination=str(tmp_path / "external"),
+    )
+
+
+def test_backup_configuration_rejects_ambiguous_passphrase_sources(
+    tmp_path, monkeypatch
+):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text("institutional-backup-passphrase", encoding="utf-8")
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE", raising=False)
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE_FILE", raising=False)
+    monkeypatch.setattr(watchdog, "_configured_environment_value", lambda _name: None)
+    monkeypatch.setattr(watchdog.l2_backup, "_is_posix_platform", lambda: False)
+    monkeypatch.setattr(
+        watchdog.l2_backup,
+        "classify_destination",
+        lambda *_args: "SEPARATE_FILESYSTEM",
+    )
+
+    assert not watchdog.backup_configuration_ready(
+        repo_root=tmp_path / "repo",
+        passphrase="institutional-backup-passphrase",
+        passphrase_file=str(secret),
+        destination=str(tmp_path / "external"),
+    )
+
+
+def test_backup_configuration_rejects_invalid_passphrase_file_without_raising(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE", raising=False)
+    monkeypatch.delenv("QUANTOS_BACKUP_PASSPHRASE_FILE", raising=False)
+    monkeypatch.setattr(watchdog, "_configured_environment_value", lambda _name: None)
+    monkeypatch.setattr(watchdog.l2_backup, "_is_posix_platform", lambda: False)
+
+    assert not watchdog.backup_configuration_ready(
+        repo_root=tmp_path / "repo",
+        passphrase_file=str(tmp_path / "missing.passphrase"),
+        destination=str(tmp_path / "external"),
+    )
+
+
+def test_event_seal_configuration_accepts_posix_separate_filesystem(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "external").mkdir()
+    monkeypatch.setattr(
+        watchdog.l2_backup,
+        "classify_destination",
+        lambda *_args: "SEPARATE_FILESYSTEM",
+    )
+
+    assert watchdog.event_seal_configuration_ready(
+        repo_root=tmp_path / "repo",
+        destination=str(tmp_path / "external"),
+    )
+
+
+def test_event_seal_configuration_rejects_unproved_destination(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        watchdog.l2_backup,
+        "classify_destination",
+        lambda *_args: "LOCAL_ONLY",
+    )
+
+    assert not watchdog.event_seal_configuration_ready(
+        repo_root=tmp_path / "repo",
+        destination=str(tmp_path / "external"),
+    )
+
+
 def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(tmp_path):
     result = evaluate_schedule(
         _healthy_tasks(tmp_path, include_backup=True, include_external=True),
@@ -221,6 +317,16 @@ def test_running_task_ignores_prior_overlap_result_until_current_instance_comple
         backup_ready=True,
         heartbeat_ready=True,
         event_seal_ready=True,
+        resident_health={
+            "generated_at_ms": NOW_MS - 1_000,
+            "verdict": "PASS",
+            "streaming": True,
+            "safety": {
+                "credentials": False,
+                "private_stream": False,
+                "broker_connectivity": False,
+            },
+        },
     )
 
     check = next(
@@ -229,8 +335,44 @@ def test_running_task_ignores_prior_overlap_result_until_current_instance_comple
         if row["task_name"] == "QUANTOS_binance_realtime_stream"
     )
     assert check["status"] == "PASS"
-    assert check["code"] == "RUNNING"
-    assert result["verdict"] == "PASS"
+    assert check["code"] == "RUNNING_HEALTHY"
+
+
+def test_running_resident_stream_requires_fresh_semantic_health(tmp_path):
+    snapshot = _healthy_snapshot(tmp_path, "QUANTOS_binance_realtime_stream")
+    running = TaskSnapshot(
+        name=snapshot.name,
+        state="Running",
+        last_run_ms=NOW_MS - 60_000,
+        last_result=0,
+        next_run_ms=None,
+        execute=snapshot.execute,
+        arguments=snapshot.arguments,
+        working_directory=snapshot.working_directory,
+    )
+    result = evaluate_schedule(
+        [running, _healthy_snapshot(tmp_path, "QUANTOS_scheduler_watchdog")],
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=False,
+        resident_health={
+            "generated_at_ms": NOW_MS - 31_000,
+            "verdict": "PASS",
+            "streaming": True,
+            "safety": {
+                "credentials": False,
+                "private_stream": False,
+                "broker_connectivity": False,
+            },
+        },
+    )
+    check = next(
+        row for row in result["checks"]
+        if row["task_name"] == "QUANTOS_binance_realtime_stream"
+    )
+    assert check["status"] == "BREACH"
+    assert check["code"] == "RESIDENT_HEALTH_STALE"
+    assert result["verdict"] == "BREACH"
 
 
 def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
@@ -529,6 +671,496 @@ def test_windows_collector_uses_fixed_powershell_command_without_shell(tmp_path)
     )
 
 
+def _systemd_properties(
+    unit: str,
+    *,
+    active: str,
+    unit_file_state: str,
+    result: str = "success",
+    status: int = 0,
+    started: int = NOW_MS // 1_000 - 60,
+    triggered: int = NOW_MS // 1_000 - 60,
+    next_run: int = NOW_MS // 1_000 + 60,
+) -> str:
+    return "\n".join(
+        (
+            f"Id={unit}",
+            "LoadState=loaded",
+            f"ActiveState={active}",
+            "SubState=running" if active == "active" else "SubState=dead",
+            f"UnitFileState={unit_file_state}",
+            f"Result={result}",
+            f"ExecMainStatus={status}",
+            f"ExecMainStartTimestamp=@{started}",
+            f"ExecMainExitTimestamp=@{started + 1}",
+            f"FragmentPath=/etc/systemd/system/{unit}",
+            "DropInPaths=",
+            "NeedDaemonReload=no",
+            "",
+        )
+    )
+
+
+def _systemd_timer_properties(
+    module: str,
+    *,
+    triggered: int = NOW_MS // 1_000 - 60,
+    next_run: int = NOW_MS // 1_000 + 60,
+) -> str:
+    unit = f"quantos-l2@{module}.timer"
+    return "\n".join(
+        (
+            f"Id={unit}",
+            "LoadState=loaded",
+            "ActiveState=active",
+            "SubState=waiting",
+            "UnitFileState=enabled",
+            f"FragmentPath=/etc/systemd/system/{unit}",
+            "DropInPaths=",
+            "NeedDaemonReload=no",
+            "",
+        )
+    )
+def _systemd_service_unit(module: str) -> str:
+    release_root = f"/opt/quantos/releases/{RELEASE_COMMIT}"
+    python = f"/opt/quantos/venvs/{RELEASE_COMMIT}/bin/python"
+    launcher = f"{release_root}/tools/l2_schedule_entrypoint.py"
+    timeout = {"domain_event_ops": "5m", "l2_backup": "6h"}.get(module, "5m")
+    unit_lines = [
+        "[Unit]",
+        f"Description=QUANTOS test unit ({module})",
+        "After=network-online.target",
+        "Wants=network-online.target",
+    ]
+    if module == "l2_backup":
+        unit_lines.append("RequiresMountsFor=/mnt/backup")
+    service_lines = [
+        "[Service]",
+        "Type=" + ("simple" if module == "binance_realtime_stream" else "oneshot"),
+        "User=quantos",
+        "Group=quantos",
+        "UMask=0077",
+        "Environment=LIVE_TRADING_ENABLED=false",
+        "Environment=REAL_BROKER_ENABLED=false",
+        "Environment=ALLOW_ORDER_SUBMISSION=false",
+        "Environment=ALLOW_AI_DIRECT_TRADING=false",
+        "Environment=REQUIRE_HUMAN_APPROVAL=true",
+        "Environment=QUANTOS_L2_DRY_RUN_ONLY=true",
+        f"Environment=QUANTOS_RELEASE_ROOT={release_root}",
+        f"Environment=QUANTOS_RELEASE_COMMIT={RELEASE_COMMIT}",
+        "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state",
+    ]
+    if module == "l2_backup":
+        service_lines.extend(
+            (
+                "Environment=QUANTOS_BACKUP_DEST=/mnt/backup",
+                "LoadCredential=l2-backup-passphrase:/etc/quantos/credentials/l2-backup-passphrase",
+            )
+        )
+    service_lines.extend(
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            f"ExecStart={python} {launcher} {module} --release-commit {RELEASE_COMMIT}",
+            f"TimeoutStartSec={timeout}",
+            "Restart=" + ("always" if module == "binance_realtime_stream" else "no"),
+            "KillMode=control-group",
+            "NoNewPrivileges=true",
+            "ProtectSystem=strict",
+            "ProtectHome=true",
+            "PrivateTmp=true",
+            "PrivateDevices=true",
+            "ProtectKernelTunables=true",
+            "ProtectKernelModules=true",
+            "ProtectControlGroups=true",
+            "RestrictSUIDSGID=true",
+            "LockPersonality=true",
+            "RestrictRealtime=true",
+            "CapabilityBoundingSet=",
+            "AmbientCapabilities=",
+            f"ReadOnlyPaths={release_root}",
+            "ReadWritePaths=/srv/quantos/state",
+        )
+    )
+    if module == "l2_backup":
+        service_lines.append("ReadWritePaths=/mnt/backup")
+    if module == "binance_realtime_stream":
+        service_lines.extend(("RestartSec=30s", "RuntimeMaxSec=23h55m", "TimeoutStopSec=90s"))
+    install = (
+        ["[Install]", "WantedBy=multi-user.target"]
+        if module == "binance_realtime_stream"
+        else []
+    )
+    return "\n".join((*unit_lines, *service_lines, *install, ""))
+
+
+def _systemd_timer_unit(module: str) -> str:
+    schedule = {
+        "domain_event_ops": "*-*-* *:01/15:00 Asia/Shanghai",
+        "l2_backup": "*-*-* 03:00:00 Asia/Shanghai",
+    }[module]
+    return "\n".join(
+        (
+            "[Unit]",
+            f"Description=QUANTOS test timer ({module})",
+            "[Timer]",
+            f"OnCalendar={schedule}",
+            "Persistent=true",
+            "AccuracySec=1s",
+            "RandomizedDelaySec=0",
+            f"Unit=quantos-l2@{module}.service",
+            "[Install]",
+            "WantedBy=timers.target",
+            "",
+        )
+    )
+
+
+class _SystemdCompleted:
+    returncode = 0
+    stderr = ""
+
+    def __init__(self, stdout: str):
+        self.stdout = stdout
+
+
+def _systemd_runner(
+    module: str,
+    *,
+    service_text: str | None = None,
+    timer_text: str | None = None,
+    service_metadata: str | None = None,
+    timer_metadata: str | None = None,
+    calls: list | None = None,
+):
+    stream = module == "binance_realtime_stream"
+    service = (
+        "quantos-binance-realtime-stream.service"
+        if stream
+        else f"quantos-l2@{module}.service"
+    )
+    timer = None if stream else f"quantos-l2@{module}.timer"
+    service_text = service_text or _systemd_service_unit(module)
+    timer_text = None if stream else (timer_text or _systemd_timer_unit(module))
+    service_metadata = service_metadata or _systemd_properties(
+        service,
+        active="active" if stream else "inactive",
+        unit_file_state="enabled" if stream else "static",
+    )
+    timer_metadata = None if stream else (
+        timer_metadata or _systemd_timer_properties(module)
+    )
+
+    def runner(command, **kwargs):
+        if calls is not None:
+            calls.append((command, kwargs))
+        if command[1] == "list-unit-files":
+            listing = f"{service} {'enabled' if stream else 'static'}\n"
+            if timer is not None:
+                listing = f"{timer} enabled\n" + listing
+            return _SystemdCompleted(listing)
+        if command[1] == "list-units":
+            return _SystemdCompleted("")
+        if command[1] == "show":
+            target = command[5]
+            return _SystemdCompleted(
+                timer_metadata if target == timer else service_metadata
+            )
+        if command[1] == "cat":
+            return _SystemdCompleted(timer_text if command[-1] == timer else service_text)
+        raise AssertionError(f"unexpected command: {command!r}")
+
+    return runner
+
+
+def test_systemd_collector_accepts_exact_ordinary_unit_and_uses_fixed_commands() -> None:
+    calls = []
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", calls=calls)
+    )[0]
+
+    assert snapshot.name == "QUANTOS_domain_event_ops"
+    assert snapshot.state == "Ready"
+    assert snapshot.last_result == 0
+    assert snapshot.last_run_ms == (NOW_MS // 1_000 - 60) * 1_000
+    assert snapshot.next_run_ms is None
+    assert snapshot.scheduler_contract_ok is True
+    assert all(kwargs["shell"] is False for _command, kwargs in calls)
+    assert calls[0][0][:4] == [
+        "systemctl",
+        "list-unit-files",
+        "--no-legend",
+        "--no-pager",
+    ]
+    assert [command[:2] for command, _kwargs in calls].count(
+        ["systemctl", "cat"]
+    ) == 2
+
+
+def test_systemd_collector_accepts_exact_backup_boundary() -> None:
+    snapshot = collect_systemd_units(runner=_systemd_runner("l2_backup"))[0]
+    assert snapshot.name == "QUANTOS_backup"
+    assert snapshot.state == "Ready"
+    assert snapshot.scheduler_contract_ok is True
+    assert dict(snapshot.configured_environment)["QUANTOS_BACKUP_DEST"] == "/mnt/backup"
+
+
+def test_systemd_collector_accepts_exact_resident_stream() -> None:
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("binance_realtime_stream")
+    )[0]
+    assert snapshot.name == "QUANTOS_binance_realtime_stream"
+    assert snapshot.state == "Running"
+    assert snapshot.last_result == 0
+    assert snapshot.scheduler_contract_ok is True
+
+
+@pytest.mark.parametrize(
+    "field,replacement",
+    (
+        (
+            "ExecStart=/opt/quantos/venvs/",
+            "ExecStart=/bin/evil\nExecStart=/opt/quantos/venvs/",
+        ),
+        (
+            "ExecStart=/opt/quantos/venvs/",
+            "ExecStartPre=/bin/evil\nExecStart=/opt/quantos/venvs/",
+        ),
+        (
+            "ExecStart=/opt/quantos/venvs/",
+            "ExecReload=/bin/evil\nExecStart=/opt/quantos/venvs/",
+        ),
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            "BindPaths=/tmp:/srv/quantos/state\nWorkingDirectory=/srv/quantos/state",
+        ),
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            "RootDirectory=/tmp/root\nWorkingDirectory=/srv/quantos/state",
+        ),
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            "InaccessiblePaths=/\nWorkingDirectory=/srv/quantos/state",
+        ),
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            "EnvironmentFile=/tmp/unsafe.env\nWorkingDirectory=/srv/quantos/state",
+        ),
+        (
+            "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state",
+            "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state\nEnvironment=LD_PRELOAD=/tmp/evil.so",
+        ),
+        (
+            "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state",
+            "Environment=\nEnvironment=QUANTOS_STATE_ROOT=/srv/quantos/state",
+        ),
+        ("NoNewPrivileges=true", "NoNewPrivileges=false"),
+        ("ProtectSystem=strict", "ProtectSystem=full"),
+        ("PrivateDevices=true", "PrivateDevices=false"),
+        ("CapabilityBoundingSet=", "CapabilityBoundingSet=CAP_NET_ADMIN"),
+        (
+            f"ReadOnlyPaths=/opt/quantos/releases/{RELEASE_COMMIT}",
+            f"ReadOnlyPaths=/opt/quantos/releases/{RELEASE_COMMIT}\nReadOnlyPaths=/tmp",
+        ),
+        (
+            "ReadWritePaths=/srv/quantos/state",
+            "ReadWritePaths=/srv/quantos/state\nReadWritePaths=/tmp",
+        ),
+        (
+            "WorkingDirectory=/srv/quantos/state",
+            "LoadCredential=unexpected:/tmp/secret\nWorkingDirectory=/srv/quantos/state",
+        ),
+    ),
+)
+def test_systemd_collector_rejects_extra_worker_authority(
+    field: str, replacement: str
+) -> None:
+    service = _systemd_service_unit("domain_event_ops").replace(field, replacement, 1)
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", service_text=service)
+    )[0]
+    assert snapshot.scheduler_contract_ok is False
+
+
+@pytest.mark.parametrize(
+    "field,replacement",
+    (
+        (
+            "LoadCredential=l2-backup-passphrase:/etc/quantos/credentials/l2-backup-passphrase",
+            "LoadCredential=wrong:/tmp/wrong",
+        ),
+        (
+            "LoadCredential=l2-backup-passphrase:/etc/quantos/credentials/l2-backup-passphrase",
+            "LoadCredential=l2-backup-passphrase:/etc/quantos/credentials/l2-backup-passphrase\n"
+            "LoadCredential=extra:/tmp/wrong",
+        ),
+        ("RequiresMountsFor=/mnt/backup", "RequiresMountsFor=/srv/quantos/state"),
+        ("QUANTOS_BACKUP_DEST=/mnt/backup", "QUANTOS_BACKUP_DEST=/srv/quantos/state"),
+        ("ReadWritePaths=/mnt/backup", "ReadWritePaths=/tmp"),
+    ),
+)
+def test_systemd_collector_rejects_backup_boundary_drift(
+    field: str, replacement: str
+) -> None:
+    service = _systemd_service_unit("l2_backup").replace(field, replacement, 1)
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("l2_backup", service_text=service)
+    )[0]
+    assert snapshot.scheduler_contract_ok is False
+
+
+@pytest.mark.parametrize(
+    "field,replacement",
+    (
+        ("DropInPaths=", "DropInPaths=/etc/systemd/system/quantos.d/override.conf"),
+        ("NeedDaemonReload=no", "NeedDaemonReload=yes"),
+        (
+            "FragmentPath=/etc/systemd/system/quantos-l2@domain_event_ops.service",
+            "FragmentPath=/run/systemd/transient/quantos-l2@domain_event_ops.service",
+        ),
+    ),
+)
+def test_systemd_collector_rejects_origin_or_reload_drift(
+    field: str, replacement: str
+) -> None:
+    unit = "quantos-l2@domain_event_ops.service"
+    metadata = _systemd_properties(
+        unit, active="inactive", unit_file_state="static"
+    ).replace(field, replacement, 1)
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner(
+            "domain_event_ops", service_metadata=metadata
+        )
+    )[0]
+    assert snapshot.scheduler_contract_ok is False
+
+
+def test_systemd_collector_rejects_runtime_only_enablement() -> None:
+    unit = "quantos-l2@domain_event_ops.timer"
+    metadata = _systemd_timer_properties("domain_event_ops").replace(
+        "UnitFileState=enabled", "UnitFileState=enabled-runtime", 1
+    )
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", timer_metadata=metadata)
+    )[0]
+    assert snapshot.state == "Disabled"
+    assert snapshot.scheduler_contract_ok is False
+
+
+def test_systemd_collector_rejects_metadata_race() -> None:
+    calls = []
+    base_runner = _systemd_runner("domain_event_ops", calls=calls)
+
+    def runner(command, **kwargs):
+        result = base_runner(command, **kwargs)
+        show_calls = sum(
+            1
+            for observed, _observed_kwargs in calls
+            if observed[1] == "show" and observed[5].endswith(".service")
+        )
+        if command[1] == "show" and command[5].endswith(".service") and show_calls == 2:
+            return _SystemdCompleted(
+                result.stdout.replace("NeedDaemonReload=no", "NeedDaemonReload=yes")
+            )
+        return result
+
+    with pytest.raises(SchedulerInspectionError, match="changed during inspection"):
+        collect_systemd_units(runner=runner)
+
+
+@pytest.mark.parametrize(
+    "field,replacement",
+    (
+        (
+            "OnCalendar=*-*-* *:01/15:00 Asia/Shanghai",
+            "OnCalendar=*-*-* *:02/15:00 Asia/Shanghai",
+        ),
+        (
+            "OnCalendar=*-*-* *:01/15:00 Asia/Shanghai",
+            "OnCalendar=*-*-* *:01/15:00 Asia/Shanghai\nOnBootSec=1s",
+        ),
+        (
+            "Unit=quantos-l2@domain_event_ops.service",
+            "Unit=quantos-l2@paper_realtime.service",
+        ),
+    ),
+)
+def test_systemd_collector_rejects_timer_contract_drift(
+    field: str, replacement: str
+) -> None:
+    timer = _systemd_timer_unit("domain_event_ops").replace(field, replacement, 1)
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", timer_text=timer)
+    )[0]
+    assert snapshot.scheduler_contract_ok is False
+
+
+def test_backup_destination_ready_rechecks_external_mount(tmp_path, monkeypatch) -> None:
+    destination = tmp_path / "backup"
+    destination.mkdir()
+    observed = []
+
+    def classify(repo_root, destination_root):
+        observed.append((repo_root, destination_root))
+        return "SEPARATE_FILESYSTEM"
+
+    monkeypatch.setattr(watchdog.l2_backup, "classify_destination", classify)
+    assert watchdog.backup_destination_ready(
+        repo_root=tmp_path / "state",
+        destination=str(destination),
+    )
+    assert len(observed) == 1
+
+
+def test_backup_destination_ready_fails_closed_after_unmount(tmp_path, monkeypatch) -> None:
+    destination = tmp_path / "backup"
+    destination.mkdir()
+    monkeypatch.setattr(
+        watchdog.l2_backup,
+        "classify_destination",
+        lambda *_args: "LOCAL_ONLY",
+    )
+    assert not watchdog.backup_destination_ready(
+        repo_root=tmp_path / "state",
+        destination=str(destination),
+    )
+
+
+def test_systemd_collector_rejects_unknown_enabled_quantos_unit() -> None:
+    class Completed:
+        returncode = 0
+        stdout = "quantos-order-submit.service enabled\n"
+        stderr = ""
+
+    with pytest.raises(SchedulerInspectionError, match="unexpected enabled"):
+        collect_systemd_units(runner=lambda *_args, **_kwargs: Completed())
+
+
+def test_systemd_collector_rejects_malformed_or_failed_metadata() -> None:
+    unit = "quantos-l2@domain_event_ops.service"
+
+    class Completed:
+        stderr = ""
+
+        def __init__(self, *, returncode: int, stdout: str):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    responses = iter(
+        (
+            Completed(returncode=0, stdout=f"{unit} static\n"),
+            Completed(returncode=0, stdout=""),
+            Completed(returncode=0, stdout="Id=wrong.service\nLoadState=loaded\n"),
+        )
+    )
+    with pytest.raises(SchedulerInspectionError, match="metadata"):
+        collect_systemd_units(runner=lambda *_args, **_kwargs: next(responses))
+
+    with pytest.raises(SchedulerInspectionError, match="query failed"):
+        collect_systemd_units(
+            runner=lambda *_args, **_kwargs: Completed(returncode=1, stdout="")
+        )
+
+
 def test_watchdog_writes_status_and_deduplicates_unchanged_alerts(tmp_path):
     status_path = tmp_path / "scheduler_watchdog_status.json"
     alerts = []
@@ -564,6 +1196,51 @@ def test_watchdog_writes_status_and_deduplicates_unchanged_alerts(tmp_path):
     assert first["verdict"] == second["verdict"] == "PARTIAL"
     assert len(alerts) == 1
     assert json.loads(status_path.read_text(encoding="utf-8"))["verdict"] == "PARTIAL"
+
+
+def test_default_collector_follows_platform_provider(monkeypatch, tmp_path):
+    observed = []
+    monkeypatch.setenv("QUANTOS_SCHEDULER_PROVIDER", "systemd")
+    monkeypatch.setattr(
+        watchdog,
+        "collect_systemd_units",
+        lambda: observed.append("systemd") or [],
+    )
+
+    result = run_scheduler_watchdog(
+        repo_root=tmp_path,
+        status_path=tmp_path / "status.json",
+        now_ms=NOW_MS,
+        backup_ready=False,
+        heartbeat_ready=False,
+        event_seal_ready=False,
+        emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
+    )
+
+    assert observed == ["systemd"]
+    assert result["verdict"] == "BREACH"
+    assert result["checks"][0]["task_name"] == "QUANTOS_factory_loop"
+
+
+def test_systemd_provider_labels_collector_failure(monkeypatch, tmp_path):
+    monkeypatch.setenv("QUANTOS_SCHEDULER_PROVIDER", "systemd")
+    monkeypatch.setattr(
+        watchdog,
+        "collect_systemd_units",
+        lambda: (_ for _ in ()).throw(SchedulerInspectionError("failed")),
+    )
+
+    result = run_scheduler_watchdog(
+        repo_root=tmp_path,
+        status_path=tmp_path / "status.json",
+        now_ms=NOW_MS,
+        backup_ready=False,
+        heartbeat_ready=False,
+        event_seal_ready=False,
+        emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
+    )
+
+    assert result["checks"][0]["task_name"] == "SYSTEMD_SCHEDULER"
 
 
 def test_read_restore_history_health_passes_real_current_authority(tmp_path):

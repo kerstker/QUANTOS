@@ -1,9 +1,9 @@
-"""Independent metadata watchdog for QUANTOS L2 Windows scheduled tasks.
+"""Independent metadata watchdog for QUANTOS L2 scheduled workers.
 
 This module does not import any monitored research, execution, or event worker.
-It inspects Task Scheduler metadata and the exact registered action contract.
+It inspects the host scheduler metadata and the exact registered action contract.
 An external heartbeat monitor is still required to detect loss of this host or
-of Task Scheduler itself.
+of the host scheduler itself.
 """
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ import hashlib
 import ipaddress
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import secrets
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Callable, Iterable
 import urllib.parse
@@ -30,12 +32,12 @@ from services.governance.l2_restore_history import (
 )
 from services.governance.artifact_admission import load_json_without_duplicate_keys
 from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
+import tools.l2_backup as l2_backup
 
 
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _RUNNING_RESULT = 267_009
-_PASSPHRASE_MIN_LENGTH = 12
 
 
 def _persistent_windows_environment(name: str) -> str | None:
@@ -95,6 +97,8 @@ class TaskSnapshot:
     execute: str | None
     arguments: str | None
     working_directory: str | None
+    scheduler_contract_ok: bool = True
+    configured_environment: tuple[tuple[str, str], ...] = ()
 
 
 EXPECTED_TASKS: dict[str, ExpectedTask] = {
@@ -456,10 +460,725 @@ def collect_windows_tasks(
     return snapshots
 
 
+_SYSTEMD_UNIT = re.compile(
+    r"^(?:quantos-l2@(?P<module>[a-z0-9_]+)\.(?P<kind>service|timer)|"
+    r"(?P<stream>quantos-binance-realtime-stream)\.service|"
+    r"(?P<watchdog>quantos-l2-watchdog)\.(?P<watchdog_kind>service|timer))$"
+)
+_SYSTEMD_TIMESTAMP = re.compile(r"^@(?P<seconds>[0-9]+)$")
+_SYSTEMD_SHOW_PROPERTIES = (
+    "Id",
+    "LoadState",
+    "ActiveState",
+    "SubState",
+    "UnitFileState",
+    "Result",
+    "ExecMainStatus",
+    "ExecMainStartTimestamp",
+    "ExecMainExitTimestamp",
+    "FragmentPath",
+    "DropInPaths",
+    "NeedDaemonReload",
+)
+_SYSTEMD_TIMER_PROPERTIES = (
+    "Id",
+    "LoadState",
+    "ActiveState",
+    "SubState",
+    "UnitFileState",
+    "FragmentPath",
+    "DropInPaths",
+    "NeedDaemonReload",
+)
+_SYSTEMD_SAFE_ENVIRONMENT = frozenset(
+    {
+        "LIVE_TRADING_ENABLED=false",
+        "REAL_BROKER_ENABLED=false",
+        "ALLOW_ORDER_SUBMISSION=false",
+        "ALLOW_AI_DIRECT_TRADING=false",
+        "REQUIRE_HUMAN_APPROVAL=true",
+        "QUANTOS_L2_DRY_RUN_ONLY=true",
+    }
+)
+
+
+def _systemd_timestamp_ms(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = _SYSTEMD_TIMESTAMP.fullmatch(value)
+    if match is None:
+        raise SchedulerInspectionError("systemd returned non-machine timestamp metadata")
+    return int(match.group("seconds")) * 1_000
+
+
+def _parse_systemd_properties(
+    raw: str, expected_unit: str, expected_names: tuple[str, ...] = _SYSTEMD_SHOW_PROPERTIES
+) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for line in raw.splitlines():
+        if not line:
+            continue
+        name, separator, value = line.partition("=")
+        if not separator or name not in expected_names or name in properties:
+            raise SchedulerInspectionError("systemd returned invalid unit metadata")
+        properties[name] = value
+    if set(properties) != set(expected_names):
+        raise SchedulerInspectionError("systemd returned incomplete unit metadata")
+    if properties["Id"] != expected_unit or properties["LoadState"] != "loaded":
+        raise SchedulerInspectionError("systemd returned inconsistent unit metadata")
+    return properties
+
+
+_SYSTEMD_UNIT_SECTIONS = frozenset({"Unit", "Service", "Timer", "Install"})
+
+
+def _parse_systemd_unit_text(raw: str) -> dict[str, tuple[str, ...]]:
+    """Parse the small rendered-unit subset and preserve repeated directives."""
+
+    directives: dict[str, list[str]] = {}
+    section: str | None = None
+    for original in raw.splitlines():
+        line = original.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+            if section not in _SYSTEMD_UNIT_SECTIONS:
+                raise SchedulerInspectionError("systemd unit contains an unknown section")
+            continue
+        if section is None:
+            # ``systemctl cat`` prefixes source paths as comments, so every
+            # non-comment directive still has to belong to a known section.
+            raise SchedulerInspectionError("systemd unit contains a directive outside a section")
+        name, separator, value = line.partition("=")
+        if not separator or not name or any(character.isspace() for character in name):
+            raise SchedulerInspectionError("systemd unit contains an invalid directive")
+        directives.setdefault(f"{section}.{name}", []).append(value)
+    return {name: tuple(values) for name, values in directives.items()}
+
+
+def _one_directive(
+    directives: dict[str, tuple[str, ...]], name: str
+) -> str | None:
+    values = directives.get(name, ())
+    return values[0] if len(values) == 1 else None
+
+
+def _unit_directives_exact(
+    directives: dict[str, tuple[str, ...]],
+    *,
+    module: str,
+    release_commit: str,
+) -> tuple[bool, tuple[tuple[str, str], ...]]:
+    release_root = f"/opt/quantos/releases/{release_commit}"
+    state_root = "/srv/quantos/state"
+    environment_values = directives.get("Service.Environment", ())
+    # In systemd an empty Environment= directive resets the complete list.
+    # Never discard it while normalizing: a later drop-in could otherwise
+    # erase the literal L2 safety flags yet leave the visible text looking safe.
+    environment_has_reset = any(value == "" for value in environment_values)
+    environment_raw = " ".join(environment_values)
+    environment_ok = _systemd_environment_is_safe(
+        environment_raw,
+        module,
+        release_commit=release_commit,
+    )
+    environment = tuple(
+        sorted(item.partition("=")[::2] for item in environment_values if "=" in item)
+    )
+    expected_python = f"/opt/quantos/venvs/{release_commit}/bin/python"
+    expected_launcher = f"{release_root}/tools/l2_schedule_entrypoint.py"
+    expected_exec = (
+        f"{expected_python} {expected_launcher} {module} "
+        f"--release-commit {release_commit}"
+    )
+    expected_hardening = {
+        "Service.User": "quantos",
+        "Service.Group": "quantos",
+        "Service.UMask": "0077",
+        "Service.WorkingDirectory": state_root,
+        "Service.NoNewPrivileges": "true",
+        "Service.ProtectSystem": "strict",
+        "Service.ProtectHome": "true",
+        "Service.PrivateTmp": "true",
+        "Service.PrivateDevices": "true",
+        "Service.ProtectKernelTunables": "true",
+        "Service.ProtectKernelModules": "true",
+        "Service.ProtectControlGroups": "true",
+        "Service.RestrictSUIDSGID": "true",
+        "Service.LockPersonality": "true",
+        "Service.RestrictRealtime": "true",
+        "Service.CapabilityBoundingSet": "",
+        "Service.AmbientCapabilities": "",
+        "Service.ReadOnlyPaths": release_root,
+    }
+    expected_writes = {state_root}
+    expected_mounts: set[str] = set()
+    expected_credentials: tuple[str, ...] = ()
+    if module == "l2_backup":
+        destination = _systemd_environment_value(environment_raw, "QUANTOS_BACKUP_DEST")
+        if destination is None:
+            return False, environment
+        expected_writes.add(destination)
+        expected_mounts.add(destination)
+        expected_credentials = (
+            "l2-backup-passphrase:/etc/quantos/credentials/l2-backup-passphrase",
+        )
+    elif module in {"domain_event_seal", "artifact_admission_seal"}:
+        destination = _systemd_environment_value(
+            environment_raw, "QUANTOS_EVENT_SEAL_DEST"
+        )
+        if destination is None:
+            return False, environment
+        expected_writes.add(destination)
+        expected_mounts.add(destination)
+    restart = "always" if module == "binance_realtime_stream" else "no"
+    runtime_max = "23h55m" if module == "binance_realtime_stream" else None
+    required_keys = {
+        "Unit.After",
+        "Unit.Wants",
+        "Service.Type",
+        "Service.User",
+        "Service.Group",
+        "Service.UMask",
+        "Service.Environment",
+        "Service.WorkingDirectory",
+        "Service.ExecStart",
+        "Service.TimeoutStartSec",
+        "Service.Restart",
+        "Service.KillMode",
+        "Service.NoNewPrivileges",
+        "Service.ProtectSystem",
+        "Service.ProtectHome",
+        "Service.PrivateTmp",
+        "Service.PrivateDevices",
+        "Service.ProtectKernelTunables",
+        "Service.ProtectKernelModules",
+        "Service.ProtectControlGroups",
+        "Service.RestrictSUIDSGID",
+        "Service.LockPersonality",
+        "Service.RestrictRealtime",
+        "Service.CapabilityBoundingSet",
+        "Service.AmbientCapabilities",
+        "Service.ReadOnlyPaths",
+        "Service.ReadWritePaths",
+    }
+    optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
+    if expected_mounts:
+        required_keys.add("Unit.RequiresMountsFor")
+    if expected_credentials:
+        required_keys.add("Service.LoadCredential")
+    if module == "binance_realtime_stream":
+        required_keys.update(
+            {
+                "Service.RestartSec",
+                "Service.RuntimeMaxSec",
+                "Service.TimeoutStopSec",
+                "Install.WantedBy",
+            }
+        )
+    keys_are_exact = bool(
+        required_keys <= directives.keys()
+        and directives.keys() <= required_keys | optional_descriptive_keys
+        and all(
+            len(directives.get(name, ())) == 1
+            for name in optional_descriptive_keys & directives.keys()
+        )
+    )
+    ok = bool(
+        keys_are_exact
+        and not environment_has_reset
+        and environment_ok
+        and _one_directive(directives, "Unit.After") == "network-online.target"
+        and _one_directive(directives, "Unit.Wants") == "network-online.target"
+        and _one_directive(directives, "Service.Type")
+        == ("simple" if module == "binance_realtime_stream" else "oneshot")
+        and _one_directive(directives, "Service.ExecStart") == expected_exec
+        and all(_one_directive(directives, name) == value for name, value in expected_hardening.items())
+        and set(directives.get("Service.ReadWritePaths", ())) == expected_writes
+        and len(directives.get("Service.ReadWritePaths", ())) == len(expected_writes)
+        and set(directives.get("Unit.RequiresMountsFor", ())) == expected_mounts
+        and len(directives.get("Unit.RequiresMountsFor", ())) == len(expected_mounts)
+        and directives.get("Service.LoadCredential", ()) == expected_credentials
+        and "Service.EnvironmentFile" not in directives
+        and _one_directive(directives, "Service.Restart") == restart
+        and _one_directive(directives, "Service.KillMode") == "control-group"
+        and (
+            module != "binance_realtime_stream"
+            or (
+                _one_directive(directives, "Service.RestartSec") == "30s"
+                and _one_directive(directives, "Service.TimeoutStopSec") == "90s"
+                and _one_directive(directives, "Install.WantedBy")
+                == "multi-user.target"
+            )
+        )
+        and (
+            runtime_max is None
+            or _one_directive(directives, "Service.RuntimeMaxSec") == runtime_max
+        )
+    )
+    return ok, environment
+
+
+def _systemd_environment_is_safe(
+    raw: str,
+    module: str,
+    *,
+    release_commit: str,
+) -> bool:
+    values = raw.split()
+    required = {item.split("=", 1)[0] for item in _SYSTEMD_SAFE_ENVIRONMENT}
+    observed: dict[str, str] = {}
+    for item in values:
+        name, separator, _value = item.partition("=")
+        if separator and name in required:
+            if name in observed:
+                return False
+            observed[name] = item
+    if set(observed.values()) != set(_SYSTEMD_SAFE_ENVIRONMENT):
+        return False
+    allowed = {
+        *(item.split("=", 1)[0] for item in _SYSTEMD_SAFE_ENVIRONMENT),
+        "QUANTOS_RELEASE_ROOT",
+        "QUANTOS_RELEASE_COMMIT",
+        "QUANTOS_STATE_ROOT",
+    }
+    if module == "l2_scheduler_watchdog":
+        allowed.add("QUANTOS_SCHEDULER_PROVIDER")
+    elif module == "l2_backup":
+        allowed.add("QUANTOS_BACKUP_DEST")
+    elif module in {"domain_event_seal", "artifact_admission_seal"}:
+        allowed.add("QUANTOS_EVENT_SEAL_DEST")
+    elif module == "external_heartbeat":
+        allowed.add("QUANTOS_HEARTBEAT_URL")
+    parsed = [item.partition("=") for item in values]
+    observed_values = {
+        name: value for name, separator, value in parsed if separator
+    }
+    fixed_values_ok = bool(
+        observed_values.get("QUANTOS_RELEASE_ROOT")
+        == f"/opt/quantos/releases/{release_commit}"
+        and observed_values.get("QUANTOS_RELEASE_COMMIT") == release_commit
+        and observed_values.get("QUANTOS_STATE_ROOT") == "/srv/quantos/state"
+        and (
+            module != "l2_scheduler_watchdog"
+            or observed_values.get("QUANTOS_SCHEDULER_PROVIDER") == "systemd"
+        )
+    )
+    if module == "external_heartbeat":
+        fixed_values_ok = bool(
+            fixed_values_ok
+            and external_heartbeat_configuration_ready(
+                observed_values.get("QUANTOS_HEARTBEAT_URL")
+            )
+        )
+    return bool(
+        fixed_values_ok
+        and
+        all(separator and name in allowed for name, separator, _value in parsed)
+        and len({name for name, _separator, _value in parsed}) == len(parsed)
+        and {name for name, _separator, _value in parsed} == allowed
+    )
+
+
+def _systemd_environment_value(raw: str, name: str) -> str | None:
+    matches = [item.split("=", 1)[1] for item in raw.split() if item.startswith(name + "=")]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _systemd_duration_seconds(value: str) -> float | None:
+    position = 0
+    total = 0.0
+    scale = {
+        "us": 1e-6,
+        "ms": 1e-3,
+        "s": 1.0,
+        "m": 60.0,
+        "min": 60.0,
+        "h": 3600.0,
+    }
+    pattern = re.compile(
+        r"(?P<number>[0-9]+(?:\.[0-9]+)?)(?P<unit>us|ms|min|h|m|s)"
+    )
+    for match in pattern.finditer(value):
+        if match.start() != position:
+            return None
+        total += float(match.group("number")) * scale[match.group("unit")]
+        position = match.end()
+    return total if position == len(value) and position > 0 else None
+
+
+def _expected_timeout_seconds(module: str) -> float | None:
+    try:
+        from tools.render_systemd_l2_units import CALENDARS, INTERVALS
+    except (ImportError, OSError):
+        return None
+    if module == "l2_scheduler_watchdog":
+        return 5 * 60.0
+    if module == "binance_realtime_stream":
+        return 5 * 60.0
+    if module in CALENDARS:
+        return _systemd_duration_seconds(CALENDARS[module][1])
+    if module in INTERVALS:
+        return _systemd_duration_seconds(INTERVALS[module][1])
+    return None
+
+
+def _systemd_timer_contract_ok(
+    *,
+    module: str,
+    directives: dict[str, tuple[str, ...]],
+) -> bool:
+    try:
+        from tools.render_systemd_l2_units import CALENDARS, INTERVALS
+    except (ImportError, OSError):
+        return False
+    expected_service = (
+        "quantos-l2-watchdog.service"
+        if module == "l2_scheduler_watchdog"
+        else f"quantos-l2@{module}.service"
+    )
+    required_keys = {
+        "Timer.Persistent",
+        "Timer.AccuracySec",
+        "Timer.RandomizedDelaySec",
+        "Timer.Unit",
+        "Install.WantedBy",
+    }
+    if module == "l2_scheduler_watchdog":
+        required_keys.update({"Timer.OnBootSec", "Timer.OnUnitInactiveSec"})
+    else:
+        required_keys.add("Timer.OnCalendar")
+    optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
+    # Empty list-valued timer directives reset earlier values in systemd.
+    # Exact key/value cardinality below rejects both resets and appended
+    # triggers, including definitions introduced by a drop-in.
+    if not (
+        required_keys <= directives.keys()
+        and directives.keys() <= required_keys | optional_descriptive_keys
+        and all(
+            len(directives.get(name, ())) == 1
+            for name in optional_descriptive_keys & directives.keys()
+        )
+    ):
+        return False
+    if (
+        _one_directive(directives, "Timer.Unit") != expected_service
+        or _one_directive(directives, "Install.WantedBy") != "timers.target"
+    ):
+        return False
+    common = bool(
+        _one_directive(directives, "Timer.Persistent") == "true"
+        and _one_directive(directives, "Timer.AccuracySec") == "1s"
+        and _one_directive(directives, "Timer.RandomizedDelaySec") == "0"
+    )
+    if module == "l2_scheduler_watchdog":
+        return bool(
+            common
+            and directives.get("Timer.OnBootSec", ()) == ("5m",)
+            and directives.get("Timer.OnUnitInactiveSec", ()) == ("15m",)
+            and "Timer.OnCalendar" not in directives
+        )
+    if module in INTERVALS:
+        calendar, _timeout = INTERVALS[module]
+        return bool(
+            common
+            and directives.get("Timer.OnCalendar", ()) == (calendar,)
+            and "Timer.OnBootSec" not in directives
+            and "Timer.OnUnitInactiveSec" not in directives
+        )
+    if module in CALENDARS:
+        calendar, _timeout = CALENDARS[module]
+        return bool(
+            common
+            and directives.get("Timer.OnCalendar", ()) == (calendar,)
+            and "Timer.OnBootSec" not in directives
+            and "Timer.OnUnitInactiveSec" not in directives
+        )
+    return False
+
+
+def _systemd_snapshot(
+    unit: str,
+    properties: dict[str, str],
+    *,
+    timer_properties: dict[str, str] | None,
+    service_directives: dict[str, tuple[str, ...]],
+    timer_directives: dict[str, tuple[str, ...]] | None,
+) -> TaskSnapshot:
+    match = _SYSTEMD_UNIT.fullmatch(unit)
+    if match is None or match.group("kind") == "timer":
+        raise SchedulerInspectionError("systemd unit name is outside the L2 allowlist")
+    if match.group("stream"):
+        module = "binance_realtime_stream"
+    elif match.group("watchdog"):
+        module = "l2_scheduler_watchdog"
+    else:
+        module = match.group("module")
+    task_names = [name for name, spec in EXPECTED_TASKS.items() if spec.module == module]
+    if len(task_names) != 1:
+        raise SchedulerInspectionError("systemd module does not map to one watchdog task")
+    active = properties["ActiveState"] == "active"
+    running = active and properties["SubState"] in {"running", "start"}
+    if running:
+        state = "Running"
+    elif timer_properties is not None and (
+        timer_properties["ActiveState"] == "active"
+        and timer_properties["SubState"] == "waiting"
+        and timer_properties["UnitFileState"] == "enabled"
+    ):
+        state = "Ready"
+    else:
+        state = "Disabled"
+    result = properties["Result"]
+    raw_status = properties["ExecMainStatus"]
+    last_result = int(raw_status) if raw_status.isdigit() else None
+    if result and result not in {"success", "done"} and last_result == 0:
+        last_result = 1
+    last_run_ms = _systemd_timestamp_ms(properties["ExecMainStartTimestamp"])
+    environment_raw = " ".join(service_directives.get("Service.Environment", ()))
+    release_commit = _systemd_environment_value(
+        environment_raw, "QUANTOS_RELEASE_COMMIT"
+    )
+    if release_commit is None or re.fullmatch(r"[0-9a-f]{40}", release_commit) is None:
+        service_contract_ok = False
+        configured_environment: tuple[tuple[str, str], ...] = ()
+    else:
+        service_contract_ok, configured_environment = _unit_directives_exact(
+            service_directives,
+            module=module,
+            release_commit=release_commit,
+        )
+    expected_python = (
+        None
+        if release_commit is None
+        else f"/opt/quantos/venvs/{release_commit}/bin/python"
+    )
+    expected_launcher = (
+        None
+        if release_commit is None
+        else f"/opt/quantos/releases/{release_commit}/tools/l2_schedule_entrypoint.py"
+    )
+    executable = expected_python
+    arguments = (
+        None
+        if expected_launcher is None
+        else f'"{expected_launcher}" {module} --release-commit {release_commit}'
+    )
+    timeout = _one_directive(service_directives, "Service.TimeoutStartSec")
+    scheduler_contract_ok = bool(
+        service_contract_ok
+        and timeout is not None
+        and _systemd_duration_seconds(timeout) == _expected_timeout_seconds(module)
+        and properties["FragmentPath"] == f"/etc/systemd/system/{unit}"
+        and properties["UnitFileState"]
+        == ("enabled" if module == "binance_realtime_stream" else "static")
+        and properties["DropInPaths"] == ""
+        and properties["NeedDaemonReload"] == "no"
+    )
+    if timer_properties is not None:
+        scheduler_contract_ok = bool(
+            scheduler_contract_ok
+            and timer_directives is not None
+            and timer_properties["FragmentPath"]
+            == f"/etc/systemd/system/{timer_properties['Id']}"
+            and timer_properties["UnitFileState"] == "enabled"
+            and timer_properties["DropInPaths"] == ""
+            and timer_properties["NeedDaemonReload"] == "no"
+            and _systemd_timer_contract_ok(
+                module=module,
+                directives=timer_directives,
+            )
+        )
+    return TaskSnapshot(
+        name=task_names[0],
+        state=state,
+        last_run_ms=last_run_ms,
+        last_result=last_result,
+        # systemctl does not expose timer realtime fields in a locale-neutral
+        # machine format on every supported systemd release. A not-yet-run
+        # timer therefore remains fail-closed as NEVER_RAN rather than parsing
+        # an ambiguous localized timestamp.
+        next_run_ms=None,
+        execute=executable,
+        arguments=arguments,
+        working_directory=_one_directive(
+            service_directives, "Service.WorkingDirectory"
+        ),
+        scheduler_contract_ok=scheduler_contract_ok,
+        configured_environment=configured_environment,
+    )
+
+
+def collect_systemd_units(
+    *,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> list[TaskSnapshot]:
+    """Collect exact QUANTOS systemd metadata without invoking a shell."""
+
+    list_result = runner(
+        ["systemctl", "list-unit-files", "--no-legend", "--no-pager", "quantos-*"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        shell=False,
+        check=False,
+    )
+    if list_result.returncode != 0:
+        raise SchedulerInspectionError("systemd unit-file query failed")
+    listed: dict[str, str] = {}
+    for line in list_result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or _SYSTEMD_UNIT.fullmatch(fields[0]) is None:
+            if len(fields) >= 2 and fields[1] not in {"disabled", "static", "masked"}:
+                raise SchedulerInspectionError("systemd has an unexpected enabled QUANTOS unit")
+            continue
+        if fields[0] in listed:
+            raise SchedulerInspectionError("systemd returned duplicate unit metadata")
+        listed[fields[0]] = fields[1]
+    runtime_result = runner(
+        ["systemctl", "list-units", "--all", "--no-legend", "--no-pager", "--plain", "quantos-*"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        shell=False,
+        check=False,
+    )
+    if runtime_result.returncode != 0:
+        raise SchedulerInspectionError("systemd runtime-unit query failed")
+    for line in runtime_result.stdout.splitlines():
+        fields = line.split(maxsplit=4)
+        if len(fields) < 4:
+            raise SchedulerInspectionError("systemd returned invalid runtime metadata")
+        unit, _load, active, _sub = fields[:4]
+        if _SYSTEMD_UNIT.fullmatch(unit) is None:
+            if active != "inactive":
+                raise SchedulerInspectionError(
+                    "systemd has an unexpected active QUANTOS unit"
+                )
+            continue
+        listed.setdefault(unit, "runtime")
+    service_units = sorted(
+        unit for unit in listed if unit.endswith(".service")
+    )
+    snapshots: list[TaskSnapshot] = []
+    for unit in service_units:
+        command = ["systemctl", "show", "--all", "--no-pager", "--timestamp=unix", unit]
+        for name in _SYSTEMD_SHOW_PROPERTIES:
+            command.extend(("--property", name))
+        result = runner(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise SchedulerInspectionError("systemd unit metadata query failed")
+        properties = _parse_systemd_properties(result.stdout, unit)
+        cat_result = runner(
+            ["systemctl", "cat", "--no-pager", unit],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            check=False,
+        )
+        if cat_result.returncode != 0:
+            raise SchedulerInspectionError("systemd unit definition query failed")
+        service_directives = _parse_systemd_unit_text(cat_result.stdout)
+        confirmed_result = runner(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            check=False,
+        )
+        if confirmed_result.returncode != 0:
+            raise SchedulerInspectionError("systemd unit metadata confirmation failed")
+        if _parse_systemd_properties(confirmed_result.stdout, unit) != properties:
+            raise SchedulerInspectionError("systemd unit metadata changed during inspection")
+        match = _SYSTEMD_UNIT.fullmatch(unit)
+        if match is None or match.group("stream"):
+            timer = None
+        elif match.group("watchdog"):
+            timer = "quantos-l2-watchdog.timer"
+        else:
+            timer = unit[:-8] + ".timer"
+        timer_properties = None
+        timer_directives = None
+        if timer is not None and timer in listed:
+            timer_command = [
+                "systemctl", "show", "--all", "--no-pager", "--timestamp=unix", timer
+            ]
+            for name in _SYSTEMD_TIMER_PROPERTIES:
+                timer_command.extend(("--property", name))
+            timer_result = runner(
+                timer_command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                shell=False,
+                check=False,
+            )
+            if timer_result.returncode != 0:
+                raise SchedulerInspectionError("systemd timer metadata query failed")
+            timer_properties = _parse_systemd_properties(
+                timer_result.stdout, timer, _SYSTEMD_TIMER_PROPERTIES
+            )
+            timer_cat_result = runner(
+                ["systemctl", "cat", "--no-pager", timer],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                shell=False,
+                check=False,
+            )
+            if timer_cat_result.returncode != 0:
+                raise SchedulerInspectionError("systemd timer definition query failed")
+            timer_directives = _parse_systemd_unit_text(timer_cat_result.stdout)
+            timer_confirmed_result = runner(
+                timer_command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                shell=False,
+                check=False,
+            )
+            if timer_confirmed_result.returncode != 0:
+                raise SchedulerInspectionError(
+                    "systemd timer metadata confirmation failed"
+                )
+            if (
+                _parse_systemd_properties(
+                    timer_confirmed_result.stdout,
+                    timer,
+                    _SYSTEMD_TIMER_PROPERTIES,
+                )
+                != timer_properties
+            ):
+                raise SchedulerInspectionError(
+                    "systemd timer metadata changed during inspection"
+                )
+        snapshots.append(
+            _systemd_snapshot(
+                unit,
+                properties,
+                timer_properties=timer_properties,
+                service_directives=service_directives,
+                timer_directives=timer_directives,
+            )
+        )
+    return snapshots
+
+
 def backup_configuration_ready(
     *,
     repo_root: str | Path,
     passphrase: str | None = None,
+    passphrase_file: str | None = None,
     destination: str | None = None,
 ) -> bool:
     passphrase = (
@@ -467,22 +1186,71 @@ def backup_configuration_ready(
         if passphrase is None
         else passphrase
     )
+    passphrase_file = (
+        (
+            _configured_environment_value("QUANTOS_BACKUP_PASSPHRASE_FILE")
+            or l2_backup._default_passphrase_file()
+        )
+        if passphrase_file is None
+        else passphrase_file
+    )
     destination = (
         _configured_environment_value("QUANTOS_BACKUP_DEST")
         if destination is None
         else destination
     )
-    if not passphrase or len(passphrase.strip()) < _PASSPHRASE_MIN_LENGTH or not destination:
+    try:
+        l2_backup.resolve_backup_passphrase(
+            environment_passphrase=passphrase,
+            passphrase_file=passphrase_file,
+        )
+    except l2_backup.L2BackupError:
+        return False
+    if not destination:
         return False
     destination_path = Path(destination)
     if not destination_path.is_absolute():
         return False
-    raw = os.fspath(destination_path)
-    if raw.startswith("\\\\") or raw.startswith("//"):
-        return True
-    repo_drive = Path(repo_root).resolve().drive.casefold()
-    destination_drive = destination_path.drive.casefold()
-    return bool(repo_drive and destination_drive and repo_drive != destination_drive)
+    try:
+        metadata = destination_path.lstat()
+        resolved = destination_path.resolve(strict=True)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(metadata.st_mode) or destination_path.is_symlink():
+        return False
+    destination_class = l2_backup.classify_destination(Path(repo_root).resolve(), resolved)
+    return destination_class in l2_backup._EXTERNAL_DESTINATION_CLASSES
+
+
+def backup_destination_ready(
+    *, repo_root: str | Path, destination: str | None
+) -> bool:
+    """Prove the configured destination is still an external durable mount.
+
+    This intentionally does not read the backup credential.  It lets the Linux
+    watchdog detect an unmounted destination that has fallen back to a local
+    directory without expanding secret access to the watchdog process.
+    """
+
+    if not destination:
+        return False
+    destination_path = Path(destination)
+    if not destination_path.is_absolute():
+        return False
+    try:
+        metadata = destination_path.lstat()
+        resolved = destination_path.resolve(strict=True)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(metadata.st_mode) or destination_path.is_symlink():
+        return False
+    try:
+        destination_class = l2_backup.classify_destination(
+            Path(repo_root).resolve(), resolved
+        )
+    except OSError:
+        return False
+    return destination_class in l2_backup._EXTERNAL_DESTINATION_CLASSES
 
 
 def external_heartbeat_configuration_ready(endpoint: str | None = None) -> bool:
@@ -525,12 +1293,15 @@ def event_seal_configuration_ready(
     path = Path(destination)
     if not path.is_absolute():
         return False
-    raw = os.fspath(path)
-    if raw.startswith("\\\\") or raw.startswith("//"):
-        return True
-    repo_drive = Path(repo_root).resolve().drive.casefold()
-    destination_drive = path.drive.casefold()
-    return bool(repo_drive and destination_drive and repo_drive != destination_drive)
+    try:
+        metadata = path.lstat()
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(metadata.st_mode) or path.is_symlink():
+        return False
+    destination_class = l2_backup.classify_destination(Path(repo_root).resolve(), resolved)
+    return destination_class in l2_backup._EXTERNAL_DESTINATION_CLASSES
 
 
 _LAUNCHER_ARGUMENTS = re.compile(
@@ -553,13 +1324,6 @@ def _action_matches(
     code_root: Path,
     expected_release_commit: str | None,
 ) -> bool:
-    if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
-        "python",
-        "python.exe",
-        "pythonw",
-        "pythonw.exe",
-    }:
-        return False
     match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
     if (
         match is None
@@ -569,13 +1333,17 @@ def _action_matches(
     ):
         return False
     try:
+        expected_python = Path(
+            f"/opt/quantos/venvs/{expected_release_commit}/bin/python"
+        ).resolve(strict=False)
+        actual_python = Path(snapshot.execute or "").resolve(strict=False)
         launcher = Path(match.group("launcher")).resolve(strict=False)
         expected_launcher = (
             code_root / "tools" / "l2_schedule_entrypoint.py"
         ).resolve(strict=False)
     except OSError:
         return False
-    if launcher != expected_launcher:
+    if actual_python != expected_python or launcher != expected_launcher:
         return False
     if not snapshot.working_directory:
         return False
@@ -596,6 +1364,7 @@ def _check_task(
     code_root: Path,
     expected_release_commit: str | None,
     self_check: bool = False,
+    resident_health: dict | None = None,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -605,6 +1374,13 @@ def _check_task(
             "status": "BREACH",
             "code": "NOT_ENABLED",
             "detail": f"task state is {snapshot.state}",
+        }
+    if not snapshot.scheduler_contract_ok:
+        return {
+            "task_name": name,
+            "status": "BREACH",
+            "code": "SCHEDULER_CONTRACT_DRIFT",
+            "detail": "systemd safety, cadence, timeout, mount, or credential metadata drifted",
         }
     if not _action_matches(
         snapshot,
@@ -632,6 +1408,36 @@ def _check_task(
             "status": "BREACH",
             "code": "NEVER_RAN",
             "detail": "task has no successful scheduling history",
+        }
+    if name == "QUANTOS_binance_realtime_stream" and snapshot.state == "Running":
+        generated_at_ms = (
+            resident_health.get("generated_at_ms")
+            if isinstance(resident_health, dict)
+            else None
+        )
+        healthy = bool(
+            isinstance(generated_at_ms, int)
+            and not isinstance(generated_at_ms, bool)
+            and 0 <= now_ms - generated_at_ms <= 30_000
+            and resident_health.get("verdict") == "PASS"
+            and resident_health.get("streaming") is True
+            and isinstance(resident_health.get("safety"), dict)
+            and resident_health["safety"].get("credentials") is False
+            and resident_health["safety"].get("private_stream") is False
+            and resident_health["safety"].get("broker_connectivity") is False
+        )
+        if not healthy:
+            return {
+                "task_name": name,
+                "status": "BREACH",
+                "code": "RESIDENT_HEALTH_STALE",
+                "detail": "resident public stream lacks a fresh fail-closed semantic health receipt",
+            }
+        return {
+            "task_name": name,
+            "status": "PASS",
+            "code": "RUNNING_HEALTHY",
+            "detail": "resident public stream has a fresh safe semantic health receipt",
         }
     age_ms = max(0, now_ms - snapshot.last_run_ms)
     if age_ms > spec.max_age_ms:
@@ -752,6 +1558,7 @@ def evaluate_schedule(
     backup_history_health: dict | None = None,
     heartbeat_ready: bool = False,
     event_seal_ready: bool = False,
+    resident_health: dict | None = None,
 ) -> dict:
     if now_ms < 0:
         raise ValueError("now_ms must be non-negative")
@@ -818,6 +1625,7 @@ def evaluate_schedule(
             code_root=release_root,
             expected_release_commit=expected_release_commit,
             self_check=name == "QUANTOS_scheduler_watchdog",
+            resident_health=resident_health,
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)
@@ -894,19 +1702,87 @@ def run_scheduler_watchdog(
     backup_ready: bool | None = None,
     heartbeat_ready: bool | None = None,
     event_seal_ready: bool | None = None,
-    collector: Callable[[], list[TaskSnapshot]] = collect_windows_tasks,
+    collector: Callable[[], list[TaskSnapshot]] | None = None,
     history_reader: Callable[..., dict] = read_restore_history_health,
     emit_fn: Callable | None = None,
+    resident_health_reader: Callable[[Path], dict] | None = None,
 ) -> dict:
     observed_at_ms = int(time.time() * 1000) if now_ms is None else now_ms
-    if backup_ready is None:
+    provider = os.environ.get("QUANTOS_SCHEDULER_PROVIDER", "").strip().casefold()
+    if not provider:
+        provider = "windows" if os.name == "nt" else "systemd"
+    if provider not in {"windows", "systemd"}:
+        raise ValueError("scheduler provider must be windows or systemd")
+    if collector is None:
+        collector = (
+            collect_windows_tasks if provider == "windows" else collect_systemd_units
+        )
+    # The Linux watchdog must not receive the backup credential. The systemd
+    # collector proves the backup unit's credential/mount metadata, and the
+    # restore-history authority proves real encrypted backup/restore outcomes.
+    if backup_ready is None and provider == "windows":
         backup_ready = backup_configuration_ready(repo_root=repo_root)
-    if heartbeat_ready is None:
+    if heartbeat_ready is None and provider == "windows":
         heartbeat_ready = external_heartbeat_configuration_ready()
-    if event_seal_ready is None:
+    if event_seal_ready is None and provider == "windows":
         event_seal_ready = event_seal_configuration_ready(repo_root=repo_root)
     try:
         snapshots = collector()
+        snapshot_by_name = {item.name: item for item in snapshots}
+        if heartbeat_ready is None:
+            heartbeat_snapshot = snapshot_by_name.get("QUANTOS_external_heartbeat")
+            heartbeat_environment = dict(
+                () if heartbeat_snapshot is None else heartbeat_snapshot.configured_environment
+            )
+            heartbeat_ready = bool(
+                heartbeat_snapshot is not None
+                and heartbeat_snapshot.scheduler_contract_ok
+                and external_heartbeat_configuration_ready(
+                    heartbeat_environment.get("QUANTOS_HEARTBEAT_URL")
+                )
+            )
+        if event_seal_ready is None:
+            seal_snapshots = tuple(
+                snapshot_by_name.get(name)
+                for name in (
+                    "QUANTOS_domain_event_seal",
+                    "QUANTOS_artifact_admission_seal",
+                )
+            )
+            destinations = {
+                dict(snapshot.configured_environment).get("QUANTOS_EVENT_SEAL_DEST")
+                for snapshot in seal_snapshots
+                if snapshot is not None
+            }
+            destination = next(iter(destinations)) if len(destinations) == 1 else None
+            event_seal_ready = bool(
+                all(
+                    snapshot is not None and snapshot.scheduler_contract_ok
+                    for snapshot in seal_snapshots
+                )
+                and event_seal_configuration_ready(
+                    repo_root=repo_root,
+                    destination=destination,
+                )
+            )
+        if backup_ready is None:
+            backup_snapshot = next(
+                (item for item in snapshots if item.name == "QUANTOS_backup"), None
+            )
+            backup_environment = dict(
+                ()
+                if backup_snapshot is None
+                else backup_snapshot.configured_environment
+            )
+            backup_ready = bool(
+                backup_snapshot is not None
+                and backup_snapshot.state in {"Ready", "Running"}
+                and backup_snapshot.scheduler_contract_ok
+                and backup_destination_ready(
+                    repo_root=repo_root,
+                    destination=backup_environment.get("QUANTOS_BACKUP_DEST"),
+                )
+            )
         history_health = None
         backup_snapshot = next(
             (item for item in snapshots if item.name == "QUANTOS_backup"), None
@@ -927,6 +1803,15 @@ def run_scheduler_watchdog(
                     "verdict": "BREACH",
                     "reason_codes": ("RESTORE_HISTORY_INSPECTION_FAILED",),
                 }
+        if resident_health_reader is None:
+            def resident_health_reader(path: Path) -> dict:
+                return load_json_without_duplicate_keys(path)
+        try:
+            resident_health = resident_health_reader(
+                Path(repo_root) / "data" / "cache" / "binance_realtime_stream_status.json"
+            )
+        except Exception:
+            resident_health = None
         result = evaluate_schedule(
             snapshots,
             now_ms=observed_at_ms,
@@ -936,8 +1821,15 @@ def run_scheduler_watchdog(
             backup_history_health=history_health,
             heartbeat_ready=heartbeat_ready,
             event_seal_ready=event_seal_ready,
+            resident_health=resident_health,
         )
     except Exception as exc:
+        if backup_ready is None:
+            backup_ready = False
+        if heartbeat_ready is None:
+            heartbeat_ready = False
+        if event_seal_ready is None:
+            event_seal_ready = False
         result = {
             "schema_version": 1,
             "verdict": "BREACH",
@@ -948,7 +1840,11 @@ def run_scheduler_watchdog(
             "summary": {"PASS": 0, "PARTIAL": 0, "UNAVAILABLE": 0, "BREACH": 1},
             "checks": [
                 {
-                    "task_name": "WINDOWS_TASK_SCHEDULER",
+                    "task_name": (
+                        "WINDOWS_TASK_SCHEDULER"
+                        if provider == "windows"
+                        else "SYSTEMD_SCHEDULER"
+                    ),
                     "status": "BREACH",
                     "code": "INSPECTION_FAILED",
                     "detail": f"scheduler metadata inspection failed ({type(exc).__name__})",
