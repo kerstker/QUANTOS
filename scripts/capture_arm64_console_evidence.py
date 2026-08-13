@@ -31,6 +31,7 @@ from scripts.evidence_binding import resolve_canonical_source_anchor  # noqa: E4
 from services.governance.arm64_console_evidence import (  # noqa: E402
     ARM64_DOCKERFILE_REF,
     ARM64_RUNTIME_IMAGE_REF,
+    PROXY_ENV_NAMES,
     TRIVY_DATABASE_REPOSITORY,
     TRIVY_SCANNER_ARM64_MANIFEST_DIGEST,
     TRIVY_SCANNER_IMAGE_REF,
@@ -169,13 +170,17 @@ def _recipe(root: Path) -> tuple[int, str]:
 def _build_argv(
     root: Path, builder: str, archive: Path, epoch: int
 ) -> list[str]:
-    return [
+    argv = [
         "docker", "buildx", "build",
         "--builder", builder,
         "--platform", TARGET_PLATFORM,
         "--no-cache",
         "--provenance=false",
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
+    ]
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--build-arg", name])
+    argv.extend([
         "--tag", ARM64_RUNTIME_IMAGE_REF,
         "--output", (
             f"type=oci,name={ARM64_RUNTIME_IMAGE_REF},dest={archive},"
@@ -183,19 +188,25 @@ def _build_argv(
         ),
         "-f", str(root / ARM64_DOCKERFILE_REF),
         str(root),
-    ]
+    ])
+    return argv
 
 
 def _docker_export_argv(
     root: Path, builder: str, archive: Path, epoch: int
 ) -> list[str]:
-    return [
+    argv = [
         "docker", "buildx", "build", "--builder", builder,
         "--platform", TARGET_PLATFORM, "--no-cache", "--provenance=false",
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
+    ]
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--build-arg", name])
+    argv.extend([
         "--output", f"type=docker,name={ARM64_RUNTIME_IMAGE_REF},dest={archive}",
         "-f", str(root / ARM64_DOCKERFILE_REF), str(root),
-    ]
+    ])
+    return argv
 
 
 def _scanner_argv(
@@ -205,7 +216,10 @@ def _scanner_argv(
     input_archive: Path | None = None,
     input_name: str = "image.tar",
     user: str | None = None,
+    inherit_proxy: bool = False,
 ) -> list[str]:
+    if inherit_proxy and network != "bridge":
+        raise CaptureError("proxy inheritance is restricted to networked scanner runs")
     argv = [
         "docker", "run", "--rm", "--platform", TARGET_PLATFORM,
         "--network", network,
@@ -215,6 +229,9 @@ def _scanner_argv(
         "--env", "HOME=/tmp",
         "--mount", f"type=bind,src={cache},dst=/cache",
     ]
+    if inherit_proxy:
+        for name in PROXY_ENV_NAMES:
+            argv.extend(["--env", name])
     if user is not None:
         argv.extend(["--user", user])
     if input_archive is not None:
@@ -561,6 +578,7 @@ def capture(
                 "--db-repository", database_ref,
                 network="bridge",
                 user=scanner_user,
+                inherit_proxy=True,
             ),
             root,
         )

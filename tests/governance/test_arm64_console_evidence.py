@@ -14,6 +14,7 @@ import pytest
 
 from services.governance.arm64_console_evidence import (
     ARM64_RUNTIME_IMAGE_REF,
+    PROXY_ENV_NAMES,
     Arm64ConsoleEvidenceError,
     build_arm64_console_smoke_evidence,
     build_arm64_container_audit_evidence,
@@ -52,6 +53,26 @@ def _capture(argv: list[str], byte: str = "0") -> dict[str, object]:
     }
 
 
+def _build_capture(label: str, byte: str) -> dict[str, object]:
+    return _capture(
+        [
+            "docker",
+            "buildx",
+            "build",
+            "--no-cache",
+            "--build-arg",
+            f"SOURCE_DATE_EPOCH={EPOCH}",
+            *[
+                item
+                for name in PROXY_ENV_NAMES
+                for item in ("--build-arg", name)
+            ],
+            label,
+        ],
+        byte,
+    )
+
+
 def _source_capture() -> dict[str, object]:
     return {
         "host_uname": "Linux dgx 6.11 aarch64 GNU/Linux",
@@ -78,11 +99,18 @@ def _scanner_capture() -> dict[str, object]:
     )
     database_manifest = b'{"schemaVersion":2,"config":{},"layers":[]}\n'
     database_digest = "sha256:" + hashlib.sha256(database_manifest).hexdigest()
-    hardened = [
-        "docker", "run", "--rm", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp",
-        "--user", "1000:1000",
-    ]
+    def hardened(network: str, *, inherit_proxy: bool = False) -> list[str]:
+        result = [
+            "docker", "run", "--rm", "--platform", "linux/arm64",
+            "--network", network, "--read-only", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp",
+            "--env", "HOME=/tmp", "--user", "1000:1000",
+        ]
+        if inherit_proxy:
+            result.extend(
+                item for name in PROXY_ENV_NAMES for item in ("--env", name)
+            )
+        return result
     scan_flags = [
         "--skip-db-update", "--skip-java-db-update", "--skip-check-update",
         "--skip-vex-repo-update", "--disable-telemetry", "--offline-scan",
@@ -90,16 +118,17 @@ def _scanner_capture() -> dict[str, object]:
     ]
     return {
         "version": {
-            **_capture(hardened + ["trivy-pinned", "--version"], "5"),
+            **_capture(hardened("none") + ["trivy-pinned", "--version"], "5"),
             "stdout_sha256": hashlib.sha256(version.encode()).hexdigest(),
         },
         "download_database": _capture(
-            hardened + ["trivy-pinned", "--download-db-only"]
+            hardened("bridge", inherit_proxy=True)
+            + ["trivy-pinned", "--download-db-only"]
         ),
         "database": {
             **_capture(
                 [
-                    *hardened, "trivy-pinned", "version",
+                    *hardened("none"), "trivy-pinned", "version",
                     "--format", "json", "--cache-dir", "/cache",
                 ],
                 "7",
@@ -108,14 +137,14 @@ def _scanner_capture() -> dict[str, object]:
         },
         "base_scan": _capture(
             [
-                *hardened, "trivy-pinned", "image", *scan_flags,
+                *hardened("none"), "trivy-pinned", "image", *scan_flags,
                 "--input", "/input/base.tar",
             ],
             "9",
         ),
         "runtime_scan": _capture(
             [
-                *hardened, "trivy-pinned", "image", *scan_flags,
+                *hardened("none"), "trivy-pinned", "image", *scan_flags,
                 "--input", "/input/runtime.tar",
             ],
             "b",
@@ -281,18 +310,8 @@ def _reproducibility(root: Path) -> dict[str, object]:
         source_clean=True,
         source_capture=_source_capture(),
         build_captures=[
-            {
-                "argv": ["docker", "buildx", "build", "--no-cache", "A"],
-                "exit_code": 0,
-                "stdout_sha256": "1" * 64,
-                "stderr_sha256": "2" * 64,
-            },
-            {
-                "argv": ["docker", "buildx", "build", "--no-cache", "B"],
-                "exit_code": 0,
-                "stdout_sha256": "3" * 64,
-                "stderr_sha256": "4" * 64,
-            },
+            _build_capture("A", "1"),
+            _build_capture("B", "2"),
         ],
     )
 
@@ -539,8 +558,8 @@ def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
             source_clean=True,
             source_capture=_source_capture(),
             build_captures=[
-                {"argv": ["docker", "buildx", "build", "--no-cache", "A"], "exit_code": 0, "stdout_sha256": "1" * 64, "stderr_sha256": "2" * 64},
-                {"argv": ["docker", "buildx", "build", "--no-cache", "B"], "exit_code": 0, "stdout_sha256": "3" * 64, "stderr_sha256": "4" * 64},
+                _build_capture("A", "1"),
+                _build_capture("B", "2"),
             ],
         )
 
@@ -556,8 +575,8 @@ def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
             source_clean=True,
             source_capture=_source_capture(),
             build_captures=[
-                {"argv": ["docker", "buildx", "build", "--no-cache", "A"], "exit_code": 0, "stdout_sha256": "1" * 64, "stderr_sha256": "2" * 64},
-                {"argv": ["docker", "buildx", "build", "--no-cache", "B"], "exit_code": 0, "stdout_sha256": "3" * 64, "stderr_sha256": "4" * 64},
+                _build_capture("A", "1"),
+                _build_capture("B", "2"),
             ],
         )
 
@@ -567,6 +586,60 @@ def test_arm64_reproducibility_rejects_recipe_tamper(tmp_path: Path) -> None:
     path = tmp_path / "deploy/console.arm64.Dockerfile"
     path.write_text(path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
     with pytest.raises(Arm64ConsoleEvidenceError, match="Dockerfile"):
+        verify_arm64_container_reproducibility_evidence(evidence, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda argv: argv.__delitem__(slice(8, 10)),
+        lambda argv: argv.extend(["--build-arg", "HTTP_PROXY"]),
+        lambda argv: argv.__setitem__(5, "SOURCE_DATE_EPOCH=999999"),
+        lambda argv: argv.__setitem__(9, "HTTP_PROXY=http://secret.invalid"),
+        lambda argv: argv.extend(["--build-arg", "UNEXPECTED_PROXY"]),
+        lambda argv: argv.__setitem__(8, "--build-arg=HTTP_PROXY"),
+    ],
+)
+def test_arm64_reproducibility_rejects_noncanonical_proxy_build_args(
+    tmp_path: Path, mutate: object
+) -> None:
+    _write_recipe(tmp_path)
+    first = tmp_path / "first.oci.tar"
+    second = tmp_path / "second.oci.tar"
+    _write_oci(first)
+    _write_oci(second)
+    captures = [_build_capture("A", "1"), _build_capture("B", "2")]
+    mutate(captures[0]["argv"])  # type: ignore[operator]
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="cold builds"):
+        build_arm64_container_reproducibility_evidence(
+            tmp_path,
+            archive_a=first,
+            archive_b=second,
+            observed_at=EPOCH,
+            build_tool=BUILD_TOOL,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+            build_captures=captures,
+        )
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "ARG http_proxy\n",
+        "ENV FOO=bar \\\n    Http_Proxy=http://secret.invalid\n",
+    ],
+)
+def test_arm64_recipe_rejects_proxy_arg_or_env_declaration(
+    tmp_path: Path, declaration: str
+) -> None:
+    evidence = _reproducibility(tmp_path)
+    path = tmp_path / "deploy/console.arm64.Dockerfile"
+    path.write_text(path.read_text(encoding="utf-8") + declaration, encoding="utf-8")
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="proxy"):
         verify_arm64_container_reproducibility_evidence(evidence, tmp_path)
 
 
@@ -622,6 +695,44 @@ def test_arm64_audit_rejects_wrong_architecture_or_runtime_finding(
         runtime_vulnerabilities=[_vulnerability("CVE-DEMO", "LOW")],
     )
     assert failed["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize(
+    ("capture_name", "mutation"),
+    [
+        ("download_database", "missing"),
+        ("download_database", "duplicate"),
+        ("download_database", "value"),
+        ("download_database", "unexpected"),
+        ("download_database", "joined"),
+        ("download_database", "short"),
+        ("base_scan", "offline_proxy"),
+    ],
+)
+def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
+    tmp_path: Path, capture_name: str, mutation: str
+) -> None:
+    evidence = _audit(tmp_path)
+    argv = evidence["scanner_capture"][capture_name]["argv"]
+    if mutation == "missing":
+        index = argv.index("HTTP_PROXY")
+        del argv[index - 1 : index + 1]
+    elif mutation == "duplicate":
+        argv.extend(["--env", "HTTP_PROXY"])
+    elif mutation == "value":
+        argv[argv.index("HTTP_PROXY")] = "HTTP_PROXY=http://secret.invalid"
+    elif mutation == "unexpected":
+        argv.extend(["--env", "UNEXPECTED=value"])
+    elif mutation == "joined":
+        argv[argv.index("--env", argv.index("HOME=/tmp") + 1)] = "--env=HTTP_PROXY"
+    elif mutation == "short":
+        index = argv.index("HTTP_PROXY")
+        argv[index - 1 : index + 1] = ["-e", "HTTP_PROXY"]
+    else:
+        argv.extend(["--env", "HTTP_PROXY"])
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="scanner capture"):
+        verify_arm64_container_audit_evidence(evidence, tmp_path)
 
 
 def test_arm64_smoke_requires_read_only_loopback_non_root_and_no_capability(
@@ -688,6 +799,28 @@ def test_arm64_smoke_rejects_embedded_observation_tamper(tmp_path: Path) -> None
     tampered["observation"]["health_response"]["mode"] = "LIVE"
     with pytest.raises(Arm64ConsoleEvidenceError):
         verify_arm64_console_smoke_evidence(tampered, tmp_path)
+
+
+def test_arm64_smoke_rejects_proxy_values_in_image_or_container_environment(
+    tmp_path: Path,
+) -> None:
+    _write_recipe(tmp_path)
+    observation = _smoke_observation()
+    container_env = list(observation["container_inspect"]["Config"]["Env"])
+    image_env = list(observation["image_inspect"]["Config"]["Env"])
+    container_env.append("HTTP_PROXY=http://secret.invalid")
+    image_env.append("HTTP_PROXY=http://secret.invalid")
+    observation["container_inspect"]["Config"]["Env"] = container_env
+    observation["image_inspect"]["Config"]["Env"] = image_env
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="proxy"):
+        build_arm64_console_smoke_evidence(
+            tmp_path,
+            observation=observation,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+        )
 
 
 def test_arm64_evidence_clis_are_check_only_without_amd64_paths(

@@ -9,6 +9,7 @@ import pytest
 from scripts.capture_arm64_console_evidence import (
     BUILDER_A,
     BUILDER_B,
+    PROXY_ENV_NAMES,
     SMOKE_CONTAINER,
     CaptureError,
     CommandResult,
@@ -43,6 +44,10 @@ class FakeRunner:
 
 def _result(argv: list[str], *, code: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> CommandResult:
     return CommandResult(tuple(argv), code, stdout, stderr)
+
+
+def _option_values(argv: list[str], option: str) -> list[str]:
+    return [argv[index + 1] for index, item in enumerate(argv[:-1]) if item == option]
 
 
 def test_subprocess_runner_is_permanently_shell_free() -> None:
@@ -109,6 +114,11 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
     assert "type=oci,name=quantos-console:l2-arm64,dest=" in first[first.index("--output") + 1]
     assert "name=quantos-console:l2-arm64" in first[first.index("--output") + 1]
     assert "rewrite-timestamp=true" in first[first.index("--output") + 1]
+    expected_build_args = ["SOURCE_DATE_EPOCH=123", *PROXY_ENV_NAMES]
+    assert _option_values(first, "--build-arg") == expected_build_args
+    assert _option_values(second, "--build-arg") == expected_build_args
+    assert all("=" not in name for name in PROXY_ENV_NAMES)
+    assert "--env" not in first and "-e" not in first
     assert first != second
 
 
@@ -170,6 +180,10 @@ def test_third_build_is_no_cache_named_docker_archive(tmp_path: Path) -> None:
     assert argv[argv.index("--output") + 1] == (
         f"type=docker,name=quantos-console:l2-arm64,dest={tmp_path / 'runtime.docker.tar'}"
     )
+    assert _option_values(argv, "--build-arg") == [
+        "SOURCE_DATE_EPOCH=123",
+        *PROXY_ENV_NAMES,
+    ]
 
 
 def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> None:
@@ -194,6 +208,42 @@ def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> No
     assert any("@sha256:" in item for item in argv)
     assert all("docker.sock" not in item for item in argv)
     assert not any("*" in item or "?" in item for item in argv)
+    assert _option_values(argv, "--env") == ["HOME=/tmp"]
+    assert not any(name in argv for name in PROXY_ENV_NAMES)
+
+
+def test_only_networked_database_download_inherits_proxy_names(tmp_path: Path) -> None:
+    argv = _scanner_argv(
+        tmp_path / "cache",
+        "--cache-dir",
+        "/cache",
+        "image",
+        "--download-db-only",
+        network="bridge",
+        inherit_proxy=True,
+    )
+
+    assert argv[argv.index("--network") + 1] == "bridge"
+    assert _option_values(argv, "--env") == ["HOME=/tmp", *PROXY_ENV_NAMES]
+    assert all("=" not in name for name in PROXY_ENV_NAMES)
+
+    with pytest.raises(CaptureError, match="proxy inheritance"):
+        _scanner_argv(
+            tmp_path / "cache",
+            "version",
+            network="none",
+            inherit_proxy=True,
+        )
+
+
+def test_proxy_values_are_never_read_or_serialized() -> None:
+    source = inspect.getsource(__import__(
+        "scripts.capture_arm64_console_evidence",
+        fromlist=["capture_arm64_console_evidence"],
+    ))
+    assert "os.environ" not in source
+    assert "os.getenv" not in source
+    assert "getenv(" not in source
 
 
 def test_dynamic_database_digest_is_parsed_from_registry_receipt() -> None:

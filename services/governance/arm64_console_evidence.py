@@ -41,6 +41,18 @@ TRIVY_SCANNER_IMAGE_REF = (
     "public.ecr.aws/aquasecurity/trivy@" + TRIVY_SCANNER_INDEX_DIGEST
 )
 TRIVY_DATABASE_REPOSITORY = "public.ecr.aws/aquasecurity/trivy-db:2"
+PROXY_ENV_NAMES = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "FTP_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "ftp_proxy",
+    "no_proxy",
+    "all_proxy",
+)
 TRIVY_DATABASE_IMAGE_DIGEST = (
     "sha256:a31116509ea91463d10ae72280c852d312180691205a3177a3ae3f49f9379edd"
 )
@@ -213,6 +225,57 @@ _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _CAPTURE_FIELDS = {"argv", "exit_code", "stdout_sha256", "stderr_sha256"}
 
 
+def _option_values(argv: list[str], option: str) -> list[str] | None:
+    """Return values for exact two-token options, rejecting joined spellings."""
+    if any(item.startswith(option + "=") for item in argv):
+        return None
+    values: list[str] = []
+    index = 0
+    while index < len(argv):
+        if argv[index] != option:
+            index += 1
+            continue
+        if index + 1 >= len(argv):
+            return None
+        value = argv[index + 1]
+        if value.startswith("-"):
+            return None
+        values.append(value)
+        index += 2
+    return values
+
+
+def _contains_proxy_value(argv: list[str]) -> bool:
+    return any(
+        item.startswith(name + "=")
+        for item in argv
+        for name in PROXY_ENV_NAMES
+    )
+
+
+def _valid_build_capture_argv(argv: list[str], epoch: int) -> bool:
+    if argv[:3] != ["docker", "buildx", "build"] or "--no-cache" not in argv:
+        return False
+    return (
+        _option_values(argv, "--build-arg")
+        == [f"SOURCE_DATE_EPOCH={epoch}", *PROXY_ENV_NAMES]
+        and not _contains_proxy_value(argv)
+        and "--env" not in argv
+        and "-e" not in argv
+    )
+
+
+def _valid_scanner_proxy_argv(argv: list[str], *, networked: bool) -> bool:
+    expected_env = ["HOME=/tmp", *(PROXY_ENV_NAMES if networked else ())]
+    expected_network = "bridge" if networked else "none"
+    return (
+        _option_values(argv, "--env") == expected_env
+        and _option_values(argv, "--network") == [expected_network]
+        and "-e" not in argv
+        and not _contains_proxy_value(argv)
+    )
+
+
 def _source(
     commit: object,
     clean: object,
@@ -346,8 +409,25 @@ def _recipe(root: Path) -> dict[str, Any]:
             "ARM64 Dockerfile must define one base image and SOURCE_DATE_EPOCH"
         )
     base_image = bases[0]
+    logical_text = re.sub(r"\\\r?\n\s*", " ", text)
+    proxy_declarations = any(
+        re.match(r"^\s*(?:ARG|ENV)\s+", line, re.IGNORECASE)
+        and any(
+            re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])",
+                line,
+                re.IGNORECASE,
+            )
+            for name in PROXY_ENV_NAMES
+        )
+        for line in logical_text.splitlines()
+    )
     if "@" not in base_image or _DIGEST.fullmatch(base_image.rsplit("@", 1)[1]) is None:
         raise Arm64ConsoleEvidenceError("ARM64 base image must be digest pinned")
+    if proxy_declarations:
+        raise Arm64ConsoleEvidenceError(
+            "ARM64 Dockerfile must not retain proxy ARG or ENV declarations"
+        )
     if len(_TARGETARCH_GUARD.findall(text)) != 2:
         raise Arm64ConsoleEvidenceError(
             "ARM64 Dockerfile must guard both build stages with TARGETARCH"
@@ -362,10 +442,13 @@ def _recipe(root: Path) -> dict[str, Any]:
 
 
 def _build_command(epoch: int) -> str:
+    proxies = "".join(f"--build-arg {name} " for name in PROXY_ENV_NAMES)
     return (
         "docker buildx build --platform linux/arm64 --no-cache "
         "--provenance=false "
         f"--build-arg SOURCE_DATE_EPOCH={epoch} "
+        + proxies
+        +
         "--output type=oci,dest=OUTPUT.oci.tar,rewrite-timestamp=true "
         "-f deploy/console.arm64.Dockerfile ."
     )
@@ -573,6 +656,7 @@ def build_arm64_container_reproducibility_evidence(
         raise Arm64ConsoleEvidenceError("two distinct OCI archive paths are required")
     root = Path(repo_root).resolve()
     source = _source(source_commit, source_clean, source_capture)
+    recipe = _recipe(root)
     if not isinstance(build_captures, list) or len(build_captures) != 2:
         raise Arm64ConsoleEvidenceError("exactly two cold-build captures are required")
     captures = [
@@ -580,12 +664,13 @@ def build_arm64_container_reproducibility_evidence(
         for index, value in enumerate(build_captures)
     ]
     if (
-        any(value["argv"][:3] != ["docker", "buildx", "build"] for value in captures)
-        or any("--no-cache" not in value["argv"] for value in captures)
+        any(
+            not _valid_build_capture_argv(value["argv"], recipe["source_date_epoch"])
+            for value in captures
+        )
         or captures[0]["argv"] == captures[1]["argv"]
     ):
         raise Arm64ConsoleEvidenceError("cold builds must use two distinct no-cache argv")
-    recipe = _recipe(root)
     first_image = _parse_arm64_oci(first_path, recipe["source_date_epoch"])
     second_image = _parse_arm64_oci(second_path, recipe["source_date_epoch"])
     builds = []
@@ -717,13 +802,15 @@ def verify_arm64_container_reproducibility_evidence(
         _capture(value, f"cold-build capture {index}")
         for index, value in enumerate(captures_value)
     ]
+    recipe = _recipe(root)
     if (
-        any(value["argv"][:3] != ["docker", "buildx", "build"] for value in captures)
-        or any("--no-cache" not in value["argv"] for value in captures)
+        any(
+            not _valid_build_capture_argv(value["argv"], recipe["source_date_epoch"])
+            for value in captures
+        )
         or captures[0]["argv"] == captures[1]["argv"]
     ):
         raise Arm64ConsoleEvidenceError("cold-build capture argv is invalid")
-    recipe = _recipe(root)
     if (
         document.get("source_date_epoch") != recipe["source_date_epoch"]
         or document.get("base_image_ref") != recipe["base_image_ref"]
@@ -971,6 +1058,9 @@ def build_arm64_container_audit_evidence(
             captures[name]["argv"][:3] != ["docker", "run", "--rm"]
             or not hardened_flags.issubset(set(captures[name]["argv"]))
             or any("docker.sock" in item for item in captures[name]["argv"])
+            or not _valid_scanner_proxy_argv(
+                captures[name]["argv"], networked=name == "download_database"
+            )
             for name in scanner_names
         )
         or captures["database_registry"]["argv"]
@@ -1294,6 +1384,10 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
                 "container environment contains a credential-like name"
             )
         parsed_environment[name] = setting
+    if any(name in parsed_environment for name in PROXY_ENV_NAMES):
+        raise Arm64ConsoleEvidenceError(
+            "container or image environment retains proxy configuration"
+        )
     if any(item not in env for item in image_env):
         raise Arm64ConsoleEvidenceError("container environment omits image settings")
     temporary = host.get("Tmpfs")
