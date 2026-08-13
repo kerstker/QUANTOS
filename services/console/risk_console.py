@@ -100,17 +100,21 @@ class DefaultRiskConsolePort:
                     "anomalies": [],
                     "audit_events": 0,
                 }
-            audit = DurableAuditLog(audit_db)
-            snapshot = build_snapshot(
-                timestamp=0, audit_log=audit, kill_switch=kill_switch
-            )
+            audit = DurableAuditLog(audit_db, create=False, read_only=True)
+            try:
+                snapshot = build_snapshot(
+                    timestamp=0, audit_log=audit, kill_switch=kill_switch
+                )
+                audit_events = len(audit.events)
+            finally:
+                audit.close()
             return {
                 "provenance": "REAL_MONITORING_SNAPSHOT",
                 "audit_chain_valid": snapshot.audit_chain_valid,
                 "kill_switch_active": snapshot.kill_switch_active,
                 "healthy": snapshot.healthy,
                 "anomalies": list(snapshot.anomalies),
-                "audit_events": len(audit.events),
+                "audit_events": audit_events,
             }
         except Exception:
             return {

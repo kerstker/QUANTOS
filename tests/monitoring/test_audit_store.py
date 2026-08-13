@@ -4,6 +4,7 @@
 (抓字段篡改),prev_hash→entry_hash 链(抓重排),seal/verify_against(抓截断/整体替换/擦除)。
 时间由调用方注入(店内无墙钟),确定性。"""
 import os
+from pathlib import Path
 import sqlite3
 
 import pytest
@@ -105,3 +106,80 @@ def test_empty_log_is_valid_and_headless(tmp_path):
     assert log.events == ()
     assert log.chain_valid() is True
     assert log.head_hash == ""
+
+
+def test_read_only_open_uses_resolved_file_uri_and_query_only(tmp_path, monkeypatch):
+    path = tmp_path / "audit.db"
+    writable = DurableAuditLog(str(path))
+    writable.close()
+    real_connect = sqlite3.connect
+    observed = {}
+
+    def recording_connect(database, *args, **kwargs):
+        observed.update(database=database, kwargs=dict(kwargs))
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr("services.monitoring.audit_store.sqlite3.connect", recording_connect)
+
+    read_only = DurableAuditLog(str(path), create=False, read_only=True)
+    try:
+        assert read_only._c.execute("PRAGMA query_only").fetchone()[0] == 1
+    finally:
+        read_only.close()
+
+    assert observed["database"] == f"{path.resolve().as_uri()}?mode=ro"
+    assert observed["kwargs"]["uri"] is True
+    assert observed["kwargs"]["check_same_thread"] is False
+
+
+@pytest.mark.parametrize("path_value", ("missing", ":memory:"))
+def test_read_only_open_rejects_non_file_authority(tmp_path, path_value):
+    path = path_value if path_value == ":memory:" else str(tmp_path / "missing.db")
+
+    with pytest.raises((ValueError, sqlite3.OperationalError)):
+        DurableAuditLog(path, create=False, read_only=True)
+
+    if path_value == "missing":
+        assert not Path(path).exists()
+
+
+def test_default_writable_mode_still_creates_and_appends(tmp_path):
+    path = tmp_path / "nested" / "audit.db"
+
+    log = DurableAuditLog(str(path))
+    try:
+        log.append(event_id="write-regression", actor="human", action="note", timestamp=1)
+        assert len(log.events) == 1
+    finally:
+        log.close()
+
+    assert path.is_file()
+
+
+def test_read_only_constructor_closes_connection_when_query_only_setup_fails(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "audit.db"
+    path.write_bytes(b"exists")
+
+    class FailingConnection:
+        closed = False
+
+        def execute(self, statement):
+            assert statement == "PRAGMA query_only=ON"
+            raise sqlite3.OperationalError("pragma rejected")
+
+        def close(self):
+            self.closed = True
+
+    connection = FailingConnection()
+    monkeypatch.setattr(
+        "services.monitoring.audit_store.sqlite3.connect",
+        lambda *args, **kwargs: connection,
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="pragma rejected"):
+        DurableAuditLog(str(path), create=False, read_only=True)
+
+    assert connection.closed is True

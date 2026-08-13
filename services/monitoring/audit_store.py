@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import sqlite3
 import threading
 from typing import Optional
@@ -30,22 +31,40 @@ from .audit_log import AuditCommitment
 class DurableAuditLog:
     """Thread-safe append-only hash-chained audit store. Time is caller-injected (no wall-clock)."""
 
-    def __init__(self, db_path: str, create: bool = True):
+    def __init__(self, db_path: str, create: bool = True, *, read_only: bool = False):
+        if read_only and create:
+            raise ValueError("read_only audit stores cannot create an authority")
+        if read_only and db_path == ":memory:":
+            raise ValueError("read_only audit stores require a file authority")
         # The db often lives under a gitignored dir (data/cache) absent on fresh checkout / CI;
         # sqlite cannot create the file if its parent is missing (mirrors run_registry.store).
         if create and db_path != ":memory:":
             parent = os.path.dirname(db_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self._c = sqlite3.connect(db_path, check_same_thread=False)
         self._lock = threading.Lock()
-        if create:
-            with self._lock:
-                self._c.execute(
-                    "CREATE TABLE IF NOT EXISTS audit_events (seq INTEGER PRIMARY KEY AUTOINCREMENT,"
-                    " event_id TEXT UNIQUE, actor TEXT, action TEXT, target TEXT, timestamp INTEGER,"
-                    " metadata_json TEXT, prev_hash TEXT, entry_hash TEXT)")
-                self._c.commit()
+        connection = None
+        try:
+            if read_only:
+                uri = f"{Path(db_path).resolve().as_uri()}?mode=ro"
+                connection = sqlite3.connect(
+                    uri, uri=True, check_same_thread=False
+                )
+                connection.execute("PRAGMA query_only=ON")
+            else:
+                connection = sqlite3.connect(db_path, check_same_thread=False)
+            self._c = connection
+            if create:
+                with self._lock:
+                    self._c.execute(
+                        "CREATE TABLE IF NOT EXISTS audit_events (seq INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        " event_id TEXT UNIQUE, actor TEXT, action TEXT, target TEXT, timestamp INTEGER,"
+                        " metadata_json TEXT, prev_hash TEXT, entry_hash TEXT)")
+                    self._c.commit()
+        except Exception:
+            if connection is not None:
+                connection.close()
+            raise
 
     def _rows(self):
         return self._c.execute(
