@@ -17,7 +17,7 @@ GIT_COMMAND_TIMEOUT_SECONDS = 10
 
 # This is deliberately a finite, versioned list.  Widening it changes the
 # identity domain and must be reviewed as a new boundary policy.
-CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v2"
+CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v3"
 RELEASE_EVIDENCE_MANIFEST_PATH = "evidence/l2_release_evidence_manifest.json"
 CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md",
@@ -30,13 +30,16 @@ CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     RELEASE_EVIDENCE_MANIFEST_PATH,
     "evidence/mexc_integration_status.json",
     "evidence/paper_shadow_status.json",
+    "evidence/reproducibility/container_build_arm64_latest.json",
     "evidence/reproducibility/container_build_latest.json",
+    "evidence/runtime/console_arm64_smoke_latest.json",
     "evidence/sbom.cdx.json",
     "evidence/supply_chain_baseline.json",
     "evidence/top_tier_assessment.json",
     "evidence/trial_ledger_integrity.json",
     "evidence/validation_report.json",
     "evidence/vulnerability/container_trivy_latest.json",
+    "evidence/vulnerability/container_trivy_arm64_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
 })
 RELEASE_EVIDENCE_REQUIRED_ARTIFACTS = frozenset(
