@@ -179,7 +179,7 @@ def _build_argv(
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
     ]
     for name in PROXY_ENV_NAMES:
-        argv.extend(["--build-arg", name])
+        argv.extend(["--build-arg", f"{name}="])
     argv.extend([
         "--tag", ARM64_RUNTIME_IMAGE_REF,
         "--output", (
@@ -201,7 +201,7 @@ def _docker_export_argv(
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
     ]
     for name in PROXY_ENV_NAMES:
-        argv.extend(["--build-arg", name])
+        argv.extend(["--build-arg", f"{name}="])
     argv.extend([
         "--output", f"type=docker,name={ARM64_RUNTIME_IMAGE_REF},dest={archive}",
         "-f", str(root / ARM64_DOCKERFILE_REF), str(root),
@@ -216,10 +216,7 @@ def _scanner_argv(
     input_archive: Path | None = None,
     input_name: str = "image.tar",
     user: str | None = None,
-    inherit_proxy: bool = False,
 ) -> list[str]:
-    if inherit_proxy and network != "bridge":
-        raise CaptureError("proxy inheritance is restricted to networked scanner runs")
     argv = [
         "docker", "run", "--rm", "--platform", TARGET_PLATFORM,
         "--network", network,
@@ -229,9 +226,8 @@ def _scanner_argv(
         "--env", "HOME=/tmp",
         "--mount", f"type=bind,src={cache},dst=/cache",
     ]
-    if inherit_proxy:
-        for name in PROXY_ENV_NAMES:
-            argv.extend(["--env", name])
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--env", f"{name}="])
     if user is not None:
         argv.extend(["--user", user])
     if input_archive is not None:
@@ -243,6 +239,21 @@ def _scanner_argv(
         )
     argv.append(TRIVY_SCANNER_IMAGE_REF)
     argv.extend(arguments)
+    return argv
+
+
+def _smoke_run_argv() -> list[str]:
+    argv = [
+        "docker", "run", "--rm", "--detach", "--name", SMOKE_CONTAINER,
+        "--network", "none", "--read-only", "--user", "65532:65532",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+    ]
+    for setting in _SAFETY_ENV:
+        argv.extend(["--env", setting])
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--env", f"{name}="])
+    argv.append(ARM64_RUNTIME_IMAGE_REF)
     return argv
 
 
@@ -578,7 +589,6 @@ def capture(
                 "--db-repository", database_ref,
                 network="bridge",
                 user=scanner_user,
-                inherit_proxy=True,
             ),
             root,
         )
@@ -686,16 +696,7 @@ def capture(
         if audit.get("verdict") != "PASS":
             raise CaptureError("ARM64 vulnerability policy did not pass")
 
-        smoke_run = [
-            "docker", "run", "--rm", "--detach", "--name", SMOKE_CONTAINER,
-            "--network", "none", "--read-only", "--user", "65532:65532",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
-        ]
-        for setting in _SAFETY_ENV:
-            smoke_run.extend(["--env", setting])
-        smoke_run.append(ARM64_RUNTIME_IMAGE_REF)
-        _run(executor, smoke_run, root)
+        smoke_run_capture = _run(executor, _smoke_run_argv(), root)
         owned_container = True
 
         container_inspect = _run(
@@ -725,7 +726,7 @@ def capture(
             raise CaptureError("container-loopback health response is invalid")
         smoke_observed_at = int(clock())
         observation = {
-            "schema_version": 1,
+            "schema_version": 2,
             "observed_at": smoke_observed_at,
             "container_inspect": _inspect_object(
                 container_inspect.stdout, "container inspect"
@@ -740,7 +741,10 @@ def capture(
             "health_response": dict(body),
             "capture": {
                 "commands": [
-                    container_inspect.receipt(), image_inspect.receipt(), health.receipt()
+                    smoke_run_capture.receipt(),
+                    container_inspect.receipt(),
+                    image_inspect.receipt(),
+                    health.receipt(),
                 ],
                 "host_uname": source_capture["host_uname"],
                 "source_commit": commit,

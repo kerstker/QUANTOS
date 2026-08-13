@@ -134,6 +134,7 @@ _REPRODUCIBILITY_LIMITATIONS = (
     "LOCAL_OBSERVATION_NOT_IDENTITY_SIGNED",
     "NOT_A_CROSS_HOST_ARTIFACT_ATTESTATION",
     "LOCAL_UNSIGNED_RUNNER_RECEIPT_NOT_CRYPTOGRAPHIC_ATTESTATION",
+    "PROXY_ENV_EXPLICITLY_CLEARED_NETWORK_PATH_NOT_ATTESTED",
 )
 _AUDIT_FIELDS = {
     "schema_version",
@@ -245,35 +246,44 @@ def _option_values(argv: list[str], option: str) -> list[str] | None:
     return values
 
 
-def _contains_proxy_value(argv: list[str]) -> bool:
-    return any(
-        item.startswith(name + "=")
-        for item in argv
-        for name in PROXY_ENV_NAMES
-    )
-
-
 def _valid_build_capture_argv(argv: list[str], epoch: int) -> bool:
     if argv[:3] != ["docker", "buildx", "build"] or "--no-cache" not in argv:
         return False
     return (
         _option_values(argv, "--build-arg")
-        == [f"SOURCE_DATE_EPOCH={epoch}", *PROXY_ENV_NAMES]
-        and not _contains_proxy_value(argv)
+        == [
+            f"SOURCE_DATE_EPOCH={epoch}",
+            *(f"{name}=" for name in PROXY_ENV_NAMES),
+        ]
         and "--env" not in argv
         and "-e" not in argv
     )
 
 
-def _valid_scanner_proxy_argv(argv: list[str], *, networked: bool) -> bool:
-    expected_env = ["HOME=/tmp", *(PROXY_ENV_NAMES if networked else ())]
+def _valid_scanner_network_argv(argv: list[str], *, networked: bool) -> bool:
     expected_network = "bridge" if networked else "none"
     return (
-        _option_values(argv, "--env") == expected_env
+        _option_values(argv, "--env")
+        == ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
         and _option_values(argv, "--network") == [expected_network]
         and "-e" not in argv
-        and not _contains_proxy_value(argv)
     )
+
+
+def _expected_smoke_run_argv() -> list[str]:
+    argv = [
+        "docker", "run", "--rm", "--detach", "--name",
+        "quantos-arm64-console-smoke", "--network", "none", "--read-only",
+        "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt",
+        "no-new-privileges:true", "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=32m",
+    ]
+    for name, setting in _SAFETY_ENVIRONMENT.items():
+        argv.extend(["--env", f"{name}={setting}"])
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--env", f"{name}="])
+    argv.append(ARM64_RUNTIME_IMAGE_REF)
+    return argv
 
 
 def _source(
@@ -442,7 +452,7 @@ def _recipe(root: Path) -> dict[str, Any]:
 
 
 def _build_command(epoch: int) -> str:
-    proxies = "".join(f"--build-arg {name} " for name in PROXY_ENV_NAMES)
+    proxies = "".join(f"--build-arg {name}= " for name in PROXY_ENV_NAMES)
     return (
         "docker buildx build --platform linux/arm64 --no-cache "
         "--provenance=false "
@@ -1058,7 +1068,7 @@ def build_arm64_container_audit_evidence(
             captures[name]["argv"][:3] != ["docker", "run", "--rm"]
             or not hardened_flags.issubset(set(captures[name]["argv"]))
             or any("docker.sock" in item for item in captures[name]["argv"])
-            or not _valid_scanner_proxy_argv(
+                or not _valid_scanner_network_argv(
                 captures[name]["argv"], networked=name == "download_database"
             )
             for name in scanner_names
@@ -1332,18 +1342,19 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
     ):
         raise Arm64ConsoleEvidenceError("target-host capture source is invalid")
     commands = raw_capture.get("commands")
-    if not isinstance(commands, list) or len(commands) != 3:
+    if not isinstance(commands, list) or len(commands) != 4:
         raise Arm64ConsoleEvidenceError("target-host capture commands are invalid")
     captured_commands = [
         _capture(value, f"target-host capture command {index}")
         for index, value in enumerate(commands)
     ]
     if (
-        captured_commands[0]["argv"]
-        != ["docker", "inspect", "quantos-arm64-console-smoke"]
+        captured_commands[0]["argv"] != _expected_smoke_run_argv()
         or captured_commands[1]["argv"]
-        != ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF]
+        != ["docker", "inspect", "quantos-arm64-console-smoke"]
         or captured_commands[2]["argv"]
+        != ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF]
+        or captured_commands[3]["argv"]
         != [
             "docker",
             "exec",
@@ -1372,31 +1383,52 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         not isinstance(item, str) for item in image_env
     ):
         raise Arm64ConsoleEvidenceError("image environment is invalid")
-    parsed_environment: dict[str, str] = {}
-    for entry in env:
-        if "=" not in entry:
-            raise Arm64ConsoleEvidenceError("container environment entry is invalid")
-        name, setting = entry.split("=", 1)
-        if not name or name in parsed_environment:
-            raise Arm64ConsoleEvidenceError("container environment names are invalid")
-        if _FORBIDDEN_ENV_NAME.search(name):
-            raise Arm64ConsoleEvidenceError(
-                "container environment contains a credential-like name"
-            )
-        parsed_environment[name] = setting
-    if any(name in parsed_environment for name in PROXY_ENV_NAMES):
+    def parse_environment(entries: list[str], label: str) -> dict[str, str]:
+        parsed: dict[str, str] = {}
+        for entry in entries:
+            if "=" not in entry:
+                raise Arm64ConsoleEvidenceError(f"{label} environment entry is invalid")
+            name, setting = entry.split("=", 1)
+            if not name or name in parsed:
+                raise Arm64ConsoleEvidenceError(f"{label} environment names are invalid")
+            if _FORBIDDEN_ENV_NAME.search(name):
+                raise Arm64ConsoleEvidenceError(
+                    f"{label} environment contains a credential-like name"
+                )
+            parsed[name] = setting
+        return parsed
+
+    parsed_environment = parse_environment(env, "container")
+    parsed_image_environment = parse_environment(image_env, "image")
+    proxy_names_casefolded = {name.casefold() for name in PROXY_ENV_NAMES}
+    if any(name.casefold() in proxy_names_casefolded for name in parsed_image_environment):
+        raise Arm64ConsoleEvidenceError("image environment retains proxy configuration")
+    container_proxy_names = {
+        name for name in parsed_environment if name.casefold() in proxy_names_casefolded
+    }
+    if (
+        container_proxy_names != set(PROXY_ENV_NAMES)
+        or any(parsed_environment[name] != "" for name in PROXY_ENV_NAMES)
+    ):
         raise Arm64ConsoleEvidenceError(
-            "container or image environment retains proxy configuration"
+            "container proxy environment must be explicitly cleared"
         )
     if any(item not in env for item in image_env):
         raise Arm64ConsoleEvidenceError("container environment omits image settings")
+    expected_environment = {
+        **parsed_image_environment,
+        **_SAFETY_ENVIRONMENT,
+        **{name: "" for name in PROXY_ENV_NAMES},
+    }
+    if parsed_environment != expected_environment:
+        raise Arm64ConsoleEvidenceError("container environment is not exact")
     temporary = host.get("Tmpfs")
     temporary_value = temporary.get("/tmp") if isinstance(temporary, Mapping) else None
     temporary_options = (
         set(temporary_value.split(",")) if isinstance(temporary_value, str) else set()
     )
     if (
-        observation.get("schema_version") != 1
+        observation.get("schema_version") != 2
         or not isinstance(digest, str)
         or _DIGEST.fullmatch(digest) is None
         or image.get("Architecture") != "arm64"
@@ -1423,14 +1455,6 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         or container.get("Mounts") != []
         or host.get("NetworkMode") != "none"
         or not no_published_ports
-        or parsed_environment != {
-            **{
-                item.split("=", 1)[0]: item.split("=", 1)[1]
-                for item in env
-                if "=" in item
-            }
-        }
-        or any(parsed_environment.get(name) != setting for name, setting in _SAFETY_ENVIRONMENT.items())
         or observation.get("health_request")
         != {
             "method": "GET",
@@ -1468,7 +1492,7 @@ def build_arm64_console_smoke_evidence(
     if validated["capture"]["source_commit"] != source["commit"]:
         raise Arm64ConsoleEvidenceError("smoke capture source does not match evidence source")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": "PASS",
         "mode": ARM64_SMOKE_MODE,
         "observed_at": validated["observed_at"],
@@ -1490,7 +1514,7 @@ def verify_arm64_console_smoke_evidence(
     if not isinstance(document, Mapping) or set(document) != _SMOKE_FIELDS:
         raise Arm64ConsoleEvidenceError("ARM64 console smoke shape is invalid")
     if (
-        document.get("schema_version") != 1
+        document.get("schema_version") != 2
         or document.get("verdict") != "PASS"
         or document.get("mode") != ARM64_SMOKE_MODE
         or document.get("platform") != ARM64_TARGET_PLATFORM

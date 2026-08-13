@@ -20,6 +20,7 @@ from scripts.capture_arm64_console_evidence import (
     _database_digest,
     _docker_export_argv,
     _scanner_argv,
+    _smoke_run_argv,
     _source_capture,
     _publish_staged_evidence,
     _parse_buildx_inspect_identity,
@@ -114,10 +115,13 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
     assert "type=oci,name=quantos-console:l2-arm64,dest=" in first[first.index("--output") + 1]
     assert "name=quantos-console:l2-arm64" in first[first.index("--output") + 1]
     assert "rewrite-timestamp=true" in first[first.index("--output") + 1]
-    expected_build_args = ["SOURCE_DATE_EPOCH=123", *PROXY_ENV_NAMES]
+    expected_build_args = [
+        "SOURCE_DATE_EPOCH=123",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
     assert _option_values(first, "--build-arg") == expected_build_args
     assert _option_values(second, "--build-arg") == expected_build_args
-    assert all("=" not in name for name in PROXY_ENV_NAMES)
+    assert all(value.endswith("=") for value in expected_build_args[1:])
     assert "--env" not in first and "-e" not in first
     assert first != second
 
@@ -182,7 +186,7 @@ def test_third_build_is_no_cache_named_docker_archive(tmp_path: Path) -> None:
     )
     assert _option_values(argv, "--build-arg") == [
         "SOURCE_DATE_EPOCH=123",
-        *PROXY_ENV_NAMES,
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
     ]
 
 
@@ -208,11 +212,15 @@ def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> No
     assert any("@sha256:" in item for item in argv)
     assert all("docker.sock" not in item for item in argv)
     assert not any("*" in item or "?" in item for item in argv)
-    assert _option_values(argv, "--env") == ["HOME=/tmp"]
-    assert not any(name in argv for name in PROXY_ENV_NAMES)
+    assert _option_values(argv, "--env") == [
+        "HOME=/tmp",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
 
 
-def test_only_networked_database_download_inherits_proxy_names(tmp_path: Path) -> None:
+def test_networked_database_download_clears_proxy_and_uses_bridge(
+    tmp_path: Path,
+) -> None:
     argv = _scanner_argv(
         tmp_path / "cache",
         "--cache-dir",
@@ -220,20 +228,28 @@ def test_only_networked_database_download_inherits_proxy_names(tmp_path: Path) -
         "image",
         "--download-db-only",
         network="bridge",
-        inherit_proxy=True,
     )
 
     assert argv[argv.index("--network") + 1] == "bridge"
-    assert _option_values(argv, "--env") == ["HOME=/tmp", *PROXY_ENV_NAMES]
-    assert all("=" not in name for name in PROXY_ENV_NAMES)
+    assert _option_values(argv, "--env") == [
+        "HOME=/tmp",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
 
-    with pytest.raises(CaptureError, match="proxy inheritance"):
-        _scanner_argv(
-            tmp_path / "cache",
-            "version",
-            network="none",
-            inherit_proxy=True,
-        )
+
+def test_smoke_run_clears_proxy_after_exact_safety_environment() -> None:
+    argv = _smoke_run_argv()
+
+    assert argv[:3] == ["docker", "run", "--rm"]
+    assert _option_values(argv, "--env") == [
+        "LIVE_TRADING_ENABLED=false",
+        "REAL_BROKER_ENABLED=false",
+        "ALLOW_ORDER_SUBMISSION=false",
+        "ALLOW_AI_DIRECT_TRADING=false",
+        "REQUIRE_HUMAN_APPROVAL=true",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
+    assert argv[argv.index("--network") + 1] == "none"
 
 
 def test_proxy_values_are_never_read_or_serialized() -> None:
@@ -344,6 +360,12 @@ def test_evidence_is_staged_then_published_as_one_set(tmp_path: Path) -> None:
 def test_final_source_recheck_precedes_evidence_publish() -> None:
     source = inspect.getsource(capture)
     assert source.index("final_commit") < source.index("_publish_staged_evidence")
+
+
+def test_capture_assembles_smoke_observation_schema_v2() -> None:
+    source = inspect.getsource(capture)
+    assert source.count('"schema_version": 2') == 1
+    assert '"schema_version": 1' not in source
 
 
 def test_reserved_resource_names_are_fixed_and_unambiguous() -> None:

@@ -65,7 +65,7 @@ def _build_capture(label: str, byte: str) -> dict[str, object]:
             *[
                 item
                 for name in PROXY_ENV_NAMES
-                for item in ("--build-arg", name)
+                for item in ("--build-arg", f"{name}=")
             ],
             label,
         ],
@@ -99,18 +99,19 @@ def _scanner_capture() -> dict[str, object]:
     )
     database_manifest = b'{"schemaVersion":2,"config":{},"layers":[]}\n'
     database_digest = "sha256:" + hashlib.sha256(database_manifest).hexdigest()
-    def hardened(network: str, *, inherit_proxy: bool = False) -> list[str]:
-        result = [
+    def hardened(network: str) -> list[str]:
+        return [
             "docker", "run", "--rm", "--platform", "linux/arm64",
             "--network", network, "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp",
-            "--env", "HOME=/tmp", "--user", "1000:1000",
+            "--env", "HOME=/tmp",
+            *[
+                item
+                for name in PROXY_ENV_NAMES
+                for item in ("--env", f"{name}=")
+            ],
+            "--user", "1000:1000",
         ]
-        if inherit_proxy:
-            result.extend(
-                item for name in PROXY_ENV_NAMES for item in ("--env", name)
-            )
-        return result
     scan_flags = [
         "--skip-db-update", "--skip-java-db-update", "--skip-check-update",
         "--skip-vex-repo-update", "--disable-telemetry", "--offline-scan",
@@ -122,8 +123,7 @@ def _scanner_capture() -> dict[str, object]:
             "stdout_sha256": hashlib.sha256(version.encode()).hexdigest(),
         },
         "download_database": _capture(
-            hardened("bridge", inherit_proxy=True)
-            + ["trivy-pinned", "--download-db-only"]
+            hardened("bridge") + ["trivy-pinned", "--download-db-only"]
         ),
         "database": {
             **_capture(
@@ -410,7 +410,7 @@ def _audit(
 
 
 def _smoke_observation() -> dict[str, object]:
-    environment = [
+    image_environment = [
         "LIVE_TRADING_ENABLED=false",
         "REAL_BROKER_ENABLED=false",
         "ALLOW_ORDER_SUBMISSION=false",
@@ -419,9 +419,33 @@ def _smoke_observation() -> dict[str, object]:
         "PYTHONDONTWRITEBYTECODE=1",
         "PYTHONUNBUFFERED=1",
     ]
+    container_environment = [
+        *image_environment,
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
+    smoke_run_argv = [
+        "docker", "run", "--rm", "--detach", "--name",
+        "quantos-arm64-console-smoke", "--network", "none", "--read-only",
+        "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt",
+        "no-new-privileges:true", "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=32m",
+        *[
+            item
+            for setting in (
+                "LIVE_TRADING_ENABLED=false",
+                "REAL_BROKER_ENABLED=false",
+                "ALLOW_ORDER_SUBMISSION=false",
+                "ALLOW_AI_DIRECT_TRADING=false",
+                "REQUIRE_HUMAN_APPROVAL=true",
+                *(f"{name}=" for name in PROXY_ENV_NAMES),
+            )
+            for item in ("--env", setting)
+        ],
+        ARM64_RUNTIME_IMAGE_REF,
+    ]
     ports = {"8400/tcp": None}
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "observed_at": EPOCH,
         "container_inspect": {
             "Image": RUNTIME_DIGEST,
@@ -439,7 +463,7 @@ def _smoke_observation() -> dict[str, object]:
                     "--port",
                     "8400",
                 ],
-                "Env": environment,
+                "Env": container_environment,
                 "ExposedPorts": {"8400/tcp": {}},
             },
             "HostConfig": {
@@ -474,7 +498,7 @@ def _smoke_observation() -> dict[str, object]:
                     "--port",
                     "8400",
                 ],
-                "Env": environment,
+                "Env": image_environment,
                 "ExposedPorts": {"8400/tcp": {}},
             },
         },
@@ -491,6 +515,12 @@ def _smoke_observation() -> dict[str, object]:
         },
         "capture": {
             "commands": [
+                {
+                    "argv": smoke_run_argv,
+                    "exit_code": 0,
+                    "stdout_sha256": "5" * 64,
+                    "stderr_sha256": "6" * 64,
+                },
                 {
                     "argv": ["docker", "inspect", "quantos-arm64-console-smoke"],
                     "exit_code": 0,
@@ -593,11 +623,11 @@ def test_arm64_reproducibility_rejects_recipe_tamper(tmp_path: Path) -> None:
     "mutate",
     [
         lambda argv: argv.__delitem__(slice(8, 10)),
-        lambda argv: argv.extend(["--build-arg", "HTTP_PROXY"]),
+        lambda argv: argv.extend(["--build-arg", "HTTP_PROXY="]),
         lambda argv: argv.__setitem__(5, "SOURCE_DATE_EPOCH=999999"),
-        lambda argv: argv.__setitem__(9, "HTTP_PROXY=http://secret.invalid"),
+        lambda argv: argv.__setitem__(7, "HTTP_PROXY=http://secret.invalid"),
         lambda argv: argv.extend(["--build-arg", "UNEXPECTED_PROXY"]),
-        lambda argv: argv.__setitem__(8, "--build-arg=HTTP_PROXY"),
+        lambda argv: argv.__setitem__(6, "--build-arg=HTTP_PROXY="),
     ],
 )
 def test_arm64_reproducibility_rejects_noncanonical_proxy_build_args(
@@ -636,6 +666,10 @@ def test_arm64_recipe_rejects_proxy_arg_or_env_declaration(
     tmp_path: Path, declaration: str
 ) -> None:
     evidence = _reproducibility(tmp_path)
+    assert (
+        "PROXY_ENV_EXPLICITLY_CLEARED_NETWORK_PATH_NOT_ATTESTED"
+        in evidence["limitations"]
+    )
     path = tmp_path / "deploy/console.arm64.Dockerfile"
     path.write_text(path.read_text(encoding="utf-8") + declaration, encoding="utf-8")
 
@@ -700,13 +734,18 @@ def test_arm64_audit_rejects_wrong_architecture_or_runtime_finding(
 @pytest.mark.parametrize(
     ("capture_name", "mutation"),
     [
-        ("download_database", "missing"),
-        ("download_database", "duplicate"),
-        ("download_database", "value"),
+        ("download_database", "missing_home"),
+        ("version", "missing_proxy"),
+        ("download_database", "duplicate_home"),
+        ("download_database", "proxy_name"),
+        ("download_database", "duplicate_proxy"),
+        ("download_database", "proxy_value"),
         ("download_database", "unexpected"),
         ("download_database", "joined"),
         ("download_database", "short"),
         ("base_scan", "offline_proxy"),
+        ("database", "wrong_network"),
+        ("download_database", "wrong_network"),
     ],
 )
 def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
@@ -714,22 +753,31 @@ def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
 ) -> None:
     evidence = _audit(tmp_path)
     argv = evidence["scanner_capture"][capture_name]["argv"]
-    if mutation == "missing":
-        index = argv.index("HTTP_PROXY")
+    if mutation == "missing_home":
+        index = argv.index("HOME=/tmp")
         del argv[index - 1 : index + 1]
-    elif mutation == "duplicate":
+    elif mutation == "missing_proxy":
+        index = argv.index("HTTP_PROXY=")
+        del argv[index - 1 : index + 1]
+    elif mutation == "duplicate_home":
+        argv.extend(["--env", "HOME=/tmp"])
+    elif mutation == "proxy_name":
         argv.extend(["--env", "HTTP_PROXY"])
-    elif mutation == "value":
-        argv[argv.index("HTTP_PROXY")] = "HTTP_PROXY=http://secret.invalid"
+    elif mutation == "duplicate_proxy":
+        argv.extend(["--env", "HTTP_PROXY="])
+    elif mutation == "proxy_value":
+        argv[argv.index("HTTP_PROXY=")] = "HTTP_PROXY=http://secret.invalid"
     elif mutation == "unexpected":
         argv.extend(["--env", "UNEXPECTED=value"])
     elif mutation == "joined":
-        argv[argv.index("--env", argv.index("HOME=/tmp") + 1)] = "--env=HTTP_PROXY"
+        argv.extend(["--env=HTTP_PROXY="])
     elif mutation == "short":
-        index = argv.index("HTTP_PROXY")
-        argv[index - 1 : index + 1] = ["-e", "HTTP_PROXY"]
+        argv.extend(["-e", "HTTP_PROXY="])
+    elif mutation == "offline_proxy":
+        argv[argv.index("HTTP_PROXY=")] = "HTTP_PROXY"
     else:
-        argv.extend(["--env", "HTTP_PROXY"])
+        index = argv.index("--network") + 1
+        argv[index] = "none" if argv[index] == "bridge" else "bridge"
 
     with pytest.raises(Arm64ConsoleEvidenceError, match="scanner capture"):
         verify_arm64_container_audit_evidence(evidence, tmp_path)
@@ -748,7 +796,68 @@ def test_arm64_smoke_requires_read_only_loopback_non_root_and_no_capability(
     )
     assert evidence["verdict"] == "PASS"
     assert evidence["runtime_image_config_digest"] == RUNTIME_DIGEST
+    assert evidence["schema_version"] == 2
+    container_env = evidence["observation"]["container_inspect"]["Config"]["Env"]
+    image_env = evidence["observation"]["image_inspect"]["Config"]["Env"]
+    assert all(f"{name}=" in container_env for name in PROXY_ENV_NAMES)
+    assert all(
+        not item.startswith(tuple(f"{name}=" for name in PROXY_ENV_NAMES))
+        for item in image_env
+    )
     assert verify_arm64_console_smoke_evidence(evidence, tmp_path)["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "valueless", "nonempty", "duplicate", "extra", "joined", "short"],
+)
+def test_arm64_smoke_rejects_noncanonical_run_environment_receipt(
+    tmp_path: Path, mutation: str
+) -> None:
+    _write_recipe(tmp_path)
+    observation = _smoke_observation()
+    argv = observation["capture"]["commands"][0]["argv"]
+    index = argv.index("HTTP_PROXY=")
+    if mutation == "missing":
+        del argv[index - 1 : index + 1]
+    elif mutation == "valueless":
+        argv[index] = "HTTP_PROXY"
+    elif mutation == "nonempty":
+        argv[index] = "HTTP_PROXY=http://secret.invalid"
+    elif mutation == "duplicate":
+        argv[-1:-1] = ["--env", "HTTP_PROXY="]
+    elif mutation == "extra":
+        argv[-1:-1] = ["--env", "UNEXPECTED=value"]
+    elif mutation == "joined":
+        argv[-1:-1] = ["--env=HTTP_PROXY="]
+    else:
+        argv[-1:-1] = ["-e", "HTTP_PROXY="]
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="capture provenance"):
+        build_arm64_console_smoke_evidence(
+            tmp_path,
+            observation=observation,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+        )
+
+
+def test_arm64_smoke_rejects_legacy_capture_without_run_receipt(
+    tmp_path: Path,
+) -> None:
+    _write_recipe(tmp_path)
+    observation = _smoke_observation()
+    del observation["capture"]["commands"][0]
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="capture commands"):
+        build_arm64_console_smoke_evidence(
+            tmp_path,
+            observation=observation,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -801,19 +910,42 @@ def test_arm64_smoke_rejects_embedded_observation_tamper(tmp_path: Path) -> None
         verify_arm64_console_smoke_evidence(tampered, tmp_path)
 
 
-def test_arm64_smoke_rejects_proxy_values_in_image_or_container_environment(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "container_missing",
+        "container_nonempty",
+        "container_duplicate",
+        "container_mixed_case",
+        "container_extra",
+        "image_proxy",
+    ],
+)
+def test_arm64_smoke_rejects_noncanonical_image_or_container_environment(
+    tmp_path: Path, mutation: str
 ) -> None:
     _write_recipe(tmp_path)
     observation = _smoke_observation()
     container_env = list(observation["container_inspect"]["Config"]["Env"])
     image_env = list(observation["image_inspect"]["Config"]["Env"])
-    container_env.append("HTTP_PROXY=http://secret.invalid")
-    image_env.append("HTTP_PROXY=http://secret.invalid")
+    if mutation == "container_missing":
+        container_env.remove("HTTP_PROXY=")
+    elif mutation == "container_nonempty":
+        container_env[container_env.index("HTTP_PROXY=")] = (
+            "HTTP_PROXY=http://secret.invalid"
+        )
+    elif mutation == "container_duplicate":
+        container_env.append("HTTP_PROXY=")
+    elif mutation == "container_mixed_case":
+        container_env.append("Http_Proxy=")
+    elif mutation == "container_extra":
+        container_env.append("UNEXPECTED=value")
+    else:
+        image_env.append("HTTP_PROXY=")
     observation["container_inspect"]["Config"]["Env"] = container_env
     observation["image_inspect"]["Config"]["Env"] = image_env
 
-    with pytest.raises(Arm64ConsoleEvidenceError, match="proxy"):
+    with pytest.raises(Arm64ConsoleEvidenceError):
         build_arm64_console_smoke_evidence(
             tmp_path,
             observation=observation,
