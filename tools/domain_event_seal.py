@@ -27,8 +27,8 @@ from services.governance.external_evidence import (
     ContinuityObservation,
     evaluate_continuity,
 )
+from services.governance.l2_backup_boundary import classify_destination
 from tools.cache_io import atomic_write_json
-from tools.l2_backup import classify_destination
 
 
 DESTINATION_ENV = "QUANTOS_EVENT_SEAL_DEST"

@@ -31,8 +31,8 @@ from services.governance.l2_restore_history import (
     evaluate_cadence,
 )
 from services.governance.artifact_admission import load_json_without_duplicate_keys
+from services.governance import l2_backup_boundary as l2_backup
 from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
-import tools.l2_backup as l2_backup
 
 
 _HOUR_MS = 3_600_000
