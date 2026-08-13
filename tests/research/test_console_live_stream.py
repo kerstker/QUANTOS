@@ -101,7 +101,11 @@ async def test_mft_stream_emits_only_notice_and_prefers_last_event_id(tmp_path, 
             as_of_ms=now_ms,
             freshness_policy=MftFreshnessPolicy("stream-test", "1", 1_000),
         )
-    monkeypatch.setenv("QUANTOS_MFT_READ_MODEL_DB", str(path))
+    state = tmp_path / "state"
+    resolved = state / "data" / "cache" / "mft_read_model.db"
+    resolved.parent.mkdir(parents=True)
+    path.replace(resolved)
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state))
 
     class Request:
         headers = {"last-event-id": "0:" + "0" * 64}

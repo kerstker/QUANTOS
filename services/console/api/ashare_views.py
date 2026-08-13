@@ -23,16 +23,35 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 
 router = APIRouter()
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_SNAP_DIR = os.path.join(_REPO_ROOT, "data", "stocks", "snapshots")
-_ALPHA_SNAPSHOT = os.path.join(_SNAP_DIR, "alpha_snapshot.json")
-_PAPER_SNAPSHOT = os.path.join(_SNAP_DIR, "paper_track_snapshot.json")
-_KLINES_SNAPSHOT = os.path.join(_SNAP_DIR, "klines_snapshot.json")
+_SNAPSHOT_NAMES = (
+    "alpha_snapshot.json",
+    "paper_track_snapshot.json",
+    "klines_snapshot.json",
+)
 
 REAL_PROVENANCE = "REAL_ASHARE_ALPHA_SNAPSHOT"
+
+
+def _snapshot_paths(root: Path) -> tuple[Path, Path, Path]:
+    directory = root / "data" / "stocks" / "snapshots"
+    return tuple(directory / name for name in _SNAPSHOT_NAMES)
+
+
+def _load_bundle(root: Path) -> tuple[dict, dict, dict] | None:
+    loaded = tuple(_load(str(path)) for path in _snapshot_paths(Path(root)))
+    if all(value is not None for value in loaded):
+        return loaded  # type: ignore[return-value]
+    return None
+
+
+def _ashare_snapshot_bundle() -> tuple[dict, dict, dict] | None:
+    state_bundle = _load_bundle(runtime_state_root(cwd=_REPO_ROOT))
+    return state_bundle if state_bundle is not None else _load_bundle(_REPO_ROOT)
 
 
 def _load(path: str) -> Optional[dict]:
@@ -206,13 +225,13 @@ def _basket_block(alpha: dict, paper: Optional[dict]) -> Dict:
 
 
 def _ashare_alpha_payload() -> Dict:
-    alpha = _load(_ALPHA_SNAPSHOT)
-    if alpha is None:
+    bundle = _ashare_snapshot_bundle()
+    if bundle is None:
         return _synthetic_payload(
-            "未找到 data/stocks/snapshots/alpha_snapshot.json —— 先运行 "
-            "tools/ashare_alpha_research.py(+ tools/ashare_paper_track.py)生成研究快照")
-    paper = _load(_PAPER_SNAPSHOT)
-    klines = _load(_KLINES_SNAPSHOT)
+            "未找到完整的 data/stocks/snapshots 三件套 —— 先运行 "
+            "tools/ashare_alpha_research.py(+ tools/ashare_paper_track.py)生成研究快照"
+        )
+    alpha, paper, klines = bundle
 
     dry = alpha.get("dry_run_champion_variant") or alpha.get("dry_run") or {}
     paper_summary = (paper or {}).get("summary") or {}

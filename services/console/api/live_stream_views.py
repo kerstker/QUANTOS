@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import os
-from pathlib import Path
 import time
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -19,12 +18,14 @@ from services.console.api.artifact_paper_views import (
     _dry_run_watch_paths,
 )
 from services.console.api.common import with_snapshot_metadata
-from services.console.api.mft_execution_views import build_mft_execution_snapshot
+from services.console.api.mft_execution_views import (
+    _mft_read_model_path,
+    build_mft_execution_snapshot,
+)
 
 
 router = APIRouter()
 _MFT_STREAM_SCHEMA = "quantos.mft-stream-notice.v1"
-_MFT_DEFAULT_PATH = "data/cache/mft_read_model.db"
 
 
 def _canonical_snapshot_json(payload: Mapping[str, Any]) -> str:
@@ -161,7 +162,7 @@ async def stream_mft_execution(
     Task 37 REST delta, which remains the sole catch-up authority.
     """
     initial_cursor = request.headers.get("last-event-id") or cursor
-    path = Path(os.environ.get("QUANTOS_MFT_READ_MODEL_DB", _MFT_DEFAULT_PATH))
+    path = _mft_read_model_path()
 
     async def events():
         last_token: tuple[tuple[Any, ...], ...] | None = None

@@ -6,10 +6,12 @@ import json
 import os
 import statistics
 import time
+from pathlib import Path
 from typing import Dict, List
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.console.api.common import short_hash as _short_hash
 from services.console.api.data_port import data_catalog_runtime
 from services.data.binance_api_coverage import (
@@ -23,9 +25,6 @@ from services.data.binance_stream_coverage import (
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-)
-_DATA_CHANNEL_INVENTORY = os.path.join(
-    _PROJECT_ROOT, "data", "cache", "data_channel_inventory.json"
 )
 _BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
 _BINANCE_REST_STATUS = "binance_realtime_market_status.json"
@@ -41,13 +40,16 @@ _BINANCE_STREAM_COVERAGE_CONTRACT = os.path.join(
 )
 
 
+def _state_cache() -> Path:
+    return runtime_state_root(cwd=Path(_PROJECT_ROOT)) / "data" / "cache"
+
+
+def _data_channel_inventory_path() -> Path:
+    return _state_cache() / "data_channel_inventory.json"
+
+
 def _status_candidates(filename: str) -> list[str]:
-    candidates: list[str] = []
-    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
-    if state_root:
-        candidates.append(os.path.join(os.path.abspath(state_root), "data", "cache", filename))
-    candidates.append(os.path.join(_PROJECT_ROOT, "data", "cache", filename))
-    return list(dict.fromkeys(candidates))
+    return [str(_state_cache() / filename)]
 
 
 def _read_latest_status(filename: str) -> tuple[Dict | None, str | None]:
@@ -66,7 +68,8 @@ def _read_latest_status(filename: str) -> tuple[Dict | None, str | None]:
     if not valid:
         return None, None
     _, payload, path = max(valid, key=lambda item: item[0])
-    return payload, path
+    del path
+    return payload, f"QUANTOS_STATE_ROOT/data/cache/{filename}"
 
 
 def _binance_api_coverage_payload() -> Dict:
@@ -407,10 +410,11 @@ def _binance_realtime_payload() -> Dict:
 
 def _data_channel_payload() -> Dict:
     """读取只读渠道审计产物；缺失时显式 UNAVAILABLE，不生成占位渠道。"""
-    if not os.path.exists(_DATA_CHANNEL_INVENTORY):
+    inventory_path = _data_channel_inventory_path()
+    if not os.path.exists(inventory_path):
         return {"status": "UNAVAILABLE", "channels": [], "summary": {}}
     try:
-        with open(_DATA_CHANNEL_INVENTORY, encoding="utf-8") as handle:
+        with open(inventory_path, encoding="utf-8") as handle:
             payload = json.load(handle)
     except (OSError, ValueError, json.JSONDecodeError):
         return {"status": "INVALID", "channels": [], "summary": {}}

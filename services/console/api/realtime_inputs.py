@@ -2,22 +2,18 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import time
 from typing import Dict
 
+from quantos.runtime_paths import runtime_state_root
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_FEATURE_STATUS = (
-    _PROJECT_ROOT / "data" / "cache" / "binance_realtime_feature_status.json"
-)
-_ALERT_STATUS = (
-    _PROJECT_ROOT
-    / "data"
-    / "cache"
-    / "binance_realtime_drift_alert_status.json"
-)
+
+
+def _status_candidates(filename: str) -> list[Path]:
+    cache = runtime_state_root(cwd=_PROJECT_ROOT) / "data" / "cache"
+    return [cache / filename]
 
 
 def _latest(candidates: list[Path]) -> Dict:
@@ -39,19 +35,12 @@ def _latest(candidates: list[Path]) -> Dict:
 
 
 def realtime_agent_input_payload() -> Dict:
-    feature_candidates: list[Path] = []
-    alert_candidates: list[Path] = []
-    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
-    if state_root:
-        cache = Path(state_root) / "data" / "cache"
-        feature_candidates.append(
-            cache / "binance_realtime_feature_status.json"
-        )
-        alert_candidates.append(
-            cache / "binance_realtime_drift_alert_status.json"
-        )
-    feature_candidates.append(_FEATURE_STATUS)
-    alert_candidates.append(_ALERT_STATUS)
+    feature_candidates = _status_candidates(
+        "binance_realtime_feature_status.json"
+    )
+    alert_candidates = _status_candidates(
+        "binance_realtime_drift_alert_status.json"
+    )
     status = _latest(feature_candidates)
     alert_status = _latest(alert_candidates)
 

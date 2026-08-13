@@ -12,6 +12,7 @@ from typing import Callable, Dict, List
 
 from fastapi import APIRouter, Query
 
+from quantos.runtime_paths import runtime_state_root
 from services.alpha.factor_set import select_synergistic_set
 from services.console.api.registry_snapshots import (
     _load_experiment_store,
@@ -21,7 +22,10 @@ from services.research.factor_engine.domain.model import compute_max_drawdown
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
+_STATE_ROOT = runtime_state_root(cwd=_REPO_ROOT)
+_CRYPTO_SNAPSHOT_PATH = os.path.join(
+    _STATE_ROOT, "data", "cache", "crypto_research_snapshot.json"
+)
 
 
 @dataclass(frozen=True)

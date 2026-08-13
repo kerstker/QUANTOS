@@ -251,6 +251,64 @@ def test_valid_existing_schema_is_accepted(tmp_path):
     assert TrialLedger(path, create=False).load(h(1)).status == "PLANNED"
 
 
+def test_read_only_mode_rejects_creation_memory_and_mutation(tmp_path):
+    missing = tmp_path / "missing-read-only.db"
+    with pytest.raises(TrialLedgerError):
+        TrialLedger(str(missing), create=False, read_only=True)
+    assert not missing.exists()
+    with pytest.raises(TrialLedgerError, match="mutually exclusive"):
+        TrialLedger(str(missing), create=True, read_only=True)
+    with pytest.raises(TrialLedgerError, match="file authority"):
+        TrialLedger(":memory:", create=False, read_only=True)
+
+    path = tmp_path / "read-only.db"
+    with TrialLedger(str(path)) as writer:
+        writer.append(rec())
+    with TrialLedger(str(path), create=False, read_only=True) as reader:
+        assert reader.verify() is True
+        with pytest.raises(TrialLedgerError, match="database failure"):
+            reader.append(rec(status="RUNNING", index=1, at=2))
+
+
+def test_read_only_open_does_not_recreate_authority_after_toctou_delete(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "toctou.db"
+    TrialLedger(str(path)).close()
+    original = sqlite3.connect
+
+    def delete_before_connect(target, *args, **kwargs):
+        path.unlink()
+        return original(target, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", delete_before_connect)
+    with pytest.raises(TrialLedgerError, match="unavailable"):
+        TrialLedger(str(path), create=False, read_only=True)
+    assert not path.exists()
+
+
+def test_failed_read_only_schema_validation_closes_connection(tmp_path, monkeypatch):
+    path = tmp_path / "invalid-read-only.db"
+    path.write_bytes(b"not sqlite")
+    before = (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_size)
+    observed = []
+    original = sqlite3.connect
+
+    def tracked_connect(*args, **kwargs):
+        connection = original(*args, **kwargs)
+        observed.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    with pytest.raises(TrialLedgerError):
+        TrialLedger(str(path), create=False, read_only=True)
+    assert observed
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        observed[0].execute("SELECT 1")
+    assert (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_size) == before
+
+
 def test_close_and_context_manager_are_deterministic(tmp_path):
     path = str(tmp_path / "close.db")
     with TrialLedger(path) as ledger:

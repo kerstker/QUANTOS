@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+import sqlite3
 
 import pytest
 
@@ -64,6 +65,68 @@ def test_presentation_metadata_can_be_corrected_without_rewriting_identity(tmp_p
 def test_missing_schema_fails_closed(tmp_path):
     with pytest.raises(AlphaFamilyRegistryError):
         AlphaFamilyRegistry(str(tmp_path / "missing.db"), create=False)
+
+
+def test_read_only_mode_rejects_creation_memory_and_mutation(tmp_path):
+    missing = tmp_path / "missing-read-only.db"
+    with pytest.raises(AlphaFamilyRegistryError, match="does not exist"):
+        AlphaFamilyRegistry(str(missing), read_only=True)
+    assert not missing.exists()
+    with pytest.raises(AlphaFamilyRegistryError, match="mutually exclusive"):
+        AlphaFamilyRegistry(str(missing), create=True, read_only=True)
+    with pytest.raises(AlphaFamilyRegistryError, match="file authority"):
+        AlphaFamilyRegistry(":memory:", read_only=True)
+
+    path = tmp_path / "read-only.db"
+    with AlphaFamilyRegistry(str(path), create=True) as writer:
+        writer.register_candidate(_candidate(), recorded_at=1)
+    with AlphaFamilyRegistry(str(path), read_only=True) as reader:
+        assert reader.verify_chain()
+        with pytest.raises(AlphaFamilyRegistryError, match="append conflict"):
+            reader.record_evaluation(
+                "family_test", {"verdict": "PASS"},
+                dataset_version="d1", recorded_at=2,
+            )
+
+
+def test_read_only_open_does_not_recreate_authority_after_toctou_delete(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "toctou.db"
+    with AlphaFamilyRegistry(str(path), create=True):
+        pass
+    original = sqlite3.connect
+
+    def delete_before_connect(target, *args, **kwargs):
+        path.unlink()
+        return original(target, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", delete_before_connect)
+    with pytest.raises(AlphaFamilyRegistryError, match="unavailable"):
+        AlphaFamilyRegistry(str(path), read_only=True)
+    assert not path.exists()
+
+
+def test_failed_read_only_schema_validation_closes_connection(tmp_path, monkeypatch):
+    path = tmp_path / "invalid-read-only.db"
+    path.write_bytes(b"not sqlite")
+    before = (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_size)
+    observed = []
+    original = sqlite3.connect
+
+    def tracked_connect(*args, **kwargs):
+        connection = original(*args, **kwargs)
+        observed.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    with pytest.raises(AlphaFamilyRegistryError):
+        AlphaFamilyRegistry(str(path), read_only=True)
+    assert observed
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        observed[0].execute("SELECT 1")
+    assert (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_size) == before
 
 
 def test_concurrent_writers_serialize_chain_head_and_insert(tmp_path):

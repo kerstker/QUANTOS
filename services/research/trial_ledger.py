@@ -7,6 +7,7 @@ import re
 import sqlite3
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -153,17 +154,33 @@ def _preflight_existing_schema(c: sqlite3.Connection) -> None:
         if name in triggers and triggers[name] != expected: raise TrialLedgerError("legacy ledger trigger malformed")
 
 class TrialLedger:
-    def __init__(self, db_path: str, create: bool = True):
+    def __init__(
+        self, db_path: str, create: bool = True, *, read_only: bool = False
+    ):
         if not isinstance(db_path, str): raise TrialLedgerError("db_path must be a string")
+        if create and read_only: raise TrialLedgerError("create and read_only are mutually exclusive")
+        if read_only and db_path == ":memory:": raise TrialLedgerError("read-only ledger requires a file authority")
         if not create and db_path != ":memory:" and not os.path.isfile(db_path): raise TrialLedgerError("ledger database does not exist")
         self._c = None
         try:
             if create and db_path != ":memory:":
                 parent = os.path.dirname(db_path)
                 if parent: os.makedirs(parent, exist_ok=True)
-            self._c = sqlite3.connect(db_path, check_same_thread=False, timeout=30)
+            target = (
+                Path(db_path).resolve().as_uri() + "?mode=ro"
+                if read_only
+                else db_path
+            )
+            self._c = sqlite3.connect(
+                target,
+                uri=read_only,
+                check_same_thread=False,
+                timeout=30,
+            )
             self._c.isolation_level = None
             self._c.execute("PRAGMA busy_timeout=30000")
+            if read_only:
+                self._c.execute("PRAGMA query_only=ON")
             self._lock = threading.RLock()
             # Validate legacy/current core objects before additive schema creation.
             with self._lock:

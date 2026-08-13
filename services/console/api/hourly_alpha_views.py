@@ -1,13 +1,13 @@
 """Read-only projection of the L2 hourly alpha workflow authorities."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sqlite3
 import time
 from typing import Any
 
 from fastapi import APIRouter
+from quantos.runtime_paths import runtime_state_root
 from services.research.alpha_workflow_store import AlphaWorkflowError, WorkflowStore
 from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.ports.persistence import ForwardLedgerError
@@ -17,6 +17,9 @@ from services.research.trial_ledger import TrialLedger, TrialLedgerError
 router = APIRouter(tags=["hourly-alpha"])
 _SCHEMA_VERSION = "quantos.hourly-alpha-console.v1"
 _FRESH_SECONDS = 7_200
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+def _hourly_alpha_cache_path() -> Path:
+    return runtime_state_root(cwd=_REPO_ROOT) / "data" / "cache"
 
 
 def _read_only(path: Path) -> sqlite3.Connection:
@@ -81,7 +84,7 @@ def _workflow_projection(path: Path) -> tuple[dict[str, Any], dict[str, Any] | N
 
 def _trial_projection(path: Path) -> dict[str, Any]:
     try:
-        with TrialLedger(str(path), create=False) as ledger:
+        with TrialLedger(str(path), create=False, read_only=True) as ledger:
             ledger.verify()
         connection = _read_only(path)
         with connection:
@@ -200,7 +203,7 @@ def build_hourly_alpha_snapshot(
 
 @router.get("/api/v1/console/hourly-alpha")
 def hourly_alpha_status() -> dict[str, Any]:
-    cache = Path(os.environ.get("QUANTOS_HOURLY_ALPHA_STATE_ROOT", "data/cache"))
+    cache = _hourly_alpha_cache_path()
     return build_hourly_alpha_snapshot(
         workflow_path=cache / "hourly_alpha_workflow.db",
         trial_path=cache / "hourly_alpha_trials.db",

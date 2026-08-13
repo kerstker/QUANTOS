@@ -8,6 +8,8 @@ record here can authorize live trading or create an APPROVED alpha.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 import sqlite3
 from typing import Any, Mapping, Optional
 
@@ -59,16 +61,48 @@ def _record_hash(*, event_id: str, event_type: str, candidate_id: str, recorded_
 class AlphaFamilyRegistry:
     """Small fail-closed append-only store with an auditable hash chain."""
 
-    def __init__(self, path: str, *, create: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        create: bool = False,
+        read_only: bool = False,
+    ) -> None:
+        if not isinstance(path, str) or not path:
+            raise AlphaFamilyRegistryError("family registry path must be non-empty")
+        if create and read_only:
+            raise AlphaFamilyRegistryError("create and read_only are mutually exclusive")
+        if read_only and path == ":memory:":
+            raise AlphaFamilyRegistryError("read-only registry requires a file authority")
+        if read_only and not os.path.isfile(path):
+            raise AlphaFamilyRegistryError("family registry does not exist")
         self.path = path
-        self._conn = sqlite3.connect(path)
-        self._conn.row_factory = sqlite3.Row
-        if create:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=FULL")
-            self._conn.executescript(_SCHEMA)
-            self._conn.commit()
-        self._require_schema()
+        connection = None
+        try:
+            target = (
+                Path(path).resolve().as_uri() + "?mode=ro"
+                if read_only
+                else path
+            )
+            connection = sqlite3.connect(target, uri=read_only)
+            connection.row_factory = sqlite3.Row
+            self._conn = connection
+            if create:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA synchronous=FULL")
+                self._conn.executescript(_SCHEMA)
+                self._conn.commit()
+            if read_only:
+                self._conn.execute("PRAGMA query_only=ON")
+            self._require_schema()
+        except AlphaFamilyRegistryError:
+            if connection is not None:
+                connection.close()
+            raise
+        except (OSError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            if connection is not None:
+                connection.close()
+            raise AlphaFamilyRegistryError("family registry unavailable") from exc
 
     def _require_schema(self) -> None:
         try:

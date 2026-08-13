@@ -326,9 +326,10 @@ def test_append_only_guards_and_hash_chain_corruption_fail_closed(tmp_path):
 def test_http_contract_is_get_only_and_never_exposes_mutation_capabilities(tmp_path, monkeypatch):
     from services.console.main import app
 
-    path = tmp_path / "mft.db"
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(tmp_path))
+    path = tmp_path / "data" / "cache" / "mft_read_model.db"
+    path.parent.mkdir(parents=True)
     _build_store(path)
-    monkeypatch.setenv("QUANTOS_MFT_READ_MODEL_DB", str(path))
     client = TestClient(app)
 
     snapshot_response = client.get("/api/v1/console/mft-execution")

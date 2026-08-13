@@ -14,25 +14,31 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 
 router = APIRouter()
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CACHE = _REPO_ROOT / "data" / "cache"
+_STATE_CACHE = runtime_state_root(cwd=_REPO_ROOT) / "data" / "cache"
+_RELEASE_CACHE = _REPO_ROOT / "data" / "cache"
 
-_FX_RESEARCH_SNAPSHOT = str(_CACHE / "fx_research_snapshot.json")
-_FX_GAUNTLET_SNAPSHOT = str(_CACHE / "fx_gauntlet_snapshot.json")
-_CARRY_STRATEGY_SNAPSHOT = str(_CACHE / "crypto_carry_strategy.json")
-_CARRY_WALKFWD_SNAPSHOT = str(_CACHE / "crypto_carry_walkforward.json")
-_CARRY_CAPACITY_SNAPSHOT = str(_CACHE / "crypto_carry_capacity.json")
-_IC_PANEL_SNAPSHOT = str(_CACHE / "ic_panel_snapshot.json")
-_CAPACITY_SNAPSHOT = str(_CACHE / "capacity_snapshot.json")
-_MACRO_REGIME_SNAPSHOT = str(_CACHE / "macro_regime_snapshot.json")
-_COMBO_BOOK_SNAPSHOT = str(_CACHE / "combo_book_snapshot.json")
-_LANCE_1M_VALIDATION_SNAPSHOT = str(_CACHE / "lance_1m_validation.json")
-_FORWARD_TRACK_STATUS = str(_CACHE / "forward_track_status.json")
-_LIVE_TRACK_STATUS = str(_CACHE / "live_track_status.json")
-_LIVE_RISK_STATE = str(_CACHE / "live_risk_state.json")
-_GONOGO_REPORT = str(_CACHE / "gonogo_report.json")
+_FX_RESEARCH_SNAPSHOT = str(_STATE_CACHE / "fx_research_snapshot.json")
+_FX_GAUNTLET_SNAPSHOT = str(_STATE_CACHE / "fx_gauntlet_snapshot.json")
+_CARRY_STRATEGY_SNAPSHOT = str(_STATE_CACHE / "crypto_carry_strategy.json")
+_CARRY_WALKFWD_SNAPSHOT = str(_STATE_CACHE / "crypto_carry_walkforward.json")
+_CARRY_CAPACITY_SNAPSHOT = str(_STATE_CACHE / "crypto_carry_capacity.json")
+
+# These five routes are shadowed by artifact_paper_views, which is the first
+# registered authority.  Keep their compatibility paths release-anchored here;
+# only the two uniquely reachable diagnostic routes above consume state here.
+_IC_PANEL_SNAPSHOT = str(_RELEASE_CACHE / "ic_panel_snapshot.json")
+_CAPACITY_SNAPSHOT = str(_RELEASE_CACHE / "capacity_snapshot.json")
+_MACRO_REGIME_SNAPSHOT = str(_RELEASE_CACHE / "macro_regime_snapshot.json")
+_COMBO_BOOK_SNAPSHOT = str(_RELEASE_CACHE / "combo_book_snapshot.json")
+_LANCE_1M_VALIDATION_SNAPSHOT = str(_RELEASE_CACHE / "lance_1m_validation.json")
+_FORWARD_TRACK_STATUS = str(_RELEASE_CACHE / "forward_track_status.json")
+_LIVE_TRACK_STATUS = str(_RELEASE_CACHE / "live_track_status.json")
+_LIVE_RISK_STATE = str(_RELEASE_CACHE / "live_risk_state.json")
+_GONOGO_REPORT = str(_RELEASE_CACHE / "gonogo_report.json")
 _EVIDENCE_GATE_WEEKS = 8
 
 
