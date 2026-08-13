@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from quantos.runtime_paths import runtime_state_root
 from services.research.factor_engine.domain.model import compute_max_drawdown, compute_sharpe
 from services.research.paper_trading.domain.pnl import PnLAttributor
 from services.console.api.alpha_library_views import (
@@ -92,12 +93,11 @@ from services.console.api.system_views import (
 )
 from services.validation.factor_statistics import compute_ic
 
-
 _IC_PANEL_SNAPSHOT = IC_PANEL_SNAPSHOT
 
 
 app = FastAPI(title="QUANTOS Research Console API", version=CONSOLE_API_VERSION)
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_STATE_ROOT = runtime_state_root(cwd=Path(__file__).resolve().parents[3])
 _extra_cors_origins = tuple(
     origin.strip()
     for origin in os.getenv("QUANTOS_CONSOLE_CORS_ORIGINS", "").split(",")
@@ -586,10 +586,9 @@ def _real_monitoring_snapshot() -> Dict:
 
 
 
-
-_CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
-
-
+_CRYPTO_SNAPSHOT_PATH = os.path.join(
+    _STATE_ROOT, "data", "cache", "crypto_research_snapshot.json"
+)
 _REAL_FACTORS_CACHE = None
 
 
@@ -643,8 +642,12 @@ def _snapshot_summary() -> Dict:
 
 
 
-_LIVE_KILL_SWITCH_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_kill_switch.json")
-_GOVERNANCE_AUDIT_DB = os.path.join(_REPO_ROOT, "data", "cache", "governance_audit.db")
+_LIVE_KILL_SWITCH_STATE = os.path.join(
+    _STATE_ROOT, "data", "cache", "live_kill_switch.json"
+)
+_GOVERNANCE_AUDIT_DB = os.path.join(
+    _STATE_ROOT, "data", "cache", "governance_audit.db"
+)
 
 
 def _load_live_kill_switch_state():

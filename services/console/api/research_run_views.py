@@ -7,6 +7,7 @@ from typing import Dict
 
 from fastapi import APIRouter, Query
 
+from quantos.runtime_paths import runtime_state_root
 
 router = APIRouter()
 
@@ -19,20 +20,31 @@ def _overview_active_runs() -> int:
         return 0
 
 
-_RUNS_DB = os.path.join("data", "cache", "research_runs.db")
-_RUNS_INDEX_TS = 1_782_700_000
+_STATE_ROOT = runtime_state_root()
+_RUNS_DB = os.path.join(_STATE_ROOT, "data", "cache", "research_runs.db")
+
+
+class _EmptyRunRegistry:
+    """Missing read model: preserve the console shape without creating state."""
+
+    @staticmethod
+    def list(kind=None, limit: int = 200):
+        del kind, limit
+        return []
+
+    @staticmethod
+    def get(run_id: str):
+        del run_id
+        return None
 
 
 def _runs_registry():
     from services.research.run_registry.store import ResearchRunStore
     from services.research.run_registry.registry import RunRegistry
-    from services.research.run_registry.indexer import index_existing
 
-    store = ResearchRunStore(_RUNS_DB)
-    reg = RunRegistry(store)
-    if not store.list(limit=1):  # empty -> seed from existing results
-        index_existing(os.path.join("data", "cache"), reg, now=_RUNS_INDEX_TS)
-    return reg
+    if not os.path.isfile(_RUNS_DB):
+        return _EmptyRunRegistry()
+    return RunRegistry(ResearchRunStore(_RUNS_DB, create=False))
 
 
 def _run_summary(r) -> Dict:

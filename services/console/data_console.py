@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from quantos.runtime_paths import runtime_state_root
 from services.data.catalog import (
     DATA_BACKEND,
     dataset_content_hash,
@@ -19,8 +20,10 @@ class DefaultDataConsolePort:
     data_backend = DATA_BACKEND
 
     def __init__(self, crypto_daily_db: Optional[Path] = None) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
-        self._crypto_daily_db = crypto_daily_db or (repo_root / "data" / "cache" / "crypto_daily.db")
+        state_root = runtime_state_root(cwd=Path(__file__).resolve().parents[2])
+        self._crypto_daily_db = crypto_daily_db or (
+            state_root / "data" / "cache" / "crypto_daily.db"
+        )
         self._real_datasets_cache: Optional[List[Dict]] = None
         self._distribution_cache: Optional[Dict[str, List[float]]] = None
 

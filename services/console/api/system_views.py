@@ -5,13 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS
 from quantos.contracts.events import (
     EVENT_ALPHA_MAINTENANCE_TRANSITION,
@@ -24,10 +24,7 @@ from quantos.contracts.events import (
     EVENT_PRETRADE_REJECTED,
     EVENT_RESEARCH_RISK_EVALUATED,
 )
-from services.monitoring.domain_event_runtime import (
-    DOMAIN_EVENT_DB,
-    read_domain_event_bus_health,
-)
+from services.monitoring.domain_event_runtime import read_domain_event_bus_health
 from services.monitoring.event_projection import DomainEventProjection
 from services.console.api.realtime_inputs import (
     realtime_agent_input_payload as _realtime_agent_input_payload,
@@ -36,11 +33,11 @@ from services.console.api.realtime_inputs import (
 
 CONSOLE_API_VERSION = os.getenv("QUANTOS_CONSOLE_API_VERSION", "0.1.0")
 RUNTIME_CONTRACT_VERSION = "console-runtime.v1"
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_STATE_ROOT = runtime_state_root()
 _DOMAIN_EVENT_PROJECTION_DB = os.path.join(
-    "data", "cache", "domain_event_projection.db"
+    _STATE_ROOT, "data", "cache", "domain_event_projection.db"
 )
-_DOMAIN_EVENT_DB = DOMAIN_EVENT_DB
+_DOMAIN_EVENT_DB = os.path.join(_STATE_ROOT, "data", "cache", "domain_events.db")
 _CONSOLE_DOMAIN_EVENT_TYPES = {
     EVENT_ALPHA_MAINTENANCE_TRANSITION,
     EVENT_DATA_QUALITY_ADMISSION_DECIDED,

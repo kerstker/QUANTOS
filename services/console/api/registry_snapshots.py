@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Sequence
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.console.api.common import short_hash
 
 
@@ -49,9 +50,9 @@ def _triple_fields(a: Dict) -> Dict:
     }
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_EXP_DB = os.path.join(_REPO_ROOT, "data", "cache", "experiment_registry.db")
-_PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
+_STATE_ROOT = runtime_state_root(cwd=Path(__file__).resolve().parents[3])
+_EXP_DB = os.path.join(_STATE_ROOT, "data", "cache", "experiment_registry.db")
+_PAPER_TRACK_DB = os.path.join(_STATE_ROOT, "data", "cache", "paper_track.db")
 _EXP_STAGE_MAP = {
     "DRAFT": "DISCOVERY",
     "TESTING": "VALIDATION",
