@@ -1270,14 +1270,14 @@ def build_arm64_container_audit_evidence(
     runtime_metadata = _object(canonical_runtime["Metadata"], "runtime metadata")
     if (
         canonical_base["ArtifactName"] != "/input/base.tar"
-        or base_metadata["RepoDigests"] != []
-        or base_metadata["RepoTags"] != []
+        or base_metadata.get("RepoDigests", []) != []
+        or base_metadata.get("RepoTags", []) != []
     ):
         raise Arm64ConsoleEvidenceError("base Trivy archive report is invalid")
     if (
         canonical_runtime["ArtifactName"] != "/input/runtime.tar"
-        or runtime_metadata["RepoDigests"] != []
-        or runtime_metadata["RepoTags"] != [ARM64_RUNTIME_IMAGE_REF]
+        or runtime_metadata.get("RepoDigests", []) != []
+        or runtime_metadata.get("RepoTags", []) != [ARM64_RUNTIME_IMAGE_REF]
     ):
         raise Arm64ConsoleEvidenceError("runtime Trivy archive report is invalid")
     runtime_digest = runtime_metadata["ImageID"]

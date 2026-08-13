@@ -422,6 +422,7 @@ def _audit(
     root: Path,
     *,
     runtime_vulnerabilities: list[dict[str, str]] | None = None,
+    omit_optional_archive_metadata: bool = False,
 ) -> dict[str, object]:
     _write_recipe(root)
     base_report = _trivy_report(BASE_REF, BASE_ID, archive_name="/input/base.tar")
@@ -431,6 +432,10 @@ def _audit(
         runtime_vulnerabilities,
         archive_name="/input/runtime.tar",
     )
+    if omit_optional_archive_metadata:
+        base_report["Metadata"].pop("RepoDigests")
+        base_report["Metadata"].pop("RepoTags")
+        runtime_report["Metadata"].pop("RepoDigests")
     base_raw = json.dumps(base_report)
     runtime_raw = json.dumps(runtime_report)
     scanner_capture = _scanner_capture()
@@ -758,6 +763,65 @@ def test_arm64_audit_binds_native_reports_scanner_and_zero_runtime_findings(
     assert summary["runtime_image_config_digest"] == RUNTIME_CONFIG_DIGEST
     assert summary["runtime_image_manifest_digest"] == RUNTIME_MANIFEST_DIGEST
     assert summary["verdict"] == "PASS"
+
+
+def test_arm64_audit_accepts_missing_optional_archive_repository_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import generate_arm64_container_audit_evidence as audit_cli
+
+    evidence = _audit(tmp_path, omit_optional_archive_metadata=True)
+    assert "RepoDigests" not in evidence["base_report"]["Metadata"]
+    assert "RepoTags" not in evidence["base_report"]["Metadata"]
+    assert "RepoDigests" not in evidence["runtime_report"]["Metadata"]
+    assert evidence["runtime_report"]["Metadata"]["RepoTags"] == [
+        ARM64_RUNTIME_IMAGE_REF
+    ]
+    assert verify_arm64_container_audit_evidence(evidence, tmp_path)["verdict"] == "PASS"
+
+    output = tmp_path / "container_trivy_arm64_latest.json"
+    output.write_text(json.dumps(evidence), encoding="utf-8")
+    monkeypatch.setattr(audit_cli, "resolve_canonical_source_anchor", lambda root: SOURCE_COMMIT)
+    monkeypatch.setattr(audit_cli.time, "time", lambda: EPOCH)
+    assert audit_cli.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--max-age-seconds",
+            "60",
+            "--check",
+        ]
+    ) == 0
+
+
+@pytest.mark.parametrize(
+    ("report_name", "field", "value"),
+    [
+        ("base_report", "RepoDigests", [f"base@{BASE_DIGEST}"]),
+        ("runtime_report", "RepoDigests", [f"runtime@{RUNTIME_CONFIG_DIGEST}"]),
+        ("base_report", "RepoDigests", "not-a-list"),
+        ("runtime_report", "RepoDigests", {}),
+        ("base_report", "RepoTags", ["unexpected:latest"]),
+        ("base_report", "RepoTags", "not-a-list"),
+    ],
+)
+def test_arm64_audit_rejects_nonempty_or_wrong_type_archive_repository_metadata(
+    tmp_path: Path, report_name: str, field: str, value: object
+) -> None:
+    evidence = _audit(tmp_path)
+    evidence[report_name]["Metadata"][field] = value
+    raw_name = report_name.replace("report", "report_raw")
+    capture_name = "base_scan" if report_name == "base_report" else "runtime_scan"
+    raw = json.dumps(evidence[report_name])
+    evidence[raw_name] = raw
+    evidence["scanner_capture"][capture_name]["stdout_sha256"] = hashlib.sha256(
+        raw.encode()
+    ).hexdigest()
+
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_audit_evidence(evidence, tmp_path)
 
 
 def test_arm64_audit_rejects_wrong_architecture_or_runtime_finding(
