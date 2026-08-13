@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.capture_arm64_console_evidence as capture_module
 from scripts.capture_arm64_console_evidence import (
     BUILDER_A,
     BUILDER_B,
@@ -294,6 +295,129 @@ def test_dynamic_database_digest_is_parsed_from_registry_receipt() -> None:
         _database_digest(b'{"Descriptor":{}}\n')
 
 
+def _scanner_preflight_results(
+    cache: Path, *, download_code: int = 0, download_stderr: bytes = b""
+) -> tuple[list[CommandResult], str]:
+    scanner_user = "1000:1001"
+    scanner_manifest_raw = (
+        '{"manifests":[{"digest":"'
+        + capture_module.TRIVY_SCANNER_ARM64_MANIFEST_DIGEST
+        + '","platform":{"architecture":"arm64","os":"linux"}}]}'
+    ).encode()
+    database_manifest_raw = b'{"schemaVersion":2,"config":{},"layers":[]}\n'
+    database_digest = "sha256:" + hashlib.sha256(database_manifest_raw).hexdigest()
+    database_ref = (
+        capture_module.TRIVY_DATABASE_REPOSITORY.rsplit(":", 1)[0]
+        + "@"
+        + database_digest
+    )
+    results = [
+        _result(["id", "-u"], stdout=b"1000\n"),
+        _result(["id", "-g"], stdout=b"1001\n"),
+        _result(
+            [
+                "docker", "buildx", "imagetools", "inspect",
+                capture_module.TRIVY_SCANNER_IMAGE_REF,
+                "--raw",
+            ],
+            stdout=scanner_manifest_raw,
+        ),
+        _result(
+            _scanner_argv(
+                cache, "version", "--format", "json",
+                role="version", user=scanner_user,
+            ),
+            stdout=b'{"Version":"0.72.0"}',
+        ),
+        _result(
+            [
+                "docker", "buildx", "imagetools", "inspect",
+                capture_module.TRIVY_DATABASE_REPOSITORY,
+                "--raw",
+            ],
+            stdout=database_manifest_raw,
+        ),
+        _result(
+            _scanner_argv(
+                cache,
+                "--cache-dir", "/cache", "image", "--download-db-only",
+                "--db-repository", database_ref,
+                role="download_database", user=scanner_user,
+            ),
+            code=download_code,
+            stderr=download_stderr,
+        ),
+    ]
+    if download_code == 0:
+        results.append(
+            _result(
+                _scanner_argv(
+                    cache,
+                    "--cache-dir", "/cache", "version", "--format", "json",
+                    role="database", user=scanner_user,
+                ),
+                stdout=(
+                    b'{"VulnerabilityDB":{"UpdatedAt":"2026-08-13T00:00:00Z",'
+                    b'"NextUpdate":"2026-08-14T00:00:00Z",'
+                    b'"DownloadedAt":"2026-08-13T00:01:00Z"}}'
+                ),
+            )
+        )
+    return results, database_digest
+
+
+def test_scanner_database_preflight_is_complete_and_reuses_one_cache(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "trivy-cache"
+    results, database_digest = _scanner_preflight_results(cache)
+    fake = FakeRunner(results)
+
+    preflight = capture_module._prepare_scanner_database(fake, tmp_path, cache)
+
+    assert cache.is_dir()
+    assert preflight.database_digest == database_digest
+    assert preflight.database_updated_at == "2026-08-13T00:00:00Z"
+    assert preflight.database_next_update == "2026-08-14T00:00:00Z"
+    assert preflight.database_downloaded_at == "2026-08-13T00:01:00Z"
+    scanner_calls = [argv for argv, _cwd in fake.calls if argv[:2] == ("docker", "run")]
+    assert len(scanner_calls) == 3
+    assert all(f"type=bind,src={cache},dst=/cache" in argv for argv in scanner_calls)
+    assert preflight.scanner_version.receipt()["argv"] == list(scanner_calls[0])
+    assert preflight.download_database.receipt()["argv"] == list(scanner_calls[1])
+    assert preflight.database.receipt()["argv"] == list(scanner_calls[2])
+    assert preflight.database_metadata_raw == (
+        '{"VulnerabilityDB":{"UpdatedAt":"2026-08-13T00:00:00Z",'
+        '"NextUpdate":"2026-08-14T00:00:00Z",'
+        '"DownloadedAt":"2026-08-13T00:01:00Z"}}'
+    )
+
+
+def test_scanner_database_preflight_precedes_builder_creation_and_builds() -> None:
+    source = inspect.getsource(capture)
+
+    preflight = source.index("scanner_preflight = _prepare_scanner_database(")
+    create = source.index('"docker", "buildx", "create"')
+    first_build = source.index("build_a = _run(")
+
+    assert preflight < create < first_build
+
+
+def test_post_preflight_scans_stay_offline_and_digest_bound() -> None:
+    source = inspect.getsource(capture)
+
+    assert '"--skip-db-update"' in source
+    assert '"--offline-scan"' in source
+    assert 'role="base_scan"' in source
+    assert 'role="runtime_scan"' in source
+    assert source.count(
+        "database_image_digest=scanner_preflight.database_digest"
+    ) == 1
+    assert source.count(
+        '"database_image_digest": scanner_preflight.database_digest'
+    ) == 1
+
+
 def test_output_root_must_be_outside_repository(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
@@ -508,7 +632,7 @@ def _source_results(commit: str) -> list[CommandResult]:
 
 
 def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "repo"
     output = tmp_path / "out"
@@ -542,6 +666,11 @@ def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
             _result(cleanup_first, code=3, stderr=b"injected cleanup failure"),
         ]
     )
+    monkeypatch.setattr(
+        capture_module,
+        "_prepare_scanner_database",
+        lambda *_args, **_kwargs: object(),
+    )
 
     expected_stderr_hash = hashlib.sha256(b"injected create failure").hexdigest()
     with pytest.raises(CaptureError, match=expected_stderr_hash):
@@ -556,6 +685,72 @@ def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
     assert cleanup_calls == [tuple(cleanup_first)]
     assert all("*" not in item and "?" not in item for item in cleanup_calls[0])
     assert not any(path.name.startswith(".arm64-console-capture-") for path in output.iterdir())
+
+
+def test_preflight_download_failure_creates_no_builder_or_build_and_cleans_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "repo"
+    output = tmp_path / "out"
+    root.mkdir()
+    commit = _capture_repo(root)
+    session = output / ".arm64-console-capture-test"
+
+    def make_session(*, prefix: str, dir: Path) -> str:
+        assert prefix == ".arm64-console-capture-"
+        assert Path(dir) == output
+        session.mkdir()
+        return str(session)
+
+    monkeypatch.setattr(capture_module.tempfile, "mkdtemp", make_session)
+    absent = [
+        _result(
+            ["docker", "image", "inspect", "quantos-console:l2-arm64"],
+            code=1, stderr=b"No such image",
+        ),
+        _result(
+            ["docker", "container", "inspect", SMOKE_CONTAINER],
+            code=1, stderr=b"No such container",
+        ),
+        _result(
+            ["docker", "buildx", "inspect", BUILDER_A],
+            code=1, stderr=b"no builder found",
+        ),
+        _result(
+            ["docker", "buildx", "inspect", BUILDER_B],
+            code=1, stderr=b"no builder found",
+        ),
+    ]
+    download_error = b"injected database download failure"
+    preflight, _database_digest = _scanner_preflight_results(
+        session / "trivy-cache",
+        download_code=2,
+        download_stderr=download_error,
+    )
+    fake = FakeRunner(_source_results(commit) + absent + preflight)
+
+    with pytest.raises(
+        CaptureError, match=hashlib.sha256(download_error).hexdigest()
+    ):
+        capture(
+            root, output, runner=fake,
+            source_resolver=lambda _root: commit,
+        )
+
+    assert any("--download-db-only" in argv for argv, _cwd in fake.calls)
+    assert not any(
+        argv[:3] in {
+            ("docker", "buildx", "create"),
+            ("docker", "buildx", "build"),
+        }
+        for argv, _cwd in fake.calls
+    )
+    assert not any(
+        argv[:4] == ("docker", "buildx", "rm", "--force")
+        for argv, _cwd in fake.calls
+    )
+    assert not session.exists()
+    assert not (output / "arm64-console-evidence-bundle").exists()
 
 
 def test_preexisting_reserved_resource_is_never_deleted(tmp_path: Path) -> None:

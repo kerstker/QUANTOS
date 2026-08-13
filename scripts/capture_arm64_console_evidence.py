@@ -97,6 +97,23 @@ class CommandResult:
         }
 
 
+@dataclass(frozen=True)
+class ScannerDatabasePreflight:
+    scanner_version: CommandResult
+    download_database: CommandResult
+    database: CommandResult
+    database_manifest: CommandResult
+    scanner_manifest: CommandResult
+    host_uid: CommandResult
+    host_gid: CommandResult
+    scanner_user: str
+    database_digest: str
+    database_metadata_raw: str
+    database_updated_at: str
+    database_next_update: str
+    database_downloaded_at: str
+
+
 class Runner(Protocol):
     def run(self, argv: Sequence[str], *, cwd: Path) -> CommandResult: ...
 
@@ -258,6 +275,110 @@ def _database_digest(raw_manifest: bytes) -> str:
     ):
         raise CaptureError("Trivy database raw manifest has an invalid shape")
     return "sha256:" + hashlib.sha256(raw_manifest).hexdigest()
+
+
+def _prepare_scanner_database(
+    runner: Runner, root: Path, cache: Path
+) -> ScannerDatabasePreflight:
+    """Resolve and download every network-dependent scanner input up front."""
+    cache.mkdir()
+    uid = _run(runner, ["id", "-u"], root)
+    gid = _run(runner, ["id", "-g"], root)
+    scanner_user = (
+        uid.stdout.decode("ascii", errors="strict").strip()
+        + ":"
+        + gid.stdout.decode("ascii", errors="strict").strip()
+    )
+    if re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", scanner_user) is None:
+        raise CaptureError("scanner uid/gid must be non-root positive integers")
+    scanner_manifest = _run(
+        runner,
+        [
+            "docker", "buildx", "imagetools", "inspect",
+            TRIVY_SCANNER_IMAGE_REF,
+            "--raw",
+        ],
+        root,
+    )
+    scanner_manifest_value = _json_object(
+        scanner_manifest.stdout, "Trivy scanner raw manifest"
+    )
+    scanner_manifests = scanner_manifest_value.get("manifests")
+    if not isinstance(scanner_manifests, list) or not any(
+        isinstance(item, Mapping)
+        and item.get("digest") == TRIVY_SCANNER_ARM64_MANIFEST_DIGEST
+        and isinstance(item.get("platform"), Mapping)
+        and item["platform"].get("architecture") == "arm64"
+        and item["platform"].get("os") == "linux"
+        for item in scanner_manifests
+    ):
+        raise CaptureError("pinned Trivy index omits expected ARM64 manifest")
+    scanner_version = _run(
+        runner,
+        _scanner_argv(
+            cache,
+            "version",
+            "--format",
+            "json",
+            role="version",
+            user=scanner_user,
+        ),
+        root,
+    )
+    database_manifest = _run(
+        runner,
+        [
+            "docker", "buildx", "imagetools", "inspect",
+            TRIVY_DATABASE_REPOSITORY,
+            "--raw",
+        ],
+        root,
+    )
+    database_digest = _database_digest(database_manifest.stdout)
+    database_ref = (
+        TRIVY_DATABASE_REPOSITORY.rsplit(":", 1)[0] + "@" + database_digest
+    )
+    download_database = _run(
+        runner,
+        _scanner_argv(
+            cache,
+            "--cache-dir", "/cache", "image", "--download-db-only",
+            "--db-repository", database_ref,
+            role="download_database",
+            user=scanner_user,
+        ),
+        root,
+    )
+    database = _run(
+        runner,
+        _scanner_argv(
+            cache,
+            "--cache-dir", "/cache", "version", "--format", "json",
+            role="database",
+            user=scanner_user,
+        ),
+        root,
+    )
+    database_raw = database.stdout.decode("utf-8", errors="strict")
+    database_value = _json_object(database.stdout, "Trivy database metadata")
+    vulnerability_db = database_value.get("VulnerabilityDB")
+    if not isinstance(vulnerability_db, Mapping):
+        raise CaptureError("Trivy version JSON omits VulnerabilityDB")
+    return ScannerDatabasePreflight(
+        scanner_version=scanner_version,
+        download_database=download_database,
+        database=database,
+        database_manifest=database_manifest,
+        scanner_manifest=scanner_manifest,
+        host_uid=uid,
+        host_gid=gid,
+        scanner_user=scanner_user,
+        database_digest=database_digest,
+        database_metadata_raw=database_raw,
+        database_updated_at=str(vulnerability_db.get("UpdatedAt", "")),
+        database_next_update=str(vulnerability_db.get("NextUpdate", "")),
+        database_downloaded_at=str(vulnerability_db.get("DownloadedAt", "")),
+    )
 
 
 _OCI_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
@@ -542,6 +663,9 @@ def capture(
                 f"builder {builder}",
             )
 
+        cache = session / "trivy-cache"
+        scanner_preflight = _prepare_scanner_database(executor, root, cache)
+
         for builder in (BUILDER_A, BUILDER_B):
             _run(
                 executor,
@@ -598,85 +722,6 @@ def capture(
         )
         _run(executor, ["docker", "pull", "--platform", TARGET_PLATFORM, base_image], root)
 
-        cache = session / "trivy-cache"
-        cache.mkdir()
-        uid = _run(executor, ["id", "-u"], root)
-        gid = _run(executor, ["id", "-g"], root)
-        scanner_user = (
-            uid.stdout.decode("ascii", errors="strict").strip()
-            + ":"
-            + gid.stdout.decode("ascii", errors="strict").strip()
-        )
-        if re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", scanner_user) is None:
-            raise CaptureError("scanner uid/gid must be non-root positive integers")
-        scanner_manifest = _run(
-            executor,
-            [
-                "docker", "buildx", "imagetools", "inspect",
-                TRIVY_SCANNER_IMAGE_REF,
-                "--raw",
-            ],
-            root,
-        )
-        scanner_manifest_value = _json_object(
-            scanner_manifest.stdout, "Trivy scanner raw manifest"
-        )
-        scanner_manifests = scanner_manifest_value.get("manifests")
-        if not isinstance(scanner_manifests, list) or not any(
-            isinstance(item, Mapping)
-            and item.get("digest") == TRIVY_SCANNER_ARM64_MANIFEST_DIGEST
-            and isinstance(item.get("platform"), Mapping)
-            and item["platform"].get("architecture") == "arm64"
-            and item["platform"].get("os") == "linux"
-            for item in scanner_manifests
-        ):
-            raise CaptureError("pinned Trivy index omits expected ARM64 manifest")
-        scanner_version = _run(
-            executor,
-            _scanner_argv(
-                cache,
-                "version",
-                "--format",
-                "json",
-                role="version",
-                user=scanner_user,
-            ),
-            root,
-        )
-        database_manifest = _run(
-            executor,
-            [
-                "docker", "buildx", "imagetools", "inspect",
-                TRIVY_DATABASE_REPOSITORY,
-                "--raw",
-            ],
-            root,
-        )
-        database_digest = _database_digest(database_manifest.stdout)
-        database_ref = (
-            TRIVY_DATABASE_REPOSITORY.rsplit(":", 1)[0] + "@" + database_digest
-        )
-        download_database = _run(
-            executor,
-            _scanner_argv(
-                cache,
-                "--cache-dir", "/cache", "image", "--download-db-only",
-                "--db-repository", database_ref,
-                role="download_database",
-                user=scanner_user,
-            ),
-            root,
-        )
-        database = _run(
-            executor,
-            _scanner_argv(
-                cache,
-                "--cache-dir", "/cache", "version", "--format", "json",
-                role="database",
-                user=scanner_user,
-            ),
-            root,
-        )
         base_archive = session / "base.docker.tar"
         runtime_scan_archive = session / "runtime-scan.docker.tar"
         base_image_inspect = _run(
@@ -709,7 +754,7 @@ def capture(
                 role="base_scan",
                 input_archive=base_archive,
                 input_name="base.tar",
-                user=scanner_user,
+                user=scanner_preflight.scanner_user,
             ),
             root,
         )
@@ -722,38 +767,33 @@ def capture(
                 role="runtime_scan",
                 input_archive=runtime_scan_archive,
                 input_name="runtime.tar",
-                user=scanner_user,
+                user=scanner_preflight.scanner_user,
             ),
             root,
         )
         base_raw = base_scan.stdout.decode("utf-8", errors="strict")
         runtime_raw = runtime_scan.stdout.decode("utf-8", errors="strict")
-        database_raw = database.stdout.decode("utf-8", errors="strict")
-        database_value = _json_object(database.stdout, "Trivy database metadata")
-        vulnerability_db = database_value.get("VulnerabilityDB")
-        if not isinstance(vulnerability_db, Mapping):
-            raise CaptureError("Trivy version JSON omits VulnerabilityDB")
         observed_at = int(clock())
         audit = build_arm64_container_audit_evidence(
             root,
             base_report=_json_object(base_scan.stdout, "base Trivy report"),
             runtime_report=_json_object(runtime_scan.stdout, "runtime Trivy report"),
             observed_at=observed_at,
-            database_updated_at=str(vulnerability_db.get("UpdatedAt", "")),
-            database_next_update=str(vulnerability_db.get("NextUpdate", "")),
-            database_downloaded_at=str(vulnerability_db.get("DownloadedAt", "")),
-            database_image_digest=database_digest,
+            database_updated_at=scanner_preflight.database_updated_at,
+            database_next_update=scanner_preflight.database_next_update,
+            database_downloaded_at=scanner_preflight.database_downloaded_at,
+            database_image_digest=scanner_preflight.database_digest,
             source_commit=commit,
             source_clean=True,
             source_capture=source_capture,
             scanner_capture={
-                "version": scanner_version.receipt(),
-                "download_database": download_database.receipt(),
-                "database": database.receipt(),
-                "database_registry": database_manifest.receipt(),
-                "scanner_registry": scanner_manifest.receipt(),
-                "host_uid": uid.receipt(),
-                "host_gid": gid.receipt(),
+                "version": scanner_preflight.scanner_version.receipt(),
+                "download_database": scanner_preflight.download_database.receipt(),
+                "database": scanner_preflight.database.receipt(),
+                "database_registry": scanner_preflight.database_manifest.receipt(),
+                "scanner_registry": scanner_preflight.scanner_manifest.receipt(),
+                "host_uid": scanner_preflight.host_uid.receipt(),
+                "host_gid": scanner_preflight.host_gid.receipt(),
                 "base_image_inspect": base_image_inspect.receipt(),
                 "runtime_image_inspect": runtime_image_inspect.receipt(),
                 "runtime_image_inspect_stdout": runtime_image_inspect.stdout.decode(
@@ -767,11 +807,11 @@ def capture(
                 "runtime_archive_sha256": _sha256_file(runtime_scan_archive),
                 "base_scan": base_scan.receipt(),
                 "runtime_scan": runtime_scan.receipt(),
-                "scanner_version_stdout": scanner_version.stdout.decode(
+                "scanner_version_stdout": scanner_preflight.scanner_version.stdout.decode(
                     "utf-8", errors="strict"
                 ),
-                "database_metadata_stdout": database_raw,
-                "database_image_digest": database_digest,
+                "database_metadata_stdout": scanner_preflight.database_metadata_raw,
+                "database_image_digest": scanner_preflight.database_digest,
             },
             base_report_raw=base_raw,
             runtime_report_raw=runtime_raw,
