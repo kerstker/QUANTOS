@@ -195,6 +195,7 @@ def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> No
         "image",
         "--input",
         "/input/image.tar",
+        role="runtime_scan",
         input_archive=image_tar,
     )
 
@@ -225,14 +226,37 @@ def test_networked_database_download_clears_proxy_and_uses_bridge(
         "/cache",
         "image",
         "--download-db-only",
-        network="bridge",
+        role="download_database",
     )
 
     assert argv[argv.index("--network") + 1] == "bridge"
+    assert argv[argv.index("--tmpfs") + 1] == (
+        "/tmp:rw,noexec,nosuid,size=256m"
+    )
     assert _option_values(argv, "--env") == [
         "HOME=/tmp",
         *(f"{name}=" for name in PROXY_ENV_NAMES),
     ]
+
+
+@pytest.mark.parametrize(
+    "role",
+    ["version", "database", "base_scan", "runtime_scan"],
+)
+def test_non_download_scanner_roles_keep_32m_tmpfs(
+    tmp_path: Path, role: str
+) -> None:
+    argv = _scanner_argv(tmp_path / "cache", "version", role=role)
+
+    assert argv[argv.index("--network") + 1] == "none"
+    assert argv[argv.index("--tmpfs") + 1] == (
+        "/tmp:rw,noexec,nosuid,size=32m"
+    )
+
+
+def test_scanner_rejects_unknown_capture_role(tmp_path: Path) -> None:
+    with pytest.raises(CaptureError, match="scanner capture role"):
+        _scanner_argv(tmp_path / "cache", "version", role="future_networked_role")
 
 
 def test_smoke_run_clears_proxy_after_exact_safety_environment() -> None:

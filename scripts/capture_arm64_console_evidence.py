@@ -68,6 +68,13 @@ _SAFETY_ENV = (
     "ALLOW_AI_DIRECT_TRADING=false",
     "REQUIRE_HUMAN_APPROVAL=true",
 )
+_SCANNER_ROLE_POLICY = {
+    "version": ("none", "32m"),
+    "download_database": ("bridge", "256m"),
+    "database": ("none", "32m"),
+    "base_scan": ("none", "32m"),
+    "runtime_scan": ("none", "32m"),
+}
 
 
 class CaptureError(RuntimeError):
@@ -195,17 +202,21 @@ def _build_argv(
 def _scanner_argv(
     cache: Path,
     *arguments: str,
-    network: str = "none",
+    role: str,
     input_archive: Path | None = None,
     input_name: str = "image.tar",
     user: str | None = None,
 ) -> list[str]:
+    try:
+        network, tmpfs_size = _SCANNER_ROLE_POLICY[role]
+    except KeyError as exc:
+        raise CaptureError(f"unknown scanner capture role: {role}") from exc
     argv = [
         "docker", "run", "--rm", "--platform", TARGET_PLATFORM,
         "--network", network,
         "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+        "--tmpfs", f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
         "--env", "HOME=/tmp",
         "--mount", f"type=bind,src={cache},dst=/cache",
     ]
@@ -623,7 +634,12 @@ def capture(
         scanner_version = _run(
             executor,
             _scanner_argv(
-                cache, "version", "--format", "json", user=scanner_user
+                cache,
+                "version",
+                "--format",
+                "json",
+                role="version",
+                user=scanner_user,
             ),
             root,
         )
@@ -646,7 +662,7 @@ def capture(
                 cache,
                 "--cache-dir", "/cache", "image", "--download-db-only",
                 "--db-repository", database_ref,
-                network="bridge",
+                role="download_database",
                 user=scanner_user,
             ),
             root,
@@ -656,6 +672,7 @@ def capture(
             _scanner_argv(
                 cache,
                 "--cache-dir", "/cache", "version", "--format", "json",
+                role="database",
                 user=scanner_user,
             ),
             root,
@@ -689,6 +706,7 @@ def capture(
                 cache,
                 *scan_common,
                 "--input", "/input/base.tar",
+                role="base_scan",
                 input_archive=base_archive,
                 input_name="base.tar",
                 user=scanner_user,
@@ -701,6 +719,7 @@ def capture(
                 cache,
                 *scan_common,
                 "--input", "/input/runtime.tar",
+                role="runtime_scan",
                 input_archive=runtime_scan_archive,
                 input_name="runtime.tar",
                 user=scanner_user,

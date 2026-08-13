@@ -129,11 +129,17 @@ def _scanner_capture() -> dict[str, object]:
         ],
         separators=(",", ":"),
     )
-    def hardened(network: str) -> list[str]:
+    def hardened(role: str) -> list[str]:
+        network = "bridge" if role == "download_database" else "none"
+        tmpfs = (
+            "/tmp:rw,noexec,nosuid,size=256m"
+            if role == "download_database"
+            else "/tmp:rw,noexec,nosuid,size=32m"
+        )
         return [
             "docker", "run", "--rm", "--platform", "linux/arm64",
             "--network", network, "--read-only", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp",
+            "--security-opt", "no-new-privileges:true", "--tmpfs", tmpfs,
             "--env", "HOME=/tmp",
             *[
                 item
@@ -149,16 +155,16 @@ def _scanner_capture() -> dict[str, object]:
     ]
     return {
         "version": {
-            **_capture(hardened("none") + ["trivy-pinned", "--version"], "5"),
+            **_capture(hardened("version") + ["trivy-pinned", "--version"], "5"),
             "stdout_sha256": hashlib.sha256(version.encode()).hexdigest(),
         },
         "download_database": _capture(
-            hardened("bridge") + ["trivy-pinned", "--download-db-only"]
+            hardened("download_database") + ["trivy-pinned", "--download-db-only"]
         ),
         "database": {
             **_capture(
                 [
-                    *hardened("none"), "trivy-pinned", "version",
+                    *hardened("database"), "trivy-pinned", "version",
                     "--format", "json", "--cache-dir", "/cache",
                 ],
                 "7",
@@ -167,14 +173,14 @@ def _scanner_capture() -> dict[str, object]:
         },
         "base_scan": _capture(
             [
-                *hardened("none"), "trivy-pinned", "image", *scan_flags,
+                *hardened("base_scan"), "trivy-pinned", "image", *scan_flags,
                 "--input", "/input/base.tar",
             ],
             "9",
         ),
         "runtime_scan": _capture(
             [
-                *hardened("none"), "trivy-pinned", "image", *scan_flags,
+                *hardened("runtime_scan"), "trivy-pinned", "image", *scan_flags,
                 "--input", "/input/runtime.tar",
             ],
             "b",
@@ -889,6 +895,41 @@ def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
     else:
         index = argv.index("--network") + 1
         argv[index] = "none" if argv[index] == "bridge" else "bridge"
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="scanner capture"):
+        verify_arm64_container_audit_evidence(evidence, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("capture_name", "mutation"),
+    [
+        ("download_database", "download_32m"),
+        ("version", "offline_256m"),
+        ("database", "offline_256m"),
+        ("base_scan", "offline_256m"),
+        ("runtime_scan", "offline_256m"),
+        ("download_database", "extra_tmpfs"),
+        ("base_scan", "duplicate_tmpfs"),
+        ("runtime_scan", "joined_tmpfs"),
+    ],
+)
+def test_arm64_audit_rejects_noncanonical_role_tmpfs_receipts(
+    tmp_path: Path, capture_name: str, mutation: str
+) -> None:
+    evidence = _audit(tmp_path)
+    argv = evidence["scanner_capture"][capture_name]["argv"]
+    tmpfs_index = argv.index("--tmpfs")
+    canonical = argv[tmpfs_index + 1]
+    if mutation == "download_32m":
+        argv[tmpfs_index + 1] = "/tmp:rw,noexec,nosuid,size=32m"
+    elif mutation == "offline_256m":
+        argv[tmpfs_index + 1] = "/tmp:rw,noexec,nosuid,size=256m"
+    elif mutation == "extra_tmpfs":
+        argv.extend(["--tmpfs", "/work:rw,noexec,nosuid,size=1m"])
+    elif mutation == "duplicate_tmpfs":
+        argv.extend(["--tmpfs", canonical])
+    else:
+        argv[tmpfs_index : tmpfs_index + 2] = [f"--tmpfs={canonical}"]
 
     with pytest.raises(Arm64ConsoleEvidenceError, match="scanner capture"):
         verify_arm64_container_audit_evidence(evidence, tmp_path)

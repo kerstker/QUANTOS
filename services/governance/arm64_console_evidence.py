@@ -307,12 +307,25 @@ def _valid_build_capture_argv(
     )
 
 
-def _valid_scanner_network_argv(argv: list[str], *, networked: bool) -> bool:
-    expected_network = "bridge" if networked else "none"
+def _valid_scanner_role_argv(argv: list[str], *, role: str) -> bool:
+    expected = {
+        "version": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
+        "download_database": (
+            "bridge",
+            "/tmp:rw,noexec,nosuid,size=256m",
+        ),
+        "database": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
+        "base_scan": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
+        "runtime_scan": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
+    }.get(role)
+    if expected is None:
+        return False
+    expected_network, expected_tmpfs = expected
     return (
         _option_values(argv, "--env")
         == ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
         and _option_values(argv, "--network") == [expected_network]
+        and _option_values(argv, "--tmpfs") == [expected_tmpfs]
         and "-e" not in argv
     )
 
@@ -1170,9 +1183,7 @@ def build_arm64_container_audit_evidence(
             captures[name]["argv"][:3] != ["docker", "run", "--rm"]
             or not hardened_flags.issubset(set(captures[name]["argv"]))
             or any("docker.sock" in item for item in captures[name]["argv"])
-                or not _valid_scanner_network_argv(
-                captures[name]["argv"], networked=name == "download_database"
-            )
+            or not _valid_scanner_role_argv(captures[name]["argv"], role=name)
             for name in scanner_names
         )
         or captures["database_registry"]["argv"]
