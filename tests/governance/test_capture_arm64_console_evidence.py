@@ -21,6 +21,7 @@ from scripts.capture_arm64_console_evidence import (
     _scanner_argv,
     _source_capture,
     _publish_staged_evidence,
+    _parse_buildx_inspect_identity,
     capture,
 )
 
@@ -117,6 +118,45 @@ def test_builder_create_uses_reviewed_digest_pinned_buildkit() -> None:
     from scripts.capture_arm64_console_evidence import BUILDKIT_IMAGE_REF
 
     assert BUILDKIT_IMAGE_REF.startswith("moby/buildkit@sha256:")
+
+
+def test_buildx_inspect_parser_accepts_actual_dgx_v031_shape() -> None:
+    raw = b"""Name:          quantos-arm64-evidence-builder-a
+Driver:        docker-container
+Last Activity: 2026-08-13 00:00:00 +0000 UTC
+
+Nodes:
+Name:                  quantos-arm64-evidence-builder-a0
+Endpoint:              unix:///var/run/docker.sock
+Status:                running
+BuildKit version:      v0.26.2
+Platforms:             linux/arm64*
+"""
+
+    assert _parse_buildx_inspect_identity(raw) == (
+        "docker-container",
+        "v0.26.2",
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"Driver: docker-container\nStatus: stopped\nBuildKit version: v0.26.2\nPlatforms: linux/arm64\n",
+        b"Driver: docker-container\nStatus: running\nBuildKit version: v0.26.2\nPlatforms: linux/amd64\n",
+        b"Driver: docker-container\nStatus: running\nBuildKit version: v0.26.2\nPlatforms: linux/arm64**\n",
+        b"Driver: docker-container\nStatus: running\nStatus: running\nBuildKit version: v0.26.2\nPlatforms: linux/arm64\n",
+        b"Driver: docker-container\nStatus: running\nBuildKit version: v0.26.2\nPlatforms: linux/arm64\nPlatforms: linux/arm64\n",
+        b"Driver: docker-container\nStatus: running\nBuildKit version: v0.27.1\nPlatforms: linux/arm64\n",
+        b"Driver: docker-container\nDriver: docker\nStatus: running\nBuildKit version: v0.26.2\nPlatforms: linux/arm64\n",
+        b"Driver: docker-container\nStatus: running\nBuildKit version: v0.26.2\nBuildKit version: v0.27.1\nPlatforms: linux/arm64\n",
+    ],
+)
+def test_buildx_inspect_parser_rejects_nonunique_or_non_arm64_builder(
+    raw: bytes,
+) -> None:
+    with pytest.raises(CaptureError, match="buildx inspect"):
+        _parse_buildx_inspect_identity(raw)
 
 
 def test_third_build_is_no_cache_named_docker_archive(tmp_path: Path) -> None:

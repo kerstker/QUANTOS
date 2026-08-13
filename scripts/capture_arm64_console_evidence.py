@@ -330,6 +330,34 @@ def _source_capture(
     }
 
 
+def _parse_buildx_inspect_identity(raw: bytes) -> tuple[str, str]:
+    text = raw.decode("utf-8", errors="strict")
+    drivers = re.findall(r"^Driver:\s*(\S+)\s*$", text, re.MULTILINE)
+    versions = re.findall(
+        r"^BuildKit(?: version)?:\s*(v[0-9]+(?:\.[0-9]+){2})\s*$",
+        text,
+        re.MULTILINE,
+    )
+    statuses = re.findall(r"^Status:\s*(\S+)\s*$", text, re.MULTILINE)
+    platform_lines = re.findall(r"^Platforms:\s*(.+?)\s*$", text, re.MULTILINE)
+    platforms = {
+        platform.strip().removesuffix("*")
+        for line in platform_lines
+        for platform in line.split(",")
+        if platform.strip() and not platform.strip().endswith("**")
+    }
+    if (
+        len(drivers) != 1
+        or len(versions) != 1
+        or versions[0] != "v0.26.2"
+        or statuses != ["running"]
+        or len(platform_lines) != 1
+        or "linux/arm64" not in platforms
+    ):
+        raise CaptureError("buildx inspect identity is invalid or incomplete")
+    return drivers[0], versions[0]
+
+
 def _build_tool(
     runner: Runner, root: Path, builder_a: str, builder_b: str
 ) -> dict[str, str]:
@@ -343,16 +371,8 @@ def _build_tool(
     if not isinstance(client, Mapping) or not isinstance(server, Mapping):
         raise CaptureError("docker version omits client or server identity")
 
-    def parse(raw: bytes) -> tuple[str, str]:
-        text = raw.decode("utf-8", errors="strict")
-        driver = re.search(r"^Driver:\s*(\S+)\s*$", text, re.MULTILINE)
-        buildkit = re.search(r"^BuildKit:\s*(v\S+)\s*$", text, re.MULTILINE | re.IGNORECASE)
-        if driver is None or buildkit is None:
-            raise CaptureError("buildx inspect omits driver or BuildKit version")
-        return driver.group(1), buildkit.group(1)
-
-    identity_a = parse(first.stdout)
-    identity_b = parse(second.stdout)
+    identity_a = _parse_buildx_inspect_identity(first.stdout)
+    identity_b = _parse_buildx_inspect_identity(second.stdout)
     if identity_a != identity_b or identity_a[0] != "docker-container":
         raise CaptureError("independent builders do not share the required driver/version")
     return {
