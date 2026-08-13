@@ -25,8 +25,9 @@ def _seed_db(path, n=130):
                          now=_T0 + n * _DAY, time_unit="ms", strict=False)
 
 
-def test_ohlcv_bars_shape_and_cap(tmp_path):
+def test_ohlcv_bars_shape_and_cap(tmp_path, monkeypatch):
     db = str(tmp_path / "crypto_mexc.db")
+    monkeypatch.setattr(mexc_views, "_STATE_ROOT", tmp_path)
     _seed_db(db, n=130)
     bars = mexc_views._ohlcv_bars_from_pit_db(db)
     assert len(bars) == 120                                # 默认尾部 120 根
@@ -41,12 +42,14 @@ def test_ohlcv_bars_shape_and_cap(tmp_path):
     assert last["volume"] == pytest.approx(2.5)
 
 
-def test_ohlcv_bars_missing_db_is_honest_empty(tmp_path):
+def test_ohlcv_bars_missing_db_is_honest_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(mexc_views, "_STATE_ROOT", tmp_path)
     assert mexc_views._ohlcv_bars_from_pit_db(str(tmp_path / "nope.db")) == []
 
 
-def test_ohlcv_bars_skips_bad_rows(tmp_path):
+def test_ohlcv_bars_skips_row_rejected_by_ingestion(tmp_path, monkeypatch):
     db = str(tmp_path / "crypto_mexc.db")
+    monkeypatch.setattr(mexc_views, "_STATE_ROOT", tmp_path)
     store = SqlitePITStore(db, create=True)
     good = {"instrument_id": "BTC", "event_time": _T0, "knowledge_time": _T0,
             "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0}

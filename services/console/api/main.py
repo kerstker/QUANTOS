@@ -49,7 +49,7 @@ from services.console.api.model_evidence_views import (
     configure_model_evidence_views,
     router as model_evidence_views_router,
 )
-from services.console.api.mexc_views import configure_mexc_views, router as mexc_views_router
+from services.console.api.mexc_views import router as mexc_views_router
 from services.console.api.go_live_views import router as go_live_views_router
 from services.console.api.alpha_lifecycle_views import router as alpha_lifecycle_views_router
 from services.console.api.alpha_family_views import router as alpha_family_views_router
@@ -749,7 +749,6 @@ configure_model_evidence_views(
     backtest_explainability=_backtest_explainability_payload,
     scenario_stress=_scenario_stress_payload,
 )
-configure_mexc_views(kill_switch_state=_load_live_kill_switch_state)
 configure_monitoring_views(
     alpha_candidates=_alpha_candidates,
     has_real_factors=lambda: bool(_load_real_factors()),

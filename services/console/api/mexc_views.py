@@ -9,9 +9,9 @@ not been produced yet:
 - ``/api/v1/console/mexc-strategy`` — the ``btc_spot_trend`` dry-run results
   from ``dry_run.db`` (equity curve, sharpe, drawdown, turnover) plus a
   buy-and-hold benchmark computed from the same market data.
-- ``/api/v1/console/mexc-readiness`` — a live-readiness checklist.  Existence
-  of mandate/attestation files is reported WITHOUT reading their contents;
-  the kill-switch state is read through the risk-owned store (fail-closed).
+- ``/api/v1/console/mexc-readiness`` — a live-readiness checklist. Credential,
+  mandate and attestation state is deliberately NOT inspected by this console;
+  the kill-switch state is read from a stable private snapshot (fail-closed).
 
 This module never touches the network, never reads credentials, and never
 grants any live capability.  L2_DRY_RUN_ONLY.
@@ -19,66 +19,132 @@ grants any live capability.  L2_DRY_RUN_ONLY.
 
 from __future__ import annotations
 
-import json
 import math
 import os
 import sqlite3
+import stat
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.console.api.common import with_snapshot_metadata
+from services.console.api.sqlite_snapshot import (
+    SqliteSnapshotError,
+    stable_sqlite_snapshot,
+)
+from services.console.api.state_artifact import INVALID, VALID, read_json_artifact
 from services.execution.dry_run_store import DryRunStore
+from services.governance.json_integrity import load_json_without_duplicate_keys
 
 
 router = APIRouter()
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_MEXC_KLINES_JSON = os.path.join(_REPO_ROOT, "data", "cache", "mexc_btc_klines.json")
-_MEXC_DB = os.path.join(_REPO_ROOT, "data", "cache", "crypto_mexc.db")
-_DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
+_STATE_ROOT = runtime_state_root(cwd=_REPO_ROOT)
+_MEXC_KLINES_JSON = os.path.join(_STATE_ROOT, "data", "cache", "mexc_btc_klines.json")
+_MEXC_DB = os.path.join(_STATE_ROOT, "data", "cache", "crypto_mexc.db")
+_DRY_RUN_DB = os.path.join(_STATE_ROOT, "data", "cache", "dry_run.db")
 _MEXC_ADAPTER = os.path.join(_REPO_ROOT, "live", "exchange", "mexc_spot.py")
-_MEXC_MANDATE = os.path.join(_REPO_ROOT, "key", "live_mandate_mexc.json")
-_MEXC_KEY_FILE = os.path.join(_REPO_ROOT, "key", "mexc_spot.json")
-_MEXC_SMOKE_EVIDENCE = os.path.join(_REPO_ROOT, "evidence", "mexc_mainnet_smoke.json")
-_ATTESTATIONS = os.path.join(_REPO_ROOT, "key", "live_validation_attestations.json")
-_LIVE_KILL_SWITCH_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_kill_switch.json")
+_MEXC_SMOKE_EVIDENCE = os.path.join(_STATE_ROOT, "evidence", "mexc_mainnet_smoke.json")
+_LIVE_KILL_SWITCH_STATE = os.path.join(_STATE_ROOT, "data", "cache", "live_kill_switch.json")
 _GOVERNANCE_TEST_DIR = os.path.join(_REPO_ROOT, "tests", "governance")
 _MEXC_STRATEGY_ID = "btc_spot_trend"
 _FRESHNESS_LIMIT_HOURS = 72.0
 
 
 # ---------------------------------------------------------------------------
-# dependency injection (composition root wires the kill-switch loader so this
-# module does not import the console root, and services/ never imports live/)
+# SQLite authorities are copied to private scratch before opening. This keeps
+# every GET physically read-only even when the producer has a committed WAL.
 # ---------------------------------------------------------------------------
 
-class MexcViewRuntime:
-    def __init__(self) -> None:
-        self._kill_switch_loader: Optional[Callable[[], Any]] = None
 
-    def configure(self, *, kill_switch_state: Callable[[], Any]) -> None:
-        if self._kill_switch_loader is None:
-            self._kill_switch_loader = kill_switch_state
-            return
-        if self._kill_switch_loader is not kill_switch_state:
-            raise RuntimeError("mexc view runtime is already configured")
-
-    def kill_switch_state(self) -> Any:
-        if self._kill_switch_loader is None:
-            raise RuntimeError(
-                "mexc view runtime must be configured by the console composition root"
-            )
-        return self._kill_switch_loader()
+def _path_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+    )
 
 
-mexc_view_runtime = MexcViewRuntime()
+def _is_reparse_point(value: os.stat_result) -> bool:
+    attributes = getattr(value, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(attributes & reparse_flag)
 
 
-def configure_mexc_views(*, kill_switch_state: Callable[[], Any]) -> None:
-    mexc_view_runtime.configure(kill_switch_state=kill_switch_state)
+def _inspect_sqlite_components(path: Path) -> tuple[tuple[str, tuple[int, int, int, int, int]], ...]:
+    """Bind every state-root component without following symlinks/reparse points."""
+    trusted_root = Path(os.path.abspath(os.fspath(_STATE_ROOT)))
+    try:
+        root_metadata = trusted_root.lstat()
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise SqliteSnapshotError("QUANTOS_STATE_ROOT is unavailable") from exc
+    if (
+        not stat.S_ISDIR(root_metadata.st_mode)
+        or stat.S_ISLNK(root_metadata.st_mode)
+        or _is_reparse_point(root_metadata)
+    ):
+        raise SqliteSnapshotError("QUANTOS_STATE_ROOT must be a trusted directory")
+    target = Path(os.path.abspath(path))
+    try:
+        relative = target.relative_to(trusted_root)
+    except ValueError as exc:
+        raise SqliteSnapshotError("SQLite authority is outside QUANTOS_STATE_ROOT") from exc
+    if not relative.parts:
+        raise SqliteSnapshotError("SQLite authority path cannot equal state root")
+    observed = [(".", _path_identity(root_metadata))]
+    current = trusted_root
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            return tuple(observed)
+        except OSError as exc:
+            raise SqliteSnapshotError("SQLite authority component is unavailable") from exc
+        if stat.S_ISLNK(metadata.st_mode) or _is_reparse_point(metadata):
+            raise SqliteSnapshotError("SQLite authority component is a link/reparse point")
+        final = index == len(relative.parts) - 1
+        if (final and not stat.S_ISREG(metadata.st_mode)) or (
+            not final and not stat.S_ISDIR(metadata.st_mode)
+        ):
+            raise SqliteSnapshotError("SQLite authority component has invalid type")
+        observed.append((part, _path_identity(metadata)))
+    return tuple(observed)
+
+
+@contextmanager
+def _sqlite_copy(path: str) -> Iterator[Optional[str]]:
+    source = Path(path)
+    before = _inspect_sqlite_components(source)
+    if not before or before[-1][0] != source.name:
+        try:
+            yield None
+        finally:
+            final = _inspect_sqlite_components(source)
+            if final != before or (final and final[-1][0] == source.name):
+                raise SqliteSnapshotError(
+                    "SQLite authority appeared or its parent identity changed"
+                )
+        return
+    with stable_sqlite_snapshot(source) as snapshot:
+        after = _inspect_sqlite_components(source)
+        if after != before:
+            raise SqliteSnapshotError("SQLite authority path identity changed")
+        try:
+            yield str(snapshot)
+        finally:
+            final = _inspect_sqlite_components(source)
+            if final != before:
+                raise SqliteSnapshotError("SQLite authority path identity changed")
 
 
 # ---------------------------------------------------------------------------
@@ -127,18 +193,17 @@ def _bar_from_row(row: Any) -> Optional[Dict[str, float]]:
 
 def _bars_from_klines_json(path: str) -> Dict[str, Any]:
     """Return {'bars': [...], 'fetched_at': float|None} or {'bars': []}."""
-    if not os.path.exists(path):
-        return {"bars": [], "fetched_at": None}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            snap = json.load(fh)
-    except Exception:
-        return {"bars": [], "fetched_at": None}
+    status, snap = read_json_artifact(path, trusted_root=_STATE_ROOT)
+    if status != VALID:
+        return {"status": status, "bars": [], "fetched_at": None}
     fetched_at = None
     raw: Any = snap
     if isinstance(snap, dict):
         fetched_at = _to_seconds(
-            snap.get("fetched_at", snap.get("generated_at", snap.get("observed_at")))
+            snap.get(
+                "fetched_at_ms",
+                snap.get("fetched_at", snap.get("generated_at", snap.get("observed_at"))),
+            )
         )
         for key in ("klines", "rows", "bars", "data"):
             if isinstance(snap.get(key), list):
@@ -150,39 +215,91 @@ def _bars_from_klines_json(path: str) -> Dict[str, Any]:
         raw = []
     bars = [b for b in (_bar_from_row(r) for r in raw) if b is not None]
     bars.sort(key=lambda b: b["t"])
-    if fetched_at is None:
+    return {"status": VALID, "bars": bars, "fetched_at": fetched_at}
+
+
+def _pit_rows_from_snapshot(snapshot: str) -> list[tuple[Any, Any]]:
+    conn = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
+    try:
+        return conn.execute(
+            "SELECT b.event_time,b.payload_json FROM bars b "
+            "JOIN (SELECT event_time,MAX(knowledge_time) AS knowledge_time "
+            "FROM bars WHERE key='BTC' GROUP BY event_time) latest "
+            "ON latest.event_time=b.event_time "
+            "AND latest.knowledge_time=b.knowledge_time WHERE b.key='BTC' "
+            "ORDER BY b.event_time"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _parse_pit_rows(rows: list[tuple[Any, Any]]) -> tuple[List[Dict[str, float]], List[Dict[str, Any]]]:
+    closes: List[Dict[str, float]] = []
+    candles: List[Dict[str, Any]] = []
+    for event_time, payload_json in rows:
         try:
-            fetched_at = os.path.getmtime(path)
-        except OSError:
-            fetched_at = None
-    return {"bars": bars, "fetched_at": fetched_at}
+            payload = load_json_without_duplicate_keys(payload_json)
+            if not isinstance(payload, dict):
+                raise TypeError("bar payload must be an object")
+            candle: Dict[str, Any] = {
+                "t": float(event_time) / 1000.0,
+                "open": float(payload["open"]),
+                "high": float(payload["high"]),
+                "low": float(payload["low"]),
+                "close": float(payload["close"]),
+            }
+            if not all(
+                math.isfinite(candle[key]) for key in ("t", "open", "high", "low", "close")
+            ) or candle["open"] <= 0 or candle["close"] <= 0:
+                raise ValueError("bar contains an invalid numeric value")
+            volume = payload.get("volume")
+            if (
+                isinstance(volume, (int, float))
+                and not isinstance(volume, bool)
+                and math.isfinite(float(volume))
+                and volume > 0
+            ):
+                candle["volume"] = float(volume)
+        except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+            raise ValueError("authoritative MEXC PIT row is invalid") from exc
+        closes.append({"t": float(event_time) / 1000.0, "close": candle["close"]})
+        candles.append(candle)
+    return closes, candles
+
+
+def _market_from_pit_db(path: str) -> Dict[str, Any]:
+    """Read all market projections from exactly one stable SQLite cut."""
+    try:
+        with _sqlite_copy(path) as snapshot:
+            if snapshot is None:
+                return {
+                    "status": "MISSING",
+                    "present": False,
+                    "bars": [],
+                    "candles": [],
+                }
+            rows = _pit_rows_from_snapshot(snapshot)
+            bars, candles = _parse_pit_rows(rows)
+    except SqliteSnapshotError:
+        return {"status": "UNAVAILABLE", "present": True, "bars": [], "candles": []}
+    except Exception:
+        return {
+            "status": "CORRUPT_OR_UNREADABLE",
+            "present": True,
+            "bars": [],
+            "candles": [],
+        }
+    return {
+        "status": "REAL",
+        "present": True,
+        "bars": bars,
+        "candles": candles,
+    }
 
 
 def _bars_from_pit_db(path: str) -> Dict[str, Any]:
-    """Read BTC OHLCV bars from the PIT sqlite (read-only), latest knowledge."""
-    if not os.path.exists(path):
-        return {"present": False, "bars": []}
-    bars: List[Dict[str, float]] = []
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            rows = conn.execute(
-                "SELECT event_time, payload_json FROM bars WHERE key='BTC' "
-                "GROUP BY event_time HAVING MAX(knowledge_time) ORDER BY event_time"
-            ).fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return {"present": False, "bars": []}
-    for event_time, payload_json in rows:
-        try:
-            payload = json.loads(payload_json)
-        except Exception:
-            continue
-        bar = _bar_from_row({"t": event_time, "close": payload.get("close")})
-        if bar is not None:
-            bars.append(bar)
-    return {"present": True, "bars": bars}
+    result = _market_from_pit_db(path)
+    return {key: result[key] for key in ("status", "present", "bars")}
 
 
 _MARKET_BARS_LIMIT = 120
@@ -192,44 +309,7 @@ def _ohlcv_bars_from_pit_db(path: str, limit: int = _MARKET_BARS_LIMIT) -> List[
     """PIT sqlite 里 BTC 的最近 `limit` 根日线 OHLCV(供 CandleChart;t=**秒**,字段名镜像
     前端 `MexcMarketPayload.bars` / `Candle` 契约:open/high/low/close 必填、volume 可选)。
     库缺/读不出/行形状坏 → 诚实空列表(页面在无 bars 时本就诚实降级,绝不硬凑)。"""
-    if not os.path.exists(path):
-        return []
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            rows = conn.execute(
-                "SELECT event_time, payload_json FROM bars WHERE key='BTC' "
-                "GROUP BY event_time HAVING MAX(knowledge_time) "
-                "ORDER BY event_time DESC LIMIT ?",
-                (int(limit),),
-            ).fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return []
-    out: List[Dict[str, Any]] = []
-    for event_time, payload_json in rows:
-        try:
-            payload = json.loads(payload_json)
-            bar: Dict[str, Any] = {
-                "t": float(event_time) / 1000.0,
-                "open": float(payload["open"]),
-                "high": float(payload["high"]),
-                "low": float(payload["low"]),
-                "close": float(payload["close"]),
-            }
-        except (KeyError, TypeError, ValueError):
-            continue
-        volume = payload.get("volume")
-        if isinstance(volume, (int, float)) and not isinstance(volume, bool) and volume > 0:
-            bar["volume"] = float(volume)
-        if bar["open"] <= 0 or bar["close"] <= 0 or not all(
-            math.isfinite(bar[k]) for k in ("open", "high", "low", "close")
-        ):
-            continue
-        out.append(bar)
-    out.reverse()                      # DESC 取尾部 N 根后还原时间升序
-    return out
+    return _market_from_pit_db(path)["candles"][-int(limit):]
 
 
 def _ann_volatility(closes: List[float], periods_per_year: float = 365.0) -> Optional[float]:
@@ -254,7 +334,7 @@ def _iso(ts: Optional[float]) -> Optional[str]:
 
 def _mexc_market_payload() -> Dict[str, Any]:
     json_side = _bars_from_klines_json(_MEXC_KLINES_JSON)
-    db_side = _bars_from_pit_db(_MEXC_DB)
+    db_side = _market_from_pit_db(_MEXC_DB)
     bars = json_side["bars"] or db_side["bars"]
     present = bool(bars)
     closes = [b["close"] for b in bars]
@@ -268,14 +348,15 @@ def _mexc_market_payload() -> Dict[str, Any]:
     vol_30d = _ann_volatility(closes[-31:]) if len(closes) >= 3 else None
     fetched_at = json_side["fetched_at"]
     if fetched_at is None and db_side["bars"]:
-        try:
-            fetched_at = os.path.getmtime(_MEXC_DB)
-        except OSError:
-            fetched_at = None
+        fetched_at = db_side["bars"][-1]["t"]
     age_hours = (
         round((time.time() - fetched_at) / 3600.0, 2) if fetched_at is not None else None
     )
     db_bars = db_side["bars"]
+    unavailable = (
+        db_side.get("status") in {"UNAVAILABLE", "CORRUPT_OR_UNREADABLE"}
+        or json_side.get("status") == INVALID
+    )
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
@@ -283,8 +364,15 @@ def _mexc_market_payload() -> Dict[str, Any]:
         "data_provenance": (
             "REAL_MEXC_MARKET_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC"
         ),
+        "snapshot_status": "UNAVAILABLE" if unavailable else (
+            "REAL" if present else "NO_SNAPSHOT"
+        ),
         "snapshot_present": present,
-        "verdict": "MEXC_MARKET_OK" if present else "NO_SNAPSHOT",
+        "verdict": (
+            "UNAVAILABLE"
+            if unavailable
+            else ("MEXC_MARKET_OK" if present else "NO_SNAPSHOT")
+        ),
         "venue": "MEXC",
         "symbol": "BTCUSDT",
         "latest_price": latest,
@@ -304,6 +392,7 @@ def _mexc_market_payload() -> Dict[str, Any]:
             ),
         },
         "db": {
+            "status": db_side.get("status"),
             "present": db_side["present"],
             "n_rows": len(db_bars),
             "date_start": _iso(db_bars[0]["t"]) if db_bars else None,
@@ -312,7 +401,7 @@ def _mexc_market_payload() -> Dict[str, Any]:
         # 逐日 OHLCV(最近 ~120 根,PIT 库只读;klines JSON 快照只存元数据、无逐行数据,
         # 故 bars 只能来自 crypto_mexc.db)。库缺 → 诚实空数组,页面降级渲染(见前端
         # MexcMarketPayload.bars 可选契约)。
-        "bars": _ohlcv_bars_from_pit_db(_MEXC_DB),
+        "bars": db_side["candles"][-_MARKET_BARS_LIMIT:],
         "honesty_note": (
             "MEXC 现货 BTC 行情只读快照(零手续费现货,Binance 兼容 v3)。数据来自离线抓取的 "
             "mexc_btc_klines.json / crypto_mexc.db,非实时推送;24h 涨跌为最近两根日 K 收盘差,"
@@ -389,19 +478,30 @@ def _buy_and_hold(bars: List[Dict[str, float]], curve: List[Dict[str, Any]]) -> 
 
 def _mexc_strategy_payload() -> Dict[str, Any]:
     runs: List[Dict[str, Any]] = []
-    if os.path.exists(_DRY_RUN_DB):
-        try:
-            store = DryRunStore(_DRY_RUN_DB, create=False)
-            try:
-                runs = [
-                    r
-                    for r in store.all_runs()
-                    if r.get("strategy_id") == _MEXC_STRATEGY_ID
-                ]
-            finally:
-                store.close()
-        except Exception:
-            runs = []
+    dry_run_status = "MISSING"
+    market_side = _bars_from_pit_db(_MEXC_DB)
+    try:
+        with _sqlite_copy(_DRY_RUN_DB) as snapshot:
+            if snapshot is not None:
+                dry_run_status = "REAL"
+                store = DryRunStore(snapshot, create=False)
+            else:
+                store = None
+            if store is not None:
+                try:
+                    runs = [
+                        r
+                        for r in store.all_runs()
+                        if r.get("strategy_id") == _MEXC_STRATEGY_ID
+                    ]
+                finally:
+                    store.close()
+    except SqliteSnapshotError:
+        dry_run_status = "UNAVAILABLE"
+        runs = []
+    except Exception:
+        dry_run_status = "CORRUPT_OR_UNREADABLE"
+        runs = []
     mexc_data_runs = [r for r in runs
                       if (r.get("detail") or {}).get("data_source") == "MEXC_PIT"]
     # canonical 口径 = MEXC 数据(2026-07 切换);只有切换前 LEGACY/CoinGecko run 时诚实标注,
@@ -416,8 +516,7 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
     curve = detail.get("equity_curve") or []
     curve_vt = detail.get("equity_curve_vt") or []
     json_side = _bars_from_klines_json(_MEXC_KLINES_JSON)
-    db_side = _bars_from_pit_db(_MEXC_DB)
-    bars = json_side["bars"] or db_side["bars"]
+    bars = json_side["bars"] or market_side["bars"]
     bnh = _buy_and_hold(bars, curve) if has else {"present": False}
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -426,8 +525,24 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
         "data_provenance": (
             "REAL_DRY_RUN_OFFLINE_SNAPSHOT" if has else "SYNTHETIC_DETERMINISTIC"
         ),
+        "snapshot_status": (
+            "UNAVAILABLE"
+            if (
+                dry_run_status in {"UNAVAILABLE", "CORRUPT_OR_UNREADABLE"}
+                or market_side.get("status") in {"UNAVAILABLE", "CORRUPT_OR_UNREADABLE"}
+            )
+            else ("REAL" if has else "NO_SNAPSHOT")
+        ),
+        "dry_run_store_status": dry_run_status,
         "snapshot_present": has,
-        "verdict": "BTC_SPOT_TREND_OK" if has else "NO_RUN",
+        "verdict": (
+            "UNAVAILABLE"
+            if (
+                dry_run_status in {"UNAVAILABLE", "CORRUPT_OR_UNREADABLE"}
+                or market_side.get("status") in {"UNAVAILABLE", "CORRUPT_OR_UNREADABLE"}
+            )
+            else ("BTC_SPOT_TREND_OK" if has else "NO_RUN")
+        ),
         "venue": "MEXC",
         "strategy_id": _MEXC_STRATEGY_ID,
         "n_runs": len(canonical),
@@ -465,8 +580,8 @@ async def mexc_strategy() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# live-readiness checklist (existence checks only — never reads file contents
-# of mandate/attestation; kill-switch read fail-closed via composition root)
+# live-readiness checklist. Credential-domain inputs are never inspected;
+# kill-switch state is read from state-root and fails closed.
 # ---------------------------------------------------------------------------
 
 def _mexc_governance_test_present() -> bool:
@@ -488,6 +603,90 @@ def _readiness_check(check_id: str, label: str, ready: bool, reason: str) -> Dic
         "status": "READY" if ready else "BLOCKED",
         "reason": reason,
     }
+
+
+def _credential_boundary_check(check_id: str, label: str) -> Dict[str, Any]:
+    return {
+        "id": check_id,
+        "label": label,
+        "status": "BLOCKED",
+        "reason": "CREDENTIAL_BOUNDARY_NOT_INSPECTED",
+    }
+
+
+def _fail_closed_kill_switch(reason: str):
+    from quantos.contracts.killswitch import KillSwitchState
+
+    return KillSwitchState(
+        tripped=True,
+        incident_id="unavailable-state-fail-closed",
+        reason=reason,
+    )
+
+
+def _load_mexc_kill_switch_state():
+    """Load state SQLite first, then strict legacy JSON; absence is TRIPPED."""
+    from quantos.contracts.killswitch import KillSwitchState
+    from services.risk.pre_trade.kill_switch_store import (
+        KillSwitchStateStore,
+        kill_switch_authority_path,
+    )
+
+    authority_path = Path(kill_switch_authority_path(_LIVE_KILL_SWITCH_STATE))
+    try:
+        authority_before = _inspect_sqlite_components(authority_path)
+        with _sqlite_copy(os.fspath(authority_path)) as snapshot:
+            if snapshot is not None:
+                store = KillSwitchStateStore(str(snapshot), create=False)
+                try:
+                    return store.load_state()
+                finally:
+                    store.close()
+    except Exception:
+        return _fail_closed_kill_switch(
+            "kill-switch authority unavailable/corrupt - failing closed"
+        )
+
+    status, raw = read_json_artifact(
+        _LIVE_KILL_SWITCH_STATE, trusted_root=_STATE_ROOT
+    )
+    try:
+        authority_after = _inspect_sqlite_components(authority_path)
+    except Exception:
+        return _fail_closed_kill_switch(
+            "kill-switch authority path changed during legacy read - failing closed"
+        )
+    if authority_after != authority_before or (
+        authority_after and authority_after[-1][0] == authority_path.name
+    ):
+        return _fail_closed_kill_switch(
+            "kill-switch authority appeared during legacy read - failing closed"
+        )
+    if status == VALID:
+        try:
+            return KillSwitchState.model_validate(raw)
+        except Exception:
+            pass
+    return _fail_closed_kill_switch(
+        "kill-switch state absent/unreadable - failing closed"
+    )
+
+
+def _valid_smoke_artifact(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("schema_version") == 1
+        and value.get("provenance") == "REAL_MEXC_MAINNET_READONLY_SMOKE"
+        and type(value.get("ran_at_ms")) is int
+        and value["ran_at_ms"] >= 0
+        and isinstance(value.get("ran_at_utc"), str)
+        and bool(value["ran_at_utc"].strip())
+        and value.get("verdict") in {"PASS", "FAIL"}
+        and isinstance(value.get("checks"), list)
+        and all(isinstance(item, dict) for item in value["checks"])
+        and value.get("order_response_shape") == "UNVERIFIED_UNTIL_FIRST_FILL"
+        and isinstance(value.get("notes"), list)
+    )
 
 
 def _mexc_readiness_payload() -> Dict[str, Any]:
@@ -515,32 +714,15 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
         )
     )
 
-    mandate_exists = os.path.exists(_MEXC_MANDATE)
+    checks.append(_credential_boundary_check("human_mandate", "人工 mandate(本端点不检查)"))
     checks.append(
-        _readiness_check(
-            "human_mandate",
-            "人工签署 mandate(key/live_mandate_mexc.json,仅检查存在性)",
-            mandate_exists,
-            "mandate 文件存在(内容不读取、不泄露)"
-            if mandate_exists
-            else "缺少人工签署的 mandate 文件——真人未签字授权任何真实金额上限",
-        )
-    )
-
-    attestation_exists = os.path.exists(_ATTESTATIONS)
-    checks.append(
-        _readiness_check(
-            "validation_attestation",
-            "验证 attestation(key/live_validation_attestations.json,仅检查存在性)",
-            attestation_exists,
-            "attestation 文件存在(内容不读取、不泄露)"
-            if attestation_exists
-            else "缺少验证 attestation——无 PASS 验证记录或可审计人工 override",
+        _credential_boundary_check(
+            "validation_attestation", "验证 attestation(本端点不检查)"
         )
     )
 
     try:
-        ks = mexc_view_runtime.kill_switch_state()
+        ks = _load_mexc_kill_switch_state()
         tripped = bool(getattr(ks, "tripped", True))
         ks_reason = getattr(ks, "reason", None)
     except Exception:
@@ -558,10 +740,7 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
     db_side = _bars_from_pit_db(_MEXC_DB)
     fetched_at = json_side["fetched_at"]
     if fetched_at is None and db_side["bars"]:
-        try:
-            fetched_at = os.path.getmtime(_MEXC_DB)
-        except OSError:
-            fetched_at = None
+        fetched_at = db_side["bars"][-1]["t"]
     age_hours = (
         round((time.time() - fetched_at) / 3600.0, 2) if fetched_at is not None else None
     )
@@ -581,63 +760,60 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
 
     strategy_runs = 0
     mexc_data_runs = 0
-    if os.path.exists(_DRY_RUN_DB):
-        try:
-            store = DryRunStore(_DRY_RUN_DB, create=False)
-            try:
-                for r in store.all_runs():
-                    if r.get("strategy_id") != _MEXC_STRATEGY_ID:
-                        continue
-                    strategy_runs += 1
-                    if (r.get("detail") or {}).get("data_source") == "MEXC_PIT":
-                        mexc_data_runs += 1
-            finally:
-                store.close()
-        except Exception:
-            strategy_runs = 0
-            mexc_data_runs = 0
+    dry_run_readable = True
+    try:
+        with _sqlite_copy(_DRY_RUN_DB) as snapshot:
+            if snapshot is not None:
+                store = DryRunStore(snapshot, create=False)
+                try:
+                    for r in store.all_runs():
+                        if r.get("strategy_id") != _MEXC_STRATEGY_ID:
+                            continue
+                        strategy_runs += 1
+                        if (r.get("detail") or {}).get("data_source") == "MEXC_PIT":
+                            mexc_data_runs += 1
+                finally:
+                    store.close()
+    except Exception:
+        dry_run_readable = False
+        strategy_runs = 0
+        mexc_data_runs = 0
     checks.append(
         _readiness_check(
             "dry_run_evidence",
             "btc_spot_trend 干跑执行证据(dry_run.db,MEXC 数据口径)",
-            mexc_data_runs > 0,
+            dry_run_readable and mexc_data_runs > 0,
             (
                 f"{mexc_data_runs} 条 MEXC 数据干跑 run 在案"
-                if mexc_data_runs > 0
+                if dry_run_readable and mexc_data_runs > 0
                 else (
+                    "dry_run.db 无法取得稳定一致快照——UNAVAILABLE"
+                    if not dry_run_readable
+                    else (
                     f"无 MEXC 数据干跑 run(仅 {strategy_runs} 条 LEGACY/CoinGecko 切换前旧口径,"
                     "不作数)——先跑 tools/live_data_refresh 再跑 tools/dry_run_btc_spot_multi"
                     if strategy_runs
                     else "无 btc_spot_trend 干跑 run——执行现实未检验"
+                    )
                 )
             ),
         )
     )
 
-    credential_configured = bool(os.environ.get("MEXC_API_KEY")) or os.path.exists(_MEXC_KEY_FILE)
     checks.append(
-        _readiness_check(
-            "credential_configured",
-            "MEXC 凭证已放置(MEXC_API_KEY env 或 key/mexc_spot.json,仅检查存在性)",
-            credential_configured,
-            (
-                "凭证已配置(内容不读取、不泄露)"
-                if credential_configured
-                else "缺少 MEXC 凭证——人工放 key/mexc_spot.json 或设 env(提现必须在交易所侧关闭)"
-            ),
+        _credential_boundary_check(
+            "credential_configured", "MEXC 凭证配置(本端点不检查)"
         )
     )
 
     smoke_ready = False
     smoke_reason = ("UNVERIFIED_MAINNET_RESPONSE — 只读 smoke 未跑(人工步骤: "
                     "python -m tools.mexc_readonly_smoke)")
-    if os.path.exists(_MEXC_SMOKE_EVIDENCE):
-        try:
-            with open(_MEXC_SMOKE_EVIDENCE, encoding="utf-8") as fh:
-                smoke = json.load(fh)
-        except Exception:
-            smoke = None
-        if isinstance(smoke, dict):
+    smoke_status, smoke = read_json_artifact(
+        _MEXC_SMOKE_EVIDENCE, trusted_root=_STATE_ROOT
+    )
+    if smoke_status == VALID:
+        if _valid_smoke_artifact(smoke):
             if smoke.get("verdict") == "PASS":
                 smoke_ready = True
                 smoke_reason = (
@@ -648,7 +824,9 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
                 smoke_reason = (f"只读 smoke verdict={smoke.get('verdict')!r} — 解决后重跑 "
                                 "tools/mexc_readonly_smoke.py")
         else:
-            smoke_reason = "smoke 证据文件损坏 — 重跑 tools/mexc_readonly_smoke.py"
+            smoke_reason = "smoke 证据 schema 无效 — 由人工重跑只读 smoke"
+    elif smoke_status == INVALID:
+        smoke_reason = "smoke 证据不可安全读取 — 由人工检查并重跑只读 smoke"
     checks.append(
         _readiness_check(
             "mainnet_smoke_evidence",
@@ -699,9 +877,10 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
         "honesty_note": (
             "MEXC 实盘就绪清单:全部 READY 也只是'具备提交人工评审的材料',绝不代表可以实盘——"
             "MEXC 无现货测试网,毕业路径 = 干跑/paper + 多方人工 mandate 下的微小真实金额;"
-            "mandate/attestation 仅检查存在性、绝不读取内容;kill-switch 读取 fail-closed。"
+            "credential/mandate/attestation 固定 NOT_ASSESSED/BLOCKED,不检查路径、内容或环境变量;"
+            "kill-switch 缺失或不可读即 TRIPPED fail-closed。"
             "mainnet_smoke_evidence 在未跑只读 smoke 前诚实报 UNVERIFIED_MAINNET_RESPONSE;"
-            "credential_configured 仅检查 key 存在性,权限位以 verify_key_permissions 为准。"
+            "凭证权限验证属于隔离的人工作业,不属于本端点。"
             "本端点只读,不授予任何能力。"
         ),
     }
@@ -712,4 +891,4 @@ async def mexc_readiness() -> Dict[str, Any]:
     return with_snapshot_metadata(_mexc_readiness_payload())
 
 
-__all__ = ["router", "configure_mexc_views", "mexc_view_runtime"]
+__all__ = ["router"]
