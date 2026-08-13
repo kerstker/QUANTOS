@@ -182,8 +182,10 @@ def test_third_build_is_no_cache_named_docker_archive(tmp_path: Path) -> None:
     assert "--no-cache" in argv
     assert argv[argv.index("--platform") + 1] == "linux/arm64"
     assert argv[argv.index("--output") + 1] == (
-        f"type=docker,name=quantos-console:l2-arm64,dest={tmp_path / 'runtime.docker.tar'}"
+        f"type=docker,name=quantos-console:l2-arm64,dest={tmp_path / 'runtime.docker.tar'},"
+        "rewrite-timestamp=true"
     )
+    assert argv[argv.index("--output") + 1].count("rewrite-timestamp=true") == 1
     assert _option_values(argv, "--build-arg") == [
         "SOURCE_DATE_EPOCH=123",
         *(f"{name}=" for name in PROXY_ENV_NAMES),

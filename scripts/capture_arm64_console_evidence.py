@@ -203,7 +203,10 @@ def _docker_export_argv(
     for name in PROXY_ENV_NAMES:
         argv.extend(["--build-arg", f"{name}="])
     argv.extend([
-        "--output", f"type=docker,name={ARM64_RUNTIME_IMAGE_REF},dest={archive}",
+        "--output", (
+            f"type=docker,name={ARM64_RUNTIME_IMAGE_REF},dest={archive},"
+            "rewrite-timestamp=true"
+        ),
         "-f", str(root / ARM64_DOCKERFILE_REF), str(root),
     ])
     return argv
