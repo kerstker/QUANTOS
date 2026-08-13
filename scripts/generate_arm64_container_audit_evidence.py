@@ -79,7 +79,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "ARM64 container Trivy evidence: current; "
                 f"base={summary['base_vulnerability_count']}; runtime=0; "
-                f"image={summary['runtime_image_digest']}"
+                f"config={summary['runtime_image_config_digest']}; "
+                f"manifest={summary['runtime_image_manifest_digest']}"
             )
             return 0
         raise Arm64ConsoleEvidenceError(

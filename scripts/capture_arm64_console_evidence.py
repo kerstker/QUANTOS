@@ -192,26 +192,6 @@ def _build_argv(
     return argv
 
 
-def _docker_export_argv(
-    root: Path, builder: str, archive: Path, epoch: int
-) -> list[str]:
-    argv = [
-        "docker", "buildx", "build", "--builder", builder,
-        "--platform", TARGET_PLATFORM, "--no-cache", "--provenance=false",
-        "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
-    ]
-    for name in PROXY_ENV_NAMES:
-        argv.extend(["--build-arg", f"{name}="])
-    argv.extend([
-        "--output", (
-            f"type=docker,name={ARM64_RUNTIME_IMAGE_REF},dest={archive},"
-            "rewrite-timestamp=true"
-        ),
-        "-f", str(root / ARM64_DOCKERFILE_REF), str(root),
-    ])
-    return argv
-
-
 def _scanner_argv(
     cache: Path,
     *arguments: str,
@@ -269,30 +249,95 @@ def _database_digest(raw_manifest: bytes) -> str:
     return "sha256:" + hashlib.sha256(raw_manifest).hexdigest()
 
 
-def _image_id(raw: bytes, label: str) -> str:
-    value = _inspect_object(raw, label).get("Id")
-    if not isinstance(value, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
-        raise CaptureError(f"{label} omits a canonical image Id")
-    return value
+_OCI_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+
+
+def _loaded_image_identity(
+    raw: bytes,
+    label: str,
+    *,
+    expected_manifest_digest: str,
+    expected_manifest_size: int,
+) -> tuple[dict[str, Any], str]:
+    image = _inspect_object(raw, label)
+    descriptor = image.get("Descriptor")
+    if not isinstance(descriptor, Mapping):
+        raise CaptureError(f"{label} omits the Docker 29 image Descriptor")
+    image_id = image.get("Id")
+    if (
+        image_id != expected_manifest_digest
+        or descriptor.get("digest") != expected_manifest_digest
+        or descriptor.get("mediaType") != _OCI_MANIFEST_MEDIA_TYPE
+        or descriptor.get("size") != expected_manifest_size
+        or type(descriptor.get("size")) is not int
+        or descriptor["size"] <= 0
+    ):
+        raise CaptureError(f"{label} manifest descriptor identity is invalid")
+    return image, image_id
 
 
 def _assert_evidence_identity(
     reproducibility: Mapping[str, Any],
     audit: Mapping[str, Any],
     smoke: Mapping[str, Any],
-    loaded_image_id: str,
 ) -> None:
     image = reproducibility.get("image")
-    if not isinstance(image, Mapping):
+    builds = reproducibility.get("builds")
+    scanner_capture = audit.get("scanner_capture")
+    observation = smoke.get("observation")
+    if (
+        not isinstance(image, Mapping)
+        or not isinstance(builds, list)
+        or len(builds) != 2
+        or not all(isinstance(item, Mapping) for item in builds)
+        or not isinstance(scanner_capture, Mapping)
+        or not isinstance(observation, Mapping)
+    ):
         raise CaptureError("reproducibility image identity is unavailable")
-    identities = {
-        image.get("config_digest"),
-        audit.get("runtime_image_digest"),
-        smoke.get("runtime_image_config_digest"),
-        loaded_image_id,
-    }
-    if len(identities) != 1 or loaded_image_id not in identities:
-        raise CaptureError("ARM64 evidence image identity is inconsistent")
+    config_digest = image.get("config_digest")
+    manifest_digest = image.get("manifest_digest")
+    manifest_size = image.get("manifest_size")
+    if (
+        not isinstance(config_digest, str)
+        or not isinstance(manifest_digest, str)
+        or config_digest == manifest_digest
+        or audit.get("runtime_image_config_digest") != config_digest
+        or smoke.get("runtime_image_config_digest") != config_digest
+        or audit.get("runtime_image_manifest_digest") != manifest_digest
+        or smoke.get("runtime_image_manifest_digest") != manifest_digest
+    ):
+        raise CaptureError("ARM64 evidence config/manifest identity is inconsistent")
+    load_capture = scanner_capture.get("runtime_image_load")
+    loaded_archive_sha256 = scanner_capture.get("loaded_oci_archive_sha256")
+    build_a = builds[0]
+    if (
+        not isinstance(load_capture, Mapping)
+        or load_capture.get("argv")
+        != [
+            "docker",
+            "load",
+            "--platform",
+            TARGET_PLATFORM,
+            "--input",
+            str(load_capture.get("argv", [None])[-1]),
+        ]
+        or Path(str(load_capture["argv"][-1])).name != build_a.get("archive_name")
+        or loaded_archive_sha256 != build_a.get("archive_sha256")
+        or build_a.get("archive_sha256") != builds[1].get("archive_sha256")
+    ):
+        raise CaptureError("ARM64 load is not bound to verified OCI archive A")
+    smoke_image = observation.get("image_inspect")
+    if not isinstance(smoke_image, Mapping):
+        raise CaptureError("ARM64 smoke image identity is unavailable")
+    descriptor = smoke_image.get("Descriptor")
+    if (
+        smoke_image.get("Id") != manifest_digest
+        or not isinstance(descriptor, Mapping)
+        or descriptor.get("digest") != manifest_digest
+        or descriptor.get("mediaType") != _OCI_MANIFEST_MEDIA_TYPE
+        or descriptor.get("size") != manifest_size
+    ):
+        raise CaptureError("ARM64 smoke manifest descriptor identity is inconsistent")
 
 
 def _sha256_file(path: Path) -> str:
@@ -515,20 +560,31 @@ def capture(
             build_captures=[build_a.receipt(), build_b.receipt()],
         )
 
-        runtime_archive = session / "runtime.docker.tar"
-        _run(
+        loaded_oci_archive_sha256 = _sha256_file(archive_a)
+        if loaded_oci_archive_sha256 != reproducibility["builds"][0]["archive_sha256"]:
+            raise CaptureError("OCI archive A changed before docker load")
+        runtime_image_load = _run(
             executor,
-            _docker_export_argv(root, BUILDER_A, runtime_archive, epoch),
+            [
+                "docker",
+                "load",
+                "--platform",
+                TARGET_PLATFORM,
+                "--input",
+                str(archive_a),
+            ],
             root,
         )
-        _run(executor, ["docker", "load", "--input", str(runtime_archive)], root)
         owned_runtime_image = True
         loaded_image_inspect = _run(
             executor, ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF], root
         )
-        loaded_image_id = _image_id(loaded_image_inspect.stdout, "loaded runtime image")
-        if loaded_image_id != reproducibility["image"]["config_digest"]:
-            raise CaptureError("loaded runtime image identity differs from OCI config")
+        _loaded_image, loaded_manifest_digest = _loaded_image_identity(
+            loaded_image_inspect.stdout,
+            "loaded runtime image",
+            expected_manifest_digest=reproducibility["image"]["manifest_digest"],
+            expected_manifest_size=reproducibility["image"]["manifest_size"],
+        )
         _run(executor, ["docker", "pull", "--platform", TARGET_PLATFORM, base_image], root)
 
         cache = session / "trivy-cache"
@@ -681,6 +737,11 @@ def capture(
                 "host_gid": gid.receipt(),
                 "base_image_inspect": base_image_inspect.receipt(),
                 "runtime_image_inspect": runtime_image_inspect.receipt(),
+                "runtime_image_inspect_stdout": runtime_image_inspect.stdout.decode(
+                    "utf-8", errors="strict"
+                ),
+                "runtime_image_load": runtime_image_load.receipt(),
+                "loaded_oci_archive_sha256": loaded_oci_archive_sha256,
                 "base_image_save": base_image_save.receipt(),
                 "runtime_image_save": runtime_image_save.receipt(),
                 "base_archive_sha256": _sha256_file(base_archive),
@@ -695,6 +756,9 @@ def capture(
             },
             base_report_raw=base_raw,
             runtime_report_raw=runtime_raw,
+            runtime_image_config_digest=reproducibility["image"]["config_digest"],
+            runtime_image_manifest_digest=loaded_manifest_digest,
+            runtime_image_manifest_size=reproducibility["image"]["manifest_size"],
         )
         if audit.get("verdict") != "PASS":
             raise CaptureError("ARM64 vulnerability policy did not pass")
@@ -729,7 +793,7 @@ def capture(
             raise CaptureError("container-loopback health response is invalid")
         smoke_observed_at = int(clock())
         observation = {
-            "schema_version": 2,
+            "schema_version": 3,
             "observed_at": smoke_observed_at,
             "container_inspect": _inspect_object(
                 container_inspect.stdout, "container inspect"
@@ -753,6 +817,8 @@ def capture(
                 "source_commit": commit,
                 "source_clean": True,
             },
+            "runtime_image_config_digest": reproducibility["image"]["config_digest"],
+            "runtime_image_manifest_digest": loaded_manifest_digest,
         }
         smoke = build_arm64_console_smoke_evidence(
             root,
@@ -761,9 +827,7 @@ def capture(
             source_clean=True,
             source_capture=source_capture,
         )
-        _assert_evidence_identity(
-            reproducibility, audit, smoke, loaded_image_id
-        )
+        _assert_evidence_identity(reproducibility, audit, smoke)
 
         final_commit, _final_source_capture = _source_capture(executor, root, resolver)
         if final_commit != commit:

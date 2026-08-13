@@ -18,7 +18,6 @@ from scripts.capture_arm64_console_evidence import (
     _assert_output_boundary,
     _build_argv,
     _database_digest,
-    _docker_export_argv,
     _scanner_argv,
     _smoke_run_argv,
     _source_capture,
@@ -173,23 +172,20 @@ def test_buildx_inspect_parser_rejects_nonunique_or_non_arm64_builder(
         _parse_buildx_inspect_identity(raw)
 
 
-def test_third_build_is_no_cache_named_docker_archive(tmp_path: Path) -> None:
-    argv = _docker_export_argv(
-        tmp_path, BUILDER_A, tmp_path / "runtime.docker.tar", 123
-    )
+def test_capture_has_exactly_two_oci_solves_and_no_docker_exporter() -> None:
+    source = inspect.getsource(capture)
 
-    assert argv[:3] == ["docker", "buildx", "build"]
-    assert "--no-cache" in argv
-    assert argv[argv.index("--platform") + 1] == "linux/arm64"
-    assert argv[argv.index("--output") + 1] == (
-        f"type=docker,name=quantos-console:l2-arm64,dest={tmp_path / 'runtime.docker.tar'},"
-        "rewrite-timestamp=true"
+    assert source.count("_build_argv(") == 2
+    assert "type=docker" not in inspect.getsource(
+        __import__(
+            "scripts.capture_arm64_console_evidence",
+            fromlist=["capture_arm64_console_evidence"],
+        )
     )
-    assert argv[argv.index("--output") + 1].count("rewrite-timestamp=true") == 1
-    assert _option_values(argv, "--build-arg") == [
-        "SOURCE_DATE_EPOCH=123",
-        *(f"{name}=" for name in PROXY_ENV_NAMES),
-    ]
+    assert "_docker_export_argv" not in source
+    assert '"--platform",' in source
+    assert '"--input",' in source
+    assert "str(archive_a)" in source
 
 
 def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> None:
@@ -308,21 +304,110 @@ def test_output_boundary_rejects_symlink_or_preexisting_final_files(
         _assert_output_boundary(root, output)
 
 
-def test_evidence_identity_requires_same_oci_loaded_audit_and_smoke_digest() -> None:
-    digest = "sha256:" + "e" * 64
-    reproducibility = {"image": {"config_digest": digest}}
-    audit = {"runtime_image_digest": digest}
-    smoke = {"runtime_image_config_digest": digest}
+def _identity_documents() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    config = "sha256:" + "c" * 64
+    manifest = "sha256:" + "d" * 64
+    archive_sha = "a" * 64
+    reproducibility = {
+        "image": {
+            "config_digest": config,
+            "manifest_digest": manifest,
+            "manifest_size": 1234,
+        },
+        "builds": [
+            {"archive_name": "console-a.oci.tar", "archive_sha256": archive_sha},
+            {"archive_name": "console-b.oci.tar", "archive_sha256": archive_sha},
+        ],
+    }
+    inspect_raw = (
+        '[{"Id":"' + manifest + '","Descriptor":{"mediaType":'
+        '"application/vnd.oci.image.manifest.v1+json","digest":"'
+        + manifest
+        + '","size":1234}}]'
+    )
+    audit = {
+        "runtime_image_config_digest": config,
+        "runtime_image_manifest_digest": manifest,
+        "scanner_capture": {
+            "runtime_image_load": {
+                "argv": [
+                    "docker",
+                    "load",
+                    "--platform",
+                    "linux/arm64",
+                    "--input",
+                    "/tmp/console-a.oci.tar",
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "0" * 64,
+                "stderr_sha256": "0" * 64,
+            },
+            "loaded_oci_archive_sha256": archive_sha,
+            "runtime_image_inspect_stdout": inspect_raw,
+        },
+    }
+    smoke = {
+        "runtime_image_config_digest": config,
+        "runtime_image_manifest_digest": manifest,
+        "observation": {
+            "image_inspect": {
+                "Id": manifest,
+                "Descriptor": {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": manifest,
+                    "size": 1234,
+                },
+            }
+        },
+    }
+    return reproducibility, audit, smoke
 
-    _assert_evidence_identity(reproducibility, audit, smoke, digest)
 
-    with pytest.raises(CaptureError, match="identity"):
-        _assert_evidence_identity(
-            reproducibility,
-            {"runtime_image_digest": "sha256:" + "f" * 64},
-            smoke,
-            digest,
+def test_evidence_identity_keeps_config_and_manifest_domains_separate() -> None:
+    reproducibility, audit, smoke = _identity_documents()
+
+    _assert_evidence_identity(reproducibility, audit, smoke)
+
+    assert reproducibility["image"]["config_digest"] != reproducibility["image"][
+        "manifest_digest"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "audit_config",
+        "smoke_manifest",
+        "swap_audit",
+        "load_b",
+        "archive_drift",
+        "descriptor_size",
+    ],
+)
+def test_evidence_identity_rejects_mismatch_swap_or_unverified_load(
+    mutation: str,
+) -> None:
+    reproducibility, audit, smoke = _identity_documents()
+    if mutation == "audit_config":
+        audit["runtime_image_config_digest"] = "sha256:" + "e" * 64
+    elif mutation == "smoke_manifest":
+        smoke["runtime_image_manifest_digest"] = "sha256:" + "e" * 64
+    elif mutation == "swap_audit":
+        audit["runtime_image_config_digest"], audit["runtime_image_manifest_digest"] = (
+            audit["runtime_image_manifest_digest"],
+            audit["runtime_image_config_digest"],
         )
+    elif mutation == "load_b":
+        audit["scanner_capture"]["runtime_image_load"]["argv"][-1] = (
+            "/tmp/console-b.oci.tar"
+        )
+    elif mutation == "archive_drift":
+        audit["scanner_capture"]["loaded_oci_archive_sha256"] = "f" * 64
+    else:
+        smoke["observation"]["image_inspect"]["Descriptor"]["size"] = 1235
+
+    with pytest.raises(CaptureError, match="identity|archive|load|descriptor"):
+        _assert_evidence_identity(reproducibility, audit, smoke)
 
 
 def test_scans_bind_exact_archives_and_image_inspect_receipts(tmp_path: Path) -> None:
@@ -364,9 +449,9 @@ def test_final_source_recheck_precedes_evidence_publish() -> None:
     assert source.index("final_commit") < source.index("_publish_staged_evidence")
 
 
-def test_capture_assembles_smoke_observation_schema_v2() -> None:
+def test_capture_assembles_smoke_observation_schema_v3() -> None:
     source = inspect.getsource(capture)
-    assert source.count('"schema_version": 2') == 1
+    assert source.count('"schema_version": 3') == 1
     assert '"schema_version": 1' not in source
 
 

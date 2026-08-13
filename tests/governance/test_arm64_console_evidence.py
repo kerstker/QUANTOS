@@ -29,7 +29,11 @@ from services.governance.json_integrity import DuplicateJsonKeyError
 EPOCH = 1_000_000
 BASE_DIGEST = "sha256:" + "a" * 64
 BASE_ID = "sha256:" + "b" * 64
-RUNTIME_DIGEST = "sha256:" + "c" * 64
+RUNTIME_CONFIG_DIGEST = "sha256:" + "c" * 64
+RUNTIME_MANIFEST_DIGEST = "sha256:" + "d" * 64
+RUNTIME_MANIFEST_SIZE = 1234
+# Audit findings remain bound to the OCI config identity.
+RUNTIME_DIGEST = RUNTIME_CONFIG_DIGEST
 BASE_REF = f"public.ecr.aws/docker/library/python@{BASE_DIGEST}"
 BUILD_TOOL = {
     "builder_name": "default",
@@ -53,13 +57,20 @@ def _capture(argv: list[str], byte: str = "0") -> dict[str, object]:
     }
 
 
-def _build_capture(label: str, byte: str) -> dict[str, object]:
+def _build_capture(
+    root: Path, archive: Path, builder: str, byte: str
+) -> dict[str, object]:
     return _capture(
         [
             "docker",
             "buildx",
             "build",
+            "--builder",
+            builder,
+            "--platform",
+            "linux/arm64",
             "--no-cache",
+            "--provenance=false",
             "--build-arg",
             f"SOURCE_DATE_EPOCH={EPOCH}",
             *[
@@ -67,7 +78,13 @@ def _build_capture(label: str, byte: str) -> dict[str, object]:
                 for name in PROXY_ENV_NAMES
                 for item in ("--build-arg", f"{name}=")
             ],
-            label,
+            "--tag",
+            ARM64_RUNTIME_IMAGE_REF,
+            "--output",
+            f"type=oci,name={ARM64_RUNTIME_IMAGE_REF},dest={archive},rewrite-timestamp=true",
+            "-f",
+            str(root / "deploy/console.arm64.Dockerfile"),
+            str(root),
         ],
         byte,
     )
@@ -99,6 +116,19 @@ def _scanner_capture() -> dict[str, object]:
     )
     database_manifest = b'{"schemaVersion":2,"config":{},"layers":[]}\n'
     database_digest = "sha256:" + hashlib.sha256(database_manifest).hexdigest()
+    runtime_inspect = json.dumps(
+        [
+            {
+                "Id": RUNTIME_MANIFEST_DIGEST,
+                "Descriptor": {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": RUNTIME_MANIFEST_DIGEST,
+                    "size": RUNTIME_MANIFEST_SIZE,
+                },
+            }
+        ],
+        separators=(",", ":"),
+    )
     def hardened(network: str) -> list[str]:
         return [
             "docker", "run", "--rm", "--platform", "linux/arm64",
@@ -166,9 +196,22 @@ def _scanner_capture() -> dict[str, object]:
         "base_image_inspect": _capture(
             ["docker", "image", "inspect", BASE_REF]
         ),
-        "runtime_image_inspect": _capture(
-            ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF]
+        "runtime_image_inspect": {
+            **_capture(["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF]),
+            "stdout_sha256": hashlib.sha256(runtime_inspect.encode()).hexdigest(),
+        },
+        "runtime_image_inspect_stdout": runtime_inspect,
+        "runtime_image_load": _capture(
+            [
+                "docker",
+                "load",
+                "--platform",
+                "linux/arm64",
+                "--input",
+                "/tmp/console-a.oci.tar",
+            ]
         ),
+        "loaded_oci_archive_sha256": "3" * 64,
         "base_image_save": _capture(
             ["docker", "image", "save", "--output", "/tmp/base.tar", BASE_REF]
         ),
@@ -310,8 +353,8 @@ def _reproducibility(root: Path) -> dict[str, object]:
         source_clean=True,
         source_capture=_source_capture(),
         build_captures=[
-            _build_capture("A", "1"),
-            _build_capture("B", "2"),
+            _build_capture(root, first, "quantos-arm64-evidence-builder-a", "1"),
+            _build_capture(root, second, "quantos-arm64-evidence-builder-b", "2"),
         ],
     )
 
@@ -406,6 +449,9 @@ def _audit(
         scanner_capture=scanner_capture,
         base_report_raw=base_raw,
         runtime_report_raw=runtime_raw,
+        runtime_image_config_digest=RUNTIME_CONFIG_DIGEST,
+        runtime_image_manifest_digest=RUNTIME_MANIFEST_DIGEST,
+        runtime_image_manifest_size=RUNTIME_MANIFEST_SIZE,
     )
 
 
@@ -445,10 +491,15 @@ def _smoke_observation() -> dict[str, object]:
     ]
     ports = {"8400/tcp": None}
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "observed_at": EPOCH,
         "container_inspect": {
-            "Image": RUNTIME_DIGEST,
+            "Image": RUNTIME_MANIFEST_DIGEST,
+            "ImageManifestDescriptor": {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": RUNTIME_MANIFEST_DIGEST,
+                "size": RUNTIME_MANIFEST_SIZE,
+            },
             "State": {"Status": "running", "Running": True},
             "Config": {
                 "Image": ARM64_RUNTIME_IMAGE_REF,
@@ -482,7 +533,12 @@ def _smoke_observation() -> dict[str, object]:
             "NetworkSettings": {"Ports": ports},
         },
         "image_inspect": {
-            "Id": RUNTIME_DIGEST,
+            "Id": RUNTIME_MANIFEST_DIGEST,
+            "Descriptor": {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": RUNTIME_MANIFEST_DIGEST,
+                "size": RUNTIME_MANIFEST_SIZE,
+            },
             "Architecture": "arm64",
             "Os": "linux",
             "RepoTags": [ARM64_RUNTIME_IMAGE_REF],
@@ -551,6 +607,8 @@ def _smoke_observation() -> dict[str, object]:
             "source_commit": SOURCE_COMMIT,
             "source_clean": True,
         },
+        "runtime_image_config_digest": RUNTIME_CONFIG_DIGEST,
+        "runtime_image_manifest_digest": RUNTIME_MANIFEST_DIGEST,
     }
 
 
@@ -587,9 +645,9 @@ def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
             source_commit=SOURCE_COMMIT,
             source_clean=True,
             source_capture=_source_capture(),
-            build_captures=[
-                _build_capture("A", "1"),
-                _build_capture("B", "2"),
+                build_captures=[
+                    _build_capture(tmp_path, first, "quantos-arm64-evidence-builder-a", "1"),
+                    _build_capture(tmp_path, second, "quantos-arm64-evidence-builder-b", "2"),
             ],
         )
 
@@ -604,9 +662,9 @@ def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
             source_commit=SOURCE_COMMIT,
             source_clean=True,
             source_capture=_source_capture(),
-            build_captures=[
-                _build_capture("A", "1"),
-                _build_capture("B", "2"),
+                build_captures=[
+                    _build_capture(tmp_path, first, "quantos-arm64-evidence-builder-a", "1"),
+                    _build_capture(tmp_path, second, "quantos-arm64-evidence-builder-b", "2"),
             ],
         )
 
@@ -638,7 +696,10 @@ def test_arm64_reproducibility_rejects_noncanonical_proxy_build_args(
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    captures = [_build_capture("A", "1"), _build_capture("B", "2")]
+    captures = [
+        _build_capture(tmp_path, first, "quantos-arm64-evidence-builder-a", "1"),
+        _build_capture(tmp_path, second, "quantos-arm64-evidence-builder-b", "2"),
+    ]
     mutate(captures[0]["argv"])  # type: ignore[operator]
 
     with pytest.raises(Arm64ConsoleEvidenceError, match="cold builds"):
@@ -688,7 +749,8 @@ def test_arm64_audit_binds_native_reports_scanner_and_zero_runtime_findings(
         "public.ecr.aws/aquasecurity/trivy@sha256:"
     )
     summary = verify_arm64_container_audit_evidence(evidence, tmp_path)
-    assert summary["runtime_image_digest"] == RUNTIME_DIGEST
+    assert summary["runtime_image_config_digest"] == RUNTIME_CONFIG_DIGEST
+    assert summary["runtime_image_manifest_digest"] == RUNTIME_MANIFEST_DIGEST
     assert summary["verdict"] == "PASS"
 
 
@@ -723,12 +785,61 @@ def test_arm64_audit_rejects_wrong_architecture_or_runtime_finding(
                 scanner_capture=scanner_capture,
                 base_report_raw=bad_base_raw,
                 runtime_report_raw=runtime_raw,
+                runtime_image_config_digest=RUNTIME_CONFIG_DIGEST,
+                runtime_image_manifest_digest=RUNTIME_MANIFEST_DIGEST,
+                runtime_image_manifest_size=RUNTIME_MANIFEST_SIZE,
         )
     failed = _audit(
         tmp_path,
         runtime_vulnerabilities=[_vulnerability("CVE-DEMO", "LOW")],
     )
     assert failed["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_descriptor",
+        "wrong_descriptor_digest",
+        "wrong_descriptor_media_type",
+        "wrong_descriptor_size",
+        "image_id_is_config",
+        "trivy_image_id_is_manifest",
+    ],
+)
+def test_arm64_audit_rejects_cross_domain_or_unverified_load(
+    tmp_path: Path, mutation: str
+) -> None:
+    evidence = _audit(tmp_path)
+    capture = evidence["scanner_capture"]
+    inspect_value = json.loads(capture["runtime_image_inspect_stdout"])
+    if mutation == "missing_descriptor":
+        del inspect_value[0]["Descriptor"]
+    elif mutation == "wrong_descriptor_digest":
+        inspect_value[0]["Descriptor"]["digest"] = RUNTIME_CONFIG_DIGEST
+    elif mutation == "wrong_descriptor_media_type":
+        inspect_value[0]["Descriptor"]["mediaType"] = (
+            "application/vnd.docker.distribution.manifest.v2+json"
+        )
+    elif mutation == "wrong_descriptor_size":
+        inspect_value[0]["Descriptor"]["size"] = 0
+    elif mutation == "image_id_is_config":
+        inspect_value[0]["Id"] = RUNTIME_CONFIG_DIGEST
+    elif mutation == "trivy_image_id_is_manifest":
+        evidence["runtime_report"]["Metadata"]["ImageID"] = RUNTIME_MANIFEST_DIGEST
+        evidence["runtime_report_raw"] = json.dumps(evidence["runtime_report"])
+        capture["runtime_scan"]["stdout_sha256"] = hashlib.sha256(
+            evidence["runtime_report_raw"].encode()
+        ).hexdigest()
+    if mutation.startswith(("missing_", "wrong_", "image_id_")):
+        raw = json.dumps(inspect_value, separators=(",", ":"))
+        capture["runtime_image_inspect_stdout"] = raw
+        capture["runtime_image_inspect"]["stdout_sha256"] = hashlib.sha256(
+            raw.encode()
+        ).hexdigest()
+
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_audit_evidence(evidence, tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -795,8 +906,9 @@ def test_arm64_smoke_requires_read_only_loopback_non_root_and_no_capability(
         source_capture=_source_capture(),
     )
     assert evidence["verdict"] == "PASS"
-    assert evidence["runtime_image_config_digest"] == RUNTIME_DIGEST
-    assert evidence["schema_version"] == 2
+    assert evidence["runtime_image_config_digest"] == RUNTIME_CONFIG_DIGEST
+    assert evidence["runtime_image_manifest_digest"] == RUNTIME_MANIFEST_DIGEST
+    assert evidence["schema_version"] == 3
     container_env = evidence["observation"]["container_inspect"]["Config"]["Env"]
     image_env = evidence["observation"]["image_inspect"]["Config"]["Env"]
     assert all(f"{name}=" in container_env for name in PROXY_ENV_NAMES)
@@ -908,6 +1020,49 @@ def test_arm64_smoke_rejects_embedded_observation_tamper(tmp_path: Path) -> None
     tampered["observation"]["health_response"]["mode"] = "LIVE"
     with pytest.raises(Arm64ConsoleEvidenceError):
         verify_arm64_console_smoke_evidence(tampered, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_descriptor",
+        "wrong_descriptor",
+        "id_is_config",
+        "trivy_config_is_manifest",
+        "swap_domains",
+    ],
+)
+def test_arm64_smoke_rejects_config_manifest_domain_confusion(
+    tmp_path: Path, mutation: str
+) -> None:
+    _write_recipe(tmp_path)
+    observation = _smoke_observation()
+    if mutation == "missing_descriptor":
+        del observation["image_inspect"]["Descriptor"]
+    elif mutation == "wrong_descriptor":
+        observation["image_inspect"]["Descriptor"]["digest"] = (
+            RUNTIME_CONFIG_DIGEST
+        )
+    elif mutation == "id_is_config":
+        observation["image_inspect"]["Id"] = RUNTIME_CONFIG_DIGEST
+    elif mutation == "trivy_config_is_manifest":
+        observation["runtime_image_config_digest"] = RUNTIME_MANIFEST_DIGEST
+    else:
+        observation["runtime_image_config_digest"], observation[
+            "runtime_image_manifest_digest"
+        ] = (
+            observation["runtime_image_manifest_digest"],
+            observation["runtime_image_config_digest"],
+        )
+
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        build_arm64_console_smoke_evidence(
+            tmp_path,
+            observation=observation,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+        )
 
 
 @pytest.mark.parametrize(

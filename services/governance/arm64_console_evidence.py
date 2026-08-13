@@ -163,7 +163,9 @@ _AUDIT_FIELDS = {
     "base_os",
     "base_vulnerability_counts",
     "runtime_image_ref",
-    "runtime_image_digest",
+    "runtime_image_config_digest",
+    "runtime_image_manifest_digest",
+    "runtime_image_manifest_size",
     "runtime_architecture",
     "runtime_os",
     "runtime_vulnerability_counts",
@@ -186,6 +188,7 @@ _SMOKE_FIELDS = {
     "platform",
     "runtime_image_ref",
     "runtime_image_config_digest",
+    "runtime_image_manifest_digest",
     "dockerfile",
     "observation_sha256",
     "observation",
@@ -224,6 +227,11 @@ _FORBIDDEN_ENV_NAME = re.compile(
 )
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _CAPTURE_FIELDS = {"argv", "exit_code", "stdout_sha256", "stderr_sha256"}
+_OCI_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+_ARM64_BUILDERS = (
+    "quantos-arm64-evidence-builder-a",
+    "quantos-arm64-evidence-builder-b",
+)
 
 
 def _option_values(argv: list[str], option: str) -> list[str] | None:
@@ -246,17 +254,56 @@ def _option_values(argv: list[str], option: str) -> list[str] | None:
     return values
 
 
-def _valid_build_capture_argv(argv: list[str], epoch: int) -> bool:
-    if argv[:3] != ["docker", "buildx", "build"] or "--no-cache" not in argv:
+def _valid_build_capture_argv(
+    argv: list[str],
+    epoch: int,
+    root: Path,
+    builder: str,
+    archive_name: str,
+) -> bool:
+    outputs = _option_values(argv, "--output")
+    if outputs is None or len(outputs) != 1:
         return False
-    return (
-        _option_values(argv, "--build-arg")
-        == [
-            f"SOURCE_DATE_EPOCH={epoch}",
-            *(f"{name}=" for name in PROXY_ENV_NAMES),
+    output_prefix = f"type=oci,name={ARM64_RUNTIME_IMAGE_REF},dest="
+    output_suffix = ",rewrite-timestamp=true"
+    output = outputs[0]
+    if not output.startswith(output_prefix) or not output.endswith(output_suffix):
+        return False
+    destination = Path(output[len(output_prefix) : -len(output_suffix)])
+    build_args = [
+        f"SOURCE_DATE_EPOCH={epoch}",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
+    expected = [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        builder,
+        "--platform",
+        ARM64_TARGET_PLATFORM,
+        "--no-cache",
+        "--provenance=false",
+    ]
+    for value in build_args:
+        expected.extend(["--build-arg", value])
+    expected.extend(
+        [
+            "--tag",
+            ARM64_RUNTIME_IMAGE_REF,
+            "--output",
+            output,
+            "-f",
+            str(root / ARM64_DOCKERFILE_REF),
+            str(root),
         ]
-        and "--env" not in argv
-        and "-e" not in argv
+    )
+    return (
+        destination.is_absolute()
+        and destination.name == archive_name
+        and argv == expected
+        and "type=docker" not in output
+        and "--load" not in argv
     )
 
 
@@ -389,6 +436,32 @@ def _object(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise Arm64ConsoleEvidenceError(f"{label} must be an object")
     return dict(value)
+
+
+def _docker29_manifest_identity(
+    value: object,
+    label: str,
+    *,
+    expected_digest: str,
+    expected_size: int,
+) -> dict[str, Any]:
+    image = _object(value, label)
+    descriptor = _object(image.get("Descriptor"), f"{label} Descriptor")
+    if (
+        _DIGEST.fullmatch(expected_digest) is None
+        or type(expected_size) is not int
+        or expected_size <= 0
+        or image.get("Id") != expected_digest
+        or descriptor.get("digest") != expected_digest
+        or descriptor.get("mediaType") != _OCI_MANIFEST_MEDIA_TYPE
+        or descriptor.get("size") != expected_size
+        or type(descriptor.get("size")) is not int
+        or descriptor["size"] <= 0
+    ):
+        raise Arm64ConsoleEvidenceError(
+            f"{label} Docker 29 manifest descriptor identity is invalid"
+        )
+    return image
 
 
 def _file_binding(root: Path, relative: str) -> dict[str, Any]:
@@ -675,8 +748,19 @@ def build_arm64_container_reproducibility_evidence(
     ]
     if (
         any(
-            not _valid_build_capture_argv(value["argv"], recipe["source_date_epoch"])
-            for value in captures
+            not _valid_build_capture_argv(
+                value["argv"],
+                recipe["source_date_epoch"],
+                root,
+                builder,
+                archive.name,
+            )
+            for value, builder, archive in zip(
+                captures,
+                _ARM64_BUILDERS,
+                (first_path, second_path),
+                strict=True,
+            )
         )
         or captures[0]["argv"] == captures[1]["argv"]
     ):
@@ -815,8 +899,19 @@ def verify_arm64_container_reproducibility_evidence(
     recipe = _recipe(root)
     if (
         any(
-            not _valid_build_capture_argv(value["argv"], recipe["source_date_epoch"])
-            for value in captures
+            not _valid_build_capture_argv(
+                value["argv"],
+                recipe["source_date_epoch"],
+                root,
+                builder,
+                str(_object(record, "ARM64 build record").get("archive_name")),
+            )
+            for value, builder, record in zip(
+                captures,
+                _ARM64_BUILDERS,
+                document.get("builds", []),
+                strict=True,
+            )
         )
         or captures[0]["argv"] == captures[1]["argv"]
     ):
@@ -996,6 +1091,9 @@ def build_arm64_container_audit_evidence(
     scanner_capture: Mapping[str, Any],
     base_report_raw: str,
     runtime_report_raw: str,
+    runtime_image_config_digest: str,
+    runtime_image_manifest_digest: str,
+    runtime_image_manifest_size: int,
 ) -> dict[str, Any]:
     """Bind native ARM64 Trivy reports to the additive console recipe."""
     _timestamp(observed_at, "observed_at")
@@ -1023,6 +1121,9 @@ def build_arm64_container_audit_evidence(
         "runtime_image_save",
         "base_archive_sha256",
         "runtime_archive_sha256",
+        "runtime_image_inspect_stdout",
+        "runtime_image_load",
+        "loaded_oci_archive_sha256",
     }
     if set(raw_scanner_capture) != required_capture:
         raise Arm64ConsoleEvidenceError("scanner capture shape is invalid")
@@ -1042,6 +1143,7 @@ def build_arm64_container_audit_evidence(
             "runtime_image_inspect",
             "base_image_save",
             "runtime_image_save",
+            "runtime_image_load",
         )
     }
     scanner_names = {
@@ -1089,6 +1191,9 @@ def build_arm64_container_audit_evidence(
         != ["docker", "image", "inspect"]
         or captures["runtime_image_inspect"]["argv"]
         != ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF]
+        or captures["runtime_image_load"]["argv"][:5]
+        != ["docker", "load", "--platform", ARM64_TARGET_PLATFORM, "--input"]
+        or len(captures["runtime_image_load"]["argv"]) != 6
         or captures["base_image_save"]["argv"][:4]
         != ["docker", "image", "save", "--output"]
         or captures["runtime_image_save"]["argv"][:4]
@@ -1118,6 +1223,9 @@ def build_arm64_container_audit_evidence(
         != _sha256_bytes(base_report_raw.encode("utf-8"))
         or captures["runtime_scan"]["stdout_sha256"]
         != _sha256_bytes(runtime_report_raw.encode("utf-8"))
+        or _HEX_DIGEST.fullmatch(
+            str(raw_scanner_capture.get("loaded_oci_archive_sha256"))
+        ) is None
     ):
         raise Arm64ConsoleEvidenceError("scanner capture identity or argv is invalid")
     try:
@@ -1162,6 +1270,31 @@ def build_arm64_container_audit_evidence(
     ):
         raise Arm64ConsoleEvidenceError("runtime Trivy archive report is invalid")
     runtime_digest = runtime_metadata["ImageID"]
+    if runtime_digest != runtime_image_config_digest:
+        raise Arm64ConsoleEvidenceError(
+            "runtime Trivy ImageID does not match the OCI config digest"
+        )
+    try:
+        runtime_image_inspect = load_json_without_duplicate_keys(
+            raw_scanner_capture.get("runtime_image_inspect_stdout")
+        )
+    except (TypeError, ValueError) as exc:
+        raise Arm64ConsoleEvidenceError("runtime image inspect is invalid") from exc
+    if (
+        not isinstance(runtime_image_inspect, list)
+        or len(runtime_image_inspect) != 1
+    ):
+        raise Arm64ConsoleEvidenceError("runtime image inspect shape is invalid")
+    _docker29_manifest_identity(
+        runtime_image_inspect[0],
+        "runtime image inspect",
+        expected_digest=runtime_image_manifest_digest,
+        expected_size=runtime_image_manifest_size,
+    )
+    if captures["runtime_image_inspect"]["stdout_sha256"] != _sha256_bytes(
+        str(raw_scanner_capture["runtime_image_inspect_stdout"]).encode("utf-8")
+    ):
+        raise Arm64ConsoleEvidenceError("runtime image inspect receipt is inconsistent")
     base_os = dict(base_metadata["OS"])
     runtime_os = dict(runtime_metadata["OS"])
     if base_os != runtime_os:
@@ -1205,7 +1338,7 @@ def build_arm64_container_audit_evidence(
         and runtime_counts["total"] == 0
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": "PASS" if passed else "FAIL",
         "mode": ARM64_AUDIT_MODE,
         "advisory_source": "AQUASEC_TRIVY_DB",
@@ -1231,7 +1364,9 @@ def build_arm64_container_audit_evidence(
         "base_os": base_os,
         "base_vulnerability_counts": base_counts,
         "runtime_image_ref": ARM64_RUNTIME_IMAGE_REF,
-        "runtime_image_digest": runtime_digest,
+        "runtime_image_config_digest": runtime_digest,
+        "runtime_image_manifest_digest": runtime_image_manifest_digest,
+        "runtime_image_manifest_size": runtime_image_manifest_size,
         "runtime_architecture": "arm64",
         "runtime_os": runtime_os,
         "runtime_vulnerability_counts": runtime_counts,
@@ -1258,7 +1393,7 @@ def verify_arm64_container_audit_evidence(
     if not isinstance(document, Mapping) or set(document) != _AUDIT_FIELDS:
         raise Arm64ConsoleEvidenceError("ARM64 container audit shape is invalid")
     if (
-        document.get("schema_version") != 1
+        document.get("schema_version") != 2
         or document.get("mode") != ARM64_AUDIT_MODE
         or document.get("advisory_source") != "AQUASEC_TRIVY_DB"
         or document.get("network_query_executed") is not True
@@ -1295,6 +1430,9 @@ def verify_arm64_container_audit_evidence(
         scanner_capture=_object(document.get("scanner_capture"), "scanner capture"),
         base_report_raw=document.get("base_report_raw"),
         runtime_report_raw=document.get("runtime_report_raw"),
+        runtime_image_config_digest=document.get("runtime_image_config_digest"),
+        runtime_image_manifest_digest=document.get("runtime_image_manifest_digest"),
+        runtime_image_manifest_size=document.get("runtime_image_manifest_size"),
     )
     if expected_source_commit is not None and expected["source"]["commit"] != expected_source_commit:
         raise Arm64ConsoleEvidenceError("source evidence is not bound to current anchor")
@@ -1303,7 +1441,8 @@ def verify_arm64_container_audit_evidence(
     return {
         "base_vulnerability_count": expected["base_vulnerability_counts"]["total"],
         "observed_at": expected["observed_at"],
-        "runtime_image_digest": expected["runtime_image_digest"],
+        "runtime_image_config_digest": expected["runtime_image_config_digest"],
+        "runtime_image_manifest_digest": expected["runtime_image_manifest_digest"],
         "runtime_vulnerability_count": expected["runtime_vulnerability_counts"]["total"],
         "scanner_version": expected["scanner_version"],
         "verdict": expected["verdict"],
@@ -1317,6 +1456,8 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         "observed_at",
         "container_inspect",
         "image_inspect",
+        "runtime_image_config_digest",
+        "runtime_image_manifest_digest",
         "health_request",
         "health_response",
         "capture",
@@ -1367,7 +1508,10 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         or "aarch64" not in raw_capture["host_uname"]
     ):
         raise Arm64ConsoleEvidenceError("target-host capture provenance is invalid")
-    digest = image.get("Id")
+    config_digest = observation.get("runtime_image_config_digest")
+    manifest_digest = observation.get("runtime_image_manifest_digest")
+    descriptor = _object(image.get("Descriptor"), "image inspect Descriptor")
+    descriptor_size = descriptor.get("size")
     host_bindings = host.get("PortBindings")
     network_ports = network.get("Ports")
     no_published_ports = host_bindings in (None, {}) and network_ports in (
@@ -1428,13 +1572,21 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         set(temporary_value.split(",")) if isinstance(temporary_value, str) else set()
     )
     if (
-        observation.get("schema_version") != 2
-        or not isinstance(digest, str)
-        or _DIGEST.fullmatch(digest) is None
+        observation.get("schema_version") != 3
+        or not isinstance(config_digest, str)
+        or _DIGEST.fullmatch(config_digest) is None
+        or not isinstance(manifest_digest, str)
+        or _DIGEST.fullmatch(manifest_digest) is None
+        or config_digest == manifest_digest
+        or image.get("Id") != manifest_digest
+        or descriptor.get("digest") != manifest_digest
+        or descriptor.get("mediaType") != _OCI_MANIFEST_MEDIA_TYPE
+        or type(descriptor_size) is not int
+        or descriptor_size <= 0
         or image.get("Architecture") != "arm64"
         or image.get("Os") != "linux"
         or ARM64_RUNTIME_IMAGE_REF not in image.get("RepoTags", [])
-        or container.get("Image") != digest
+        or container.get("Image") != manifest_digest
         or config.get("Image") != ARM64_RUNTIME_IMAGE_REF
         or config.get("User") != "65532:65532"
         or image_config.get("User") != "65532:65532"
@@ -1470,6 +1622,18 @@ def _validated_smoke_observation(value: Mapping[str, Any]) -> dict[str, Any]:
         }
     ):
         raise Arm64ConsoleEvidenceError("ARM64 smoke observation is unsafe or invalid")
+    container_descriptor = container.get("ImageManifestDescriptor")
+    if container_descriptor is not None:
+        value = _object(container_descriptor, "container image manifest descriptor")
+        if (
+            value.get("digest") != manifest_digest
+            or value.get("mediaType") != _OCI_MANIFEST_MEDIA_TYPE
+            or type(value.get("size")) is not int
+            or value["size"] <= 0
+        ):
+            raise Arm64ConsoleEvidenceError(
+                "container image manifest descriptor is inconsistent"
+            )
     _canonical_bytes(observation)
     observation["observed_at"] = observed_at
     observation["capture"]["source_commit"] = capture_commit
@@ -1492,13 +1656,14 @@ def build_arm64_console_smoke_evidence(
     if validated["capture"]["source_commit"] != source["commit"]:
         raise Arm64ConsoleEvidenceError("smoke capture source does not match evidence source")
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "PASS",
         "mode": ARM64_SMOKE_MODE,
         "observed_at": validated["observed_at"],
         "platform": ARM64_TARGET_PLATFORM,
         "runtime_image_ref": ARM64_RUNTIME_IMAGE_REF,
-        "runtime_image_config_digest": validated["image_inspect"]["Id"],
+        "runtime_image_config_digest": validated["runtime_image_config_digest"],
+        "runtime_image_manifest_digest": validated["runtime_image_manifest_digest"],
         "dockerfile": recipe["dockerfile"],
         "observation_sha256": _sha256_bytes(_canonical_bytes(validated)),
         "observation": validated,
@@ -1514,7 +1679,7 @@ def verify_arm64_console_smoke_evidence(
     if not isinstance(document, Mapping) or set(document) != _SMOKE_FIELDS:
         raise Arm64ConsoleEvidenceError("ARM64 console smoke shape is invalid")
     if (
-        document.get("schema_version") != 2
+        document.get("schema_version") != 3
         or document.get("verdict") != "PASS"
         or document.get("mode") != ARM64_SMOKE_MODE
         or document.get("platform") != ARM64_TARGET_PLATFORM
@@ -1542,7 +1707,9 @@ def verify_arm64_console_smoke_evidence(
     if (
         document.get("observed_at") != observation["observed_at"]
         or document.get("runtime_image_config_digest")
-        != observation["image_inspect"]["Id"]
+        != observation["runtime_image_config_digest"]
+        or document.get("runtime_image_manifest_digest")
+        != observation["runtime_image_manifest_digest"]
         or document.get("observation_sha256")
         != _sha256_bytes(_canonical_bytes(observation))
         or observation["capture"]["source_commit"] != source["commit"]
@@ -1550,7 +1717,10 @@ def verify_arm64_console_smoke_evidence(
         raise Arm64ConsoleEvidenceError("ARM64 smoke evidence is inconsistent")
     return {
         "observed_at": observation["observed_at"],
-        "runtime_image_config_digest": observation["image_inspect"]["Id"],
+        "runtime_image_config_digest": observation["runtime_image_config_digest"],
+        "runtime_image_manifest_digest": observation[
+            "runtime_image_manifest_digest"
+        ],
         "verdict": "PASS",
     }
 
