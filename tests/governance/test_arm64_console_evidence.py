@@ -485,7 +485,7 @@ def _smoke_observation() -> dict[str, object]:
         "quantos-arm64-console-smoke", "--network", "none", "--read-only",
         "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt",
         "no-new-privileges:true", "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=32m",
+        "/tmp:rw,noexec,nosuid,size=33554432",
         *[
             item
             for setting in (
@@ -1103,6 +1103,25 @@ def test_arm64_smoke_fails_closed_on_unsafe_observation(
         target = target[key]  # type: ignore[index]
     target[path[-1]] = value  # type: ignore[index]
     with pytest.raises(Arm64ConsoleEvidenceError):
+        build_arm64_console_smoke_evidence(
+            tmp_path,
+            observation=observation,
+            source_commit=SOURCE_COMMIT,
+            source_clean=True,
+            source_capture=_source_capture(),
+        )
+
+
+def test_arm64_smoke_rejects_noncanonical_tmpfs_size_observation(
+    tmp_path: Path,
+) -> None:
+    _write_recipe(tmp_path)
+    observation = _smoke_observation()
+    observation["container_inspect"]["HostConfig"]["Tmpfs"] = {
+        "/tmp": "rw,noexec,nosuid,size=32m"
+    }
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="unsafe or invalid"):
         build_arm64_console_smoke_evidence(
             tmp_path,
             observation=observation,

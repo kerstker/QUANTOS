@@ -336,7 +336,7 @@ def _expected_smoke_run_argv() -> list[str]:
         "quantos-arm64-console-smoke", "--network", "none", "--read-only",
         "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt",
         "no-new-privileges:true", "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=32m",
+        "/tmp:rw,noexec,nosuid,size=33554432",
     ]
     for name, setting in _SAFETY_ENVIRONMENT.items():
         argv.extend(["--env", f"{name}={setting}"])

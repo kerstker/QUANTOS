@@ -258,7 +258,7 @@ def _smoke_run_argv() -> list[str]:
         "docker", "run", "--rm", "--detach", "--name", SMOKE_CONTAINER,
         "--network", "none", "--read-only", "--user", "65532:65532",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=33554432",
     ]
     for setting in _SAFETY_ENV:
         argv.extend(["--env", setting])

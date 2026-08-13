@@ -264,6 +264,9 @@ def test_smoke_run_clears_proxy_after_exact_safety_environment() -> None:
     argv = _smoke_run_argv()
 
     assert argv[:3] == ["docker", "run", "--rm"]
+    assert argv[argv.index("--tmpfs") + 1] == (
+        "/tmp:rw,noexec,nosuid,size=33554432"
+    )
     assert _option_values(argv, "--env") == [
         "LIVE_TRADING_ENABLED=false",
         "REAL_BROKER_ENABLED=false",
