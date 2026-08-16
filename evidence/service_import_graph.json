@@ -171,12 +171,12 @@
     {
       "references": [
         {
-          "line": 15,
+          "line": 16,
           "module": "services.alpha.factor_set",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 560,
+          "line": 564,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -186,12 +186,12 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 271,
+          "line": 272,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 343,
+          "line": 344,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -202,12 +202,12 @@
     {
       "references": [
         {
-          "line": 15,
+          "line": 17,
           "module": "services.data.binance_api_coverage",
           "path": "services/console/api/data_catalog.py"
         },
         {
-          "line": 19,
+          "line": 21,
           "module": "services.data.binance_stream_coverage",
           "path": "services/console/api/data_catalog.py"
         },
@@ -217,17 +217,17 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 9,
+          "line": 10,
           "module": "services.data.catalog",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.data.persistent_store",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.data.versioning",
           "path": "services/console/data_console.py"
         }
@@ -248,7 +248,7 @@
           "path": "services/console/api/artifact_paper_views.py"
         },
         {
-          "line": 33,
+          "line": 40,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/mexc_views.py"
         }
@@ -273,6 +273,16 @@
           "line": 14,
           "module": "services.governance.top_tier_assessment",
           "path": "services/console/api/architecture_views.py"
+        },
+        {
+          "line": 41,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/mexc_views.py"
+        },
+        {
+          "line": 10,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/state_artifact.py"
         }
       ],
       "source": "console",
@@ -281,7 +291,7 @@
     {
       "references": [
         {
-          "line": 32,
+          "line": 33,
           "module": "services.lifecycle",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -302,7 +312,7 @@
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 31,
+          "line": 28,
           "module": "services.monitoring.event_projection",
           "path": "services/console/api/system_views.py"
         },
@@ -334,57 +344,57 @@
     {
       "references": [
         {
-          "line": 12,
+          "line": 17,
           "module": "services.research.alpha_family_catalog",
           "path": "services/console/api/alpha_family_views.py"
         },
         {
-          "line": 13,
+          "line": 18,
           "module": "services.research.alpha_family_registry",
           "path": "services/console/api/alpha_family_views.py"
         },
         {
-          "line": 20,
+          "line": 21,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 241,
+          "line": 245,
           "module": "services.research.alpha_expression",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 242,
+          "line": 246,
           "module": "services.research.dsl_checker",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 243,
+          "line": 247,
           "module": "services.research.complexity",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 244,
+          "line": 248,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 291,
+          "line": 295,
           "module": "services.research.alpha_expression",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 292,
+          "line": 296,
           "module": "services.research.dsl_checker",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 293,
+          "line": 297,
           "module": "services.research.complexity",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 294,
+          "line": 298,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -414,12 +424,12 @@
           "path": "services/console/api/hourly_alpha_views.py"
         },
         {
-          "line": 18,
+          "line": 19,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/main.py"
         },
         {
-          "line": 19,
+          "line": 20,
           "module": "services.research.paper_trading.domain.pnl",
           "path": "services/console/api/main.py"
         },
@@ -434,28 +444,23 @@
           "path": "services/console/api/primary_views.py"
         },
         {
-          "line": 151,
+          "line": 152,
           "module": "services.research.experiment_registry.store",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 162,
+          "line": 163,
           "module": "services.research.paper_trading.store",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 27,
+          "line": 42,
           "module": "services.research.run_registry.store",
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 28,
+          "line": 43,
           "module": "services.research.run_registry.registry",
-          "path": "services/console/api/research_run_views.py"
-        },
-        {
-          "line": 29,
-          "module": "services.research.run_registry.indexer",
           "path": "services/console/api/research_run_views.py"
         }
       ],
@@ -465,9 +470,14 @@
     {
       "references": [
         {
-          "line": 659,
+          "line": 662,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/main.py"
+        },
+        {
+          "line": 630,
+          "module": "services.risk.pre_trade.kill_switch_store",
+          "path": "services/console/api/mexc_views.py"
         },
         {
           "line": 13,
@@ -491,7 +501,7 @@
     {
       "references": [
         {
-          "line": 93,
+          "line": 94,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/main.py"
         },
@@ -1335,7 +1345,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "48597d7bc74a2e6bd8defa7d0f5a45f80f69bbc1e6e2c88d2fecbedcf6b8d0d4",
+  "graph_sha256": "dd474f8d9da164e6ecf63af92c94b6cf450cd6982836cb6e3598947430eb1f9d",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1373,7 +1383,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 472,
+  "source_file_count": 474,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
