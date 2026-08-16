@@ -3,12 +3,12 @@
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "47a93ab2becc188e7b808888c087c1b7b2650f8c",
+  "commit": "7943f9eff7ca578b077ade75f2bbdec86470c35e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1786549864963,
+  "generated_at_ms": 1786916842841,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "52f2b83be278862446eed24359c83c9e4a1df83d872f5335f4bf8cff35876cf3",
+  "input_hash": "17bb08743ef4474647b3391495b1f567131930509dc1f0ed5fa6b611f2615933",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": false,
@@ -43,13 +43,13 @@
     "tests/live": {
       "exists": true,
       "file_count": 68,
-      "files_sha256": "d3b79c30d386f74e941dc571e5c74134b41614a4ea55992074305849df8b13ec",
+      "files_sha256": "e50032db24b405f7fa21a4c7cb9fb76c06f8773da39ae1d4b6485598128a4e9e",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
-      "file_count": 164,
-      "files_sha256": "7e7bebef5892c02355f541c644e068f9d2f284314df613ef22367ad3bdab44f8",
+      "file_count": 170,
+      "files_sha256": "41c1fa616d2340cf71134a0dcc4fc0c97825ce4b5af31baa3256ae57dd826499",
       "kind": "python_directory"
     }
   },
@@ -87,10 +87,10 @@
   },
   "status": "READY_FOR_SHADOW",
   "validation": {
-    "current": false,
-    "head_commit": "47a93ab2becc188e7b808888c087c1b7b2650f8c",
-    "overall_status": "FAIL",
-    "reported_commit": "b2da7c52ecf52b4929ef5fb23089fc62591e3dd4",
+    "current": true,
+    "head_commit": "7943f9eff7ca578b077ade75f2bbdec86470c35e",
+    "overall_status": "PASS",
+    "reported_commit": "7943f9eff7ca578b077ade75f2bbdec86470c35e",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"

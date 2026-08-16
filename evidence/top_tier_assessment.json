@@ -1082,6 +1082,13 @@
         "config/templates/live_mandate_binance_mainnet.json.template",
         "config/top_tier_requirements.json",
         "deploy/console.Dockerfile",
+        "deploy/console.arm64.Dockerfile",
+        "deploy/systemd/README.md",
+        "deploy/systemd/quantos-binance-realtime-stream.service",
+        "deploy/systemd/quantos-l2-watchdog.service",
+        "deploy/systemd/quantos-l2-watchdog.timer",
+        "deploy/systemd/quantos-l2@.service",
+        "deploy/systemd/quantos-l2@.timer",
         "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md",
         "docs/engineering/specs/2026-07-31-cross-host-container-reproducibility.md",
         "docs/engineering/specs/2026-07-31-identity-access-review-attestation.md",
@@ -1209,6 +1216,7 @@
         "tests/execution/test_impact_ownership.py",
         "tests/execution/test_lot_book.py",
         "tests/execution/test_realtime_engineering_paper_store.py",
+        "tests/governance/test_arm64_container_boundary.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_external_seal.py",
@@ -1238,6 +1246,7 @@
         "tests/governance/test_strong_identity.py",
         "tests/governance/test_strong_identity_evidence.py",
         "tests/governance/test_supply_chain_evidence.py",
+        "tests/governance/test_systemd_l2_boundary.py",
         "tests/governance/test_top_tier_assessment.py",
         "tests/intelligence/test_external_provider_runtime.py",
         "tests/live/test_kill_switch_reset_cli.py",
@@ -1319,6 +1328,7 @@
         "tools/realtime_alpha_discovery.py",
         "tools/realtime_alpha_execution_paper.py",
         "tools/realtime_alpha_forward_shadow.py",
+        "tools/render_systemd_l2_units.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
         "tools/testnet_execution_service.py",
@@ -1579,9 +1589,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1786545464622,
-    "run_id": "66e2c22e49c4afd04ebe2b8a60e5e5f725d2267a935edca84ba46ac99d0c846a",
-    "source_commit": "b2da7c52ecf52b4929ef5fb23089fc62591e3dd4"
+    "generated_at": 1786915724545,
+    "run_id": "3ce6c1fed950e5829873bd9409451e4a6af54e6858dbbd09dcc4ad4b44f427a1",
+    "source_commit": "7943f9eff7ca578b077ade75f2bbdec86470c35e"
   },
   "verdict": "NOT_TOP_TIER"
 }

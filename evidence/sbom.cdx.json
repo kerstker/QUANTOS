@@ -8642,11 +8642,11 @@
       "version": "2.7.0"
     },
     {
-      "bom-ref": "npm:nanoid@3.3.17:node_modules/nanoid",
+      "bom-ref": "npm:nanoid@3.3.18:node_modules/nanoid",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "c502dfd00dc738c9601ead27db8eff2d1b80398981edd5c9fc3bc0c46bec4818a3e395ed052990c9cbbe17c3836c7c27b3f5f21596a0c8bd7e27439f7f0d44d2"
+          "content": "0d38383096c631691f8ba55915d36ddbf71a31b432e0ebbe3a9fe1250bc611672755fa00d5003ec7344a033c3d8c3ebe19538e798aff98872e0d276e83a17afb"
         }
       ],
       "name": "nanoid",
@@ -8660,10 +8660,10 @@
           "value": "package-lock.json"
         }
       ],
-      "purl": "pkg:npm/nanoid@3.3.17",
+      "purl": "pkg:npm/nanoid@3.3.18",
       "scope": "optional",
       "type": "library",
-      "version": "3.3.17"
+      "version": "3.3.18"
     },
     {
       "bom-ref": "npm:natural-compare@1.4.0:node_modules/natural-compare",

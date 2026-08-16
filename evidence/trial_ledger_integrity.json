@@ -1,6 +1,8 @@
 {
-  "block_reasons": [],
-  "commit": "47a93ab2becc188e7b808888c087c1b7b2650f8c",
+  "block_reasons": [
+    "LEDGER_ABSENT"
+  ],
+  "commit": "7943f9eff7ca578b077ade75f2bbdec86470c35e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -14,15 +16,15 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1786549864963,
+  "generated_at_ms": 1786916842841,
   "generator_sha256": "ed05a3e0000aa3ef05f2807acfac3344d3af4e5381447d5893b1e12c923e8310",
-  "input_hash": "749961d1dcba2f4bc834118cdf28babf8be95658f89d75e7393b344578d7272d",
+  "input_hash": "967d2a1310787a2eecf42dac00ec9d9cff5a70d4889c5beffc9a46384d2b7e71",
   "inputs": {
     "data/cache/experiment_registry.db": {
-      "exists": true,
+      "exists": false,
       "kind": "file",
-      "sha256": "35870e2e0a884d6925ff807aec3d424d3d545da25a288cadf89a0544ff324d79",
-      "size_bytes": 3688673280
+      "sha256": null,
+      "size_bytes": null
     },
     "services/research/experiment_registry/store.py": {
       "exists": true,
@@ -39,62 +41,58 @@
   },
   "ledger": {
     "append_only_guards": {
-      "evaluations": "GUARDED",
-      "search_attempt_events": "GUARDED",
-      "search_candidates": "GUARDED",
-      "search_evaluations": "GUARDED",
-      "trial_oos_access": "GUARDED",
-      "trial_provenance": "GUARDED",
-      "trials": "GUARDED"
+      "evaluations": "UNKNOWN",
+      "search_attempt_events": "UNKNOWN",
+      "search_candidates": "UNKNOWN",
+      "search_evaluations": "UNKNOWN",
+      "trial_oos_access": "UNKNOWN",
+      "trial_provenance": "UNKNOWN",
+      "trials": "UNKNOWN"
     },
-    "exists": true,
+    "exists": false,
     "path": "data/cache/experiment_registry.db",
     "row_counts": {
-      "evaluations": 3714,
-      "search_attempt_events": 849,
-      "search_candidates": 24647,
-      "search_evaluations": 3713,
+      "evaluations": 0,
+      "search_attempt_events": 0,
+      "search_candidates": 0,
+      "search_evaluations": 0,
       "trial_oos_access": 0,
-      "trial_provenance": 7000,
-      "trials": 2582
+      "trial_provenance": 0,
+      "trials": 0
     },
-    "sha256": "35870e2e0a884d6925ff807aec3d424d3d545da25a288cadf89a0544ff324d79",
-    "sqlite_integrity": "ok",
-    "user_version": 4
+    "sha256": null,
+    "sqlite_integrity": null,
+    "user_version": null
   },
   "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
   "oos_access": {
     "accesses_recorded": 0,
-    "chain_head": "",
-    "chain_valid": true,
-    "reason": null,
-    "table_present": true,
+    "chain_head": null,
+    "chain_valid": false,
+    "reason": "LEDGER_ABSENT",
+    "table_present": false,
     "trials_with_access": 0
   },
   "open_gaps": [
     {
-      "detail": "P5-1/P5-2: the factory, registered-candidate batch, official research session, alpha-family discovery, and robust-grid entries now write TrialRecord provenance per registered candidate at registration time. wiring is visible in provenance_wiring and pinned by the provenance/session tests. Production rows appear as drivers are re-run through these entries. Still open: any future ad-hoc driver that bypasses them, and the entire pre-P5-1 historical trial population is permanently bare — bare_trials stays non-zero and this artifact stays PARTIAL.",
-      "id": "TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT",
+      "detail": "The authority ledger is absent in this checkout. Integrity, append-only guards, provenance, and OOS access cannot be verified.",
+      "id": "TRIAL_LEDGER_ABSENT",
       "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
-      "state": "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING"
+      "state": "BLOCKED"
     }
   ],
   "provenance": {
-    "actor_type_counts": {
-      "AUTOMATED_SEARCH": 7000
-    },
-    "attempts_recorded": 7000,
-    "bare_trials": 2409,
-    "chain_head": "db576bee2a1d1abb7bd6a68283cd93400e683a65a5e8a1939dddfb87a515d229",
-    "chain_valid": true,
-    "configs_with_provenance": 173,
-    "coverage_ratio": 0.067002,
-    "max_oos_peek_count": 0,
-    "reason": null,
-    "status_counts": {
-      "RECORDED": 7000
-    },
-    "table_present": true
+    "actor_type_counts": {},
+    "attempts_recorded": 0,
+    "bare_trials": 0,
+    "chain_head": null,
+    "chain_valid": false,
+    "configs_with_provenance": 0,
+    "coverage_ratio": 0.0,
+    "max_oos_peek_count": null,
+    "reason": "LEDGER_ABSENT",
+    "status_counts": {},
+    "table_present": false
   },
   "provenance_wiring": {
     "available": true,
@@ -175,5 +173,5 @@
     "prev_hash",
     "entry_hash"
   ],
-  "verdict": "PARTIAL"
+  "verdict": "BLOCKED"
 }
