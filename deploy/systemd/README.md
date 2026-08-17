@@ -21,6 +21,13 @@ All services run as the dedicated unprivileged `quantos` account with a strict
 filesystem boundary. The five non-secret L2 safety flags are literal properties
 of every service. No `EnvironmentFile=` is permitted because systemd environment
 files override matching `Environment=` values regardless of textual order.
+Rendered workers and the resident public stream accept only the fixed standard
+proxy variable *names* through one exact `PassEnvironment=` directive. Proxy
+values are operator runtime state: they are imported into the system manager by
+name, are not written into a unit, release, receipt, or evidence document, and
+are not attested as a network identity. An import must be repeated after a
+system-manager restart before public-data services are restarted. The watchdog
+strictly rejects missing, split, duplicated, or additional passed names.
 Backup passphrases must be provided only to the backup unit through a systemd
 credential and the file-based backup interface; they must not be placed in an
 environment variable or on a command line.

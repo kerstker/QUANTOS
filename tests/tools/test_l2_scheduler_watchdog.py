@@ -749,6 +749,10 @@ def _systemd_service_unit(module: str) -> str:
         f"Environment=QUANTOS_RELEASE_ROOT={release_root}",
         f"Environment=QUANTOS_RELEASE_COMMIT={RELEASE_COMMIT}",
         "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state",
+        (
+            "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY "
+            "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
+        ),
     ]
     if module == "l2_backup":
         service_lines.extend(
@@ -884,6 +888,18 @@ def test_systemd_collector_accepts_exact_ordinary_unit_and_uses_fixed_commands()
     assert snapshot.last_run_ms == (NOW_MS // 1_000 - 60) * 1_000
     assert snapshot.next_run_ms is None
     assert snapshot.scheduler_contract_ok is True
+    assert not {
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "FTP_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "ftp_proxy",
+        "no_proxy",
+        "all_proxy",
+    }.intersection(dict(snapshot.configured_environment))
     assert all(kwargs["shell"] is False for _command, kwargs in calls)
     assert calls[0][0][:4] == [
         "systemctl",
@@ -912,6 +928,38 @@ def test_systemd_collector_accepts_exact_resident_stream() -> None:
     assert snapshot.state == "Running"
     assert snapshot.last_result == 0
     assert snapshot.scheduler_contract_ok is True
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        "",
+        (
+            "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY "
+            "http_proxy https_proxy ftp_proxy no_proxy all_proxy AWS_SECRET_ACCESS_KEY"
+        ),
+        (
+            "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY\n"
+            "PassEnvironment=http_proxy https_proxy ftp_proxy no_proxy all_proxy"
+        ),
+    ),
+)
+def test_systemd_collector_rejects_missing_extra_or_split_proxy_name_contract(
+    replacement: str,
+) -> None:
+    exact = (
+        "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY "
+        "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
+    )
+    service = _systemd_service_unit("domain_event_ops").replace(
+        exact,
+        replacement,
+        1,
+    )
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", service_text=service)
+    )[0]
+    assert snapshot.scheduler_contract_ok is False
 
 
 @pytest.mark.parametrize(

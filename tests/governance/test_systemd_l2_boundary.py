@@ -13,6 +13,10 @@ TIMER = SYSTEMD / "quantos-l2@.timer"
 STREAM = SYSTEMD / "quantos-binance-realtime-stream.service"
 WATCHDOG_SERVICE = SYSTEMD / "quantos-l2-watchdog.service"
 WATCHDOG_TIMER = SYSTEMD / "quantos-l2-watchdog.timer"
+PROXY_PASS_ENVIRONMENT = (
+    "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY "
+    "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
+)
 
 
 def _text(path: Path) -> str:
@@ -79,6 +83,26 @@ def test_units_pin_l2_safety_and_systemd_hardening() -> None:
         assert text.count("Environment=QUANTOS_L2_DRY_RUN_ONLY=true") == 1
 
 
+def test_public_proxy_transport_is_name_only_and_exact() -> None:
+    for path in (SERVICE, STREAM):
+        text = _text(path)
+        assert text.count(PROXY_PASS_ENVIRONMENT) == 1
+        for name in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "FTP_PROXY",
+            "NO_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "ftp_proxy",
+            "no_proxy",
+            "all_proxy",
+        ):
+            assert f"Environment={name}=" not in text
+    assert "PassEnvironment=" not in _text(WATCHDOG_SERVICE)
+
+
 def test_resident_stream_is_isolated_and_restarts_without_order_authority() -> None:
     text = _text(STREAM)
     assert "binance_realtime_stream --release-commit __QUANTOS_RELEASE_SHA__" in text
@@ -141,6 +165,7 @@ def test_renderer_emits_only_requested_allowlisted_worker(tmp_path: Path) -> Non
     assert "__QUANTOS_RELEASE_SHA__" not in service + timer
     assert release in service + timer
     assert f"Environment=QUANTOS_RELEASE_COMMIT={release}" in service
+    assert service.count(PROXY_PASS_ENVIRONMENT) == 1
     assert "%i" not in service
     assert "domain_event_ops" in service
     assert "OnCalendar=*-*-* *:01/15:00" in timer
@@ -340,6 +365,12 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
     assert "systemctl start" not in corpus
     assert "WantedBy=multi-user.target" in _text(
         output / "quantos-binance-realtime-stream.service"
+    )
+    assert _text(output / "quantos-binance-realtime-stream.service").count(
+        PROXY_PASS_ENVIRONMENT
+    ) == 1
+    assert "PassEnvironment=" not in _text(
+        output / "quantos-l2-watchdog.service"
     )
     assert "WantedBy=timers.target" in _text(
         output / "quantos-l2-watchdog.timer"

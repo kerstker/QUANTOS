@@ -38,6 +38,19 @@ from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _RUNNING_RESULT = 267_009
+SYSTEMD_PROXY_ENVIRONMENT_NAMES = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "FTP_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "ftp_proxy",
+    "no_proxy",
+    "all_proxy",
+)
+_SYSTEMD_PROXY_PASS_ENVIRONMENT = " ".join(SYSTEMD_PROXY_ENVIRONMENT_NAMES)
 
 
 def _persistent_windows_environment(name: str) -> str | None:
@@ -663,6 +676,9 @@ def _unit_directives_exact(
         "Service.ReadOnlyPaths",
         "Service.ReadWritePaths",
     }
+    inherits_public_proxy_transport = module != "l2_scheduler_watchdog"
+    if inherits_public_proxy_transport:
+        required_keys.add("Service.PassEnvironment")
     optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
     if expected_mounts:
         required_keys.add("Unit.RequiresMountsFor")
@@ -701,6 +717,12 @@ def _unit_directives_exact(
         and len(directives.get("Unit.RequiresMountsFor", ())) == len(expected_mounts)
         and directives.get("Service.LoadCredential", ()) == expected_credentials
         and "Service.EnvironmentFile" not in directives
+        and directives.get("Service.PassEnvironment", ())
+        == (
+            (_SYSTEMD_PROXY_PASS_ENVIRONMENT,)
+            if inherits_public_proxy_transport
+            else ()
+        )
         and _one_directive(directives, "Service.Restart") == restart
         and _one_directive(directives, "Service.KillMode") == "control-group"
         and (

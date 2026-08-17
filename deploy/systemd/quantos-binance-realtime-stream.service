@@ -21,6 +21,9 @@ Environment=QUANTOS_L2_DRY_RUN_ONLY=true
 Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
 Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
 Environment=QUANTOS_STATE_ROOT=/srv/quantos/state
+# Public-data transport only. The operator imports values into the system
+# manager by name; no proxy value is stored in this unit or release evidence.
+PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy no_proxy all_proxy
 WorkingDirectory=/srv/quantos/state
 ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python /opt/quantos/releases/__QUANTOS_RELEASE_SHA__/tools/l2_schedule_entrypoint.py binance_realtime_stream --release-commit __QUANTOS_RELEASE_SHA__
 TimeoutStartSec=5m
