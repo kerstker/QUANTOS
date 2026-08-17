@@ -930,6 +930,37 @@ def test_systemd_collector_accepts_exact_resident_stream() -> None:
     assert snapshot.scheduler_contract_ok is True
 
 
+def test_systemd_collector_excludes_only_exact_non_scheduled_support_units() -> None:
+    base_runner = _systemd_runner("domain_event_ops")
+    support_units = (
+        "quantos-console-api.service",
+        "quantos-console-frontend.service",
+        "quantos-proxy-environment.service",
+    )
+
+    def runner(command, **kwargs):
+        result = base_runner(command, **kwargs)
+        if command[1] == "list-unit-files":
+            return _SystemdCompleted(
+                result.stdout
+                + "".join(f"{unit} enabled\n" for unit in support_units)
+            )
+        if command[1] == "list-units":
+            return _SystemdCompleted(
+                "".join(
+                    f"{unit} loaded active running approved support unit\n"
+                    for unit in support_units
+                )
+            )
+        return result
+
+    snapshots = collect_systemd_units(runner=runner)
+
+    assert [snapshot.name for snapshot in snapshots] == [
+        "QUANTOS_domain_event_ops"
+    ]
+
+
 @pytest.mark.parametrize(
     "replacement",
     (

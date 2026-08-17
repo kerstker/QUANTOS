@@ -51,6 +51,16 @@ SYSTEMD_PROXY_ENVIRONMENT_NAMES = (
     "all_proxy",
 )
 _SYSTEMD_PROXY_PASS_ENVIRONMENT = " ".join(SYSTEMD_PROXY_ENVIRONMENT_NAMES)
+# These services are outside the scheduled-worker namespace.  Recognizing an
+# exact name here only keeps the scheduler collector scoped to scheduler
+# targets; it does not make a health or safety claim about the support service.
+SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS = frozenset(
+    {
+        "quantos-console-api.service",
+        "quantos-console-frontend.service",
+        "quantos-proxy-environment.service",
+    }
+)
 
 
 def _persistent_windows_environment(name: str) -> str | None:
@@ -1049,8 +1059,16 @@ def collect_systemd_units(
     if list_result.returncode != 0:
         raise SchedulerInspectionError("systemd unit-file query failed")
     listed: dict[str, str] = {}
+    support_units: set[str] = set()
     for line in list_result.stdout.splitlines():
         fields = line.split()
+        if len(fields) >= 2 and fields[0] in SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS:
+            if fields[0] in support_units:
+                raise SchedulerInspectionError(
+                    "systemd returned duplicate support-unit metadata"
+                )
+            support_units.add(fields[0])
+            continue
         if len(fields) < 2 or _SYSTEMD_UNIT.fullmatch(fields[0]) is None:
             if len(fields) >= 2 and fields[1] not in {"disabled", "static", "masked"}:
                 raise SchedulerInspectionError("systemd has an unexpected enabled QUANTOS unit")
@@ -1073,6 +1091,8 @@ def collect_systemd_units(
         if len(fields) < 4:
             raise SchedulerInspectionError("systemd returned invalid runtime metadata")
         unit, _load, active, _sub = fields[:4]
+        if unit in SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS:
+            continue
         if _SYSTEMD_UNIT.fullmatch(unit) is None:
             if active != "inactive":
                 raise SchedulerInspectionError(

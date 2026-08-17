@@ -328,6 +328,32 @@ def test_runtime_contract_binds_version_schema_instance_and_l2_boundary():
     }
 
 
+def test_runtime_contract_uses_pinned_release_commit_when_build_sha_is_absent(
+    monkeypatch,
+):
+    release_commit = "c1b21f9f0b3d586ab8aa12fa8f1e00a73bc9c118"
+    monkeypatch.delenv("QUANTOS_BUILD_SHA", raising=False)
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
+
+    body = client.get("/api/v1/console/runtime-contract").json()
+
+    assert body["build_sha"] == release_commit
+    assert body["build_sha_known"] is True
+
+
+def test_runtime_contract_does_not_hide_an_explicit_dirty_build(monkeypatch):
+    monkeypatch.setenv("QUANTOS_BUILD_SHA", "dirty")
+    monkeypatch.setenv(
+        "QUANTOS_RELEASE_COMMIT",
+        "c1b21f9f0b3d586ab8aa12fa8f1e00a73bc9c118",
+    )
+
+    body = client.get("/api/v1/console/runtime-contract").json()
+
+    assert body["build_sha"] == "dirty"
+    assert body["build_sha_known"] is False
+
+
 def test_dry_run_surfaces_paper_order_preview_without_live_capability():
     body = client.get("/api/v1/console/dry-run").json()
     preview = body["paper_order_preview"]

@@ -412,6 +412,8 @@ def _runtime_contract_payload() -> Dict:
     we report that fact instead of manufacturing a release identity.
     """
     build_sha = os.getenv("QUANTOS_BUILD_SHA", "").strip()
+    if not build_sha:
+        build_sha = os.getenv("QUANTOS_RELEASE_COMMIT", "").strip()
     build_sha_known = bool(build_sha and build_sha.lower() not in {"unknown", "dirty"})
     instance_id = os.getenv("QUANTOS_CONSOLE_INSTANCE_ID", "").strip()
     if not instance_id:
