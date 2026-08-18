@@ -10,6 +10,7 @@ from tools.local_frontend_server import (
     SpaRequestHandler,
     _cache_control_for_path,
     _client_is_allowed,
+    _client_request_is_allowed,
     _frontend_dist_root,
     _has_real_local_api_contract,
     _is_event_stream_response,
@@ -64,6 +65,19 @@ def test_client_allowlist_keeps_loopback_and_rejects_other_subnets():
     assert _client_is_allowed("192.168.5.5", network) is True
     assert _client_is_allowed("192.168.6.5", network) is False
     assert _client_is_allowed("not-an-ip", network) is False
+
+
+def test_lan_clients_are_monitoring_only_and_cannot_reach_runner_or_post():
+    assert _client_request_is_allowed("GET", "/workbench/market", "192.168.5.5") is True
+    assert _client_request_is_allowed("GET", "/api/v1/console/dry-run", "192.168.5.5") is True
+    assert _client_request_is_allowed("HEAD", "/assets/app.js", "192.168.5.5") is True
+    assert _client_request_is_allowed("GET", "/__runner__/health", "192.168.5.5") is False
+    assert _client_request_is_allowed("POST", "/api/v1/console/research", "192.168.5.5") is False
+
+
+def test_loopback_keeps_existing_runner_and_post_access():
+    assert _client_request_is_allowed("GET", "/__runner__/health", "127.0.0.1") is True
+    assert _client_request_is_allowed("POST", "/__runner__/runs", "127.0.0.1") is True
 
 
 class _FiniteEventStream:

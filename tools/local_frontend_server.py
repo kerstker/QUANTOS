@@ -95,6 +95,20 @@ def _client_is_allowed(client_host: str, network: AllowedNetwork | None) -> bool
     return network is not None and address.version == network.version and address in network
 
 
+def _client_request_is_allowed(method: str, path: str, client_host: str) -> bool:
+    """Keep every non-loopback client on the read-only monitoring surface."""
+    try:
+        address = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    request_path = urlsplit(path).path
+    if method not in {"GET", "HEAD"}:
+        return False
+    return request_path != "/__runner__" and not request_path.startswith("/__runner__/")
+
+
 def _is_event_stream_response(response: http.client.HTTPResponse) -> bool:
     content_type = str(response.getheader("Content-Type", ""))
     return content_type.partition(";")[0].strip().lower() == "text/event-stream"
@@ -173,9 +187,14 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def _request_is_allowed(self) -> bool:
         network = getattr(self.server, "allowed_network", None)
-        if _client_is_allowed(str(self.client_address[0]), network):
+        client_host = str(self.client_address[0])
+        if _client_is_allowed(client_host, network) and _client_request_is_allowed(
+            self.command,
+            self.path,
+            client_host,
+        ):
             return True
-        self.send_error(403, "client network is not allowed")
+        self.send_error(403, "client network or request surface is not allowed")
         return False
 
     def _proxy_target(self) -> tuple[str, int, str] | None:
