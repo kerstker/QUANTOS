@@ -1,15 +1,17 @@
 """Serve the built QUANTOS research console without a Windows console host.
 
-This is a local-only L2 operational surface.  It serves the already-built
-React bundle and falls back to ``index.html`` for client-side routes.  Building
-the bundle remains an explicit IDE operation; the resident process requires no
-Node/npm/cmd shell.
+This is an L2 read-only operational surface.  It serves the already-built React
+bundle and falls back to ``index.html`` for client-side routes.  Loopback is the
+default and a LAN listener requires both a specific private interface address
+and an explicit narrow private client network.  Building the bundle remains an
+explicit IDE operation; the resident process requires no Node/npm/cmd shell.
 """
 from __future__ import annotations
 
 import argparse
 import http.client
 import http.server
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -47,6 +49,50 @@ _HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+AllowedNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def _validated_listener(
+    host: str,
+    allow_network: str | None,
+) -> tuple[str, AllowedNetwork | None]:
+    """Validate the exact bind address and optional LAN client allowlist."""
+    normalized_host = "127.0.0.1" if host == "localhost" else host
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError as exc:
+        raise ValueError("host must be a literal IP address") from exc
+    if address.is_loopback:
+        if allow_network is not None:
+            raise ValueError("allow-network is invalid for a loopback listener")
+        return str(address), None
+    if address.is_unspecified:
+        raise ValueError("LAN binding requires a specific interface address")
+    if allow_network is None:
+        raise ValueError("LAN binding requires --allow-network")
+    try:
+        network = ipaddress.ip_network(allow_network, strict=True)
+    except ValueError as exc:
+        raise ValueError("allow-network must be a canonical network") from exc
+    if network.version != address.version or not network.is_private:
+        raise ValueError("allow-network must be a private network matching the host")
+    minimum_prefix = 24 if network.version == 4 else 64
+    if network.prefixlen < minimum_prefix:
+        raise ValueError("allow-network must be /24 or narrower for IPv4, /64 or narrower for IPv6")
+    if address not in network:
+        raise ValueError("host must be inside allow-network")
+    return str(address), network
+
+
+def _client_is_allowed(client_host: str, network: AllowedNetwork | None) -> bool:
+    """Allow local health checks and, when configured, the exact private LAN."""
+    try:
+        address = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    return network is not None and address.version == network.version and address in network
 
 
 def _is_event_stream_response(response: http.client.HTTPResponse) -> bool:
@@ -92,6 +138,8 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
+        if not self._request_is_allowed():
+            return
         if self._proxy_target() is not None:
             self._proxy()
             return
@@ -103,6 +151,8 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler contract
+        if not self._request_is_allowed():
+            return
         if self._proxy_target() is not None:
             self._proxy()
             return
@@ -114,10 +164,19 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler contract
+        if not self._request_is_allowed():
+            return
         if self._proxy_target() is None:
             self.send_error(405)
             return
         self._proxy()
+
+    def _request_is_allowed(self) -> bool:
+        network = getattr(self.server, "allowed_network", None)
+        if _client_is_allowed(str(self.client_address[0]), network):
+            return True
+        self.send_error(403, "client network is not allowed")
+        return False
 
     def _proxy_target(self) -> tuple[str, int, str] | None:
         parsed = urlsplit(self.path)
@@ -195,6 +254,16 @@ class LocalThreadingServer(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        request_handler: type[http.server.BaseHTTPRequestHandler],
+        *,
+        allowed_network: AllowedNetwork | None = None,
+    ) -> None:
+        self.allowed_network = allowed_network
+        super().__init__(server_address, request_handler)
+
 
 def _has_real_local_api_contract(*, dist: Path = DIST) -> bool:
     """Reject bundles that would silently fall back to frontend mock data."""
@@ -227,15 +296,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--allow-network")
     args = parser.parse_args(argv)
-    if args.host not in {"127.0.0.1", "localhost"}:
-        parser.error("the research console may bind only to the local loopback")
+    try:
+        host, allowed_network = _validated_listener(args.host, args.allow_network)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not _has_real_local_api_contract():
         parser.error(
             "real local frontend build is unavailable; run npm run build "
             "in apps/research-console"
         )
-    with LocalThreadingServer((args.host, args.port), SpaRequestHandler) as server:
+    with LocalThreadingServer(
+        (host, args.port),
+        SpaRequestHandler,
+        allowed_network=allowed_network,
+    ) as server:
         server.serve_forever()
     return 0
 

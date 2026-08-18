@@ -9,10 +9,12 @@ from tools.local_frontend_server import (
     REQUIRED_LOCAL_API_MARKERS,
     SpaRequestHandler,
     _cache_control_for_path,
+    _client_is_allowed,
     _frontend_dist_root,
     _has_real_local_api_contract,
     _is_event_stream_response,
     _spa_target,
+    _validated_listener,
 )
 
 
@@ -28,6 +30,40 @@ def test_frontend_dist_root_defaults_and_requires_absolute_override(monkeypatch,
     monkeypatch.setenv(FRONTEND_DIST_ENV, "relative/dist")
     with pytest.raises(RuntimeError, match="absolute path"):
         _frontend_dist_root(root=root)
+
+
+def test_listener_defaults_to_loopback_and_rejects_unreviewed_lan_binding():
+    host, network = _validated_listener("127.0.0.1", None)
+    assert host == "127.0.0.1"
+    assert network is None
+
+    with pytest.raises(ValueError, match="allow-network"):
+        _validated_listener("192.168.5.68", None)
+    with pytest.raises(ValueError, match="specific interface"):
+        _validated_listener("0.0.0.0", "192.168.5.0/24")
+    with pytest.raises(ValueError, match="private"):
+        _validated_listener("8.8.8.8", "8.8.8.0/24")
+
+
+def test_listener_accepts_only_a_canonical_narrow_private_network():
+    host, network = _validated_listener("192.168.5.68", "192.168.5.0/24")
+    assert host == "192.168.5.68"
+    assert str(network) == "192.168.5.0/24"
+
+    with pytest.raises(ValueError, match="canonical"):
+        _validated_listener("192.168.5.68", "192.168.5.68/24")
+    with pytest.raises(ValueError, match="narrower"):
+        _validated_listener("192.168.5.68", "192.168.0.0/16")
+    with pytest.raises(ValueError, match="inside"):
+        _validated_listener("192.168.6.68", "192.168.5.0/24")
+
+
+def test_client_allowlist_keeps_loopback_and_rejects_other_subnets():
+    _, network = _validated_listener("192.168.5.68", "192.168.5.0/24")
+    assert _client_is_allowed("127.0.0.1", network) is True
+    assert _client_is_allowed("192.168.5.5", network) is True
+    assert _client_is_allowed("192.168.6.5", network) is False
+    assert _client_is_allowed("not-an-ip", network) is False
 
 
 class _FiniteEventStream:
