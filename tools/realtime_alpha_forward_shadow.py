@@ -31,6 +31,7 @@ from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.realtime_alpha_discovery import (
     REALTIME_FEEDBACK_SIGNAL_VERSION,
     REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    SLOW_STATE_LOOKBACK_MS,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesis,
@@ -56,7 +57,7 @@ DEFAULT_SHADOW_STORE = ROOT / "data" / "cache" / "realtime_alpha_forward_shadow.
 DEFAULT_OUTPUT = ROOT / "data" / "cache" / "realtime_alpha_forward_shadow.json"
 MAX_DISCOVERY_AGE_MS = 3 * 60 * 60_000
 MAX_FEATURE_STATUS_AGE_MS = 15 * 60_000
-RECENT_FRAME_LOOKBACK_MS = 3 * 60_000
+RECENT_FRAME_LOOKBACK_MS = SLOW_STATE_LOOKBACK_MS + 2 * 30_000
 
 # The engineering and formal shadow authorities deliberately share the
 # deterministic signal/label implementation but never share a ledger.  The
@@ -249,6 +250,7 @@ def _manifest_spec(
             economic_hypothesis=str(row["economic_hypothesis"]),
             falsification_standard=str(row["falsification_standard"]),
             signal_version=str(row["signal_version"]),
+            lookback_ms=int(row.get("lookback_ms", 0)),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise RealtimeAlphaForwardShadowError(

@@ -51,6 +51,8 @@ def _config_hash(row: dict[str, object]) -> str:
         "signal_version": str(row["signal_version"]),
         "label_policy": "post_latency_first_known_mid",
     }
+    if int(row.get("lookback_ms", 0)) > 0:
+        params["lookback_ms"] = str(row["lookback_ms"])
     if row.get("adaptive_feedback") is True:
         params.update(
             {
@@ -127,6 +129,22 @@ def test_builds_root_and_adaptive_canonical_identities() -> None:
     assert identities[0].decision_interval_ms == RealtimeAlphaPolicy().decision_interval_ms
     assert identities[0].label_horizon_ms == rows[0]["horizon_ms"]
     assert identities[0].expression == ""
+
+
+def test_builds_slow_state_identity_with_lookback_bound_into_config() -> None:
+    root = next(
+        item for item in default_realtime_hypotheses() if item.lookback_ms > 0
+    )
+    row = root.as_dict()
+    row["required_features"] = list(root.required_features)
+    rows = [row]
+
+    identities = build_realtime_candidate_identities(
+        _registrations(rows), _document(rows)
+    )
+
+    assert len(identities) == 1
+    assert row["lookback_ms"] == root.lookback_ms
 
 
 @pytest.mark.parametrize(

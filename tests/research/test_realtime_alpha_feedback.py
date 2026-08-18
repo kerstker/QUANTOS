@@ -57,6 +57,27 @@ def test_positive_uncertain_family_gets_bounded_deterministic_mutations() -> Non
     assert first.candidate_budget_remaining == 0
 
 
+def test_slow_state_adaptive_children_preserve_parent_lookback() -> None:
+    base = default_realtime_hypotheses()
+    parent_spec = next(
+        item for item in base if item.mechanism == "slow_cross_sectional_reversal"
+    )
+    runs = {
+        parent_spec.candidate_id: [
+            _run(parent_spec.candidate_id, 0.001, 1_500 + index)
+            for index in range(8)
+        ]
+    }
+
+    plan = build_feedback_plan(base, runs, existing_candidate_ids=(), max_new=2)
+
+    assert plan.proposals
+    assert all(
+        item.spec.lookback_ms == parent_spec.lookback_ms
+        for item in plan.proposals
+    )
+
+
 def test_clearly_refuted_family_is_deprioritized_without_new_trials() -> None:
     base = default_realtime_hypotheses()
     parent = "rt_flow_continuation_2m_v1"

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
+import math
 
 from services.features.binance_realtime_projection import FEATURE_IDS
 from services.research.realtime_alpha_discovery import (
     FeatureCoverage,
     REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    SLOW_STATE_LOOKBACK_MS,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     assess_data_admission,
     assess_executable_depth_capacity,
     build_forward_paper_decision,
     default_realtime_hypotheses,
+    enrich_slow_state,
     evaluate_hypothesis,
     realize_forward_paper_decision,
     signal_score,
@@ -37,20 +40,35 @@ def _coverage(*, span_days: int, end_ms: int = 100 * DAY_MS):
     }
 
 
-def test_default_manifest_is_a_fixed_24_trial_family_budget() -> None:
+def test_default_manifest_is_a_fixed_30_trial_family_budget() -> None:
     hypotheses = default_realtime_hypotheses()
 
-    assert len(hypotheses) == 24
-    assert len({item.candidate_id for item in hypotheses}) == 24
+    assert len(hypotheses) == 30
+    assert len({item.candidate_id for item in hypotheses}) == 30
     assert Counter(item.family_id for item in hypotheses) == {
         "order_flow": 6,
         "order_book": 6,
         "liquidation": 6,
-        "funding_basis": 6,
+        "funding_basis": 8,
+        "cross_sectional_state": 4,
     }
     assert all(item.economic_hypothesis.strip() for item in hypotheses)
     assert all(item.falsification_standard.strip() for item in hypotheses)
     assert all("rt_mid_price" in item.required_features for item in hypotheses)
+
+
+def test_additive_slow_budget_preserves_original_candidate_identity_shape() -> None:
+    hypotheses = default_realtime_hypotheses()
+    legacy = hypotheses[:24]
+    slow = hypotheses[24:]
+
+    assert all(item.lookback_ms == 0 for item in legacy)
+    assert all("lookback_ms" not in item.as_dict() for item in legacy)
+    assert all(item.lookback_ms == SLOW_STATE_LOOKBACK_MS for item in slow)
+    assert all(
+        item.as_dict()["lookback_ms"] == SLOW_STATE_LOOKBACK_MS
+        for item in slow
+    )
 
 
 def test_data_admission_progresses_without_weakening_maturity_gates() -> None:
@@ -217,6 +235,8 @@ def _frame(
     basis: float = 0.0,
     funding: float = 0.0,
     spread: float = 0.0,
+    trailing_return: float | None = None,
+    trailing_vol: float | None = None,
 ) -> RealtimeFrame:
     return RealtimeFrame(
         instrument_id=instrument,
@@ -229,6 +249,8 @@ def _frame(
         funding_rate=funding,
         taker_imbalance_5s=taker,
         liquidation_imbalance_5s=liquidation,
+        trailing_return_8h=trailing_return,
+        trailing_realized_vol_8h=trailing_vol,
     )
 
 
@@ -246,6 +268,84 @@ def test_signal_directions_encode_continuation_absorption_and_liquidation() -> N
     assert signal_score(by_mechanism["flow_absorption_reversal"], absorbed_flow) < 0
     assert signal_score(by_mechanism["liquidation_cascade"], long_liquidation) < 0
     assert signal_score(by_mechanism["liquidation_exhaustion"], long_liquidation) > 0
+
+
+def test_slow_state_enrichment_is_causal_and_future_invariant() -> None:
+    step_ms = 30_000
+    observations = SLOW_STATE_LOOKBACK_MS // step_ms + 1
+    history = tuple(
+        _frame(
+            "BTCUSDT",
+            index * step_ms,
+            mid=100.0 * math.exp(index * 0.0001),
+        )
+        for index in range(observations)
+    )
+
+    enriched = enrich_slow_state({"BTCUSDT": history})["BTCUSDT"]
+    assert enriched[-1].trailing_return_8h is not None
+    assert enriched[-1].trailing_return_8h > 0
+    assert enriched[-1].trailing_realized_vol_8h is not None
+
+    extreme_future = _frame(
+        "BTCUSDT",
+        history[-1].decision_time_ms + step_ms,
+        mid=1_000_000.0,
+    )
+    with_future = enrich_slow_state(
+        {"BTCUSDT": (*history, extreme_future)}
+    )["BTCUSDT"]
+    assert with_future[:-1] == enriched
+
+
+def test_slow_cross_sectional_and_filtered_funding_signal_directions() -> None:
+    by_mechanism = {
+        item.mechanism: item
+        for item in default_realtime_hypotheses()
+        if item.horizon_ms == 3_600_000
+    }
+    winner = _frame(
+        "BTCUSDT",
+        SLOW_STATE_LOOKBACK_MS,
+        trailing_return=0.12,
+        trailing_vol=0.08,
+    )
+    quiet = _frame(
+        "ETHUSDT",
+        SLOW_STATE_LOOKBACK_MS,
+        trailing_return=-0.04,
+        trailing_vol=0.02,
+    )
+    tight_aligned = _frame(
+        "SOLUSDT",
+        SLOW_STATE_LOOKBACK_MS,
+        funding=0.001,
+        basis=12.0,
+        spread=1.0,
+        depth=-0.8,
+    )
+    wide_opposed = _frame(
+        "XRPUSDT",
+        SLOW_STATE_LOOKBACK_MS,
+        funding=0.001,
+        basis=12.0,
+        spread=20.0,
+        depth=0.8,
+    )
+
+    assert signal_score(by_mechanism["slow_cross_sectional_reversal"], winner) < 0
+    assert signal_score(by_mechanism["slow_cross_sectional_low_vol"], quiet) > signal_score(
+        by_mechanism["slow_cross_sectional_low_vol"], winner
+    )
+    assert abs(
+        signal_score(
+            by_mechanism["funding_crowding_liquidity_filtered"], tight_aligned
+        )
+    ) > abs(
+        signal_score(
+            by_mechanism["funding_crowding_liquidity_filtered"], wide_opposed
+        )
+    )
 
 
 def test_sign_flip_challenger_is_exact_directional_inverse() -> None:

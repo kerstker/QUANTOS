@@ -332,6 +332,7 @@ def build_feedback_plan(
                     "cost, holdout, PBO, DSR, regime, capacity, and drawdown gates."
                 ),
                 signal_version=REALTIME_FEEDBACK_SIGNAL_VERSION,
+                lookback_ms=parent.lookback_ms,
             )
             proposals.append(
                 FeedbackProposal(
@@ -376,6 +377,7 @@ def build_feedback_plan(
                         "cost, holdout, PBO, DSR, regime, capacity, and drawdown gates."
                     ),
                     signal_version=REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+                    lookback_ms=parent.lookback_ms,
                 )
                 proposals.append(
                     FeedbackProposal(

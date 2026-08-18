@@ -10,6 +10,7 @@ from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from services.research.realtime_alpha_discovery import (
     REALTIME_FEEDBACK_SIGN_FLIP_SIGNAL_VERSION,
+    SLOW_STATE_LOOKBACK_MS,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesis,
@@ -22,12 +23,28 @@ from tools.realtime_alpha_forward_shadow import (
     FORMAL_BLINDED_SHADOW_AUTHORITY,
     FORMAL_BLINDED_SHADOW_PAPER_CLASS,
     RealtimeAlphaForwardShadowError,
+    RECENT_FRAME_LOOKBACK_MS,
     _admission_identity,
     _admitted_spec,
+    _manifest_spec,
     eligible_candidates,
     run_cycle,
 )
 from tools.realtime_alpha_formal_shadow import run_cycle as run_formal_cycle
+
+
+def test_forward_manifest_preserves_slow_state_lookback_and_load_window() -> None:
+    root = next(
+        item for item in default_realtime_hypotheses() if item.lookback_ms > 0
+    )
+    row = root.as_dict()
+    row["required_features"] = list(root.required_features)
+
+    parsed, lineage = _manifest_spec(row)
+
+    assert lineage is None
+    assert parsed == root
+    assert RECENT_FRAME_LOOKBACK_MS > SLOW_STATE_LOOKBACK_MS
 
 
 def _discovery(

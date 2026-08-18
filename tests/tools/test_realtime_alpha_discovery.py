@@ -14,7 +14,10 @@ from services.features.binance_realtime_projection import (
     FEATURE_VERSION,
 )
 from services.features.value_store import SqliteFeatureValueStore
-from services.research.realtime_alpha_discovery import RealtimeAlphaPolicy
+from services.research.realtime_alpha_discovery import (
+    RealtimeAlphaPolicy,
+    SLOW_STATE_LOOKBACK_MS,
+)
 from tools.realtime_alpha_discovery import (
     RealtimeAlphaWorkerError,
     coverage_from_store,
@@ -124,6 +127,35 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     )
     assert set(capacity) == set(coverage["rt_mid_price"].instruments)
     assert all(values == (5_000_000.0,) for values in capacity.values())
+
+
+def test_bucket_loader_materializes_causal_slow_state_with_cache_parity(
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "slow-features.db"
+    buckets = SLOW_STATE_LOOKBACK_MS // 30_000 + 2
+    end_ms = _write_store(store_path, instruments=2, buckets=buckets)
+    instruments = ("S00USDT", "S01USDT")
+
+    uncached = load_bucketed_frames(
+        store_path,
+        instruments=instruments,
+        start_ms=0,
+        end_ms=end_ms,
+    )
+    cached = load_bucketed_frames(
+        store_path,
+        instruments=instruments,
+        start_ms=0,
+        end_ms=end_ms,
+        frame_cache_path=tmp_path / "slow-decision-frames.db",
+    )
+
+    assert cached == uncached
+    for instrument in instruments:
+        assert uncached[instrument][-1].trailing_return_8h is not None
+        assert uncached[instrument][-1].trailing_realized_vol_8h is not None
+        assert uncached[instrument][0].trailing_return_8h is None
 
 
 def test_coverage_reads_compact_series_metadata_not_the_feature_archive(
@@ -341,8 +373,8 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(
     assert report["status"] == "RUNNING_EXPLORATORY"
     assert report["autonomy"]["autonomous_search_running"] is True
     assert report["autonomy"]["requires_developer_ai"] is False
-    assert report["funnel"]["pre_registered"] == 24
-    assert report["funnel"]["evaluated"] == 24
+    assert report["funnel"]["pre_registered"] == 30
+    assert report["funnel"]["evaluated"] == 30
     assert report["funnel"]["formal_passes"] == 0
     assert all("evaluation_status" in row for row in report["candidates"])
     assert any(row["evaluation_status"] == "EVALUATED" for row in report["candidates"])
@@ -392,7 +424,7 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(
         policy=policy,
         persist_trials=False,
     )
-    assert repeated["funnel"]["pre_registered"] == 24
+    assert repeated["funnel"]["pre_registered"] == 30
     assert repeated["registry"]["chain_valid"] is True
 
 
@@ -547,7 +579,7 @@ def test_cycle_turns_positive_realized_feedback_into_fresh_oos_challengers(tmp_p
 
     assert report["feedback"]["status"] == "ADAPTIVE_EXPLORATION_READY"
     assert report["feedback"]["consumed_realizations"] == 10
-    assert report["funnel"]["base_pre_registered"] == 24
+    assert report["funnel"]["base_pre_registered"] == 30
     assert report["funnel"]["adaptive_pre_registered"] == 2
     adaptive = [row for row in report["candidates"] if row["adaptive_feedback"]]
     assert {row["candidate_id"] for row in adaptive} == {

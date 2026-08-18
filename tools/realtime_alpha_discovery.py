@@ -1,7 +1,7 @@
 """Autonomous realtime Alpha discovery scheduled worker.
 
 The worker consumes only the retained Binance public-feature store.  It
-pre-registers the fixed 24-trial microstructure/relative-value budget, builds
+pre-registers the fixed 30-trial microstructure/state/relative-value budget, builds
 PIT 30-second decision frames, evaluates post-latency labels, records every
 attempt in the global experiment registry, and publishes a compact operator
 snapshot.  It has no credentials, broker adapter, order-submission seam, or
@@ -61,6 +61,7 @@ from services.research.realtime_alpha_discovery import (
     assess_data_admission,
     assess_executable_depth_capacity,
     default_realtime_hypotheses,
+    enrich_slow_state,
     evaluate_hypothesis,
 )
 from services.research.realtime_alpha_feedback import (
@@ -114,7 +115,7 @@ def _is_sha256(value: object) -> bool:
 def realtime_frame_view_hash(
     frames: Mapping[str, Sequence[RealtimeFrame]],
 ) -> str:
-    digest = hashlib.sha256(b"realtime-decision-frame-view.v1\0")
+    digest = hashlib.sha256(b"realtime-decision-frame-view.v2\0")
 
     def update(value: bytes) -> None:
         digest.update(len(value).to_bytes(8, "big"))
@@ -138,6 +139,10 @@ def realtime_frame_view_hash(
                         "taker_imbalance_5s": frame.taker_imbalance_5s,
                         "liquidation_imbalance_5s": (
                             frame.liquidation_imbalance_5s
+                        ),
+                        "trailing_return_8h": frame.trailing_return_8h,
+                        "trailing_realized_vol_8h": (
+                            frame.trailing_realized_vol_8h
                         ),
                     },
                     ensure_ascii=True,
@@ -616,6 +621,7 @@ def _adaptive_hypothesis(
             economic_hypothesis=str(row["economic_hypothesis"]),
             falsification_standard=str(row["falsification_standard"]),
             signal_version=str(row["signal_version"]),
+            lookback_ms=int(row.get("lookback_ms", 0)),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise RealtimeAlphaWorkerError("adaptive candidate definition is invalid") from exc
@@ -662,6 +668,8 @@ def _definition(
         "signal_version": spec.signal_version,
         "label_policy": "post_latency_first_known_mid",
     }
+    if spec.lookback_ms > 0:
+        params["lookback_ms"] = str(spec.lookback_ms)
     if lineage is not None:
         params.update(
             {
@@ -909,12 +917,14 @@ def load_bucketed_frames(
     refresh only the recent tail and read the historical buckets directly.
     """
     if frame_cache_path is None:
-        return _query_bucketed_frames(
-            path,
-            instruments=instruments,
-            start_ms=start_ms,
-            end_ms=end_ms,
-            bucket_ms=bucket_ms,
+        return enrich_slow_state(
+            _query_bucketed_frames(
+                path,
+                instruments=instruments,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                bucket_ms=bucket_ms,
+            )
         )
     if type(max_cache_lag_ms) is not int or max_cache_lag_ms < 0:
         raise ValueError("max_cache_lag_ms must be a non-negative integer")
@@ -936,11 +946,13 @@ def load_bucketed_frames(
             # the feature admission gate.  Avoid a full feature-table scan on
             # every discovery cycle; the next stale boundary will trigger a
             # bounded refresh and rebuild only when required.
-            return _read_frame_cache(
-                connection,
-                instruments=instruments,
-                start_ms=start_ms,
-                end_ms=end_ms + bucket_ms,
+            return enrich_slow_state(
+                _read_frame_cache(
+                    connection,
+                    instruments=instruments,
+                    start_ms=start_ms,
+                    end_ms=end_ms + bucket_ms,
+                )
             )
         if needs_history:
             refresh_start = start_ms
@@ -958,11 +970,13 @@ def load_bucketed_frames(
             bucket_ms=bucket_ms,
         )
         _write_frame_cache(connection, refreshed)
-        return _read_frame_cache(
-            connection,
-            instruments=instruments,
-            start_ms=start_ms,
-            end_ms=end_ms + bucket_ms,
+        return enrich_slow_state(
+            _read_frame_cache(
+                connection,
+                instruments=instruments,
+                start_ms=start_ms,
+                end_ms=end_ms + bucket_ms,
+            )
         )
     finally:
         connection.close()
@@ -1557,7 +1571,13 @@ def run_cycle(
                     "priority": "P1",
                     "hypothesis_count": sum(item.family_id == family for item in hypotheses),
                 }
-                for family in ("order_flow", "order_book", "liquidation", "funding_basis")
+                for family in (
+                    "order_flow",
+                    "order_book",
+                    "liquidation",
+                    "funding_basis",
+                    "cross_sectional_state",
+                )
             ],
             "candidates": sorted_rows,
             "top_candidates": sorted_rows[:8],

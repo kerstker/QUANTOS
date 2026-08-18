@@ -178,6 +178,10 @@ def _expected_registration_config_hash(row: Mapping[str, Any]) -> str:
         "signal_version": _required_text(row.get("signal_version"), "signal_version"),
         "label_policy": "post_latency_first_known_mid",
     }
+    if "lookback_ms" in row:
+        params["lookback_ms"] = str(
+            _required_int(row.get("lookback_ms"), "lookback_ms", positive=True)
+        )
     if row.get("adaptive_feedback") is True:
         params.update(
             {
@@ -214,6 +218,7 @@ def _validate_registration_matches_manifest(
         "economic_hypothesis",
         "falsification_standard",
         "signal_version",
+        "lookback_ms",
         "adaptive_feedback",
         "parent_candidate_id",
         "feedback_cutoff_ms",

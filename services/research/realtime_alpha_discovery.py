@@ -1,8 +1,8 @@
 """Deterministic realtime Alpha discovery primitives.
 
-This module internalizes QUANTOS' first realtime research budget: four economic
-families, two falsifiable mechanisms per family, and three pre-registered
-horizons per mechanism (24 trials total).  It is deliberately pure: no network,
+This module internalizes QUANTOS' realtime research budget: the original four
+microstructure families plus a slow cross-sectional state family.  It is
+deliberately pure: no network,
 filesystem, database, broker, credentials, wall clock, lifecycle promotion, or
 order submission.  The scheduled tooling boundary supplies retained PIT frames
 and persists the resulting evidence.
@@ -20,8 +20,8 @@ authority by itself.
 """
 from __future__ import annotations
 
-from bisect import bisect_left
-from dataclasses import asdict, dataclass
+from bisect import bisect_left, bisect_right
+from dataclasses import asdict, dataclass, replace
 import math
 import statistics
 from typing import Mapping, Sequence
@@ -31,6 +31,8 @@ from services.features.binance_realtime_projection import CORE_FEATURE_IDS
 
 DAY_MS = 86_400_000
 FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1_000
+SLOW_STATE_LOOKBACK_MS = 8 * 60 * 60 * 1_000
+SLOW_STATE_MIN_OBSERVATIONS = 768
 LABEL_POLICY = (
     "FIRST_KNOWN_MID_AT_OR_AFTER_DECISION_PLUS_LATENCY_PLUS_HORIZON"
 )
@@ -176,9 +178,17 @@ class RealtimeHypothesis:
     economic_hypothesis: str
     falsification_standard: str
     signal_version: str = "realtime-microstructure.v1"
+    lookback_ms: int = 0
+
+    def __post_init__(self) -> None:
+        if type(self.lookback_ms) is not int or self.lookback_ms < 0:
+            raise RealtimeAlphaDiscoveryError("lookback_ms must be non-negative")
 
     def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+        payload = asdict(self)
+        if self.lookback_ms == 0:
+            payload.pop("lookback_ms")
+        return payload
 
 
 @dataclass(frozen=True)
@@ -193,6 +203,8 @@ class RealtimeFrame:
     funding_rate: float
     taker_imbalance_5s: float
     liquidation_imbalance_5s: float
+    trailing_return_8h: float | None = None
+    trailing_realized_vol_8h: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instrument_id, str) or not self.instrument_id:
@@ -215,6 +227,20 @@ class RealtimeFrame:
         )
         if any(not math.isfinite(float(value)) for value in numeric):
             raise RealtimeAlphaDiscoveryError("frame contains a non-finite value")
+        optional_numeric = (
+            self.trailing_return_8h,
+            self.trailing_realized_vol_8h,
+        )
+        if any(
+            value is not None and not math.isfinite(float(value))
+            for value in optional_numeric
+        ):
+            raise RealtimeAlphaDiscoveryError("frame slow state is non-finite")
+        if (
+            self.trailing_realized_vol_8h is not None
+            and self.trailing_realized_vol_8h < 0
+        ):
+            raise RealtimeAlphaDiscoveryError("frame slow volatility is negative")
         if self.mid_price <= 0 or self.spread_bps < 0:
             raise RealtimeAlphaDiscoveryError("frame price/spread is outside its domain")
         for value in (
@@ -262,6 +288,7 @@ class RealtimeHypothesisEvaluation:
 
 _MICRO_HORIZONS = (30_000, 120_000, 300_000)
 _RELATIVE_VALUE_HORIZONS = (300_000, 3_600_000, 28_800_000)
+_SLOW_HORIZONS = (3_600_000, 28_800_000)
 
 
 def _horizon_label(horizon_ms: int) -> str:
@@ -273,7 +300,11 @@ def _horizon_label(horizon_ms: int) -> str:
 
 
 def default_realtime_hypotheses() -> tuple[RealtimeHypothesis, ...]:
-    """Return the immutable 24-trial realtime research budget."""
+    """Return the immutable 30-trial realtime research budget.
+
+    The original 24 definitions remain byte-compatible.  Six additive slow
+    candidates consume only causal state derived from the retained mid series.
+    """
     mechanisms = (
         (
             "order_flow",
@@ -354,7 +385,109 @@ def default_realtime_hypotheses() -> tuple[RealtimeHypothesis, ...]:
                     falsification_standard=falsification,
                 )
             )
+    slow_mechanisms = (
+        (
+            "cross_sectional_state",
+            "slow_cross_sectional_reversal",
+            ("rt_mid_price", "rt_spread_bps"),
+            "Eight-hour cross-sectional winners mean revert relative to laggards after executable costs.",
+            "The reversal must survive chronological holdout, doubled costs, and removal of the most volatile symbols.",
+        ),
+        (
+            "cross_sectional_state",
+            "slow_cross_sectional_low_vol",
+            ("rt_mid_price", "rt_spread_bps"),
+            "Lower realized-volatility instruments earn a relative defensive premium over the next one to eight hours.",
+            "The premium must persist outside stress windows and remain positive after turnover and doubled costs.",
+        ),
+        (
+            "funding_basis",
+            "funding_crowding_liquidity_filtered",
+            (
+                "rt_mid_price",
+                "rt_spread_bps",
+                "rt_depth_imbalance_5",
+                "rt_mark_basis_bps",
+                "rt_funding_rate",
+            ),
+            "Funding crowding unwinds are strongest when the book is tight and displayed depth confirms the unwind direction.",
+            "The filtered unwind must beat the unfiltered cost burden on holdout data and survive doubled execution costs.",
+        ),
+    )
+    for family, mechanism, required, hypothesis, falsification in slow_mechanisms:
+        for horizon_ms in _SLOW_HORIZONS:
+            result.append(
+                RealtimeHypothesis(
+                    candidate_id=f"rt_{mechanism}_{_horizon_label(horizon_ms)}_v1",
+                    family_id=family,
+                    mechanism=mechanism,
+                    horizon_ms=horizon_ms,
+                    required_features=tuple(required),
+                    economic_hypothesis=hypothesis,
+                    falsification_standard=falsification,
+                    lookback_ms=SLOW_STATE_LOOKBACK_MS,
+                )
+            )
     return tuple(result)
+
+
+def enrich_slow_state(
+    frames_by_instrument: Mapping[str, Sequence[RealtimeFrame]],
+) -> dict[str, tuple[RealtimeFrame, ...]]:
+    """Derive causal eight-hour return and realized-volatility state.
+
+    Only frames at or before each decision participate.  The original frames
+    are immutable, and insufficient history remains explicit as ``None``.
+    Prefix moments make the derivation linear after the per-series sort.
+    """
+    enriched: dict[str, tuple[RealtimeFrame, ...]] = {}
+    for instrument, raw_frames in sorted(frames_by_instrument.items()):
+        frames = sorted(raw_frames, key=lambda item: item.decision_time_ms)
+        if any(item.instrument_id != instrument for item in frames):
+            raise RealtimeAlphaDiscoveryError(
+                "frame instrument does not match its series key"
+            )
+        times = [item.decision_time_ms for item in frames]
+        if len(times) != len(set(times)):
+            raise RealtimeAlphaDiscoveryError(
+                "frame decision times must be unique per instrument"
+            )
+        log_returns = [0.0]
+        for previous, current in zip(frames, frames[1:]):
+            log_returns.append(math.log(current.mid_price / previous.mid_price))
+        prefix = [0.0]
+        prefix_sq = [0.0]
+        for value in log_returns:
+            prefix.append(prefix[-1] + value)
+            prefix_sq.append(prefix_sq[-1] + value * value)
+        rows: list[RealtimeFrame] = []
+        for index, frame in enumerate(frames):
+            cutoff = frame.decision_time_ms - SLOW_STATE_LOOKBACK_MS
+            baseline_index = bisect_right(times, cutoff, 0, index + 1) - 1
+            sample_count = index - baseline_index
+            if (
+                baseline_index < 0
+                or sample_count < SLOW_STATE_MIN_OBSERVATIONS
+                or frame.decision_time_ms - times[baseline_index]
+                < SLOW_STATE_LOOKBACK_MS
+            ):
+                rows.append(frame)
+                continue
+            total = prefix[index + 1] - prefix[baseline_index + 1]
+            total_sq = prefix_sq[index + 1] - prefix_sq[baseline_index + 1]
+            mean = total / sample_count
+            variance = max(0.0, total_sq / sample_count - mean * mean)
+            rows.append(
+                replace(
+                    frame,
+                    trailing_return_8h=(
+                        frame.mid_price / frames[baseline_index].mid_price - 1.0
+                    ),
+                    trailing_realized_vol_8h=math.sqrt(variance),
+                )
+            )
+        enriched[instrument] = tuple(rows)
+    return enriched
 
 
 def assess_data_admission(
@@ -557,6 +690,18 @@ def _base_signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
         return -frame.mark_basis_bps
     if spec.mechanism == "funding_crowding_unwind":
         return -frame.funding_rate * (1.0 + abs(frame.mark_basis_bps))
+    if spec.mechanism == "funding_crowding_liquidity_filtered":
+        base = -frame.funding_rate * (1.0 + abs(frame.mark_basis_bps))
+        confirmation = 1.0 + max(0.0, math.copysign(1.0, base) * frame.depth_imbalance_5)
+        return base * confirmation / spread_scale
+    if spec.mechanism == "slow_cross_sectional_reversal":
+        if frame.trailing_return_8h is None:
+            raise RealtimeAlphaDiscoveryError("slow return state is unavailable")
+        return -frame.trailing_return_8h
+    if spec.mechanism == "slow_cross_sectional_low_vol":
+        if frame.trailing_realized_vol_8h is None:
+            raise RealtimeAlphaDiscoveryError("slow volatility state is unavailable")
+        return -frame.trailing_realized_vol_8h
     raise RealtimeAlphaDiscoveryError(f"unknown realtime mechanism: {spec.mechanism}")
 
 
@@ -825,6 +970,14 @@ def evaluate_hypothesis(
                 continue
             bucket_index = frame.decision_time_ms // policy.decision_interval_ms
             if bucket_index % step != 0:
+                continue
+            if (
+                spec.mechanism == "slow_cross_sectional_reversal"
+                and frame.trailing_return_8h is None
+            ) or (
+                spec.mechanism == "slow_cross_sectional_low_vol"
+                and frame.trailing_realized_vol_8h is None
+            ):
                 continue
             target = frame.decision_time_ms + policy.execution_latency_ms + spec.horizon_ms
             future_index = bisect_left(times, target)
