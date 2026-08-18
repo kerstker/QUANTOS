@@ -1,10 +1,10 @@
 {
-  "checks_manifest_sha256": "f74065372c9ebc8a8ee0932326d3ce2192f0c509aaed4d1c2be63e923ef8fd5c",
-  "commit": "7aba1b57e3e208cafe24d0141ad6a176875d79f6",
+  "checks_manifest_sha256": "834e091071f3054ac533d32af211424b041c36b3d1b096b1f1923bf7c7945da6",
+  "commit": "0c7577134f9509dd3cb5f0256e9554275ada660b",
   "derived_refresh_manifest_sha256": "592d2b2818cbf3eb17a9a63ec94fe1836b0035602b3283590e49e8e6b9378c11",
-  "duration_ms": 588510,
-  "generated_at_ms": 1787061650941,
-  "overall_status": "FAIL",
+  "duration_ms": 609462,
+  "generated_at_ms": 1787063472498,
+  "overall_status": "PASS",
   "phase13_manifest_sha256": "b65301db53d8cf10b49a750e7aa82eff79b0a256620f256ee277f877ee2b3dd1",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -32,7 +32,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 64,
+      "duration_ms": 63,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -45,7 +45,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 32,
+      "duration_ms": 31,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -97,7 +97,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 968,
+      "duration_ms": 966,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -136,7 +136,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 315,
+      "duration_ms": 314,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -150,7 +150,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 4230,
+      "duration_ms": 4291,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -163,7 +163,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 15,
+      "duration_ms": 31,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -187,7 +187,7 @@
         "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 2630,
+      "duration_ms": 2668,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -199,7 +199,7 @@
         "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/scripts/generate_supply_chain_evidence.py"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 414,
+      "duration_ms": 415,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -212,7 +212,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 466,
+      "duration_ms": 464,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -224,7 +224,7 @@
         "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/scripts/assess_top_tier.py"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 8912,
+      "duration_ms": 8949,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -237,7 +237,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 9006,
+      "duration_ms": 8960,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -273,7 +273,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 496390,
+      "duration_ms": 494272,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -290,7 +290,7 @@
         "tests/tools"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 59855,
+      "duration_ms": 61756,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -298,60 +298,56 @@
     },
     {
       "command": [
-        "npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "typecheck"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/apps/research-console",
-      "detail": "FileNotFoundError: [Errno 2] No such file or directory: 'npm'",
-      "duration_ms": 0,
-      "returncode": null,
+      "duration_ms": 2473,
+      "returncode": 0,
       "stage": "frontend: typecheck",
-      "status": "ERROR",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
       "command": [
-        "npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "eslint"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/apps/research-console",
-      "detail": "FileNotFoundError: [Errno 2] No such file or directory: 'npm'",
-      "duration_ms": 0,
-      "returncode": null,
+      "duration_ms": 2273,
+      "returncode": 0,
       "stage": "frontend: eslint",
-      "status": "ERROR",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
       "command": [
-        "npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "test",
         "--",
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/apps/research-console",
-      "detail": "FileNotFoundError: [Errno 2] No such file or directory: 'npm'",
-      "duration_ms": 0,
-      "returncode": null,
+      "duration_ms": 12298,
+      "returncode": 0,
       "stage": "frontend: tests",
-      "status": "ERROR",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
       "command": [
-        "npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "build"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/apps/research-console",
-      "detail": "FileNotFoundError: [Errno 2] No such file or directory: 'npm'",
-      "duration_ms": 0,
-      "returncode": null,
+      "duration_ms": 3671,
+      "returncode": 0,
       "stage": "frontend: production build",
-      "status": "ERROR",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
@@ -362,7 +358,7 @@
         "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 666,
+      "duration_ms": 716,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -377,7 +373,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 615,
+      "duration_ms": 664,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -392,7 +388,7 @@
         "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632/tests/governance/test_727_final_audit.py"
       ],
       "cwd": "/home/kerstker/quantos-migration-20260813/development/realtime-alpha-structure-7600a632",
-      "duration_ms": 3023,
+      "duration_ms": 3273,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -430,20 +426,20 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1787061062430,
+  "started_at_ms": 1787062863035,
   "summary": {
-    "errored": 4,
+    "errored": 0,
     "failed": 0,
-    "passed": 23,
+    "passed": 27,
     "selected": 27,
     "timed_out": 0
   },
   "timeout_seconds": 1800.0,
   "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
   "validation": {
-    "current": false,
-    "generated_at": 1787061650941,
-    "run_id": "fe2a00e60fcaa8ba301c8b0f8366e1022ae1dd0d7ac6356779178fd7eaf52de0",
-    "source_commit": "7aba1b57e3e208cafe24d0141ad6a176875d79f6"
+    "current": true,
+    "generated_at": 1787063472498,
+    "run_id": "ce22bf1c6995bbe5da1426869854c5c1ffdf7925eea3488c4b6f94a8a5012834",
+    "source_commit": "0c7577134f9509dd3cb5f0256e9554275ada660b"
   }
 }
