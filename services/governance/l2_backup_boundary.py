@@ -287,11 +287,40 @@ def classify_destination(
     return "LOCAL_ONLY"
 
 
-def _validate_passphrase_file_mode(mode: int) -> None:
-    if mode & 0o077:
+def _validate_passphrase_file_mode(
+    mode: int, *, systemd_managed: bool = False
+) -> None:
+    permissions = stat.S_IMODE(mode)
+    if systemd_managed:
+        # LoadCredential= exposes a read-only copy inside a per-unit directory
+        # that systemd makes accessible only to the unit UID (and root).  On
+        # systems without id-mapped credential mounts this copy may be 0440 so
+        # the configured service group can read it.  Preserve the directory
+        # isolation contract while still rejecting all write/execute/other
+        # access.
+        if (
+            permissions & 0o337
+            or not permissions & 0o400
+        ):
+            raise L2BackupError(
+                "systemd backup credential permissions are unsafe"
+            )
+        return
+    if permissions & 0o077:
         raise L2BackupError(
             "backup passphrase file permissions must be owner-only"
         )
+
+
+def _is_systemd_credential_path(path: Path) -> bool:
+    directory = os.environ.get(CREDENTIALS_DIRECTORY_ENV)
+    if not directory:
+        return False
+    credential_directory = Path(directory)
+    return bool(
+        credential_directory.is_absolute()
+        and path == credential_directory / SYSTEMD_PASSPHRASE_CREDENTIAL
+    )
 
 
 def _validate_passphrase_strength(passphrase: object) -> None:
@@ -315,13 +344,16 @@ def _read_passphrase_file(
     validator = passphrase_validator or _validate_passphrase_strength
     try:
         path = Path(path_value)
+        systemd_managed = _is_systemd_credential_path(path)
         before = path.lstat()
         if not stat.S_ISREG(before.st_mode) or path.is_symlink():
             raise L2BackupError(
                 "backup passphrase file must be a regular non-symlink file"
             )
         if is_posix_fn():
-            _validate_passphrase_file_mode(before.st_mode)
+            _validate_passphrase_file_mode(
+                before.st_mode, systemd_managed=systemd_managed
+            )
         if before.st_size > _MAX_PASSPHRASE_FILE_BYTES:
             raise L2BackupError("backup passphrase file is invalid")
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
@@ -337,7 +369,9 @@ def _read_passphrase_file(
             ):
                 raise L2BackupError("backup passphrase file is invalid")
             if is_posix_fn():
-                _validate_passphrase_file_mode(opened.st_mode)
+                _validate_passphrase_file_mode(
+                    opened.st_mode, systemd_managed=systemd_managed
+                )
             content = os.read(descriptor, _MAX_PASSPHRASE_FILE_BYTES + 1)
             after = os.fstat(descriptor)
             if (

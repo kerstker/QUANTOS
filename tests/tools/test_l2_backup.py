@@ -508,6 +508,42 @@ def test_posix_passphrase_file_rejects_group_or_other_permissions():
         l2_backup_module._validate_passphrase_file_mode(0o100640)
 
 
+def test_systemd_credential_accepts_read_only_service_group_copy():
+    l2_backup_module._validate_passphrase_file_mode(
+        0o100440, systemd_managed=True
+    )
+
+
+@pytest.mark.parametrize("mode", (0o100460, 0o100441, 0o100640, 0o100444))
+def test_systemd_credential_rejects_write_execute_or_other_access(mode):
+    with pytest.raises(L2BackupError, match="systemd.*unsafe"):
+        l2_backup_module._validate_passphrase_file_mode(
+            mode, systemd_managed=True
+        )
+
+
+def test_group_read_exception_is_limited_to_exact_systemd_credential(
+    tmp_path, monkeypatch
+):
+    credentials = tmp_path / "credentials"
+    credential = credentials / "l2-backup-passphrase"
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+
+    assert l2_backup_module._is_systemd_credential_path(credential) is True
+    assert (
+        l2_backup_module._is_systemd_credential_path(
+            credentials / "different-name"
+        )
+        is False
+    )
+    assert (
+        l2_backup_module._is_systemd_credential_path(
+            tmp_path / "l2-backup-passphrase"
+        )
+        is False
+    )
+
+
 def test_passphrase_file_rejects_empty_or_weak_secret_without_leaking_path(
     tmp_path, monkeypatch
 ):

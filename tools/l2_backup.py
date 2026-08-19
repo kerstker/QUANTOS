@@ -318,8 +318,16 @@ def _assert_destination_boundary(
         raise L2BackupError("backup destination boundary changed")
 
 
-def _validate_passphrase_file_mode(mode: int) -> None:
-    _backup_boundary._validate_passphrase_file_mode(mode)
+def _validate_passphrase_file_mode(
+    mode: int, *, systemd_managed: bool = False
+) -> None:
+    _backup_boundary._validate_passphrase_file_mode(
+        mode, systemd_managed=systemd_managed
+    )
+
+
+def _is_systemd_credential_path(path: Path) -> bool:
+    return _backup_boundary._is_systemd_credential_path(path)
 
 
 def _read_passphrase_file(path_value: str | os.PathLike[str]) -> str:
