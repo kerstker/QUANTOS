@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react';
 
+import { fetchDataCatalogSnapshot } from '@/lib/api/research-console-api';
+import type { BinanceRealtimePayload, DataCatalogPayload } from '@/lib/types/research';
 import { PageShell } from '@/ui/primitives';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import type { JsonObject, MftSnapshot } from '@/workbench/contracts';
 import { useMftReadModel } from '@/workbench/useMftReadModel';
 
@@ -84,16 +87,27 @@ function diagnosticCode(phase: ReturnType<typeof useMftReadModel>['phase']): str
   return 'MFT_UNAVAILABLE';
 }
 
-function DiagnosticOnly({ state, reason }: {
+function DiagnosticOnly({ state, reason, publicMarket }: {
   state: ReturnType<typeof useMftReadModel>;
   reason?: string | null;
+  publicMarket?: BinanceRealtimePayload | null;
 }) {
+  const eventCount = publicMarket
+    ? Object.values(publicMarket.stream.event_counts).reduce(
+      (total: number, value: number) => total + value,
+      0,
+    )
+    : 0;
+  const complete = publicMarket?.rest_snapshot.coverage.complete ?? 0;
+  const requested = publicMarket?.rest_snapshot.coverage.requested ?? publicMarket?.universe_size ?? 0;
   return (
     <PageShell>
       <header>
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Market Monitor</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">市场监控</h1>
-        <p className="mt-2 max-w-3xl text-sm text-muted">市场权威状态不可验证；页面停止渲染运营数字。</p>
+        <p className="mt-2 max-w-3xl text-sm text-muted">
+          MFT 执行权威不可验证；执行、仓位、收益与订单数字保持隐藏，公开市场监控独立展示。
+        </p>
       </header>
       <section className="rounded-xl border border-neg/35 bg-neg/10 p-5" role="alert">
         <div className="flex flex-wrap items-center gap-2">
@@ -106,12 +120,57 @@ function DiagnosticOnly({ state, reason }: {
           <div><dt className="text-faint">transport</dt><dd className="mt-1 font-mono text-ink">{state.transport}</dd></div>
           <div><dt className="text-faint">retained snapshot</dt><dd className="mt-1 font-mono text-ink">{state.snapshot ? snapshotId(state.snapshot) : 'NONE'}</dd></div>
         </dl>
-        <p className="mt-4 text-xs leading-5 text-muted">
-          不使用合成回退，不展示保留快照中的市场、收益或风险值，也不生成交易建议。
-        </p>
+        <p className="mt-4 text-xs leading-5 text-muted">不使用合成 MFT 回退，不展示保留快照中的执行、收益或风险值，也不生成交易建议。</p>
       </section>
+      {publicMarket ? (
+        <section className="rounded-xl border border-pos/35 bg-pos/10 p-5" aria-label="公开市场实时监控">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="font-mono text-sm text-pos">REAL_PUBLIC_MARKET_MONITORING</strong>
+            <span className="rounded border border-warn/35 px-2 py-0.5 text-[10px] font-semibold text-warn">
+              EXECUTION AUTHORITY UNAVAILABLE
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted">
+            仅展示公开 Binance 行情与本地只读特征投影；无凭证、无私有流、无券商连接、无下单能力。
+          </p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+            <Metric label="stream" value={publicMarket.stream.effective_streaming ? 'STREAMING' : 'NOT_STREAMING'} accent />
+            <Metric label="universe" value={publicMarket.universe_size} />
+            <Metric label="stream age" value={`${publicMarket.stream.age_ms ?? 'UNKNOWN'}ms`} />
+            <Metric label="stream lag" value={`${publicMarket.stream.lag_ms ?? 'UNKNOWN'}ms`} />
+            <Metric label="public / market" value={`${publicMarket.stream.connections.public === true ? 'UP' : 'DOWN'} / ${publicMarket.stream.connections.market === true ? 'UP' : 'DOWN'}`} />
+            <Metric label="events" value={eventCount.toLocaleString('en-US')} />
+            <Metric label="REST coverage" value={`${complete}/${requested}`} />
+            <Metric label="stream chain" value={publicMarket.stream.chain_valid ? 'VALID' : 'UNKNOWN'} />
+            <Metric label="features" value={publicMarket.feature_projection.feature_count} />
+            <Metric label="instruments" value={publicMarket.feature_projection.instrument_count} />
+            <Metric label="drift" value={publicMarket.feature_projection.drift_status ?? 'UNKNOWN'} />
+            <Metric label="checked at" value={timestamp(publicMarket.checked_at_ms)} />
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-warn/35 bg-warn/10 p-4 text-xs text-warn" role="status">
+          公开市场数据权威同样不可用；本页不显示任何运营数字。
+        </section>
+      )}
     </PageShell>
   );
+}
+
+function admittedPublicMarket(result: ReturnType<typeof useConsoleSnapshot<DataCatalogPayload>>): BinanceRealtimePayload | null {
+  const payload = result.payload;
+  const market = payload?.binance_realtime;
+  const provenance = payload?.data_provenance;
+  if (!result.usingBackend || typeof provenance !== 'string' || !provenance.startsWith('REAL_') || !market) return null;
+  const safety = market.safety;
+  const safetyExact = safety.public_market_data_only === true
+    && safety.credentials === false
+    && safety.private_stream === false
+    && safety.broker_connectivity === false
+    && safety.order_submission === false
+    && safety.live_trading === false;
+  if (!safetyExact || market.verdict !== 'PASS' || !market.stream.fresh || !market.stream.effective_streaming) return null;
+  return market;
 }
 
 function activeAlerts(snapshot: MftSnapshot): string[] {
@@ -134,6 +193,8 @@ function activeAlerts(snapshot: MftSnapshot): string[] {
 
 export default function MarketMonitor() {
   const state = useMftReadModel();
+  const catalog = useConsoleSnapshot<DataCatalogPayload>(fetchDataCatalogSnapshot);
+  const publicMarket = admittedPublicMarket(catalog);
   const snapshot = state.snapshot;
   const requiredSectionUnavailable = snapshot !== null && [
     snapshot.market_gap, snapshot.scheduler, snapshot.risk, snapshot.reconciliation,
@@ -155,7 +216,7 @@ export default function MarketMonitor() {
         : snapshot && snapshot.status !== 'AVAILABLE'
           ? snapshot.snapshot_status
           : null;
-    return <DiagnosticOnly state={state} reason={reason} />;
+    return <DiagnosticOnly state={state} reason={reason} publicMarket={publicMarket} />;
   }
 
   const alerts = activeAlerts(snapshot);

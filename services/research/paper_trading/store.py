@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 import statistics
+from pathlib import Path
 from typing import Optional, Sequence
 
 from services.validation.performance import sharpe
@@ -39,13 +40,39 @@ _TABLES = ("paper_periods", "paper_track")
 
 
 class PaperTrackStore:
-    def __init__(self, path: str, *, create: bool = False) -> None:
-        self._conn = sqlite3.connect(path)
-        self._conn.row_factory = sqlite3.Row
-        if create:
-            self._conn.executescript(_SCHEMA)
-            self._conn.commit()
-        self._require_schema()
+    def __init__(
+        self,
+        path: str,
+        *,
+        create: bool = False,
+        read_only: bool = False,
+    ) -> None:
+        if create and read_only:
+            raise PaperTrackStoreError("create and read_only are mutually exclusive")
+        if read_only and path == ":memory:":
+            raise PaperTrackStoreError("read-only paper-track store requires a file authority")
+        connection = None
+        try:
+            target = Path(path).resolve().as_uri() + "?mode=ro" if read_only else path
+            connection = sqlite3.connect(target, uri=read_only)
+            connection.row_factory = sqlite3.Row
+            self._conn = connection
+            if create:
+                self._conn.executescript(_SCHEMA)
+                self._conn.commit()
+            if read_only:
+                self._conn.execute("PRAGMA query_only=ON")
+            self._require_schema()
+        except PaperTrackStoreError:
+            if connection is not None:
+                connection.close()
+            raise
+        except (OSError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            if connection is not None:
+                connection.close()
+            if read_only:
+                raise PaperTrackStoreError("paper-track store unavailable") from exc
+            raise
 
     def _require_schema(self) -> None:
         try:
@@ -145,3 +172,6 @@ class PaperTrackStore:
 
     def all_tracks(self) -> list:
         return [dict(r) for r in self._conn.execute("SELECT * FROM paper_track ORDER BY alpha_id")]
+
+    def close(self) -> None:
+        self._conn.close()

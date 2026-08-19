@@ -6,6 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Exit 2 is the reviewed fail-closed SAFE_BLOCKED/PARTIAL outcome.  Keep the
+# exact status available to the watchdog while avoiding a misleading failed
+# systemd unit for an expected safety decision.
+SuccessExitStatus=2
 User=quantos
 Group=quantos
 UMask=0077

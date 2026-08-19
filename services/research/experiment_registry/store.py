@@ -13,6 +13,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Iterator, Mapping, Optional, Sequence
 
 from quantos.contracts.events import EventOutboxMessage
@@ -499,10 +500,27 @@ class SqliteExperimentStore:
         path: str,
         *,
         create: bool = False,
+        read_only: bool = False,
         expected_authority_instance_id: str | None = None,
         external_providers: FamilyAuthorityExternalProviders | None = None,
     ) -> None:
-        self._conn = sqlite3.connect(path, timeout=5.0)
+        if create and read_only:
+            raise ExperimentStoreError("create and read_only are mutually exclusive")
+        if read_only and path == ":memory:":
+            raise ExperimentStoreError("read-only experiment store requires a file authority")
+        connection = None
+        try:
+            target = Path(path).resolve().as_uri() + "?mode=ro" if read_only else path
+            connection = sqlite3.connect(target, timeout=5.0, uri=read_only)
+            if read_only:
+                connection.execute("PRAGMA query_only=ON")
+        except (OSError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            if connection is not None:
+                connection.close()
+            if read_only:
+                raise ExperimentStoreError("experiment store unavailable") from exc
+            raise
+        self._conn = connection
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys=ON")
         if self._conn.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
@@ -2506,6 +2524,28 @@ class SqliteExperimentStore:
                 "SELECT * FROM evaluations WHERE alpha_id = ? ORDER BY recorded_ts, run_id", (alpha_id,)
             )
         ]
+
+    def latest_evaluations_by_alpha(self) -> dict[str, dict]:
+        """Return each alpha's deterministic evaluation head in one read.
+
+        Console projections need one latest row per alpha.  Performing one
+        query per alpha blocks the single API process for large registries, so
+        keep the same ``recorded_ts, run_id`` ordering contract while taking a
+        single SQLite snapshot.
+        """
+
+        self._require_schema()
+        rows = self._conn.execute(
+            "WITH ranked AS ("
+            " SELECT run_id, ROW_NUMBER() OVER ("
+            "  PARTITION BY alpha_id ORDER BY recorded_ts DESC, run_id DESC"
+            " ) AS row_rank FROM evaluations"
+            ") "
+            "SELECT e.* FROM evaluations e "
+            "JOIN ranked r ON r.run_id=e.run_id "
+            "WHERE r.row_rank=1 ORDER BY e.alpha_id"
+        )
+        return {str(row["alpha_id"]): dict(row) for row in rows}
 
     def pending_evaluation_audits(
         self,

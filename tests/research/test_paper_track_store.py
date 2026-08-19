@@ -1,9 +1,35 @@
 import pytest
+import sqlite3
 from services.research.paper_trading.store import PaperTrackStore, PaperTrackStoreError
 
 
 def _store():
     return PaperTrackStore(":memory:", create=True)
+
+
+def test_read_only_store_never_creates_or_mutates_authority(tmp_path):
+    missing = tmp_path / "missing.db"
+    with pytest.raises(PaperTrackStoreError):
+        PaperTrackStore(str(missing), read_only=True)
+    assert not missing.exists()
+
+    path = tmp_path / "authority.db"
+    writer = PaperTrackStore(str(path), create=True)
+    writer.close()
+    reader = PaperTrackStore(str(path), read_only=True)
+    try:
+        assert reader._conn.execute("PRAGMA query_only").fetchone()[0] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            reader._conn.execute("CREATE TABLE forbidden(value INTEGER)")
+    finally:
+        reader.close()
+
+
+def test_read_only_store_rejects_create_and_memory():
+    with pytest.raises(PaperTrackStoreError):
+        PaperTrackStore(":memory:", read_only=True)
+    with pytest.raises(PaperTrackStoreError):
+        PaperTrackStore(":memory:", create=True, read_only=True)
 
 
 def test_append_is_idempotent_by_period():

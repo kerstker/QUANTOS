@@ -176,7 +176,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 564,
+          "line": 584,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -186,12 +186,12 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 272,
+          "line": 277,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 344,
+          "line": 358,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -449,7 +449,7 @@
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 163,
+          "line": 167,
           "module": "services.research.paper_trading.store",
           "path": "services/console/api/registry_snapshots.py"
         },
@@ -1186,7 +1186,7 @@
           "path": "services/research/oos_validation.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.validation.performance",
           "path": "services/research/paper_trading/store.py"
         },
@@ -1345,7 +1345,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "dd474f8d9da164e6ecf63af92c94b6cf450cd6982836cb6e3598947430eb1f9d",
+  "graph_sha256": "0a8da92fb106d2e80816a98f79e5a453b7af68396163878d36f165d6e483d1d1",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

@@ -151,7 +151,11 @@ def _load_experiment_store():
     try:
         from services.research.experiment_registry.store import SqliteExperimentStore
 
-        return SqliteExperimentStore(_EXP_DB, create=False) if os.path.exists(_EXP_DB) else None
+        return (
+            SqliteExperimentStore(_EXP_DB, create=False, read_only=True)
+            if os.path.exists(_EXP_DB)
+            else None
+        )
     except Exception:
         return None
 
@@ -162,7 +166,11 @@ def _load_paper_track_store():
     try:
         from services.research.paper_trading.store import PaperTrackStore
 
-        return PaperTrackStore(_PAPER_TRACK_DB, create=False) if os.path.exists(_PAPER_TRACK_DB) else None
+        return (
+            PaperTrackStore(_PAPER_TRACK_DB, create=False, read_only=True)
+            if os.path.exists(_PAPER_TRACK_DB)
+            else None
+        )
     except Exception:
         return None
 
@@ -181,6 +189,7 @@ def _real_experiment_rows(st) -> List[Dict]:
     evaluation artifacts (reproducibility hash, IC, net Sharpe, deflated Sharpe, turnover, verdict)."""
     try:
         alphas = st.all_alphas()
+        latest_evaluations = st.latest_evaluations_by_alpha()
     except Exception:
         return []
     rows = []
@@ -188,13 +197,9 @@ def _real_experiment_rows(st) -> List[Dict]:
         :30
     ]:
         aid = a.get("alpha_id")
-        try:
-            evs = st.list_evaluations(aid)
-        except Exception:
-            evs = []
-        if not evs:
+        ev = latest_evaluations.get(str(aid))
+        if ev is None:
             continue
-        ev = evs[-1]
         try:
             ej = json.loads(ev.get("evaluation_json") or "{}")
         except (json.JSONDecodeError, TypeError):
@@ -312,20 +317,29 @@ def _lifecycle_rows_real(st) -> List[Dict]:
 
     try:
         alphas = st.all_alphas()
+        latest_evaluations = st.latest_evaluations_by_alpha()
     except Exception:
         return []
     pts = _load_paper_track_store()
+    try:
+        paper_tracks = {
+            str(track["alpha_id"]): track for track in pts.all_tracks()
+        } if pts is not None else {}
+    except Exception:
+        paper_tracks = {}
+    finally:
+        if pts is not None:
+            close = getattr(pts, "close", None)
+            if callable(close):
+                close()
     rows: List[Dict] = []
     for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9), reverse=True):
         aid = a.get("alpha_id")
-        try:
-            evs = st.list_evaluations(aid)
-        except Exception:
-            evs = []
         ej: Dict = {}
-        if evs:
+        evaluation = latest_evaluations.get(str(aid))
+        if evaluation is not None:
             try:
-                ej = json.loads(evs[-1].get("evaluation_json") or "{}")
+                ej = json.loads(evaluation.get("evaluation_json") or "{}")
             except (json.JSONDecodeError, TypeError):
                 ej = {}
         try:
@@ -338,7 +352,7 @@ def _lifecycle_rows_real(st) -> List[Dict]:
         # when no per-period cross-sectional IC was recorded). When a paper track exists, the degradation
         # engine compares the held-out paper Sharpe to the train-head Sharpe (like-for-like, never a
         # Sharpe-vs-cumulative-return mismatch); otherwise the recommendation stays NO_LIVE_DATA.
-        t = pts.track(aid) if pts is not None else None
+        t = paper_tracks.get(str(aid))
         live_ic = t["paper_ic"] if (t and t.get("paper_ic") is not None) else None
         if t and isinstance(t.get("paper_sharpe"), (int, float)):
             from services.alpha.degradation_monitor import monitor_alpha_health
@@ -439,9 +453,14 @@ def _lifecycle_monitor_payload() -> Dict:
     rows: List[Dict] = []
     provenance = "SYNTHETIC_DETERMINISTIC"
     if st is not None:
-        rows = _lifecycle_rows_real(st)
-        if rows:
-            provenance = "EXPERIMENT_REGISTRY"
+        try:
+            rows = _lifecycle_rows_real(st)
+            if rows:
+                provenance = "EXPERIMENT_REGISTRY"
+        finally:
+            close = getattr(st, "close", None)
+            if callable(close):
+                close()
     if not rows:
         rows = _lifecycle_rows_synthetic()
         provenance = "SYNTHETIC_DETERMINISTIC"
@@ -463,7 +482,12 @@ def _lifecycle_monitor_payload() -> Dict:
 def _experiments_payload() -> Dict:
     st = _load_experiment_store()
     if st is not None:
-        experiments = _real_experiment_rows(st)
+        try:
+            experiments = _real_experiment_rows(st)
+        finally:
+            close = getattr(st, "close", None)
+            if callable(close):
+                close()
         if experiments:
             return {
                 "registry_mode": "READ_ONLY_RESEARCH_REGISTRY",
@@ -602,7 +626,7 @@ async def experiments() -> Dict:
 
 
 @router.get("/api/v1/console/lifecycle-monitor")
-async def lifecycle_monitor() -> Dict:
+def lifecycle_monitor() -> Dict:
     payload = _lifecycle_monitor_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

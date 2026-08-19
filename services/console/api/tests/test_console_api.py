@@ -1,5 +1,7 @@
 """Console HTTP adapter regression tests."""
 
+import inspect
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -600,6 +602,63 @@ def test_alpha_zoo_has_paper_track_time_dimensions():
     for k in ("paper_ic", "paper_sharpe", "perf_gap", "n_paper_periods"):
         assert k in row  # present (real value or null)
     assert any(d["group"] == "时间/活体征" for d in payload["dimensions"])
+
+
+def test_alpha_zoo_and_lifecycle_use_bulk_registry_reads(monkeypatch):
+    from services.console.api import alpha_library_views as alpha_views
+    from services.console.api import registry_snapshots as registry_views
+
+    alpha = {
+        "alpha_id": "a1",
+        "definition_json": '{"name":"a1","params":{"operator":"rank"}}',
+        "state": "TESTING",
+        "returns_json": "[]",
+        "sharpe": 1.0,
+        "pvalue": 0.1,
+    }
+    evaluation = {
+        "run_id": "run-a1",
+        "alpha_id": "a1",
+        "dataset_version": "dataset-v1",
+        "recorded_ts": 1,
+        "verdict": "PASS",
+        "content_hash": "a" * 64,
+        "evaluation_json": '{"net_sharpe":1.0,"verdict":"PASS"}',
+    }
+
+    class ExperimentDouble:
+        def all_alphas(self):
+            return [alpha]
+
+        def latest_evaluations_by_alpha(self):
+            return {"a1": evaluation}
+
+        def list_evaluations(self, _alpha_id):
+            raise AssertionError("per-alpha evaluation reads are forbidden")
+
+    class PaperDouble:
+        def all_tracks(self):
+            return [{"alpha_id": "a1", "paper_sharpe": 0.8, "paper_ic": None}]
+
+        def track(self, _alpha_id):
+            raise AssertionError("per-alpha paper-track reads are forbidden")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(alpha_views, "_load_paper_track_store", PaperDouble)
+    monkeypatch.setattr(registry_views, "_load_paper_track_store", PaperDouble)
+
+    assert alpha_views._alpha_zoo_rows_real(ExperimentDouble())[0]["alpha_id"] == "a1"
+    assert registry_views._lifecycle_rows_real(ExperimentDouble())[0]["alpha_id"] == "a1"
+
+
+def test_heavy_registry_routes_are_sync_for_fastapi_threadpool_dispatch():
+    from services.console.api.alpha_library_views import alpha_zoo
+    from services.console.api.registry_snapshots import lifecycle_monitor
+
+    assert inspect.iscoroutinefunction(alpha_zoo) is False
+    assert inspect.iscoroutinefunction(lifecycle_monitor) is False
 
 
 def test_backtest_results_aggregates_real_runs_or_fails_closed():

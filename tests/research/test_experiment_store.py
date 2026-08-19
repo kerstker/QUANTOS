@@ -20,6 +20,31 @@ def _store():
     return SqliteExperimentStore(":memory:", create=True)
 
 
+def test_read_only_store_never_creates_or_mutates_authority(tmp_path):
+    missing = tmp_path / "missing.db"
+    with pytest.raises(ExperimentStoreError):
+        SqliteExperimentStore(str(missing), read_only=True)
+    assert not missing.exists()
+
+    path = tmp_path / "authority.db"
+    writer = SqliteExperimentStore(str(path), create=True)
+    writer.close()
+    reader = SqliteExperimentStore(str(path), read_only=True)
+    try:
+        assert reader._conn.execute("PRAGMA query_only").fetchone()[0] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            reader._conn.execute("CREATE TABLE forbidden(value INTEGER)")
+    finally:
+        reader.close()
+
+
+def test_read_only_store_rejects_create_and_memory():
+    with pytest.raises(ExperimentStoreError):
+        SqliteExperimentStore(":memory:", read_only=True)
+    with pytest.raises(ExperimentStoreError):
+        SqliteExperimentStore(":memory:", create=True, read_only=True)
+
+
 def _evaluation_write(
     *,
     alpha_id: str = "a1",
@@ -46,6 +71,23 @@ def test_trials_dedup_by_hash_and_count():
     s.add_trials(["h2", "h3"], first_seen_ts=2)   # h2 already present
     assert s.trial_count() == 3
     assert sorted(s.all_trial_hashes()) == ["h1", "h2", "h3"]
+
+
+def test_latest_evaluations_by_alpha_returns_one_deterministic_head_per_alpha():
+    store = _store()
+    writes = (
+        _evaluation_write(alpha_id="a1", recorded_ts=100, reproducibility_hash="a1-old"),
+        _evaluation_write(alpha_id="a1", recorded_ts=200, reproducibility_hash="a1-new"),
+        _evaluation_write(alpha_id="a2", recorded_ts=150, reproducibility_hash="a2-only"),
+    )
+    for write in writes:
+        store.insert_evaluation(**write.__dict__)
+
+    latest = store.latest_evaluations_by_alpha()
+
+    assert list(latest) == ["a1", "a2"]
+    assert latest["a1"]["recorded_ts"] == 200
+    assert latest["a2"]["recorded_ts"] == 150
 
 
 def test_evaluation_is_write_once():

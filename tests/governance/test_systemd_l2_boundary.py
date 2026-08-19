@@ -44,6 +44,7 @@ def test_input_templates_are_not_installable_or_enabled_by_repository_action() -
 
 def test_worker_service_binds_immutable_release_and_mutable_state() -> None:
     text = _text(SERVICE)
+    assert text.count("SuccessExitStatus=2") == 1
     assert "Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__" in text
     assert "Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__" in text
     assert "Environment=QUANTOS_STATE_ROOT=/srv/quantos/state" in text
@@ -168,6 +169,7 @@ def test_renderer_emits_only_requested_allowlisted_worker(tmp_path: Path) -> Non
     assert service.count(PROXY_PASS_ENVIRONMENT) == 1
     assert "%i" not in service
     assert "domain_event_ops" in service
+    assert service.count("SuccessExitStatus=2") == 1
     assert "OnCalendar=*-*-* *:01/15:00" in timer
     assert "DO_NOT_INSTALL_UNRENDERED" not in timer
     assert "WantedBy=timers.target" in timer

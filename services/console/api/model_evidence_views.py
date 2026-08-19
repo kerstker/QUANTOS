@@ -489,9 +489,19 @@ def _evidence_ledger_payload() -> Dict:
         entry["verification"]["hash_chain_valid"] = chain_valid
 
     blockers = [entry for entry in entries if entry["blocks_live_authorization"]]
+    experiment_store = _load_experiment_store()
+    try:
+        data_provenance = (
+            "EXPERIMENT_REGISTRY"
+            if experiment_store is not None
+            else "SYNTHETIC_DETERMINISTIC"
+        )
+    finally:
+        if experiment_store is not None:
+            experiment_store.close()
     return {
         "ledger_mode": "READ_ONLY_IMMUTABLE_EVIDENCE_LEDGER",
-        "data_provenance": "EXPERIMENT_REGISTRY" if _load_experiment_store() else "SYNTHETIC_DETERMINISTIC",
+        "data_provenance": data_provenance,
         "chain_id": "quantos-research-ledger-2026w24",
         "root_hash": entries[-1]["ledger_hash"] if entries else "GENESIS",
         "summary": {

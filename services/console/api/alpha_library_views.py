@@ -422,12 +422,27 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
     except Exception:
         return []
     pts = _load_paper_track_store()
+    try:
+        paper_tracks = {
+            str(track["alpha_id"]): track for track in pts.all_tracks()
+        } if pts is not None else {}
+    except Exception:
+        paper_tracks = {}
+    finally:
+        if pts is not None:
+            close = getattr(pts, "close", None)
+            if callable(close):
+                close()
+    try:
+        latest_evaluations = st.latest_evaluations_by_alpha()
+    except Exception:
+        latest_evaluations = {}
     rows: List[Dict] = []
     for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9), reverse=True):
         aid = a.get("alpha_id")
         try:
-            evs = st.list_evaluations(aid)
-            ej = json.loads(evs[-1].get("evaluation_json") or "{}") if evs else {}
+            evaluation = latest_evaluations.get(str(aid))
+            ej = json.loads(evaluation.get("evaluation_json") or "{}") if evaluation else {}
         except (json.JSONDecodeError, TypeError, Exception):
             ej = {}
         try:
@@ -485,7 +500,7 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
         # 时间/活体征 dimensions from the REAL forward paper-track store (out-of-sample paper P&L / IC);
         # None when this alpha has no paper track (fail-closed). These are a research-only record and
         # NEVER unlock any automatic promotion (auto_approved stays 0; non-human never APPROVED).
-        t = pts.track(aid) if pts is not None else None
+        t = paper_tracks.get(str(aid))
         row["paper_ic"] = t.get("paper_ic") if t else None
         row["paper_sharpe"] = t.get("paper_sharpe") if t else None
         row["perf_gap"] = t.get("perf_gap") if t else None
@@ -548,9 +563,14 @@ def _alpha_zoo_payload() -> Dict:
     st = _load_experiment_store()
     rows, provenance = [], "SYNTHETIC_DETERMINISTIC"
     if st is not None:
-        rows = _alpha_zoo_rows_real(st)
-        if rows:
-            provenance = "EXPERIMENT_REGISTRY"
+        try:
+            rows = _alpha_zoo_rows_real(st)
+            if rows:
+                provenance = "EXPERIMENT_REGISTRY"
+        finally:
+            close = getattr(st, "close", None)
+            if callable(close):
+                close()
     if not rows:
         rows = _alpha_zoo_rows_synthetic()
         provenance = "SYNTHETIC_DETERMINISTIC"
@@ -732,7 +752,7 @@ async def dsl_explorer_check(expr: str = Query(...)) -> Dict:
 
 
 @router.get("/api/v1/console/alpha-zoo")
-async def alpha_zoo() -> Dict:
+def alpha_zoo() -> Dict:
     payload = _alpha_zoo_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

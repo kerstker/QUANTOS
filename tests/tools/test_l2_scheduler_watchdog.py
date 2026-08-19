@@ -754,6 +754,8 @@ def _systemd_service_unit(module: str) -> str:
             "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
         ),
     ]
+    if module != "binance_realtime_stream":
+        service_lines.append("SuccessExitStatus=2")
     if module == "l2_backup":
         service_lines.extend(
             (
@@ -1034,6 +1036,7 @@ def test_systemd_collector_rejects_missing_extra_or_split_proxy_name_contract(
         ),
         ("NoNewPrivileges=true", "NoNewPrivileges=false"),
         ("ProtectSystem=strict", "ProtectSystem=full"),
+        ("SuccessExitStatus=2", "SuccessExitStatus=0"),
         ("PrivateDevices=true", "PrivateDevices=false"),
         ("CapabilityBoundingSet=", "CapabilityBoundingSet=CAP_NET_ADMIN"),
         (

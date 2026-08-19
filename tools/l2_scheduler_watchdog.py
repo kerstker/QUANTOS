@@ -689,6 +689,12 @@ def _unit_directives_exact(
     inherits_public_proxy_transport = module != "l2_scheduler_watchdog"
     if inherits_public_proxy_transport:
         required_keys.add("Service.PassEnvironment")
+    ordinary_worker = module not in {
+        "binance_realtime_stream",
+        "l2_scheduler_watchdog",
+    }
+    if ordinary_worker:
+        required_keys.add("Service.SuccessExitStatus")
     optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
     if expected_mounts:
         required_keys.add("Unit.RequiresMountsFor")
@@ -719,6 +725,10 @@ def _unit_directives_exact(
         and _one_directive(directives, "Unit.Wants") == "network-online.target"
         and _one_directive(directives, "Service.Type")
         == ("simple" if module == "binance_realtime_stream" else "oneshot")
+        and (
+            not ordinary_worker
+            or _one_directive(directives, "Service.SuccessExitStatus") == "2"
+        )
         and _one_directive(directives, "Service.ExecStart") == expected_exec
         and all(_one_directive(directives, name) == value for name, value in expected_hardening.items())
         and set(directives.get("Service.ReadWritePaths", ())) == expected_writes
