@@ -548,7 +548,7 @@ def test_main_accepts_passphrase_file_argument(tmp_path, monkeypatch, capsys):
         ],
     )
 
-    l2_backup_module.main()
+    assert l2_backup_module.main() == 0
 
     assert captured["passphrase"] == PASSPHRASE
     assert json.loads(capsys.readouterr().out)["verdict"] == "PASS"
@@ -577,10 +577,42 @@ def test_systemd_credential_directory_supplies_default_passphrase_file(
         ["l2_backup.py", "--dest", str(tmp_path / "backup")],
     )
 
-    l2_backup_module.main()
+    assert l2_backup_module.main() == 0
 
     assert captured["passphrase"] == PASSPHRASE
     assert json.loads(capsys.readouterr().out)["verdict"] == "PASS"
+
+
+def test_main_returns_numeric_failure_without_ambiguous_system_exit(
+    tmp_path, monkeypatch, capsys
+):
+    secret = tmp_path / "backup.passphrase"
+    secret.write_text(PASSPHRASE + "\n", encoding="utf-8")
+    monkeypatch.setattr(l2_backup_module, "_is_posix_platform", lambda: False)
+    monkeypatch.delenv(l2_backup_module.PASSPHRASE_ENV, raising=False)
+    monkeypatch.setattr(
+        l2_backup_module,
+        "run_recorded_l2_backup",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            L2BackupError("BACKUP_CONFIGURATION_UNAVAILABLE")
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "l2_backup.py",
+            "--dest",
+            str(tmp_path / "backup"),
+            "--passphrase-file",
+            str(secret),
+        ],
+    )
+
+    assert l2_backup_module.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "BACKUP_CONFIGURATION_UNAVAILABLE\n"
 
 
 def test_default_backup_sources_require_data_quality_admission_authority():

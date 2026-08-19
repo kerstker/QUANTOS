@@ -19,6 +19,7 @@ import secrets
 import shutil
 import sqlite3
 import stat
+import sys
 import tempfile
 import time
 from typing import Iterable
@@ -1221,7 +1222,7 @@ def evaluate_restore_continuity(
     )
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Run the encrypted QUANTOS L2 state backup")
     parser.add_argument("--dest", default=os.environ.get(DESTINATION_ENV))
     parser.add_argument("--repo-root", default=os.getcwd())
@@ -1251,14 +1252,16 @@ def main() -> None:
             max_rpo_ms=args.max_rpo_ms,
         )
     except L2BackupError as exc:
-        raise SystemExit(str(exc)) from None
+        print(str(exc), file=sys.stderr)
+        return 1
     print(
         json.dumps(
             {key: value for key, value in result.items() if key != "batch_dir"},
             sort_keys=True,
         )
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
