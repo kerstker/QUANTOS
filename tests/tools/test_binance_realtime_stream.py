@@ -195,7 +195,45 @@ def test_cursor_chain_subprocess_uses_fixed_module_without_shell(tmp_path, monke
         "--verify-cursor-chain",
     ]
     assert observed["kwargs"]["shell"] is False
-    assert observed["kwargs"]["timeout"] >= 45 * 60
+    assert observed["kwargs"]["timeout"] >= 75 * 60
+
+
+@pytest.mark.asyncio
+async def test_async_cursor_audit_kills_child_when_cancelled(tmp_path, monkeypatch):
+    released = asyncio.Event()
+    observed = {"killed": False, "waited": False}
+
+    class Process:
+        returncode = None
+
+        async def communicate(self):
+            await released.wait()
+            return b"", b""
+
+        def kill(self):
+            observed["killed"] = True
+            self.returncode = -9
+            released.set()
+
+        async def wait(self):
+            observed["waited"] = True
+            return self.returncode
+
+    async def spawn(*_args, **_kwargs):
+        return Process()
+
+    monkeypatch.setattr(realtime.asyncio, "create_subprocess_exec", spawn)
+    task = asyncio.create_task(
+        realtime._verify_cursor_chain_subprocess_async(
+            str(tmp_path / "stream.db")
+        )
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert observed == {"killed": True, "waited": True}
 
 
 @pytest.mark.asyncio
@@ -246,10 +284,8 @@ async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
         await stop.wait()
 
     monkeypatch.setattr(realtime, "_verify_store_chain", verify)
-    monkeypatch.setattr(
-        realtime,
-        "_verify_cursor_chain_subprocess",
-        lambda _path, *, checkpoint_seq, checkpoint_row_hash: (
+    async def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
+        return (
             cursor_calls.append((checkpoint_seq, checkpoint_row_hash))
             or {
                 "valid": True,
@@ -258,7 +294,12 @@ async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
                 "verified_seq": checkpoint_seq,
                 "verified_row_hash": checkpoint_row_hash,
             }
-        ),
+        )
+
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_subprocess_async",
+        verify_cursor,
     )
     monkeypatch.setattr(realtime, "_consume", consume)
 
@@ -315,7 +356,7 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
         state.connections[endpoint] = True
         await stop.wait()
 
-    def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
+    async def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
         cursor_calls.append((checkpoint_seq, checkpoint_row_hash))
         return {
             "valid": True,
@@ -339,7 +380,7 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     )
     monkeypatch.setattr(
         realtime,
-        "_verify_cursor_chain_subprocess",
+        "_verify_cursor_chain_subprocess_async",
         verify_cursor,
     )
     monkeypatch.setattr(realtime, "CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS", 1_000)
@@ -663,6 +704,30 @@ def test_future_skew_frame_is_rejected_before_mutating_stream_state(tmp_path):
         cursor.close()
 
 
+def test_book_frame_without_event_time_uses_transaction_time_for_skew_guard():
+    state = StreamState(("BTC",))
+    future = {
+        "e": "bookTicker",
+        "T": _NOW + realtime.MAX_FUTURE_SKEW_MS + 1,
+        "s": "BTCUSDT",
+        "u": 10,
+        "b": "99",
+        "B": "2",
+        "a": "101",
+        "A": "3",
+    }
+
+    with pytest.raises(
+        BinanceStreamDataError,
+        match="exchange event time exceeds bounded future skew",
+    ):
+        state.handle(_frame("btcusdt@bookTicker", future), received_at_ms=_NOW)
+
+    assert state.latest["BTCUSDT"] == {}
+    assert state.event_counts == {}
+    assert state.last_received_at_ms is None
+
+
 def test_snapshot_retains_bounded_exchange_clock_skew_without_breaking_pit(tmp_path):
     state = StreamState(("BTC",))
     state.handle(
@@ -842,10 +907,13 @@ async def test_run_stream_resumes_persisted_recovering_cursor(tmp_path, monkeypa
         await stop.wait()
 
     monkeypatch.setattr(realtime, "_consume", consume)
+    async def verify_cursor(*_args, **_kwargs):
+        return dict(initial_verification)
+
     monkeypatch.setattr(
         realtime,
-        "_verify_cursor_chain_subprocess",
-        lambda *_args, **_kwargs: dict(initial_verification),
+        "_verify_cursor_chain_subprocess_async",
+        verify_cursor,
     )
 
     await realtime.run_stream(

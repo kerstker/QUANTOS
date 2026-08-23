@@ -16,6 +16,7 @@ import math
 import os
 import time
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -265,8 +266,11 @@ class StreamState:
         if data.get("st") not in (None, 1):
             return
         received_at_ms = _integer(received_at_ms, "received_at_ms")
-        if data.get("E") is not None:
-            event_time_ms = _integer(data.get("E"), "event_time")
+        frame_event_time = data.get("E")
+        if frame_event_time is None and "@bookTicker" in stream:
+            frame_event_time = data.get("T")
+        if frame_event_time is not None:
+            event_time_ms = _integer(frame_event_time, "event_time")
             if event_time_ms > received_at_ms + MAX_FUTURE_SKEW_MS:
                 raise BinanceStreamDataError(
                     "exchange event time exceeds bounded future skew"
@@ -841,6 +845,54 @@ def _verify_cursor_chain_subprocess(
         raise BinanceStreamDataError(str(exc)) from exc
 
 
+async def _verify_cursor_chain_subprocess_async(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Run the fixed verifier with cancellation that kills and reaps its child."""
+
+    command = binance_cursor_chain_audit_process.cursor_chain_audit_command(
+        store_path,
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=str(Path(binance_cursor_chain_audit_process.__file__).resolve().parents[1]),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    communication = asyncio.create_task(process.communicate())
+    try:
+        stdout, _stderr = await asyncio.wait_for(
+            asyncio.shield(communication),
+            timeout=(
+                binance_cursor_chain_audit_process.CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS
+            ),
+        )
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await asyncio.shield(communication)
+        raise
+    except TimeoutError as exc:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await asyncio.shield(communication)
+        raise BinanceStreamDataError("cursor chain verifier timed out") from exc
+    try:
+        return binance_cursor_chain_audit_process.parse_cursor_chain_audit_result(
+            stdout=stdout.decode("utf-8"),
+            returncode=int(process.returncode),
+        )
+    except binance_cursor_chain_audit_process.CursorChainAuditProcessError as exc:
+        raise BinanceStreamDataError(str(exc)) from exc
+
+
 async def run_stream(
     *,
     tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
@@ -1030,8 +1082,7 @@ async def run_stream(
         while not stop.is_set() and time.monotonic() < deadline:
             audit_checkpoint = dict(cursor_chain_checkpoint)
             checkpoint_mode = str(audit_checkpoint["verification_mode"])
-            verification = await asyncio.to_thread(
-                _verify_cursor_chain_subprocess,
+            verification = await _verify_cursor_chain_subprocess_async(
                 store_path,
                 checkpoint_seq=int(audit_checkpoint["checkpoint_seq"]),
                 checkpoint_row_hash=str(

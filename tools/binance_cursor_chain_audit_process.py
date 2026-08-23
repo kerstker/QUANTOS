@@ -15,24 +15,25 @@ from typing import Any
 
 # A genesis audit over the production cursor authority currently covers several
 # million payload-bound events.  The DGX ARM64 audit is CPU-bound and has crossed
-# the former 30-minute ceiling while remaining healthy.  This is a bounded
+# the former 60-minute ceiling while remaining healthy.  This is a bounded
 # bootstrap/renewal proof; normal restarts use the trusted batch checkpoint and
 # verify only the suffix.
-CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 60 * 60.0
+CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 90 * 60.0
 
 
 class CursorChainAuditProcessError(RuntimeError):
     """The isolated verifier did not return one coherent fail-closed result."""
 
 
-def run_cursor_chain_audit(
+def cursor_chain_audit_command(
     store_path: str,
     *,
     checkpoint_seq: int = 0,
     checkpoint_row_hash: str = "",
-) -> dict[str, Any]:
-    """Run the fixed cursor verifier outside the WebSocket process GIL."""
-    command = [
+) -> list[str]:
+    """Return the fixed verifier argv; callers cannot select an executable."""
+
+    return [
         sys.executable,
         "-m",
         "tools.binance_realtime_stream",
@@ -44,17 +45,15 @@ def run_cursor_chain_audit(
         "--cursor-checkpoint-row-hash",
         checkpoint_row_hash,
     ]
-    result = subprocess.run(
-        command,
-        cwd=str(Path(__file__).resolve().parents[1]),
-        capture_output=True,
-        text=True,
-        check=False,
-        shell=False,
-        timeout=CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS,
-    )
+
+
+def parse_cursor_chain_audit_result(
+    *, stdout: str, returncode: int
+) -> dict[str, Any]:
+    """Validate that process status and its JSON verdict agree fail-closed."""
+
     try:
-        verification = json.loads(result.stdout)
+        verification = json.loads(stdout)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise CursorChainAuditProcessError(
             "cursor chain verifier returned malformed output"
@@ -66,15 +65,44 @@ def run_cursor_chain_audit(
             "cursor chain verifier returned an inconsistent result"
         )
     success = verification["valid"] is True
-    if (result.returncode == 0) != success:
+    if (returncode == 0) != success:
         raise CursorChainAuditProcessError(
             "cursor chain verifier returned an inconsistent result"
         )
     return verification
 
 
+def run_cursor_chain_audit(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Run the fixed cursor verifier outside the WebSocket process GIL."""
+    command = cursor_chain_audit_command(
+        store_path,
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
+    result = subprocess.run(
+        command,
+        cwd=str(Path(__file__).resolve().parents[1]),
+        capture_output=True,
+        text=True,
+        check=False,
+        shell=False,
+        timeout=CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS,
+    )
+    return parse_cursor_chain_audit_result(
+        stdout=result.stdout,
+        returncode=result.returncode,
+    )
+
+
 __all__ = [
     "CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS",
     "CursorChainAuditProcessError",
+    "cursor_chain_audit_command",
+    "parse_cursor_chain_audit_result",
     "run_cursor_chain_audit",
 ]
