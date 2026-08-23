@@ -16,7 +16,6 @@ import math
 import os
 import time
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -860,7 +859,11 @@ async def _verify_cursor_chain_subprocess_async(
     )
     process = await asyncio.create_subprocess_exec(
         *command,
-        cwd=str(Path(binance_cursor_chain_audit_process.__file__).resolve().parents[1]),
+        cwd=os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(binance_cursor_chain_audit_process.__file__)
+            )
+        ),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
