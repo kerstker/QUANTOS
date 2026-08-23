@@ -960,7 +960,11 @@ def _systemd_snapshot(
     task_names = [name for name, spec in EXPECTED_TASKS.items() if spec.module == module]
     if len(task_names) != 1:
         raise SchedulerInspectionError("systemd module does not map to one watchdog task")
-    active = properties["ActiveState"] == "active"
+    # A systemd oneshot remains ``activating/start`` for its entire execution.
+    # Treat that as a real running state; otherwise a watchdog sample taken on
+    # a timer boundary falsely reports the task as Disabled while the worker is
+    # legitimately computing.
+    active = properties["ActiveState"] in {"active", "activating"}
     running = active and properties["SubState"] in {"running", "start"}
     if running:
         state = "Running"

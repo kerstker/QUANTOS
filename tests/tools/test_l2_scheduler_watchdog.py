@@ -914,6 +914,24 @@ def test_systemd_collector_accepts_exact_ordinary_unit_and_uses_fixed_commands()
     ) == 2
 
 
+def test_systemd_collector_treats_executing_oneshot_as_running() -> None:
+    metadata = _systemd_properties(
+        "quantos-l2@domain_event_ops.service",
+        active="inactive",
+        unit_file_state="static",
+    ).replace(
+        "ActiveState=inactive\nSubState=dead",
+        "ActiveState=activating\nSubState=start",
+    )
+
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner("domain_event_ops", service_metadata=metadata)
+    )[0]
+
+    assert snapshot.state == "Running"
+    assert snapshot.scheduler_contract_ok is True
+
+
 def test_systemd_collector_accepts_exact_backup_boundary() -> None:
     snapshot = collect_systemd_units(runner=_systemd_runner("l2_backup"))[0]
     assert snapshot.name == "QUANTOS_backup"
