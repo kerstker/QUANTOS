@@ -1,10 +1,12 @@
 import ast
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.binance_stream_cursor import StreamCursorStore
 from services.features.value_store import SqliteFeatureValueStore
 from services.features.binance_realtime_projection import CORE_FEATURE_IDS, FEATURE_IDS
 from tools import binance_realtime_features as realtime
@@ -73,12 +75,50 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         source.append_snapshot(incomplete)
     finally:
         source.close()
+    cursor = StreamCursorStore(str(source_path), create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="AAAUSDT",
+            first_update_id=1,
+            final_update_id=2,
+            previous_final_update_id=0,
+            event_time_ms=19_998,
+            observed_at_ms=19_999,
+        )
+        cursor_verification = cursor.verify_chain_from()
+    finally:
+        cursor.close()
+    stream_status_path = tmp_path / "stream-status.json"
+    stream_status_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "generated_at_ms": 19_999,
+                "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+                "cursor": {
+                    "chain": {
+                        **cursor_verification,
+                        "verification_mode": "FULL_SUBPROCESS_BOOTSTRAP",
+                        "bootstrap_verification_mode": (
+                            "FULL_SUBPROCESS_BOOTSTRAP"
+                        ),
+                        "verified_at_ms": 19_999,
+                        "full_verified_at_ms": 19_999,
+                    }
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     feature_path = tmp_path / "features.db"
     status_path = tmp_path / "status.json"
     result = realtime.execute(
         now_ms=20_000,
         source_store_path=str(source_path),
+        stream_status_path=str(stream_status_path),
         feature_store_path=str(feature_path),
         batch_store_path=str(tmp_path / "batches.db"),
         status_path=str(status_path),
@@ -109,6 +149,15 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     assert result["runtime"]["elapsed_ms"] >= 0
     assert result["source"]["chain_verification"]["mode"] == "FULL_BOOTSTRAP"
     assert result["source"]["chain_verification"]["verified_suffix_rows"] == 601
+    assert result["source"]["cursor_chain_checkpoint"]["verified_seq"] == 1
+    assert (
+        result["source"]["cursor_chain_verification"]["mode"]
+        == "FULL_BOOTSTRAP"
+    )
+    assert (
+        result["source"]["cursor_chain_verification"]["basis"]
+        == "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
     assert result["batch"]["chain_valid"] is True
     assert result["agent_input"]["automatic_action"] is False
     assert attestation is not None
@@ -148,6 +197,7 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     repeated = realtime.execute(
         now_ms=20_001,
         source_store_path=str(source_path),
+        stream_status_path=str(stream_status_path),
         feature_store_path=str(feature_path),
         batch_store_path=str(tmp_path / "batches.db"),
         status_path=str(tmp_path / "status.json"),
@@ -162,12 +212,28 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         "INCREMENTAL_FROM_TRUSTED_BATCH"
     )
     assert repeated["source"]["chain_verification"]["verified_suffix_rows"] == 0
+    assert (
+        repeated["source"]["cursor_chain_verification"]["mode"]
+        == "INCREMENTAL_FROM_TRUSTED_BATCH"
+    )
+    assert (
+        repeated["source"]["cursor_chain_verification"][
+            "verified_suffix_events"
+        ]
+        == 0
+    )
     periodic = realtime._trusted_source_checkpoint(
         str(tmp_path / "batches.db"),
         now_ms=20_000 + realtime.FULL_CHAIN_AUDIT_INTERVAL_MS,
     )
     assert periodic["verification_mode"] == "FULL_PERIODIC_AUDIT"
     assert periodic["checkpoint_seq"] == 0
+    cursor_periodic = realtime._trusted_cursor_checkpoint(
+        str(tmp_path / "batches.db"),
+        now_ms=20_000 + realtime.CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
+    )
+    assert cursor_periodic["verification_mode"] == "FULL_PERIODIC_AUDIT"
+    assert cursor_periodic["checkpoint_seq"] == 0
 
 
 def test_live_execute_publishes_completion_clock_not_start_clock(
@@ -204,6 +270,7 @@ def test_live_execute_publishes_completion_clock_not_start_clock(
     assert set(result["runtime"]["stage_elapsed_ms"]) == {
         "trusted_source_checkpoint",
         "source_snapshot_load",
+        "cursor_chain_verification",
         "source_contract_hashing",
         "feature_projection",
         "feature_store_append",
@@ -215,6 +282,74 @@ def test_live_execute_publishes_completion_clock_not_start_clock(
     assert all(
         elapsed >= 0
         for elapsed in result["runtime"]["stage_elapsed_ms"].values()
+    )
+
+
+def test_cursor_journal_without_full_audit_attestation_fails_closed(tmp_path):
+    source_path = tmp_path / "source.db"
+    cursor = StreamCursorStore(str(source_path), create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=1,
+            final_update_id=2,
+            previous_final_update_id=0,
+            event_time_ms=99,
+            observed_at_ms=100,
+        )
+    finally:
+        cursor.close()
+
+    with pytest.raises(
+        realtime.BinanceRealtimeFeatureError,
+        match="full-audit attestation",
+    ):
+        realtime._cursor_chain_verification(
+            str(source_path),
+            checkpoint={
+                "checkpoint_seq": 0,
+                "checkpoint_row_hash": "",
+                "full_verified_at_ms": None,
+                "verification_mode": "FULL_BOOTSTRAP",
+            },
+            stream_status_path=str(tmp_path / "missing-status.json"),
+            now_ms=1_000,
+        )
+
+
+def test_periodic_full_audit_has_a_distinct_content_addressed_batch_id(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        for index in range(300):
+            for ticker in ("AAA", "BBB"):
+                source.append_snapshot(_snapshot(f"{ticker}USDT", index))
+    finally:
+        source.close()
+
+    paths = {
+        "source_store_path": str(source_path),
+        "feature_store_path": str(tmp_path / "features.db"),
+        "batch_store_path": str(tmp_path / "batches.db"),
+        "status_path": str(tmp_path / "status.json"),
+        "source_row_limit": 600,
+    }
+    first = realtime.execute(now_ms=20_000, **paths)
+    periodic = realtime.execute(
+        now_ms=20_000 + realtime.FULL_CHAIN_AUDIT_INTERVAL_MS,
+        **paths,
+    )
+
+    assert first["batch"]["new_batch"] is True
+    assert periodic["batch"]["new_batch"] is True
+    assert periodic["batch"]["batch_id"] != first["batch"]["batch_id"]
+    assert periodic["source"]["chain_verification"]["mode"] == (
+        "FULL_PERIODIC_AUDIT"
     )
 
 

@@ -34,6 +34,7 @@ from services.data.binance_stream_cursor import (
     StreamCursorStore,
 )
 from services.features.realtime_feature_batch_store import (
+    trusted_cursor_chain_checkpoint,
     trusted_source_chain_checkpoint,
 )
 from tools import binance_cursor_chain_audit_process
@@ -53,6 +54,8 @@ FLUSH_SECONDS = 5.0
 MAX_STREAM_LAG_MS = 10_000
 CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
+CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
+CURSOR_FULL_AUDIT_LEAD_MS = 90 * 60 * 1_000
 class BinanceStreamDataError(RuntimeError):
     """A stream frame violates the documented public market-data contract."""
 
@@ -862,10 +865,11 @@ async def run_stream(
         now_ms=int(time.time() * 1_000),
         full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
     )
-    cursor_chain_checkpoint = {
-        "checkpoint_seq": 0,
-        "checkpoint_row_hash": "",
-    }
+    cursor_chain_checkpoint = trusted_cursor_chain_checkpoint(
+        batch_store_path,
+        now_ms=int(time.time() * 1_000),
+        full_chain_audit_interval_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
+    )
     cursor_chain_verification: dict[str, Any] = {
         "valid": False,
         "anchor_seq": 0,
@@ -904,6 +908,7 @@ async def run_stream(
                         if isinstance(depth, dict):
                             depth.update(_cursor_fields(recovered))
                 if cursor_chain_verification.get("valid") is True:
+                    previous_cursor_verification = cursor_chain_verification
                     cursor_chain_verification = _verify_cursor_chain_local(
                         store_path,
                         checkpoint_seq=int(
@@ -916,14 +921,34 @@ async def run_stream(
                     cursor_chain_verification["verification_mode"] = (
                         "INCREMENTAL_ON_FLUSH"
                     )
+                    cursor_chain_verification["bootstrap_verification_mode"] = (
+                        previous_cursor_verification.get(
+                            "bootstrap_verification_mode",
+                            previous_cursor_verification.get(
+                                "verification_mode"
+                            ),
+                        )
+                    )
+                    cursor_chain_verification["batch_authority"] = (
+                        previous_cursor_verification.get("batch_authority")
+                    )
+                    cursor_chain_verification["full_verified_at_ms"] = (
+                        previous_cursor_verification.get(
+                            "full_verified_at_ms"
+                        )
+                    )
                     cursor_chain_verification["verified_at_ms"] = observed_at_ms
                     if cursor_chain_verification.get("valid") is True:
                         cursor_chain_checkpoint = {
+                            **cursor_chain_checkpoint,
                             "checkpoint_seq": int(
                                 cursor_chain_verification["verified_seq"]
                             ),
                             "checkpoint_row_hash": str(
                                 cursor_chain_verification["verified_row_hash"]
+                            ),
+                            "verification_mode": (
+                                "INCREMENTAL_FROM_STREAM_CHECKPOINT"
                             ),
                         }
                 snapshots = state.snapshots(observed_at_ms)
@@ -992,22 +1017,84 @@ async def run_stream(
             except TimeoutError:
                 continue
 
-    async def bootstrap_cursor_chain() -> None:
+    async def cursor_chain_audit_loop() -> None:
+        """Audit once at boot, then renew the full proof before it expires."""
         nonlocal cursor_chain_checkpoint, cursor_chain_verification
-        verification = await asyncio.to_thread(
-            _verify_cursor_chain_subprocess,
-            store_path,
-            checkpoint_seq=0,
-            checkpoint_row_hash="",
-        )
-        verification["verification_mode"] = "FULL_SUBPROCESS_BOOTSTRAP"
-        verification["verified_at_ms"] = int(time.time() * 1_000)
-        cursor_chain_verification = verification
-        if verification.get("valid") is True:
+        while not stop.is_set() and time.monotonic() < deadline:
+            audit_checkpoint = dict(cursor_chain_checkpoint)
+            checkpoint_mode = str(audit_checkpoint["verification_mode"])
+            verification = await asyncio.to_thread(
+                _verify_cursor_chain_subprocess,
+                store_path,
+                checkpoint_seq=int(audit_checkpoint["checkpoint_seq"]),
+                checkpoint_row_hash=str(
+                    audit_checkpoint["checkpoint_row_hash"]
+                ),
+            )
+            verified_at_ms = int(time.time() * 1_000)
+            verification["verification_mode"] = {
+                "FULL_BOOTSTRAP": "FULL_SUBPROCESS_BOOTSTRAP",
+                "FULL_PERIODIC_AUDIT": "FULL_PERIODIC_SUBPROCESS_AUDIT",
+            }.get(checkpoint_mode, checkpoint_mode)
+            verification["bootstrap_verification_mode"] = verification[
+                "verification_mode"
+            ]
+            verification["verified_at_ms"] = verified_at_ms
+            verification["batch_authority"] = audit_checkpoint[
+                "batch_authority"
+            ]
+            verification["full_verified_at_ms"] = (
+                verified_at_ms
+                if int(verification.get("anchor_seq", -1)) == 0
+                and verification.get("valid") is True
+                else audit_checkpoint["full_verified_at_ms"]
+            )
+            cursor_chain_verification = verification
+            if verification.get("valid") is not True:
+                return
             cursor_chain_checkpoint = {
+                **audit_checkpoint,
                 "checkpoint_seq": int(verification["verified_seq"]),
                 "checkpoint_row_hash": str(verification["verified_row_hash"]),
+                "full_verified_at_ms": verification["full_verified_at_ms"],
+                "verification_mode": "INCREMENTAL_FROM_STREAM_CHECKPOINT",
             }
+            full_verified_at_ms = verification["full_verified_at_ms"]
+            if type(full_verified_at_ms) is not int:
+                return
+            renewal_at_ms = (
+                full_verified_at_ms
+                + CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS
+                - CURSOR_FULL_AUDIT_LEAD_MS
+            )
+            wait_seconds = max(
+                0.0,
+                (renewal_at_ms - int(time.time() * 1_000)) / 1_000,
+            )
+            wait_seconds = min(
+                wait_seconds,
+                max(0.0, deadline - time.monotonic()),
+            )
+            if wait_seconds <= 0:
+                cursor_chain_checkpoint = {
+                    **cursor_chain_checkpoint,
+                    "checkpoint_seq": 0,
+                    "checkpoint_row_hash": "",
+                    "verification_mode": "FULL_PERIODIC_AUDIT",
+                }
+                continue
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=wait_seconds)
+                return
+            except TimeoutError:
+                if time.monotonic() >= deadline:
+                    return
+                cursor_chain_checkpoint = {
+                    **cursor_chain_checkpoint,
+                    "checkpoint_seq": 0,
+                    "checkpoint_row_hash": "",
+                    "verification_mode": "FULL_PERIODIC_AUDIT",
+                }
 
     try:
         await asyncio.gather(
@@ -1015,7 +1102,7 @@ async def run_stream(
             _consume("market", urls["market"], state=state, stop=stop, deadline=deadline),
             flush_loop(),
             verify_chain_loop(),
-            bootstrap_cursor_chain(),
+            cursor_chain_audit_loop(),
         )
     finally:
         cursor_store.close()

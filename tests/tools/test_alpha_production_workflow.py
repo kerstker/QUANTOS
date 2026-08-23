@@ -644,6 +644,66 @@ def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
     assert snapshot["reconciliation"]["realtime_handoff_count"] == 1
 
 
+def test_realtime_historical_gate_replays_durable_family_evaluation(tmp_path) -> None:
+    """候选滚出当前 discovery JSON 后，正式 OOS 证据仍从哈希链权威回放。"""
+    identity = _realtime_identity("rt_durable_oos_v1")
+    stored_evaluation = {
+        "candidate_id": identity.candidate_id,
+        "dataset_version": "realtime-dataset-v1",
+        "evaluation": {
+            "candidate_id": identity.candidate_id,
+            "evaluation_status": "EVALUATED",
+            "status": "VALIDATED_AWAITING_90D_SHADOW_MATURITY",
+            "verdict": "PASS",
+            "gate_pass": True,
+            "gate_reasons": [],
+        },
+        "event_seq": 12,
+        "recorded_at": 2_900,
+        "record_hash": "e" * 64,
+    }
+    registry_evidence = {
+        "schema_version": 1,
+        "generated_at_ms": 2_900,
+        "authority_hash": "f" * 64,
+        "evaluations": {identity.candidate_id: [stored_evaluation]},
+    }
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        snapshot = reconcile_workflow(
+            workflow=workflow,
+            identities=(identity,),
+            historical_document={},
+            historical_path="historical.json",
+            forward_evaluations_document={},
+            forward_evaluations_path="forward.json",
+            forward_status_document={},
+            forward_status_path="forward-status.json",
+            risk_document={},
+            risk_path="risk.json",
+            realtime_document={},
+            realtime_path="paper.json",
+            lifecycle_document={},
+            lifecycle_path="lifecycle.json",
+            release_commit=COMMIT,
+            realtime_discovery_document={
+                "generated_at_ms": 3_000,
+                "candidates": [],
+            },
+            realtime_discovery_path="realtime-discovery.json",
+            realtime_registry_evidence=registry_evidence,
+            realtime_registry_path="realtime-registry.db",
+        )
+
+    gate = _gates(snapshot["candidates"][0])["HISTORICAL_OOS"]
+    assert gate["status"] == "PASS"
+    assert gate["reference"] == "realtime-registry.db"
+    assert gate["content_hash"]
+    assert (
+        snapshot["source_hashes"]["realtime_alpha_registry_evaluations"]
+        == stable_hash(registry_evidence)
+    )
+
+
 def test_exploratory_realtime_candidate_waits_before_formal_shadow_requirement():
     discovery = {
         "candidates": [

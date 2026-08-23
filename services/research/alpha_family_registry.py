@@ -288,7 +288,9 @@ class AlphaFamilyRegistry:
         return out
 
     def evaluations(self, candidate_id: str) -> list[dict]:
-        return [row["payload"] | {"event_seq": row["event_seq"], "record_hash": row["record_hash"]}
+        return [row["payload"] | {"event_seq": row["event_seq"],
+                                  "recorded_at": row["recorded_at"],
+                                  "record_hash": row["record_hash"]}
                 for row in self._events(event_type="EVALUATED", candidate_id=candidate_id)]
 
     def paper_runs(self, candidate_id: str) -> list[dict]:
@@ -364,6 +366,37 @@ class AlphaFamilyRegistry:
                 self._conn.rollback()
             raise AlphaFamilyRegistryError(
                 "family registry discovery snapshot is unavailable"
+            ) from exc
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+
+    def workflow_evidence_snapshot(
+        self,
+    ) -> tuple[str, list[dict], dict[str, list[dict]]]:
+        """Freeze identities and durable evaluation histories in one read view."""
+        try:
+            self._conn.execute("BEGIN")
+            authority = self.authority_hash()
+            definitions = self.candidate_definitions()
+            evaluations = {
+                str(row["candidate_id"]): self.evaluations(
+                    str(row["candidate_id"])
+                )
+                for row in definitions
+            }
+            self._conn.commit()
+            return authority, definitions, evaluations
+        except AlphaFamilyRegistryError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise AlphaFamilyRegistryError(
+                "family registry workflow snapshot is unavailable"
             ) from exc
         except Exception:
             if self._conn.in_transaction:

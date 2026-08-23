@@ -434,13 +434,53 @@ def _realtime_historical_gate(
     *,
     document: Mapping[str, Any],
     path: str | Path,
+    registry_evidence: Mapping[str, Any] | None = None,
+    registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
 ) -> GateEvidence:
     row = _sequence_row(document, candidate_id, field="candidates")
-    admission = document.get("data_admission")
-    formal_allowed = bool(
-        isinstance(admission, Mapping)
-        and admission.get("formal_validation_allowed") is True
-    )
+    evidence_document = document
+    evidence_path = path
+    evidence_source = "REALTIME_DISCOVERY_SNAPSHOT"
+    registry_event: Mapping[str, Any] | None = None
+    if row:
+        admission = document.get("data_admission")
+        formal_allowed = bool(
+            isinstance(admission, Mapping)
+            and admission.get("formal_validation_allowed") is True
+        )
+    else:
+        evaluations = (
+            registry_evidence.get("evaluations")
+            if isinstance(registry_evidence, Mapping)
+            else None
+        )
+        history = (
+            evaluations.get(candidate_id)
+            if isinstance(evaluations, Mapping)
+            else None
+        )
+        if isinstance(history, Sequence) and not isinstance(
+            history, (str, bytes, bytearray)
+        ):
+            valid = [
+                item
+                for item in history
+                if isinstance(item, Mapping)
+                and type(item.get("event_seq")) is int
+                and isinstance(item.get("evaluation"), Mapping)
+            ]
+            if valid:
+                latest = max(valid, key=lambda item: int(item["event_seq"]))
+                row = dict(latest["evaluation"])
+                registry_event = latest
+                evidence_document = registry_evidence or {}
+                evidence_path = registry_path
+                evidence_source = "ALPHA_FAMILY_REGISTRY"
+        formal_allowed = row.get("status") in {
+            "SHADOW_CANDIDATE_READY",
+            "VALIDATED_AWAITING_90D_SHADOW_MATURITY",
+            "REJECTED_BY_FORMAL_GATE",
+        }
     if not row:
         status = EvidenceStatus.NOT_AVAILABLE
     elif not formal_allowed or row.get("evaluation_status") != "EVALUATED":
@@ -453,14 +493,57 @@ def _realtime_historical_gate(
         "candidate": row,
         "formal_validation_allowed": formal_allowed,
         "research_policy_hash": document.get("research_policy_hash"),
+        "evidence_source": evidence_source,
+        "registry_authority_hash": (
+            registry_evidence.get("authority_hash")
+            if registry_event is not None
+            and isinstance(registry_evidence, Mapping)
+            else None
+        ),
+        "registry_event_seq": (
+            registry_event.get("event_seq")
+            if registry_event is not None
+            else None
+        ),
+        "registry_record_hash": (
+            registry_event.get("record_hash")
+            if registry_event is not None
+            else None
+        ),
     }
     return _gate(
         EvidenceGate.HISTORICAL_OOS,
         status,
-        path=path,
-        document=document if row else {},
+        path=evidence_path,
+        document=evidence_document if row else {},
         row=bound_row,
     )
+
+
+def _realtime_registry_evidence(path: str | Path) -> dict[str, Any]:
+    resolved = Path(path)
+    if not resolved.is_file():
+        return {}
+    registry = AlphaFamilyRegistry(str(resolved), create=False)
+    try:
+        authority, definitions, evaluations = (
+            registry.workflow_evidence_snapshot()
+        )
+    finally:
+        registry.close()
+    recorded = [
+        int(item["recorded_at"])
+        for history in evaluations.values()
+        for item in history
+        if type(item.get("recorded_at")) is int
+    ]
+    return {
+        "schema_version": 1,
+        "generated_at_ms": max(recorded, default=0),
+        "authority_hash": authority,
+        "candidate_definition_hash": stable_hash(definitions),
+        "evaluations": evaluations,
+    }
 
 
 def _track_row(document: Mapping[str, Any], candidate_id: str) -> dict[str, Any]:
@@ -912,6 +995,8 @@ def reconcile_workflow(
     release_commit: str | None,
     realtime_discovery_document: Mapping[str, Any] | None = None,
     realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_registry_evidence: Mapping[str, Any] | None = None,
+    realtime_registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
     realtime_formal_shadow_document: Mapping[str, Any] | None = None,
     realtime_formal_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW,
     realtime_shadow_document: Mapping[str, Any] | None = None,
@@ -943,6 +1028,7 @@ def reconcile_workflow(
         realtime_document,
         lifecycle_document,
         realtime_discovery_document or {},
+        realtime_registry_evidence or {},
         realtime_formal_shadow_document or {},
         realtime_shadow_document or {},
         realtime_execution_document or {},
@@ -964,6 +1050,8 @@ def reconcile_workflow(
                 identity.candidate_id,
                 document=realtime_discovery_document or {},
                 path=realtime_discovery_path,
+                registry_evidence=realtime_registry_evidence,
+                registry_path=realtime_registry_path,
             )
             shadow, periods = _realtime_formal_shadow_gate(
                 identity.candidate_id,
@@ -1146,6 +1234,9 @@ def reconcile_workflow(
                 "realtime_alpha_discovery": stable_hash(
                     realtime_discovery_document or {}
                 ),
+                "realtime_alpha_registry_evaluations": stable_hash(
+                    realtime_registry_evidence or {}
+                ),
                 "realtime_alpha_formal_shadow": stable_hash(
                     realtime_formal_shadow_document or {}
                 ),
@@ -1297,6 +1388,9 @@ def run(
         realtime_registry_path=realtime_registry_path,
         realtime_discovery_path=realtime_discovery_path,
     )
+    realtime_registry_document = _realtime_registry_evidence(
+        realtime_registry_path
+    )
     with AlphaProductionWorkflow(db_path) as workflow:
         snapshot = reconcile_workflow(
             workflow=workflow,
@@ -1317,6 +1411,8 @@ def run(
             release_commit=commit,
             realtime_discovery_document=_read_optional(realtime_discovery_path),
             realtime_discovery_path=realtime_discovery_path,
+            realtime_registry_evidence=realtime_registry_document,
+            realtime_registry_path=realtime_registry_path,
             realtime_formal_shadow_document=_read_optional(
                 realtime_formal_shadow_path
             ),

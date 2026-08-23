@@ -21,6 +21,10 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.binance_stream_cursor import (
+    StreamCursorStore,
+    StreamCursorStoreError,
+)
 from services.data.distribution_drift import (
     evaluate_feature_distribution_drift,
 )
@@ -39,6 +43,7 @@ from services.features.binance_realtime_projection import (
 )
 from services.features.realtime_feature_batch_store import (
     RealtimeFeatureBatchStore,
+    trusted_cursor_chain_checkpoint,
     trusted_source_chain_checkpoint,
 )
 from services.features.value_store import SqliteFeatureValueStore
@@ -48,6 +53,9 @@ from tools.cache_io import atomic_write_json
 
 DEFAULT_SOURCE_STORE = os.path.join(
     "data", "cache", "binance_realtime_stream.db"
+)
+DEFAULT_STREAM_STATUS = os.path.join(
+    "data", "cache", "binance_realtime_stream_status.json"
 )
 DEFAULT_FEATURE_STORE = os.path.join(
     "data", "cache", "binance_realtime_features.db"
@@ -62,6 +70,8 @@ SOURCE_ROW_LIMIT = 3_500
 DRIFT_HISTORY_LIMIT = 240
 WORKER_VERSION = "binance-realtime-feature-worker.v2"
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
+CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
+MAX_STREAM_STATUS_AGE_MS = 15 * 60 * 1_000
 CALIBRATION_POLICY = DriftCalibrationPolicy(
     baseline_window=60,
     recent_window=20,
@@ -242,10 +252,126 @@ def _trusted_source_checkpoint(
         return trusted_source_chain_checkpoint(
             batch_store_path,
             now_ms=now_ms,
+            full_chain_audit_interval_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
+        )
+    except Exception as exc:
+        raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
+
+
+def _trusted_cursor_checkpoint(
+    batch_store_path: str,
+    *,
+    now_ms: int,
+) -> dict[str, Any]:
+    """Load the cursor-chain anchor from the verified feature batch journal."""
+    try:
+        return trusted_cursor_chain_checkpoint(
+            batch_store_path,
+            now_ms=now_ms,
             full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
         )
     except Exception as exc:
         raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
+
+
+def _cursor_chain_verification(
+    source_store_path: str,
+    *,
+    checkpoint: dict[str, Any],
+    stream_status_path: str,
+    now_ms: int | None,
+) -> dict[str, Any] | None:
+    """Independently verify the cursor suffix before the batch anchors it.
+
+    Snapshot-only fixtures and legacy stores legitimately have no cursor
+    journal.  Once the cursor schema exists, however, corruption is a hard
+    feature-worker failure rather than an optional diagnostic.
+    """
+    try:
+        store = StreamCursorStore(source_store_path)
+    except StreamCursorStoreError as exc:
+        if str(exc) == "cursor store schema is missing":
+            return None
+        raise BinanceRealtimeFeatureError("cursor chain is unreadable") from exc
+    validation_now_ms = (
+        int(time.time() * 1_000) if now_ms is None else int(now_ms)
+    )
+    checkpoint_seq = int(checkpoint["checkpoint_seq"])
+    checkpoint_row_hash = str(checkpoint["checkpoint_row_hash"])
+    basis = "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
+    full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    attested_frontier_seq: int | None = None
+    attested_frontier_hash: str | None = None
+    stream_status_sha256: str | None = None
+    if checkpoint_seq == 0:
+        try:
+            status_bytes = Path(stream_status_path).read_bytes()
+            status = json.loads(status_bytes.decode("utf-8"))
+            if not isinstance(status, dict):
+                raise ValueError("stream status must be an object")
+            cursor = status.get("cursor") if isinstance(status, dict) else None
+            chain = cursor.get("chain") if isinstance(cursor, dict) else None
+            bootstrap_mode = (
+                chain.get("bootstrap_verification_mode")
+                if isinstance(chain, dict)
+                else None
+            )
+            generated_at_ms = status.get("generated_at_ms")
+            full_verified_at_ms = chain.get("full_verified_at_ms")
+            attested_frontier_seq = chain.get("verified_seq")
+            attested_frontier_hash = chain.get("verified_row_hash")
+            valid_status = bool(
+                status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+                and type(generated_at_ms) is int
+                and 0 <= validation_now_ms - generated_at_ms
+                < MAX_STREAM_STATUS_AGE_MS
+                and isinstance(chain, dict)
+                and chain.get("valid") is True
+                and bootstrap_mode
+                in {
+                    "FULL_SUBPROCESS_BOOTSTRAP",
+                    "FULL_PERIODIC_SUBPROCESS_AUDIT",
+                }
+                and type(full_verified_at_ms) is int
+                and 0 <= validation_now_ms - full_verified_at_ms
+                < CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS
+                and type(attested_frontier_seq) is int
+                and attested_frontier_seq >= 0
+                and (
+                    attested_frontier_hash == ""
+                    if attested_frontier_seq == 0
+                    else _is_sha256(attested_frontier_hash)
+                )
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            valid_status = False
+        if not valid_status:
+            store.close()
+            raise BinanceRealtimeFeatureError(
+                "cursor full-audit attestation is unavailable or invalid"
+            )
+        checkpoint_seq = int(attested_frontier_seq)
+        checkpoint_row_hash = str(attested_frontier_hash)
+        stream_status_sha256 = hashlib.sha256(status_bytes).hexdigest()
+        basis = "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    try:
+        verification = dict(
+            store.verify_chain_from(
+                checkpoint_seq=checkpoint_seq,
+                checkpoint_row_hash=checkpoint_row_hash,
+            )
+        )
+    finally:
+        store.close()
+    if verification.get("valid") is not True:
+        raise BinanceRealtimeFeatureError("cursor chain is invalid")
+    verification["mode"] = checkpoint["verification_mode"]
+    verification["basis"] = basis
+    verification["full_verified_at_ms"] = full_verified_at_ms
+    verification["attested_frontier_seq"] = attested_frontier_seq
+    verification["attested_frontier_hash"] = attested_frontier_hash
+    verification["stream_status_sha256"] = stream_status_sha256
+    return verification
 
 
 def _projection_watermarks(
@@ -387,6 +513,7 @@ def execute(
     *,
     now_ms: int | None = None,
     source_store_path: str = DEFAULT_SOURCE_STORE,
+    stream_status_path: str = DEFAULT_STREAM_STATUS,
     feature_store_path: str = DEFAULT_FEATURE_STORE,
     batch_store_path: str = DEFAULT_BATCH_STORE,
     status_path: str = DEFAULT_STATUS,
@@ -412,6 +539,10 @@ def execute(
         batch_store_path,
         now_ms=now,
     )
+    trusted_cursor_checkpoint = _trusted_cursor_checkpoint(
+        batch_store_path,
+        now_ms=now,
+    )
     finish_stage("trusted_source_checkpoint")
     input_hashes = {
         "feature_batch_authority_before": trusted_checkpoint["batch_authority"],
@@ -431,6 +562,28 @@ def execute(
     finally:
         source_store.close()
     finish_stage("source_snapshot_load")
+    cursor_chain_verification = _cursor_chain_verification(
+        source_store_path,
+        checkpoint=trusted_cursor_checkpoint,
+        stream_status_path=stream_status_path,
+        now_ms=(None if now_ms is None else now),
+    )
+    cursor_chain_checkpoint = (
+        None
+        if cursor_chain_verification is None
+        or int(cursor_chain_verification["verified_seq"]) <= 0
+        else {
+            "schema_version": 1,
+            "verified_seq": int(cursor_chain_verification["verified_seq"]),
+            "verified_row_hash": str(
+                cursor_chain_verification["verified_row_hash"]
+            ),
+            "full_verified_at_ms": (
+                cursor_chain_verification["full_verified_at_ms"]
+            ),
+        }
+    )
+    finish_stage("cursor_chain_verification")
     source_digest = _sha256(snapshots)
     input_hashes["public_source_snapshot_bundle"] = source_digest
     input_hashes["public_source_chain_view"] = _sha256(
@@ -445,6 +598,20 @@ def execute(
                 )
             },
             "verification": chain_verification,
+        }
+    )
+    input_hashes["public_cursor_chain_view"] = _sha256(
+        {
+            "checkpoint": {
+                key: trusted_cursor_checkpoint[key]
+                for key in (
+                    "checkpoint_seq",
+                    "checkpoint_row_hash",
+                    "full_verified_at_ms",
+                    "verification_mode",
+                )
+            },
+            "verification": cursor_chain_verification,
         }
     )
     dataset_version = f"binance-realtime:{source_digest}"
@@ -530,15 +697,8 @@ def execute(
         )
 
     batch_payload = {
-        "schema_version": 2,
-        "batch_id": _sha256(
-            {
-                "source_digest": source_digest,
-                "feature_version": FEATURE_VERSION,
-                "materializer_version": MATERIALIZER_VERSION,
-                "worker_version": WORKER_VERSION,
-            }
-        ),
+        "schema_version": 3,
+        "identity_scheme": "CONTENT_ADDRESSED_PAYLOAD_V1",
         "observed_at_ms": source_observed_at_ms,
         "source": {
             "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
@@ -559,6 +719,7 @@ def execute(
                     else trusted_checkpoint["full_verified_at_ms"]
                 ),
             },
+            "cursor_chain_checkpoint": cursor_chain_checkpoint,
         },
         "projection": {
             "worker_version": WORKER_VERSION,
@@ -594,6 +755,12 @@ def execute(
             "live_trading": False,
         },
     }
+    batch_payload["batch_id"] = _sha256(
+        {
+            "kind": "BINANCE_REALTIME_FEATURE_BATCH_V3",
+            "payload_without_batch_id": batch_payload,
+        }
+    )
     batch_store = RealtimeFeatureBatchStore(batch_store_path, create=True)
     try:
         new_batch = batch_store.append(batch_payload)
@@ -629,6 +796,30 @@ def execute(
                 "verified_suffix_rows": chain_verification[
                     "verified_suffix_rows"
                 ],
+            },
+            "cursor_chain_verification": {
+                "mode": (
+                    "NOT_AVAILABLE_NO_CURSOR_JOURNAL"
+                    if cursor_chain_verification is None
+                    else cursor_chain_verification["mode"]
+                ),
+                "anchor_seq": (
+                    None
+                    if cursor_chain_verification is None
+                    else cursor_chain_verification["anchor_seq"]
+                ),
+                "verified_suffix_events": (
+                    None
+                    if cursor_chain_verification is None
+                    else cursor_chain_verification[
+                        "verified_suffix_events"
+                    ]
+                ),
+                "basis": (
+                    None
+                    if cursor_chain_verification is None
+                    else cursor_chain_verification["basis"]
+                ),
             },
         },
         "features": {

@@ -250,18 +250,20 @@ class RealtimeFeatureBatchStore:
             ) from exc
 
 
-def trusted_source_chain_checkpoint(
+def _trusted_chain_checkpoint(
     path: str,
     *,
     now_ms: int,
     full_chain_audit_interval_ms: int,
+    checkpoint_key: str,
+    checkpoint_label: str,
     create: bool = True,
 ) -> dict[str, Any]:
-    """Load a source-chain checkpoint from the verified batch authority.
+    """Load one source-side checkpoint from the verified batch authority.
 
     The feature batch journal is an independent append-only consumer authority.
     Its latest batch may therefore anchor suffix verification of the much larger
-    realtime source journal.  Missing history bootstraps from genesis; stale
+    realtime journals.  Missing history bootstraps from genesis; stale
     history deliberately requires another full audit.
     """
     if (
@@ -281,7 +283,7 @@ def trusted_source_chain_checkpoint(
     finally:
         store.close()
     source = latest.get("source") if isinstance(latest, dict) else None
-    checkpoint = source.get("chain_checkpoint") if isinstance(source, dict) else None
+    checkpoint = source.get(checkpoint_key) if isinstance(source, dict) else None
     if checkpoint is None:
         return {
             "checkpoint_seq": 0,
@@ -291,7 +293,9 @@ def trusted_source_chain_checkpoint(
             "batch_authority": batch_authority,
         }
     if not isinstance(checkpoint, dict) or checkpoint.get("schema_version") != 1:
-        raise RealtimeFeatureBatchStoreError("source chain checkpoint is malformed")
+        raise RealtimeFeatureBatchStoreError(
+            f"{checkpoint_label} chain checkpoint is malformed"
+        )
     seq = checkpoint.get("verified_seq")
     row_hash = checkpoint.get("verified_row_hash")
     full_verified_at_ms = checkpoint.get("full_verified_at_ms")
@@ -307,7 +311,9 @@ def trusted_source_chain_checkpoint(
         or full_verified_at_ms < 0
         or full_verified_at_ms > now_ms
     ):
-        raise RealtimeFeatureBatchStoreError("source chain checkpoint is malformed")
+        raise RealtimeFeatureBatchStoreError(
+            f"{checkpoint_label} chain checkpoint is malformed"
+        )
     if now_ms - full_verified_at_ms >= full_chain_audit_interval_ms:
         return {
             "checkpoint_seq": 0,
@@ -325,8 +331,45 @@ def trusted_source_chain_checkpoint(
     }
 
 
+def trusted_source_chain_checkpoint(
+    path: str,
+    *,
+    now_ms: int,
+    full_chain_audit_interval_ms: int,
+    create: bool = True,
+) -> dict[str, Any]:
+    """Load the snapshot-source checkpoint from verified batch authority."""
+    return _trusted_chain_checkpoint(
+        path,
+        now_ms=now_ms,
+        full_chain_audit_interval_ms=full_chain_audit_interval_ms,
+        checkpoint_key="chain_checkpoint",
+        checkpoint_label="source",
+        create=create,
+    )
+
+
+def trusted_cursor_chain_checkpoint(
+    path: str,
+    *,
+    now_ms: int,
+    full_chain_audit_interval_ms: int,
+    create: bool = True,
+) -> dict[str, Any]:
+    """Load the stream-cursor checkpoint from verified batch authority."""
+    return _trusted_chain_checkpoint(
+        path,
+        now_ms=now_ms,
+        full_chain_audit_interval_ms=full_chain_audit_interval_ms,
+        checkpoint_key="cursor_chain_checkpoint",
+        checkpoint_label="cursor",
+        create=create,
+    )
+
+
 __all__ = [
     "RealtimeFeatureBatchStore",
     "RealtimeFeatureBatchStoreError",
+    "trusted_cursor_chain_checkpoint",
     "trusted_source_chain_checkpoint",
 ]
