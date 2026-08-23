@@ -195,6 +195,7 @@ def test_cursor_chain_subprocess_uses_fixed_module_without_shell(tmp_path, monke
         "--verify-cursor-chain",
     ]
     assert observed["kwargs"]["shell"] is False
+    assert observed["kwargs"]["timeout"] >= 45 * 60
 
 
 @pytest.mark.asyncio
