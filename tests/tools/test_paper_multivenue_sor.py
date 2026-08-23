@@ -481,6 +481,62 @@ def test_collect_books_uses_visible_binance_rest_failover_when_stream_is_stale(
     } == {"BINANCE_PUBLIC_USDM_REST_FAILOVER"}
 
 
+def test_collect_books_deepens_binance_rest_only_for_whole_unit_shortfall(
+    tmp_path,
+):
+    now_ms = 2_000_000
+    instrument_id = "BTCUSDT"
+    path = tmp_path / "binance.db"
+    snapshot = _binance_snapshot(instrument_id, "60000", now_ms)
+    snapshot["depth20"]["bids"] = [
+        ["60000", "0.20"],
+        ["59999", "0.20"],
+    ]
+    snapshot["depth20"]["asks"] = [
+        ["60001", "0.20"],
+        ["60002", "0.20"],
+    ]
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        store.append_snapshot(snapshot)
+    finally:
+        store.close()
+
+    requested_limits: list[int] = []
+
+    def fake_get(url: str):
+        if "fapi.binance.com" not in url:
+            return _bybit_payload(instrument_id, "60000", now_ms)
+        limit = int(url.rsplit("limit=", 1)[1])
+        requested_limits.append(limit)
+        payload = _binance_rest_payload("60000", now_ms)
+        quantity = "0.20" if limit == 20 else "0.60"
+        payload["bids"] = [
+            ["60000", quantity],
+            ["59999", quantity],
+        ]
+        payload["asks"] = [
+            ["60001", quantity],
+            ["60002", quantity],
+        ]
+        return payload
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+        instruments=(instrument_id,),
+    )
+
+    assert requested_limits == [20, 50]
+    assert bundle["binance_sources"][instrument_id] == (
+        "BINANCE_PUBLIC_USDM_REST_FAILOVER"
+    )
+    assert books[instrument_id][0].bids[0].quantity == 1
+    assert books[instrument_id][0].asks[0].quantity == 1
+
+
 def test_persisted_routing_snapshot_requires_two_fresh_venues_per_ticker(tmp_path):
     now_ms = 2_000_000
     bases = {"DOGEUSDT": "0.20", "XRPUSDT": "0.50"}

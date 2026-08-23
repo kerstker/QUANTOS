@@ -73,6 +73,7 @@ MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
 MAX_FUTURE_SKEW_MS = 30_000
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60_000
+BINANCE_DEPTH_LIMITS = (20, 50, 100, 500)
 BYBIT_DEPTH_LIMITS = (20, 50, 200, 500)
 FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
@@ -230,6 +231,39 @@ def parse_binance_rest_book(
         bids=bids,
         asks=asks,
     )
+
+
+def _fetch_binance_rest_book_with_bounded_depth(
+    instrument_id: str,
+    *,
+    now_ms: int,
+    http_get: Callable[[str], object],
+    read_clock: Callable[[], int],
+) -> VenueBook:
+    """Fetch the smallest allowed REST depth that proves whole-unit liquidity."""
+
+    last_depth_error: PaperMultiVenueSORError | None = None
+    for limit in BINANCE_DEPTH_LIMITS:
+        url = (
+            f"{BINANCE_BASE_URL}/fapi/v1/depth?"
+            f"{urlencode({'symbol': instrument_id, 'limit': limit})}"
+        )
+        payload = http_get(url)
+        observed_at_ms = max(now_ms, int(read_clock()))
+        try:
+            return parse_binance_rest_book(
+                payload,
+                instrument_id,
+                observed_at_ms=observed_at_ms,
+            )
+        except PaperMultiVenueSORError as exc:
+            if "has no whole-unit depth" not in str(exc):
+                raise
+            last_depth_error = exc
+    assert last_depth_error is not None
+    raise PaperMultiVenueSORError(
+        f"Binance bounded REST depth is insufficient for {instrument_id}"
+    ) from last_depth_error
 
 
 def parse_bybit_book(
@@ -586,17 +620,12 @@ def collect_books(
                 binance_book = parse_binance_book(snapshot, now_ms=now_ms)
                 binance_source = "BINANCE_PUBLIC_USDM_WEBSOCKET"
             except PaperMultiVenueSORError as websocket_error:
-                binance_url = (
-                    f"{BINANCE_BASE_URL}/fapi/v1/depth?"
-                    f"{urlencode({'symbol': instrument_id, 'limit': 20})}"
-                )
                 try:
-                    binance_payload = http_get(binance_url)
-                    binance_observed_at_ms = max(now_ms, int(read_clock()))
-                    binance_book = parse_binance_rest_book(
-                        binance_payload,
+                    binance_book = _fetch_binance_rest_book_with_bounded_depth(
                         instrument_id,
-                        observed_at_ms=binance_observed_at_ms,
+                        now_ms=now_ms,
+                        http_get=http_get,
+                        read_clock=read_clock,
                     )
                 except Exception as rest_error:
                     raise PaperMultiVenueSORError(
