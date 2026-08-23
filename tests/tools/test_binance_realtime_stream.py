@@ -126,6 +126,28 @@ def test_cursor_chain_full_audit_runs_in_isolated_subprocess(tmp_path):
     assert verification["verified_seq"] == 1
 
 
+def test_store_chain_full_audit_runs_in_isolated_subprocess(tmp_path):
+    path = str(tmp_path / "stream.db")
+    store = BinanceRealtimeStore(path, create=True)
+    try:
+        store.append_snapshot(
+            {
+                "instrument_id": "BTCUSDT",
+                "observed_at_ms": 100,
+                "event_time_ms": 99,
+            }
+        )
+    finally:
+        store.close()
+
+    verification = realtime._verify_store_chain_subprocess(path)
+
+    assert verification["valid"] is True
+    assert verification["anchor_seq"] == 0
+    assert verification["verified_suffix_rows"] == 1
+    assert verification["verified_seq"] == 1
+
+
 def test_cursor_chain_subprocess_rejects_malformed_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
         realtime.binance_cursor_chain_audit_process.subprocess,
@@ -237,6 +259,92 @@ async def test_async_cursor_audit_kills_child_when_cancelled(tmp_path, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_async_store_audit_kills_child_when_cancelled(tmp_path, monkeypatch):
+    released = asyncio.Event()
+    observed = {"killed": False, "waited": False}
+
+    class Process:
+        returncode = None
+
+        async def communicate(self):
+            await released.wait()
+            return b"", b""
+
+        def kill(self):
+            observed["killed"] = True
+            self.returncode = -9
+            released.set()
+
+        async def wait(self):
+            observed["waited"] = True
+            return self.returncode
+
+    async def spawn(*_args, **_kwargs):
+        return Process()
+
+    monkeypatch.setattr(realtime.asyncio, "create_subprocess_exec", spawn)
+    task = asyncio.create_task(
+        realtime._verify_store_chain_subprocess_async(
+            str(tmp_path / "stream.db")
+        )
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert observed == {"killed": True, "waited": True}
+
+
+@pytest.mark.asyncio
+async def test_production_depth_recovery_uses_hard_timeout_process(
+    tmp_path,
+    monkeypatch,
+):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    calls = []
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=10,
+            final_update_id=11,
+            previous_final_update_id=9,
+            event_time_ms=9_900,
+            observed_at_ms=10_000,
+        )
+        cursor.observe(
+            channel="depth20",
+            instrument_id="BTCUSDT",
+            first_update_id=20,
+            final_update_id=21,
+            previous_final_update_id=19,
+            event_time_ms=9_901,
+            observed_at_ms=10_000,
+        )
+
+        async def fetch(symbol, *, observed_at_ms):
+            calls.append((symbol, observed_at_ms))
+            return {"last_update_id": 21, "event_time_ms": 9_902}
+
+        monkeypatch.setattr(
+            realtime,
+            "_fetch_depth_snapshot_subprocess_async",
+            fetch,
+        )
+
+        recovered = await _recover_depth_cursor_async(
+            cursor,
+            "BTCUSDT",
+            observed_at_ms=10_001,
+        )
+        assert recovered.state.value == "RECOVERED"
+        assert calls == [("BTCUSDT", 10_001)]
+    finally:
+        cursor.close()
+
+
+@pytest.mark.asyncio
 async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
     tmp_path,
     monkeypatch,
@@ -268,7 +376,7 @@ async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
     calls = []
     cursor_calls = []
 
-    def verify(_path, *, checkpoint_seq, checkpoint_row_hash):
+    async def verify(_path, *, checkpoint_seq, checkpoint_row_hash):
         calls.append((checkpoint_seq, checkpoint_row_hash))
         return {
             "valid": True,
@@ -283,7 +391,7 @@ async def test_stream_verifier_starts_from_trusted_batch_checkpoint(
         state.connections[_endpoint] = True
         await stop.wait()
 
-    monkeypatch.setattr(realtime, "_verify_store_chain", verify)
+    monkeypatch.setattr(realtime, "_verify_store_chain_subprocess_async", verify)
     async def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
         return (
             cursor_calls.append((checkpoint_seq, checkpoint_row_hash))
@@ -367,16 +475,19 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
         }
 
     monkeypatch.setattr(realtime, "_consume", consume)
-    monkeypatch.setattr(
-        realtime,
-        "_verify_store_chain",
-        lambda *_args, **_kwargs: {
+    async def verify_store(*_args, **_kwargs):
+        return {
             "valid": True,
             "anchor_seq": 0,
             "verified_suffix_rows": 0,
             "verified_seq": 0,
             "verified_row_hash": "",
-        },
+        }
+
+    monkeypatch.setattr(
+        realtime,
+        "_verify_store_chain_subprocess_async",
+        verify_store,
     )
     monkeypatch.setattr(
         realtime,
@@ -937,6 +1048,121 @@ async def test_run_stream_resumes_persisted_recovering_cursor(tmp_path, monkeypa
         assert recovered.publishable is True
     finally:
         reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_multi_symbol_recovery_refreshes_flush_observation_clock(
+    tmp_path,
+    monkeypatch,
+):
+    store_path = str(tmp_path / "stream.db")
+    snapshot_store = BinanceRealtimeStore(store_path, create=True)
+    snapshot_store.close()
+    cursor = StreamCursorStore(store_path, create=True)
+    try:
+        for symbol in ("BTCUSDT", "ETHUSDT"):
+            cursor.observe(
+                channel="depth20",
+                instrument_id=symbol,
+                first_update_id=10,
+                final_update_id=11,
+                previous_final_update_id=9,
+                event_time_ms=9_900,
+                observed_at_ms=10_000,
+            )
+            cursor.observe(
+                channel="depth20",
+                instrument_id=symbol,
+                first_update_id=20,
+                final_update_id=21,
+                previous_final_update_id=19,
+                event_time_ms=9_901,
+                observed_at_ms=10_000,
+            )
+        initial_verification = cursor.verify_chain_from()
+    finally:
+        cursor.close()
+
+    clock = {"seconds": 10.0}
+    frames_updated = threading.Event()
+    monkeypatch.setattr(realtime.time, "time", lambda: clock["seconds"])
+
+    def fetch(_symbol, *, observed_at_ms):
+        frames_updated.clear()
+        clock["seconds"] += 20.0
+        assert frames_updated.wait(timeout=1.0)
+        return {
+            "last_update_id": 21,
+            "event_time_ms": int(observed_at_ms),
+        }
+
+    async def consume(endpoint, _url, *, state, stop, deadline):
+        del deadline
+        state.connections[endpoint] = True
+        seen_ms = 0
+        while not stop.is_set():
+            current_ms = int(clock["seconds"] * 1_000)
+            if current_ms != seen_ms:
+                for symbol in ("BTCUSDT", "ETHUSDT"):
+                    state.handle(
+                        _frame(
+                            f"{symbol.lower()}@bookTicker",
+                            {
+                                "e": "bookTicker",
+                                "T": current_ms,
+                                "s": symbol,
+                                "u": current_ms,
+                                "b": "99",
+                                "B": "2",
+                                "a": "101",
+                                "A": "3",
+                            },
+                        ),
+                        received_at_ms=current_ms,
+                    )
+                seen_ms = current_ms
+                frames_updated.set()
+            await asyncio.sleep(0)
+
+    async def verify_store(*_args, **_kwargs):
+        return {
+            "valid": True,
+            "anchor_seq": 0,
+            "verified_suffix_rows": 0,
+            "verified_seq": 0,
+            "verified_row_hash": "",
+        }
+
+    async def verify_cursor(*_args, **_kwargs):
+        return dict(initial_verification)
+
+    monkeypatch.setattr(realtime, "_consume", consume)
+    monkeypatch.setattr(
+        realtime,
+        "_verify_store_chain_subprocess_async",
+        verify_store,
+    )
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_subprocess_async",
+        verify_cursor,
+    )
+
+    status = await realtime.run_stream(
+        tickers=("BTC", "ETH"),
+        duration_seconds=0.08,
+        flush_seconds=0.01,
+        store_path=store_path,
+        status_path=str(tmp_path / "status.json"),
+        batch_store_path=str(tmp_path / "batches.db"),
+        rest_depth_fetch=fetch,
+    )
+
+    assert status["generated_at_ms"] >= 50_000
+    assert all(
+        row["event_time_ms"] <= status["generated_at_ms"]
+        for row in status["latest"].values()
+    )
 
 
 @pytest.mark.parametrize(

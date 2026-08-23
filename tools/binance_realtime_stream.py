@@ -37,7 +37,11 @@ from services.features.realtime_feature_batch_store import (
     trusted_cursor_chain_checkpoint,
     trusted_source_chain_checkpoint,
 )
-from tools import binance_cursor_chain_audit_process
+from tools import (
+    binance_cursor_chain_audit_process,
+    binance_depth_snapshot_process,
+    binance_store_chain_audit_process,
+)
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_rest_gap_fill import RestGapFillError, fetch_depth_snapshot
 from tools.cache_io import atomic_write_json
@@ -201,10 +205,17 @@ async def _recover_depth_cursor_async(
         observed_at_ms=int(observed_at_ms),
     )
     try:
-        snapshot = await asyncio.to_thread(
-            rest_depth_fetch,
-            symbol,
-            observed_at_ms=observed_at_ms,
+        snapshot = (
+            await _fetch_depth_snapshot_subprocess_async(
+                symbol,
+                observed_at_ms=observed_at_ms,
+            )
+            if rest_depth_fetch is fetch_depth_snapshot
+            else await asyncio.to_thread(
+                rest_depth_fetch,
+                symbol,
+                observed_at_ms=observed_at_ms,
+            )
         )
         if not isinstance(snapshot, Mapping) or not snapshot:
             raise ValueError("empty result")
@@ -809,6 +820,24 @@ def _verify_store_chain(
         verifier.close()
 
 
+def _verify_store_chain_subprocess(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Run a potentially full snapshot audit outside the resident process."""
+
+    try:
+        return binance_store_chain_audit_process.run_store_chain_audit(
+            store_path,
+            checkpoint_seq=checkpoint_seq,
+            checkpoint_row_hash=checkpoint_row_hash,
+        )
+    except binance_store_chain_audit_process.StoreChainAuditProcessError as exc:
+        raise BinanceStreamDataError(str(exc)) from exc
+
+
 def _verify_cursor_chain_local(
     store_path: str,
     *,
@@ -896,6 +925,101 @@ async def _verify_cursor_chain_subprocess_async(
         raise BinanceStreamDataError(str(exc)) from exc
 
 
+async def _run_fixed_subprocess(
+    command: Sequence[str],
+    *,
+    timeout_seconds: float,
+    module_file: str,
+) -> tuple[str, int]:
+    """Run one fixed child; cancellation and timeout always kill and reap it."""
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(module_file))),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    communication = asyncio.create_task(process.communicate())
+    try:
+        stdout, _stderr = await asyncio.wait_for(
+            asyncio.shield(communication),
+            timeout=timeout_seconds,
+        )
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await asyncio.shield(communication)
+        raise
+    except TimeoutError:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await asyncio.shield(communication)
+        raise
+    return stdout.decode("utf-8"), int(process.returncode)
+
+
+async def _verify_store_chain_subprocess_async(
+    store_path: str,
+    *,
+    checkpoint_seq: int = 0,
+    checkpoint_row_hash: str = "",
+) -> dict[str, Any]:
+    """Run the snapshot verifier with a cancellation-safe process boundary."""
+
+    command = binance_store_chain_audit_process.store_chain_audit_command(
+        store_path,
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
+    try:
+        stdout, returncode = await _run_fixed_subprocess(
+            command,
+            timeout_seconds=(
+                binance_store_chain_audit_process.STORE_CHAIN_VERIFY_TIMEOUT_SECONDS
+            ),
+            module_file=binance_store_chain_audit_process.__file__,
+        )
+    except TimeoutError as exc:
+        raise BinanceStreamDataError("store chain verifier timed out") from exc
+    try:
+        return binance_store_chain_audit_process.parse_store_chain_audit_result(
+            stdout=stdout,
+            returncode=returncode,
+        )
+    except binance_store_chain_audit_process.StoreChainAuditProcessError as exc:
+        raise BinanceStreamDataError(str(exc)) from exc
+
+
+async def _fetch_depth_snapshot_subprocess_async(
+    symbol: str,
+    *,
+    observed_at_ms: int,
+) -> dict[str, Any]:
+    """Fetch credential-free REST depth without leaving executor threads behind."""
+
+    command = binance_depth_snapshot_process.depth_snapshot_command(
+        symbol,
+        observed_at_ms=observed_at_ms,
+    )
+    try:
+        stdout, returncode = await _run_fixed_subprocess(
+            command,
+            timeout_seconds=binance_depth_snapshot_process.DEPTH_SNAPSHOT_TIMEOUT_SECONDS,
+            module_file=binance_depth_snapshot_process.__file__,
+        )
+    except TimeoutError as exc:
+        raise TimeoutError("depth snapshot process timed out") from exc
+    try:
+        return binance_depth_snapshot_process.parse_depth_snapshot_result(
+            stdout=stdout,
+            returncode=returncode,
+        )
+    except binance_depth_snapshot_process.DepthSnapshotProcessError as exc:
+        raise RestGapFillError(str(exc)) from exc
+
+
 async def run_stream(
     *,
     tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
@@ -948,7 +1072,6 @@ async def run_stream(
         try:
             while time.monotonic() < deadline:
                 await asyncio.sleep(min(flush_seconds, max(0.0, deadline - time.monotonic())))
-                observed_at_ms = int(time.time() * 1000)
                 for symbol in sorted(state.symbols):
                     cursor = cursor_store.latest("depth20", symbol)
                     if cursor is not None and cursor.state in {
@@ -963,12 +1086,21 @@ async def run_stream(
                         recovered = await _recover_depth_cursor_async(
                             cursor_store,
                             symbol,
-                            observed_at_ms=observed_at_ms,
+                            # A slow REST/proxy round trip must not make the
+                            # eventual snapshot clock stale.  Each recovery
+                            # attempt owns its actual invocation time.
+                            observed_at_ms=int(time.time() * 1000),
                             rest_depth_fetch=rest_depth_fetch,
                         )
                         depth = state.latest[symbol].get("depth20")
                         if isinstance(depth, dict):
                             depth.update(_cursor_fields(recovered))
+                # WebSocket consumers continue to advance while the public
+                # REST recoveries above await I/O.  Refresh the observation
+                # clock immediately before reducing their current state;
+                # otherwise valid frames received during a slow recovery are
+                # misclassified as future-skewed against an old flush clock.
+                observed_at_ms = int(time.time() * 1000)
                 if cursor_chain_verification.get("valid") is True:
                     previous_cursor_verification = cursor_chain_verification
                     cursor_chain_verification = _verify_cursor_chain_local(
@@ -1039,8 +1171,7 @@ async def run_stream(
         nonlocal chain_verified_at_ms
         while not stop.is_set() and time.monotonic() < deadline:
             verification_mode = str(chain_checkpoint["verification_mode"])
-            verification = await asyncio.to_thread(
-                _verify_store_chain,
+            verification = await _verify_store_chain_subprocess_async(
                 store_path,
                 checkpoint_seq=int(chain_checkpoint["checkpoint_seq"]),
                 checkpoint_row_hash=str(chain_checkpoint["checkpoint_row_hash"]),
@@ -1181,11 +1312,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--batch-store", default=DEFAULT_BATCH_STORE)
     parser.add_argument("--verify-cursor-chain", action="store_true")
+    parser.add_argument("--verify-store-chain", action="store_true")
     parser.add_argument("--cursor-checkpoint-seq", type=int, default=0)
     parser.add_argument("--cursor-checkpoint-row-hash", default="")
     args = parser.parse_args(argv)
     if args.verify_cursor_chain:
         verification = _verify_cursor_chain_local(
+            args.store,
+            checkpoint_seq=args.cursor_checkpoint_seq,
+            checkpoint_row_hash=args.cursor_checkpoint_row_hash,
+        )
+        print(json.dumps(verification, sort_keys=True, separators=(",", ":")))
+        return (
+            SCHEDULE_EXIT_SUCCESS
+            if verification.get("valid") is True
+            else SCHEDULE_EXIT_FAILURE
+        )
+    if args.verify_store_chain:
+        verification = _verify_store_chain(
             args.store,
             checkpoint_seq=args.cursor_checkpoint_seq,
             checkpoint_row_hash=args.cursor_checkpoint_row_hash,
