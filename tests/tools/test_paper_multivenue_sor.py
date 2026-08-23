@@ -327,6 +327,50 @@ def test_collect_books_reanchors_snapshot_time_after_chain_verification(tmp_path
     assert bundle["quality"]["binance_rest_failover_used"] is False
 
 
+def test_collect_books_deepens_bybit_snapshot_only_for_whole_unit_shortfall(
+    tmp_path,
+):
+    now_ms = 2_000_000
+    instrument_id = "BTCUSDT"
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        store.append_snapshot(
+            _binance_snapshot(instrument_id, "60000", now_ms)
+        )
+    finally:
+        store.close()
+
+    requested_limits: list[int] = []
+
+    def fake_get(url: str):
+        limit = int(url.rsplit("limit=", 1)[1])
+        requested_limits.append(limit)
+        payload = _bybit_payload(instrument_id, "60000", now_ms)
+        quantity = "0.20" if limit == 20 else "0.60"
+        payload["result"]["b"] = [
+            ["59999", quantity],
+            ["59998", quantity],
+        ]
+        payload["result"]["a"] = [
+            ["60001", quantity],
+            ["60002", quantity],
+        ]
+        return payload
+
+    books, _bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+        instruments=(instrument_id,),
+    )
+
+    assert requested_limits == [20, 50]
+    assert books[instrument_id][1].bids[0].quantity == 1
+    assert books[instrument_id][1].asks[0].quantity == 1
+
+
 def test_collect_books_verifies_only_suffix_from_trusted_checkpoint(
     tmp_path,
     monkeypatch,

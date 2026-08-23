@@ -72,6 +72,7 @@ MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
 MAX_FUTURE_SKEW_MS = 30_000
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60_000
+BYBIT_DEPTH_LIMITS = (20, 50, 200, 500)
 FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
     "binance_usdm": Decimal("5"),
@@ -260,6 +261,46 @@ def parse_bybit_book(
         bids=_levels(result.get("b"), "bybit.bids", descending=True),
         asks=_levels(result.get("a"), "bybit.asks", descending=False),
     )
+
+
+def _fetch_bybit_book_with_bounded_depth(
+    instrument_id: str,
+    *,
+    now_ms: int,
+    http_get: Callable[[str], object],
+    read_clock: Callable[[], int],
+) -> VenueBook:
+    """Fetch the smallest bounded public depth that proves whole-unit liquidity.
+
+    The integer SOR contract intentionally aggregates fractional native depth at
+    the worst contributing price.  Expensive instruments can have less than one
+    native unit inside Bybit's first 20 levels, so retry only that narrow depth
+    shortfall with progressively deeper, API-bounded snapshots.  Any malformed,
+    stale, crossed or otherwise invalid response still fails immediately.
+    """
+
+    last_depth_error: PaperMultiVenueSORError | None = None
+    for limit in BYBIT_DEPTH_LIMITS:
+        url = (
+            f"{BYBIT_BASE_URL}/v5/market/orderbook?"
+            f"{urlencode({'category': 'linear', 'symbol': instrument_id, 'limit': limit})}"
+        )
+        payload = http_get(url)
+        observed_at_ms = max(now_ms, int(read_clock()))
+        try:
+            return parse_bybit_book(
+                payload,
+                instrument_id,
+                observed_at_ms=observed_at_ms,
+            )
+        except PaperMultiVenueSORError as exc:
+            if "has no whole-unit depth" not in str(exc):
+                raise
+            last_depth_error = exc
+    assert last_depth_error is not None
+    raise PaperMultiVenueSORError(
+        f"Bybit bounded depth is insufficient for {instrument_id}"
+    ) from last_depth_error
 
 
 def _book_payload(
@@ -563,16 +604,11 @@ def collect_books(
                     ) from rest_error
                 binance_source = "BINANCE_PUBLIC_USDM_REST_FAILOVER"
             binance_sources[instrument_id] = binance_source
-            url = (
-                f"{BYBIT_BASE_URL}/v5/market/orderbook?"
-                f"{urlencode({'category': 'linear', 'symbol': instrument_id, 'limit': 20})}"
-            )
-            bybit_payload = http_get(url)
-            response_observed_at_ms = max(now_ms, int(read_clock()))
-            bybit_book = parse_bybit_book(
-                bybit_payload,
+            bybit_book = _fetch_bybit_book_with_bounded_depth(
                 instrument_id,
-                observed_at_ms=response_observed_at_ms,
+                now_ms=now_ms,
+                http_get=http_get,
+                read_clock=read_clock,
             )
             skew = abs(binance_book.observed_at_ms - bybit_book.observed_at_ms)
             if skew > MAX_VENUE_SKEW_MS:
