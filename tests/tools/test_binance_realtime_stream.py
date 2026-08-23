@@ -629,6 +629,40 @@ def test_malformed_depth_frame_does_not_advance_durable_cursor(tmp_path):
         cursor.close()
 
 
+def test_future_skew_frame_is_rejected_before_mutating_stream_state(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        state = StreamState(("BTC",), cursor_store=cursor)
+        future = {
+            "e": "depthUpdate",
+            "E": _NOW + realtime.MAX_FUTURE_SKEW_MS + 1,
+            "T": _NOW + realtime.MAX_FUTURE_SKEW_MS,
+            "s": "BTCUSDT",
+            "U": 10,
+            "u": 11,
+            "pu": 9,
+            "b": [["99", "2"]],
+            "a": [["101", "3"]],
+            "st": 1,
+        }
+
+        with pytest.raises(
+            BinanceStreamDataError,
+            match="exchange event time exceeds bounded future skew",
+        ):
+            state.handle(
+                _frame("btcusdt@depth20@500ms", future),
+                received_at_ms=_NOW,
+            )
+
+        assert state.latest["BTCUSDT"] == {}
+        assert state.event_counts == {}
+        assert state.last_received_at_ms is None
+        assert cursor.event_count() == 0
+    finally:
+        cursor.close()
+
+
 def test_snapshot_retains_bounded_exchange_clock_skew_without_breaking_pit(tmp_path):
     state = StreamState(("BTC",))
     state.handle(

@@ -264,6 +264,13 @@ class StreamState:
             raise BinanceStreamDataError("combined stream wrapper is malformed")
         if data.get("st") not in (None, 1):
             return
+        received_at_ms = _integer(received_at_ms, "received_at_ms")
+        if data.get("E") is not None:
+            event_time_ms = _integer(data.get("E"), "event_time")
+            if event_time_ms > received_at_ms + MAX_FUTURE_SKEW_MS:
+                raise BinanceStreamDataError(
+                    "exchange event time exceeds bounded future skew"
+                )
         event = str(data.get("e", ""))
         if stream == "!forceOrder@arr" or event == "forceOrder":
             self._handle_liquidation(data)
