@@ -13,7 +13,7 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -67,7 +67,8 @@ DEFAULT_STATUS = os.path.join(
 )
 INSTRUMENTS = ("DOGEUSDT", "XRPUSDT", "ADAUSDT", "DOTUSDT")
 PAPER_INSTRUMENTS = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
-TARGET_NOTIONAL = Decimal("100")
+CANARY_MAX_TARGET_NOTIONAL = Decimal("100")
+TARGET_NOTIONAL = CANARY_MAX_TARGET_NOTIONAL
 MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
 MAX_FUTURE_SKEW_MS = 30_000
@@ -839,13 +840,29 @@ def run_canary(
         instrument_id: float(sign * TARGET_NOTIONAL / Decimal(str(aum)))
         for instrument_id, sign in signs.items()
     }
+    # Quantity is not comparable across instruments.  Derive the strict integer
+    # ceiling from the fixed authorized canary notional and current reference
+    # prices; keep the notional gate fixed even if a caller mutates the requested
+    # target.  This lets a USD 100 low-priced-coin canary run without turning the
+    # quantity limit into an unbounded or price-dependent bypass.
+    max_canary_quantity = max(
+        int(
+            (
+                CANARY_MAX_TARGET_NOTIONAL
+                / Decimal(str(prices[instrument_id]))
+            ).to_integral_value(rounding=ROUND_CEILING)
+        )
+        for instrument_id in signs
+    )
     # P2-1 fix: realistic limits (paper SOR is still a canary test, not production gate)
     limits = RiskLimits(
         allowed_instruments=frozenset(INSTRUMENTS),
         allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=1000,
-        max_order_notional=float(TARGET_NOTIONAL * Decimal("1.01")),
-        fat_finger_qty=1000,
+        default_max_position_qty=max_canary_quantity,
+        max_order_notional=float(
+            CANARY_MAX_TARGET_NOTIONAL * Decimal("1.01")
+        ),
+        fat_finger_qty=max_canary_quantity,
         max_gross_exposure=10**7,
         max_net_exposure=10**7,
         max_leverage=5.0,  # 5x (was 100.0)
@@ -971,10 +988,19 @@ def execute(
             if isinstance(route, Mapping) and route.get("venue_id")
         }
     )
+    canary_count = len(INSTRUMENTS)
+    all_canaries_routed = (
+        run.n_intents == canary_count
+        and run.n_approved == canary_count
+        and run.n_rejected == 0
+        and len(routing) == canary_count
+        and len(route_tca) == canary_count
+        and len(venues) >= 2
+    )
     status = {
         "schema_version": 1,
         "generated_at_ms": now,
-        "status": "PASS" if route_tca and len(venues) >= 2 else "BLOCKED",
+        "status": "PASS" if all_canaries_routed else "BLOCKED",
         "mode": "L2_PAPER_EXECUTION_CANARY",
         "simulation_only": True,
         "strategy_edge_claim": False,
@@ -985,6 +1011,10 @@ def execute(
         "venues": venues,
         "route_plan_count": len(routing),
         "route_tca_count": len(route_tca),
+        "n_intents": run.n_intents,
+        "n_approved": run.n_approved,
+        "n_rejected": run.n_rejected,
+        "rejected_reasons": list(run.rejected_reasons),
         "book_bundle_count": book_rows,
         "fee_policy_version": FEE_POLICY_VERSION,
         "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
@@ -1003,7 +1033,9 @@ def execute(
     }
     atomic_write_json(status_path, status)
     if status["status"] != "PASS":
-        raise PaperMultiVenueSORError("paper SOR canary produced no multi-venue TCA")
+        raise PaperMultiVenueSORError(
+            "paper SOR canary did not route every required instrument"
+        )
     _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
         status,
         bundle,

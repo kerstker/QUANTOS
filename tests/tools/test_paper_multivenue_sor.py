@@ -164,7 +164,7 @@ def test_public_rest_parsers_allow_only_bounded_exchange_clock_lead():
 def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
     now_ms = 2_000_000
     bases = {
-        "DOGEUSDT": "0.20",
+        "DOGEUSDT": "0.09",
         "XRPUSDT": "0.50",
         "ADAUSDT": "0.40",
         "DOTUSDT": "2.00",
@@ -745,15 +745,24 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
     run = SimpleNamespace(
         run_id="paper-sor-run",
         reproducibility_hash="c" * 64,
+        n_intents=len(paper_sor.INSTRUMENTS),
+        n_approved=len(paper_sor.INSTRUMENTS),
+        n_rejected=0,
+        rejected_reasons=[],
         detail={
-            "route_tca": [{"instrument_id": "DOGEUSDT"}],
+            "route_tca": [
+                {"instrument_id": instrument_id}
+                for instrument_id in paper_sor.INSTRUMENTS
+            ],
             "routing": [
                 {
+                    "instrument_id": instrument_id,
                     "slices": [
                         {"venue_id": "binance_usdm"},
                         {"venue_id": "bybit_linear"},
                     ]
                 }
+                for instrument_id in paper_sor.INSTRUMENTS
             ],
         },
     )
@@ -809,6 +818,8 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
         "credentials_accessed": False,
         "broker_connectivity": False,
     }
+    assert status["n_approved"] == len(paper_sor.INSTRUMENTS)
+    assert status["n_rejected"] == 0
 
     bundle["quality"]["private_access"] = True
     assert paper_sor._build_release_run_attestation(
