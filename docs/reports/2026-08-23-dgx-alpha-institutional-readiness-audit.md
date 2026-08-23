@@ -59,6 +59,18 @@ NOT_AVAILABLE。
 绑定进 gate content hash。该回放不会把探索评估升级成正式 PASS：DGX 当前 38 个最新评估
 均为 EXPLORATORY_ONLY，因此修复后的诚实状态是 PENDING，而非 PASS。
 
+### 4. 未来时间戳异常帧会终止常驻流并取消全审
+
+DGX 首次运行修复后的全量游标审计超过 39 分钟后，Binance WebSocket 出现一条超过
+30 秒硬上限的未来事件时间帧。旧路径先把帧写进内存快照或交给游标存储，随后才在快照
+构造阶段报错；异常逸出常驻 flush loop，进程退出，并取消尚未完成的全量哈希链审计。
+主机 NTP 与 Binance 公共服务器时间差约 0.8 秒，因此不是 DGX 时钟失步。
+
+整改：在 `StreamState.handle` 的任何内存、计数器或持久游标变更之前，统一校验事件字段
+`E`；超过既有 30 秒上限的帧由消费循环隔离并计入拒绝数。快照构造阶段的二次防御保持
+不变，阈值没有放宽。回归测试锁定异常帧不得改变 latest、event count、last received 或
+游标事件链。
+
 ## 收益与证据判断
 
 - 旧 100 万 paper 轨：carry 约 -3.28%，crowd_contra 约 -4.90%，top_contra 约 +4.48%；
