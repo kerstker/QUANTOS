@@ -166,22 +166,61 @@ def test_gap_blocks_watermark_until_complete_rest_snapshot_recovery(tmp_path) ->
             observed_at_ms=1_250,
         )
         assert recovered.state is StreamCursorState.RECOVERED
-        assert recovered.cursor_update_id == 22
+        assert recovered.cursor_update_id == 25
         assert recovered.pending_through_update_id is None
 
         watermark = store.trading_watermark((("depth20", "BTCUSDT"),))
         assert watermark["publishable"] is True
         assert watermark["watermark_ms"] == 1_240
 
+        stale = _observe(
+            store,
+            first=23,
+            final=24,
+            previous=22,
+            event_time_ms=1_230,
+        )
+        assert stale.event_id == recovered.event_id
+
         continued = _observe(
             store,
-            first=26,
+            first=24,
             final=27,
-            previous=22,
+            previous=23,
             event_time_ms=1_300,
         )
         assert continued.state is StreamCursorState.CONTIGUOUS
         assert continued.cursor_update_id == 27
+    finally:
+        store.close()
+
+
+def test_first_post_recovery_event_must_cover_snapshot_or_connect_by_pu(
+    tmp_path,
+) -> None:
+    store = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    try:
+        _observe(store, first=10, final=12, previous=9, event_time_ms=1_000)
+        _observe(store, first=20, final=22, previous=19, event_time_ms=1_100)
+        store.begin_recovery("depth20", "BTCUSDT", observed_at_ms=1_200)
+        recovered = store.complete_recovery(
+            "depth20",
+            "BTCUSDT",
+            snapshot_update_id=25,
+            event_time_ms=1_240,
+            observed_at_ms=1_250,
+        )
+        assert recovered.cursor_update_id == 25
+
+        missed = _observe(
+            store,
+            first=27,
+            final=30,
+            previous=26,
+            event_time_ms=1_300,
+        )
+        assert missed.state is StreamCursorState.GAP_DETECTED
+        assert missed.reason_code == "SEQUENCE_GAP"
     finally:
         store.close()
 

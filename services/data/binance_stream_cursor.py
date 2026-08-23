@@ -348,6 +348,19 @@ class StreamCursorStore:
             pending = max(previous.pending_through_update_id or 0, final_update_id)
             reason = previous.reason_code
         elif (
+            previous.state is StreamCursorState.RECOVERED
+            and first_update_id <= previous.cursor_update_id <= final_update_id
+        ):
+            # Binance's documented snapshot bootstrap discards buffered frames
+            # through REST `lastUpdateId`, then accepts the first event whose
+            # [U, u] range covers that id.  Its `pu` still refers to the last
+            # pre-snapshot stream event, so requiring `pu == lastUpdateId` here
+            # would manufacture a gap after every valid REST recovery.
+            state = StreamCursorState.CONTIGUOUS
+            cursor_update_id = final_update_id
+            pending = None
+            reason = None
+        elif (
             previous_final_update_id == previous.cursor_update_id
         ):
             state = StreamCursorState.CONTIGUOUS
@@ -440,10 +453,13 @@ class StreamCursorStore:
                 instrument_id=previous.instrument_id,
                 event_type="RECOVERY_COMPLETED" if complete else "RECOVERY_BLOCKED",
                 state=(StreamCursorState.RECOVERED if complete else StreamCursorState.BLOCKED),
-                # The REST snapshot proves coverage through the latest observed
-                # partial-book frame.  Continue from that stream frame's `u`;
-                # the REST snapshot's global id is not the next frame's `pu`.
-                cursor_update_id=(required if complete else previous.cursor_update_id),
+                # A successful REST snapshot becomes the recovery frontier.
+                # Buffered stream events at or behind it are stale and are
+                # ignored by observe(); the first newer event must either span
+                # this id via [U, u] or connect through `pu`.
+                cursor_update_id=(
+                    snapshot_update_id if complete else previous.cursor_update_id
+                ),
                 observed_first_update_id=None,
                 observed_final_update_id=snapshot_update_id,
                 observed_previous_final_update_id=None,
