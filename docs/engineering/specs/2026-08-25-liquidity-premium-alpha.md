@@ -83,17 +83,26 @@ still not forward evidence and grants no testnet or live authority.
 The contract was frozen and fully validated at source commit
 `2f231c84707e51d4a533f1d6dd508c9dd31b8de2`. On the DGX, construction stopped
 before the experiment registry opened because selected instrument `XMR` lacked
-its required `t+7` price. The durable trial table remained at 2,850 rows,
+its required `t+7` price (decision `2024-02-15T00:00:00Z`, required label
+`2024-02-22T00:00:00Z`). The durable trial table remained at 2,850 rows,
 `LIQUIDITY_PREMIUM_V1` had zero search events, and no return statistics were
 computed. This is `REJECTED_DATA_INTEGRITY`, not evidence for or against the
 economic premium.
 
+The audited recorder commit is
+`3e48132c42a1e0c534123b091ef04b0f9afd086c`. It wrote preflight record
+`preflight-651a5cc899a6aad34b7501bc` for dataset version
+`b82813352bba302fc95a6ab17f5968e6aaa5592b017c304259b76b6d122d89ecf` to DGX
+artifact `evidence/liquidity_premium_2f231c84707e51d4a533f1d6dd508c9dd31b8de2.json`.
+The artifact SHA-256 is
+`e5d0ae51ee62b84ac0b14384e809c13cbcfa3b81dd03f716479107d1900a05b2`.
+
 The failure is economically material: dropping XMR after seeing the missing
 label, changing the top-48 universe, skipping that week, or imputing a zero
 return would manufacture exactly the survivorship/untradeable-premium illusion
-the experiment was designed to catch. None is allowed. An audited recorder can
-publish this pre-registry rejection with the original contract/source commit and
-a separate recorder commit, but it still performs no registry mutation. This
+the experiment was designed to catch. None is allowed. The audited recorder
+published this pre-registry rejection with the original contract/source commit
+and a separate recorder commit, while performing no registry mutation. This
 frozen family is closed; any delisting-aware payoff convention would be a new,
 independently pre-registered experiment rather than a repair of this result.
 
