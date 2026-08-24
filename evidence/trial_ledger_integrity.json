@@ -2,7 +2,7 @@
   "block_reasons": [
     "LEDGER_ABSENT"
   ],
-  "commit": "92860b56def33d51b61b612f6a9d88e9f4a8740a",
+  "commit": "0a9b7c0669b756f41ac161e1918e1e74cce0ddc2",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -16,7 +16,7 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1787612803380,
+  "generated_at_ms": 1787614570801,
   "generator_sha256": "ed05a3e0000aa3ef05f2807acfac3344d3af4e5381447d5893b1e12c923e8310",
   "input_hash": "13b1f33cebf2a5afa5c38defffc064eac8f5ffd17ca797e78a496b5e3ee62c46",
   "inputs": {
