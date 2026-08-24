@@ -13,20 +13,20 @@
   },
   "builds": [
     {
-      "archive_name": "runtime.oci.tar",
-      "archive_sha256": "0df2f5d2f3e8f5284e3e3429f1d0909c0016eb04a4325c5ce80f84123bfe4881",
-      "archive_size": 140335616,
-      "config_digest": "sha256:3872c98c1a68ba7bbbc3db838afc41794dd55918f09a47a5176ca938eeb8a978",
+      "archive_name": "runtime-current-a.oci.tar",
+      "archive_sha256": "df9b2b7c4d08ee6d90af400f6c93bc66356558d65f77a05c6ba7257637b71c9a",
+      "archive_size": 140366336,
+      "config_digest": "sha256:677c76660d7207835c174b1b11cc04132e2b1b2f3589d48bd62e1f12bd0b082b",
       "label": "A",
-      "manifest_digest": "sha256:47f1db0bbe4b32577fe9a82e70e5498b35a704cf675b2f20ea34025828c449b0"
+      "manifest_digest": "sha256:157b0734904aa838aa824c9fb324be6b92368c98fe0587961c766dd37e9ec246"
     },
     {
-      "archive_name": "runtime-b.oci.tar",
-      "archive_sha256": "0df2f5d2f3e8f5284e3e3429f1d0909c0016eb04a4325c5ce80f84123bfe4881",
-      "archive_size": 140335616,
-      "config_digest": "sha256:3872c98c1a68ba7bbbc3db838afc41794dd55918f09a47a5176ca938eeb8a978",
+      "archive_name": "runtime-current-b.oci.tar",
+      "archive_sha256": "df9b2b7c4d08ee6d90af400f6c93bc66356558d65f77a05c6ba7257637b71c9a",
+      "archive_size": 140366336,
+      "config_digest": "sha256:677c76660d7207835c174b1b11cc04132e2b1b2f3589d48bd62e1f12bd0b082b",
       "label": "B",
-      "manifest_digest": "sha256:47f1db0bbe4b32577fe9a82e70e5498b35a704cf675b2f20ea34025828c449b0"
+      "manifest_digest": "sha256:157b0734904aa838aa824c9fb324be6b92368c98fe0587961c766dd37e9ec246"
     }
   ],
   "dockerfile": {
@@ -42,7 +42,7 @@
   "exporter": "oci",
   "image": {
     "architecture": "amd64",
-    "config_digest": "sha256:3872c98c1a68ba7bbbc3db838afc41794dd55918f09a47a5176ca938eeb8a978",
+    "config_digest": "sha256:677c76660d7207835c174b1b11cc04132e2b1b2f3589d48bd62e1f12bd0b082b",
     "config_size": 8094,
     "created": "2026-06-16T00:20:04Z",
     "diff_ids": [
@@ -52,11 +52,11 @@
       "sha256:8e5e9a87b99a1854e8092efc0af2e6705f903feee92924e884fe710add465b9d",
       "sha256:87b6fda826019af7ab903470268ca579ea2dfccaa3bc5b71a964b0f185e0f94c",
       "sha256:fc2984ce96dffa6729625973791f813d3081f6c2bc4959f242162eea4aa6a4aa",
-      "sha256:e2774174aedbbf5293ee21bb52c6025ed035ec4c10fbb80f5bbc84aaa35b5ec6",
+      "sha256:be228767132319825a16f5917c978994c705e3f806ebc8b258aae506a8e7b6ef",
       "sha256:0ab260ff080ff59afabe51ea6c576bf63a73f98c1ea5ce5d64da8bb5d990a373",
-      "sha256:846194977c11c877af9b7f8e52c6940ebfb2900e9f6ba9c017d34eda8220cccd",
+      "sha256:9f2d831fa57798f239065e9558448f0367077a0f160b3d78f956205d81806010",
       "sha256:ef4810c707f054dcae890320f2718c37636fd813a5d86ba078c3c9c7f5adc3ac",
-      "sha256:39fbf634131e6dfabce6c78532eb135fb1494f684ef610a86e323833b0278d34"
+      "sha256:a999c4ce6f6094cb2ed028c5a75824c6bb1344a05f106ea52ab89231cb56ede7"
     ],
     "layers": [
       {
@@ -90,9 +90,9 @@
         "size": 14141044
       },
       {
-        "digest": "sha256:a61d5e3b3d410c15183ba0dee4d9f1bbeda268c83c8187595b285d53f229f9e4",
+        "digest": "sha256:480a4ac496aa21bd6a4e2db27e20bb15b8ab2490a922f02f54fceee5aa308617",
         "rewritten_timestamp": true,
-        "size": 104875150
+        "size": 104902564
       },
       {
         "digest": "sha256:f2881f93c831016d3517947fd4f3829537498f25b82c52fca583333e4b79075f",
@@ -100,9 +100,9 @@
         "size": 1725128
       },
       {
-        "digest": "sha256:e1077d4e9b5a75ec636e2bc42a2be6c4217de7937f200b3f27d14985fac486d7",
+        "digest": "sha256:98782d4719ddb8672da4d62cfe99365b3c854ee5a0908b0854ecac60918132e0",
         "rewritten_timestamp": true,
-        "size": 1461879
+        "size": 1465769
       },
       {
         "digest": "sha256:f0182f7864b47122f084c3bbaa36ffadf4f5879626a9965c5cfee641d33f862e",
@@ -110,12 +110,12 @@
         "size": 87865
       },
       {
-        "digest": "sha256:81726ee91ea05a07f10c68417d7b3bdba398da1fdb2e63e4ee76d6e7647da0ec",
+        "digest": "sha256:1f879fa6c544f12e85f68f2588c352ebe08e95270fd1c8d328fd67acfcfc4fc5",
         "rewritten_timestamp": true,
         "size": 908
       }
     ],
-    "manifest_digest": "sha256:47f1db0bbe4b32577fe9a82e70e5498b35a704cf675b2f20ea34025828c449b0",
+    "manifest_digest": "sha256:157b0734904aa838aa824c9fb324be6b92368c98fe0587961c766dd37e9ec246",
     "manifest_size": 2984,
     "os": "linux",
     "rewritten_timestamp_layer_count": 7
@@ -127,7 +127,7 @@
   ],
   "mode": "LOCAL_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1786915507,
+  "observed_at": 1787540300,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
