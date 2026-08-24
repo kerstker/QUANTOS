@@ -139,6 +139,7 @@ def run_registered_candidate_batch(
     stale_search_timeout_ms: int | None = None,
     periods_per_year: int = 252,
     quantile: float = 0.2,
+    target_aum: float = 1e7,
     config: AlphaFactoryConfig | None = None,
     cost: CostModel | None = None,
     evidence: Mapping[str, Mapping[str, Any]] | None = None,
@@ -157,8 +158,9 @@ def run_registered_candidate_batch(
     trial population in one transaction before the catalog or evaluator can
     observe the batch. Caller-supplied time keeps the composition deterministic.
     ``quantile`` fixes the long/short tail fraction for both catalog observations
-    and batch PBO; callers that override it must bind the same value into their
-    immutable candidate/evaluation contract.
+    and batch PBO. ``target_aum`` fixes the notional used by transaction-impact
+    and capacity calculations. Callers that override either value must bind the
+    same value into their immutable candidate/evaluation contract.
 
     W10 (spec §14.1/§14.2): when ``budget`` is provided, the batch FIRST checks
     the declared ResearchBudget and refuses with ``BudgetExhausted`` once
@@ -216,6 +218,14 @@ def run_registered_candidate_batch(
     ):
         raise ValueError("quantile must be finite and in (0, 0.5]")
     quantile = float(quantile)
+    if (
+        isinstance(target_aum, bool)
+        or not isinstance(target_aum, (int, float))
+        or not math.isfinite(float(target_aum))
+        or float(target_aum) <= 0.0
+    ):
+        raise ValueError("target_aum must be finite and positive")
+    target_aum = float(target_aum)
     if evidence is not None and not isinstance(evidence, Mapping):
         raise TypeError("evidence must be a mapping or None")
     if hypothesis_by_candidate is not None and not isinstance(
@@ -318,6 +328,7 @@ def run_registered_candidate_batch(
             catalog,
             config,
             quantile=quantile,
+            target_aum=target_aum,
             periods_per_year=periods_per_year,
             cost=cost,
         )

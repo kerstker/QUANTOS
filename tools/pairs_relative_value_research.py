@@ -407,6 +407,7 @@ def run(
                 recorded_at=recorded_at,
                 periods_per_year=PERIODS_PER_YEAR,
                 quantile=QUANTILE,
+                target_aum=TARGET_AUM,
                 config=AlphaFactoryConfig(compute_regime_evidence=True),
                 cost=BASE_COST,
                 evidence=evidence,

@@ -51,6 +51,83 @@ def test_market_impact_increases_cost_when_adv_is_small():
     assert with_impact.costs[0] > no_impact.costs[0]
 
 
+def test_realized_max_participation_uses_exact_weight_changes() -> None:
+    periods = [
+        _period([1, 2, 3, 4, 5], [0.0] * 5, adv=[1_000.0] * 5),
+        _period([5, 2, 3, 4, 1], [0.0] * 5, adv=[1_000.0] * 5),
+    ]
+
+    result = run_panel_backtest(
+        periods,
+        cost=CostModel(0, 0),
+        quantile=0.2,
+        target_aum=100.0,
+    )
+
+    assert result.max_participations == pytest.approx((0.05, 0.10))
+
+
+def test_participation_is_unassessed_without_exact_adv_vector() -> None:
+    result = run_panel_backtest(
+        [_period([1, 2, 3], [0.0] * 3)],
+        cost=CostModel(0, 0),
+    )
+
+    assert result.max_participations == (None,)
+
+
+def test_dynamic_universe_exit_adv_pays_impact_and_binds_participation() -> None:
+    first = PanelPeriod(
+        instruments=("a", "b"),
+        signals=(1.0, -1.0),
+        forward_returns=(0.0, 0.0),
+        adv_notional=(1_000.0, 1_000.0),
+    )
+    second = PanelPeriod(
+        instruments=("c", "d"),
+        signals=(1.0, -1.0),
+        forward_returns=(0.0, 0.0),
+        adv_notional=(1_000.0, 1_000.0),
+        exit_adv_notional=(("a", 1_000.0), ("b", 1_000.0)),
+    )
+
+    free = run_panel_backtest(
+        (first, second), cost=CostModel(0, 0), quantile=0.5, target_aum=100.0
+    )
+    impact = run_panel_backtest(
+        (first, second),
+        cost=CostModel(0, 0, impact_coef=20.0),
+        quantile=0.5,
+        target_aum=100.0,
+    )
+
+    assert impact.costs[1] > free.costs[1]
+    assert impact.max_participations[1] == pytest.approx(0.05)
+
+
+def test_dynamic_universe_missing_exit_adv_fails_closed() -> None:
+    first = PanelPeriod(
+        instruments=("a", "b"),
+        signals=(1.0, -1.0),
+        forward_returns=(0.0, 0.0),
+        adv_notional=(1_000.0, 1_000.0),
+    )
+    second = PanelPeriod(
+        instruments=("c", "d"),
+        signals=(1.0, -1.0),
+        forward_returns=(0.0, 0.0),
+        adv_notional=(1_000.0, 1_000.0),
+    )
+
+    with pytest.raises(ValueError, match="missing current exit ADV"):
+        run_panel_backtest(
+            (first, second),
+            cost=CostModel(0, 0, impact_coef=20.0),
+            quantile=0.5,
+            target_aum=100.0,
+        )
+
+
 def test_no_integer_share_dropping_cheap_names_get_weight():
     # a cheap-but-extreme-signal name still receives a notional weight (fractional)
     p = _period(signals=[10, 1, 2, 3, 4], fwd=[0.0] * 5)

@@ -258,10 +258,10 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("binance_spot_klines", "binance_usdm_price"),
         ("1d", "3d", "7d"),
         ("short borrow proxy", "leg imbalance", "structural breaks", "microstructure bounce"),
-        ("random-pair bootstrap", "no-close control", "formation/trade roll-forward"),
+        ("fixed-hash pair control", "continuation sign control", "formation/trade roll-forward"),
         ("pair selection on trade window", "global normalization", "delisting leakage"),
-        ("services/research/backtest_engine", "tools/mean_reversion_cluster.py"),
-        "NEW_EXPERIMENT_GAP",
+        ("services/research/pairs_relative_value.py", "tools/pairs_relative_value_research.py"),
+        "EXISTING_FALSIFIED_IMPLEMENTATION",
     ),
     AlphaMethodSpec(
         "order_flow_imbalance",
@@ -320,7 +320,7 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("untradeable-premium illusion", "capacity", "delisting", "impact"),
         ("large-cap-only subset", "participation cap", "double-impact pressure"),
         ("using future ADV", "zero-return liquidity proxy bias", "survivorship"),
-        ("services/research/realism/capacity_curve.py", "services/execution/impact.py"),
+        ("services/research/liquidity_premium.py", "tools/liquidity_premium_research.py"),
         "NEW_EXPERIMENT_GAP",
     ),
     AlphaMethodSpec(

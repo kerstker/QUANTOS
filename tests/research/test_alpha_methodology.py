@@ -112,3 +112,26 @@ def test_discovery_controls_bind_papers_to_existing_fail_closed_modules():
         by_id["dsr_selection_bias"].system_modules
     )
 
+
+def test_pairs_result_is_internalized_as_falsified_not_an_open_gap():
+    pair_method = next(
+        item for item in ALPHA_METHODS if item.method_id == "pairs_relative_value"
+    )
+
+    assert pair_method.system_disposition == "EXISTING_FALSIFIED_IMPLEMENTATION"
+    assert pair_method.system_modules == (
+        "services/research/pairs_relative_value.py",
+        "tools/pairs_relative_value_research.py",
+    )
+
+
+def test_liquidity_gap_points_to_the_frozen_implementation() -> None:
+    liquidity_method = next(
+        item for item in ALPHA_METHODS if item.method_id == "liquidity_premium"
+    )
+
+    assert liquidity_method.system_disposition == "NEW_EXPERIMENT_GAP"
+    assert liquidity_method.system_modules == (
+        "services/research/liquidity_premium.py",
+        "tools/liquidity_premium_research.py",
+    )

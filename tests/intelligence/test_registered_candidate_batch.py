@@ -101,16 +101,25 @@ def test_candidate_pool_is_durable_before_agent_scoring(monkeypatch) -> None:
     ] == ["STARTED", "COMPLETED"]
 
 
-def test_registered_batch_passes_explicit_cost_contract_to_evaluator(monkeypatch) -> None:
+def test_registered_batch_passes_explicit_execution_contract_to_evaluator(monkeypatch) -> None:
     registry = _registry()
     candidates = _candidates(2)
     expected = CostModel(fee_bps=4.0, slippage_bps=2.0, impact_coef=0.0)
     captured = {}
 
-    def capture_evaluator(_catalog, _config, *, quantile, periods_per_year, cost):
+    def capture_evaluator(
+        _catalog,
+        _config,
+        *,
+        quantile,
+        target_aum,
+        periods_per_year,
+        cost,
+    ):
         captured.update(
             cost=cost,
             quantile=quantile,
+            target_aum=target_aum,
             periods_per_year=periods_per_year,
         )
         return object()
@@ -138,14 +147,38 @@ def test_registered_batch_passes_explicit_cost_contract_to_evaluator(monkeypatch
         recorded_at=101,
         periods_per_year=1_095,
         quantile=0.2,
+        target_aum=1_250_000.0,
         cost=expected,
     )
 
     assert captured == {
         "cost": expected,
         "quantile": 0.2,
+        "target_aum": 1_250_000.0,
         "periods_per_year": 1_095,
     }
+
+
+@pytest.mark.parametrize("target_aum", [True, 0, -1.0, float("inf")])
+def test_registered_batch_rejects_invalid_target_aum_before_writes(
+    target_aum,
+) -> None:
+    registry = _registry()
+
+    with pytest.raises(ValueError, match="target_aum must be finite and positive"):
+        batch_module.run_registered_candidate_batch(
+            _candidates(2),
+            registry=registry,
+            search_id="invalid-aum-batch",
+            search_kind="CURATED_CANDIDATE_BATCH",
+            search_source="tests.intelligence",
+            dataset_version="dataset-v1",
+            recorded_at=101,
+            target_aum=target_aum,
+        )
+
+    assert registry._store.trial_count() == 0
+    assert registry.search_attempt_events("invalid-aum-batch") == []
 
 
 def test_failed_agent_run_retains_candidates_and_failed_terminal(monkeypatch) -> None:

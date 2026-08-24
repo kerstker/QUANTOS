@@ -1,6 +1,6 @@
 # Distance-selected pairs relative value: frozen experiment contract
 
-Status: PRE-REGISTERED IN CODE, OUTCOME NOT ACCESSED
+Status: EVALUATED ON DGX, REJECTED_HISTORICAL, 2026-08-25
 
 ## Economic claim and boundary
 
@@ -74,6 +74,34 @@ Every other outcome is `REJECTED_HISTORICAL`.  Neither outcome authorizes live
 trading.  The evidence artifact retains the contract hash, dataset hash, exact
 trial hashes, catalog trial counts, evaluator evidence hashes, cycle selections,
 cost replay, and every failed decision bar.
+
+## Frozen outcome and disposition
+
+The one authorized batch completed on the DGX as search
+`search-f5cdda3dab57cf106530698a` with dataset version
+`aaec89c578dc108d05504ba6fe770bf00eb21b55c66c9a29795a73a51eeeaa54e`.
+The immutable evidence artifact is
+`/srv/quantos/state/evidence/pairs_relative_value_search-f5cdda3dab57cf106530698a.json`
+(SHA-256 `d9482df8c456fb932b5d8f378ae21e636e69dc11f57f3ea547a1194b8fe90523`).
+
+The primary distance-convergence candidate had USD 1 million replay net Sharpe
+0.143, net return 1.64%, maximum drawdown 22.25%, PBO 0.629, and DSR 0.0.  Under
+the frozen doubled fee/slippage contract, return fell to -5.46% and Sharpe to
+-0.034.  It beat both negative controls, and its last two cycles were stronger,
+but it failed six pre-registered bars: evaluator PASS, net Sharpe, DSR, PBO,
+drawdown, and doubled-cost profitability.  Therefore the complete family is
+`REJECTED_HISTORICAL`; it is not tuned, reopened, paper-tracked, or deployed.
+
+Two infrastructure defects were exposed without changing that decision.  The
+registered batch had not passed the contract's USD 1 million AUM into
+`AlphaEvaluator`, whose default was USD 10 million; the artifact therefore keeps
+the formal evaluator result separate from the explicit USD 1 million economic
+replay.  The batch API now binds an explicit `target_aum`.  Separately, the DSR
+catalog mixed historical returns from legacy/direct-save alpha rows with a
+filtered alpha-hypothesis trial ledger, causing `CATALOG_EVIDENCE_INVALID`.
+Evidence minting now excludes any return observation whose exact definition is
+outside the retained trial ledger.  Neither correction rescues this family: it
+already fails at the more favorable USD 1 million replay and under stress costs.
 
 ## Primary source
 

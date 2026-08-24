@@ -153,6 +153,53 @@ def test_legacy_16_hex_trials_keep_count_but_mint_full_hash_evidence() -> None:
     assert verify_catalog_evidence_against_catalog(evidence, catalog, "a")
 
 
+def test_historical_returns_outside_filtered_trial_ledger_do_not_poison_evidence() -> None:
+    catalog = AlphaCatalog()
+    left = _definition("a", "factor-a")
+    right = _definition("b", "factor-b")
+    orphan = _definition("legacy-direct-save", "factor-orphan")
+    catalog.restore_evaluation_context(
+        trials=(left.definition_hash, right.definition_hash),
+        historical_returns={
+            "a": (0.01, 0.02, -0.01, 0.03),
+            "b": (-0.01, 0.01, 0.02, -0.02),
+            "legacy-direct-save": (0.03, 0.02, -0.02, 0.01),
+        },
+        historical_pvalues={},
+        historical_definition_hashes={
+            "a": left.definition_hash,
+            "b": right.definition_hash,
+            "legacy-direct-save": orphan.definition_hash,
+        },
+    )
+    catalog.register(left)
+    catalog.set_returns("a", (0.02, 0.01, -0.01, 0.04))
+
+    evidence = catalog.evidence("a")
+
+    assert evidence is not None
+    assert tuple(item.observation_id for item in evidence.return_observations) == tuple(
+        sorted((left.definition_hash, right.definition_hash))
+    )
+    assert orphan.definition_hash not in evidence.trial_definition_hashes
+    assert verify_catalog_evidence_against_catalog(evidence, catalog, "a")
+
+
+def test_scoped_evidence_always_retains_subject_definition() -> None:
+    catalog = _catalog()
+    subject_hash = catalog.get("a").definition_hash
+    peer_hash = catalog.get("b").definition_hash
+
+    evidence = catalog.evidence("a", scope_trial_hashes=frozenset({peer_hash}))
+
+    assert evidence is not None
+    assert evidence.trial_definition_hashes == tuple(sorted((peer_hash, subject_hash)))
+    assert tuple(item.observation_id for item in evidence.return_observations) == tuple(
+        sorted((peer_hash, subject_hash))
+    )
+    assert verify_catalog_evidence(evidence)
+
+
 def test_current_re_evaluation_replaces_its_own_historical_return_window() -> None:
     catalog = AlphaCatalog()
     left = _definition("a", "factor-a")

@@ -30,6 +30,10 @@ class PanelPeriod:
     # candidates have different valid-period histories (the normal case, not the exception, once
     # real factors have different data-availability windows).
     event_time: Optional[int] = None
+    # ADV for names that were held in the previous period but have left the
+    # current signal cross-section. This lets dynamic-universe liquidation pay
+    # impact and prove participation instead of disappearing at base cost only.
+    exit_adv_notional: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,7 @@ class PanelResult:
     gross_returns: tuple[float, ...]
     costs: tuple[float, ...]
     turnovers: tuple[float, ...] = ()     # sum |Δweight| each period
+    max_participations: tuple[Optional[float], ...] = ()
 
     def total_net_return(self) -> float:
         return math.prod(1.0 + r for r in self.period_returns) - 1.0 if self.period_returns else 0.0
@@ -86,7 +91,7 @@ def run_panel_backtest(
     target_aum: float = 1e7,
 ) -> PanelResult:
     prev_w: dict[str, float] = {}
-    period_returns, gross_returns, costs, turnovers = [], [], [], []
+    period_returns, gross_returns, costs, turnovers, max_participations = [], [], [], [], []
     for p in periods:
         # fail-closed on malformed cross-sections (review P1/P2)
         if len(set(p.instruments)) != len(p.instruments):
@@ -95,6 +100,31 @@ def run_panel_backtest(
             raise ValueError("PanelPeriod.signals must all be finite")
         long_idx, short_idx = _quantile_legs(p.signals, quantile)
         w = _dollar_neutral_weights(p.instruments, long_idx, short_idx, gross)
+        if p.adv_notional and (
+            len(p.adv_notional) != len(p.instruments)
+            or any(
+                not math.isfinite(value) or value <= 0.0
+                for value in p.adv_notional
+            )
+        ):
+            raise ValueError(
+                "PanelPeriod.adv_notional must be an aligned positive finite vector"
+            )
+        exit_adv = dict(p.exit_adv_notional)
+        if (
+            len(exit_adv) != len(p.exit_adv_notional)
+            or set(exit_adv) & set(p.instruments)
+            or any(
+                not isinstance(name, str)
+                or not name
+                or not math.isfinite(value)
+                or value <= 0.0
+                for name, value in p.exit_adv_notional
+            )
+        ):
+            raise ValueError(
+                "PanelPeriod.exit_adv_notional must be unique, positive, and exit-only"
+            )
 
         gross_r = sum(w[inst] * p.forward_returns[i] for i, inst in enumerate(p.instruments))
 
@@ -106,21 +136,49 @@ def run_panel_backtest(
         base_bps = cost.fee_bps + cost.slippage_bps
         cst = 0.0
         turnover = 0.0
+        period_max_participation: Optional[float] = 0.0 if p.adv_notional else None
         for n in names:
             dw = abs(w.get(n, 0.0) - prev_w.get(n, 0.0))   # fraction of AUM traded
             turnover += dw
             cst += dw * base_bps / 10_000.0
-        if cost.impact_coef > 0 and p.adv_notional:
-            for i, inst in enumerate(p.instruments):
-                dw = abs(w[inst] - prev_w.get(inst, 0.0))
-                if dw > 0:
-                    traded_notional = dw * target_aum
-                    cst += dw * cost.impact_bps(traded_notional, p.adv_notional[i]) / 10_000.0
+        if p.adv_notional:
+            adv_by_instrument = {
+                **dict(zip(p.instruments, p.adv_notional, strict=True)),
+                **exit_adv,
+            }
+            for instrument in names:
+                dw = abs(w.get(instrument, 0.0) - prev_w.get(instrument, 0.0))
+                if dw == 0.0:
+                    continue
+                adv = adv_by_instrument.get(instrument)
+                if adv is None:
+                    raise ValueError(
+                        "dynamic-universe liquidation is missing current exit ADV"
+                    )
+                traded_notional = dw * target_aum
+                if cost.impact_coef > 0:
+                    cst += (
+                        dw
+                        * cost.impact_bps(traded_notional, adv)
+                        / 10_000.0
+                    )
+                participation = dw * target_aum / adv
+                if period_max_participation is not None:
+                    period_max_participation = max(
+                        period_max_participation, participation
+                    )
 
         period_returns.append(gross_r - cst)
         gross_returns.append(gross_r)
         costs.append(cst)
         turnovers.append(turnover)
+        max_participations.append(period_max_participation)
         prev_w = w
 
-    return PanelResult(tuple(period_returns), tuple(gross_returns), tuple(costs), tuple(turnovers))
+    return PanelResult(
+        tuple(period_returns),
+        tuple(gross_returns),
+        tuple(costs),
+        tuple(turnovers),
+        tuple(max_participations),
+    )

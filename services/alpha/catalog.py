@@ -190,12 +190,35 @@ class AlphaCatalog:
         if len({**self._historical_sharpes, **self._sharpes}) < 2:
             return None
 
+        definition_hash = self._defs[alpha_id].definition_hash
+        if scope_trial_hashes is not None:
+            normalized_scope = {
+                _evidence_trial_id(value) for value in scope_trial_hashes
+            }
+            scoped = normalized_scope & self._evidence_trials
+            # The subject is mandatory evidence, not a synthetic research-session
+            # token.  register() already admitted its definition hash; retaining
+            # that exact identity keeps a caller's narrow scope replayable.
+            if definition_hash in self._evidence_trials:
+                scoped.add(definition_hash)
+            effective_trials = tuple(sorted(scoped))
+        else:
+            effective_trials = tuple(sorted(self._evidence_trials))
+        effective_trial_set = frozenset(effective_trials)
+
         return_series_by_definition: dict[str, tuple[float, ...]] = {}
         for historical_id, values in self._historical_returns.items():
             definition_hash = self._historical_definition_hashes.get(
                 historical_id
             )
             if definition_hash is not None:
+                if definition_hash not in effective_trial_set:
+                    # load_for_evaluation deliberately scopes DSR trials to
+                    # alpha-hypothesis searches. Legacy/direct-save alpha rows
+                    # may still exist for lifecycle and FDR history, but their
+                    # returns cannot influence variance/correlation unless the
+                    # exact definition is in this evidence ledger.
+                    continue
                 current_definition = self._defs.get(historical_id)
                 if (
                     historical_id in self._returns
@@ -215,6 +238,8 @@ class AlphaCatalog:
             if definition is None:
                 continue
             definition_hash = definition.definition_hash
+            if definition_hash not in effective_trial_set:
+                continue
             values = self._returns[current_id]
             existing = return_series_by_definition.get(definition_hash)
             if existing is not None and existing != values:
@@ -226,17 +251,6 @@ class AlphaCatalog:
         from services.validation.catalog_evidence import create_catalog_evidence
 
         definition_hash = self._defs[alpha_id].definition_hash
-
-        # Apply scope filter if provided
-        if scope_trial_hashes is not None:
-            scoped = frozenset(scope_trial_hashes) & frozenset(self._evidence_trials)
-            # Always include the subject's own trial even if absent from scope
-            subject_trial_id = f"research_session#{alpha_id}#trial"
-            if subject_trial_id not in scoped and subject_trial_id in self._evidence_trials:
-                scoped = scoped | {subject_trial_id}
-            effective_trials = tuple(sorted(scoped))
-        else:
-            effective_trials = tuple(sorted(self._evidence_trials))
 
         return create_catalog_evidence(
             subject_id=alpha_id,
