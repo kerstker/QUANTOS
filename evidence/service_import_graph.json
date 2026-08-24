@@ -1031,6 +1031,11 @@
           "path": "services/research/ml/feature_panel.py"
         },
         {
+          "line": 17,
+          "module": "services.alpha.panel_backtest",
+          "path": "services/research/pairs_relative_value.py"
+        },
+        {
           "line": 14,
           "module": "services.alpha.panel_backtest",
           "path": "services/research/panel_builder.py"
@@ -1345,7 +1350,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "dd666cbcbcc0b41ea6997f9c82141ab7c87b9da9884493135a891f849d0844ce",
+  "graph_sha256": "026aef19cb174a5663fd46e7195cc580aa1289e6eec4f173f44257e5f4be447b",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1383,7 +1388,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 476,
+  "source_file_count": 477,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
