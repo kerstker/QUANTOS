@@ -511,7 +511,7 @@
     "tests/tools/test_external_model_provider.py": "1429ebf1966dccfe46486645a307998f48ad2426ff012c3836e6f18c33ef2e02",
     "tests/tools/test_l2_backup.py": "dca6360f7f740c3aac138921a3f80fb5fb398dc4f0c0fe11068b143ea20722fa",
     "tests/tools/test_l2_schedule_entrypoint.py": "19f9f0f967f29cc876a8684fa338d933a8ffd09fafbf16d1b49ab2f7efcd6935",
-    "tests/tools/test_l2_scheduler_watchdog.py": "6c8aca431bef9c5ee964beb6386e6269b52cb1b998cc45079c4f673c8003bcb2",
+    "tests/tools/test_l2_scheduler_watchdog.py": "f5df8c9c5be84b4baeaa896478dd04c575325565cd7d059a3c83843fd03b64f4",
     "tests/tools/test_mft_testnet_soak.py": "491e1e8773cac4d469773d4aea79d32cae73af3843ee64ca75e8be5f1ab7bf3f",
     "tests/tools/test_paper_order_preview.py": "4a76c9c4cc700aacf7b136ba5cd8364f64e6bd4993df10ef1d32e72d3569ad6c",
     "tests/tools/test_realtime_alpha_discovery.py": "01212f280b12486f2038c0a7d42b3a46fad0acba7d6ec2141c212f9e58a9f1b5",
@@ -541,7 +541,7 @@
     "tools/kill_switch_events.py": "4ee21fe060d7de4bac1c3b93e8e6abe929b9bdf9f9cfcdb0b761631c55193fb2",
     "tools/l2_backup.py": "bd5020ed33a54f589b5838c6fec019b90a49e6f3477b2fd8cb47a6556fb8bf82",
     "tools/l2_schedule_entrypoint.py": "5504b55fd3322c8c12fd26499fa61e912f6741bb0bf2b05155cd75acee82a901",
-    "tools/l2_scheduler_watchdog.py": "f52edde9906ec119521e22ae7fb3e19b33377d8c3253193bd16d9d2a38a73def",
+    "tools/l2_scheduler_watchdog.py": "a5b2157eb1a6d8d6bff9b1cc9649b9e42491bf57404fd65381369c73e9d9954f",
     "tools/live_backup.py": "df70aaaeefebf0485ba95764f192afa6875695ad00a8bdbdd30c31c6d65fb750",
     "tools/live_data_refresh.py": "a7dc785ae3e0ecccabf6966e8dfaa6d115bdab4c0b989c55eafdfeec68aa0768",
     "tools/live_kill_switch_reset.py": "4d3aadd4bf9b2cf06ef6d0108b0533428c1a56a5170dfc974da5dcbf81a34d58",
@@ -587,9 +587,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1787544875174,
-    "run_id": "7567bde18aef66b2d77e645864f5b09d38ad98ef9c049b6355bec3985f38c65d",
-    "source_commit": "d8a3f201ba56c891876b6d2c941f02e9eb6e4585"
+    "generated_at": 1787547247405,
+    "run_id": "c8e84a20781046302bb9eb49a88c92d43e39fcc0bb56207a608905684b87cdd9",
+    "source_commit": "69bbe0e26cb5a8aa40ce5d75a5df96d9161d795c"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
