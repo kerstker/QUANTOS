@@ -22,6 +22,7 @@ from services.alpha.config import AlphaFactoryConfig
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.liquidity_premium import (
+    LiquidityDataIntegrityError,
     LiquidityDecisionPlan,
     LiquidityExperimentConfig,
     build_liquidity_periods,
@@ -319,6 +320,89 @@ def judge(
     }
 
 
+def _record_preflight_rejection(
+    *,
+    output: Path,
+    panel,
+    dataset_version: str,
+    generated_at_ms: int,
+    source_commit: str,
+    recovery_tool_commit: str,
+    start_row: int,
+    failure: LiquidityDataIntegrityError,
+) -> dict[str, Any]:
+    """Persist a data-integrity rejection without opening the trial registry."""
+
+    document = {
+        "schema_version": "liquidity_premium_preflight_rejection.v1",
+        "readiness": "L2_DRY_RUN_ONLY",
+        "generated_at_ms": generated_at_ms,
+        "dataset_observed_through_ms": int(panel.event_times[-1]),
+        "source_commit": source_commit,
+        "recovery_tool_commit": recovery_tool_commit,
+        "preflight_id": "preflight-"
+        + stable_hash(
+            {
+                "contract_hash": CONTRACT_HASH,
+                "dataset_version": dataset_version,
+                "failure": {
+                    "reason_code": failure.reason_code,
+                    "instrument": failure.instrument,
+                    "decision_row": failure.decision_row,
+                    "label_row": failure.label_row,
+                },
+                "source_commit": source_commit,
+            }
+        )[:24],
+        "search_id": None,
+        "search_kind": SEARCH_KIND,
+        "dataset_version": dataset_version,
+        "contract_hash": CONTRACT_HASH,
+        "evaluation_contract": EVALUATION_CONTRACT,
+        "economic_hypothesis": ECONOMIC_HYPOTHESIS,
+        "sample_start": {
+            "row": start_row,
+            "event_time": int(panel.event_times[start_row]),
+            "rule": EVALUATION_CONTRACT["sample_start_rule"],
+        },
+        "preflight_failure": {
+            "reason_code": failure.reason_code,
+            "instrument": failure.instrument,
+            "decision_row": failure.decision_row,
+            "decision_time": int(panel.event_times[failure.decision_row]),
+            "label_row": failure.label_row,
+            "label_time": int(panel.event_times[failure.label_row]),
+            "detail": str(failure),
+            "policy": "FAIL_CLOSED_NO_SKIP_NO_IMPUTATION_NO_REGISTRATION",
+        },
+        "return_statistics_computed": False,
+        "trial_registry": {
+            "mutation_attempted": False,
+            "registered_candidate_count": 0,
+            "recorded_run_ids": [],
+        },
+        "decision": {
+            "status": "REJECTED_DATA_INTEGRITY",
+            "economic_candidate": False,
+            "formal_pass": False,
+            "failed_bars": ["complete_selected_holding_returns"],
+            "forward_admission_allowed": False,
+            "testnet_eligible": False,
+            "live_eligible": False,
+        },
+        "safety": {
+            "public_historical_market_data_only": True,
+            "credentials": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+            "registry_mutation": False,
+            "human_approval_still_required": True,
+        },
+    }
+    atomic_write_json(str(output), document, indent=2)
+    return document
+
+
 def run(
     *,
     output: str | Path,
@@ -331,14 +415,13 @@ def run(
         raise FileExistsError(f"refusing to overwrite immutable result: {output}")
     if not isinstance(source_commit, str) or _COMMIT.fullmatch(source_commit) is None:
         raise ValueError("source_commit must be a lowercase 40-character git commit")
-    if recover_search_id is None:
-        if recovery_tool_commit is not None:
-            raise ValueError("recovery_tool_commit requires recover_search_id")
-    elif (
+    if recovery_tool_commit is not None and (
         not isinstance(recovery_tool_commit, str)
         or _COMMIT.fullmatch(recovery_tool_commit) is None
     ):
         raise ValueError("recovery_tool_commit must identify audited recovery code")
+    if recover_search_id is not None and recovery_tool_commit is None:
+        raise ValueError("recover_search_id requires recovery_tool_commit")
 
     panel = _research_panel()
     dataset_version = field_panel_dataset_version(
@@ -348,19 +431,44 @@ def run(
     artifact_generated_at = time.time_ns() // 1_000_000
     definitions = candidate_definitions()
     start_row = find_first_eligible_decision_row(panel, LIQUIDITY_CONFIG)
+    built_inputs: dict[
+        str,
+        tuple[tuple[PanelPeriod, ...], tuple[LiquidityDecisionPlan, ...]],
+    ] = {}
+    try:
+        for definition, mode, universe_size, _role in definitions:
+            built_inputs[definition.alpha_id] = build_liquidity_periods(
+                panel,
+                LIQUIDITY_CONFIG,
+                mode=mode,
+                universe_size=universe_size,
+                start_row=start_row,
+            )
+    except LiquidityDataIntegrityError as failure:
+        if recovery_tool_commit is None:
+            raise
+        return _record_preflight_rejection(
+            output=output,
+            panel=panel,
+            dataset_version=dataset_version,
+            generated_at_ms=artifact_generated_at,
+            source_commit=source_commit,
+            recovery_tool_commit=recovery_tool_commit,
+            start_row=start_row,
+            failure=failure,
+        )
+    if recover_search_id is None and recovery_tool_commit is not None:
+        raise ValueError(
+            "recovery_tool_commit without recover_search_id is only valid for "
+            "an observed preflight data rejection"
+        )
     candidates = []
     periods_by_id: dict[str, tuple[PanelPeriod, ...]] = {}
     plans_by_size: dict[int, tuple[LiquidityDecisionPlan, ...]] = {}
     leakage_by_mode_size: dict[str, bool | None] = {}
     mapping = {}
     for definition, mode, universe_size, role in definitions:
-        periods, plans = build_liquidity_periods(
-            panel,
-            LIQUIDITY_CONFIG,
-            mode=mode,
-            universe_size=universe_size,
-            start_row=start_row,
-        )
+        periods, plans = built_inputs[definition.alpha_id]
         candidates.append((definition, periods))
         periods_by_id[definition.alpha_id] = periods
         plans_by_size.setdefault(universe_size, plans)

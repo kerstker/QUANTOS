@@ -6,6 +6,7 @@ import pytest
 
 from services.research.alpha_expression import FieldPanel
 from services.research.liquidity_premium import (
+    LiquidityDataIntegrityError,
     LiquidityExperimentConfig,
     build_decision_plan,
     build_liquidity_periods,
@@ -147,7 +148,9 @@ def test_missing_selected_forward_price_fails_closed() -> None:
     panel = _panel()
     panel.matrices["close"][5][7] = None
 
-    with pytest.raises(ValueError, match="missing holding return"):
+    with pytest.raises(
+        LiquidityDataIntegrityError, match="missing holding return"
+    ) as captured:
         build_liquidity_periods(
             panel,
             _config(),
@@ -155,6 +158,10 @@ def test_missing_selected_forward_price_fails_closed() -> None:
             universe_size=6,
             start_row=3,
         )
+    assert captured.value.reason_code == "MISSING_SELECTED_HOLDING_RETURN"
+    assert captured.value.instrument == "c7"
+    assert captured.value.decision_row == 3
+    assert captured.value.label_row == 5
 
 
 def test_earliest_decision_requires_complete_breadth_without_future_scan() -> None:

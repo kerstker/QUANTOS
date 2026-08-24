@@ -21,6 +21,25 @@ LiquiditySignalMode = Literal["illiquidity", "liquidity", "hash"]
 _HASH_SALT = "quantos.liquidity-premium.hash-control.v1"
 
 
+class LiquidityDataIntegrityError(ValueError):
+    """A selected historical holding cannot be priced without fabrication."""
+
+    def __init__(
+        self,
+        *,
+        reason_code: str,
+        instrument: str,
+        decision_row: int,
+        label_row: int,
+        detail: str,
+    ) -> None:
+        super().__init__(detail)
+        self.reason_code = reason_code
+        self.instrument = instrument
+        self.decision_row = decision_row
+        self.label_row = label_row
+
+
 @dataclass(frozen=True)
 class LiquidityExperimentConfig:
     lookback_rows: int = 28
@@ -249,8 +268,15 @@ def build_liquidity_periods(
             current = close[decision_row][column]
             future = close[future_row][column]
             if not _positive(current) or not _positive(future):
-                raise ValueError(
-                    f"missing holding return for selected instrument {instrument}"
+                raise LiquidityDataIntegrityError(
+                    reason_code="MISSING_SELECTED_HOLDING_RETURN",
+                    instrument=instrument,
+                    decision_row=decision_row,
+                    label_row=future_row,
+                    detail=(
+                        "missing holding return for selected instrument "
+                        f"{instrument}"
+                    ),
                 )
             value = float(future) / float(current) - 1.0
             if not math.isfinite(value) or value <= -1.0:
@@ -327,6 +353,7 @@ def liquidity_signal_leakage_ok(
 
 
 __all__ = [
+    "LiquidityDataIntegrityError",
     "LiquidityDecisionPlan",
     "LiquidityExperimentConfig",
     "build_decision_plan",

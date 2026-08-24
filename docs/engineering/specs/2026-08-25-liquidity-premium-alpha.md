@@ -1,6 +1,6 @@
 # Cross-sectional liquidity premium: frozen experiment contract
 
-Status: PRE-REGISTERED IN CODE, OUTCOME NOT ACCESSED
+Status: DGX PREFLIGHT REJECTED_DATA_INTEGRITY, 2026-08-25
 
 ## Economic claim and boundary
 
@@ -77,6 +77,25 @@ The primary is `HISTORICAL_DIAGNOSTIC_PASS` only when every condition holds:
 
 Every other outcome is `REJECTED_HISTORICAL`. A positive historical outcome is
 still not forward evidence and grants no testnet or live authority.
+
+## Observed preflight result
+
+The contract was frozen and fully validated at source commit
+`2f231c84707e51d4a533f1d6dd508c9dd31b8de2`. On the DGX, construction stopped
+before the experiment registry opened because selected instrument `XMR` lacked
+its required `t+7` price. The durable trial table remained at 2,850 rows,
+`LIQUIDITY_PREMIUM_V1` had zero search events, and no return statistics were
+computed. This is `REJECTED_DATA_INTEGRITY`, not evidence for or against the
+economic premium.
+
+The failure is economically material: dropping XMR after seeing the missing
+label, changing the top-48 universe, skipping that week, or imputing a zero
+return would manufacture exactly the survivorship/untradeable-premium illusion
+the experiment was designed to catch. None is allowed. An audited recorder can
+publish this pre-registry rejection with the original contract/source commit and
+a separate recorder commit, but it still performs no registry mutation. This
+frozen family is closed; any delisting-aware payoff convention would be a new,
+independently pre-registered experiment rather than a repair of this result.
 
 ## Primary source
 

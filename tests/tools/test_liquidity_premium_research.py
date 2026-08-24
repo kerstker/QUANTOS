@@ -1,3 +1,5 @@
+import pytest
+
 from tools.liquidity_premium_research import (
     CONTRACT_HASH,
     EVALUATION_CONTRACT,
@@ -5,7 +7,10 @@ from tools.liquidity_premium_research import (
     PRIMARY_ALIAS,
     candidate_definitions,
     judge,
+    run,
 )
+
+from services.research.alpha_expression import FieldPanel
 
 
 def test_frozen_contract_has_four_candidates_and_no_parameter_scan() -> None:
@@ -99,3 +104,65 @@ def test_unassessed_participation_fails_closed_economically() -> None:
     assert "participation_assessed" in decision["failed_bars"]
     assert "max_participation_at_most_10pct" in decision["failed_bars"]
 
+
+def _preflight_failure_panel() -> FieldPanel:
+    rows, names = 40, 50
+    instruments = [f"c{index}" for index in range(names)]
+    event_times = [1_700_000_000_000 + row * 86_400_000 for row in range(rows)]
+    close = [[100.0 + index for index in range(names)] for _row in range(rows)]
+    volume = [
+        [1_000.0 * (index + 1) for index in range(names)]
+        for _row in range(rows)
+    ]
+    # c49 is the most liquid selected name at t=28 and has no t+7 label.
+    close[35][49] = None
+    return FieldPanel(instruments, event_times, {"close": close, "volume": volume})
+
+
+def test_audited_recorder_publishes_pre_registry_data_rejection(
+    monkeypatch, tmp_path
+) -> None:
+    from tools import liquidity_premium_research as research
+
+    monkeypatch.setattr(research, "_research_panel", _preflight_failure_panel)
+    monkeypatch.setattr(research.time, "time_ns", lambda: 123_000_000)
+    monkeypatch.setattr(
+        research,
+        "production_experiment_registry",
+        lambda: (_ for _ in ()).throw(AssertionError("registry must not open")),
+    )
+    output = tmp_path / "preflight-rejection.json"
+
+    document = run(
+        output=output,
+        source_commit="a" * 40,
+        recovery_tool_commit="b" * 40,
+    )
+
+    assert output.is_file()
+    assert document["decision"]["status"] == "REJECTED_DATA_INTEGRITY"
+    assert document["decision"]["economic_candidate"] is False
+    assert document["preflight_failure"]["reason_code"] == (
+        "MISSING_SELECTED_HOLDING_RETURN"
+    )
+    assert document["preflight_failure"]["instrument"] == "c49"
+    assert document["trial_registry"] == {
+        "mutation_attempted": False,
+        "registered_candidate_count": 0,
+        "recorded_run_ids": [],
+    }
+    assert document["return_statistics_computed"] is False
+
+
+def test_preflight_failure_without_audited_recorder_still_raises(
+    monkeypatch, tmp_path
+) -> None:
+    from tools import liquidity_premium_research as research
+
+    monkeypatch.setattr(research, "_research_panel", _preflight_failure_panel)
+
+    with pytest.raises(
+        research.LiquidityDataIntegrityError,
+        match="missing holding return",
+    ):
+        run(output=tmp_path / "must-not-exist.json", source_commit="a" * 40)

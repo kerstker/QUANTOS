@@ -125,12 +125,12 @@ def test_pairs_result_is_internalized_as_falsified_not_an_open_gap():
     )
 
 
-def test_liquidity_gap_points_to_the_frozen_implementation() -> None:
+def test_liquidity_data_rejection_is_internalized_as_blocked_implementation() -> None:
     liquidity_method = next(
         item for item in ALPHA_METHODS if item.method_id == "liquidity_premium"
     )
 
-    assert liquidity_method.system_disposition == "NEW_EXPERIMENT_GAP"
+    assert liquidity_method.system_disposition == "EXISTING_BLOCKED_IMPLEMENTATION"
     assert liquidity_method.system_modules == (
         "services/research/liquidity_premium.py",
         "tools/liquidity_premium_research.py",

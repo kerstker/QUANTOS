@@ -36,6 +36,7 @@ _SYSTEM_DISPOSITIONS = frozenset(
     {
         "EXISTING_TESTED_FAMILY",
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        "EXISTING_BLOCKED_IMPLEMENTATION",
         "NEW_EXPERIMENT_GAP",
         "FORWARD_EXPERIMENT_GAP",
     }
@@ -321,7 +322,7 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("large-cap-only subset", "participation cap", "double-impact pressure"),
         ("using future ADV", "zero-return liquidity proxy bias", "survivorship"),
         ("services/research/liquidity_premium.py", "tools/liquidity_premium_research.py"),
-        "NEW_EXPERIMENT_GAP",
+        "EXISTING_BLOCKED_IMPLEMENTATION",
     ),
     AlphaMethodSpec(
         "crypto_attention_momentum",
@@ -507,6 +508,7 @@ def audit_methodology(
             "FORWARD_EXPERIMENT_GAP": 10,
             "EXISTING_TESTED_FAMILY": -5,
             "EXISTING_FALSIFIED_IMPLEMENTATION": -10,
+            "EXISTING_BLOCKED_IMPLEMENTATION": -8,
         }[item.system_disposition]
         tiers = tuple(
             sorted({sources[source_id].evidence_tier.value for source_id in item.source_ids})
