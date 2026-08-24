@@ -16,6 +16,11 @@ def test_frozen_contract_has_exact_three_candidates_and_no_scan():
     assert len(CONTRACT_HASH) == 64
 
 
+def test_contract_identity_does_not_bind_registry_wall_clock():
+    assert "recorded_at" not in EVALUATION_CONTRACT
+    assert "generated_at_ms" not in EVALUATION_CONTRACT
+
+
 def test_definitions_are_unique_and_bind_the_contract():
     definitions = candidate_definitions()
     assert len(definitions) == 3

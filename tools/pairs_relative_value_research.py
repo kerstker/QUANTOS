@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import statistics
+import time
 from typing import Any, Mapping, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
@@ -304,7 +305,10 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
         panel,
         source_versions={"contract_hash": CONTRACT_HASH, "source": DATA_SOURCE},
     )
-    recorded_at = int(panel.event_times[-1])
+    # Registry STARTED events form a monotonic production clock.  Dataset time
+    # belongs in dataset_version/sample metadata; using the final market bar as
+    # the event clock rolls back as soon as any newer research run exists.
+    recorded_at = time.time_ns() // 1_000_000
     definitions = candidate_definitions()
     start_row = find_first_eligible_formation_start(panel, PAIR_CONFIG)
     candidates = []
@@ -409,6 +413,7 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
         "schema_version": "pairs_relative_value_research.v1",
         "readiness": "L2_DRY_RUN_ONLY",
         "generated_at_ms": recorded_at,
+        "dataset_observed_through_ms": int(panel.event_times[-1]),
         "source_commit": source_commit,
         "search_id": search_id,
         "search_kind": SEARCH_KIND,
