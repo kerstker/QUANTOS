@@ -1358,6 +1358,64 @@ def test_watchdog_refreshes_clock_after_concurrent_resident_health_publication(
     assert stream_check["code"] == "RUNNING_HEALTHY"
 
 
+def test_default_resident_health_reader_parses_strict_json_from_disk(tmp_path):
+    snapshots = _healthy_tasks(tmp_path, include_backup=False)
+    stream_index = next(
+        index
+        for index, row in enumerate(snapshots)
+        if row.name == "QUANTOS_binance_realtime_stream"
+    )
+    stream = snapshots[stream_index]
+    snapshots[stream_index] = TaskSnapshot(
+        name=stream.name,
+        state="Running",
+        last_run_ms=stream.last_run_ms,
+        last_result=stream.last_result,
+        next_run_ms=stream.next_run_ms,
+        execute=stream.execute,
+        arguments=stream.arguments,
+        working_directory=stream.working_directory,
+    )
+    receipt_path = (
+        tmp_path / "data" / "cache" / "binance_realtime_stream_status.json"
+    )
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "generated_at_ms": NOW_MS - 1_000,
+                "verdict": "PASS",
+                "streaming": True,
+                "safety": {
+                    "credentials": False,
+                    "private_stream": False,
+                    "broker_connectivity": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_scheduler_watchdog(
+        repo_root=tmp_path,
+        status_path=tmp_path / "status.json",
+        now_ms=NOW_MS,
+        backup_ready=False,
+        heartbeat_ready=False,
+        event_seal_ready=False,
+        collector=lambda: snapshots,
+        emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
+    )
+
+    stream_check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_binance_realtime_stream"
+    )
+    assert stream_check["status"] == "PASS"
+    assert stream_check["code"] == "RUNNING_HEALTHY"
+
+
 def test_default_collector_follows_platform_provider(monkeypatch, tmp_path):
     observed = []
     monkeypatch.setenv("QUANTOS_SCHEDULER_PROVIDER", "systemd")

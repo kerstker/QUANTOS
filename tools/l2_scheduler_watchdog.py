@@ -1866,7 +1866,7 @@ def run_scheduler_watchdog(
                 }
         if resident_health_reader is None:
             def resident_health_reader(path: Path) -> dict:
-                return load_json_without_duplicate_keys(path)
+                return load_json_without_duplicate_keys(path.read_bytes())
         try:
             resident_health = resident_health_reader(
                 Path(repo_root) / "data" / "cache" / "binance_realtime_stream_status.json"
