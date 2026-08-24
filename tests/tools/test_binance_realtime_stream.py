@@ -13,6 +13,7 @@ from tools.binance_realtime_stream import (
     StreamState,
     _recover_depth_cursor,
     _recover_depth_cursor_async,
+    _recover_depth_cursors_async,
     _status,
     _verify_cursor_chain_subprocess,
     _verify_store_chain,
@@ -1006,6 +1007,68 @@ async def test_async_recovery_keeps_cursor_writes_on_event_loop(tmp_path):
         assert recovered.cursor_update_id == 30
     finally:
         release.set()
+        cursor.close()
+
+
+@pytest.mark.asyncio
+async def test_multi_symbol_recovery_runs_public_rest_fetches_concurrently(tmp_path):
+    cursor = StreamCursorStore(str(tmp_path / "stream.db"), create=True)
+    all_fetches_started = threading.Event()
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    try:
+        for symbol in ("BTCUSDT", "ETHUSDT"):
+            cursor.observe(
+                channel="depth20",
+                instrument_id=symbol,
+                first_update_id=10,
+                final_update_id=11,
+                previous_final_update_id=9,
+                event_time_ms=9_900,
+                observed_at_ms=10_000,
+            )
+            cursor.observe(
+                channel="depth20",
+                instrument_id=symbol,
+                first_update_id=20,
+                final_update_id=21,
+                previous_final_update_id=19,
+                event_time_ms=9_901,
+                observed_at_ms=10_000,
+            )
+
+        def fetch(_symbol, *, observed_at_ms):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                if active == 2:
+                    all_fetches_started.set()
+            try:
+                assert all_fetches_started.wait(timeout=1.0)
+                return {
+                    "last_update_id": 21,
+                    "event_time_ms": int(observed_at_ms),
+                }
+            finally:
+                with lock:
+                    active -= 1
+
+        results = await _recover_depth_cursors_async(
+            cursor,
+            ("BTCUSDT", "ETHUSDT"),
+            rest_depth_fetch=fetch,
+        )
+
+        assert max_active == 2
+        assert [symbol for symbol, _record in results] == [
+            "BTCUSDT",
+            "ETHUSDT",
+        ]
+        assert all(record.publishable for _symbol, record in results)
+    finally:
+        all_fetches_started.set()
         cursor.close()
 
 

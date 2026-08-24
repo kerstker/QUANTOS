@@ -238,6 +238,33 @@ async def _recover_depth_cursor_async(
         raise
 
 
+async def _recover_depth_cursors_async(
+    cursor_store: StreamCursorStore,
+    symbols: Sequence[str],
+    *,
+    rest_depth_fetch=fetch_depth_snapshot,
+) -> list[tuple[str, StreamCursorRecord]]:
+    """Recover independent symbol cursors concurrently on one event-loop owner.
+
+    Public REST calls run in independent children/threads.  The synchronous
+    journal transitions before and after each await remain serialized on this
+    event loop, preserving the store's single-writer contract.
+    """
+
+    async def recover(symbol: str) -> tuple[str, StreamCursorRecord]:
+        return (
+            symbol,
+            await _recover_depth_cursor_async(
+                cursor_store,
+                symbol,
+                observed_at_ms=int(time.time() * 1000),
+                rest_depth_fetch=rest_depth_fetch,
+            ),
+        )
+
+    return list(await asyncio.gather(*(recover(symbol) for symbol in symbols)))
+
+
 class StreamState:
     """In-memory reduction of documented frames into bounded snapshots."""
 
@@ -1072,6 +1099,7 @@ async def run_stream(
         try:
             while time.monotonic() < deadline:
                 await asyncio.sleep(min(flush_seconds, max(0.0, deadline - time.monotonic())))
+                blocked_symbols: list[str] = []
                 for symbol in sorted(state.symbols):
                     cursor = cursor_store.latest("depth20", symbol)
                     if cursor is not None and cursor.state in {
@@ -1083,18 +1111,16 @@ async def run_stream(
                         StreamCursorState.RECOVERING,
                         StreamCursorState.BLOCKED,
                     }:
-                        recovered = await _recover_depth_cursor_async(
-                            cursor_store,
-                            symbol,
-                            # A slow REST/proxy round trip must not make the
-                            # eventual snapshot clock stale.  Each recovery
-                            # attempt owns its actual invocation time.
-                            observed_at_ms=int(time.time() * 1000),
-                            rest_depth_fetch=rest_depth_fetch,
-                        )
-                        depth = state.latest[symbol].get("depth20")
-                        if isinstance(depth, dict):
-                            depth.update(_cursor_fields(recovered))
+                        blocked_symbols.append(symbol)
+                recovered_cursors = await _recover_depth_cursors_async(
+                    cursor_store,
+                    blocked_symbols,
+                    rest_depth_fetch=rest_depth_fetch,
+                )
+                for symbol, recovered in recovered_cursors:
+                    depth = state.latest[symbol].get("depth20")
+                    if isinstance(depth, dict):
+                        depth.update(_cursor_fields(recovered))
                 # WebSocket consumers continue to advance while the public
                 # REST recoveries above await I/O.  Refresh the observation
                 # clock immediately before reducing their current state;
