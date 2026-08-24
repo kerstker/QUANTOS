@@ -1131,7 +1131,9 @@ async def run_stream(
                             "full_verified_at_ms"
                         )
                     )
-                    cursor_chain_verification["verified_at_ms"] = observed_at_ms
+                    cursor_chain_verification["verified_at_ms"] = int(
+                        time.time() * 1000
+                    )
                     if cursor_chain_verification.get("valid") is True:
                         cursor_chain_checkpoint = {
                             **cursor_chain_checkpoint,
@@ -1145,22 +1147,33 @@ async def run_stream(
                                 "INCREMENTAL_FROM_STREAM_CHECKPOINT"
                             ),
                         }
+                # Cursor verification may decode a sizeable append-only suffix
+                # while both WebSocket consumers keep advancing.  Snapshot the
+                # state against the post-verification clock, not the clock from
+                # before that work began.
+                observed_at_ms = int(time.time() * 1000)
                 snapshots = state.snapshots(observed_at_ms)
                 for snapshot in snapshots.values():
                     store.append_snapshot(snapshot)
+                row_count = store.row_count()
+                cursor_status = cursor_store.trading_watermark(
+                    (("depth20", symbol) for symbol in sorted(state.symbols)),
+                    chain_verification=cursor_chain_verification,
+                )
+                # generated_at_ms is the semantic receipt publication clock.
+                # Refresh it only after every status dependency is complete so
+                # a slow audit cannot publish an already-stale heartbeat.
+                published_at_ms = int(time.time() * 1000)
                 latest_status = _status(
                     state,
-                    observed_at_ms=observed_at_ms,
+                    observed_at_ms=published_at_ms,
                     snapshots=snapshots,
                     store_path=store_path,
-                    row_count=store.row_count(),
+                    row_count=row_count,
                     chain_valid=chain_valid,
                     chain_verified_at_ms=chain_verified_at_ms,
                     chain_verification=chain_verification,
-                    cursor_status=cursor_store.trading_watermark(
-                        (("depth20", symbol) for symbol in sorted(state.symbols)),
-                        chain_verification=cursor_chain_verification,
-                    ),
+                    cursor_status=cursor_status,
                 )
                 atomic_write_json(status_path, latest_status, indent=2)
         finally:
@@ -1213,8 +1226,21 @@ async def run_stream(
     async def cursor_chain_audit_loop() -> None:
         """Audit once at boot, then renew the full proof before it expires."""
         nonlocal cursor_chain_checkpoint, cursor_chain_verification
+        force_full_audit = False
         while not stop.is_set() and time.monotonic() < deadline:
             audit_checkpoint = dict(cursor_chain_checkpoint)
+            if force_full_audit:
+                # This genesis checkpoint belongs only to the subprocess audit.
+                # Publishing it through the shared incremental checkpoint makes
+                # the event loop re-read the entire cursor history on its next
+                # flush and can freeze resident health for minutes.
+                audit_checkpoint = {
+                    **audit_checkpoint,
+                    "checkpoint_seq": 0,
+                    "checkpoint_row_hash": "",
+                    "verification_mode": "FULL_PERIODIC_AUDIT",
+                }
+                force_full_audit = False
             checkpoint_mode = str(audit_checkpoint["verification_mode"])
             verification = await _verify_cursor_chain_subprocess_async(
                 store_path,
@@ -1241,17 +1267,56 @@ async def run_stream(
                 and verification.get("valid") is True
                 else audit_checkpoint["full_verified_at_ms"]
             )
-            cursor_chain_verification = verification
             if verification.get("valid") is not True:
+                cursor_chain_verification = verification
                 return
-            cursor_chain_checkpoint = {
-                **audit_checkpoint,
-                "checkpoint_seq": int(verification["verified_seq"]),
-                "checkpoint_row_hash": str(verification["verified_row_hash"]),
-                "full_verified_at_ms": verification["full_verified_at_ms"],
-                "verification_mode": "INCREMENTAL_FROM_STREAM_CHECKPOINT",
-            }
-            full_verified_at_ms = verification["full_verified_at_ms"]
+            current_checkpoint = dict(cursor_chain_checkpoint)
+            current_seq = int(current_checkpoint["checkpoint_seq"])
+            audited_seq = int(verification["verified_seq"])
+            if (
+                current_seq > audited_seq
+                and cursor_chain_verification.get("valid") is True
+            ):
+                # Flushes may advance while the subprocess scans a stable SQLite
+                # snapshot.  Preserve that newer independently-verified suffix,
+                # while renewing its genesis-to-head full-audit provenance.
+                cursor_chain_verification = {
+                    **cursor_chain_verification,
+                    "bootstrap_verification_mode": verification[
+                        "bootstrap_verification_mode"
+                    ],
+                    "batch_authority": verification["batch_authority"],
+                    "full_verified_at_ms": verification[
+                        "full_verified_at_ms"
+                    ],
+                }
+                cursor_chain_checkpoint = {
+                    **current_checkpoint,
+                    "full_verified_at_ms": verification[
+                        "full_verified_at_ms"
+                    ],
+                    "verification_mode": (
+                        "INCREMENTAL_FROM_STREAM_CHECKPOINT"
+                    ),
+                }
+            else:
+                cursor_chain_verification = verification
+                cursor_chain_checkpoint = {
+                    **audit_checkpoint,
+                    "checkpoint_seq": audited_seq,
+                    "checkpoint_row_hash": str(
+                        verification["verified_row_hash"]
+                    ),
+                    "full_verified_at_ms": verification[
+                        "full_verified_at_ms"
+                    ],
+                    "verification_mode": (
+                        "INCREMENTAL_FROM_STREAM_CHECKPOINT"
+                    ),
+                }
+            full_verified_at_ms = cursor_chain_checkpoint[
+                "full_verified_at_ms"
+            ]
             if type(full_verified_at_ms) is not int:
                 return
             renewal_at_ms = (
@@ -1268,12 +1333,7 @@ async def run_stream(
                 max(0.0, deadline - time.monotonic()),
             )
             if wait_seconds <= 0:
-                cursor_chain_checkpoint = {
-                    **cursor_chain_checkpoint,
-                    "checkpoint_seq": 0,
-                    "checkpoint_row_hash": "",
-                    "verification_mode": "FULL_PERIODIC_AUDIT",
-                }
+                force_full_audit = True
                 continue
             try:
                 await asyncio.wait_for(stop.wait(), timeout=wait_seconds)
@@ -1281,12 +1341,7 @@ async def run_stream(
             except TimeoutError:
                 if time.monotonic() >= deadline:
                     return
-                cursor_chain_checkpoint = {
-                    **cursor_chain_checkpoint,
-                    "checkpoint_seq": 0,
-                    "checkpoint_row_hash": "",
-                    "verification_mode": "FULL_PERIODIC_AUDIT",
-                }
+                force_full_audit = True
 
     try:
         await asyncio.gather(

@@ -458,6 +458,7 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     )
     batch_store.close()
     cursor_calls = []
+    local_checkpoint_calls = []
 
     async def consume(endpoint, _url, *, state, stop, deadline):
         del deadline
@@ -466,6 +467,26 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
 
     async def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
         cursor_calls.append((checkpoint_seq, checkpoint_row_hash))
+        if checkpoint_seq == 0:
+            # Keep the scheduled full audit in flight across several flushes.
+            # The resident publisher must continue from its incremental head;
+            # it must never inherit the audit worker's genesis checkpoint.
+            await asyncio.sleep(0.08)
+        return {
+            "valid": True,
+            "anchor_seq": checkpoint_seq,
+            "verified_suffix_events": 0,
+            "verified_seq": checkpoint_seq,
+            "verified_row_hash": checkpoint_row_hash,
+        }
+
+    def verify_cursor_local(
+        _path,
+        *,
+        checkpoint_seq,
+        checkpoint_row_hash,
+    ):
+        local_checkpoint_calls.append((checkpoint_seq, checkpoint_row_hash))
         return {
             "valid": True,
             "anchor_seq": checkpoint_seq,
@@ -494,6 +515,11 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
         "_verify_cursor_chain_subprocess_async",
         verify_cursor,
     )
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_local",
+        verify_cursor_local,
+    )
     monkeypatch.setattr(realtime, "CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS", 1_000)
     monkeypatch.setattr(realtime, "CURSOR_FULL_AUDIT_LEAD_MS", 900)
 
@@ -508,6 +534,11 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
 
     assert cursor_calls[0] == (77, "d" * 64)
     assert any(seq == 0 and row_hash == "" for seq, row_hash in cursor_calls[1:])
+    assert local_checkpoint_calls
+    assert all(
+        seq == 77 and row_hash == "d" * 64
+        for seq, row_hash in local_checkpoint_calls
+    )
 
 
 def test_state_reduces_complete_stream_surface_into_one_snapshot():
@@ -1086,6 +1117,18 @@ async def test_slow_multi_symbol_recovery_refreshes_flush_observation_clock(
     clock = {"seconds": 10.0}
     frames_updated = threading.Event()
     monkeypatch.setattr(realtime.time, "time", lambda: clock["seconds"])
+    original_row_count = realtime.BinanceRealtimeStore.row_count
+
+    def delayed_row_count(store):
+        result = original_row_count(store)
+        clock["seconds"] += 5.0
+        return result
+
+    monkeypatch.setattr(
+        realtime.BinanceRealtimeStore,
+        "row_count",
+        delayed_row_count,
+    )
 
     def fetch(_symbol, *, observed_at_ms):
         frames_updated.clear()
@@ -1159,6 +1202,7 @@ async def test_slow_multi_symbol_recovery_refreshes_flush_observation_clock(
     )
 
     assert status["generated_at_ms"] >= 50_000
+    assert status["generated_at_ms"] == int(clock["seconds"] * 1_000)
     assert all(
         row["event_time_ms"] <= status["generated_at_ms"]
         for row in status["latest"].values()
