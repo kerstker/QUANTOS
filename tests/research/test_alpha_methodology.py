@@ -1,0 +1,114 @@
+import pytest
+
+from services.research.alpha_methodology import (
+    ALPHA_METHODS,
+    DISCOVERY_CONTROLS,
+    SOURCES,
+    AlphaMethodSpec,
+    EvidenceTier,
+    MethodReadiness,
+    MethodologyRegistryError,
+    SourceSpec,
+    audit_methodology,
+    validate_methodology_registry,
+)
+
+
+def test_builtin_methodology_registry_is_valid_and_unique():
+    validate_methodology_registry(SOURCES, ALPHA_METHODS, DISCOVERY_CONTROLS)
+    assert len({item.source_id for item in SOURCES}) == len(SOURCES)
+    assert len({item.method_id for item in ALPHA_METHODS}) == len(ALPHA_METHODS)
+    assert len({item.control_id for item in DISCOVERY_CONTROLS}) == len(
+        DISCOVERY_CONTROLS
+    )
+
+
+def test_every_alpha_method_has_mechanism_falsification_and_failure_risks():
+    for item in ALPHA_METHODS:
+        assert item.economic_mechanism.strip()
+        assert item.testable_claim.strip()
+        assert item.required_channel_ids
+        assert item.holding_horizons
+        assert item.cost_risks
+        assert item.falsification_tests
+        assert item.leakage_risks
+        assert item.source_ids
+        assert item.system_modules
+
+
+def test_practitioner_claims_cannot_masquerade_as_peer_reviewed_sources():
+    bad_source = SourceSpec(
+        source_id="ict_bad_tier",
+        title="Practitioner video",
+        authors=("Practitioner",),
+        year=2022,
+        evidence_tier=EvidenceTier.PEER_REVIEWED,
+        url="https://example.com/video",
+        doi=None,
+        practitioner_claim=True,
+        scope_note="A practitioner claim without independent academic evidence.",
+    )
+    with pytest.raises(MethodologyRegistryError, match="practitioner claim"):
+        validate_methodology_registry(
+            (bad_source,),
+            (
+                AlphaMethodSpec(
+                    method_id="bad_method",
+                    name="bad",
+                    source_ids=(bad_source.source_id,),
+                    portability="PRACTITIONER_TRANSLATION",
+                    economic_mechanism="Claimed price delivery behavior.",
+                    testable_claim="A fixed signal predicts a fixed future return.",
+                    required_channel_ids=("channel",),
+                    holding_horizons=("1h",),
+                    cost_risks=("spread",),
+                    falsification_tests=("sign control",),
+                    leakage_risks=("future bars",),
+                    system_modules=("services/research",),
+                    system_disposition="NEW_EXPERIMENT_GAP",
+                ),
+            ),
+            (),
+        )
+
+
+def test_audit_is_fail_closed_for_missing_and_forward_only_channels():
+    rows = {row.method_id: row for row in audit_methodology({
+        "binance_usdm_price": "REAL_HISTORY",
+        "binance_spot_klines": "REAL_HISTORY",
+        "binance_usdm_websocket_stream": "REAL_RECENT",
+    })}
+    assert rows["pairs_relative_value"].readiness == (
+        MethodReadiness.HISTORICAL_DIAGNOSTIC_READY
+    )
+    assert rows["ict_liquidity_sweep_session"].readiness == (
+        MethodReadiness.FORWARD_PREREG_REQUIRED
+    )
+    assert rows["crypto_attention_momentum"].readiness == (
+        MethodReadiness.BLOCKED_MISSING_INPUT
+    )
+    assert "crypto_attention" in rows["crypto_attention_momentum"].missing_channels
+
+
+def test_audit_priority_is_deterministic_and_never_labels_profitability():
+    availability = {
+        method_channel: "REAL_HISTORY"
+        for item in ALPHA_METHODS
+        for method_channel in item.required_channel_ids
+    }
+    first = audit_methodology(availability)
+    second = audit_methodology(dict(reversed(tuple(availability.items()))))
+    assert first == second
+    assert [row.priority_rank for row in first] == list(range(1, len(first) + 1))
+    assert all("PROFIT" not in row.readiness.value for row in first)
+
+
+def test_discovery_controls_bind_papers_to_existing_fail_closed_modules():
+    by_id = {item.control_id: item for item in DISCOVERY_CONTROLS}
+    assert "dsr_selection_bias" in by_id
+    assert "pbo_cscv" in by_id
+    assert by_id["dsr_selection_bias"].source_ids
+    assert "services/validation/deflated_sharpe.py" in (
+        by_id["dsr_selection_bias"].system_modules
+    )
+
