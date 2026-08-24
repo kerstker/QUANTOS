@@ -36,7 +36,10 @@ from quantos.runtime_paths import runtime_state_root
 from services.alpha.catalog import AlphaCatalog
 from services.data.binance_systemic_store import BinanceSystemicStore
 from services.research.experiment_registry.registry import ExperimentRegistry
-from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.experiment_registry.store import (
+    ExperimentStoreError,
+    SqliteExperimentStore,
+)
 from services.research.realtime_alpha_discovery import (
     RealtimeAlphaPolicy,
     RealtimeFrame,
@@ -48,9 +51,12 @@ from services.research.rpi_alpha import (
     RPI_DATASET_ID,
     RpiDataset,
     RpiDepthObservation,
+    RpiResearchPlan,
     assess_rpi_data_admission,
     default_rpi_hypotheses,
     enrich_frames_with_rpi,
+    locked_oos_observations,
+    low_frequency_rpi_plan,
 )
 from services.research.trial_provenance import trial_provenance_for_definition
 from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
@@ -65,6 +71,7 @@ DEFAULT_RPI_STORE = ROOT / "data" / "cache" / "binance_rpi_depth.db"
 DEFAULT_SOURCE_STORE = ROOT / "data" / "cache" / "binance_realtime_features.db"
 DEFAULT_EXPERIMENT_DB = ROOT / "data" / "cache" / "experiment_registry.db"
 DEFAULT_OUTPUT = ROOT / "data" / "cache" / "rpi_alpha_research.json"
+DEFAULT_FRAME_CACHE = ROOT / "data" / "cache" / "rpi_alpha_decision_frames.db"
 
 STRICT_DSR_MIN = 0.95
 STRICT_PBO_MAX = 0.25
@@ -224,23 +231,36 @@ def _strict_gate(
     return not reasons, tuple(reasons)
 
 
-def _empty_report(*, now: int, admission, output_path: str | Path) -> dict[str, Any]:
+def _empty_report(
+    *,
+    now: int,
+    admission,
+    output_path: str | Path,
+    specs=None,
+    status: str | None = None,
+    global_trial_count: int = 0,
+    research_plan: RpiResearchPlan | None = None,
+    preregistration_search_id: str | None = None,
+    rpi_authority_hash: str | None = None,
+) -> dict[str, Any]:
+    manifest = tuple(default_rpi_hypotheses() if specs is None else specs)
     report = {
         "schema_version": 1,
         "generated_at_ms": now,
-        "status": admission.status,
+        "status": admission.status if status is None else status,
         "mode": "L2_RPI_ALPHA_RESEARCH",
+        "rpi_authority_hash": rpi_authority_hash,
         "data_admission": admission.as_dict(),
-        "manifest": [item.as_dict() for item in default_rpi_hypotheses()],
+        "manifest": [item.as_dict() for item in manifest],
         "search_id": None,
         "funnel": {
-            "pre_registered": 3,
+            "pre_registered": len(manifest),
             "evaluated": 0,
             "statistical_passes": 0,
             "promotion_eligible": 0,
         },
         "candidates": [],
-        "global_trial_count": 0,
+        "global_trial_count": global_trial_count,
         "remaining_promotion_gates": list(REMAINING_PROMOTION_GATES),
         "safety": {
             "paper_only": True,
@@ -250,6 +270,14 @@ def _empty_report(*, now: int, admission, output_path: str | Path) -> dict[str, 
             "broker_connectivity": False,
         },
     }
+    if research_plan is not None:
+        report.update(
+            {
+                "research_plan": research_plan.as_dict(),
+                "plan_hash": research_plan.plan_hash,
+                "preregistration_search_id": preregistration_search_id,
+            }
+        )
     return _publish_report(report, output_path)
 
 
@@ -273,20 +301,119 @@ def _publish_report(
     return normalized
 
 
-def run_cycle(
+def _preregister_plan(
+    *,
+    plan: RpiResearchPlan,
+    experiment_db: str | Path,
+    now: int,
+) -> tuple[str, int]:
+    """Write the three v2 configs before any locked OOS outcome is loaded."""
+    if now < plan.registered_at_ms:
+        raise RpiAlphaResearchError("RPI v2 plan is not yet effective")
+    definitions = {_definition(item).definition_hash: _definition(item) for item in plan.hypotheses}
+    source = "tools.rpi_low_frequency_research"
+    search_kind = "RPI_LOW_FREQUENCY_FIXED_V2_PREREGISTRATION"
+    search_id = make_search_id(
+        source=source,
+        search_kind=search_kind,
+        dataset_version=plan.plan_hash,
+        recorded_at=plan.registered_at_ms,
+        params={"plan_hash": plan.plan_hash},
+    )
+    store = SqliteExperimentStore(str(experiment_db), create=False)
+    registry = ExperimentRegistry(store)
+    try:
+        recorded_at = max(now, int(time.time() * 1_000))
+        try:
+            registry.begin_search_attempt(
+                search_id=search_id,
+                search_kind=search_kind,
+                source=source,
+                dataset_version=plan.plan_hash,
+                recorded_at=recorded_at,
+            )
+        except ExperimentStoreError as exc:
+            if "already exists" not in str(exc):
+                raise
+            identity = registry.search_identity(search_id)
+            if (
+                identity.get("search_kind") != search_kind
+                or identity.get("source") != source
+                or identity.get("dataset_version") != plan.plan_hash
+            ):
+                raise RpiAlphaResearchError(
+                    "RPI v2 preregistration identity conflicts with the frozen plan"
+                ) from exc
+            retained = {
+                str(row["config_hash"])
+                for row in registry.search_candidates(search_id)
+            }
+            if retained != set(definitions):
+                raise RpiAlphaResearchError(
+                    "RPI v2 preregistration candidate set is incomplete"
+                ) from exc
+        else:
+            registry.register_search_candidates(
+                search_id,
+                definitions,
+                registered_at=recorded_at,
+            )
+            for definition in definitions.values():
+                registry.record_trial_provenance(
+                    trial_provenance_for_definition(
+                        definition,
+                        research_session_id=search_id,
+                        actor_id=source,
+                        dataset_version=plan.plan_hash,
+                        recorded_at=recorded_at,
+                        model_name="deterministic-rpi-depth-low-frequency-v2",
+                        code_hash=plan.plan_hash,
+                    )
+                )
+            registry.finish_search_attempt(
+                search_id,
+                status="COMPLETED",
+                recorded_at=recorded_at,
+            )
+        return search_id, store.trial_count()
+    finally:
+        store.close()
+
+
+def _run_cycle(
     *,
     rpi_store: str | Path = DEFAULT_RPI_STORE,
     source_store: str | Path = DEFAULT_SOURCE_STORE,
     experiment_db: str | Path = DEFAULT_EXPERIMENT_DB,
     output_path: str | Path = DEFAULT_OUTPUT,
+    frame_cache_path: str | Path = DEFAULT_FRAME_CACHE,
     now_ms: int | None = None,
     rpi_loader: Callable[..., RpiDataset] = load_rpi_dataset,
     frame_loader: Callable[..., Mapping[str, Sequence[RealtimeFrame]]] = load_bucketed_frames,
+    research_plan: RpiResearchPlan | None = None,
 ) -> dict[str, Any]:
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     dataset = rpi_loader(rpi_store)
+    specs = (
+        default_rpi_hypotheses()
+        if research_plan is None
+        else research_plan.hypotheses
+    )
+    observations = (
+        dataset.observations
+        if research_plan is None
+        else locked_oos_observations(research_plan, dataset.observations)
+    )
+    preregistration_search_id = None
+    preregistered_trial_count = 0
+    if research_plan is not None:
+        preregistration_search_id, preregistered_trial_count = _preregister_plan(
+            plan=research_plan,
+            experiment_db=experiment_db,
+            now=now,
+        )
     admission = assess_rpi_data_admission(
-        dataset.observations,
+        observations,
         now_ms=now,
         chain_valid=dataset.chain_valid,
         expected_instruments=tuple(
@@ -294,16 +421,34 @@ def run_cycle(
         ),
     )
     if not admission.exploration_allowed:
-        return _empty_report(now=now, admission=admission, output_path=output_path)
+        return _empty_report(
+            now=now,
+            admission=admission,
+            output_path=output_path,
+            specs=specs,
+            status=(
+                "LOCKED_OOS_COLLECTING"
+                if research_plan is not None
+                else admission.status
+            ),
+            global_trial_count=preregistered_trial_count,
+            research_plan=research_plan,
+            preregistration_search_id=preregistration_search_id,
+            rpi_authority_hash=dataset.authority_hash,
+        )
     assert admission.common_start_ms is not None and admission.common_end_ms is not None
-    policy = RealtimeAlphaPolicy(
-        decision_interval_ms=HOUR_MS,
-        max_feature_age_ms=3 * HOUR_MS,
-        max_label_lateness_ms=HOUR_MS,
-        min_cross_section=8,
-        min_evaluation_periods=24,
-        fee_bps=4.0,
-        slippage_bps=2.0,
+    policy = (
+        RealtimeAlphaPolicy(
+            decision_interval_ms=HOUR_MS,
+            max_feature_age_ms=3 * HOUR_MS,
+            max_label_lateness_ms=HOUR_MS,
+            min_cross_section=8,
+            min_evaluation_periods=24,
+            fee_bps=4.0,
+            slippage_bps=2.0,
+        )
+        if research_plan is None
+        else research_plan.evaluation_policy
     )
     frames = frame_loader(
         source_store,
@@ -311,10 +456,9 @@ def run_cycle(
         start_ms=admission.common_start_ms,
         end_ms=admission.common_end_ms,
         bucket_ms=HOUR_MS,
-        frame_cache_path=None,
+        frame_cache_path=frame_cache_path,
     )
-    enriched = enrich_frames_with_rpi(frames, dataset.observations)
-    specs = default_rpi_hypotheses()
+    enriched = enrich_frames_with_rpi(frames, observations)
     definitions = {item.candidate_id: _definition(item) for item in specs}
     evaluations = {
         item.candidate_id: evaluate_hypothesis(item, enriched, policy=policy)
@@ -323,6 +467,9 @@ def run_cycle(
     dataset_version = stable_hash(
         {
             "rpi_authority_hash": dataset.authority_hash,
+            "research_plan_hash": (
+                None if research_plan is None else research_plan.plan_hash
+            ),
             "admission": admission.as_dict(),
             "manifest": [item.as_dict() for item in specs],
             "frame_view": {
@@ -347,17 +494,30 @@ def run_cycle(
     try:
         registry.load_for_evaluation(catalog)
         recorded_at = max(now, int(time.time() * 1_000))
+        search_source = (
+            "tools.rpi_alpha_research"
+            if research_plan is None
+            else "tools.rpi_low_frequency_research"
+        )
+        search_kind = (
+            "RPI_DEEP_LIQUIDITY_FIXED_V1"
+            if research_plan is None
+            else "RPI_LOW_FREQUENCY_FIXED_V2_EVALUATION"
+        )
         search_id = make_search_id(
-            source="tools.rpi_alpha_research",
-            search_kind="RPI_DEEP_LIQUIDITY_FIXED_V1",
+            source=search_source,
+            search_kind=search_kind,
             dataset_version=dataset_version,
             recorded_at=recorded_at,
-            params={"candidate_ids": [item.candidate_id for item in specs]},
+            params={
+                "candidate_ids": [item.candidate_id for item in specs],
+                "plan_hash": None if research_plan is None else research_plan.plan_hash,
+            },
         )
         registry.begin_search_attempt(
             search_id=search_id,
-            search_kind="RPI_DEEP_LIQUIDITY_FIXED_V1",
-            source="tools.rpi_alpha_research",
+            search_kind=search_kind,
+            source=search_source,
             dataset_version=dataset_version,
             recorded_at=recorded_at,
         )
@@ -372,10 +532,14 @@ def run_cycle(
                 trial_provenance_for_definition(
                     definition,
                     research_session_id=search_id,
-                    actor_id="tools.rpi_alpha_research",
+                    actor_id=search_source,
                     dataset_version=dataset_version,
                     recorded_at=recorded_at,
-                    model_name="deterministic-rpi-depth-v1",
+                    model_name=(
+                        "deterministic-rpi-depth-v1"
+                        if research_plan is None
+                        else "deterministic-rpi-depth-low-frequency-v2"
+                    ),
                 )
             )
             catalog.register(definition)
@@ -476,12 +640,21 @@ def run_cycle(
         "schema_version": 1,
         "generated_at_ms": now,
         "status": (
-            "FORMAL_HISTORICAL_RESEARCH"
-            if admission.formal_validation_allowed
-            else "EXPLORATORY_ONLY"
+            (
+                "LOCKED_OOS_FORMAL_RESEARCH"
+                if admission.formal_validation_allowed
+                else "LOCKED_OOS_EXPLORATORY_ONLY"
+            )
+            if research_plan is not None
+            else (
+                "FORMAL_HISTORICAL_RESEARCH"
+                if admission.formal_validation_allowed
+                else "EXPLORATORY_ONLY"
+            )
         ),
         "mode": "L2_RPI_ALPHA_RESEARCH",
         "dataset_version": dataset_version,
+        "rpi_authority_hash": dataset.authority_hash,
         "data_admission": admission.as_dict(),
         "manifest": [item.as_dict() for item in specs],
         "search_id": search_id,
@@ -505,7 +678,62 @@ def run_cycle(
             "broker_connectivity": False,
         },
     }
+    if research_plan is not None:
+        report.update(
+            {
+                "research_plan": research_plan.as_dict(),
+                "plan_hash": research_plan.plan_hash,
+                "preregistration_search_id": preregistration_search_id,
+            }
+        )
     return _publish_report(report, output_path)
+
+
+def run_cycle(
+    *,
+    rpi_store: str | Path = DEFAULT_RPI_STORE,
+    source_store: str | Path = DEFAULT_SOURCE_STORE,
+    experiment_db: str | Path = DEFAULT_EXPERIMENT_DB,
+    output_path: str | Path = DEFAULT_OUTPUT,
+    frame_cache_path: str | Path = DEFAULT_FRAME_CACHE,
+    now_ms: int | None = None,
+    rpi_loader: Callable[..., RpiDataset] = load_rpi_dataset,
+    frame_loader: Callable[..., Mapping[str, Sequence[RealtimeFrame]]] = load_bucketed_frames,
+) -> dict[str, Any]:
+    return _run_cycle(
+        rpi_store=rpi_store,
+        source_store=source_store,
+        experiment_db=experiment_db,
+        output_path=output_path,
+        frame_cache_path=frame_cache_path,
+        now_ms=now_ms,
+        rpi_loader=rpi_loader,
+        frame_loader=frame_loader,
+    )
+
+
+def run_low_frequency_cycle(
+    *,
+    rpi_store: str | Path = DEFAULT_RPI_STORE,
+    source_store: str | Path = DEFAULT_SOURCE_STORE,
+    experiment_db: str | Path = DEFAULT_EXPERIMENT_DB,
+    output_path: str | Path = ROOT / "data" / "cache" / "rpi_low_frequency_research.json",
+    frame_cache_path: str | Path = DEFAULT_FRAME_CACHE,
+    now_ms: int | None = None,
+    rpi_loader: Callable[..., RpiDataset] = load_rpi_dataset,
+    frame_loader: Callable[..., Mapping[str, Sequence[RealtimeFrame]]] = load_bucketed_frames,
+) -> dict[str, Any]:
+    return _run_cycle(
+        rpi_store=rpi_store,
+        source_store=source_store,
+        experiment_db=experiment_db,
+        output_path=output_path,
+        frame_cache_path=frame_cache_path,
+        now_ms=now_ms,
+        rpi_loader=rpi_loader,
+        frame_loader=frame_loader,
+        research_plan=low_frequency_rpi_plan(),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

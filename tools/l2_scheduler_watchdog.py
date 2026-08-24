@@ -184,6 +184,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_binance_rpi_depth": ExpectedTask(
         "binance_rpi_depth", 3 * _HOUR_MS
     ),
+    "QUANTOS_rpi_low_frequency_research": ExpectedTask(
+        "rpi_low_frequency_research", 2 * _DAY_MS, frozenset({2})
+    ),
     "QUANTOS_binance_realtime_features": ExpectedTask(
         "binance_realtime_features", 15 * 60_000
     ),

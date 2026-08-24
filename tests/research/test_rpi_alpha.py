@@ -13,10 +13,14 @@ from services.research.realtime_alpha_discovery import (
 )
 from services.research.rpi_alpha import (
     RPI_FEATURE_ID,
+    RPI_V2_LOCKED_OOS_START_MS,
+    RPI_V2_PREREGISTERED_AT_MS,
     RpiDepthObservation,
     assess_rpi_data_admission,
     default_rpi_hypotheses,
     enrich_frames_with_rpi,
+    locked_oos_observations,
+    low_frequency_rpi_plan,
 )
 
 
@@ -67,6 +71,43 @@ def test_rpi_manifest_is_a_fixed_three_trial_one_hour_family() -> None:
     assert all(RPI_FEATURE_ID in item.required_features for item in hypotheses)
     assert all(item.economic_hypothesis.strip() for item in hypotheses)
     assert all(item.falsification_standard.strip() for item in hypotheses)
+
+
+def test_rpi_v2_plan_is_fixed_future_locked_and_hash_stable() -> None:
+    first = low_frequency_rpi_plan()
+    second = low_frequency_rpi_plan()
+
+    assert first == second
+    assert first.plan_hash == second.plan_hash
+    assert first.registered_at_ms == RPI_V2_PREREGISTERED_AT_MS
+    assert first.locked_oos_start_ms == RPI_V2_LOCKED_OOS_START_MS
+    assert first.locked_oos_start_ms > first.registered_at_ms
+    assert first.origin == "OUTCOME_INFORMED_BY_V1_COST_FAILURE"
+    assert first.formal_credit_source == "POST_REGISTRATION_LOCKED_OOS_ONLY"
+    assert len(first.hypotheses) == 3
+    assert {item.mechanism for item in first.hypotheses} == {
+        "rpi_depth_reversal"
+    }
+    assert {item.horizon_ms for item in first.hypotheses} == {
+        4 * HOUR_MS,
+        8 * HOUR_MS,
+        24 * HOUR_MS,
+    }
+    assert first.as_dict()["plan_hash"] == first.plan_hash
+
+
+def test_rpi_v2_locked_oos_filter_excludes_all_preboundary_information() -> None:
+    boundary = RPI_V2_LOCKED_OOS_START_MS
+    rows = (
+        RpiDepthObservation("BTCUSDT", boundary - 2, boundary - 1, 0.1),
+        RpiDepthObservation("BTCUSDT", boundary - 1, boundary, 0.2),
+        RpiDepthObservation("BTCUSDT", boundary, boundary, 0.3),
+        RpiDepthObservation("BTCUSDT", boundary + 1, boundary + 2, 0.4),
+    )
+
+    locked = locked_oos_observations(low_frequency_rpi_plan(), rows)
+
+    assert locked == rows[2:]
 
 
 def test_rpi_observation_rejects_non_pit_or_out_of_domain_values() -> None:

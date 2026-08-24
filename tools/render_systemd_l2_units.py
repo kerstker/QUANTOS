@@ -87,6 +87,7 @@ CALENDARS: dict[str, tuple[str, str]] = {
     "paper_research_risk_bundle": ("*-*-* 23:08:00 Asia/Shanghai", "6h"),
     "paper_order_preview": ("*-*-* 23:10:00 Asia/Shanghai", "6h"),
     "paper_shadow_auto": ("*-*-* 21:20:00 Asia/Shanghai", "6h"),
+    "rpi_low_frequency_research": ("*-*-* 11:00:00 Asia/Shanghai", "15m"),
 }
 
 INTERVALS: dict[str, tuple[str, str]] = {

@@ -4,9 +4,17 @@ import json
 
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.realtime_alpha_discovery import DAY_MS, RealtimeFrame
-from services.research.rpi_alpha import RpiDataset, RpiDepthObservation
+from services.research.rpi_alpha import (
+    RPI_V2_LOCKED_OOS_START_MS,
+    RpiDataset,
+    RpiDepthObservation,
+)
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
-from tools.rpi_alpha_research import run_cycle
+from tools.rpi_alpha_research import (
+    DEFAULT_FRAME_CACHE,
+    run_cycle,
+    run_low_frequency_cycle,
+)
 
 
 HOUR_MS = 3_600_000
@@ -160,3 +168,107 @@ def test_rpi_cycle_replay_does_not_double_count_fixed_trials(tmp_path):
     assert {row["candidate_id"] for row in first["candidates"]} == {
         row["candidate_id"] for row in second["candidates"]
     }
+
+
+def test_rpi_v1_uses_dedicated_hourly_frame_cache(tmp_path):
+    experiment_db = tmp_path / "experiment.db"
+    _empty_experiment_db(experiment_db)
+    observed = {}
+
+    def frames(*args, **kwargs):
+        observed.update(kwargs)
+        return _frames(*args, **kwargs)
+
+    run_cycle(
+        rpi_store=tmp_path / "unused-rpi.db",
+        source_store=tmp_path / "unused-features.db",
+        experiment_db=experiment_db,
+        output_path=tmp_path / "rpi_alpha.json",
+        now_ms=10 * DAY_MS + 60_000,
+        rpi_loader=lambda *_args, **_kwargs: _dataset(),
+        frame_loader=frames,
+    )
+
+    assert observed["frame_cache_path"] == DEFAULT_FRAME_CACHE
+
+
+def _future_dataset(span_days: int) -> RpiDataset:
+    start = RPI_V2_LOCKED_OOS_START_MS
+    end = start + span_days * DAY_MS
+    rows = []
+    for index, ticker in enumerate(FORWARD_MAJOR_TICKERS):
+        for stamp in range(start, end + 1, HOUR_MS):
+            rows.append(
+                RpiDepthObservation(
+                    f"{ticker}USDT",
+                    stamp,
+                    stamp + 1,
+                    -0.91 + index * 0.14,
+                )
+            )
+    return RpiDataset(tuple(rows), "b" * 64, True)
+
+
+def test_rpi_v2_preregisters_three_trials_without_loading_outcomes(tmp_path):
+    experiment_db = tmp_path / "experiment.db"
+    _empty_experiment_db(experiment_db)
+    calls = []
+
+    def forbidden_frames(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("locked OOS outcomes must not be loaded before maturity")
+
+    kwargs = {
+        "rpi_store": tmp_path / "unused-rpi.db",
+        "source_store": tmp_path / "unused-features.db",
+        "experiment_db": experiment_db,
+        "output_path": tmp_path / "rpi_v2.json",
+        "now_ms": RPI_V2_LOCKED_OOS_START_MS + 2 * DAY_MS + 60_000,
+        "rpi_loader": lambda *_args, **_kwargs: _future_dataset(2),
+        "frame_loader": forbidden_frames,
+    }
+
+    first = run_low_frequency_cycle(**kwargs)
+    second = run_low_frequency_cycle(**kwargs)
+
+    assert calls == []
+    assert first["status"] == "LOCKED_OOS_COLLECTING"
+    assert first["funnel"] == {
+        "pre_registered": 3,
+        "evaluated": 0,
+        "statistical_passes": 0,
+        "promotion_eligible": 0,
+    }
+    assert first["research_plan"]["plan_hash"] == first["plan_hash"]
+    assert first["global_trial_count"] == 3
+    assert second["global_trial_count"] == 3
+    assert first["preregistration_search_id"] == second["preregistration_search_id"]
+
+
+def test_rpi_v2_evaluates_only_postregistration_locked_sample(tmp_path):
+    experiment_db = tmp_path / "experiment.db"
+    _empty_experiment_db(experiment_db)
+    observed = {}
+
+    def frames(*args, **kwargs):
+        observed.update(kwargs)
+        return _frames(*args, **kwargs)
+
+    report = run_low_frequency_cycle(
+        rpi_store=tmp_path / "unused-rpi.db",
+        source_store=tmp_path / "unused-features.db",
+        experiment_db=experiment_db,
+        output_path=tmp_path / "rpi_v2.json",
+        frame_cache_path=tmp_path / "rpi-hourly.db",
+        now_ms=RPI_V2_LOCKED_OOS_START_MS + 4 * DAY_MS + 60_000,
+        rpi_loader=lambda *_args, **_kwargs: _future_dataset(4),
+        frame_loader=frames,
+    )
+
+    assert observed["start_ms"] >= RPI_V2_LOCKED_OOS_START_MS
+    assert observed["frame_cache_path"] == tmp_path / "rpi-hourly.db"
+    assert report["status"] == "LOCKED_OOS_EXPLORATORY_ONLY"
+    assert report["funnel"]["pre_registered"] == 3
+    assert report["funnel"]["evaluated"] == 3
+    assert report["funnel"]["statistical_passes"] == 0
+    assert all(row["promotion_eligible"] is False for row in report["candidates"])

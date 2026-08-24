@@ -737,6 +737,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "realtime_alpha_execution_paper",
             "realtime_alpha_formal_shadow",
             "realtime_alpha_forward_shadow",
+            "rpi_low_frequency_research",
         }
     )
 
@@ -755,6 +756,7 @@ def test_required_input_attestation_surface_is_explicit() -> None:
             "realtime_alpha_execution_paper",
             "realtime_alpha_formal_shadow",
             "realtime_alpha_forward_shadow",
+            "rpi_low_frequency_research",
         }
     )
 

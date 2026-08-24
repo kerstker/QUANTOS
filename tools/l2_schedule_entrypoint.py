@@ -68,6 +68,7 @@ ALLOWED_L2_MODULES = frozenset(
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
+        "rpi_low_frequency_research",
     }
 )
 
@@ -96,6 +97,7 @@ REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
+        "rpi_low_frequency_research",
     }
 )
 _ATTESTATION_SAFETY = {
