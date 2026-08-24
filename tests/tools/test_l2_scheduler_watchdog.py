@@ -1298,6 +1298,66 @@ def test_watchdog_writes_status_and_deduplicates_unchanged_alerts(tmp_path):
     assert json.loads(status_path.read_text(encoding="utf-8"))["verdict"] == "PARTIAL"
 
 
+def test_watchdog_refreshes_clock_after_concurrent_resident_health_publication(
+    monkeypatch,
+    tmp_path,
+):
+    clock = iter(
+        (
+            NOW_MS / 1_000,
+            (NOW_MS + 5_000) / 1_000,
+            (NOW_MS + 10_000) / 1_000,
+        )
+    )
+    monkeypatch.setattr(watchdog.time, "time", lambda: next(clock))
+    snapshots = _healthy_tasks(tmp_path, include_backup=False)
+    stream_index = next(
+        index
+        for index, row in enumerate(snapshots)
+        if row.name == "QUANTOS_binance_realtime_stream"
+    )
+    stream = snapshots[stream_index]
+    snapshots[stream_index] = TaskSnapshot(
+        name=stream.name,
+        state="Running",
+        last_run_ms=stream.last_run_ms,
+        last_result=stream.last_result,
+        next_run_ms=stream.next_run_ms,
+        execute=stream.execute,
+        arguments=stream.arguments,
+        working_directory=stream.working_directory,
+    )
+
+    result = run_scheduler_watchdog(
+        repo_root=tmp_path,
+        status_path=tmp_path / "status.json",
+        backup_ready=False,
+        heartbeat_ready=False,
+        event_seal_ready=False,
+        collector=lambda: snapshots,
+        resident_health_reader=lambda _path: {
+            "generated_at_ms": NOW_MS + 8_000,
+            "verdict": "PASS",
+            "streaming": True,
+            "safety": {
+                "credentials": False,
+                "private_stream": False,
+                "broker_connectivity": False,
+            },
+        },
+        emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
+    )
+
+    stream_check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_binance_realtime_stream"
+    )
+    assert result["observed_at_ms"] == NOW_MS + 10_000
+    assert stream_check["status"] == "PASS"
+    assert stream_check["code"] == "RUNNING_HEALTHY"
+
+
 def test_default_collector_follows_platform_provider(monkeypatch, tmp_path):
     observed = []
     monkeypatch.setenv("QUANTOS_SCHEDULER_PROVIDER", "systemd")

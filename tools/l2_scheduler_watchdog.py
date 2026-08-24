@@ -1839,6 +1839,11 @@ def run_scheduler_watchdog(
                     destination=backup_environment.get("QUANTOS_BACKUP_DEST"),
                 )
             )
+        # Scheduler collection can take several seconds on a busy host.  Use a
+        # post-collection clock for restore-history age checks instead of the
+        # invocation clock captured before the metadata inspection began.
+        if now_ms is None:
+            observed_at_ms = int(time.time() * 1000)
         history_health = None
         backup_snapshot = next(
             (item for item in snapshots if item.name == "QUANTOS_backup"), None
@@ -1868,6 +1873,12 @@ def run_scheduler_watchdog(
             )
         except Exception:
             resident_health = None
+        # The resident stream publishes concurrently with this oneshot.  Read
+        # its receipt first and only then capture the evaluation clock; using
+        # the invocation clock can misclassify a valid receipt published during
+        # scheduler inspection as being from the future.
+        if now_ms is None:
+            observed_at_ms = int(time.time() * 1000)
         result = evaluate_schedule(
             snapshots,
             now_ms=observed_at_ms,
