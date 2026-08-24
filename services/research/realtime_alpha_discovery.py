@@ -205,6 +205,11 @@ class RealtimeFrame:
     liquidation_imbalance_5s: float
     trailing_return_8h: float | None = None
     trailing_realized_vol_8h: float | None = None
+    # Hourly, complete Binance public RPI-inclusive 1000-level book.  This is
+    # deliberately optional: the main 30-second feature path remains byte-for-
+    # byte compatible, while the independent RPI research driver may attach
+    # only observations whose knowledge_time is no later than this decision.
+    rpi_notional_imbalance_1000: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instrument_id, str) or not self.instrument_id:
@@ -230,6 +235,7 @@ class RealtimeFrame:
         optional_numeric = (
             self.trailing_return_8h,
             self.trailing_realized_vol_8h,
+            self.rpi_notional_imbalance_1000,
         )
         if any(
             value is not None and not math.isfinite(float(value))
@@ -241,6 +247,13 @@ class RealtimeFrame:
             and self.trailing_realized_vol_8h < 0
         ):
             raise RealtimeAlphaDiscoveryError("frame slow volatility is negative")
+        if (
+            self.rpi_notional_imbalance_1000 is not None
+            and not -1.0000001 <= self.rpi_notional_imbalance_1000 <= 1.0000001
+        ):
+            raise RealtimeAlphaDiscoveryError(
+                "frame RPI imbalance is outside [-1, 1]"
+            )
         if self.mid_price <= 0 or self.spread_bps < 0:
             raise RealtimeAlphaDiscoveryError("frame price/spread is outside its domain")
         for value in (
@@ -702,6 +715,20 @@ def _base_signal_score(spec: RealtimeHypothesis, frame: RealtimeFrame) -> float:
         if frame.trailing_realized_vol_8h is None:
             raise RealtimeAlphaDiscoveryError("slow volatility state is unavailable")
         return -frame.trailing_realized_vol_8h
+    if spec.mechanism == "rpi_depth_continuation":
+        if frame.rpi_notional_imbalance_1000 is None:
+            raise RealtimeAlphaDiscoveryError("RPI depth state is unavailable")
+        return frame.rpi_notional_imbalance_1000 / spread_scale
+    if spec.mechanism == "rpi_depth_reversal":
+        if frame.rpi_notional_imbalance_1000 is None:
+            raise RealtimeAlphaDiscoveryError("RPI depth state is unavailable")
+        return -frame.rpi_notional_imbalance_1000 / spread_scale
+    if spec.mechanism == "rpi_top_divergence":
+        if frame.rpi_notional_imbalance_1000 is None:
+            raise RealtimeAlphaDiscoveryError("RPI depth state is unavailable")
+        return (
+            frame.rpi_notional_imbalance_1000 - frame.depth_imbalance_5
+        ) / spread_scale
     raise RealtimeAlphaDiscoveryError(f"unknown realtime mechanism: {spec.mechanism}")
 
 
@@ -977,6 +1004,9 @@ def evaluate_hypothesis(
             ) or (
                 spec.mechanism == "slow_cross_sectional_low_vol"
                 and frame.trailing_realized_vol_8h is None
+            ) or (
+                spec.mechanism.startswith("rpi_")
+                and frame.rpi_notional_imbalance_1000 is None
             ):
                 continue
             target = frame.decision_time_ms + policy.execution_latency_ms + spec.horizon_ms
