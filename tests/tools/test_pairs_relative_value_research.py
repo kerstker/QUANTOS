@@ -1,7 +1,14 @@
+import json
+
+from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.hashing import stable_hash
+from quantos.contracts.research import ValidationVerdict
+from services.alpha.evaluation_evidence import bind_evaluation_reproducibility
 from tools.pairs_relative_value_research import (
     CONTRACT_HASH,
     EVALUATION_CONTRACT,
     PRIMARY_ALIAS,
+    _stored_evaluation,
     candidate_definitions,
     judge,
 )
@@ -69,3 +76,48 @@ def test_governance_review_can_reject_formally_without_erasing_economics():
     assert decision["formal_pass"] is False
     assert decision["economic_candidate"] is True
     assert decision["failed_bars"] == ["evaluator_verdict_pass"]
+
+
+def test_immutable_rejection_can_be_published_when_full_evidence_is_incomplete():
+    definition = AlphaDefinition(alpha_id="a", name="a", params={"x": "1"})
+    evaluation = bind_evaluation_reproducibility(
+        AlphaEvaluation(
+            alpha_id="a",
+            verdict=ValidationVerdict.REQUIRES_HUMAN_REVIEW,
+            reasons=("CATALOG_EVIDENCE_INVALID",),
+        ),
+        dataset_version="dataset-v1",
+    )
+    payload = evaluation.model_dump(mode="json")
+    row = {
+        "alpha_id": "a",
+        "dataset_version": "dataset-v1",
+        "evaluation_json": json.dumps(payload, sort_keys=True),
+        "content_hash": stable_hash(
+            {"evaluation": payload, "dataset_version": "dataset-v1"}
+        ),
+    }
+
+    class Registry:
+        def get_evaluation(self, run_id):
+            assert run_id == "run-1"
+            return row
+
+        def verify_evaluation(self, run_id):
+            return False
+
+        def search_evaluations(self, search_id):
+            assert search_id == "search-1"
+            return [{
+                "run_id": "run-1",
+                "config_hash": definition.definition_hash,
+                "evaluation_content_hash": row["content_hash"],
+            }]
+
+    alpha_id, stored = _stored_evaluation(
+        Registry(), "search-1", "run-1", {"a": definition}
+    )
+    assert alpha_id == "a"
+    assert stored["verified"] is True
+    assert stored["full_evidence_verified"] is False
+    assert stored["reasons"] == ["CATALOG_EVIDENCE_INVALID"]

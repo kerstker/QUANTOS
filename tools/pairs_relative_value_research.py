@@ -17,10 +17,11 @@ import statistics
 import time
 from typing import Any, Mapping, Sequence
 
-from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
+from services.alpha.evaluation_evidence import verify_evaluation_reproducibility
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.pairs_relative_value import (
@@ -211,8 +212,8 @@ def _stored_evaluation(
     definitions: Mapping[str, AlphaDefinition],
 ) -> tuple[str, dict[str, Any]]:
     row = registry.get_evaluation(str(run_id))
-    if not isinstance(row, Mapping) or registry.verify_evaluation(str(run_id)) is not True:
-        raise RuntimeError("stored evaluation failed immutable verification")
+    if not isinstance(row, Mapping):
+        raise RuntimeError("stored evaluation is missing")
     alpha_id = str(row.get("alpha_id", ""))
     definition = definitions.get(alpha_id)
     if definition is None:
@@ -232,10 +233,29 @@ def _stored_evaluation(
         payload = json.loads(str(row["evaluation_json"]))
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("stored evaluation payload is invalid") from exc
+    content_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": row.get("dataset_version")}
+    )
+    if content_hash != row.get("content_hash"):
+        raise RuntimeError("stored evaluation content hash mismatch")
+    try:
+        evaluation = AlphaEvaluation.model_validate(payload)
+    except Exception as exc:
+        raise RuntimeError("stored evaluation contract is invalid") from exc
+    if not verify_evaluation_reproducibility(
+        evaluation, dataset_version=str(row.get("dataset_version", ""))
+    ):
+        raise RuntimeError("stored evaluation reproducibility hash mismatch")
+    # registry.verify_evaluation() intentionally also requires complete catalog
+    # and PBO evidence.  A fail-closed REQUIRES_HUMAN_REVIEW row can be immutable
+    # and reproducible while this stronger evidence-completeness verdict is
+    # False.  Preserve both facts instead of refusing to publish the rejection.
+    full_evidence_verified = registry.verify_evaluation(str(run_id)) is True
     return alpha_id, {
         "run_id": str(run_id),
         "content_hash": row.get("content_hash"),
         "verified": True,
+        "full_evidence_verified": full_evidence_verified,
         "verdict": payload.get("verdict"),
         "reasons": list(payload.get("reasons") or ()),
         "net_sharpe": payload.get("net_sharpe"),
@@ -293,22 +313,35 @@ def judge(
     }
 
 
-def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
+def run(
+    *,
+    output: str | Path,
+    source_commit: str,
+    recover_search_id: str | None = None,
+    recovery_tool_commit: str | None = None,
+) -> dict[str, Any]:
     output = Path(output)
     if output.exists():
         raise FileExistsError(f"refusing to overwrite immutable result: {output}")
     if not isinstance(source_commit, str) or _COMMIT.fullmatch(source_commit) is None:
         raise ValueError("source_commit must be a lowercase 40-character git commit")
+    if recover_search_id is None:
+        if recovery_tool_commit is not None:
+            raise ValueError("recovery_tool_commit requires recover_search_id")
+    elif (
+        not isinstance(recovery_tool_commit, str)
+        or _COMMIT.fullmatch(recovery_tool_commit) is None
+    ):
+        raise ValueError(
+            "recovery_tool_commit must identify the audited recovery code"
+        )
 
     panel = _research_panel()
     dataset_version = field_panel_dataset_version(
         panel,
         source_versions={"contract_hash": CONTRACT_HASH, "source": DATA_SOURCE},
     )
-    # Registry STARTED events form a monotonic production clock.  Dataset time
-    # belongs in dataset_version/sample metadata; using the final market bar as
-    # the event clock rolls back as soon as any newer research run exists.
-    recorded_at = time.time_ns() // 1_000_000
+    artifact_generated_at = time.time_ns() // 1_000_000
     definitions = candidate_definitions()
     start_row = find_first_eligible_formation_start(panel, PAIR_CONFIG)
     candidates = []
@@ -345,13 +378,6 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
         for definition, selection, _direction, _role in definitions
     }
     aliases_to_ids = {alias: item["alpha_id"] for alias, item in mapping.items()}
-    search_id = make_search_id(
-        source=SOURCE,
-        search_kind=SEARCH_KIND,
-        dataset_version=dataset_version,
-        recorded_at=recorded_at,
-        params={"contract_hash": CONTRACT_HASH, "source_commit": source_commit},
-    )
     budget = ResearchBudget(
         max_trials=3,
         max_feature_count=2,
@@ -360,34 +386,91 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
         stopping_rules={"max_trials": 3},
     )
     with production_experiment_registry() as registry:
-        trial_count_before = registry._store.trial_count()
-        batch = run_registered_candidate_batch(
-            candidates,
-            registry=registry,
-            search_id=search_id,
-            search_kind=SEARCH_KIND,
-            search_source=SOURCE,
-            dataset_version=dataset_version,
-            recorded_at=recorded_at,
-            periods_per_year=PERIODS_PER_YEAR,
-            quantile=QUANTILE,
-            config=AlphaFactoryConfig(compute_regime_evidence=True),
-            cost=BASE_COST,
-            evidence=evidence,
-            budget=budget,
-            parent_hypothesis=ECONOMIC_HYPOTHESIS,
-            search_space=(
-                "Exactly three frozen candidates: distance convergence, its exact "
-                "sign control, and fixed-hash-pair convergence control. No scan."
-            ),
-            data_source=DATA_SOURCE,
-            uses_locked_oos=False,
-            hypothesis_by_candidate={
-                definition.alpha_id: stable_hash({"hypothesis": ECONOMIC_HYPOTHESIS, "role": role})
-                for definition, _selection, _direction, role in definitions
-            },
-            code_hash=source_commit,
-        )
+        if recover_search_id is None:
+            # Registry STARTED events form a monotonic production clock.
+            recorded_at = artifact_generated_at
+            search_id = make_search_id(
+                source=SOURCE,
+                search_kind=SEARCH_KIND,
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                params={"contract_hash": CONTRACT_HASH, "source_commit": source_commit},
+            )
+            trial_count_before = registry._store.trial_count()
+            batch = run_registered_candidate_batch(
+                candidates,
+                registry=registry,
+                search_id=search_id,
+                search_kind=SEARCH_KIND,
+                search_source=SOURCE,
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                periods_per_year=PERIODS_PER_YEAR,
+                quantile=QUANTILE,
+                config=AlphaFactoryConfig(compute_regime_evidence=True),
+                cost=BASE_COST,
+                evidence=evidence,
+                budget=budget,
+                parent_hypothesis=ECONOMIC_HYPOTHESIS,
+                search_space=(
+                    "Exactly three frozen candidates: distance convergence, its exact "
+                    "sign control, and fixed-hash-pair convergence control. No scan."
+                ),
+                data_source=DATA_SOURCE,
+                uses_locked_oos=False,
+                hypothesis_by_candidate={
+                    definition.alpha_id: stable_hash(
+                        {"hypothesis": ECONOMIC_HYPOTHESIS, "role": role}
+                    )
+                    for definition, _selection, _direction, role in definitions
+                },
+                code_hash=source_commit,
+            )
+            recovered = False
+        else:
+            search_id = str(recover_search_id)
+            identity = registry.search_identity(search_id)
+            expected_identity = {
+                "search_kind": SEARCH_KIND,
+                "source": SOURCE,
+                "dataset_version": dataset_version,
+            }
+            if any(identity.get(key) != value for key, value in expected_identity.items()):
+                raise RuntimeError("recovery search identity does not match frozen experiment")
+            events = registry.search_attempt_events(search_id)
+            starts = [event for event in events if event.get("status") == "STARTED"]
+            if len(starts) != 1 or not events or events[-1].get("status") != "COMPLETED":
+                raise RuntimeError("recovery requires exactly one completed search attempt")
+            recorded_at = int(starts[0]["recorded_at"])
+            expected_search_id = make_search_id(
+                source=SOURCE,
+                search_kind=SEARCH_KIND,
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                params={"contract_hash": CONTRACT_HASH, "source_commit": source_commit},
+            )
+            if expected_search_id != search_id:
+                raise RuntimeError("recovery search id is not bound to source commit and contract")
+            expected_hashes = {
+                definition.definition_hash for definition, *_rest in definitions
+            }
+            observed_hashes = {
+                str(row.get("config_hash", ""))
+                for row in registry.search_candidates(search_id)
+            }
+            if observed_hashes != expected_hashes:
+                raise RuntimeError("recovery candidate set differs from frozen family")
+            links = registry.search_evaluations(search_id)
+            run_ids = [str(link.get("run_id", "")) for link in links]
+            if len(run_ids) != len(definitions) or len(set(run_ids)) != len(run_ids):
+                raise RuntimeError("recovery search does not have exactly three evaluations")
+            batch = {
+                "recorded_run_ids": run_ids,
+                "registered_candidate_count": len(observed_hashes),
+                "budget_declaration": None,
+            }
+            trial_count_before = None
+            recovered = True
         definition_by_id = {definition.alpha_id: definition for definition, *_ in definitions}
         evaluations = dict(
             _stored_evaluation(registry, search_id, str(run_id), definition_by_id)
@@ -412,9 +495,11 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
     document = {
         "schema_version": "pairs_relative_value_research.v1",
         "readiness": "L2_DRY_RUN_ONLY",
-        "generated_at_ms": recorded_at,
+        "generated_at_ms": artifact_generated_at,
+        "search_recorded_at_ms": recorded_at,
         "dataset_observed_through_ms": int(panel.event_times[-1]),
         "source_commit": source_commit,
+        "recovery_tool_commit": recovery_tool_commit,
         "search_id": search_id,
         "search_kind": SEARCH_KIND,
         "dataset_version": dataset_version,
@@ -429,7 +514,10 @@ def run(*, output: str | Path, source_commit: str) -> dict[str, Any]:
         "trial_registry": {
             "trial_count_before": trial_count_before,
             "trial_count_after": trial_count_after,
-            "trial_count_delta": trial_count_after - trial_count_before,
+            "trial_count_delta": (
+                None if trial_count_before is None else trial_count_after - trial_count_before
+            ),
+            "recovered_from_completed_search": recovered,
             "registered_candidate_count": batch.get("registered_candidate_count"),
             "recorded_run_ids": list(batch.get("recorded_run_ids", ())),
             "budget_declaration": batch.get("budget_declaration"),
@@ -470,8 +558,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--recover-search-id")
+    parser.add_argument("--recovery-tool-commit")
     args = parser.parse_args()
-    result = run(output=args.output, source_commit=args.source_commit)
+    result = run(
+        output=args.output,
+        source_commit=args.source_commit,
+        recover_search_id=args.recover_search_id,
+        recovery_tool_commit=args.recovery_tool_commit,
+    )
     print(
         "pairs relative value: "
         f"status={result['decision']['status']} "
