@@ -348,7 +348,7 @@ def test_immature_dynamic_candidate_precomputes_inputs_but_stays_pending(
     assert document["status"] == "PENDING"
 
 
-def test_main_treats_published_pending_artifact_as_healthy_job(
+def test_main_does_not_publish_pending_artifact_without_complete_attestation(
     tmp_path, monkeypatch
 ) -> None:
     from tools import paper_candidate_universe
@@ -371,7 +371,9 @@ def test_main_treats_published_pending_artifact_as_healthy_job(
     )
 
     assert bundle.main(["--output", str(output)]) == 0
-    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "PENDING"
+    assert not output.exists()
+    attestation = bundle.release_run_attestation()
+    assert attestation is not None and attestation["complete"] is False
 
 
 def test_main_returns_failure_when_bundle_cannot_be_computed(
@@ -489,6 +491,7 @@ def test_main_marks_attestation_incomplete_when_source_changes_mid_run(
     from tools import paper_candidate_universe
 
     output = tmp_path / "risk.json"
+    output.write_text("previous-attested-bytes\n", encoding="utf-8")
     document = {
         "schema_version": bundle.BUNDLE_SCHEMA_VERSION,
         "provenance": bundle.BUNDLE_PROVENANCE,
@@ -530,3 +533,5 @@ def test_main_marks_attestation_incomplete_when_source_changes_mid_run(
         attestation["input_hashes"]["source_authorities_before"]
         != attestation["output_hashes"]["source_authorities_after"]
     )
+    assert output.read_text(encoding="utf-8") == "previous-attested-bytes\n"
+    assert not tuple(tmp_path.glob(".risk.json.staged-*"))

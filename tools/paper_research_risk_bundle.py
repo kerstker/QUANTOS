@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+import secrets
 import sqlite3
 import sys
 from typing import Any, Mapping, Sequence
@@ -1269,29 +1270,37 @@ def run_bundle(
         raise RuntimeError("paper research-risk safety contract is invalid")
     document["safety"] = expected_safety
     output_path = Path(output)
-    _write(output_path, document)
-    source_after = _source_authority_view(source_paths)
-    contract = {
-        "schema_version": 1,
-        "paper_aum_usd": float(paper_aum_usd),
-        "max_fx_age_days": MAX_FX_AGE_DAYS,
-        "required_forward_periods": REQUIRED_FORWARD_PERIODS,
-        "required_input_fields": list(REQUIRED_INPUT_FIELDS),
-        "risk_config": dict(RiskConfig().__dict__),
-        "sources": {
-            name: os.path.normpath(str(Path(path).resolve()))
-            for name, path in sorted(source_paths.items())
-        },
-    }
-    _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
-        document,
-        candidate_ids=selected,
-        contract=contract,
-        source_before=source_before,
-        source_after=source_after,
-        output_path=output_path,
+    staged_output = output_path.with_name(
+        f".{output_path.name}.staged-{os.getpid()}-{secrets.token_hex(4)}"
     )
-    return document
+    try:
+        _write(staged_output, document)
+        source_after = _source_authority_view(source_paths)
+        contract = {
+            "schema_version": 1,
+            "paper_aum_usd": float(paper_aum_usd),
+            "max_fx_age_days": MAX_FX_AGE_DAYS,
+            "required_forward_periods": REQUIRED_FORWARD_PERIODS,
+            "required_input_fields": list(REQUIRED_INPUT_FIELDS),
+            "risk_config": dict(RiskConfig().__dict__),
+            "sources": {
+                name: os.path.normpath(str(Path(path).resolve()))
+                for name, path in sorted(source_paths.items())
+            },
+        }
+        _LAST_RELEASE_RUN_ATTESTATION = _build_release_run_attestation(
+            document,
+            candidate_ids=selected,
+            contract=contract,
+            source_before=source_before,
+            source_after=source_after,
+            output_path=staged_output,
+        )
+        if _LAST_RELEASE_RUN_ATTESTATION["complete"] is True:
+            os.replace(staged_output, output_path)
+        return document
+    finally:
+        staged_output.unlink(missing_ok=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
