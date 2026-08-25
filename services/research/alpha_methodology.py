@@ -158,7 +158,7 @@ SOURCES: tuple[SourceSpec, ...] = (
         "https://www.sciencedirect.com/science/article/pii/S0275531920301926",
         "10.1016/j.ribaf.2020.101252",
         False,
-        "Direct crypto cross-sectional evidence; implementation still needs independent cost, delisting, and forward tests.",
+        "Direct crypto cross-sectional evidence; the frozen QUANTOS translation was independently costed and historically falsified on DGX, so the same specification must not be re-mined.",
     ),
     SourceSpec(
         "crypto_price_discovery_makarov_schoar",
@@ -366,7 +366,7 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
             "services/research/idiosyncratic_volatility.py",
             "tools/idiosyncratic_volatility_research.py",
         ),
-        "NEW_EXPERIMENT_GAP",
+        "EXISTING_FALSIFIED_IMPLEMENTATION",
     ),
     AlphaMethodSpec(
         "ict_liquidity_sweep_session",

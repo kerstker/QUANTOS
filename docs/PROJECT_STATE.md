@@ -2396,3 +2396,31 @@ and the pre-commit hook, while the new workspace cleaner is dry-run by default
 and explicitly excludes `key/`, authoritative `data/`, `.git/`, and dependency
 directories.  The cleanup does not alter Alpha admission: formal eligibility
 remains **zero**, so no Testnet execution or soak was started by this work.
+
+## 2026-08-25 crypto idiosyncratic-volatility falsification on DGX
+
+The peer-reviewed Zhang-Li crypto IVOL prior was translated into one frozen,
+costed cross-sectional experiment instead of a parameter search. A DGX
+preflight exposed and then fail-closed two data hazards before the experiment
+registry opened: late-sample top-60 breadth collapse and a 46-name clustered
+right-censoring event. The final contract excluded the systemic terminal
+cluster, retained the singleton XMR termination as a forced exit, and produced
+305 non-overlapping weekly periods for exactly five preregistered candidates.
+
+The only formal run on immutable release `b9e7b45` registered five trials
+(global count 2,850 to 2,855) and returned `REJECTED_HISTORICAL`. The high-IVOL
+primary had net Sharpe `-0.350`, net return `-53.15%`, maximum drawdown `61.51%`,
+DSR `3.87e-11`, PBO `0.0857`, and maximum participation `17.19%`; its final 20%
+suffix Sharpe was `-0.972`. All robustness and economic-control bars except
+full evidence verification and PBO failed. The 6.48 MB immutable artifact is
+retained on DGX as
+`/srv/quantos/state/evidence/crypto_idiosyncratic_volatility_b9e7b45.json`,
+SHA-256 `29bc75421162bdc16d3b349051f85dccdebe40dfa500a7a5db6fc736a004294c`.
+Overwrite was refused without changing the trial population.
+
+This exact IVOL specification is now an
+`EXISTING_FALSIFIED_IMPLEMENTATION`, not an open experiment gap. It cannot be
+rescued by reversing the sign, lowering costs, reducing the universe, or
+changing the window after seeing the result. Formal Alpha eligibility remains
+**zero**; no forward admission, Testnet intent, credentials, broker connection,
+order submission, or live authority was created.

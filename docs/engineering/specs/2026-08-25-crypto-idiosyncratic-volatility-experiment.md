@@ -85,3 +85,32 @@ The implementation is offline and deterministic. It imports no broker SDK,
 does not read credentials, cannot submit orders, cannot mutate Alpha lifecycle
 state, and cannot enable live flags. Mainnet remains structurally blocked and
 human approval remains mandatory.
+
+## Frozen DGX result
+
+The only formal historical run used immutable release
+`b9e7b45a3c10378082525ecb285088b29a055014`, dataset version
+`82d73dd26da563170d03083addda054523cc24775a562a993ee8e0092853b1e41`,
+contract hash
+`1ab230b058866e5121ab4112c98cef76433580809df29b928ccc64b04434aa8b0`,
+and search id `search-fad56768528f37e68c49bba3`. The five frozen
+candidates increased the global trial population from 2,850 to 2,855 exactly
+once.
+
+The primary had 305 non-overlapping weekly periods, net Sharpe `-0.3502`, net
+return `-53.15%`, maximum drawdown `61.51%`, DSR approximately
+`3.87e-11`, PBO `0.0857`, and maximum participation `17.19%`. Its final 20%
+chronological suffix had Sharpe `-0.9716` and return `-15.92%`. It also failed
+double-cost, terminal-event, sign-control, hash-placebo, total-volatility, and
+top-30 investability bars. Full immutable evaluator evidence verified, but the
+verdict was `FAIL`; the family status is therefore `REJECTED_HISTORICAL`, with
+no forward, paper, testnet, or live admission.
+
+The immutable DGX artifact is
+`/srv/quantos/state/evidence/crypto_idiosyncratic_volatility_b9e7b45.json`
+(`root:quantos`, mode `0440`, 6,476,013 bytes), SHA-256
+`29bc75421162bdc16d3b349051f85dccdebe40dfa500a7a5db6fc736a004294c`.
+An overwrite attempt was refused before registry mutation and the trial count
+remained 2,855. This exact specification is closed to threshold relaxation,
+sign rescue, or post-result window changes; any future IVOL work must state a
+new economic mechanism and consume a new trial budget.
