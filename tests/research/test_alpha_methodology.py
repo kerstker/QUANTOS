@@ -177,3 +177,24 @@ def test_conflicting_crypto_max_priors_are_internalized_as_falsified() -> None:
         "services/research/lottery_max.py",
         "tools/lottery_max_research.py",
     )
+
+
+def test_ict_sweep_claim_is_bound_to_forward_only_observable_translation() -> None:
+    sources = {item.source_id: item for item in SOURCES}
+    method = next(
+        item for item in ALPHA_METHODS
+        if item.method_id == "ict_liquidity_sweep_session"
+    )
+
+    assert sources["ict_huddleston_primary"].evidence_tier is (
+        EvidenceTier.PRACTITIONER_PRIMARY
+    )
+    assert sources["ofi_cont_kukanov_stoikov"].evidence_tier is (
+        EvidenceTier.PEER_REVIEWED
+    )
+    assert method.portability == "PRACTITIONER_TRANSLATION"
+    assert method.system_disposition == "FORWARD_EXPERIMENT_GAP"
+    assert method.system_modules == (
+        "services/research/ict_liquidity_sweep.py",
+        "tools/ict_liquidity_sweep_preregistration.py",
+    )

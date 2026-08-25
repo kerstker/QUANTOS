@@ -423,7 +423,10 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("spread spikes", "liquidation jumps", "latency", "definition multiplicity"),
         ("random-session placebo", "sweep-only control", "continuation sign control"),
         ("swing levels using future bars", "session timezone drift", "post-hoc confluence rules"),
-        ("services/research/realtime_alpha_discovery.py", "services/research/session.py"),
+        (
+            "services/research/ict_liquidity_sweep.py",
+            "tools/ict_liquidity_sweep_preregistration.py",
+        ),
         "FORWARD_EXPERIMENT_GAP",
     ),
     AlphaMethodSpec(
