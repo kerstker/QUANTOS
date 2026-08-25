@@ -85,6 +85,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "defillama_tvl_forward_refresh.py"),
              os.path.join(_ROOT, "tools", "defillama_stablecoin_fetch.py"),
              os.path.join(_ROOT, "tools", "defillama_stablecoin_forward_refresh.py"),
+             # Wikimedia Analytics keyless article pageviews. Historical rows
+             # remain diagnostic; fetch-time cross-sections form the only PIT
+             # forward series. No account, credential, or order surface exists.
+             os.path.join(_ROOT, "tools", "wikimedia_attention_fetch.py"),
+             os.path.join(_ROOT, "tools", "wikimedia_attention_forward_refresh.py"),
              # Hyperliquid public info endpoint: market-wide funding/premium/OI,
              # historical funding and cross-venue predicted funding. Keyless,
              # account-free and order-free; no signing or exchange SDK.
@@ -205,6 +210,10 @@ _EXTRA_ALLOWED_BY_FILE = {
     "defillama_tvl_forward_refresh.py": {"quantos"},
     "defillama_stablecoin_fetch.py": {"argparse", "math", "quantos"},
     "defillama_stablecoin_forward_refresh.py": {"quantos"},
+    "wikimedia_attention_fetch.py": {
+        "argparse", "datetime", "math", "quantos"
+    },
+    "wikimedia_attention_forward_refresh.py": {"quantos"},
     "hyperliquid_public_fetch.py": {"argparse", "math"},
     "hyperliquid_public_forward_refresh.py": {"quantos"},
     "cftc_tff_fetch.py": {"argparse", "datetime", "math"},

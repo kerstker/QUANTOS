@@ -112,6 +112,17 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "a separate daily bitemporal forward-vintage store starts honest PIT accumulation.",
     ),
     DataChannelSpec(
+        "crypto_attention", "Wikimedia Analytics", "public_web",
+        "crypto_attention_pageviews", "daily", "1d",
+        ("daily_user_pageviews", "attention_innovation"),
+        "data/cache/crypto_attention_pageviews.json", "REAL_DIAGNOSTIC",
+        ("attention_momentum", "event_regime"), 48, "public_rest",
+        "Official keyless English-Wikipedia per-article pageviews with the user "
+        "agent filter. Historical API rows are retrospective and diagnostic only; "
+        "actual fetch-time cross-sections accumulate in a bitemporal forward store. "
+        "No historical backfill can grant Alpha, Shadow, Testnet, or live admission.",
+    ),
+    DataChannelSpec(
         "hyperliquid_public_perp", "Hyperliquid", "hyperliquid_perp",
         "hyperliquid_public_market", "1h->daily + snapshot", "1h/1d/snapshot",
         (

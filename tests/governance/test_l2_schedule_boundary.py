@@ -48,6 +48,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "cftc_tff_forward_refresh",
         "defillama_tvl_forward_refresh",
         "defillama_stablecoin_forward_refresh",
+        "wikimedia_attention_forward_refresh",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",
@@ -82,6 +83,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_binance_book_depth_forward_refresh" in source
     assert "QUANTOS_defillama_tvl_forward_refresh" in source
     assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
+    assert "QUANTOS_wikimedia_attention_forward_refresh" in source
     assert "QUANTOS_hyperliquid_public_forward_refresh" in source
     assert "QUANTOS_cftc_tff_forward_refresh" in source
     assert "QUANTOS_paper_operational_evidence" in source
@@ -130,6 +132,22 @@ def test_defillama_forward_vintage_refresh_is_daily_and_bounded():
         r'Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" '
         r'-Module "defillama_stablecoin_forward_refresh".*?\n\s*'
         r'-Trigger \$defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit '
+        r'\(New-TimeSpan -Minutes 5\)',
+        source,
+    )
+
+
+def test_wikimedia_attention_forward_refresh_is_daily_and_bounded():
+    source = _source()
+    assert re.search(
+        r'\$wikimediaAttentionForwardRefreshTrigger\s*=\s*'
+        r'New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:45"',
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_wikimedia_attention_forward_refresh" '
+        r'-Module "wikimedia_attention_forward_refresh".*?\n\s*'
+        r'-Trigger \$wikimediaAttentionForwardRefreshTrigger -ExecutionTimeLimit '
         r'\(New-TimeSpan -Minutes 5\)',
         source,
     )

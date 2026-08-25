@@ -366,6 +366,9 @@ $defillamaTvlForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterv
 # Stablecoin history is likewise revisable.  Persist one new global supply
 # vintage each morning after the chain-TVL snapshot; public/keyless and L2-only.
 $defillamaStablecoinForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:40"
+# Wikimedia history has no QUANTOS-captured vintages. Persist one canonical
+# user-pageview cross-section daily; retrospective history stays diagnostic.
+$wikimediaAttentionForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:45"
 # Third-venue public funding/premium history is immutable and can be merged
 # incrementally.  Refresh daily without wallet/account/order authority.
 $hyperliquidPublicForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:50"
@@ -493,6 +496,8 @@ Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama
   -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" -Module "defillama_stablecoin_forward_refresh" `
   -Trigger $defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-L2Task -Name "QUANTOS_wikimedia_attention_forward_refresh" -Module "wikimedia_attention_forward_refresh" `
+  -Trigger $wikimediaAttentionForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_hyperliquid_public_forward_refresh" -Module "hyperliquid_public_forward_refresh" `
   -Trigger $hyperliquidPublicForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_binance_book_depth_forward_refresh" -Module "binance_book_depth_forward_refresh" `

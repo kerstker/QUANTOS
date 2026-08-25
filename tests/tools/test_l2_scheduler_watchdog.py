@@ -400,6 +400,10 @@ def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
             "defillama_stablecoin_forward_refresh",
             2 * 86_400_000,
         ),
+        "QUANTOS_wikimedia_attention_forward_refresh": (
+            "wikimedia_attention_forward_refresh",
+            2 * 86_400_000,
+        ),
         "QUANTOS_hyperliquid_public_forward_refresh": (
             "hyperliquid_public_forward_refresh",
             2 * 86_400_000,

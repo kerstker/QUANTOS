@@ -153,6 +153,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_defillama_stablecoin_forward_refresh": ExpectedTask(
         "defillama_stablecoin_forward_refresh", 2 * _DAY_MS
     ),
+    "QUANTOS_wikimedia_attention_forward_refresh": ExpectedTask(
+        "wikimedia_attention_forward_refresh", 2 * _DAY_MS
+    ),
     "QUANTOS_hyperliquid_public_forward_refresh": ExpectedTask(
         "hyperliquid_public_forward_refresh", 2 * _DAY_MS
     ),

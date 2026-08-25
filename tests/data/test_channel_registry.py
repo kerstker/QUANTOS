@@ -30,6 +30,11 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     assert stablecoins.availability == "REAL_DIAGNOSTIC"
     assert stablecoins.endpoint_class == "public_rest"
     assert "supply_acceleration" in stablecoins.fields
+    attention = spec_by_channel("crypto_attention")
+    assert attention.provider == "Wikimedia Analytics"
+    assert attention.availability == "REAL_DIAGNOSTIC"
+    assert attention.endpoint_class == "public_rest"
+    assert "attention_momentum" in attention.alpha_families
     assert spec_by_channel("cross_exchange_book").availability == "REAL_SNAPSHOT"
     hyperliquid = spec_by_channel("hyperliquid_public_perp")
     assert hyperliquid.availability == "REAL_HISTORY"

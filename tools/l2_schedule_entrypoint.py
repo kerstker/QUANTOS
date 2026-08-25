@@ -41,6 +41,7 @@ ALLOWED_L2_MODULES = frozenset(
         "crypto_factory_loop",
         "defillama_tvl_forward_refresh",
         "defillama_stablecoin_forward_refresh",
+        "wikimedia_attention_forward_refresh",
         "dry_run_candidate_multi",
         "hyperliquid_public_forward_refresh",
         "domain_event_ops",
