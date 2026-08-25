@@ -1,5 +1,41 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 机制优先 Alpha 第二切片已在 DGX 形成双场所前向权威：**
+> 新增的 Bybit 公共 linear WebSocket 采集器只订阅 `orderbook.200`、逐笔成交、
+> `allLiquidation` 与 ticker；它不读取凭证、账户或私有流，也没有 broker/委托能力。
+> snapshot/delta 盘口重建、删除档位、成交 ID、清算方向/破产价/数量、source sequence
+> 以及 event/receive/process 三时钟都进入批次原子、append-only 的 SQLite 哈希链。
+> 历史回填信用被明确禁止，200 GiB 剩余空间门在启动前 fail-closed。
+> source commit `083c1f21bf518376a0163ea82e78f518499f89f4` 的 canonical gate 为
+> 27/27 PASS（core 6661 passed / 19 skipped，live/trading/tools 2865 passed /
+> 2 skipped，frontend 199 tests + typecheck/lint/build，Phase 13 24 passed）；证据
+> release `23ca452d5f8abc76bf289912d3ea1be66c4694f2` 在 ARM64 上的聚焦套件为
+> 211/211 passed。76 个非 Attention worker 单元与 4 个 special 单元经
+> `systemd-analyze verify`；79 个既有非冻结单元忽略 release SHA 后差异为 0，
+> 安装后的 80 个渲染单元逐字差异为 0。Wikimedia Attention collector/timer
+> 未被覆盖，SHA-256 仍为 `6f4a00e7...` / `6f65417e...`，并继续固定在
+> `af41c762f82d14cd6ccebf00ec9408df21a2ea5f`。
+>
+> 首次切换因新 root-owned release 未加入 system Git `safe.directory` 而由入口身份
+> 校验正确 fail-closed；这段失败 journal 与被波及的定时任务结果均未删除。补入这个
+> 确切只读 release 路径后，Binance/Bybit 两个 resident stream 均恢复 active/running，
+> 实际进程环境再次证明四个实盘开关为 false、人工审批为 true，release 精确绑定
+> `23ca452d...`。新鲜 watchdog 为 35 PASS / 6 PARTIAL / 1 BREACH /
+> 3 UNAVAILABLE；唯一 BREACH 仍是主机重启造成的备份恢复历史洁净窗未自然成熟，三项
+> UNAVAILABLE 仍是 operator-owned 外部 heartbeat / 两个 seal 未配置。
+>
+> 部署观测时 Bybit authority 已从 6,094 条增长到 33,378 条（orderbook 15,134、
+> trade 7,689、ticker 10,548、真实 liquidation 7），DB 51,372,032 bytes、重连 0、
+> 拒绝 0、状态 PASS；创世链在 6,094 条处全量复核有效，33,378 条检查点/链头精确一致
+>（head `6235e70a...9af066d9`）。DGX 审计
+> `evidence/mechanism_alpha_audit_23ca452d.json` SHA-256 为
+> `5c244ec2c3ad07674b2ea001c71842b6bbb2c270844bebfa7ff6652b0015c0c0`：数据面现在为
+> 1 `HISTORICAL_READY` / 4 `PARTIAL` / 2 `FORWARD_ONLY` / 1 `MISSING`；
+> `multi_venue_trade_l2` 与 `positioning_liquidation` 均达到两个场所，但正式
+> `alpha_eligible_count` 仍为 0。下一阶段只在自然积累的盲化双场所事件上研究“被迫清算者、
+> 急单与跨场所资金约束者如何付钱”的机制候选，并以增量净执行价值和独立下注次数判定；
+> 不把短期连通性、公式 Sharpe 或刚上线数据冒充可盈利 Alpha。
+>
 > **2026-08-25 机制优先 Alpha 第一切片部署收口：** 研究入口不再允许只报公式与
 > Sharpe；12 类方法现在必须在搜索前声明持续付钱者、持续性假设和独立下注单位，缺一
 > 即拒绝。新增 `executable_value.v1` 以双倍成本后的增量净利润、与现有组合正交性、
