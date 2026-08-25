@@ -64,6 +64,38 @@ def test_store_rejects_conflicting_identity_and_future_event_time(tmp_path):
         store.close()
 
 
+def test_websocket_store_requires_bounded_receive_and_process_clocks(tmp_path):
+    store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
+    try:
+        complete = _snapshot(2_000)
+        complete.update(
+            {
+                "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+                "received_at_ms": 1_950,
+                "processed_at_ms": 2_000,
+            }
+        )
+        assert store.append_snapshot(complete) is True
+
+        missing = _snapshot(3_000)
+        missing["provider"] = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        with pytest.raises(BinanceRealtimeStoreError, match="three clocks"):
+            store.append_snapshot(missing)
+
+        reversed_clocks = _snapshot(4_000)
+        reversed_clocks.update(
+            {
+                "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+                "received_at_ms": 4_100,
+                "processed_at_ms": 4_000,
+            }
+        )
+        with pytest.raises(BinanceRealtimeStoreError, match="three clocks"):
+            store.append_snapshot(reversed_clocks)
+    finally:
+        store.close()
+
+
 def test_existing_store_reopens_as_read_only_consumer(tmp_path):
     path = str(tmp_path / "binance.db")
     writer = BinanceRealtimeStore(path, create=True)
@@ -84,9 +116,21 @@ def test_latest_for_provider_uses_observation_time_not_append_order(tmp_path):
     store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
     try:
         newest = _snapshot(3_000)
-        newest["provider"] = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        newest.update(
+            {
+                "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+                "received_at_ms": 2_900,
+                "processed_at_ms": 3_000,
+            }
+        )
         delayed_older = _snapshot(2_000)
-        delayed_older["provider"] = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        delayed_older.update(
+            {
+                "provider": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+                "received_at_ms": 1_950,
+                "processed_at_ms": 2_000,
+            }
+        )
         assert store.append_snapshot(newest) is True
         assert store.append_snapshot(delayed_older) is True
 

@@ -121,6 +121,27 @@ class BinanceRealtimeStore:
             or event_time_ms > observed_at_ms + MAX_FUTURE_SKEW_MS
         ):
             raise BinanceRealtimeStoreError("snapshot identity is invalid")
+        if snapshot.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET":
+            try:
+                received_raw = snapshot["received_at_ms"]
+                processed_raw = snapshot["processed_at_ms"]
+                if isinstance(received_raw, bool) or isinstance(processed_raw, bool):
+                    raise TypeError
+                received_at_ms = int(received_raw)
+                processed_at_ms = int(processed_raw)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise BinanceRealtimeStoreError(
+                    "websocket snapshot three clocks are invalid"
+                ) from exc
+            if (
+                received_at_ms < 0
+                or processed_at_ms != observed_at_ms
+                or received_at_ms > processed_at_ms
+                or event_time_ms > received_at_ms + MAX_FUTURE_SKEW_MS
+            ):
+                raise BinanceRealtimeStoreError(
+                    "websocket snapshot three clocks are invalid"
+                )
         return instrument_id, observed_at_ms, event_time_ms
 
     def _decode(self, row: sqlite3.Row) -> dict[str, Any]:

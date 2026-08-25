@@ -32,6 +32,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
 from quantos.contracts.hashing import stable_hash
+from services.alpha.executable_value import (
+    ExecutableValueInputs,
+    ExecutableValuePolicy,
+    ExecutableValueResult,
+    evaluate_executable_value,
+)
 from services.alpha.family_testing import marginal_ir
 from services.research import factor_decomp as fd
 from services.research.book_combine import combine_returns, inverse_vol_weights
@@ -573,6 +579,80 @@ def build_candidate_portfolio_evidence(
     }
 
 
+def build_portfolio_executable_inputs(
+    row: Mapping[str, Any],
+    *,
+    reference_aum: float,
+    executable_metrics: Mapping[str, Any],
+    evidence_hashes: Mapping[str, str],
+) -> ExecutableValueInputs:
+    """Adapt legacy portfolio evidence to the mechanism-first value objective.
+
+    Only capacity and conservative orthogonality are derivable from the existing
+    row.  Incremental net returns, double-cost returns, realized execution
+    confidence, turnover, tail loss, and independent prediction count must be
+    supplied by separately hash-bound evidence.  Simulated TCA is deliberately
+    not converted into execution confidence.
+    """
+    if not isinstance(row, Mapping):
+        raise TypeError("portfolio evidence row must be a mapping")
+    if not isinstance(executable_metrics, Mapping):
+        raise TypeError("executable_metrics must be a mapping")
+    if not isinstance(evidence_hashes, Mapping):
+        raise TypeError("evidence_hashes must be a mapping")
+
+    exposure = row.get("common_exposure")
+    orthogonality: float | None = None
+    if isinstance(exposure, Mapping) and exposure.get("available") is True:
+        r_squared = _metric(exposure, "r_squared")
+        residual_corr = _metric(exposure, "max_residual_corr_vs_incumbent")
+        if r_squared is not None and residual_corr is not None:
+            orthogonality = max(0.0, 1.0 - max(r_squared, residual_corr))
+
+    capacity = row.get("capacity")
+    capacity_low = (
+        _metric(capacity, "low")
+        if isinstance(capacity, Mapping) and capacity.get("available") is True
+        else None
+    )
+    return ExecutableValueInputs(
+        candidate_id=str(row.get("candidate_id", "")),
+        reference_aum=reference_aum,
+        incremental_net_return=executable_metrics.get("incremental_net_return"),
+        double_cost_incremental_net_return=executable_metrics.get(
+            "double_cost_incremental_net_return"
+        ),
+        orthogonality=orthogonality,
+        execution_confidence=executable_metrics.get("execution_confidence"),
+        capacity_low=capacity_low,
+        annual_turnover=executable_metrics.get("annual_turnover"),
+        tail_loss_fraction=executable_metrics.get("tail_loss_fraction"),
+        independent_bet_count=executable_metrics.get("independent_bet_count"),
+        evidence_hashes=evidence_hashes,
+    )
+
+
+def evaluate_portfolio_executable_value(
+    row: Mapping[str, Any],
+    *,
+    reference_aum: float,
+    executable_metrics: Mapping[str, Any],
+    evidence_hashes: Mapping[str, str],
+    policy: ExecutableValuePolicy | None = None,
+) -> ExecutableValueResult:
+    """Evaluate a portfolio candidate without changing the legacy promotion gate."""
+    effective_policy = ExecutableValuePolicy() if policy is None else policy
+    return evaluate_executable_value(
+        build_portfolio_executable_inputs(
+            row,
+            reference_aum=reference_aum,
+            executable_metrics=executable_metrics,
+            evidence_hashes=evidence_hashes,
+        ),
+        effective_policy,
+    )
+
+
 __all__ = [
     "GATE_FAIL",
     "GATE_INCOMPLETE",
@@ -583,10 +663,12 @@ __all__ = [
     "PortfolioGatePolicy",
     "SUB_EVIDENCE_NAMES",
     "build_candidate_portfolio_evidence",
+    "build_portfolio_executable_inputs",
     "capacity_summary",
     "common_exposure",
     "crowding_summary",
     "evaluate_portfolio_gate",
+    "evaluate_portfolio_executable_value",
     "marginal_contribution",
     "tca_reference",
 ]

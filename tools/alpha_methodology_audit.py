@@ -19,7 +19,13 @@ if __package__ in {None, ""}:  # pragma: no cover - CLI path compatibility
     _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quantos.contracts.hashing import stable_hash
+from services.alpha.executable_value import ExecutableValuePolicy
 from services.data.channel_registry import channel_specs
+from services.data.research_surfaces import (
+    CHANNEL_CAPABILITIES,
+    RESEARCH_SURFACES,
+    audit_research_surfaces,
+)
 from services.research.alpha_methodology import (
     ALPHA_METHODS,
     DISCOVERY_CONTROLS,
@@ -58,6 +64,16 @@ def _registry_payload() -> dict[str, object]:
     }
 
 
+def _surface_registry_payload() -> dict[str, object]:
+    return {
+        "surfaces": [asdict(item) for item in RESEARCH_SURFACES],
+        "channel_capabilities": {
+            channel_id: [capability.value for capability in capabilities]
+            for channel_id, capabilities in sorted(CHANNEL_CAPABILITIES.items())
+        },
+    }
+
+
 def build_methodology_audit(
     *,
     availability: Mapping[str, str] | None = None,
@@ -72,6 +88,7 @@ def build_methodology_audit(
         local_channel_availability(root) if availability is None else availability
     )
     ranked = audit_methodology(channel_availability)
+    surface_audit = audit_research_surfaces(channel_availability)
     registry = _registry_payload()
     rows = []
     method_by_id = {item.method_id: item for item in ALPHA_METHODS}
@@ -83,28 +100,67 @@ def build_methodology_audit(
         item["portability"] = method.portability
         item["required_channel_ids"] = list(method.required_channel_ids)
         item["testable_claim"] = method.testable_claim
+        item["payer_ids"] = [payer.value for payer in method.payer_ids]
+        item["persistence_assumption"] = method.persistence_assumption
+        item["independent_bet_unit"] = method.independent_bet_unit
         item["falsification_tests"] = list(method.falsification_tests)
         item["system_modules"] = list(method.system_modules)
         rows.append(item)
     readiness_counts = Counter(item["readiness"] for item in rows)
+    surface_rows = []
+    for row in surface_audit:
+        item = asdict(row)
+        item["readiness"] = row.readiness.value
+        item["available_capabilities"] = [
+            value.value for value in row.available_capabilities
+        ]
+        item["missing_capabilities"] = [
+            value.value for value in row.missing_capabilities
+        ]
+        surface_rows.append(item)
+    surface_readiness_counts = Counter(item["readiness"] for item in surface_rows)
+    policy = ExecutableValuePolicy()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_ms": generated_at_ms,
         "purpose": "ALPHA_RESEARCH_SUPPLY_NOT_PROMOTION",
         "methodology_hash": stable_hash(registry),
+        "data_surface_registry_hash": stable_hash(_surface_registry_payload()),
         "source_count": len(SOURCES),
         "method_count": len(ALPHA_METHODS),
         "discovery_control_count": len(DISCOVERY_CONTROLS),
         "alpha_eligible_count": 0,
         "channel_availability": dict(sorted(channel_availability.items())),
-        "summary": {"readiness_counts": dict(sorted(readiness_counts.items()))},
+        "summary": {
+            "readiness_counts": dict(sorted(readiness_counts.items())),
+            "surface_readiness_counts": dict(
+                sorted(surface_readiness_counts.items())
+            ),
+        },
         "ranked_methods": rows,
+        "data_surface_audit": surface_rows,
+        "executable_objective": {
+            "policy_version": policy.policy_version,
+            "policy_hash": policy.content_hash,
+            "policy": asdict(policy),
+            "formula": (
+                "reference_aum * min(incremental_net_return, "
+                "double_cost_incremental_net_return) * orthogonality * "
+                "execution_confidence * capacity_multiplier / "
+                "(turnover_penalty * tail_penalty)"
+            ),
+            "ranked_status": "PASS_ONLY",
+            "research_only": True,
+        },
         "registry": registry,
         "honesty": (
             "priority ranks evidence and data readiness, not expected or realized profit",
             "historical diagnostic readiness is not formal OOS, paper, Testnet, or live eligibility",
             "practitioner translations remain explicitly non-academic until independently evidenced",
             "every evaluated configuration must enter the global trial ledger before outcome access",
+            "every method must name its economic payer, persistence assumption, and independent bet unit before search",
+            "missing execution, capacity, tail-risk, or provenance evidence is incomplete and is never zero-filled",
+            "executable-value scoring allocates research attention only and grants no lifecycle or trading permission",
         ),
     }
 
@@ -166,4 +222,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

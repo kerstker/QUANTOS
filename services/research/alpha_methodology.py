@@ -29,6 +29,19 @@ class MethodReadiness(str, Enum):
     BLOCKED_MISSING_INPUT = "BLOCKED_MISSING_INPUT"
 
 
+class EconomicPayer(str, Enum):
+    """Observable participant class hypothesized to fund the Alpha edge."""
+
+    FORCED_LIQUIDATOR = "FORCED_LIQUIDATOR"
+    URGENT_LARGE_ORDER = "URGENT_LARGE_ORDER"
+    LEVERAGED_CROWD = "LEVERAGED_CROWD"
+    HEDGING_DEMAND = "HEDGING_DEMAND"
+    CAPITAL_CONSTRAINED_CROSS_VENUE = "CAPITAL_CONSTRAINED_CROSS_VENUE"
+    PASSIVE_RULE_BASED_FLOW = "PASSIVE_RULE_BASED_FLOW"
+    SLOW_INFORMATION_REACTOR = "SLOW_INFORMATION_REACTOR"
+    SPECULATIVE_LOTTERY_DEMAND = "SPECULATIVE_LOTTERY_DEMAND"
+
+
 _PORTABILITIES = frozenset(
     {"DIRECT_CRYPTO", "CROSS_ASSET_PRIOR", "PRACTITIONER_TRANSLATION"}
 )
@@ -71,6 +84,9 @@ class AlphaMethodSpec:
     leakage_risks: tuple[str, ...]
     system_modules: tuple[str, ...]
     system_disposition: str
+    payer_ids: tuple[EconomicPayer, ...]
+    persistence_assumption: str
+    independent_bet_unit: str
 
 
 @dataclass(frozen=True)
@@ -266,6 +282,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("formation/holding overlap", "survivorship", "post-selection horizon choice"),
         ("services/research/alpha_expression.py", "tools/crypto_daily_research.py"),
         "EXISTING_TESTED_FAMILY",
+        (EconomicPayer.SLOW_INFORMATION_REACTOR, EconomicPayer.PASSIVE_RULE_BASED_FLOW),
+        "Information diffusion and benchmark/rebalancing flows recur across independent market cycles.",
+        "one non-overlapping formation and holding period across the eligible cross-section",
     ),
     AlphaMethodSpec(
         "carry_cross_section",
@@ -281,6 +300,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("using announced instead of settled funding", "revised funding history"),
         ("services/factor_garden/canonical.py", "tools/dry_run_carry_authoritative_multi.py"),
         "EXISTING_TESTED_FAMILY",
+        (EconomicPayer.HEDGING_DEMAND, EconomicPayer.LEVERAGED_CROWD),
+        "Recurring leverage and hedge demand pays settled financing to inventory providers.",
+        "one non-overlapping settled-funding holding period across the eligible cross-section",
     ),
     AlphaMethodSpec(
         "pairs_relative_value",
@@ -296,6 +318,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("pair selection on trade window", "global normalization", "delisting leakage"),
         ("services/research/pairs_relative_value.py", "tools/pairs_relative_value_research.py"),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.CAPITAL_CONSTRAINED_CROSS_VENUE, EconomicPayer.URGENT_LARGE_ORDER),
+        "Balance-sheet and inventory constraints can delay convergence after idiosyncratic urgent flow.",
+        "one pair formed ex ante and traded in a disjoint locked window",
     ),
     AlphaMethodSpec(
         "order_flow_imbalance",
@@ -311,6 +336,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("including label-window trades", "using reconstructed post-gap depth"),
         ("services/research/realtime_alpha_discovery.py", "tools/realtime_alpha_discovery.py"),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.URGENT_LARGE_ORDER,),
+        "Inelastic execution urgency repeatedly consumes finite displayed and latent liquidity.",
+        "one non-overlapping order-flow event and fixed label horizon",
     ),
     AlphaMethodSpec(
         "cross_venue_price_discovery",
@@ -326,6 +354,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("asynchronous joins", "clock skew", "observed-at/event-time confusion"),
         ("tools/cross_venue_research.py", "tools/paper_multivenue_sor.py"),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.CAPITAL_CONSTRAINED_CROSS_VENUE,),
+        "Fragmented capital, inventory, and venue access can delay price propagation.",
+        "one source-timestamped lead-lag event with disjoint label horizon",
     ),
     AlphaMethodSpec(
         "positioning_reversal",
@@ -341,6 +372,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("publication delay", "revised account ratios", "cross-venue calendar mismatch"),
         ("tools/crypto_oi_research.py", "tools/cross_venue_positioning_evaluation.py"),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.LEVERAGED_CROWD, EconomicPayer.FORCED_LIQUIDATOR),
+        "Leverage cycles and forced deleveraging repeatedly create crowded entry and exit pressure.",
+        "one disjoint positioning observation and fixed holding period",
     ),
     AlphaMethodSpec(
         "liquidity_premium",
@@ -356,6 +390,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("using future ADV", "zero-return liquidity proxy bias", "survivorship"),
         ("services/research/liquidity_premium.py", "tools/liquidity_premium_research.py"),
         "EXISTING_BLOCKED_IMPLEMENTATION",
+        (EconomicPayer.URGENT_LARGE_ORDER, EconomicPayer.PASSIVE_RULE_BASED_FLOW),
+        "Recurring immediacy demand and rule-driven rebalances compensate scarce liquidity supply.",
+        "one non-overlapping liquidity formation and rebalance period",
     ),
     AlphaMethodSpec(
         "crypto_attention_momentum",
@@ -371,6 +408,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("backfilled search trends", "article publication time", "revised attention series"),
         ("services/data", "services/research/alpha_expression.py"),
         "NEW_EXPERIMENT_GAP",
+        (EconomicPayer.SLOW_INFORMATION_REACTOR, EconomicPayer.PASSIVE_RULE_BASED_FLOW),
+        "Attention shocks and rule-based flows recur while information incorporation remains uneven.",
+        "one locked attention innovation with a disjoint forward return horizon",
     ),
     AlphaMethodSpec(
         "crypto_idiosyncratic_volatility",
@@ -389,6 +429,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
             "tools/idiosyncratic_volatility_research.py",
         ),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.SPECULATIVE_LOTTERY_DEMAND, EconomicPayer.CAPITAL_CONSTRAINED_CROSS_VENUE),
+        "Speculative demand and limits to arbitrage can recur in a changing but liquid cross-section.",
+        "one independent weekly formation and holding observation",
     ),
     AlphaMethodSpec(
         "crypto_lottery_max",
@@ -410,6 +453,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
             "tools/lottery_max_research.py",
         ),
         "EXISTING_FALSIFIED_IMPLEMENTATION",
+        (EconomicPayer.SPECULATIVE_LOTTERY_DEMAND,),
+        "Lottery preference can recur as speculative capital rotates through extreme-return assets.",
+        "one independent prior-week MAX formation and next-week holding observation",
     ),
     AlphaMethodSpec(
         "ict_liquidity_sweep_session",
@@ -428,6 +474,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
             "tools/ict_liquidity_sweep_preregistration.py",
         ),
         "FORWARD_EXPERIMENT_GAP",
+        (EconomicPayer.FORCED_LIQUIDATOR, EconomicPayer.URGENT_LARGE_ORDER),
+        "Clustered stops and urgent liquidation flow recur around previously visible liquidity levels.",
+        "one pre-registered non-overlapping 15-minute sweep event",
     ),
     AlphaMethodSpec(
         "ict_fvg_mean_fill",
@@ -443,6 +492,9 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("bar close not yet known", "choosing gap threshold after outcomes", "ambiguous fill rule"),
         ("services/research/realtime_alpha_discovery.py", "services/research/backtest_engine"),
         "FORWARD_EXPERIMENT_GAP",
+        (EconomicPayer.URGENT_LARGE_ORDER, EconomicPayer.SLOW_INFORMATION_REACTOR),
+        "Urgent displacement can outrun replenishment and slower price discovery in repeated events.",
+        "one fixed three-bar gap event with a non-overlapping outcome window",
     ),
 )
 
@@ -507,7 +559,13 @@ def validate_methodology_registry(
             raise MethodologyRegistryError("method portability is invalid")
         if item.system_disposition not in _SYSTEM_DISPOSITIONS:
             raise MethodologyRegistryError("method system disposition is invalid")
-        scalar_fields = (item.name, item.economic_mechanism, item.testable_claim)
+        scalar_fields = (
+            item.name,
+            item.economic_mechanism,
+            item.testable_claim,
+            item.persistence_assumption,
+            item.independent_bet_unit,
+        )
         tuple_fields = (
             item.source_ids,
             item.required_channel_ids,
@@ -519,6 +577,12 @@ def validate_methodology_registry(
         )
         if any(not _nonempty(value) for value in scalar_fields):
             raise MethodologyRegistryError("method narrative fields are required")
+        if not item.payer_ids:
+            raise MethodologyRegistryError("method must identify an economic payer")
+        if any(not isinstance(value, EconomicPayer) for value in item.payer_ids):
+            raise MethodologyRegistryError("method economic payer is invalid")
+        if len(item.payer_ids) != len(set(item.payer_ids)):
+            raise MethodologyRegistryError("method economic payers must be unique")
         if any(not values or any(not _nonempty(value) for value in values) for values in tuple_fields):
             raise MethodologyRegistryError("method experiment fields are required")
         if not set(item.source_ids).issubset(source_ids):
@@ -617,6 +681,7 @@ __all__ = [
     "SOURCES",
     "AlphaMethodSpec",
     "DiscoveryControlSpec",
+    "EconomicPayer",
     "EvidenceTier",
     "MethodReadiness",
     "MethodologyAuditRow",

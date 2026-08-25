@@ -5,6 +5,7 @@ from services.research.alpha_methodology import (
     DISCOVERY_CONTROLS,
     SOURCES,
     AlphaMethodSpec,
+    EconomicPayer,
     EvidenceTier,
     MethodReadiness,
     MethodologyRegistryError,
@@ -25,6 +26,10 @@ def test_builtin_methodology_registry_is_valid_and_unique():
 
 def test_every_alpha_method_has_mechanism_falsification_and_failure_risks():
     for item in ALPHA_METHODS:
+        assert item.payer_ids
+        assert all(isinstance(payer, EconomicPayer) for payer in item.payer_ids)
+        assert item.persistence_assumption.strip()
+        assert item.independent_bet_unit.strip()
         assert item.economic_mechanism.strip()
         assert item.testable_claim.strip()
         assert item.required_channel_ids
@@ -66,10 +71,37 @@ def test_practitioner_claims_cannot_masquerade_as_peer_reviewed_sources():
                     leakage_risks=("future bars",),
                     system_modules=("services/research",),
                     system_disposition="NEW_EXPERIMENT_GAP",
+                    payer_ids=(EconomicPayer.URGENT_LARGE_ORDER,),
+                    persistence_assumption="Urgency repeats when liquidity demand is inelastic.",
+                    independent_bet_unit="one non-overlapping event",
                 ),
             ),
             (),
         )
+
+
+def test_method_without_identified_payer_is_rejected_before_search() -> None:
+    bad = AlphaMethodSpec(
+        method_id="payerless_formula",
+        name="payerless",
+        source_ids=(SOURCES[0].source_id,),
+        portability="DIRECT_CRYPTO",
+        economic_mechanism="A formula has a historical correlation.",
+        testable_claim="The formula predicts a future return.",
+        required_channel_ids=("binance_usdm_price",),
+        holding_horizons=("7d",),
+        cost_risks=("turnover",),
+        falsification_tests=("sign control",),
+        leakage_risks=("future bars",),
+        system_modules=("services/research",),
+        system_disposition="NEW_EXPERIMENT_GAP",
+        payer_ids=(),
+        persistence_assumption="No structural persistence was identified.",
+        independent_bet_unit="one week",
+    )
+
+    with pytest.raises(MethodologyRegistryError, match="economic payer"):
+        validate_methodology_registry(SOURCES, (bad,), ())
 
 
 def test_audit_is_fail_closed_for_missing_and_forward_only_channels():

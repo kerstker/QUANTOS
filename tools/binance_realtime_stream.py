@@ -314,12 +314,12 @@ class StreamState:
                 )
         event = str(data.get("e", ""))
         if stream == "!forceOrder@arr" or event == "forceOrder":
-            self._handle_liquidation(data)
+            self._handle_liquidation(data, received_at_ms=received_at_ms)
             self._count("forceOrder")
             self.last_received_at_ms = received_at_ms
             return
         if stream == "!contractInfo" or event == "contractInfo":
-            self._handle_contract_info(data)
+            self._handle_contract_info(data, received_at_ms=received_at_ms)
             self._count("contractInfo")
             self.last_received_at_ms = received_at_ms
             return
@@ -339,6 +339,7 @@ class StreamState:
             mid = (bid + ask) / 2.0
             slot["book"] = {
                 "event_time_ms": event_time,
+                "received_at_ms": received_at_ms,
                 "transaction_time_ms": _integer(
                     data.get("T", event_time), "book.transaction_time"
                 ),
@@ -376,6 +377,7 @@ class StreamState:
             )
             slot["depth20"] = {
                 "event_time_ms": event_time,
+                "received_at_ms": received_at_ms,
                 "transaction_time_ms": transaction_time,
                 "first_update_id": first_update_id,
                 "final_update_id": final_update_id,
@@ -388,6 +390,7 @@ class StreamState:
         elif "@markPrice" in stream or event == "markPriceUpdate":
             slot["mark"] = {
                 "event_time_ms": _integer(data.get("E"), "mark.event_time"),
+                "received_at_ms": received_at_ms,
                 "mark_price": _finite(data.get("p"), "mark.price", positive=True),
                 "index_price": _finite(data.get("i"), "mark.index", positive=True),
                 "estimated_settle_price": _finite(
@@ -405,6 +408,7 @@ class StreamState:
                 raise BinanceStreamDataError("kline payload is missing")
             slot["kline_1m"] = {
                 "event_time_ms": _integer(data.get("E"), "kline.event_time"),
+                "received_at_ms": received_at_ms,
                 "open_time_ms": _integer(kline.get("t"), "kline.open_time"),
                 "close_time_ms": _integer(kline.get("T"), "kline.close_time"),
                 "open": _finite(kline.get("o"), "kline.open", positive=True),
@@ -434,6 +438,12 @@ class StreamState:
                     "notional": 0.0,
                     "buy_taker_notional": 0.0,
                     "sell_taker_notional": 0.0,
+                    "first_event_time_ms": _integer(
+                        data.get("E"), "trade.event_time"
+                    ),
+                    "last_event_time_ms": 0,
+                    "first_received_at_ms": received_at_ms,
+                    "last_received_at_ms": 0,
                     "last_trade_time_ms": 0,
                 },
             )
@@ -443,6 +453,10 @@ class StreamState:
             bucket["notional"] = float(bucket["notional"]) + notional
             side = "sell_taker_notional" if bool(data.get("m")) else "buy_taker_notional"
             bucket[side] = float(bucket[side]) + notional
+            bucket["last_event_time_ms"] = _integer(
+                data.get("E"), "trade.event_time"
+            )
+            bucket["last_received_at_ms"] = received_at_ms
             bucket["last_trade_time_ms"] = _integer(
                 data.get("T"), "trade.trade_time"
             )
@@ -507,6 +521,8 @@ class StreamState:
                 "bid_delete_count": 0,
                 "ask_delete_count": 0,
                 "continuity_breaks": 0,
+                "first_received_at_ms": received_at_ms,
+                "last_received_at_ms": 0,
             },
         )
         bucket["event_count"] = int(bucket["event_count"]) + 1
@@ -524,6 +540,7 @@ class StreamState:
         bucket.update(
             {
                 "event_time_ms": event_time,
+                "last_received_at_ms": received_at_ms,
                 "transaction_time_ms": transaction_time,
                 "first_update_id": first_update_id,
                 "final_update_id": final_update_id,
@@ -535,6 +552,7 @@ class StreamState:
         self.rpi_last_update_ids[symbol] = final_update_id
         self.latest[symbol]["rpi_depth"] = {
             "event_time_ms": event_time,
+            "received_at_ms": received_at_ms,
             "transaction_time_ms": transaction_time,
             "first_update_id": first_update_id,
             "final_update_id": final_update_id,
@@ -546,7 +564,12 @@ class StreamState:
             **({} if cursor is None else _cursor_fields(cursor)),
         }
 
-    def _handle_contract_info(self, data: Mapping[str, Any]) -> None:
+    def _handle_contract_info(
+        self,
+        data: Mapping[str, Any],
+        *,
+        received_at_ms: int,
+    ) -> None:
         symbol = str(data.get("s", "")).upper()
         if symbol not in self.symbols:
             return
@@ -583,6 +606,7 @@ class StreamState:
             )
         self.latest[symbol]["contract_info"] = {
             "event_time_ms": _integer(data.get("E"), "contract.event_time"),
+            "received_at_ms": received_at_ms,
             "contract_type": contract_type,
             "delivery_time_ms": _integer(
                 data.get("dt"), "contract.delivery_time"
@@ -596,7 +620,12 @@ class StreamState:
             "paper_eligible": contract_type == "PERPETUAL" and status == "TRADING",
         }
 
-    def _handle_liquidation(self, data: Mapping[str, Any]) -> None:
+    def _handle_liquidation(
+        self,
+        data: Mapping[str, Any],
+        *,
+        received_at_ms: int,
+    ) -> None:
         order = data.get("o")
         if not isinstance(order, Mapping):
             raise BinanceStreamDataError("liquidation order is missing")
@@ -615,6 +644,12 @@ class StreamState:
                 "long_liquidation_notional": 0.0,
                 "short_liquidation_notional": 0.0,
                 "largest_notional": 0.0,
+                "first_event_time_ms": _integer(
+                    data.get("E"), "liquidation.event_time"
+                ),
+                "last_event_time_ms": 0,
+                "first_received_at_ms": received_at_ms,
+                "last_received_at_ms": 0,
                 "last_trade_time_ms": 0,
             },
         )
@@ -629,6 +664,10 @@ class StreamState:
         )
         bucket[side] = float(bucket[side]) + notional
         bucket["largest_notional"] = max(float(bucket["largest_notional"]), notional)
+        bucket["last_event_time_ms"] = _integer(
+            data.get("E"), "liquidation.event_time"
+        )
+        bucket["last_received_at_ms"] = received_at_ms
         bucket["last_trade_time_ms"] = _integer(
             order.get("T", data.get("E")), "liquidation.trade_time"
         )
@@ -652,9 +691,32 @@ class StreamState:
                 for value in latest.values()
                 if isinstance(value, Mapping) and "event_time_ms" in value
             ]
+            windows = (
+                self.trade_buckets.get(symbol, {}),
+                self.liquidation_buckets.get(symbol, {}),
+                self.rpi_delta_buckets.get(symbol, {}),
+            )
+            times.extend(
+                int(value["last_event_time_ms"])
+                for value in windows
+                if "last_event_time_ms" in value
+            )
             if not times:
                 continue
             source_event_time_ms = max(times)
+            receive_times = [
+                int(value["received_at_ms"])
+                for value in latest.values()
+                if isinstance(value, Mapping) and "received_at_ms" in value
+            ]
+            receive_times.extend(
+                int(value["last_received_at_ms"])
+                for value in windows
+                if "last_received_at_ms" in value
+            )
+            if not receive_times:
+                raise BinanceStreamDataError("snapshot has no exact receive clock")
+            source_received_at_ms = max(receive_times)
             future_skew_ms = max(0, source_event_time_ms - int(observed_at_ms))
             if future_skew_ms > MAX_FUTURE_SKEW_MS:
                 raise BinanceStreamDataError(
@@ -678,6 +740,8 @@ class StreamState:
                 "instrument_id": symbol,
                 "event_time_ms": source_event_time_ms,
                 "knowledge_time_ms": knowledge_time_ms,
+                "received_at_ms": source_received_at_ms,
+                "processed_at_ms": int(observed_at_ms),
                 "observed_at_ms": int(observed_at_ms),
                 **latest,
                 "trade_window": dict(self.trade_buckets.get(symbol, {})),

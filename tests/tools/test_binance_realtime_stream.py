@@ -679,6 +679,19 @@ def test_state_reduces_complete_stream_surface_into_one_snapshot():
     )
 
     snapshot = state.snapshots(_NOW)["BTCUSDT"]
+    assert snapshot["event_time_ms"] == 9_905
+    assert snapshot["received_at_ms"] == _NOW
+    assert snapshot["processed_at_ms"] == _NOW
+    assert snapshot["observed_at_ms"] == snapshot["processed_at_ms"]
+    assert snapshot["book"]["received_at_ms"] == _NOW
+    assert snapshot["depth20"]["received_at_ms"] == _NOW
+    assert snapshot["rpi_depth"]["received_at_ms"] == _NOW
+    assert snapshot["mark"]["received_at_ms"] == _NOW
+    assert snapshot["kline_1m"]["received_at_ms"] == _NOW
+    assert snapshot["trade_window"]["first_received_at_ms"] == _NOW
+    assert snapshot["trade_window"]["last_received_at_ms"] == _NOW
+    assert snapshot["liquidation_window"]["first_received_at_ms"] == _NOW
+    assert snapshot["liquidation_window"]["last_received_at_ms"] == _NOW
     assert snapshot["quality"]["complete_core"] is True
     assert snapshot["book"]["spread_bps"] > 0
     assert len(snapshot["depth20"]["bids"]) == 2
@@ -692,6 +705,37 @@ def test_state_reduces_complete_stream_surface_into_one_snapshot():
     assert state.trade_buckets == {}
     assert state.liquidation_buckets == {}
     assert state.rpi_delta_buckets == {}
+
+
+def test_event_receive_and_process_clocks_remain_distinct() -> None:
+    state = StreamState(("BTC",))
+    received_at_ms = _NOW - 50
+    state.handle(
+        _frame(
+            "btcusdt@bookTicker",
+            {
+                "e": "bookTicker",
+                "E": 9_900,
+                "T": 9_899,
+                "s": "BTCUSDT",
+                "u": 10,
+                "b": "99.9",
+                "B": "5",
+                "a": "100.1",
+                "A": "4",
+                "st": 1,
+            },
+        ),
+        received_at_ms=received_at_ms,
+    )
+
+    snapshot = state.snapshots(_NOW)["BTCUSDT"]
+    assert snapshot["event_time_ms"] == 9_900
+    assert snapshot["received_at_ms"] == received_at_ms
+    assert snapshot["processed_at_ms"] == _NOW
+    assert snapshot["book"]["received_at_ms"] == received_at_ms
+    assert snapshot["event_time_ms"] != snapshot["received_at_ms"]
+    assert snapshot["received_at_ms"] != snapshot["processed_at_ms"]
 
 
 def test_rpi_depth_detects_sequence_break_without_claiming_reconstructed_book():
