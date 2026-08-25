@@ -135,3 +135,22 @@ def test_liquidity_data_rejection_is_internalized_as_blocked_implementation() ->
         "services/research/liquidity_premium.py",
         "tools/liquidity_premium_research.py",
     )
+
+
+def test_direct_crypto_ivol_paper_is_mapped_to_frozen_experiment() -> None:
+    source = next(
+        item for item in SOURCES if item.source_id == "crypto_ivol_zhang_li"
+    )
+    method = next(
+        item for item in ALPHA_METHODS
+        if item.method_id == "crypto_idiosyncratic_volatility"
+    )
+
+    assert source.evidence_tier is EvidenceTier.PEER_REVIEWED
+    assert source.doi == "10.1016/j.ribaf.2020.101252"
+    assert method.portability == "DIRECT_CRYPTO"
+    assert method.system_disposition == "NEW_EXPERIMENT_GAP"
+    assert method.system_modules == (
+        "services/research/idiosyncratic_volatility.py",
+        "tools/idiosyncratic_volatility_research.py",
+    )
