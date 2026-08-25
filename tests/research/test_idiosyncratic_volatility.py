@@ -11,6 +11,7 @@ from services.research.idiosyncratic_volatility import (
     adverse_terminal_stress_periods,
     build_decision_plan,
     build_ivol_periods,
+    find_contiguous_sample_stop_row,
     find_first_eligible_decision_row,
     ivol_signal_leakage_ok,
     signal_snapshot,
@@ -202,3 +203,24 @@ def test_first_eligible_decision_requires_complete_trailing_breadth() -> None:
     assert find_first_eligible_decision_row(panel, config) == (
         config.return_lookback_rows + 1
     )
+
+
+def test_sample_stops_at_first_scheduled_primary_breadth_failure() -> None:
+    panel = _panel()
+    config = _config()
+    start = config.return_lookback_rows + 1
+    for row in range(12, len(panel.event_times)):
+        for column in (0, 1, 2):
+            panel.matrices["close"][row][column] = None
+            panel.matrices["volume"][row][column] = None
+
+    assert find_contiguous_sample_stop_row(panel, start, config) == 12
+    periods, plans, _forced = build_ivol_periods(
+        panel,
+        config,
+        mode="idiosyncratic",
+        universe_size=config.universe_size,
+        start_row=start,
+    )
+    assert [plan.decision_row for plan in plans] == [6, 8, 10]
+    assert len(periods) == 3

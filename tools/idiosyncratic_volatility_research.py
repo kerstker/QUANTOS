@@ -29,6 +29,7 @@ from services.research.idiosyncratic_volatility import (
     IvolExperimentConfig,
     adverse_terminal_stress_periods,
     build_ivol_periods,
+    find_contiguous_sample_stop_row,
     find_first_eligible_decision_row,
     ivol_signal_leakage_ok,
 )
@@ -91,6 +92,9 @@ EVALUATION_CONTRACT = {
     "ivol_measure": "population_std_of_28_daily_OLS_residuals",
     "liquidity_measure": "median(close_times_base_volume)_over_prior_28_rows",
     "sample_start_rule": "earliest_decision_with_60_complete_trailing_names",
+    "sample_end_rule": (
+        "exclusive_first_scheduled_decision_with_fewer_than_60_complete_names"
+    ),
     "holding_rows": IVOL_CONFIG.holding_rows,
     "rebalance": "every_7_rows_non_overlapping_no_skips",
     "universe_size": IVOL_CONFIG.universe_size,
@@ -455,6 +459,7 @@ def run(
     generated_at_ms = time.time_ns() // 1_000_000
     definitions = candidate_definitions()
     start_row = find_first_eligible_decision_row(panel, IVOL_CONFIG)
+    stop_row = find_contiguous_sample_stop_row(panel, start_row, IVOL_CONFIG)
     built: dict[
         str,
         tuple[
@@ -471,6 +476,7 @@ def run(
                 mode=mode,
                 universe_size=universe_size,
                 start_row=start_row,
+                stop_row=stop_row,
             )
     except IvolDataIntegrityError as failure:
         return _record_preflight_rejection(
@@ -504,6 +510,7 @@ def run(
                 mode=mode,
                 universe_size=universe_size,
                 start_row=start_row,
+                stop_row=stop_row,
             ),
         )
         mapping[definition.name] = {
@@ -666,6 +673,15 @@ def run(
             "row": start_row,
             "event_time": int(panel.event_times[start_row]),
             "rule": EVALUATION_CONTRACT["sample_start_rule"],
+        },
+        "sample_end": {
+            "exclusive_row": stop_row,
+            "first_excluded_event_time": int(panel.event_times[stop_row]),
+            "last_included_decision_time": int(
+                panel.event_times[stop_row - IVOL_CONFIG.holding_rows]
+            ),
+            "rule": EVALUATION_CONTRACT["sample_end_rule"],
+            "later_recovery_not_reentered": True,
         },
         "trial_registry": {
             "trial_count_before": trial_count_before,

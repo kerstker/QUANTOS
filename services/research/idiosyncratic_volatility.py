@@ -47,6 +47,18 @@ class IvolDataIntegrityError(ValueError):
         self.label_row = label_row
 
 
+class IvolBreadthError(ValueError):
+    """A scheduled decision cannot satisfy the frozen primary breadth."""
+
+    def __init__(self, *, decision_row: int, available: int, required: int) -> None:
+        super().__init__(
+            f"only {available} complete names for frozen universe {required}"
+        )
+        self.decision_row = decision_row
+        self.available = available
+        self.required = required
+
+
 @dataclass(frozen=True)
 class IvolExperimentConfig:
     return_lookback_rows: int = 28
@@ -204,8 +216,10 @@ def build_decision_plan(
             )
         )
     if len(eligible) < universe_size:
-        raise ValueError(
-            f"only {len(eligible)} complete names for frozen universe {universe_size}"
+        raise IvolBreadthError(
+            decision_row=decision_row,
+            available=len(eligible),
+            required=universe_size,
         )
     ranked = sorted(eligible, key=lambda item: (-item[2], item[0]))[:universe_size]
     market = tuple(
@@ -269,6 +283,35 @@ def find_first_eligible_decision_row(
     raise ValueError("panel never reaches the frozen ivol universe breadth")
 
 
+def find_contiguous_sample_stop_row(
+    panel: FieldPanel,
+    start_row: int,
+    config: IvolExperimentConfig = IvolExperimentConfig(),
+) -> int:
+    """Return the exclusive first scheduled primary-breadth failure.
+
+    Once the frozen top-60 research universe becomes incomplete, later rows are
+    never cherry-picked back into the sample.  This boundary depends only on
+    signal-time data availability and is computed before any return statistic.
+    """
+
+    _validate_panel(panel)
+    if isinstance(start_row, bool) or not isinstance(start_row, int):
+        raise TypeError("start_row must be an integer")
+    if start_row < config.return_lookback_rows + 1:
+        raise ValueError("start_row lacks a complete trailing return window")
+    decision_row = start_row
+    while decision_row + config.holding_rows < len(panel.event_times):
+        try:
+            build_decision_plan(
+                panel, decision_row, config.universe_size, config
+            )
+        except IvolBreadthError:
+            return decision_row
+        decision_row += config.holding_rows
+    return decision_row
+
+
 def _holding_outcome(
     panel: FieldPanel,
     close: Sequence[Sequence[object]],
@@ -328,6 +371,7 @@ def build_ivol_periods(
     mode: IvolSignalMode = "idiosyncratic",
     universe_size: int | None = None,
     start_row: int | None = None,
+    stop_row: int | None = None,
 ) -> tuple[
     tuple[PanelPeriod, ...],
     tuple[IvolDecisionPlan, ...],
@@ -346,13 +390,25 @@ def build_ivol_periods(
         raise TypeError("start_row must be an integer or None")
     if decision_row < config.return_lookback_rows + 1:
         raise ValueError("start_row lacks a complete trailing return window")
+    sample_stop = (
+        find_contiguous_sample_stop_row(panel, decision_row, config)
+        if stop_row is None
+        else stop_row
+    )
+    if isinstance(sample_stop, bool) or not isinstance(sample_stop, int):
+        raise TypeError("stop_row must be an integer or None")
+    if sample_stop <= decision_row or sample_stop > len(panel.event_times):
+        raise ValueError("stop_row must be after start_row and within the panel")
     column_by_name = {name: index for index, name in enumerate(panel.instruments)}
     periods: list[PanelPeriod] = []
     plans: list[IvolDecisionPlan] = []
     forced_events: list[ForcedExitEvent] = []
     forced_exit_adv: dict[str, float] = {}
     previous_instruments: frozenset[str] = frozenset()
-    while decision_row + config.holding_rows < len(panel.event_times):
+    while (
+        decision_row < sample_stop
+        and decision_row + config.holding_rows < len(panel.event_times)
+    ):
         plan = build_decision_plan(panel, decision_row, selected_size, config)
         instruments, signals, adv = signal_snapshot(panel, plan, mode)
         label_row = decision_row + config.holding_rows
@@ -490,6 +546,7 @@ def ivol_signal_leakage_ok(
     mode: IvolSignalMode = "idiosyncratic",
     universe_size: int | None = None,
     start_row: int | None = None,
+    stop_row: int | None = None,
 ) -> bool | None:
     """Prove current signals are invariant to every strictly future cell."""
 
@@ -499,9 +556,12 @@ def ivol_signal_leakage_ok(
         if start_row is None
         else start_row
     )
-    decision_rows = list(
-        range(first, len(panel.event_times) - config.holding_rows, config.holding_rows)
+    sample_stop = (
+        find_contiguous_sample_stop_row(panel, first, config)
+        if stop_row is None
+        else stop_row
     )
+    decision_rows = list(range(first, sample_stop, config.holding_rows))
     if not decision_rows:
         return None
     assessed = False
@@ -530,12 +590,14 @@ def ivol_signal_leakage_ok(
 __all__ = [
     "ForcedExitEvent",
     "IvolDataIntegrityError",
+    "IvolBreadthError",
     "IvolDecisionPlan",
     "IvolExperimentConfig",
     "adverse_terminal_stress_periods",
     "build_decision_plan",
     "build_ivol_periods",
     "find_first_eligible_decision_row",
+    "find_contiguous_sample_stop_row",
     "ivol_signal_leakage_ok",
     "signal_snapshot",
 ]

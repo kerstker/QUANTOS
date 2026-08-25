@@ -19,6 +19,11 @@ liquidity families. The paper is a prior, not a profitability guarantee.
 - Data: PIT reads from `crypto_funding.db`; daily close and base-unit volume.
 - Decision universe: top 60 by median dollar ADV over the previous 28 completed
   daily rows. The investability control uses the nested top 30.
+- Sample end: the first scheduled decision after sample start with fewer than
+  60 complete signal-time names is excluded, as are all later rows even if
+  breadth later recovers. This is a data-availability boundary computed before
+  any return statistic; bad weeks are never skipped and the universe is not
+  reduced after observing the DGX coverage failure.
 - Signal window: 28 completed daily returns ending at `t-1`; row `t` is used
   only to prove entry availability.
 - Market factor: equal-weight daily return of the decision-time liquid universe.

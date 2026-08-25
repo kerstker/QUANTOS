@@ -25,6 +25,9 @@ def test_frozen_contract_has_five_candidates_and_no_parameter_scan() -> None:
     assert EVALUATION_CONTRACT["holding_rows"] == 7
     assert EVALUATION_CONTRACT["universe_size"] == 60
     assert EVALUATION_CONTRACT["liquid_size"] == 30
+    assert EVALUATION_CONTRACT["sample_end_rule"] == (
+        "exclusive_first_scheduled_decision_with_fewer_than_60_complete_names"
+    )
     assert EVALUATION_CONTRACT["terminal_exit_policy"]["adverse_stress_return"] == 0.20
     assert EVALUATION_CONTRACT["parameter_scan"] is False
     assert len(CONTRACT_HASH) == 64
