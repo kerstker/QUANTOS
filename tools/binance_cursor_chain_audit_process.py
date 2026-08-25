@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 
-# A genesis audit over the production cursor authority currently covers several
-# million payload-bound events.  The DGX ARM64 audit is CPU-bound and has crossed
-# the former 60-minute ceiling while remaining healthy.  This is a bounded
-# bootstrap/renewal proof; normal restarts use the trusted batch checkpoint and
-# verify only the suffix.
-CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 90 * 60.0
+# A genesis audit over the production cursor authority covered 45.9M
+# payload-bound events on DGX ARM64 and crossed the former 90-minute ceiling
+# while remaining CPU-bound.  Resident renewal starts four hours before expiry;
+# this three-hour hard ceiling leaves one hour of scheduling margin.  Normal
+# restarts still use the trusted batch checkpoint and verify only the suffix.
+CURSOR_CHAIN_VERIFY_TIMEOUT_SECONDS = 3 * 60 * 60.0
 
 
 class CursorChainAuditProcessError(RuntimeError):

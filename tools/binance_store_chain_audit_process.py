@@ -13,7 +13,11 @@ from pathlib import Path
 from typing import Any
 
 
-STORE_CHAIN_VERIFY_TIMEOUT_SECONDS = 60 * 60.0
+# Production source-chain authorities are already large enough for a full ARM64
+# audit to approach one hour.  The resident starts renewal four hours before
+# expiry; retain a three-hour hard ceiling so healthy growth is not killed by
+# the former 60-minute bootstrap limit while a wedged verifier remains bounded.
+STORE_CHAIN_VERIFY_TIMEOUT_SECONDS = 3 * 60 * 60.0
 
 
 class StoreChainAuditProcessError(RuntimeError):

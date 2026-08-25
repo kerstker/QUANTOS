@@ -59,7 +59,15 @@ MAX_STREAM_LAG_MS = 10_000
 CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
 CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
-CURSOR_FULL_AUDIT_LEAD_MS = 90 * 60 * 1_000
+# DGX ARM64 evidence on 2026-08-26: the 45.9M-event cursor authority exceeded
+# 90 minutes and the source authority approached the feature worker's 45-minute
+# service ceiling.  Start resident renewal four hours before proof expiry; the
+# isolated verifiers retain a three-hour hard ceiling, leaving one hour of
+# explicit scheduling margin instead of renewing only after the proof is stale.
+SOURCE_FULL_AUDIT_LEAD_MS = 4 * 60 * 60 * 1_000
+CURSOR_FULL_AUDIT_LEAD_MS = 4 * 60 * 60 * 1_000
+
+
 class BinanceStreamDataError(RuntimeError):
     """A stream frame violates the documented public market-data contract."""
 
@@ -1270,47 +1278,98 @@ async def run_stream(
             stop.set()
 
     async def verify_chain_loop() -> None:
+        """Verify suffixes and renew the source proof before it expires.
+
+        Full source audits are deliberately resident background work.  The
+        short-lived feature worker consumes this status attestation and checks
+        only the local suffix; it must never start a multi-million-row genesis
+        scan inside a five-minute schedule.
+        """
         nonlocal chain_checkpoint, chain_valid, chain_verification
         nonlocal chain_verified_at_ms
+        force_full_audit = False
         while not stop.is_set() and time.monotonic() < deadline:
-            verification_mode = str(chain_checkpoint["verification_mode"])
+            audit_checkpoint = dict(chain_checkpoint)
+            if force_full_audit:
+                audit_checkpoint = {
+                    **audit_checkpoint,
+                    "checkpoint_seq": 0,
+                    "checkpoint_row_hash": "",
+                    "verification_mode": "FULL_PERIODIC_AUDIT",
+                }
+                force_full_audit = False
+            checkpoint_mode = str(audit_checkpoint["verification_mode"])
             verification = await _verify_store_chain_subprocess_async(
                 store_path,
-                checkpoint_seq=int(chain_checkpoint["checkpoint_seq"]),
-                checkpoint_row_hash=str(chain_checkpoint["checkpoint_row_hash"]),
+                checkpoint_seq=int(audit_checkpoint["checkpoint_seq"]),
+                checkpoint_row_hash=str(audit_checkpoint["checkpoint_row_hash"]),
             )
             chain_verified_at_ms = int(time.time() * 1_000)
             chain_valid = verification.get("valid") is True
+            verification_mode = {
+                "FULL_BOOTSTRAP": "FULL_SUBPROCESS_BOOTSTRAP",
+                "FULL_PERIODIC_AUDIT": "FULL_PERIODIC_SUBPROCESS_AUDIT",
+            }.get(checkpoint_mode, checkpoint_mode)
+            previous_bootstrap_mode = (
+                chain_verification.get("bootstrap_verification_mode")
+                if isinstance(chain_verification, Mapping)
+                else None
+            )
+            bootstrap_mode = (
+                verification_mode
+                if checkpoint_mode in {"FULL_BOOTSTRAP", "FULL_PERIODIC_AUDIT"}
+                else previous_bootstrap_mode or verification_mode
+            )
             chain_verification = {
                 **verification,
                 "verification_mode": verification_mode,
-                "batch_authority": chain_checkpoint["batch_authority"],
+                "bootstrap_verification_mode": bootstrap_mode,
+                "verified_at_ms": chain_verified_at_ms,
+                "batch_authority": audit_checkpoint["batch_authority"],
                 "full_verified_at_ms": (
                     chain_verified_at_ms
                     if int(verification.get("anchor_seq", -1)) == 0
                     and chain_valid
-                    else chain_checkpoint["full_verified_at_ms"]
+                    else audit_checkpoint["full_verified_at_ms"]
                 ),
             }
-            if chain_valid:
-                chain_checkpoint = {
-                    "checkpoint_seq": int(verification["verified_seq"]),
-                    "checkpoint_row_hash": str(
-                        verification["verified_row_hash"]
-                    ),
-                    "full_verified_at_ms": chain_verification[
-                        "full_verified_at_ms"
-                    ],
-                    "verification_mode": "INCREMENTAL_FROM_STREAM_CHECKPOINT",
-                    "batch_authority": chain_checkpoint["batch_authority"],
-                }
+            if not chain_valid:
+                return
+            chain_checkpoint = {
+                "checkpoint_seq": int(verification["verified_seq"]),
+                "checkpoint_row_hash": str(verification["verified_row_hash"]),
+                "full_verified_at_ms": chain_verification[
+                    "full_verified_at_ms"
+                ],
+                "verification_mode": "INCREMENTAL_FROM_STREAM_CHECKPOINT",
+                "batch_authority": audit_checkpoint["batch_authority"],
+            }
+            full_verified_at_ms = chain_checkpoint["full_verified_at_ms"]
+            if type(full_verified_at_ms) is not int:
+                return
+            renewal_at_ms = (
+                full_verified_at_ms
+                + FULL_CHAIN_AUDIT_INTERVAL_MS
+                - SOURCE_FULL_AUDIT_LEAD_MS
+            )
+            now_ms = int(time.time() * 1_000)
+            until_renewal_seconds = (renewal_at_ms - now_ms) / 1_000
+            if until_renewal_seconds <= 0:
+                force_full_audit = True
+                continue
             remaining = max(0.0, deadline - time.monotonic())
-            wait_seconds = min(CHAIN_VERIFY_INTERVAL_SECONDS, remaining)
+            wait_seconds = min(
+                CHAIN_VERIFY_INTERVAL_SECONDS,
+                until_renewal_seconds,
+                remaining,
+            )
             if wait_seconds <= 0:
                 break
             try:
                 await asyncio.wait_for(stop.wait(), timeout=wait_seconds)
             except TimeoutError:
+                if int(time.time() * 1_000) >= renewal_at_ms:
+                    force_full_audit = True
                 continue
 
     async def cursor_chain_audit_loop() -> None:

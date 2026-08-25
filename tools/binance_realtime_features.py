@@ -252,7 +252,7 @@ def _trusted_source_checkpoint(
         return trusted_source_chain_checkpoint(
             batch_store_path,
             now_ms=now_ms,
-            full_chain_audit_interval_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
+            full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
         )
     except Exception as exc:
         raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
@@ -268,10 +268,110 @@ def _trusted_cursor_checkpoint(
         return trusted_cursor_chain_checkpoint(
             batch_store_path,
             now_ms=now_ms,
-            full_chain_audit_interval_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
+            full_chain_audit_interval_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
         )
     except Exception as exc:
         raise BinanceRealtimeFeatureError("feature batch chain is invalid") from exc
+
+
+def _source_chain_verification(
+    store: BinanceRealtimeStore,
+    *,
+    limit: int,
+    checkpoint: dict[str, Any],
+    stream_status_path: str,
+    now_ms: int | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Verify source rows from a batch anchor or resident full-audit proof.
+
+    Once the 24-hour batch proof expires, the feature worker must not perform a
+    genesis scan.  The resident stream renews that proof in an isolated process
+    before expiry; this worker validates the fresh status bytes and independently
+    verifies only the suffix from the attested frontier.
+    """
+    validation_now_ms = (
+        int(time.time() * 1_000) if now_ms is None else int(now_ms)
+    )
+    checkpoint_seq = int(checkpoint["checkpoint_seq"])
+    checkpoint_row_hash = str(checkpoint["checkpoint_row_hash"])
+    full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    basis = "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
+    attested_frontier_seq: int | None = None
+    attested_frontier_hash: str | None = None
+    stream_status_sha256: str | None = None
+    if checkpoint_seq == 0:
+        try:
+            status_bytes = Path(stream_status_path).read_bytes()
+            status = json.loads(status_bytes.decode("utf-8"))
+            if not isinstance(status, dict):
+                raise ValueError("stream status must be an object")
+            store_status = status.get("store")
+            store_status = store_status if isinstance(store_status, dict) else {}
+            chain = store_status.get("chain_verification")
+            chain = chain if isinstance(chain, dict) else {}
+            safety = status.get("safety")
+            safety = safety if isinstance(safety, dict) else {}
+            generated_at_ms = status.get("generated_at_ms")
+            bootstrap_mode = chain.get("bootstrap_verification_mode")
+            full_verified_at_ms = chain.get("full_verified_at_ms")
+            attested_frontier_seq = chain.get("verified_seq")
+            attested_frontier_hash = chain.get("verified_row_hash")
+            valid_status = bool(
+                status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+                and type(generated_at_ms) is int
+                and 0 <= validation_now_ms - generated_at_ms
+                < MAX_STREAM_STATUS_AGE_MS
+                and store_status.get("chain_valid") is True
+                and chain.get("valid") is True
+                and bootstrap_mode
+                in {
+                    "FULL_SUBPROCESS_BOOTSTRAP",
+                    "FULL_PERIODIC_SUBPROCESS_AUDIT",
+                }
+                and type(full_verified_at_ms) is int
+                and 0 <= validation_now_ms - full_verified_at_ms
+                < FULL_CHAIN_AUDIT_INTERVAL_MS
+                and type(attested_frontier_seq) is int
+                and attested_frontier_seq >= 0
+                and (
+                    attested_frontier_hash == ""
+                    if attested_frontier_seq == 0
+                    else _is_sha256(attested_frontier_hash)
+                )
+                and _is_sha256(chain.get("batch_authority"))
+                and safety.get("public_market_data_only") is True
+                and safety.get("credentials") is False
+                and safety.get("private_stream") is False
+                and safety.get("broker_connectivity") is False
+                and safety.get("order_submission") is False
+                and safety.get("live_trading") is False
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            valid_status = False
+        if not valid_status:
+            raise BinanceRealtimeFeatureError(
+                "source full-audit attestation is unavailable or invalid"
+            )
+        checkpoint_seq = int(attested_frontier_seq)
+        checkpoint_row_hash = str(attested_frontier_hash)
+        stream_status_sha256 = hashlib.sha256(status_bytes).hexdigest()
+        basis = "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    rows, verification = _source_snapshots(
+        store,
+        limit=limit,
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
+    verification = dict(verification)
+    if verification.get("valid") is not True:
+        raise BinanceRealtimeFeatureError("source chain is invalid")
+    verification["mode"] = checkpoint["verification_mode"]
+    verification["basis"] = basis
+    verification["full_verified_at_ms"] = full_verified_at_ms
+    verification["attested_frontier_seq"] = attested_frontier_seq
+    verification["attested_frontier_hash"] = attested_frontier_hash
+    verification["stream_status_sha256"] = stream_status_sha256
+    return rows, verification
 
 
 def _cursor_chain_verification(
@@ -553,11 +653,12 @@ def execute(
     output_hashes: dict[str, str] = {}
     source_store = BinanceRealtimeStore(source_store_path, create=False)
     try:
-        snapshots, chain_verification = _source_snapshots(
+        snapshots, chain_verification = _source_chain_verification(
             source_store,
             limit=source_row_limit,
-            checkpoint_seq=trusted_checkpoint["checkpoint_seq"],
-            checkpoint_row_hash=trusted_checkpoint["checkpoint_row_hash"],
+            checkpoint=trusted_checkpoint,
+            stream_status_path=stream_status_path,
+            now_ms=now,
         )
     finally:
         source_store.close()
@@ -566,7 +667,7 @@ def execute(
         source_store_path,
         checkpoint=trusted_cursor_checkpoint,
         stream_status_path=stream_status_path,
-        now_ms=(None if now_ms is None else now),
+        now_ms=now,
     )
     cursor_chain_checkpoint = (
         None
@@ -713,11 +814,9 @@ def execute(
                 "schema_version": 1,
                 "verified_seq": chain_verification["verified_seq"],
                 "verified_row_hash": chain_verification["verified_row_hash"],
-                "full_verified_at_ms": (
-                    now
-                    if trusted_checkpoint["checkpoint_seq"] == 0
-                    else trusted_checkpoint["full_verified_at_ms"]
-                ),
+                "full_verified_at_ms": chain_verification[
+                    "full_verified_at_ms"
+                ],
             },
             "cursor_chain_checkpoint": cursor_chain_checkpoint,
         },
@@ -795,6 +894,13 @@ def execute(
                 "anchor_seq": chain_verification["anchor_seq"],
                 "verified_suffix_rows": chain_verification[
                     "verified_suffix_rows"
+                ],
+                "basis": chain_verification["basis"],
+                "attested_frontier_seq": chain_verification[
+                    "attested_frontier_seq"
+                ],
+                "stream_status_sha256": chain_verification[
+                    "stream_status_sha256"
                 ],
             },
             "cursor_chain_verification": {

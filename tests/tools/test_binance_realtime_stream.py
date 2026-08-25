@@ -542,6 +542,94 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     )
 
 
+@pytest.mark.asyncio
+async def test_resident_stream_renews_full_source_audit_before_expiry(
+    tmp_path,
+    monkeypatch,
+):
+    batch_path = tmp_path / "batches.db"
+    now_ms = int(realtime.time.time() * 1_000)
+    batch_store = RealtimeFeatureBatchStore(str(batch_path), create=True)
+    batch_store.append(
+        {
+            "batch_id": "source-anchor",
+            "observed_at_ms": now_ms,
+            "source": {
+                "chain_checkpoint": {
+                    "schema_version": 1,
+                    "verified_seq": 123,
+                    "verified_row_hash": "b" * 64,
+                    "full_verified_at_ms": now_ms,
+                },
+                "cursor_chain_checkpoint": {
+                    "schema_version": 1,
+                    "verified_seq": 77,
+                    "verified_row_hash": "d" * 64,
+                    "full_verified_at_ms": now_ms,
+                },
+            },
+        }
+    )
+    batch_store.close()
+    source_calls = []
+
+    async def consume(endpoint, _url, *, state, stop, deadline):
+        del deadline
+        state.connections[endpoint] = True
+        await stop.wait()
+
+    async def verify_source(_path, *, checkpoint_seq, checkpoint_row_hash):
+        source_calls.append((checkpoint_seq, checkpoint_row_hash))
+        if checkpoint_seq == 0:
+            await asyncio.sleep(0.08)
+        return {
+            "valid": True,
+            "anchor_seq": checkpoint_seq,
+            "verified_suffix_rows": 0,
+            "verified_seq": checkpoint_seq,
+            "verified_row_hash": checkpoint_row_hash,
+        }
+
+    async def verify_cursor(_path, *, checkpoint_seq, checkpoint_row_hash):
+        return {
+            "valid": True,
+            "anchor_seq": checkpoint_seq,
+            "verified_suffix_events": 0,
+            "verified_seq": checkpoint_seq,
+            "verified_row_hash": checkpoint_row_hash,
+        }
+
+    monkeypatch.setattr(realtime, "_consume", consume)
+    monkeypatch.setattr(
+        realtime,
+        "_verify_store_chain_subprocess_async",
+        verify_source,
+    )
+    monkeypatch.setattr(
+        realtime,
+        "_verify_cursor_chain_subprocess_async",
+        verify_cursor,
+    )
+    monkeypatch.setattr(realtime, "FULL_CHAIN_AUDIT_INTERVAL_MS", 1_000)
+    monkeypatch.setattr(realtime, "SOURCE_FULL_AUDIT_LEAD_MS", 900)
+
+    status = await realtime.run_stream(
+        tickers=("BTC",),
+        duration_seconds=0.25,
+        flush_seconds=0.01,
+        store_path=str(tmp_path / "stream.db"),
+        status_path=str(tmp_path / "status.json"),
+        batch_store_path=str(batch_path),
+    )
+
+    assert source_calls[0] == (123, "b" * 64)
+    assert any(seq == 0 and row_hash == "" for seq, row_hash in source_calls[1:])
+    assert status["store"]["chain_valid"] is True
+    assert status["store"]["chain_verification"][
+        "bootstrap_verification_mode"
+    ] == "FULL_PERIODIC_SUBPROCESS_AUDIT"
+
+
 def test_state_reduces_complete_stream_surface_into_one_snapshot():
     state = StreamState(("BTC",))
     state.handle(

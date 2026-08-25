@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-26 DGX Binance 全链证明扩展性故障与本地修复：** 真机游标权威已约
+> 45.9M 事件；90 分钟隔离全审计超时。随后五分钟 realtime-feature worker 在源证明
+> 过期后自行从创世扫描，约 45 分钟达到 9.7 GiB 峰值并被 systemd 限时终止，timer
+> 重启后仍零进展。失败全程 fail-closed，没有发布未验证特征或产生 Alpha 资格。现已把
+> source/cursor 全审计唯一归属 resident stream：24 小时证明到期前四小时启动、隔离
+> verifier 三小时硬上限；短期 feature worker 只验证可信 batch checkpoint 后缀，若
+> checkpoint 缺失/过期则验证 resident 的完整证明、绑定状态文件 SHA 并独立验证其后缀，
+> 永不回退到创世扫描。定向回归 51 项通过。当前仍需形成不可变 ARM64 release、等待两条
+> 真机全证明完成并取得新 feature PASS 才能关闭事故；O(n) 全审计成本仍诚实保留，未来
+> segment/Merkle 迁移须独立评审，不能以延长证明期限或跳过 payload 校验替代。系统继续
+> `L2_DRY_RUN_ONLY`，凭证、账户、broker、下单、testnet/live 均未开放。设计见
+> `docs/engineering/specs/2026-08-26-binance-resident-full-audit-renewal.md`。
+
 > **2026-08-25 双场所强平机制的盲化成熟度与 DGX 发布已收口：** 新增的
 > outcome-blind health worker 只把预注册后的 Bybit `allLiquidation` 原始打印按
 > 同币种/同方向、5 秒接收时钟间隔聚成已静默闭合的 burst，再施加 30 分钟币种级

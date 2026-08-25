@@ -128,6 +128,29 @@ be re-registered from a clean release after adopting this contract.
 | `QUANTOS_external_heartbeat` | Every 5 minutes, only when configured | `tools.external_heartbeat` |
 | `QUANTOS_domain_event_seal` | Daily 02:30, only when configured | `tools.domain_event_seal` |
 
+### Binance full-chain proof renewal
+
+`binance_realtime_stream` is the sole owner of source/cursor genesis audits.
+It renews each 24-hour proof in a background subprocess four hours before
+expiry, with a three-hour hard ceiling. `binance_realtime_features` consumes a
+fresh resident proof and independently verifies only the suffix; it must never
+scan either journal from genesis inside its five-minute schedule.
+
+While a missing or expired proof is rebuilding, the expected state is:
+
+- the resident public WebSocket collector continues ingesting;
+- feature publication fails quickly and the timer retries later;
+- downstream Alpha/paper consumers remain blocked on stale feature evidence.
+
+Do not delete the feature-batch authority, extend the 24-hour proof lifetime,
+disable payload verification, or repeatedly start the feature service by hand.
+Those actions either destroy the trusted anchor or conceal the fail-closed
+state. Diagnose the resident service/status first; recovery is complete only
+after both full proofs are fresh and a new feature batch reports
+`STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX` (or a later trusted-batch
+suffix) with a zero watchdog breach. Detailed evidence and limits are in
+[`2026-08-26-binance-resident-full-audit-renewal.md`](../engineering/specs/2026-08-26-binance-resident-full-audit-renewal.md).
+
 ## Three-Alpha Paper Cycle
 
 The operator-level paper flow is a single idempotent, L2-only command. It runs
