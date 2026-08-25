@@ -661,6 +661,16 @@
               "role": "binance_book_depth_archive_authority"
             },
             {
+              "relative_path": "data/cache/bybit_linear_events.db",
+              "required": false,
+              "role": "bybit_public_linear_event_authority"
+            },
+            {
+              "relative_path": "data/cache/bybit_market_resilience.db",
+              "required": false,
+              "role": "outcome_free_market_resilience_authority"
+            },
+            {
               "relative_path": "data/cache/cross_venue_liquidation_health.json",
               "required": false,
               "role": "cross_venue_liquidation_health"
@@ -766,7 +776,7 @@
               "role": "cross_venue_liquidation_preregistration"
             }
           ],
-          "version": 9
+          "version": 10
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -840,6 +850,16 @@
               "role": "binance_book_depth_archive_authority"
             },
             {
+              "relative_path": "data/cache/bybit_linear_events.db",
+              "required": false,
+              "role": "bybit_public_linear_event_authority"
+            },
+            {
+              "relative_path": "data/cache/bybit_market_resilience.db",
+              "required": false,
+              "role": "outcome_free_market_resilience_authority"
+            },
+            {
               "relative_path": "data/cache/cross_venue_liquidation_health.json",
               "required": false,
               "role": "cross_venue_liquidation_health"
@@ -945,7 +965,7 @@
               "role": "cross_venue_liquidation_preregistration"
             }
           ],
-          "version": 9
+          "version": 10
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1620,9 +1640,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1787663132922,
-    "run_id": "f1b2d2921370014d877d6d44c8623428df2db3d6278bfd843a19ec509daa75c5",
-    "source_commit": "1e86dd7c0526463bce86286095668cc1e80a4083"
+    "generated_at": 1787668370798,
+    "run_id": "fe5f31a70d248dd2e3d92dc80e9934da7a1abda3a69c7b5e83d731d867c3b95b",
+    "source_commit": "f93ff22543bc07af9ec9508951691f796a03bd01"
   },
   "verdict": "NOT_TOP_TIER"
 }
