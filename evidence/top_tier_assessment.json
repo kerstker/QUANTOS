@@ -1085,6 +1085,7 @@
         "deploy/console.arm64.Dockerfile",
         "deploy/systemd/README.md",
         "deploy/systemd/quantos-binance-realtime-stream.service",
+        "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
         "deploy/systemd/quantos-l2@.service",
@@ -1589,9 +1590,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1787647756863,
-    "run_id": "93b6bc6e94add6fd1553dc65a7d4ac327367a23f4b4a8753231aeb2b35b78d57",
-    "source_commit": "91c00465cb87973bb5b6ee3fee80c743407761ce"
+    "generated_at": 1787651897140,
+    "run_id": "1cb87926f003a50af7bedb1c64551f66a72a95566826e905bcc0c632625c328d",
+    "source_commit": "083c1f21bf518376a0163ea82e78f518499f89f4"
   },
   "verdict": "NOT_TOP_TIER"
 }
