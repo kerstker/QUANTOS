@@ -36,6 +36,7 @@ ALLOWED_L2_MODULES = frozenset(
         "binance_realtime_features",
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",
+        "bybit_realtime_stream",
         "candidate_portfolio_evidence",
         "cftc_tff_forward_refresh",
         "crypto_factory_loop",

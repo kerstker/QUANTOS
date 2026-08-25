@@ -29,7 +29,9 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 _MODULE = re.compile(r"[a-z0-9_]+")
 _SAFE_POSIX_MOUNT = re.compile(r"/[A-Za-z0-9._/-]+")
 _RELEASE_TOKEN = "__QUANTOS_RELEASE_SHA__"
-_RESIDENT_MODULES = frozenset({"binance_realtime_stream"})
+_RESIDENT_MODULES = frozenset(
+    {"binance_realtime_stream", "bybit_realtime_stream"}
+)
 _WATCHDOG_MODULE = "l2_scheduler_watchdog"
 _ATTENTION_RELEASE_TOKEN = "__QUANTOS_ATTENTION_RELEASE_SHA__"
 _PROTECTED_SYSTEM_ROOTS = tuple(
@@ -304,6 +306,7 @@ def render_special_units(
     output.mkdir(parents=True, mode=0o700)
     names = (
         "quantos-binance-realtime-stream.service",
+        "quantos-bybit-realtime-stream.service",
         "quantos-l2-watchdog.service",
         "quantos-l2-watchdog.timer",
     )
@@ -325,7 +328,10 @@ def render_special_units(
             raise SystemdRenderError(
                 "special unit attention release binding is incomplete"
             )
-        if name == "quantos-binance-realtime-stream.service":
+        if name in {
+            "quantos-binance-realtime-stream.service",
+            "quantos-bybit-realtime-stream.service",
+        }:
             rendered = rendered.rstrip() + "\n\n[Install]\nWantedBy=multi-user.target\n"
         elif name == "quantos-l2-watchdog.timer":
             rendered = rendered.rstrip() + "\n\n[Install]\nWantedBy=timers.target\n"

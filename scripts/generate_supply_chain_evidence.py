@@ -84,6 +84,7 @@ _MANIFESTS = (
     "deploy/console.Dockerfile",
     "deploy/systemd/README.md",
     "deploy/systemd/quantos-binance-realtime-stream.service",
+    "deploy/systemd/quantos-bybit-realtime-stream.service",
     "deploy/systemd/quantos-l2-watchdog.service",
     "deploy/systemd/quantos-l2-watchdog.timer",
     "deploy/systemd/quantos-l2@.service",

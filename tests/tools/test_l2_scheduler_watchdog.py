@@ -325,6 +325,8 @@ def test_running_task_ignores_prior_overlap_result_until_current_instance_comple
                 "credentials": False,
                 "private_stream": False,
                 "broker_connectivity": False,
+                "order_submission": False,
+                "live_trading": False,
             },
         },
     )
@@ -375,6 +377,46 @@ def test_running_resident_stream_requires_fresh_semantic_health(tmp_path):
     assert result["verdict"] == "BREACH"
 
 
+def test_bybit_resident_stream_uses_its_own_fail_closed_health_receipt(tmp_path):
+    snapshot = _healthy_snapshot(tmp_path, "QUANTOS_bybit_realtime_stream")
+    running = TaskSnapshot(
+        name=snapshot.name,
+        state="Running",
+        last_run_ms=NOW_MS - 60_000,
+        last_result=0,
+        next_run_ms=None,
+        execute=snapshot.execute,
+        arguments=snapshot.arguments,
+        working_directory=snapshot.working_directory,
+    )
+    result = evaluate_schedule(
+        [running, _healthy_snapshot(tmp_path, "QUANTOS_scheduler_watchdog")],
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=False,
+        resident_health={
+            "QUANTOS_bybit_realtime_stream": {
+                "generated_at_ms": NOW_MS - 1_000,
+                "verdict": "PASS",
+                "streaming": True,
+                "safety": {
+                    "credentials": False,
+                    "private_stream": False,
+                    "broker_connectivity": False,
+                    "order_submission": False,
+                    "live_trading": False,
+                },
+            }
+        },
+    )
+    check = next(
+        row for row in result["checks"]
+        if row["task_name"] == "QUANTOS_bybit_realtime_stream"
+    )
+    assert check["status"] == "PASS"
+    assert check["code"] == "RUNNING_HEALTHY"
+
+
 def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
     systemic = EXPECTED_TASKS["QUANTOS_binance_systemic_risk"]
     rpi = EXPECTED_TASKS["QUANTOS_binance_rpi_depth"]
@@ -420,11 +462,23 @@ def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
     } == expected
 
 
-def test_resident_binance_stream_exit_is_stale_within_three_paper_cadences():
-    stream = EXPECTED_TASKS["QUANTOS_binance_realtime_stream"]
-
-    assert stream.module == "binance_realtime_stream"
-    assert stream.max_age_ms == 15 * 60_000
+def test_resident_stream_exits_are_stale_within_three_paper_cadences():
+    assert {
+        name: (EXPECTED_TASKS[name].module, EXPECTED_TASKS[name].max_age_ms)
+        for name in (
+            "QUANTOS_binance_realtime_stream",
+            "QUANTOS_bybit_realtime_stream",
+        )
+    } == {
+        "QUANTOS_binance_realtime_stream": (
+            "binance_realtime_stream",
+            15 * 60_000,
+        ),
+        "QUANTOS_bybit_realtime_stream": (
+            "bybit_realtime_stream",
+            15 * 60_000,
+        ),
+    }
 
 
 def test_lifecycle_and_formal_shadow_workers_are_pinned_in_watchdog_contract():
@@ -814,7 +868,11 @@ def _systemd_service_unit(module: str) -> str:
         unit_lines.append("RequiresMountsFor=/mnt/backup")
     service_lines = [
         "[Service]",
-        "Type=" + ("simple" if module == "binance_realtime_stream" else "oneshot"),
+        "Type=" + (
+            "simple"
+            if module in {"binance_realtime_stream", "bybit_realtime_stream"}
+            else "oneshot"
+        ),
         "User=quantos",
         "Group=quantos",
         "UMask=0077",
@@ -832,7 +890,7 @@ def _systemd_service_unit(module: str) -> str:
             "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
         ),
     ]
-    if module != "binance_realtime_stream":
+    if module not in {"binance_realtime_stream", "bybit_realtime_stream"}:
         service_lines.append("SuccessExitStatus=2")
     if module == "l2_backup":
         service_lines.extend(
@@ -846,7 +904,11 @@ def _systemd_service_unit(module: str) -> str:
             "WorkingDirectory=/srv/quantos/state",
             f"ExecStart={python} {launcher} {module} --release-commit {RELEASE_COMMIT}",
             f"TimeoutStartSec={timeout}",
-            "Restart=" + ("always" if module == "binance_realtime_stream" else "no"),
+            "Restart=" + (
+                "always"
+                if module in {"binance_realtime_stream", "bybit_realtime_stream"}
+                else "no"
+            ),
             "KillMode=control-group",
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
@@ -867,11 +929,11 @@ def _systemd_service_unit(module: str) -> str:
     )
     if module == "l2_backup":
         service_lines.append("ReadWritePaths=/mnt/backup")
-    if module == "binance_realtime_stream":
+    if module in {"binance_realtime_stream", "bybit_realtime_stream"}:
         service_lines.extend(("RestartSec=30s", "RuntimeMaxSec=23h55m", "TimeoutStopSec=90s"))
     install = (
         ["[Install]", "WantedBy=multi-user.target"]
-        if module == "binance_realtime_stream"
+        if module in {"binance_realtime_stream", "bybit_realtime_stream"}
         else []
     )
     return "\n".join((*unit_lines, *service_lines, *install, ""))
@@ -916,9 +978,13 @@ def _systemd_runner(
     timer_metadata: str | None = None,
     calls: list | None = None,
 ):
-    stream = module == "binance_realtime_stream"
+    stream = module in {"binance_realtime_stream", "bybit_realtime_stream"}
     service = (
-        "quantos-binance-realtime-stream.service"
+        (
+            "quantos-binance-realtime-stream.service"
+            if module == "binance_realtime_stream"
+            else "quantos-bybit-realtime-stream.service"
+        )
         if stream
         else f"quantos-l2@{module}.service"
     )
@@ -1018,11 +1084,16 @@ def test_systemd_collector_accepts_exact_backup_boundary() -> None:
     assert dict(snapshot.configured_environment)["QUANTOS_BACKUP_DEST"] == "/mnt/backup"
 
 
-def test_systemd_collector_accepts_exact_resident_stream() -> None:
-    snapshot = collect_systemd_units(
-        runner=_systemd_runner("binance_realtime_stream")
-    )[0]
-    assert snapshot.name == "QUANTOS_binance_realtime_stream"
+@pytest.mark.parametrize(
+    "module,task_name",
+    [
+        ("binance_realtime_stream", "QUANTOS_binance_realtime_stream"),
+        ("bybit_realtime_stream", "QUANTOS_bybit_realtime_stream"),
+    ],
+)
+def test_systemd_collector_accepts_exact_resident_stream(module, task_name) -> None:
+    snapshot = collect_systemd_units(runner=_systemd_runner(module))[0]
+    assert snapshot.name == task_name
     assert snapshot.state == "Running"
     assert snapshot.last_result == 0
     assert snapshot.scheduler_contract_ok is True
@@ -1421,6 +1492,8 @@ def test_watchdog_refreshes_clock_after_concurrent_resident_health_publication(
                 "credentials": False,
                 "private_stream": False,
                 "broker_connectivity": False,
+                "order_submission": False,
+                "live_trading": False,
             },
         },
         emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
@@ -1468,6 +1541,8 @@ def test_default_resident_health_reader_parses_strict_json_from_disk(tmp_path):
                     "credentials": False,
                     "private_stream": False,
                     "broker_connectivity": False,
+                    "order_submission": False,
+                    "live_trading": False,
                 },
             }
         ),

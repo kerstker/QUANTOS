@@ -220,6 +220,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_binance_realtime_stream": ExpectedTask(
         "binance_realtime_stream", 15 * 60_000
     ),
+    "QUANTOS_bybit_realtime_stream": ExpectedTask(
+        "bybit_realtime_stream", 15 * 60_000
+    ),
     "QUANTOS_paper_multivenue_sor": ExpectedTask(
         "paper_multivenue_sor", 15 * 60_000
     ),
@@ -492,7 +495,7 @@ def collect_windows_tasks(
 
 _SYSTEMD_UNIT = re.compile(
     r"^(?:quantos-l2@(?P<module>[a-z0-9_]+)\.(?P<kind>service|timer)|"
-    r"(?P<stream>quantos-binance-realtime-stream)\.service|"
+    r"(?P<stream>quantos-(?:binance|bybit)-realtime-stream)\.service|"
     r"(?P<watchdog>quantos-l2-watchdog)\.(?P<watchdog_kind>service|timer))$"
 )
 _SYSTEMD_TIMESTAMP = re.compile(r"^@(?P<seconds>[0-9]+)$")
@@ -530,6 +533,13 @@ _SYSTEMD_SAFE_ENVIRONMENT = frozenset(
         "QUANTOS_L2_DRY_RUN_ONLY=true",
     }
 )
+_RESIDENT_STREAM_MODULES = frozenset(
+    {"binance_realtime_stream", "bybit_realtime_stream"}
+)
+_RESIDENT_HEALTH_PATHS = {
+    "QUANTOS_binance_realtime_stream": "binance_realtime_stream_status.json",
+    "QUANTOS_bybit_realtime_stream": "bybit_realtime_stream_status.json",
+}
 
 
 def _systemd_timestamp_ms(value: str | None) -> int | None:
@@ -662,8 +672,8 @@ def _unit_directives_exact(
             return False, environment
         expected_writes.add(destination)
         expected_mounts.add(destination)
-    restart = "always" if module == "binance_realtime_stream" else "no"
-    runtime_max = "23h55m" if module == "binance_realtime_stream" else None
+    restart = "always" if module in _RESIDENT_STREAM_MODULES else "no"
+    runtime_max = "23h55m" if module in _RESIDENT_STREAM_MODULES else None
     required_keys = {
         "Unit.After",
         "Unit.Wants",
@@ -698,6 +708,7 @@ def _unit_directives_exact(
         required_keys.add("Service.PassEnvironment")
     ordinary_worker = module not in {
         "binance_realtime_stream",
+        "bybit_realtime_stream",
         "l2_scheduler_watchdog",
     }
     if ordinary_worker:
@@ -707,7 +718,7 @@ def _unit_directives_exact(
         required_keys.add("Unit.RequiresMountsFor")
     if expected_credentials:
         required_keys.add("Service.LoadCredential")
-    if module == "binance_realtime_stream":
+    if module in _RESIDENT_STREAM_MODULES:
         required_keys.update(
             {
                 "Service.RestartSec",
@@ -731,7 +742,7 @@ def _unit_directives_exact(
         and _one_directive(directives, "Unit.After") == "network-online.target"
         and _one_directive(directives, "Unit.Wants") == "network-online.target"
         and _one_directive(directives, "Service.Type")
-        == ("simple" if module == "binance_realtime_stream" else "oneshot")
+        == ("simple" if module in _RESIDENT_STREAM_MODULES else "oneshot")
         and (
             not ordinary_worker
             or _one_directive(directives, "Service.SuccessExitStatus") == "2"
@@ -753,7 +764,7 @@ def _unit_directives_exact(
         and _one_directive(directives, "Service.Restart") == restart
         and _one_directive(directives, "Service.KillMode") == "control-group"
         and (
-            module != "binance_realtime_stream"
+            module not in _RESIDENT_STREAM_MODULES
             or (
                 _one_directive(directives, "Service.RestartSec") == "30s"
                 and _one_directive(directives, "Service.TimeoutStopSec") == "90s"
@@ -872,7 +883,7 @@ def _expected_timeout_seconds(module: str) -> float | None:
         return None
     if module == "l2_scheduler_watchdog":
         return 5 * 60.0
-    if module == "binance_realtime_stream":
+    if module in _RESIDENT_STREAM_MODULES:
         return 5 * 60.0
     if module in CALENDARS:
         return _systemd_duration_seconds(CALENDARS[module][1])
@@ -967,7 +978,11 @@ def _systemd_snapshot(
     if match is None or match.group("kind") == "timer":
         raise SchedulerInspectionError("systemd unit name is outside the L2 allowlist")
     if match.group("stream"):
-        module = "binance_realtime_stream"
+        module = (
+            "binance_realtime_stream"
+            if match.group("stream") == "quantos-binance-realtime-stream"
+            else "bybit_realtime_stream"
+        )
     elif match.group("watchdog"):
         module = "l2_scheduler_watchdog"
     else:
@@ -1033,7 +1048,7 @@ def _systemd_snapshot(
         and _systemd_duration_seconds(timeout) == _expected_timeout_seconds(module)
         and properties["FragmentPath"] == f"/etc/systemd/system/{unit}"
         and properties["UnitFileState"]
-        == ("enabled" if module == "binance_realtime_stream" else "static")
+        == ("enabled" if module in _RESIDENT_STREAM_MODULES else "static")
         and properties["DropInPaths"] == ""
         and properties["NeedDaemonReload"] == "no"
     )
@@ -1480,22 +1495,33 @@ def _check_task(
             "code": "NEVER_RAN",
             "detail": "task has no successful scheduling history",
         }
-    if name == "QUANTOS_binance_realtime_stream" and snapshot.state == "Running":
+    if name in _RESIDENT_HEALTH_PATHS and snapshot.state == "Running":
+        selected_health = None
+        if isinstance(resident_health, dict):
+            task_health = resident_health.get(name)
+            if isinstance(task_health, dict):
+                selected_health = task_health
+            elif name == "QUANTOS_binance_realtime_stream":
+                # Backward-compatible direct Binance receipt used by callers
+                # and retained evidence generated before the second stream.
+                selected_health = resident_health
         generated_at_ms = (
-            resident_health.get("generated_at_ms")
-            if isinstance(resident_health, dict)
+            selected_health.get("generated_at_ms")
+            if isinstance(selected_health, dict)
             else None
         )
         healthy = bool(
             isinstance(generated_at_ms, int)
             and not isinstance(generated_at_ms, bool)
             and 0 <= now_ms - generated_at_ms <= 30_000
-            and resident_health.get("verdict") == "PASS"
-            and resident_health.get("streaming") is True
-            and isinstance(resident_health.get("safety"), dict)
-            and resident_health["safety"].get("credentials") is False
-            and resident_health["safety"].get("private_stream") is False
-            and resident_health["safety"].get("broker_connectivity") is False
+            and selected_health.get("verdict") == "PASS"
+            and selected_health.get("streaming") is True
+            and isinstance(selected_health.get("safety"), dict)
+            and selected_health["safety"].get("credentials") is False
+            and selected_health["safety"].get("private_stream") is False
+            and selected_health["safety"].get("broker_connectivity") is False
+            and selected_health["safety"].get("order_submission") is False
+            and selected_health["safety"].get("live_trading") is False
         )
         if not healthy:
             return {
@@ -1904,12 +1930,14 @@ def run_scheduler_watchdog(
         if resident_health_reader is None:
             def resident_health_reader(path: Path) -> dict:
                 return load_json_without_duplicate_keys(path.read_bytes())
-        try:
-            resident_health = resident_health_reader(
-                Path(repo_root) / "data" / "cache" / "binance_realtime_stream_status.json"
-            )
-        except Exception:
-            resident_health = None
+        resident_health: dict[str, dict] = {}
+        for task_name, filename in _RESIDENT_HEALTH_PATHS.items():
+            try:
+                resident_health[task_name] = resident_health_reader(
+                    Path(repo_root) / "data" / "cache" / filename
+                )
+            except Exception:
+                continue
         # The resident stream publishes concurrently with this oneshot.  Read
         # its receipt first and only then capture the evaluation clock; using
         # the invocation clock can misclassify a valid receipt published during

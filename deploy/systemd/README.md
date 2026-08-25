@@ -45,8 +45,8 @@ boundary, not by itself proof of a separate physical disk or off-host copy;
 operators must retain the independent disaster-recovery copy required by the
 deployment policy.
 
-The resident Binance stream is public-market-data only. It is isolated in its
-own service so restart and process-tree shutdown semantics do not weaken the
-short-lived worker template. No checked-in unit has broker credential access,
-Mainnet authority, order submission authority, or permission to write inside
-the immutable release.
+The resident Binance and Bybit streams are public-market-data only. They are
+isolated in their own services so restart and process-tree shutdown semantics
+do not weaken the short-lived worker template. No checked-in unit has broker
+credential access, Mainnet authority, order submission authority, or
+permission to write inside the immutable release.

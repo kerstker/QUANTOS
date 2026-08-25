@@ -2,7 +2,7 @@
 
 Date: 2026-08-25  
 Scope: L2 research and dry-run only  
-Status: implemented first slice; DGX acceptance evidence pending
+Status: first slice deployed; second-venue forward authority implemented
 
 ## Decision
 
@@ -102,6 +102,42 @@ formula search:
    with the same three clocks, followed by forward withdrawal/recovery
    materialization. No order-flow Alpha is reopened before that surface and its
    blind forward window mature.
+
+## Second development slice: Bybit public linear events
+
+The second venue is Bybit linear because its USDT perpetual symbols overlap the
+existing Binance USDM pilot and therefore make venue-lead, urgent-flow and
+capital-constraint questions directly observable. The collector uses only the
+official keyless `wss://stream.bybit.com/v5/public/linear` endpoint and fixed
+public topics:
+
+- `orderbook.200.{symbol}` snapshots and deltas;
+- `publicTrade.{symbol}` source trade batches;
+- `allLiquidation.{symbol}` complete liquidation messages;
+- `tickers.{symbol}` mark/index/OI/funding state.
+
+The initial pilot is BTCUSDT, ETHUSDT and SOLUSDT. Level 200 is deliberately
+chosen over level 50: the official documented cadence is 100ms rather than
+20ms, reducing forward storage pressure while retaining meaningful depth.
+Every source message is persisted with its source event clock, local receive
+clock and local processing clock in `PublicMarketEventStore`; the store is
+batch-atomic, append-only, idempotent for exact replays and hash chained.
+
+Orderbook snapshots reset local state. Deltas apply insert/update/delete rules;
+delta-before-snapshot, non-increasing sequence, crossed/empty reconstruction,
+future-dated source clocks and unallowlisted topics fail closed. Public trade
+batches retain every source trade ID, taker side, price, quantity, block flag,
+RPI flag and cross sequence. Liquidations retain the liquidated position side,
+bankruptcy price and quantity. No SDK, private topic, credential, account or
+order surface is present.
+
+The capability registry may therefore mark multi-venue trade/L2 observability
+as `FORWARD_ONLY` once the artifact exists. It still does not grant historical
+readiness. A zero-size L2 update means a level was filled or cancelled; it does
+not reveal the exact cause. Consequently exact cancel rate remains missing and
+must not be inferred from deletion count alone. The next materialization is a
+PIT book-recovery/venue-lead panel after enough blind forward events accrue;
+only then may a new mechanism hypothesis be pre-registered.
 
 The existing liquidation cascade/exhaustion definitions and prior order-flow
 definitions remain frozen failures. The ICT sweep contract remains a separate

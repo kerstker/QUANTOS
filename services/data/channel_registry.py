@@ -222,6 +222,30 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "and RPI data is diagnostic-only for paper fills.",
     ),
     DataChannelSpec(
+        "bybit_linear_websocket_events", "Bybit", "bybit_linear",
+        "bybit_linear_events", "continuous->1s batch", "100ms/event",
+        (
+            "event_time_ms", "received_at_ms", "processed_at_ms",
+            "orderbook_l2_snapshot", "orderbook_l2_delta",
+            "public_trade_prints", "taker_side", "rpi_trade_flag",
+            "all_liquidations", "mark_price", "index_price",
+            "open_interest", "funding_rate", "book_delete_count",
+        ),
+        "data/cache/bybit_linear_events.db", "REAL_SNAPSHOT",
+        (
+            "liquidity_microstructure", "cross_exchange", "event_regime",
+            "crowd_reversal", "funding_basis",
+        ),
+        1, "public_websocket",
+        "Official keyless V5 public linear stream for the fixed forward pilot "
+        "universe. Raw orderbook messages, trade batches, all-liquidation "
+        "messages and ticker deltas retain exchange-event, local-receive and "
+        "local-process clocks in one append-only hash chain. The channel begins "
+        "at actual collection time and has no historical or formal-forward "
+        "credit. A zero-size level proves deletion, not whether the cause was a "
+        "cancel or execution, so exact cancel rate remains unclaimed.",
+    ),
+    DataChannelSpec(
         "binance_usdm_systemic_risk", "Binance", "binance_usdm",
         "binance_systemic_risk", "30m", "30m/1h/snapshot",
         (

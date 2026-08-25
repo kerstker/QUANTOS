@@ -12,6 +12,14 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
     stream = spec_by_channel("binance_usdm_websocket_stream")
     assert stream.endpoint_class == "public_websocket"
     assert "liquidation_orders" in stream.fields
+    bybit_stream = spec_by_channel("bybit_linear_websocket_events")
+    assert bybit_stream.availability == "REAL_SNAPSHOT"
+    assert bybit_stream.endpoint_class == "public_websocket"
+    assert {
+        "event_time_ms", "received_at_ms", "processed_at_ms",
+        "orderbook_l2_delta", "public_trade_prints", "all_liquidations",
+    } <= set(bybit_stream.fields)
+    assert "exact cancel rate remains unclaimed" in bybit_stream.notes
     bybit_positioning = spec_by_channel("bybit_linear_positioning")
     assert bybit_positioning.availability == "REAL_HISTORY"
     assert bybit_positioning.endpoint_class == "public_rest"

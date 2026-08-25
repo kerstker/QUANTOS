@@ -28,6 +28,10 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
              os.path.join(_ROOT, "tools", "binance_rpi_depth.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_stream.py"),
+             # Bybit V5 public linear WebSocket. Keyless event/L2 forward
+             # authority with three local/source clocks; no private topic,
+             # account, credential, SDK or order surface.
+             os.path.join(_ROOT, "tools", "bybit_realtime_stream.py"),
              # Binance Data Vision USD-M bookDepth archives.  The collector
              # verifies the official checksum, stores fetch-time knowledge,
              # and the wrapper only roots outputs under L2 state.
@@ -160,6 +164,10 @@ _EXTRA_ALLOWED_BY_FILE = {
     "binance_realtime_stream.py": {
         "argparse", "asyncio", "collections", "math", "quantos", "typing",
         "websockets",
+    },
+    "bybit_realtime_stream.py": {
+        "argparse", "asyncio", "collections", "decimal", "hashlib",
+        "pathlib", "shutil", "typing", "websockets",
     },
     "binance_book_depth_fetch.py": {
         "argparse", "collections", "hashlib", "pathlib", "typing"

@@ -11,6 +11,7 @@ RENDERER = ROOT / "tools" / "render_systemd_l2_units.py"
 SERVICE = SYSTEMD / "quantos-l2@.service"
 TIMER = SYSTEMD / "quantos-l2@.timer"
 STREAM = SYSTEMD / "quantos-binance-realtime-stream.service"
+BYBIT_STREAM = SYSTEMD / "quantos-bybit-realtime-stream.service"
 WATCHDOG_SERVICE = SYSTEMD / "quantos-l2-watchdog.service"
 WATCHDOG_TIMER = SYSTEMD / "quantos-l2-watchdog.timer"
 PROXY_PASS_ENVIRONMENT = (
@@ -28,6 +29,7 @@ def test_input_templates_are_not_installable_or_enabled_by_repository_action() -
         SERVICE,
         TIMER,
         STREAM,
+        BYBIT_STREAM,
         WATCHDOG_SERVICE,
         WATCHDOG_TIMER,
         SYSTEMD / "README.md",
@@ -39,6 +41,7 @@ def test_input_templates_are_not_installable_or_enabled_by_repository_action() -
     assert "WantedBy=multi-user.target" not in _text(SERVICE)
     assert "[Install]" not in _text(TIMER)
     assert "[Install]" not in _text(STREAM)
+    assert "[Install]" not in _text(BYBIT_STREAM)
     assert "[Install]" not in _text(WATCHDOG_TIMER)
 
 
@@ -59,7 +62,7 @@ def test_worker_service_binds_immutable_release_and_mutable_state() -> None:
 
 
 def test_units_pin_l2_safety_and_systemd_hardening() -> None:
-    for path in (SERVICE, STREAM, WATCHDOG_SERVICE):
+    for path in (SERVICE, STREAM, BYBIT_STREAM, WATCHDOG_SERVICE):
         text = _text(path)
         for directive in (
             "User=quantos",
@@ -85,7 +88,7 @@ def test_units_pin_l2_safety_and_systemd_hardening() -> None:
 
 
 def test_public_proxy_transport_is_name_only_and_exact() -> None:
-    for path in (SERVICE, STREAM):
+    for path in (SERVICE, STREAM, BYBIT_STREAM):
         text = _text(path)
         assert text.count(PROXY_PASS_ENVIRONMENT) == 1
         for name in (
@@ -105,12 +108,16 @@ def test_public_proxy_transport_is_name_only_and_exact() -> None:
 
 
 def test_resident_stream_is_isolated_and_restarts_without_order_authority() -> None:
-    text = _text(STREAM)
-    assert "binance_realtime_stream --release-commit __QUANTOS_RELEASE_SHA__" in text
-    assert "Restart=always" in text
-    assert "RuntimeMaxSec=23h55m" in text
-    assert "KillMode=control-group" in text
-    assert "ALLOW_ORDER_SUBMISSION=true" not in text
+    for path, module in (
+        (STREAM, "binance_realtime_stream"),
+        (BYBIT_STREAM, "bybit_realtime_stream"),
+    ):
+        text = _text(path)
+        assert f"{module} --release-commit __QUANTOS_RELEASE_SHA__" in text
+        assert "Restart=always" in text
+        assert "RuntimeMaxSec=23h55m" in text
+        assert "KillMode=control-group" in text
+        assert "ALLOW_ORDER_SUBMISSION=true" not in text
 
 
 def test_timer_template_is_explicitly_placeholder_only() -> None:
@@ -130,6 +137,7 @@ def test_supply_chain_manifest_binds_linux_systemd_surface() -> None:
         "deploy/systemd/quantos-l2@.service",
         "deploy/systemd/quantos-l2@.timer",
         "deploy/systemd/quantos-binance-realtime-stream.service",
+        "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
         "tools/render_systemd_l2_units.py",
@@ -361,6 +369,7 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
 
     assert {path.name for path in paths} == {
         "quantos-binance-realtime-stream.service",
+        "quantos-bybit-realtime-stream.service",
         "quantos-l2-watchdog.service",
         "quantos-l2-watchdog.timer",
     }
@@ -374,6 +383,12 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
         output / "quantos-binance-realtime-stream.service"
     )
     assert _text(output / "quantos-binance-realtime-stream.service").count(
+        PROXY_PASS_ENVIRONMENT
+    ) == 1
+    assert "WantedBy=multi-user.target" in _text(
+        output / "quantos-bybit-realtime-stream.service"
+    )
+    assert _text(output / "quantos-bybit-realtime-stream.service").count(
         PROXY_PASS_ENVIRONMENT
     ) == 1
     assert "PassEnvironment=" not in _text(
