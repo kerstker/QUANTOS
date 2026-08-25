@@ -1,6 +1,6 @@
 # Crypto attention forward channel
 
-Status: IMPLEMENTED, VALIDATED, AND COLLECTING FORWARD VINTAGES ON DGX
+Status: IMPLEMENTED, VALIDATED, COLLECTING, AND FORWARD PROTOCOL FROZEN
 
 ## Purpose
 
@@ -91,3 +91,36 @@ the bitemporal database SHA-256 is
 `fe07cd4e74d4d4d13056bec55327f11929219823dfcb320a3c79596e07abe725`.
 The methodology audit therefore remains honestly
 `FORWARD_PREREG_REQUIRED`, with `alpha_eligible_count=0`.
+
+## Frozen forward experiment
+
+`services/research/attention_momentum.py` contains the deterministic pure
+signal primitives. `tools/attention_momentum_preregistration.py` contains the
+append-once experiment contract and reads no attention values, prices, labels,
+returns, registry, lifecycle, broker, credential, or order surface.
+
+The frozen primary signal is a 7-day cross-sectional price-momentum rank
+conditioned by the positive part of a 28-event-day Wikimedia attention
+innovation rank. It trades the first complete Binance USDM daily close strictly
+after the attention vintage's actual knowledge time and exits at the next
+complete daily close. The 13-asset universe, top/bottom 25% construction,
+$1 million diagnostic AUM, 5% participation cap, costs, double-cost pressure,
+and four-candidate family are fixed with no parameter scan. The three controls
+are price-only momentum, a prior-only deterministic timestamp placebo, and
+attention-only.
+
+Only the earliest complete 13-instrument vintage per event day whose knowledge
+time is strictly after the DGX preregistration timestamp is admissible. Missing
+attention days are not forward-filled or dropped: the frozen book is cash for
+that outcome day and the outage is counted. Missing execution or exit prices
+fail closed as data-integrity rejections.
+
+Return statistics remain forbidden until both conditions hold: UTC
+`2027-08-31T00:00:00Z` has passed and at least 252 eligible independent
+one-day outcomes exist after the 28-day attention warm-up. Before then, only
+data-health counts and hashes may be inspected. The future one-shot evaluator
+must register exactly four candidates in the global trial ledger before any
+outcome access and must apply DSR, PBO, cost, drawdown, participation,
+incremental-vs-price-only, timestamp-placebo, crowding/capacity, regime, and
+tail-risk bars. Even a terminal pass can authorize only a human-reviewed L2
+paper admission; it grants no Testnet or live authority.
