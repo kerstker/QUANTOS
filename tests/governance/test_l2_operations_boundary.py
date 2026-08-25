@@ -70,6 +70,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "binance_book_depth_archive_authority",
             False,
         ),
+        "data/cache/cross_venue_liquidation_health.json": (
+            "cross_venue_liquidation_health",
+            False,
+        ),
         "data/cache/artifact_admission.db": (
             "artifact_admission_authority",
             False,
@@ -117,8 +121,18 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "vendor_delivery_history_authority",
             False,
         ),
+        "evidence/cross_venue_liquidation_preregistration_764e5b5.json": (
+            "cross_venue_liquidation_preregistration",
+            False,
+        ),
     }
-    assert all(path.startswith("data/cache/") for path in actual)
+    assert all(
+        path.startswith("data/cache/") or path.startswith("evidence/")
+        for path in actual
+    )
+    assert {
+        path for path in actual if path.startswith("evidence/")
+    } == {"evidence/cross_venue_liquidation_preregistration_764e5b5.json"}
     assert all(not path.startswith("key/") for path in actual)
     assert all(
         "secret" not in path.lower() and "credential" not in path.lower()

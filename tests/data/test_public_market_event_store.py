@@ -122,3 +122,74 @@ def test_append_only_triggers_and_tamper_detection(tmp_path):
 def test_missing_store_fails_closed(tmp_path):
     with pytest.raises(PublicMarketEventStoreError, match="unreadable"):
         PublicMarketEventStore(str(tmp_path / "missing.db"))
+
+
+def test_channel_reader_is_causal_filtered_and_payload_verified(tmp_path):
+    store = PublicMarketEventStore(str(tmp_path / "events.db"), create=True)
+    first = _event(
+        event_id="a" * 64,
+        event_time_ms=1_000,
+        received_at_ms=1_100,
+        processed_at_ms=1_200,
+    )
+    first["channel"] = "all_liquidation"
+    second = _event(
+        event_id="b" * 64,
+        event_time_ms=2_000,
+        received_at_ms=2_100,
+        processed_at_ms=2_200,
+    )
+    second["channel"] = "all_liquidation"
+    second["instrument_id"] = "ETHUSDT"
+    store.append_events([second, first])
+
+    assert [
+        row["event_id"]
+        for row in store.events_by_channel_after(
+            "all_liquidation",
+            after_processed_at_ms=1_200,
+        )
+    ] == ["b" * 64]
+    assert [
+        row["instrument_id"]
+        for row in store.events_by_channel_after(
+            "all_liquidation",
+            after_processed_at_ms=0,
+            instruments=("BTCUSDT",),
+        )
+    ] == ["BTCUSDT"]
+
+    store._conn.execute("DROP TRIGGER public_market_events_no_update")
+    store._conn.execute(
+        "UPDATE public_market_events SET payload_json='{}' WHERE event_id=?",
+        ("a" * 64,),
+    )
+    store._conn.commit()
+    with pytest.raises(PublicMarketEventStoreError, match="payload hash"):
+        store.events_by_channel_after(
+            "all_liquidation", after_processed_at_ms=0
+        )
+    store.close()
+
+
+@pytest.mark.parametrize(
+    "channel,after,instruments",
+    [
+        ("BAD", 0, None),
+        ("all_liquidation", True, None),
+        ("all_liquidation", -1, None),
+        ("all_liquidation", 0, ()),
+        ("all_liquidation", 0, ("btc/usdt",)),
+    ],
+)
+def test_channel_reader_rejects_unreviewed_query_shapes(
+    tmp_path, channel, after, instruments
+):
+    store = PublicMarketEventStore(str(tmp_path / "events.db"), create=True)
+    with pytest.raises(ValueError):
+        store.events_by_channel_after(
+            channel,
+            after_processed_at_ms=after,
+            instruments=instruments,
+        )
+    store.close()

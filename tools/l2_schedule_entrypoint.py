@@ -40,6 +40,7 @@ ALLOWED_L2_MODULES = frozenset(
         "candidate_portfolio_evidence",
         "cftc_tff_forward_refresh",
         "crypto_factory_loop",
+        "cross_venue_liquidation_health",
         "defillama_tvl_forward_refresh",
         "defillama_stablecoin_forward_refresh",
         "wikimedia_attention_forward_refresh",

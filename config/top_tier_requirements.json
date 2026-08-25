@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  8,
+                                                                                   "version":  9,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -574,6 +574,11 @@
                                                                                                        "relative_path":  "data/cache/binance_book_depth_archive.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "binance_book_depth_archive_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/cross_venue_liquidation_health.json",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "cross_venue_liquidation_health"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/data_quality_admission.db",
@@ -669,6 +674,11 @@
                                                                                                        "relative_path":  "data/cache/vendor_delivery_history.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "vendor_delivery_history_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "cross_venue_liquidation_preregistration"
                                                                                                    }
                                                                                                ]
                                                                                },
@@ -708,7 +718,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  8,
+                                                                                   "version":  9,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -734,6 +744,11 @@
                                                                                                        "relative_path":  "data/cache/binance_book_depth_archive.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "binance_book_depth_archive_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/cross_venue_liquidation_health.json",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "cross_venue_liquidation_health"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/data_quality_admission.db",
@@ -829,6 +844,11 @@
                                                                                                        "relative_path":  "data/cache/vendor_delivery_history.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "vendor_delivery_history_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "cross_venue_liquidation_preregistration"
                                                                                                    }
                                                                                                ]
                                                                                },

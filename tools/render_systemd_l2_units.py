@@ -97,6 +97,10 @@ CALENDARS: dict[str, tuple[str, str]] = {
 INTERVALS: dict[str, tuple[str, str]] = {
     "alpha_lifecycle_cockpit": ("*-*-* *:01/5:00 Asia/Shanghai", "6h"),
     "alpha_production_workflow": ("*-*-* *:03/5:00 Asia/Shanghai", "6h"),
+    "cross_venue_liquidation_health": (
+        "*-*-* *:17/30:00 Asia/Shanghai",
+        "10m",
+    ),
     "domain_event_ops": ("*-*-* *:01/15:00 Asia/Shanghai", "5m"),
     "external_heartbeat": ("*-*-* *:03/5:00 Asia/Shanghai", "6h"),
     "paper_realtime": ("*-*-* *:04/5:00 Asia/Shanghai", "6h"),

@@ -709,6 +709,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "candidate_portfolio_evidence",
             "cftc_tff_forward_refresh",
             "crypto_factory_loop",
+            "cross_venue_liquidation_health",
             "defillama_tvl_forward_refresh",
             "defillama_stablecoin_forward_refresh",
             "wikimedia_attention_forward_refresh",

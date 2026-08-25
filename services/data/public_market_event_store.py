@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS public_market_events (
 );
 CREATE INDEX IF NOT EXISTS idx_public_market_event_time
 ON public_market_events(venue, instrument_id, channel, event_time_ms);
+CREATE INDEX IF NOT EXISTS idx_public_market_channel_processed
+ON public_market_events(channel, processed_at_ms, seq);
 CREATE TRIGGER IF NOT EXISTS public_market_events_no_update
 BEFORE UPDATE ON public_market_events
 BEGIN SELECT RAISE(ABORT, 'public_market_events is append-only'); END;
@@ -287,6 +289,27 @@ class PublicMarketEventStore:
             "head_hash": _GENESIS if row is None else str(row["row_hash"]),
         }
 
+    @staticmethod
+    def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except json.JSONDecodeError as exc:
+            raise PublicMarketEventStoreError("event payload is invalid JSON") from exc
+        if not isinstance(payload, dict) or _sha256(payload) != row["payload_sha256"]:
+            raise PublicMarketEventStoreError("event payload hash mismatch")
+        return {
+            "seq": int(row["seq"]),
+            "event_id": str(row["event_id"]),
+            "venue": str(row["venue"]),
+            "channel": str(row["channel"]),
+            "instrument_id": str(row["instrument_id"]),
+            "event_time_ms": int(row["event_time_ms"]),
+            "received_at_ms": int(row["received_at_ms"]),
+            "processed_at_ms": int(row["processed_at_ms"]),
+            "source_sequence": str(row["source_sequence"]),
+            "payload": payload,
+        }
+
     def recent_events(self, limit: int = 100) -> list[dict[str, Any]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("limit must be a positive integer")
@@ -296,26 +319,55 @@ class PublicMarketEventStore:
                 (limit,),
             )
         )
-        output = []
-        for row in reversed(rows):
-            payload = json.loads(str(row["payload_json"]))
-            if not isinstance(payload, dict) or _sha256(payload) != row["payload_sha256"]:
-                raise PublicMarketEventStoreError("event payload hash mismatch")
-            output.append(
-                {
-                    "seq": int(row["seq"]),
-                    "event_id": str(row["event_id"]),
-                    "venue": str(row["venue"]),
-                    "channel": str(row["channel"]),
-                    "instrument_id": str(row["instrument_id"]),
-                    "event_time_ms": int(row["event_time_ms"]),
-                    "received_at_ms": int(row["received_at_ms"]),
-                    "processed_at_ms": int(row["processed_at_ms"]),
-                    "source_sequence": str(row["source_sequence"]),
-                    "payload": payload,
-                }
-            )
-        return output
+        return [self._decode_row(row) for row in reversed(rows)]
+
+    def events_by_channel_after(
+        self,
+        channel: str,
+        *,
+        after_processed_at_ms: int,
+        instruments: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read a channel in causal processing order after an exclusive boundary."""
+
+        if not isinstance(channel, str) or _IDENTIFIER.fullmatch(channel) is None:
+            raise ValueError("channel is invalid")
+        if (
+            isinstance(after_processed_at_ms, bool)
+            or not isinstance(after_processed_at_ms, int)
+            or after_processed_at_ms < 0
+        ):
+            raise ValueError("after_processed_at_ms must be a non-negative integer")
+        params: list[object] = [channel, after_processed_at_ms]
+        query = (
+            "SELECT * FROM public_market_events "
+            "WHERE channel=? AND processed_at_ms>?"
+        )
+        if instruments is not None:
+            if isinstance(instruments, (str, bytes)) or not isinstance(
+                instruments, Sequence
+            ):
+                raise ValueError("instruments must be a sequence")
+            normalized = tuple(instruments)
+            if (
+                not normalized
+                or len(set(normalized)) != len(normalized)
+                or any(
+                    not isinstance(value, str)
+                    or _INSTRUMENT.fullmatch(value) is None
+                    for value in normalized
+                )
+            ):
+                raise ValueError("instruments are invalid")
+            placeholders = ",".join("?" for _value in normalized)
+            query += f" AND instrument_id IN ({placeholders})"
+            params.extend(normalized)
+        query += " ORDER BY processed_at_ms,seq"
+        try:
+            rows = self._conn.execute(query, params)
+            return [self._decode_row(row) for row in rows]
+        except sqlite3.DatabaseError as exc:
+            raise PublicMarketEventStoreError("event store is unreadable") from exc
 
     def verify_chain_from(
         self,

@@ -140,6 +140,9 @@ def test_supply_chain_manifest_binds_linux_systemd_surface() -> None:
         "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
+        "services/data/public_market_event_store.py",
+        "services/research/liquidation_mechanism.py",
+        "tools/cross_venue_liquidation_health.py",
         "tools/render_systemd_l2_units.py",
         "tests/governance/test_systemd_l2_boundary.py",
     } <= set(_MANIFESTS)
@@ -356,6 +359,23 @@ def test_watchdog_has_dedicated_hardened_unit_and_timer() -> None:
     assert "CapabilityBoundingSet=" in service
     assert "OnUnitInactiveSec=15m" in timer
     assert "Persistent=true" in timer
+
+
+def test_renderer_pins_blind_liquidation_health_cadence(tmp_path: Path) -> None:
+    from tools.render_systemd_l2_units import render_units
+
+    output = tmp_path / "liquidation-health"
+    render_units(
+        output_root=output,
+        release_commit="a" * 40,
+        modules=("cross_venue_liquidation_health",),
+    )
+
+    timer = _text(output / "quantos-l2@cross_venue_liquidation_health.timer")
+    service = _text(output / "quantos-l2@cross_venue_liquidation_health.service")
+    assert "OnCalendar=*-*-* *:17/30:00 Asia/Shanghai" in timer
+    assert "cross_venue_liquidation_health" in service
+    assert "ALLOW_ORDER_SUBMISSION=false" in service
 
 
 def test_renderer_binds_resident_stream_and_watchdog_without_installing(

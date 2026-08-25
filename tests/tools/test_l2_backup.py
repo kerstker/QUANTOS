@@ -738,6 +738,25 @@ def test_binance_book_depth_archive_is_an_optional_backup_source():
     assert source.required is False
 
 
+def test_liquidation_forward_contract_and_health_are_optional_backup_sources():
+    expected = {
+        "data/cache/cross_venue_liquidation_health.json": (
+            "cross_venue_liquidation_health",
+            False,
+        ),
+        "evidence/cross_venue_liquidation_preregistration_764e5b5.json": (
+            "cross_venue_liquidation_preregistration",
+            False,
+        ),
+    }
+
+    assert {
+        source.relative_path: (source.role, source.required)
+        for source in DEFAULT_SOURCES
+        if source.relative_path in expected
+    } == expected
+
+
 @pytest.mark.parametrize(
     ("relative_path", "role"),
     [

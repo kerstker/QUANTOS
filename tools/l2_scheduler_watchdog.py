@@ -143,6 +143,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_candidate_portfolio_evidence": ExpectedTask(
         "candidate_portfolio_evidence", 2 * _DAY_MS
     ),
+    "QUANTOS_cross_venue_liquidation_health": ExpectedTask(
+        "cross_venue_liquidation_health", 2 * _HOUR_MS
+    ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_binance_book_depth_forward_refresh": ExpectedTask(

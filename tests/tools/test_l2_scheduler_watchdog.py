@@ -481,6 +481,14 @@ def test_resident_stream_exits_are_stale_within_three_paper_cadences():
     }
 
 
+def test_liquidation_health_worker_is_pinned_to_two_hour_freshness() -> None:
+    health = EXPECTED_TASKS["QUANTOS_cross_venue_liquidation_health"]
+
+    assert health.module == "cross_venue_liquidation_health"
+    assert health.max_age_ms == 2 * 3_600_000
+    assert health.partial_results == frozenset()
+
+
 def test_lifecycle_and_formal_shadow_workers_are_pinned_in_watchdog_contract():
     lifecycle = EXPECTED_TASKS["QUANTOS_alpha_lifecycle_cockpit"]
     formal_shadow = EXPECTED_TASKS["QUANTOS_realtime_alpha_formal_shadow"]
