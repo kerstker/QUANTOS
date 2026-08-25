@@ -49,7 +49,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 10
+SOURCE_CONTRACT_VERSION = 11
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
@@ -153,6 +153,11 @@ DEFAULT_SOURCES = (
     BackupSource(
         "data/cache/bybit_market_resilience.db",
         "outcome_free_market_resilience_authority",
+        False,
+    ),
+    BackupSource(
+        "data/cache/okx_borrow_vintages.db",
+        "okx_public_borrow_forward_vintages",
         False,
     ),
     BackupSource(
@@ -478,7 +483,9 @@ def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
                 _online_sqlite_backup(source_connection, snapshot_connection)
     except sqlite3.Error as exc:
         raise L2BackupError(f"failed to snapshot SQLite source: {source.name}") from exc
-    _sqlite_integrity(snapshot)
+    # The encrypted round-trip compares this snapshot's manifest digest and
+    # performs a full SQLite integrity check on the restored bytes. Repeating
+    # the same multi-GB integrity scan here adds no independent evidence.
     return snapshot, "SQLITE_ONLINE_BACKUP", source.stat().st_mtime_ns
 
 
@@ -573,6 +580,9 @@ def restore_l2_batch(
             max_rpo_ms=max_rpo_ms,
             now_ms=now_ms,
         )
+        drill_hashes = drill.get("sha256")
+        if not isinstance(drill_hashes, dict):
+            raise L2BackupError("restore drill did not return artifact digests")
         manifest_path = flat / "manifest.json"
         manifest = _load_manifest(manifest_path)
         source_contract_digest = _verify_manifest_source_contract(manifest, expected_contract)
@@ -625,7 +635,11 @@ def restore_l2_batch(
             if not source.is_file():
                 raise L2BackupError(f"restored artifact is missing: {artifact}")
             source_size = source.stat(follow_symlinks=False).st_size
-            if entry.get("size") != source_size or entry.get("sha256") != _sha256_file(source):
+            # The generic restore drill already hashed every restored artifact
+            # once. Reuse that digest instead of rereading each multi-GB file a
+            # third time; the manifest value remains the independent expected
+            # digest recorded before encryption.
+            if entry.get("size") != source_size or entry.get("sha256") != drill_hashes.get(artifact):
                 raise L2BackupError(f"restored artifact digest mismatch: {artifact}")
             output = tree.joinpath(*relative.parts)
             output.parent.mkdir(parents=True, exist_ok=True)

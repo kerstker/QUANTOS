@@ -48,6 +48,39 @@ def test_encrypted_restore_drill_roundtrip_writes_integrity_evidence(tmp_path):
     json.dumps(result)
 
 
+def test_encrypted_restore_hashes_each_restored_file_once(tmp_path, monkeypatch):
+    import tools.restore_drill as restore_drill
+
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"authority-bytes")
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    encrypt_file(
+        str(source),
+        str(batch / "source.bin.enc"),
+        "restore-drill-passphrase",
+    )
+    calls = []
+    real_hash = restore_drill._sha256_file
+
+    def counted(path, **kwargs):
+        calls.append(path)
+        return real_hash(path, **kwargs)
+
+    monkeypatch.setattr(restore_drill, "_sha256_file", counted)
+    result = restore_drill.run_restore_drill(
+        batch_dir=str(batch),
+        restore_dir=str(tmp_path / "restore"),
+        passphrase="restore-drill-passphrase",
+        rto_ms=30_000,
+        max_rpo_ms=86_400_000,
+    )
+
+    assert result["integrity_verified"] is True
+    assert len(calls) == 1
+    assert calls[0].endswith("source.bin")
+
+
 def test_restore_drill_wrong_passphrase_fails_closed(tmp_path):
     from tools.live_backup import BackupDecryptionError
     from tools.restore_drill import run_restore_drill

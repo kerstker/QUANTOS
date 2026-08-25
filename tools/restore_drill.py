@@ -114,9 +114,14 @@ def run_restore_drill(
                 decrypt_file(source_path, output_path, passphrase or "")
             else:
                 shutil.copyfile(source_path, output_path)
-            expected_hashes[restored_name] = _sha256_file(output_path)
-            if _sha256_file(output_path) != expected_hashes[restored_name]:
+            restored_sha256 = _sha256_file(output_path)
+            # Authenticated decryption already rejects any encrypted-byte or
+            # plaintext tampering. Plaintext opt-in has no AEAD, so compare
+            # source and destination once. Never hash the restored multi-GB
+            # file twice merely to compare a value with itself.
+            if mode == "PLAINTEXT" and _sha256_file(source_path) != restored_sha256:
                 raise RestoreDrillError(f"integrity mismatch after restore: {restored_name}")
+            expected_hashes[restored_name] = restored_sha256
 
         elapsed_ms = int(round((time.perf_counter() - started) * 1000))
         if elapsed_ms > rto_ms:

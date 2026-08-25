@@ -110,14 +110,21 @@ def _source_authority_paths(
     fx_db: str | Path,
     maintenance: str | Path,
 ) -> dict[str, str | Path]:
-    """Enumerate every mutable authority consumed by the production builder."""
+    """Enumerate byte authorities that must remain stable during the build.
+
+    The experiment registry is deliberately absent.  The builder reads only a
+    small, hash-chained set of evaluation records from that multi-gigabyte
+    append-only authority.  Those exact verified records are bound separately
+    by :func:`_verified_evaluation_evidence_view`; hashing the unrelated whole
+    registry twice made every concurrent append invalidate an otherwise exact
+    proof and extended the race window by minutes.
+    """
     return {
         "crypto_funding_db": Path("data/cache/crypto_funding.db"),
         "crypto_funding_rates": Path("data/cache/crypto_funding_rates.json"),
         "crypto_funding_snapshot": Path("data/cache/crypto_funding_snapshot.json"),
         "crypto_oi_metrics": Path("data/cache/crypto_oi_metrics.json"),
         "dataset_evidence": dataset_evidence,
-        "experiment_registry": Path("data/cache/experiment_registry.db"),
         "forward_evaluations": forward_evaluations,
         "forward_ledger": forward_db,
         "forward_status": forward_status,
@@ -126,6 +133,57 @@ def _source_authority_paths(
         "maintenance": maintenance,
         "paper_evaluations": evaluations,
     }
+
+
+def _verified_evaluation_evidence_view(
+    document: Mapping[str, Any],
+) -> dict[str, dict[str, object]]:
+    """Return the exact registry records consumed by this bundle.
+
+    ``_verified_evaluation_rows`` and ``_verified_forward_evaluation_rows``
+    admit a record only after ``ExperimentRegistry.verify_evaluation`` passes.
+    The run id and immutable content hash are copied into the resulting alpha
+    metadata, so the release proof can bind the consumed subset without making
+    unrelated registry appends part of the transaction.
+    """
+    rows = document.get("alphas")
+    if not isinstance(rows, Mapping):
+        return {}
+    result: dict[str, dict[str, object]] = {}
+    for alpha_id, raw_row in sorted(rows.items(), key=lambda item: str(item[0])):
+        if not isinstance(raw_row, Mapping):
+            continue
+        inputs = raw_row.get("inputs")
+        inputs = inputs if isinstance(inputs, Mapping) else {}
+        metadata_rows = inputs.get("alpha_metadata")
+        if not isinstance(metadata_rows, Sequence) or isinstance(
+            metadata_rows, (str, bytes, bytearray)
+        ):
+            continue
+        for metadata in metadata_rows:
+            if not isinstance(metadata, Mapping):
+                continue
+            run_id = metadata.get("evaluation_run_id")
+            content_hash = metadata.get("evaluation_content_hash")
+            if run_id is None and content_hash is None:
+                continue
+            result[str(alpha_id)] = {
+                "run_id": run_id,
+                "content_hash": content_hash,
+            }
+            break
+    return result
+
+
+def _verified_evaluation_evidence_complete(
+    view: Mapping[str, Mapping[str, object]],
+) -> bool:
+    return all(
+        isinstance(record.get("run_id"), str)
+        and bool(str(record["run_id"]).strip())
+        and _is_sha256(record.get("content_hash"))
+        for record in view.values()
+    )
 
 
 def _source_view_complete(view: Mapping[str, Any]) -> bool:
@@ -179,11 +237,13 @@ def _build_release_run_attestation(
     release_commit = os.environ.get("QUANTOS_RELEASE_COMMIT")
     if isinstance(release_commit, str):
         release_commit = release_commit.strip().lower()
+    evaluation_evidence = _verified_evaluation_evidence_view(document)
     input_hashes = {
         "candidate_universe": stable_hash(list(candidate_ids)),
         "paper_research_risk_contract": stable_hash(dict(contract)),
         "risk_input_bundle_view": stable_hash(_risk_input_bundle_view(document)),
         "source_authorities_before": stable_hash(dict(source_before)),
+        "verified_evaluation_records": stable_hash(evaluation_evidence),
     }
     output_hashes = {
         "paper_research_risk_bundle_file": _sha256_file(output_path),
@@ -219,6 +279,7 @@ def _build_release_run_attestation(
         and set(rows) == set(candidate_ids)
         and source_before == source_after
         and _source_view_complete(source_before)
+        and _verified_evaluation_evidence_complete(evaluation_evidence)
         and all(_is_sha256(value) for value in input_hashes.values())
         and all(_is_sha256(value) for value in output_hashes.values())
         and safety == expected_safety
@@ -699,6 +760,7 @@ def _metadata_from_evaluation(
         "deployed_alpha_id": deployed_alpha_id,
         "research_alpha_id": evaluation_row.get("research_alpha_id"),
         "evaluation_run_id": evaluation_row.get("run_id"),
+        "evaluation_content_hash": evaluation_row.get("content_hash"),
         "evaluation_verdict": evaluation.get("verdict"),
         "maintenance_state": maintenance_state,
         "evidence_timing": (

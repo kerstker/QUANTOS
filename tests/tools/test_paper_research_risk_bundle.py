@@ -452,6 +452,7 @@ def test_main_attests_published_pending_bundle_and_exact_source_view(
         "paper_research_risk_contract",
         "risk_input_bundle_view",
         "source_authorities_before",
+        "verified_evaluation_records",
     }
     assert set(attestation["output_hashes"]) == {
         "paper_research_risk_bundle_file",
@@ -535,3 +536,63 @@ def test_main_marks_attestation_incomplete_when_source_changes_mid_run(
     )
     assert output.read_text(encoding="utf-8") == "previous-attested-bytes\n"
     assert not tuple(tmp_path.glob(".risk.json.staged-*"))
+
+
+def test_source_authorities_exclude_unrelated_experiment_registry_bytes(tmp_path) -> None:
+    paths = bundle._source_authority_paths(
+        forward_db=tmp_path / "forward.db",
+        dataset_evidence=tmp_path / "dataset.json",
+        evaluations=tmp_path / "evaluations.json",
+        forward_evaluations=tmp_path / "forward-evaluations.json",
+        forward_status=tmp_path / "forward-status.json",
+        fx_db=tmp_path / "fx.db",
+        maintenance=tmp_path / "maintenance.json",
+    )
+
+    assert "experiment_registry" not in paths
+
+
+def test_verified_evaluation_view_binds_only_consumed_registry_records() -> None:
+    document = {
+        "alphas": {
+            "evaluated": {
+                "inputs": {
+                    "alpha_metadata": [
+                        {
+                            "evaluation_run_id": "run-1",
+                            "evaluation_content_hash": "a" * 64,
+                        }
+                    ]
+                }
+            },
+            "pending": {"inputs": {}, "status": "PENDING"},
+        }
+    }
+
+    view = bundle._verified_evaluation_evidence_view(document)
+
+    assert view == {
+        "evaluated": {"run_id": "run-1", "content_hash": "a" * 64}
+    }
+    assert bundle._verified_evaluation_evidence_complete(view) is True
+
+
+def test_verified_evaluation_view_rejects_malformed_consumed_hash() -> None:
+    document = {
+        "alphas": {
+            "evaluated": {
+                "inputs": {
+                    "alpha_metadata": [
+                        {
+                            "evaluation_run_id": "run-1",
+                            "evaluation_content_hash": "not-a-hash",
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    view = bundle._verified_evaluation_evidence_view(document)
+
+    assert bundle._verified_evaluation_evidence_complete(view) is False
