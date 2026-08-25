@@ -529,6 +529,80 @@ def test_schedule_evaluation_rejects_task_pinned_to_different_release(tmp_path):
     assert check["code"] == "ACTION_DRIFT"
 
 
+def test_schedule_evaluation_accepts_explicit_frozen_task_release_pin(tmp_path):
+    state_root = tmp_path / "state"
+    releases_root = tmp_path / "releases"
+    code_root = releases_root / RELEASE_COMMIT
+    frozen_commit = "b" * 40
+    frozen_root = releases_root / frozen_commit
+    state_root.mkdir()
+    code_root.mkdir(parents=True)
+    frozen_root.mkdir()
+    snapshots = [
+        _healthy_snapshot(state_root, name, code_root=code_root)
+        for name in EXPECTED_TASKS
+    ]
+    attention_name = "QUANTOS_wikimedia_attention_forward_refresh"
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "execute": f"/opt/quantos/venvs/{frozen_commit}/bin/python",
+                "arguments": (
+                    f'"{frozen_root / "tools" / "l2_schedule_entrypoint.py"}" '
+                    "wikimedia_attention_forward_refresh --release-commit "
+                    f"{frozen_commit}"
+                ),
+            }
+        )
+        if item.name == attention_name
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=state_root,
+        code_root=code_root,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+        task_release_pins={attention_name: frozen_commit},
+    )
+
+    check = next(row for row in result["checks"] if row["task_name"] == attention_name)
+    assert result["verdict"] == "PASS"
+    assert check["status"] == "PASS"
+
+
+def test_schedule_evaluation_rejects_task_that_deviates_from_frozen_pin(tmp_path):
+    state_root = tmp_path / "state"
+    code_root = tmp_path / "releases" / RELEASE_COMMIT
+    state_root.mkdir()
+    code_root.mkdir(parents=True)
+    attention_name = "QUANTOS_wikimedia_attention_forward_refresh"
+    snapshots = [
+        _healthy_snapshot(state_root, name, code_root=code_root)
+        for name in EXPECTED_TASKS
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=state_root,
+        code_root=code_root,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+        task_release_pins={attention_name: "b" * 40},
+    )
+
+    check = next(row for row in result["checks"] if row["task_name"] == attention_name)
+    assert result["verdict"] == "BREACH"
+    assert check["code"] == "ACTION_DRIFT"
+
+
 def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp_path):
     snapshots = _healthy_tasks(
         tmp_path, include_backup=True, include_external=True
@@ -1442,6 +1516,64 @@ def test_default_collector_follows_platform_provider(monkeypatch, tmp_path):
     assert observed == ["systemd"]
     assert result["verdict"] == "BREACH"
     assert result["checks"][0]["task_name"] == "QUANTOS_factory_loop"
+
+
+def test_systemd_watchdog_applies_frozen_attention_release_from_unit_environment(
+    monkeypatch, tmp_path
+):
+    state_root = tmp_path / "state"
+    code_root = tmp_path / "releases" / RELEASE_COMMIT
+    frozen_commit = "b" * 40
+    frozen_root = code_root.parent / frozen_commit
+    state_root.mkdir()
+    code_root.mkdir(parents=True)
+    frozen_root.mkdir()
+    conditional = {
+        "QUANTOS_backup",
+        "QUANTOS_external_heartbeat",
+        "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
+    }
+    snapshots = [
+        _healthy_snapshot(state_root, name, code_root=code_root)
+        for name in EXPECTED_TASKS
+        if name not in conditional
+    ]
+    attention_name = "QUANTOS_wikimedia_attention_forward_refresh"
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "execute": f"/opt/quantos/venvs/{frozen_commit}/bin/python",
+                "arguments": (
+                    f'"{frozen_root / "tools" / "l2_schedule_entrypoint.py"}" '
+                    "wikimedia_attention_forward_refresh --release-commit "
+                    f"{frozen_commit}"
+                ),
+            }
+        )
+        if item.name == attention_name
+        else item
+        for item in snapshots
+    ]
+    monkeypatch.setenv("QUANTOS_SCHEDULER_PROVIDER", "systemd")
+    monkeypatch.setenv(watchdog._ATTENTION_RELEASE_ENVIRONMENT, frozen_commit)
+
+    result = run_scheduler_watchdog(
+        repo_root=state_root,
+        code_root=code_root,
+        status_path=state_root / "status.json",
+        now_ms=NOW_MS,
+        backup_ready=False,
+        heartbeat_ready=False,
+        event_seal_ready=False,
+        collector=lambda: snapshots,
+        emit_fn=lambda *_args, **_kwargs: {"n": 0, "pushed": False},
+    )
+
+    check = next(row for row in result["checks"] if row["task_name"] == attention_name)
+    assert result["verdict"] == "PARTIAL"
+    assert check["status"] == "PASS"
 
 
 def test_systemd_provider_labels_collector_failure(monkeypatch, tmp_path):

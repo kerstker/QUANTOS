@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
 import urllib.parse
 
 from services.governance.l2_restore_history import (
@@ -51,6 +51,7 @@ SYSTEMD_PROXY_ENVIRONMENT_NAMES = (
     "all_proxy",
 )
 _SYSTEMD_PROXY_PASS_ENVIRONMENT = " ".join(SYSTEMD_PROXY_ENVIRONMENT_NAMES)
+_ATTENTION_RELEASE_ENVIRONMENT = "QUANTOS_WIKIMEDIA_ATTENTION_RELEASE_COMMIT"
 # These services are outside the scheduled-worker namespace.  Recognizing an
 # exact name here only keeps the scheduler collector scoped to scheduler
 # targets; it does not make a health or safety claim about the support service.
@@ -793,6 +794,7 @@ def _systemd_environment_is_safe(
     }
     if module == "l2_scheduler_watchdog":
         allowed.add("QUANTOS_SCHEDULER_PROVIDER")
+        allowed.add(_ATTENTION_RELEASE_ENVIRONMENT)
     elif module == "l2_backup":
         allowed.add("QUANTOS_BACKUP_DEST")
     elif module in {"domain_event_seal", "artifact_admission_seal"}:
@@ -810,7 +812,14 @@ def _systemd_environment_is_safe(
         and observed_values.get("QUANTOS_STATE_ROOT") == "/srv/quantos/state"
         and (
             module != "l2_scheduler_watchdog"
-            or observed_values.get("QUANTOS_SCHEDULER_PROVIDER") == "systemd"
+            or (
+                observed_values.get("QUANTOS_SCHEDULER_PROVIDER") == "systemd"
+                and re.fullmatch(
+                    r"[0-9a-f]{40}",
+                    observed_values.get(_ATTENTION_RELEASE_ENVIRONMENT, ""),
+                )
+                is not None
+            )
         )
     )
     if module == "external_heartbeat":
@@ -1621,6 +1630,7 @@ def evaluate_schedule(
     heartbeat_ready: bool = False,
     event_seal_ready: bool = False,
     resident_health: dict | None = None,
+    task_release_pins: Mapping[str, str] | None = None,
 ) -> dict:
     if now_ms < 0:
         raise ValueError("now_ms must be non-negative")
@@ -1635,6 +1645,21 @@ def evaluate_schedule(
     expected_release_commit = _action_release_commit(
         by_name.get("QUANTOS_scheduler_watchdog")
     )
+    release_pins = dict(task_release_pins or {})
+    if any(
+        name not in EXPECTED_TASKS
+        or name == "QUANTOS_scheduler_watchdog"
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+        for name, commit in release_pins.items()
+    ):
+        raise ValueError("task release pins must name known non-watchdog tasks and exact commits")
+    if release_pins and (
+        expected_release_commit is None
+        or release_root.name != expected_release_commit
+    ):
+        raise ValueError(
+            "task release pins require a watchdog code root named by its commit"
+        )
 
     checks: list[dict] = []
     conditional_readiness = {
@@ -1678,14 +1703,20 @@ def evaluate_schedule(
                     }
                 )
             continue
+        task_release_commit = release_pins.get(name, expected_release_commit)
+        task_code_root = (
+            release_root.parent / task_release_commit
+            if name in release_pins and task_release_commit is not None
+            else release_root
+        )
         check = _check_task(
             snapshot,
             name=name,
             spec=spec,
             now_ms=now_ms,
             repo_root=root,
-            code_root=release_root,
-            expected_release_commit=expected_release_commit,
+            code_root=task_code_root,
+            expected_release_commit=task_release_commit,
             self_check=name == "QUANTOS_scheduler_watchdog",
             resident_health=resident_health,
         )
@@ -1885,6 +1916,15 @@ def run_scheduler_watchdog(
         # scheduler inspection as being from the future.
         if now_ms is None:
             observed_at_ms = int(time.time() * 1000)
+        task_release_pins: dict[str, str] = {}
+        if provider == "systemd":
+            attention_release_commit = os.environ.get(
+                _ATTENTION_RELEASE_ENVIRONMENT, ""
+            ).strip()
+            if attention_release_commit:
+                task_release_pins[
+                    "QUANTOS_wikimedia_attention_forward_refresh"
+                ] = attention_release_commit
         result = evaluate_schedule(
             snapshots,
             now_ms=observed_at_ms,
@@ -1895,6 +1935,7 @@ def run_scheduler_watchdog(
             heartbeat_ready=heartbeat_ready,
             event_seal_ready=event_seal_ready,
             resident_health=resident_health,
+            task_release_pins=task_release_pins,
         )
     except Exception as exc:
         if backup_ready is None:

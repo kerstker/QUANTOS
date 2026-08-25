@@ -340,6 +340,10 @@ def test_watchdog_has_dedicated_hardened_unit_and_timer() -> None:
     assert "l2_scheduler_watchdog --release-commit __QUANTOS_RELEASE_SHA__" in service
     assert "WorkingDirectory=/srv/quantos/state" in service
     assert "Environment=QUANTOS_SCHEDULER_PROVIDER=systemd" in service
+    assert (
+        "Environment=QUANTOS_WIKIMEDIA_ATTENTION_RELEASE_COMMIT="
+        "__QUANTOS_ATTENTION_RELEASE_SHA__"
+    ) in service
     assert "NoNewPrivileges=true" in service
     assert "CapabilityBoundingSet=" in service
     assert "OnUnitInactiveSec=15m" in timer
@@ -362,6 +366,7 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
     }
     corpus = "\n".join(_text(path) for path in paths)
     assert "__QUANTOS_RELEASE_SHA__" not in corpus
+    assert "__QUANTOS_ATTENTION_RELEASE_SHA__" not in corpus
     assert release in corpus
     assert "systemctl enable" not in corpus
     assert "systemctl start" not in corpus
@@ -377,3 +382,25 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
     assert "WantedBy=timers.target" in _text(
         output / "quantos-l2-watchdog.timer"
     )
+
+
+def test_renderer_can_pin_frozen_attention_collector_independently(
+    tmp_path: Path,
+) -> None:
+    from tools.render_systemd_l2_units import render_special_units
+
+    release = "b" * 40
+    attention_release = "c" * 40
+    output = tmp_path / "special"
+    render_special_units(
+        output_root=output,
+        release_commit=release,
+        attention_release_commit=attention_release,
+    )
+
+    service = _text(output / "quantos-l2-watchdog.service")
+    assert f"Environment=QUANTOS_RELEASE_COMMIT={release}" in service
+    assert (
+        "Environment=QUANTOS_WIKIMEDIA_ATTENTION_RELEASE_COMMIT="
+        f"{attention_release}"
+    ) in service

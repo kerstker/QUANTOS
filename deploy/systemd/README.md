@@ -13,7 +13,13 @@ directory. A governed renderer must bind an exact clean commit, an allowlisted
 module, its explicit cadence and timeout, then run offline unit verification.
 Rendering does not install, enable, or start anything.
 The renderer has separate modes for allowlisted one-shot workers and for the
-resident stream/watchdog trio; both modes bind the same immutable commit token.
+resident stream/watchdog trio. The normal case binds the same immutable commit
+token throughout. A forward collector whose source was frozen before outcomes
+may be supplied to the special-unit renderer as an explicit second commit pin;
+the watchdog then requires that collector's executable, launcher, arguments,
+and release root to agree with the frozen pin while the rest of the fleet stays
+bound to the watchdog release. This narrow exception preserves prospective
+evidence and does not permit an unpinned or caller-selected runtime action.
 Rendered worker calendars pin `Asia/Shanghai` explicitly, preserving the
 reviewed Windows wall-clock schedule even if the host timezone later drifts.
 

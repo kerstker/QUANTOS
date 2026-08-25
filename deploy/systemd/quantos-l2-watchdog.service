@@ -18,6 +18,7 @@ Environment=QUANTOS_L2_DRY_RUN_ONLY=true
 Environment=QUANTOS_SCHEDULER_PROVIDER=systemd
 Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
 Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_WIKIMEDIA_ATTENTION_RELEASE_COMMIT=__QUANTOS_ATTENTION_RELEASE_SHA__
 Environment=QUANTOS_STATE_ROOT=/srv/quantos/state
 WorkingDirectory=/srv/quantos/state
 ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python /opt/quantos/releases/__QUANTOS_RELEASE_SHA__/tools/l2_schedule_entrypoint.py l2_scheduler_watchdog --release-commit __QUANTOS_RELEASE_SHA__

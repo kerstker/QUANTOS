@@ -31,6 +31,7 @@ _SAFE_POSIX_MOUNT = re.compile(r"/[A-Za-z0-9._/-]+")
 _RELEASE_TOKEN = "__QUANTOS_RELEASE_SHA__"
 _RESIDENT_MODULES = frozenset({"binance_realtime_stream"})
 _WATCHDOG_MODULE = "l2_scheduler_watchdog"
+_ATTENTION_RELEASE_TOKEN = "__QUANTOS_ATTENTION_RELEASE_SHA__"
 _PROTECTED_SYSTEM_ROOTS = tuple(
     PurePosixPath(path)
     for path in (
@@ -283,12 +284,20 @@ def render_units(
 
 
 def render_special_units(
-    *, output_root: str | Path, release_commit: str
+    *,
+    output_root: str | Path,
+    release_commit: str,
+    attention_release_commit: str | None = None,
 ) -> tuple[Path, ...]:
     """Bind the resident stream and watchdog without installing either unit."""
 
     if _COMMIT.fullmatch(release_commit) is None:
         raise SystemdRenderError("release commit must be 40 lowercase hex characters")
+    attention_commit = attention_release_commit or release_commit
+    if _COMMIT.fullmatch(attention_commit) is None:
+        raise SystemdRenderError(
+            "attention release commit must be 40 lowercase hex characters"
+        )
     output = Path(output_root)
     if output.exists():
         raise SystemdRenderError("output directory must not already exist")
@@ -304,8 +313,18 @@ def render_special_units(
         if content.count(_RELEASE_TOKEN) == 0:
             raise SystemdRenderError("special unit is missing the release token")
         rendered = content.replace(_RELEASE_TOKEN, release_commit)
+        if name == "quantos-l2-watchdog.service":
+            if rendered.count(_ATTENTION_RELEASE_TOKEN) != 1:
+                raise SystemdRenderError(
+                    "watchdog unit is missing the attention release token"
+                )
+            rendered = rendered.replace(_ATTENTION_RELEASE_TOKEN, attention_commit)
         if _RELEASE_TOKEN in rendered:
             raise SystemdRenderError("special unit release binding is incomplete")
+        if _ATTENTION_RELEASE_TOKEN in rendered:
+            raise SystemdRenderError(
+                "special unit attention release binding is incomplete"
+            )
         if name == "quantos-binance-realtime-stream.service":
             rendered = rendered.rstrip() + "\n\n[Install]\nWantedBy=multi-user.target\n"
         elif name == "quantos-l2-watchdog.timer":
@@ -324,6 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backup-mount")
     parser.add_argument("--event-seal-mount")
     parser.add_argument("--heartbeat-url")
+    parser.add_argument("--attention-release-commit")
     parser.add_argument("--special-units", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -335,8 +355,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             paths = render_special_units(
                 output_root=args.output,
                 release_commit=args.release_commit,
+                attention_release_commit=args.attention_release_commit,
             )
         else:
+            if args.attention_release_commit:
+                raise SystemdRenderError(
+                    "attention release commit requires special-unit rendering"
+                )
             if not args.module:
                 raise SystemdRenderError("at least one worker module is required")
             paths = render_units(
