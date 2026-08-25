@@ -1052,6 +1052,11 @@
         },
         {
           "line": 35,
+          "module": "services.alpha.executable_value",
+          "path": "services/research/portfolio_evidence.py"
+        },
+        {
+          "line": 41,
           "module": "services.alpha.family_testing",
           "path": "services/research/portfolio_evidence.py"
         },
@@ -1360,7 +1365,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "8ecb4231813aff10b1b8367c979054025431652adab6f00f740f6fa7b55bf289",
+  "graph_sha256": "e68187cd63c1425e9bb9510dec62998bc54192e781f278b4987e023baa26382a",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1398,7 +1403,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 482,
+  "source_file_count": 484,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
