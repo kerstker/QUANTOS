@@ -1,9 +1,9 @@
 {
   "checks_manifest_sha256": "466ffda0d17c1ef11ac286aab7a9f25af69befeb74c42b08bbf71b02dd956f87",
-  "commit": "08a5175f51b896b9c4ff5d8e7f20eb1683dc7a99",
+  "commit": "296b6c43f11d3a736d56ac68afc380ab0544afa1",
   "derived_refresh_manifest_sha256": "b1d387eaecd873e53185ad6a137f0cbc000c5335b1be5ea12f842e67273f7c71",
-  "duration_ms": 922726,
-  "generated_at_ms": 1787633579260,
+  "duration_ms": 922978,
+  "generated_at_ms": 1787635549932,
   "overall_status": "PASS",
   "phase13_manifest_sha256": "d9021ccc49353e4cc8481ee6f804127f23798ccae8c29a715175e8cf14420ed5",
   "readiness": "L2_DRY_RUN_ONLY",
@@ -32,7 +32,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 84,
+      "duration_ms": 86,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -45,7 +45,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 105,
+      "duration_ms": 108,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -84,7 +84,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 330,
+      "duration_ms": 338,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -97,7 +97,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 1110,
+      "duration_ms": 1111,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -109,7 +109,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\tools\\provision_artifact_admission_authority.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 184,
+      "duration_ms": 188,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -136,7 +136,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 499,
+      "duration_ms": 498,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -150,7 +150,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 5143,
+      "duration_ms": 5140,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -163,7 +163,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 67,
+      "duration_ms": 73,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -175,7 +175,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 417,
+      "duration_ms": 412,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -187,7 +187,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 3062,
+      "duration_ms": 3089,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -199,7 +199,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_supply_chain_evidence.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 1256,
+      "duration_ms": 1245,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -212,7 +212,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 1450,
+      "duration_ms": 1447,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -224,7 +224,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\assess_top_tier.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 11555,
+      "duration_ms": 11584,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -237,7 +237,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 11645,
+      "duration_ms": 11581,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -273,7 +273,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 700864,
+      "duration_ms": 701967,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -290,7 +290,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 109449,
+      "duration_ms": 108750,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -303,7 +303,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 2234,
+      "duration_ms": 2277,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -316,7 +316,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 3482,
+      "duration_ms": 3335,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -331,7 +331,7 @@
         "--no-file-parallelism"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 24283,
+      "duration_ms": 24205,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -344,7 +344,7 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 4030,
+      "duration_ms": 3971,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -358,7 +358,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 3488,
+      "duration_ms": 3517,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -373,7 +373,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 3538,
+      "duration_ms": 3521,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -388,7 +388,7 @@
         "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\tests\\governance\\test_727_final_audit.py"
       ],
       "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 33613,
+      "duration_ms": 33704,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -426,7 +426,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1787632656533,
+  "started_at_ms": 1787634626953,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -438,8 +438,8 @@
   "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
   "validation": {
     "current": true,
-    "generated_at": 1787633579260,
-    "run_id": "f0754393103be1062af88b9f39d94a31fd04ce852fbc8f92408ec420cece06f2",
-    "source_commit": "08a5175f51b896b9c4ff5d8e7f20eb1683dc7a99"
+    "generated_at": 1787635549932,
+    "run_id": "cdb5911fc480b3456be6db83a9040b224e61dff1e5d3cb094e52a79a0efe4af7",
+    "source_commit": "296b6c43f11d3a736d56ac68afc380ab0544afa1"
   }
 }
