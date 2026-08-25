@@ -2,7 +2,7 @@
 
 Date: 2026-08-25  
 Scope: L2 research and dry-run only  
-Status: first slice deployed; second-venue forward authority implemented
+Status: second-venue authority deployed; first mechanism preregistration implemented
 
 ## Decision
 
@@ -142,6 +142,46 @@ only then may a new mechanism hypothesis be pre-registered.
 The existing liquidation cascade/exhaustion definitions and prior order-flow
 definitions remain frozen failures. The ICT sweep contract remains a separate
 pre-registered forward observation and cannot be tuned from interim returns.
+
+## Third development slice: forced-liquidation recovery contract
+
+The first experiment consuming both venue authorities is not a formula sweep.
+`tools/cross_venue_liquidation_preregistration.py` freezes one economic
+mechanism: forcibly liquidated Bybit accounts can cross a temporarily depleted
+book faster than fragmented Binance/Bybit capital can restore convergence.
+The independent prediction unit is one instrument-side liquidation burst plus
+a 30-minute instrument lockout.
+
+The primary requires all of the following using only data processed before the
+decision: a same-side liquidation burst, same-side taker confirmation,
+liquidation notional material relative to the pre-event 20bps book, causal book
+recovery, and at least a 2bps Bybit pressure overshoot relative to synchronous
+Binance quotes. Entry occurs only after a two-second quiet period plus 250ms
+latency; the holding horizon is fixed at 60 seconds. Buy-position liquidation
+maps to forced sell pressure and Sell-position liquidation maps to forced buy
+pressure, matching the source field's explicit liquidated-position semantics.
+
+Exactly five candidates are frozen together:
+
+1. cross-venue liquidation reversion (primary);
+2. the continuation sign control;
+3. reversion without the Binance-resilience condition;
+4. a matched urgent-taker-flow event with no nearby liquidation;
+5. a six-hour-shifted clock placebo with no liquidation.
+
+No threshold, sign, horizon, venue filter, or control may change after outcome
+access. Unblinding requires at least 90 days, 60 eligible event days, 500
+non-overlapping episodes, and 75 episodes per instrument. Interim monitoring is
+limited to clocks, chain integrity, coverage, event-day counts, and missing
+data; returns, Sharpe, labels, or candidate comparisons are forbidden.
+
+The terminal decision is not Sharpe-only. It requires full evaluator evidence,
+`executable_value.v1` PASS, positive incremental net return against the best
+eligible existing L2 paper book, double-cost survival, correlation no greater
+than 0.60, execution confidence of at least 0.80, at least USD 1 million of
+capacity, tail/crowding/regime evidence, and superiority to all four controls.
+A missing versioned fee schedule blocks PASS rather than becoming zero cost.
+Even a terminal PASS grants only human-reviewed L2 paper admission.
 
 ## Alpha portfolio policy
 

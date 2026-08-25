@@ -230,3 +230,25 @@ def test_ict_sweep_claim_is_bound_to_forward_only_observable_translation() -> No
         "services/research/ict_liquidity_sweep.py",
         "tools/ict_liquidity_sweep_preregistration.py",
     )
+
+
+def test_cross_venue_liquidation_method_names_payer_and_forward_authorities() -> None:
+    method = next(
+        item for item in ALPHA_METHODS
+        if item.method_id == "cross_venue_liquidation_recovery"
+    )
+
+    assert method.portability == "DIRECT_CRYPTO"
+    assert method.system_disposition == "FORWARD_EXPERIMENT_GAP"
+    assert method.required_channel_ids == (
+        "binance_usdm_websocket_stream",
+        "bybit_linear_websocket_events",
+    )
+    assert method.payer_ids == (
+        EconomicPayer.FORCED_LIQUIDATOR,
+        EconomicPayer.CAPITAL_CONSTRAINED_CROSS_VENUE,
+    )
+    assert "30-minute" in method.independent_bet_unit
+    assert method.system_modules == (
+        "tools/cross_venue_liquidation_preregistration.py",
+    )

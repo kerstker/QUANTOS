@@ -49,3 +49,23 @@ def test_audit_surfaces_missing_institutional_inputs_without_profit_claims() -> 
     assert rows["borrow_survivorship"]["readiness"] == "MISSING"
     assert "BORROW_RATE" in rows["borrow_survivorship"]["missing_capabilities"]
     assert report["alpha_eligible_count"] == 0
+
+
+def test_liquidation_mechanism_requires_both_forward_venue_authorities() -> None:
+    report = build_methodology_audit(
+        availability={
+            "binance_usdm_websocket_stream": "REAL_RECENT",
+            "bybit_linear_websocket_events": "REAL_SNAPSHOT",
+        },
+        generated_at_ms=1234,
+    )
+    rows = {item["method_id"]: item for item in report["ranked_methods"]}
+    method = rows["cross_venue_liquidation_recovery"]
+
+    assert method["readiness"] == "FORWARD_PREREG_REQUIRED"
+    assert method["missing_channels"] == ()
+    assert method["payer_ids"] == [
+        "FORCED_LIQUIDATOR",
+        "CAPITAL_CONSTRAINED_CROSS_VENUE",
+    ]
+    assert report["alpha_eligible_count"] == 0
