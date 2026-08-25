@@ -58,8 +58,13 @@ artifact, and dry-run reproducibility hash. Realtime execution paper binds one
 transactionally frozen Signal Shadow view, parsed feature/contract status, pre/post
 execution-ledger authorities, any consumed routing snapshot, and its report.
 The research-risk producer binds the candidate universe and fixed risk contract,
-requires all source authorities (including SQLite WAL bytes) to remain identical
-across the computation, and binds the exact per-candidate input view plus output.
+requires every file authority it consumes as bytes (including SQLite WAL bytes)
+to remain identical across the computation, and binds the exact per-candidate
+input view plus output. Experiment evaluations are a narrower authority: each
+consumed record must first pass the experiment registry's native hash-chain
+verification, then its exact run id and immutable content hash are bound into the
+release proof. Unrelated bytes and concurrent appends in the multi-gigabyte
+registry are deliberately outside that transaction.
 It must publish through a unique same-directory staging file. The producer computes
 the source-after view and worker attestation against that staging file and may call
 atomic `os.replace` only when `attestation.complete` is exactly `true`. An incomplete,
