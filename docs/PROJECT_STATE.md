@@ -1,5 +1,36 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 机制优先 Alpha 第一切片部署收口：** 研究入口不再允许只报公式与
+> Sharpe；12 类方法现在必须在搜索前声明持续付钱者、持续性假设和独立下注单位，缺一
+> 即拒绝。新增 `executable_value.v1` 以双倍成本后的增量净利润、与现有组合正交性、
+> 成交可信度和容量作为正项，以换手和尾部损失作为惩罚；缺成本/容量/尾部/来源证据
+> 一律 `INCOMPLETE`，评分只分配研究注意力，不授予 lifecycle、Testnet 或交易权限。
+> 同时建立 8 个正交数据面能力审计，并把 Binance public USDM WebSocket 从事实上的
+> 双时钟升级为 event/receive/process 三时钟；book/depth/RPI/mark/kline、成交窗口和
+> 清算窗口都保留接收时钟，新写入行由 store fail-closed 校验，旧历史仍可读。
+>
+> canonical gate 在 source commit `91c00465cb87973bb5b6ee3fee80c743407761ce`
+> 上为 27/27 PASS、0 failed（core 6648 passed；live/tools 2846 passed；frontend
+> 199 tests + typecheck/lint/build；Phase 13 为 24 passed）；证据绑定后的不可变 ARM64
+> release `7f40dbd0aaad107195878db983e7b8945459690e` 已部署 DGX，聚焦 ARM64 套件
+> 137 passed。DGX 实际审计 artifact
+> `evidence/mechanism_alpha_audit_7f40dbd.json` SHA-256 为
+> `fb87b018a82f223212ec80e7a4fe6b0f78ae68f0edace2a9c681d9200cc6081b`；8 个数据面
+> 只有 funding/basis 为 `HISTORICAL_READY`，5 个 `PARTIAL`，positioning/liquidation
+> 为 `FORWARD_ONLY`，borrow/survivorship 为 `MISSING`，正式 Alpha eligible 仍为 0。
+> 真实流尾行已证明 `event_time_ms <= received_at_ms <= processed_at_ms ==
+> observed_at_ms`，成交窗口亦含首尾 event/receive 时钟；stream 于 17:23:07 CST
+> 以 PID 3218170 在新 release 上运行，14/14 complete、双公共连接与追加链通过，
+> 凭证/私有流/broker/下单/live 全为 false。
+>
+> 38 个普通 worker 与 resident stream/watchdog 已换到新 release；79 个渲染单元经
+> `systemd-analyze verify` 且归一化差异为 0。冻结的 Wikimedia Attention 仍固定在
+> `af41c762f82d14cd6ccebf00ec9408df21a2ea5f`，service/timer SHA-256 逐位保持
+> `6f4a00e7...` / `6f65417e...`。新 watchdog 为 31 PASS / 9 PARTIAL / 1 BREACH /
+> 3 UNAVAILABLE：唯一 BREACH 仍是重启后的备份恢复历史洁净窗未成熟；外部心跳和
+> 两个外部 seal 仍未配置。下一切片不是继续堆公式，而是补第二交易场所的事件级逐笔/
+> L2 前向权威，再研究跨场所资金约束者和急单付费者所支付的可执行弱优势。
+
 > **2026-08-25 DGX 统一 L2 release 与风险包原子发布收口：** 不可变 ARM64
 > release `bcea7a9a9cd351c18acd563791fcec484233d26a` 已部署；其父提交
 > `09f408479e1dd4f7ec0ac30b21837cbbdb50eefe` 的 canonical gate 为 27/27 PASS、
