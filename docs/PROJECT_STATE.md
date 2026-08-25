@@ -1,5 +1,33 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 首个双场所强平机制候选已盲化预注册：** 研究对象不是新公式，而是
+> “Bybit 被强平账户以急迫成交消耗本场所深度、受资本约束的 Binance/Bybit 跨场所资金
+> 不能立即补平价差，强平静默与盘口恢复后超调回归”的可证伪机制。独立下注定义为一次
+> instrument-side 强平簇加 30 分钟币种锁定；主候选与反号延续、去跨场所条件、无强平
+> 急单、六小时错位时钟四个控制一次冻结。阈值、方向、60 秒持有期和控制均禁止事后替换。
+> source commit `3c6c9d0d874128a966f209d5778d89bd710ef5e8` 的 canonical gate 为
+> 27/27 PASS（core 6662 passed / 19 skipped，live/trading/tools 2878 passed /
+> 2 skipped，frontend 199 tests + typecheck/lint/build，Phase 13 24 passed）；证据
+> release `764e5b52dcc35755d36349e1f0b0d08c1f2ddec7` 在 ARM64 上的聚焦套件为
+> 35/35 passed。该一次性 release 没有切换或重启已稳定运行的采集 fleet。
+>
+> DGX 于 `1787657314273` 只写一次
+> `evidence/cross_venue_liquidation_preregistration_764e5b5.json`；preregistration ID
+> `efc72d046b926fb47ace4c0b8b68fc40d8fe5116bf99508075ba65bde7ef1d02`，合同哈希
+> `4a398eb8d95315a2110385eaec3ac944bfeaf6c5de7243c5ee59f38bec10681e`，artifact
+> SHA-256 `e86ffcb6d44448b5034e5550fb6fb15124809749a78e847981c2577d8db72428`，
+> 权限 `root:quantos 0440`；第二次写入由 `FileExistsError` 拒绝。最早揭盲时刻固定为
+> `1795433314273`（2026-11-23 19:28:34.273 Asia/Shanghai），且还必须同时达到
+> 60 个事件日、500 个非重叠簇、每币至少 75 个簇。揭盲前仅允许检查时钟、哈希链、覆盖率
+> 和事件计数，禁止计算收益/Sharpe/候选比较；数据不足只能按可用性延长，不能按结果延长。
+>
+> 终局必须经过 `executable_value.v1`，相对最佳现有 L2 paper book 的增量净收益为正、
+> 双倍成本存活、相关性不高于 0.60、执行置信度至少 0.80、容量至少 USD 1M，并胜过全部
+> 四个控制；缺版本化费率表直接阻断 PASS。冻结后 global trial count 仍为 2860，
+> `outcomes_accessed=false`、`return_statistics_computed=false`、eligible=0。Binance/Bybit
+> resident streams 继续运行在 `23ca452d...`；检查时 Bybit authority 已有 194,750 条、
+> 其中 32 条强平、重连 0、拒绝 0、状态 PASS。没有 Testnet/live、凭证、broker 或下单授权。
+>
 > **2026-08-25 机制优先 Alpha 第二切片已在 DGX 形成双场所前向权威：**
 > 新增的 Bybit 公共 linear WebSocket 采集器只订阅 `orderbook.200`、逐笔成交、
 > `allLiquidation` 与 ticker；它不读取凭证、账户或私有流，也没有 broker/委托能力。
