@@ -80,6 +80,7 @@ CALENDARS: dict[str, tuple[str, str]] = {
     "defillama_stablecoin_forward_refresh": ("*-*-* 09:40:00 Asia/Shanghai", "5m"),
     "wikimedia_attention_forward_refresh": ("*-*-* 09:45:00 Asia/Shanghai", "5m"),
     "hyperliquid_public_forward_refresh": ("*-*-* 09:50:00 Asia/Shanghai", "5m"),
+    "okx_borrow_forward_refresh": ("*-*-* 09:55:00 Asia/Shanghai", "5m"),
     "binance_book_depth_forward_refresh": ("*-*-* 10:00:00 Asia/Shanghai", "30m"),
     "cftc_tff_forward_refresh": ("Tue *-*-* 10:10:00 Asia/Shanghai", "5m"),
     "domain_event_seal": ("*-*-* 02:30:00 Asia/Shanghai", "6h"),

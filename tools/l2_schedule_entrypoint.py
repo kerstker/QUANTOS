@@ -46,6 +46,7 @@ ALLOWED_L2_MODULES = frozenset(
         "wikimedia_attention_forward_refresh",
         "dry_run_candidate_multi",
         "hyperliquid_public_forward_refresh",
+        "okx_borrow_forward_refresh",
         "domain_event_ops",
         "domain_event_seal",
         "external_heartbeat",

@@ -372,6 +372,7 @@ $wikimediaAttentionForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -Days
 # Third-venue public funding/premium history is immutable and can be merged
 # incrementally.  Refresh daily without wallet/account/order authority.
 $hyperliquidPublicForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:50"
+$okxBorrowForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:55"
 # Binance Data Vision publishes checksum sidecars for completed UTC-day
 # bookDepth archives.  Capture one immutable, public, keyless day each morning;
 # retrospective rows keep fetch-time knowledge and never receive backdated
@@ -500,6 +501,9 @@ Register-L2Task -Name "QUANTOS_wikimedia_attention_forward_refresh" -Module "wik
   -Trigger $wikimediaAttentionForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_hyperliquid_public_forward_refresh" -Module "hyperliquid_public_forward_refresh" `
   -Trigger $hyperliquidPublicForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+
+Register-L2Task -Name "QUANTOS_okx_borrow_forward_refresh" -Module "okx_borrow_forward_refresh" `
+  -Trigger $okxBorrowForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_binance_book_depth_forward_refresh" -Module "binance_book_depth_forward_refresh" `
   -Trigger $binanceBookDepthForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 Register-L2Task -Name "QUANTOS_cftc_tff_forward_refresh" -Module "cftc_tff_forward_refresh" `

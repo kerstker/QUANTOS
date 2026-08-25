@@ -141,6 +141,28 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "No wallet, account, signature, credential or order surface is used.",
     ),
     DataChannelSpec(
+        "okx_public_borrow_rates", "OKX", "okx",
+        "okx_public_borrow_rates", "daily", "1h + fetch snapshot",
+        (
+            "annual_average_borrow_rate_24h",
+            "annual_previous_borrow_rate",
+            "annual_estimated_next_borrow_rate",
+            "annual_settled_borrow_rate",
+            "annual_settled_lending_rate",
+            "source_event_time",
+            "fetch_knowledge_time",
+        ),
+        "data/cache/okx_public_borrow_rates.json", "REAL_RECENT",
+        ("funding_basis", "cross_exchange", "crowd_reversal", "event_regime"),
+        48, "public_rest",
+        "Official keyless Savings borrow-rate summary plus settled hourly history "
+        "for the 14-currency research universe. Historical source timestamps enter "
+        "the bitemporal store only at actual fetch knowledge time. The provider's "
+        "amount fields are deprecated and empty, so this channel supplies BORROW_RATE "
+        "only: BORROW_AVAILABILITY remains explicitly unavailable. No account, "
+        "credential, transfer, or order surface is used.",
+    ),
+    DataChannelSpec(
         "cftc_tff_crypto_positioning", "U.S. CFTC", "cme_futures",
         "traders_in_financial_futures_futures_only", "weekly", "1w",
         (

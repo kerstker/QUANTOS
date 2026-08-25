@@ -715,6 +715,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "wikimedia_attention_forward_refresh",
             "dry_run_candidate_multi",
             "hyperliquid_public_forward_refresh",
+            "okx_borrow_forward_refresh",
             "domain_event_ops",
             "domain_event_seal",
             "external_heartbeat",

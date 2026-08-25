@@ -496,6 +496,10 @@ def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
             "hyperliquid_public_forward_refresh",
             2 * 86_400_000,
         ),
+        "QUANTOS_okx_borrow_forward_refresh": (
+            "okx_borrow_forward_refresh",
+            2 * 86_400_000,
+        ),
         "QUANTOS_cftc_tff_forward_refresh": (
             "cftc_tff_forward_refresh",
             9 * 86_400_000,

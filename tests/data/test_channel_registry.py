@@ -56,6 +56,11 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
         "funding_rate", "premium", "mark_price", "oracle_price",
         "open_interest", "day_notional_volume",
     } <= set(hyperliquid.fields)
+    okx_borrow = spec_by_channel("okx_public_borrow_rates")
+    assert okx_borrow.availability == "REAL_RECENT"
+    assert okx_borrow.endpoint_class == "public_rest"
+    assert "annual_settled_borrow_rate" in okx_borrow.fields
+    assert "BORROW_AVAILABILITY remains explicitly unavailable" in okx_borrow.notes
     cftc = spec_by_channel("cftc_tff_crypto_positioning")
     assert cftc.availability == "REAL_HISTORY"
     assert cftc.endpoint_class == "public_rest"

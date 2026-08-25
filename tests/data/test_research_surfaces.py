@@ -47,11 +47,17 @@ def test_current_data_surface_audit_keeps_orthogonal_gaps_honest() -> None:
     ]
 
     borrow = rows["borrow_survivorship"]
-    assert borrow.readiness is SurfaceReadiness.MISSING
+    assert borrow.readiness is SurfaceReadiness.PARTIAL
+    assert ChannelCapability.BORROW_RATE in borrow.available_capabilities
+    assert "okx_public_borrow_rates" in borrow.contributing_channels
     assert set(borrow.missing_capabilities) >= {
-        ChannelCapability.BORROW_RATE,
         ChannelCapability.BORROW_AVAILABILITY,
+        ChannelCapability.DELISTING_HISTORY,
+        ChannelCapability.HISTORICAL_CONSTITUENTS,
     }
+    assert ChannelCapability.BORROW_AVAILABILITY not in CHANNEL_CAPABILITIES[
+        "okx_public_borrow_rates"
+    ]
 
 
 def test_recent_or_snapshot_channels_never_masquerade_as_history() -> None:

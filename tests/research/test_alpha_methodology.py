@@ -151,6 +151,12 @@ def test_discovery_controls_bind_papers_to_existing_fail_closed_modules():
         "blockchain_limits_arbitrage_hautsch_scheuch_voigt",
     } == set(resilience.source_ids)
     assert "services/research/market_resilience.py" in resilience.system_modules
+    borrow = by_id["public_borrow_cost_not_availability"]
+    assert set(borrow.source_ids) == {
+        "costly_short_lending_atmaz_basak_ruan",
+        "lending_fee_information_duong_huszar_tan_zhang",
+    }
+    assert "tools/okx_borrow_fetch.py" in borrow.system_modules
 
 
 def test_pairs_result_is_internalized_as_falsified_not_an_open_gap():

@@ -115,6 +115,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "mft_testnet_soak_evidence_authority",
             False,
         ),
+        "data/cache/okx_borrow_vintages.db": (
+            "okx_public_borrow_forward_vintages",
+            False,
+        ),
         "data/cache/paper_candidate_registry.db": (
             "factory_candidate_admission",
             False,

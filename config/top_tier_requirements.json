@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  10,
+                                                                                   "version":  11,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -659,6 +659,11 @@
                                                                                                        "relative_path":  "data/cache/mft_testnet_soak.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "mft_testnet_soak_evidence_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/okx_borrow_vintages.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "okx_public_borrow_forward_vintages"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/paper_candidate_registry.db",
@@ -728,7 +733,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  10,
+                                                                                   "version":  11,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -839,6 +844,11 @@
                                                                                                        "relative_path":  "data/cache/mft_testnet_soak.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "mft_testnet_soak_evidence_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/okx_borrow_vintages.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "okx_public_borrow_forward_vintages"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/paper_candidate_registry.db",

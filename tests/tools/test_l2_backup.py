@@ -763,6 +763,17 @@ def test_bybit_raw_and_outcome_free_resilience_are_optional_backup_sources(
     assert source.required is False
 
 
+def test_okx_public_borrow_forward_vintages_are_an_optional_backup_source():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path == "data/cache/okx_borrow_vintages.db"
+    )
+
+    assert source.role == "okx_public_borrow_forward_vintages"
+    assert source.required is False
+
+
 def test_liquidation_forward_contract_and_health_are_optional_backup_sources():
     expected = {
         "data/cache/cross_venue_liquidation_health.json": (

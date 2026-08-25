@@ -56,6 +56,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "external_heartbeat",
         "dry_run_candidate_multi",
         "hyperliquid_public_forward_refresh",
+        "okx_borrow_forward_refresh",
         "forward_track_advance",
         "gonogo_report",
         "alpha_paper_cycle",
@@ -85,6 +86,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
     assert "QUANTOS_wikimedia_attention_forward_refresh" in source
     assert "QUANTOS_hyperliquid_public_forward_refresh" in source
+    assert "QUANTOS_okx_borrow_forward_refresh" in source
     assert "QUANTOS_cftc_tff_forward_refresh" in source
     assert "QUANTOS_paper_operational_evidence" in source
     assert "QUANTOS_realtime_alpha_execution_paper" in source
@@ -148,6 +150,22 @@ def test_wikimedia_attention_forward_refresh_is_daily_and_bounded():
         r'Register-L2Task -Name "QUANTOS_wikimedia_attention_forward_refresh" '
         r'-Module "wikimedia_attention_forward_refresh".*?\n\s*'
         r'-Trigger \$wikimediaAttentionForwardRefreshTrigger -ExecutionTimeLimit '
+        r'\(New-TimeSpan -Minutes 5\)',
+        source,
+    )
+
+
+def test_okx_borrow_forward_refresh_is_daily_and_bounded():
+    source = _source()
+    assert re.search(
+        r'\$okxBorrowForwardRefreshTrigger\s*=\s*'
+        r'New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:55"',
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_okx_borrow_forward_refresh" '
+        r'-Module "okx_borrow_forward_refresh".*?\n\s*'
+        r'-Trigger \$okxBorrowForwardRefreshTrigger -ExecutionTimeLimit '
         r'\(New-TimeSpan -Minutes 5\)',
         source,
     )

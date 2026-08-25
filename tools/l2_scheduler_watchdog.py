@@ -163,6 +163,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_hyperliquid_public_forward_refresh": ExpectedTask(
         "hyperliquid_public_forward_refresh", 2 * _DAY_MS
     ),
+    "QUANTOS_okx_borrow_forward_refresh": ExpectedTask(
+        "okx_borrow_forward_refresh", 2 * _DAY_MS
+    ),
     "QUANTOS_cftc_tff_forward_refresh": ExpectedTask(
         "cftc_tff_forward_refresh", 9 * _DAY_MS
     ),

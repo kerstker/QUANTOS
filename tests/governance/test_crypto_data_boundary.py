@@ -99,6 +99,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # account-free and order-free; no signing or exchange SDK.
              os.path.join(_ROOT, "tools", "hyperliquid_public_fetch.py"),
              os.path.join(_ROOT, "tools", "hyperliquid_public_forward_refresh.py"),
+             # OKX public Savings borrow-rate summary and hourly history.
+             # Amount fields are deprecated and fail closed if populated; the
+             # collector has no account, credential, transfer, or order path.
+             os.path.join(_ROOT, "tools", "okx_borrow_fetch.py"),
+             os.path.join(_ROOT, "tools", "okx_borrow_forward_refresh.py"),
              # CFTC official Socrata TFF Futures-Only history for canonical CME
              # BTC/ETH contracts; keyless/read-only, no account or order path.
              os.path.join(_ROOT, "tools", "cftc_tff_fetch.py"),
@@ -224,6 +229,8 @@ _EXTRA_ALLOWED_BY_FILE = {
     "wikimedia_attention_forward_refresh.py": {"quantos"},
     "hyperliquid_public_fetch.py": {"argparse", "math"},
     "hyperliquid_public_forward_refresh.py": {"quantos"},
+    "okx_borrow_fetch.py": {"argparse", "math", "quantos", "re"},
+    "okx_borrow_forward_refresh.py": {"quantos"},
     "cftc_tff_fetch.py": {"argparse", "datetime", "math"},
     "cftc_tff_forward_refresh.py": {"quantos"},
     # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用

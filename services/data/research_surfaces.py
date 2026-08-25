@@ -106,6 +106,10 @@ CHANNEL_CAPABILITIES: Mapping[str, tuple[ChannelCapability, ...]] = {
         ChannelCapability.BASIS_TERM_STRUCTURE,
         ChannelCapability.OPEN_INTEREST,
     ),
+    "okx_public_borrow_rates": (
+        ChannelCapability.EVENT_TIME,
+        ChannelCapability.BORROW_RATE,
+    ),
     "binance_usdm_book_depth_archive": (
         ChannelCapability.EVENT_TIME,
         ChannelCapability.L2_BOOK,
@@ -268,7 +272,7 @@ RESEARCH_SURFACES: tuple[ResearchSurfaceSpec, ...] = (
             ChannelCapability.DELISTING_HISTORY,
             ChannelCapability.HISTORICAL_CONSTITUENTS,
         ),
-        (),
+        ("okx_public_borrow_rates",),
         1,
         "Can the short leg be borrowed in the actual historical universe at the claimed price?",
     ),

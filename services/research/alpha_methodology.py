@@ -191,6 +191,32 @@ SOURCES: tuple[SourceSpec, ...] = (
         "venue and clock provenance; observed spreads are not assumed executable.",
     ),
     SourceSpec(
+        "costly_short_lending_atmaz_basak_ruan",
+        "Dynamic Equilibrium with Costly Short-Selling and Lending Market",
+        ("Adem Atmaz", "Suleyman Basak", "Fangcheng Ruan"),
+        2024,
+        EvidenceTier.PEER_REVIEWED,
+        "https://academic.oup.com/rfs/article/37/2/444/7243191",
+        "10.1093/rfs/hhad060",
+        False,
+        "Equity-lending theory identifies disagreement, limited lending supply and "
+        "short demand as joint determinants of fees. It motivates the payer mechanism "
+        "but does not transfer a crypto return rule or reveal OKX lendable quantity.",
+    ),
+    SourceSpec(
+        "lending_fee_information_duong_huszar_tan_zhang",
+        "Information Value of Stock Lending Fees: Are Lenders Price Takers?",
+        ("T. X. Duong", "Zsuzsa R. Huszar", "Raymond S. K. Tan", "Weina Zhang"),
+        2017,
+        EvidenceTier.PEER_REVIEWED,
+        "https://academic.oup.com/rof/article-abstract/21/6/2353/2877115",
+        "10.1093/rof/rfw075",
+        False,
+        "Equity evidence says lending fees may contain supply-side information beyond "
+        "short demand. Crypto direction, horizon and executable net returns remain "
+        "unproven and require a separately frozen forward experiment.",
+    ),
+    SourceSpec(
         "crypto_risk_return_liu_tsyvinski",
         "Risks and Returns of Cryptocurrency",
         ("Yukun Liu", "Aleh Tsyvinski"),
@@ -589,6 +615,21 @@ DISCOVERY_CONTROLS: tuple[DiscoveryControlSpec, ...] = (
             "services/research/market_resilience.py",
             "services/data/market_resilience_store.py",
             "tools/bybit_realtime_stream.py",
+        ),
+    ),
+    DiscoveryControlSpec(
+        "public_borrow_cost_not_availability",
+        (
+            "costly_short_lending_atmaz_basak_ruan",
+            "lending_fee_information_duong_huszar_tan_zhang",
+        ),
+        "Treating a public borrowing rate as lendable quantity, back-dating fetched "
+        "history into PIT evidence, or creating a return rule before a frozen mechanism "
+        "experiment.",
+        (
+            "tools/okx_borrow_fetch.py",
+            "services/data/fundamental_store.py",
+            "services/data/research_surfaces.py",
         ),
     ),
     DiscoveryControlSpec(
