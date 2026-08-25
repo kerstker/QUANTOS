@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
+from services.data.market_resilience_store import MarketResilienceStore
 from services.data.public_market_event_store import PublicMarketEventStore
 from tools import bybit_realtime_stream as stream
 
@@ -154,14 +157,32 @@ def test_snapshot_and_delta_reconstruct_book_and_measure_deletes():
     assert latest["best_bid"] == 99.0
     assert latest["best_ask"] == 101.0
     assert latest["update_id"] == 11
+    assert len(latest["segment_id"]) == 64
 
 
 def test_new_snapshot_resets_book_and_update_one_is_allowed():
     state = stream.BybitLinearState(("BTCUSDT",))
     state.handle(_book(update_id=99, sequence=999), received_at_ms=_NOW)
+    first_segment = state.latest["BTCUSDT"]["book"]["segment_id"]
     reset = _book(update_id=1, sequence=1, bids=[["98", "1"]], asks=[["102", "1"]])
     state.handle(reset, received_at_ms=_NOW + 1)
     assert state.latest["BTCUSDT"]["book"]["best_bid"] == 98.0
+    assert state.latest["BTCUSDT"]["book"]["segment_id"] != first_segment
+
+
+def test_new_transport_connection_invalidates_stale_book_until_snapshot():
+    state = stream.BybitLinearState(("BTCUSDT",))
+    state.handle(_book(), received_at_ms=_NOW)
+    assert "book" in state.latest["BTCUSDT"]
+    state.begin_connection()
+    assert "book" not in state.latest["BTCUSDT"]
+    state.handle(_trade(), received_at_ms=_NOW + 1)
+    events = state.drain(processed_at_ms=_NOW + 2)
+    assert state.resilience_snapshots(
+        events=events,
+        processed_at_ms=_NOW + 2,
+        raw_store_head={"head_seq": 1, "head_hash": "a" * 64},
+    ) == []
 
 
 def test_delta_before_snapshot_and_nonincreasing_sequence_fail_closed():
@@ -340,3 +361,60 @@ def test_valid_but_wrong_chain_checkpoint_fails_closed(tmp_path):
             now_ms=_NOW + 1,
         )
     store.close()
+
+
+def test_flush_commits_raw_before_outcome_free_resilience_snapshot(tmp_path, monkeypatch):
+    raw_path = tmp_path / "events.db"
+    resilience_path = tmp_path / "resilience.db"
+    checkpoint_path = tmp_path / "chain.json"
+    status_path = tmp_path / "status.json"
+    raw_store = PublicMarketEventStore(str(raw_path), create=True)
+    resilience_store = MarketResilienceStore(str(resilience_path), create=True)
+    state = stream.BybitLinearState(("BTCUSDT",))
+    state.handle(_book(), received_at_ms=_NOW)
+    state.handle(_trade(), received_at_ms=_NOW + 1)
+    raw_checkpoint = stream._initial_chain_checkpoint(
+        raw_store,
+        store_path=str(raw_path),
+        checkpoint_path=str(checkpoint_path),
+        now_ms=_NOW + 2,
+    )
+    resilience_checkpoint = resilience_store.verify_chain()
+    monkeypatch.setattr(stream.time, "time", lambda: (_NOW + 20) / 1000)
+    monkeypatch.setattr(
+        stream.shutil,
+        "disk_usage",
+        lambda _path: type("Usage", (), {"free": stream.MIN_FREE_STORAGE_BYTES + 1})(),
+    )
+
+    status = asyncio.run(
+        stream._flush(
+            state,
+            raw_store,
+            resilience_store,
+            store_path=str(raw_path),
+            checkpoint_path=str(checkpoint_path),
+            chain_checkpoint=raw_checkpoint,
+            resilience_checkpoint=resilience_checkpoint,
+            status_path=str(status_path),
+            connected=True,
+            reconnects=0,
+        )
+    )
+
+    raw_head = raw_store.head()
+    rows = resilience_store.recent_snapshots()
+    assert raw_head["head_seq"] == 2
+    assert len(rows) == 1
+    assert rows[0]["raw_authority_head"] == {
+        "head_seq": raw_head["head_seq"],
+        "head_hash": raw_head["head_hash"],
+    }
+    assert rows[0]["source_event_ids"] == [
+        event["event_id"] for event in raw_store.recent_events()
+    ]
+    assert status["resilience"]["head_seq"] == 1
+    assert status["resilience"]["chain_valid"] is True
+    assert status["safety"]["order_submission"] is False
+    raw_store.close()
+    resilience_store.close()

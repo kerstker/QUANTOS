@@ -20,6 +20,11 @@ def test_channel_ids_are_unique_and_have_explicit_temporal_contracts():
         "orderbook_l2_delta", "public_trade_prints", "all_liquidations",
     } <= set(bybit_stream.fields)
     assert "exact cancel rate remains unclaimed" in bybit_stream.notes
+    resilience = spec_by_channel("bybit_market_resilience")
+    assert resilience.availability == "REAL_SNAPSHOT"
+    assert resilience.endpoint_class == "derived_public_websocket"
+    assert "cancel_rate_inferred_false" in resilience.fields
+    assert "no future return" in resilience.notes.lower()
     bybit_positioning = spec_by_channel("bybit_linear_positioning")
     assert bybit_positioning.availability == "REAL_HISTORY"
     assert bybit_positioning.endpoint_class == "public_rest"

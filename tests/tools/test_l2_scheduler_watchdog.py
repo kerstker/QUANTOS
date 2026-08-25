@@ -399,6 +399,11 @@ def test_bybit_resident_stream_uses_its_own_fail_closed_health_receipt(tmp_path)
                 "generated_at_ms": NOW_MS - 1_000,
                 "verdict": "PASS",
                 "streaming": True,
+                "resilience": {
+                    "head_seq": 1,
+                    "head_hash": "a" * 64,
+                    "chain_valid": True,
+                },
                 "safety": {
                     "credentials": False,
                     "private_stream": False,
@@ -415,6 +420,47 @@ def test_bybit_resident_stream_uses_its_own_fail_closed_health_receipt(tmp_path)
     )
     assert check["status"] == "PASS"
     assert check["code"] == "RUNNING_HEALTHY"
+
+
+def test_bybit_resident_health_fails_closed_without_resilience_chain(tmp_path):
+    snapshot = _healthy_snapshot(tmp_path, "QUANTOS_bybit_realtime_stream")
+    running = TaskSnapshot(
+        name=snapshot.name,
+        state="Running",
+        last_run_ms=NOW_MS - 60_000,
+        last_result=0,
+        next_run_ms=None,
+        execute=snapshot.execute,
+        arguments=snapshot.arguments,
+        working_directory=snapshot.working_directory,
+    )
+    result = evaluate_schedule(
+        [running, _healthy_snapshot(tmp_path, "QUANTOS_scheduler_watchdog")],
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=False,
+        resident_health={
+            "QUANTOS_bybit_realtime_stream": {
+                "generated_at_ms": NOW_MS - 1_000,
+                "verdict": "PASS",
+                "streaming": True,
+                "safety": {
+                    "credentials": False,
+                    "private_stream": False,
+                    "broker_connectivity": False,
+                    "order_submission": False,
+                    "live_trading": False,
+                },
+            }
+        },
+    )
+    check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_bybit_realtime_stream"
+    )
+    assert check["status"] == "BREACH"
+    assert check["code"] == "RESIDENT_HEALTH_STALE"
 
 
 def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():

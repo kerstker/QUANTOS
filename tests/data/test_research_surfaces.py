@@ -41,6 +41,10 @@ def test_current_data_surface_audit_keeps_orthogonal_gaps_honest() -> None:
     assert order_flow.readiness is SurfaceReadiness.PARTIAL
     assert order_flow.missing_capabilities == (ChannelCapability.CANCEL_RATE,)
     assert ChannelCapability.BOOK_RECOVERY in order_flow.available_capabilities
+    assert "bybit_market_resilience" in order_flow.contributing_channels
+    assert ChannelCapability.CANCEL_RATE not in CHANNEL_CAPABILITIES[
+        "bybit_market_resilience"
+    ]
 
     borrow = rows["borrow_survivorship"]
     assert borrow.readiness is SurfaceReadiness.MISSING

@@ -143,6 +143,14 @@ def test_discovery_controls_bind_papers_to_existing_fail_closed_modules():
     assert "services/validation/deflated_sharpe.py" in (
         by_id["dsr_selection_bias"].system_modules
     )
+    resilience = by_id["outcome_free_market_resilience_measurement"]
+    assert {
+        "ofi_cont_kukanov_stoikov",
+        "flow_toxicity_easley_lopez_de_prado_ohara",
+        "dynamic_lob_rosu",
+        "blockchain_limits_arbitrage_hautsch_scheuch_voigt",
+    } == set(resilience.source_ids)
+    assert "services/research/market_resilience.py" in resilience.system_modules
 
 
 def test_pairs_result_is_internalized_as_falsified_not_an_open_gap():

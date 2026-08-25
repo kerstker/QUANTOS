@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  9,
+                                                                                   "version":  10,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -574,6 +574,16 @@
                                                                                                        "relative_path":  "data/cache/binance_book_depth_archive.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "binance_book_depth_archive_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/bybit_linear_events.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "bybit_public_linear_event_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/bybit_market_resilience.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "outcome_free_market_resilience_authority"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/cross_venue_liquidation_health.json",
@@ -718,7 +728,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  9,
+                                                                                   "version":  10,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -744,6 +754,16 @@
                                                                                                        "relative_path":  "data/cache/binance_book_depth_archive.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "binance_book_depth_archive_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/bybit_linear_events.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "bybit_public_linear_event_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/bybit_market_resilience.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "outcome_free_market_resilience_authority"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/cross_venue_liquidation_health.json",

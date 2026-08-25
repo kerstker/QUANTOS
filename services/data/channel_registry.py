@@ -246,6 +246,29 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "cancel or execution, so exact cancel rate remains unclaimed.",
     ),
     DataChannelSpec(
+        "bybit_market_resilience", "Bybit", "bybit_linear",
+        "bybit_market_resilience", "continuous->1s", "one row/instrument/flush",
+        (
+            "event_time_ms", "received_at_ms", "processed_at_ms",
+            "book_segment_id", "book_update_id", "book_cross_sequence",
+            "best_bid", "best_ask", "mid_price", "spread_bps",
+            "quote_depth_5bps", "quote_depth_10bps", "quote_depth_20bps",
+            "quote_depth_imbalance_20bps", "buy_taker_notional",
+            "sell_taker_notional", "signed_taker_notional", "taker_imbalance",
+            "trade_count", "rpi_trade_count", "block_trade_count",
+            "book_update_count", "level_delete_count",
+            "raw_authority_head_seq", "raw_authority_head_hash",
+            "cancel_rate_inferred_false",
+        ),
+        "data/cache/bybit_market_resilience.db", "REAL_SNAPSHOT",
+        ("liquidity_microstructure", "cross_exchange", "event_regime"),
+        1, "derived_public_websocket",
+        "Outcome-free one-second public-book and signed-flow measurements bound "
+        "to the committed Bybit raw-event chain. Reconnects create new book "
+        "segments; no future return, label, queue position, fill probability or "
+        "exact cancellation rate is inferred.",
+    ),
+    DataChannelSpec(
         "binance_usdm_systemic_risk", "Binance", "binance_usdm",
         "binance_systemic_risk", "30m", "30m/1h/snapshot",
         (

@@ -70,6 +70,14 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "binance_book_depth_archive_authority",
             False,
         ),
+        "data/cache/bybit_linear_events.db": (
+            "bybit_public_linear_event_authority",
+            False,
+        ),
+        "data/cache/bybit_market_resilience.db": (
+            "outcome_free_market_resilience_authority",
+            False,
+        ),
         "data/cache/cross_venue_liquidation_health.json": (
             "cross_venue_liquidation_health",
             False,

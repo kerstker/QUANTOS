@@ -1513,6 +1513,25 @@ def _check_task(
             if isinstance(selected_health, dict)
             else None
         )
+        resilience = (
+            selected_health.get("resilience")
+            if isinstance(selected_health, dict)
+            and name == "QUANTOS_bybit_realtime_stream"
+            else None
+        )
+        resilience_healthy = bool(
+            name != "QUANTOS_bybit_realtime_stream"
+            or (
+                isinstance(resilience, dict)
+                and isinstance(resilience.get("head_seq"), int)
+                and not isinstance(resilience.get("head_seq"), bool)
+                and resilience["head_seq"] > 0
+                and isinstance(resilience.get("head_hash"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", resilience["head_hash"])
+                is not None
+                and resilience.get("chain_valid") is True
+            )
+        )
         healthy = bool(
             isinstance(generated_at_ms, int)
             and not isinstance(generated_at_ms, bool)
@@ -1525,6 +1544,7 @@ def _check_task(
             and selected_health["safety"].get("broker_connectivity") is False
             and selected_health["safety"].get("order_submission") is False
             and selected_health["safety"].get("live_trading") is False
+            and resilience_healthy
         )
         if not healthy:
             return {

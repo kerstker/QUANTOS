@@ -49,7 +49,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 9
+SOURCE_CONTRACT_VERSION = 10
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
@@ -143,6 +143,16 @@ DEFAULT_SOURCES = (
     BackupSource(
         "data/cache/binance_book_depth_archive.db",
         "binance_book_depth_archive_authority",
+        False,
+    ),
+    BackupSource(
+        "data/cache/bybit_linear_events.db",
+        "bybit_public_linear_event_authority",
+        False,
+    ),
+    BackupSource(
+        "data/cache/bybit_market_resilience.db",
+        "outcome_free_market_resilience_authority",
         False,
     ),
     BackupSource(

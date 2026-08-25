@@ -21,8 +21,10 @@ from typing import Any
 
 from websockets.asyncio.client import connect
 
+from services.data.market_resilience_store import MarketResilienceStore
 from services.data.public_market_event_store import PublicMarketEventStore
 from services.governance.json_integrity import load_json_without_duplicate_keys
+from services.research.market_resilience import build_market_resilience_snapshot
 from tools.cache_io import atomic_write_json
 
 
@@ -34,6 +36,9 @@ PUBLIC_LINEAR_URL = "wss://stream.bybit.com/v5/public/linear"
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 DEFAULT_DEPTH = 200
 DEFAULT_STORE = os.path.join("data", "cache", "bybit_linear_events.db")
+DEFAULT_RESILIENCE_STORE = os.path.join(
+    "data", "cache", "bybit_market_resilience.db"
+)
 DEFAULT_STATUS = os.path.join("data", "cache", "bybit_realtime_stream_status.json")
 DEFAULT_CHAIN_CHECKPOINT = os.path.join(
     "data", "cache", "bybit_linear_events_chain.json"
@@ -235,6 +240,13 @@ class BybitLinearState:
         self.last_error: str | None = None
         self.latest: dict[str, dict[str, Any]] = {}
 
+    def begin_connection(self) -> None:
+        """Invalidate reconstructed books before a new transport segment."""
+
+        self._books.clear()
+        for latest in self.latest.values():
+            latest.pop("book", None)
+
     @staticmethod
     def _topic(raw: Mapping[str, Any]) -> tuple[str, str, str]:
         topic = raw.get("topic")
@@ -308,6 +320,16 @@ class BybitLinearState:
         if message_type == "snapshot":
             bid_map: dict[Decimal, Decimal] = {}
             ask_map: dict[Decimal, Decimal] = {}
+            segment_id = _hash(
+                {
+                    "venue": _VENUE,
+                    "instrument_id": symbol,
+                    "update_id": update_id,
+                    "cross_sequence": cross_sequence,
+                    "event_time_ms": event_time_ms,
+                    "received_at_ms": received_at_ms,
+                }
+            )
         else:
             assert current is not None
             if (
@@ -317,6 +339,7 @@ class BybitLinearState:
                 raise BybitRealtimeStreamError("orderbook sequence is not increasing")
             bid_map = dict(current["bids"])
             ask_map = dict(current["asks"])
+            segment_id = str(current["segment_id"])
         delete_count = 0
         update_count = 0
         for side, rows in ((bid_map, bids), (ask_map, asks)):
@@ -338,6 +361,7 @@ class BybitLinearState:
             "cross_sequence": cross_sequence,
             "event_time_ms": event_time_ms,
             "received_at_ms": received_at_ms,
+            "segment_id": segment_id,
         }
         self._books[symbol] = book
         self.latest.setdefault(symbol, {})["book"] = {
@@ -350,6 +374,7 @@ class BybitLinearState:
             "event_time_ms": event_time_ms,
             "received_at_ms": received_at_ms,
             "message_type": message_type,
+            "segment_id": segment_id,
         }
         payload = {
             "provider": _PROVIDER,
@@ -642,6 +667,47 @@ class BybitLinearState:
         self._pending.clear()
         return output
 
+    def resilience_snapshots(
+        self,
+        *,
+        events: Sequence[Mapping[str, Any]],
+        processed_at_ms: int,
+        raw_store_head: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Compress one flush into at most one outcome-free row per instrument."""
+
+        grouped: dict[str, list[Mapping[str, Any]]] = {}
+        for event in events:
+            channel = event.get("channel")
+            symbol = event.get("instrument_id")
+            if channel not in {"orderbook_l2", "public_trade"}:
+                continue
+            if isinstance(symbol, str):
+                grouped.setdefault(symbol, []).append(event)
+        snapshots: list[dict[str, Any]] = []
+        for symbol in sorted(grouped):
+            book = self._books.get(symbol)
+            if book is None:
+                continue
+            snapshots.append(
+                build_market_resilience_snapshot(
+                    venue=_VENUE,
+                    instrument_id=symbol,
+                    segment_id=str(book["segment_id"]),
+                    bids=book["bids"],
+                    asks=book["asks"],
+                    book_update_id=int(book["update_id"]),
+                    book_cross_sequence=int(book["cross_sequence"]),
+                    book_event_time_ms=int(book["event_time_ms"]),
+                    book_received_at_ms=int(book["received_at_ms"]),
+                    source_events=grouped[symbol],
+                    processed_at_ms=processed_at_ms,
+                    raw_authority_head_seq=int(raw_store_head["head_seq"]),
+                    raw_authority_head_hash=str(raw_store_head["head_hash"]),
+                )
+            )
+        return snapshots
+
     @property
     def pending_count(self) -> int:
         return len(self._pending)
@@ -653,6 +719,7 @@ class BybitLinearState:
         connected: bool,
         reconnects: int,
         store_head: Mapping[str, Any],
+        resilience_head: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         generated = _integer(generated_at_ms, "generated_at_ms")
         return {
@@ -687,6 +754,16 @@ class BybitLinearState:
             "reconnects": reconnects,
             "latest": self.latest,
             "store": dict(store_head),
+            "resilience": (
+                {
+                    "head_seq": 0,
+                    "head_hash": "",
+                    "chain_valid": True,
+                    "verified_suffix_snapshots": 0,
+                }
+                if resilience_head is None
+                else dict(resilience_head)
+            ),
             "safety": {
                 "public_market_data_only": True,
                 "credentials": False,
@@ -701,10 +778,12 @@ class BybitLinearState:
 async def _flush(
     state: BybitLinearState,
     store: PublicMarketEventStore,
+    resilience_store: MarketResilienceStore,
     *,
     store_path: str,
     checkpoint_path: str,
     chain_checkpoint: dict[str, Any],
+    resilience_checkpoint: dict[str, Any],
     status_path: str,
     connected: bool,
     reconnects: int,
@@ -725,6 +804,44 @@ async def _flush(
         or verification.get("verified_row_hash") != head["head_hash"]
     ):
         raise BybitRealtimeStreamError("public event chain suffix verification failed")
+    snapshots = state.resilience_snapshots(
+        events=events,
+        processed_at_ms=processed_at_ms,
+        raw_store_head=head,
+    )
+    resilience_head = (
+        resilience_store.append_snapshots(snapshots)
+        if snapshots
+        else resilience_store.head()
+    )
+    resilience_verification = resilience_store.verify_chain_from(
+        checkpoint_seq=int(resilience_checkpoint["verified_seq"]),
+        checkpoint_row_hash=str(resilience_checkpoint["verified_row_hash"]),
+    )
+    if (
+        not resilience_verification.get("valid")
+        or resilience_verification.get("verified_seq")
+        != resilience_head["head_seq"]
+        or resilience_verification.get("verified_row_hash")
+        != resilience_head["head_hash"]
+    ):
+        raise BybitRealtimeStreamError(
+            "market resilience chain suffix verification failed"
+        )
+    resilience_checkpoint.update(
+        {
+            "verified_seq": resilience_verification["verified_seq"],
+            "verified_row_hash": resilience_verification["verified_row_hash"],
+        }
+    )
+    resilience_head.update(
+        {
+            "chain_valid": True,
+            "verified_suffix_snapshots": resilience_verification[
+                "verified_events"
+            ],
+        }
+    )
     chain_checkpoint.update(
         {
             "verified_at_ms": processed_at_ms,
@@ -743,6 +860,7 @@ async def _flush(
         connected=connected,
         reconnects=reconnects,
         store_head=head,
+        resilience_head=resilience_head,
     )
     atomic_write_json(status_path, status, indent=2)
     return status
@@ -755,6 +873,7 @@ async def run_stream(
     store_path: str,
     status_path: str,
     checkpoint_path: str = DEFAULT_CHAIN_CHECKPOINT,
+    resilience_store_path: str = DEFAULT_RESILIENCE_STORE,
     run_seconds: int = 0,
 ) -> dict[str, Any]:
     if isinstance(run_seconds, bool) or not isinstance(run_seconds, int) or run_seconds < 0:
@@ -763,13 +882,24 @@ async def run_stream(
     os.makedirs(os.path.dirname(store_path) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(status_path) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(resilience_store_path) or ".", exist_ok=True)
     store = PublicMarketEventStore(store_path, create=True)
+    resilience_store = MarketResilienceStore(resilience_store_path, create=True)
     chain_checkpoint = _initial_chain_checkpoint(
         store,
         store_path=store_path,
         checkpoint_path=checkpoint_path,
         now_ms=int(time.time() * 1000),
     )
+    resilience_verification = resilience_store.verify_chain()
+    if not resilience_verification.get("valid"):
+        store.close()
+        resilience_store.close()
+        raise BybitRealtimeStreamError("market resilience chain verification failed")
+    resilience_checkpoint = {
+        "verified_seq": resilience_verification["verified_seq"],
+        "verified_row_hash": resilience_verification["verified_row_hash"],
+    }
     reconnects = 0
     started = time.monotonic()
     deadline = None if run_seconds == 0 else started + run_seconds
@@ -785,6 +915,7 @@ async def run_stream(
                     ping_timeout=20,
                     max_size=16 * 1024 * 1024,
                 ) as websocket:
+                    state.begin_connection()
                     await websocket.send(_canonical(subscribe_request(symbols, depth=depth)))
                     next_flush = time.monotonic() + 1.0
                     next_app_ping = time.monotonic() + 20.0
@@ -816,9 +947,11 @@ async def run_stream(
                             status = await _flush(
                                 state,
                                 store,
+                                resilience_store,
                                 store_path=store_path,
                                 checkpoint_path=checkpoint_path,
                                 chain_checkpoint=chain_checkpoint,
+                                resilience_checkpoint=resilience_checkpoint,
                                 status_path=status_path,
                                 connected=True,
                                 reconnects=reconnects,
@@ -831,9 +964,11 @@ async def run_stream(
                 status = await _flush(
                     state,
                     store,
+                    resilience_store,
                     store_path=store_path,
                     checkpoint_path=checkpoint_path,
                     chain_checkpoint=chain_checkpoint,
+                    resilience_checkpoint=resilience_checkpoint,
                     status_path=status_path,
                     connected=False,
                     reconnects=reconnects,
@@ -844,9 +979,11 @@ async def run_stream(
         status = await _flush(
             state,
             store,
+            resilience_store,
             store_path=store_path,
             checkpoint_path=checkpoint_path,
             chain_checkpoint=chain_checkpoint,
+            resilience_checkpoint=resilience_checkpoint,
             status_path=status_path,
             connected=False,
             reconnects=reconnects,
@@ -854,6 +991,7 @@ async def run_stream(
         return status
     finally:
         store.close()
+        resilience_store.close()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -863,6 +1001,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
     parser.add_argument("--depth", type=int, choices=(50, 200), default=DEFAULT_DEPTH)
     parser.add_argument("--store", default=DEFAULT_STORE)
+    parser.add_argument("--resilience-store", default=DEFAULT_RESILIENCE_STORE)
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--checkpoint", default=DEFAULT_CHAIN_CHECKPOINT)
     parser.add_argument("--run-seconds", type=int, default=0)
@@ -875,6 +1014,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             store_path=args.store,
             status_path=args.status,
             checkpoint_path=args.checkpoint,
+            resilience_store_path=args.resilience_store,
             run_seconds=args.run_seconds,
         )
     )
@@ -885,6 +1025,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "rejected_frames": status["rejected_frames"],
                 "reconnects": status["reconnects"],
                 "store": status["store"],
+                "resilience": status["resilience"],
                 "verdict": status["verdict"],
             },
             sort_keys=True,
@@ -902,6 +1043,7 @@ __all__ = [
     "BybitRealtimeStreamError",
     "DEFAULT_DEPTH",
     "DEFAULT_CHAIN_CHECKPOINT",
+    "DEFAULT_RESILIENCE_STORE",
     "DEFAULT_STATUS",
     "DEFAULT_STORE",
     "DEFAULT_SYMBOLS",

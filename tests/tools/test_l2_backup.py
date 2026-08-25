@@ -738,6 +738,31 @@ def test_binance_book_depth_archive_is_an_optional_backup_source():
     assert source.required is False
 
 
+@pytest.mark.parametrize(
+    ("relative_path", "role"),
+    [
+        (
+            "data/cache/bybit_linear_events.db",
+            "bybit_public_linear_event_authority",
+        ),
+        (
+            "data/cache/bybit_market_resilience.db",
+            "outcome_free_market_resilience_authority",
+        ),
+    ],
+)
+def test_bybit_raw_and_outcome_free_resilience_are_optional_backup_sources(
+    relative_path,
+    role,
+):
+    source = next(
+        item for item in DEFAULT_SOURCES if item.relative_path == relative_path
+    )
+
+    assert source.role == role
+    assert source.required is False
+
+
 def test_liquidation_forward_contract_and_health_are_optional_backup_sources():
     expected = {
         "data/cache/cross_venue_liquidation_health.json": (

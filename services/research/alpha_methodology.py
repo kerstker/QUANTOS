@@ -155,6 +155,42 @@ SOURCES: tuple[SourceSpec, ...] = (
         "NYSE microstructure evidence; crypto persistence and net tradability are not implied.",
     ),
     SourceSpec(
+        "flow_toxicity_easley_lopez_de_prado_ohara",
+        "Flow Toxicity and Liquidity in a High-frequency World",
+        ("David Easley", "Marcos Lopez de Prado", "Maureen O'Hara"),
+        2012,
+        EvidenceTier.PEER_REVIEWED,
+        "https://academic.oup.com/rfs/article-abstract/25/5/1457/1569929",
+        "10.1093/rfs/hhs053",
+        False,
+        "Equity flow-toxicity evidence motivates retaining signed volume and trade "
+        "intensity; it does not validate VPIN or a crypto trading rule.",
+    ),
+    SourceSpec(
+        "dynamic_lob_rosu",
+        "A Dynamic Model of the Limit Order Book",
+        ("Ioanid Rosu",),
+        2009,
+        EvidenceTier.PEER_REVIEWED,
+        "https://academic.oup.com/rfs/article-abstract/22/11/4601/1566283",
+        "10.1093/rfs/hhp011",
+        False,
+        "Theoretical limit-order-book prior for temporary impact and replenishment; "
+        "it is not empirical crypto profitability evidence.",
+    ),
+    SourceSpec(
+        "blockchain_limits_arbitrage_hautsch_scheuch_voigt",
+        "Building Trust Takes Time: Limits to Arbitrage for Blockchain-Based Assets",
+        ("Nikolaus Hautsch", "Christoph Scheuch", "Stefan Voigt"),
+        2021,
+        EvidenceTier.WORKING_PAPER,
+        "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3302159",
+        "10.2139/ssrn.3302159",
+        False,
+        "Blockchain settlement-latency and venue-segmentation evidence motivates "
+        "venue and clock provenance; observed spreads are not assumed executable.",
+    ),
+    SourceSpec(
         "crypto_risk_return_liu_tsyvinski",
         "Risks and Returns of Cryptocurrency",
         ("Yukun Liu", "Aleh Tsyvinski"),
@@ -538,6 +574,23 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
 
 
 DISCOVERY_CONTROLS: tuple[DiscoveryControlSpec, ...] = (
+    DiscoveryControlSpec(
+        "outcome_free_market_resilience_measurement",
+        (
+            "ofi_cont_kukanov_stoikov",
+            "flow_toxicity_easley_lopez_de_prado_ohara",
+            "dynamic_lob_rosu",
+            "blockchain_limits_arbitrage_hautsch_scheuch_voigt",
+        ),
+        "Turning contemporaneous order-flow, depth and latency priors into a "
+        "future-return claim, or relabelling public level deletions as exact "
+        "cancellations.",
+        (
+            "services/research/market_resilience.py",
+            "services/data/market_resilience_store.py",
+            "tools/bybit_realtime_stream.py",
+        ),
+    ),
     DiscoveryControlSpec(
         "dsr_selection_bias",
         ("dsr_bailey_lopez_de_prado",),

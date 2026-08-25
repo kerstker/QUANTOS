@@ -138,6 +138,14 @@ CHANNEL_CAPABILITIES: Mapping[str, tuple[ChannelCapability, ...]] = {
         ChannelCapability.OPEN_INTEREST,
         ChannelCapability.LIQUIDATIONS,
     ),
+    "bybit_market_resilience": (
+        ChannelCapability.EVENT_TIME,
+        ChannelCapability.RECEIVE_TIME,
+        ChannelCapability.PROCESS_TIME,
+        ChannelCapability.L2_BOOK,
+        ChannelCapability.TAKER_FLOW,
+        ChannelCapability.BOOK_RECOVERY,
+    ),
     "binance_usdm_systemic_risk": (
         ChannelCapability.EVENT_TIME,
         ChannelCapability.BASIS_TERM_STRUCTURE,
@@ -205,6 +213,7 @@ RESEARCH_SURFACES: tuple[ResearchSurfaceSpec, ...] = (
         (
             "binance_usdm_websocket_stream",
             "bybit_linear_websocket_events",
+            "bybit_market_resilience",
             "binance_usdm_book_depth_archive",
         ),
         1,
