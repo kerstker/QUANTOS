@@ -1,5 +1,40 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 DGX 统一 L2 release 与风险包原子发布收口：** 不可变 ARM64
+> release `bcea7a9a9cd351c18acd563791fcec484233d26a` 已部署；其父提交
+> `09f408479e1dd4f7ec0ac30b21837cbbdb50eefe` 的 canonical gate 为 27/27 PASS、
+> 0 failed，DGX 实际 `quantos` 用户的风险包/调度入口/watchdog/systemd 治理集合为
+> 168 passed。38 个普通 worker、resident public stream 与 watchdog 已精确换到
+> `bcea7a9a...`；冻结中的 Wikimedia Attention collector 仍单独固定在
+> `af41c762f82d14cd6ccebf00ec9408df21a2ea5f`，service/timer SHA-256 分别保持
+> `6f4a00e7...` / `6f65417e...`。79 个实际安装单元与审阅后渲染逐文件相同，39 个
+> worker timer、watchdog timer 和 resident stream 均保持 enabled。stream 首次切换因
+> 新 release 漏入 system Git `safe.directory` 而 fail-closed 并进入重启；补齐只读 release
+> 身份验证后于 15:45:49 CST 以 PID 3113709 成功启动，最新语义健康为 PASS、14/14
+> complete、双公共连接正常、0 reconnect、链与 cursor publishability 均通过；凭证、
+> 私有流、broker、下单和 live 仍全为 false。启动失败 journal 未清除。
+>
+> 23:08 的旧 `paper_research_risk_bundle` 与多个大写 worker 并发，11GB
+> `experiment_registry` 在 source-before/source-after 之间变化，attestation 正确失败；
+> 但旧实现会在验证前覆盖 canonical，使现存 `f48cb16...` 不等于上次成功证明的
+> `bbc61f99...`。现实现改为同目录唯一 staging，只有 `attestation.complete=true` 才
+> `os.replace` 原子发布，失败必保留旧 canonical 并清理 staging。旧 canonical 已从消费
+> 路径可恢复地移到 `evidence/quarantine/2026-08-25-paper_research_risk_inputs-unattested-
+> f48cb16bec244b10.json`（完整 SHA-256 `f48cb16bec244b10e57d31ece77d726d2d1aa54a8b07a807e2eeb37aa55dbfa9`，
+> `root:quantos 0440`），不是删除。随后只运行一次新 release：receipt
+> `1787644126498-3140772-paper_research_risk_bundle.json` 证明 release verified、
+> `worker_attested=true`、source-before=source-after
+> `2810a7238beae4fad8a998493e4506a8674260330f5670c4080426c05cfa1a05`，发布输出
+> SHA-256 为 `f48cb16...` 并与新 canonical 一致。
+>
+> 新 watchdog 已无 ACTION_DRIFT，汇总为 32 PASS / 8 PARTIAL / 1 BREACH /
+> 3 UNAVAILABLE。唯一 BREACH 仍是备份恢复历史：65 次尝试、10 次成功、最新终态 PASS、
+> overdue open=0，但 8 月 23 日 03:00 的备份被主机重启 SIGTERM，洁净窗仍含 1 次失败，
+> 且 cadence/history span/success count 尚未自然成熟；不得 reset 或改阈值伪装健康。
+> 三个 UNAVAILABLE 仍是 operator-owned HTTPS heartbeat、domain event seal 与 artifact
+> admission seal 未配置。系统因此仍为 `L2_DRY_RUN_ONLY` / `NOT_TOP_TIER`，不构成盈利、
+> Testnet 或实盘就绪声明。
+
 > **2026-08-25 DGX ICT 流动性扫单前向协议冻结：** 把 ICT 的 practitioner liquidity
 > sweep 语言与 Cont--Kukanov--Stoikov 的订单流失衡机制严格拆开：前者不是盈利证据，
 > 后者也不验证 ICT 规则。系统冻结了 30 秒 PIT、60 分钟前高/低、同侧 taker imbalance、

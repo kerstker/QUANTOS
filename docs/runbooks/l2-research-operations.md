@@ -60,6 +60,24 @@ execution-ledger authorities, any consumed routing snapshot, and its report.
 The research-risk producer binds the candidate universe and fixed risk contract,
 requires all source authorities (including SQLite WAL bytes) to remain identical
 across the computation, and binds the exact per-candidate input view plus output.
+It must publish through a unique same-directory staging file. The producer computes
+the source-after view and worker attestation against that staging file and may call
+atomic `os.replace` only when `attestation.complete` is exactly `true`. An incomplete,
+unstable, interrupted, or exception path must remove the staging file and leave the
+prior canonical bytes unchanged. A failed release-run receipt therefore never
+authorizes the canonical file, even when that file exists.
+
+If a failed run may have been produced by a release older than this atomic-publish
+contract, compare the canonical SHA-256 with the output hash of the last successful,
+worker-attested receipt. On mismatch, move the canonical file to a recoverable
+`evidence/quarantine/` path that includes its hash; do not delete or overwrite it.
+Run the producer at most once from a validated immutable release in a window with no
+other template worker active. Publishability is proven only when the new receipt has
+`release_verified=true`, `worker_attested=true`, matching source-before/source-after
+hashes, and an output hash equal to the canonical SHA-256. Atomic publication closes
+the contamination failure mode; it does not make the current 23:08 schedule free of
+writer contention, so a later `RESULT_1` remains a real availability breach and must
+not be reset or thresholded away.
 The operational collector binds the exact upstream release receipt and Shadow
 artifact, candidate scope, preregistered window policy, isolated drill results,
 and the append-only evidence authority before and after collection. Re-observing
