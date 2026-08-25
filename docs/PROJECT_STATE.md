@@ -1,5 +1,29 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 DGX ICT 流动性扫单前向协议冻结：** 把 ICT 的 practitioner liquidity
+> sweep 语言与 Cont--Kukanov--Stoikov 的订单流失衡机制严格拆开：前者不是盈利证据，
+> 后者也不验证 ICT 规则。系统冻结了 30 秒 PIT、60 分钟前高/低、同侧 taker imbalance、
+> displayed-depth absorption、两分钟 reclaim、15 分钟持有、DST-safe 纽约时段及四个控制，
+> 共 5 个候选，禁止阈值/时段/方向/持有期扫描。不可变 ARM64 release
+> `c7fb7d8e34ff35f93560149c675534c426f9ae07` 通过 38 项聚焦测试；DGX 在
+> `1787637742099` append-once 记录合同，preregistration ID 为
+> `a735078a00fbc0510087db37394089f09b4d905be193a94d1d3cf999f60bbece6`，artifact
+> SHA-256 为 `2e2fbb946e4b2f0d9e6969f09962db96c0ed7cefc8197068049279d5de07877d`。
+> 冻结前最大知识时钟早 83.204 秒，旧帧全部不合格；二次记录被 `FileExistsError` 拒绝，
+> 全局 trial 仍为 2860，未读收益、未算统计、未改 registry，eligible=0。最早时间门
+> `1795413742099` 之后仍须同时满足 60 个事件日和 500 个非重叠事件；即使终局 PASS 也只
+> 能进入人工 L2 paper 评审，不授予 Shadow/Testnet/live、凭证、broker 或订单权限。
+
+> **2026-08-25 DGX lottery/MAX 低风险异象证伪：** 在 115 币、305 个非重叠周期间冻结
+> 低 MAX 主假设、Top60/Top30、反号与双倍成本控制，并只运行一次正式研究。全局 trial
+> 从 2855 精确增至 2860；主候选净 Sharpe -0.254、总收益 -48.18%、最大回撤 68.92%、
+> DSR `1.43e-10`、PBO 0.40，末段也为负；高 MAX 反号同样亏损，Top30 的弱正收益在双倍
+> 成本下转负，全部 evaluator verdict 为 FAIL。不可变 artifact
+> `crypto_weekly_lottery_max_34d5792.json` SHA-256 为
+> `d8ad393e9b3565efcc29b9717a5984490483d8eeab11505c59998df76f318eea`，二次运行被拒绝。
+> 方法论已标记 `EXISTING_FALSIFIED_IMPLEMENTATION`，不得降门槛或重复挖掘；这轮结果缩小
+> 了错误搜索空间，不是盈利 Alpha，也没有触碰任何实盘边界。
+
 > **2026-08-12 实时特征双时钟新鲜度修复（Task 39 继续锁定）：** 运行观察发现实时特征
 > worker 在重负载周期约需 13--17 分钟，但旧状态把周期开始时间写成 `generated_at_ms`，
 > 导致刚完成的 PASS 可能立即被下游按 15 分钟阈值判旧。现以完成时钟发布状态，同时由

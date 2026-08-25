@@ -102,3 +102,33 @@ contract recorder that reads no prices, feature values, labels, returns,
 registry, lifecycle, credentials, broker, or order surface. The DGX raw feature
 collector continues independently; recording this protocol does not evaluate
 or trade the hypothesis.
+
+## DGX preregistration evidence
+
+The complete immutable ARM64 release is
+`c7fb7d8e34ff35f93560149c675534c426f9ae07`. The DGX focused suite passed 38
+tests covering the pure kernel, append-once recorder, methodology catalog, and
+crypto-data governance boundary. Immediately before recording, the realtime
+feature authority contained 30,300,306 rows. Its maximum knowledge time was
+`1787637658895`, 83.204 seconds earlier than the freeze, so no retained frame is
+eligible for this experiment.
+
+DGX recorded the contract exactly once at `1787637742099`:
+
+- artifact:
+  `/srv/quantos/state/evidence/ict_liquidity_sweep_preregistration_c7fb7d8.json`;
+- preregistration ID:
+  `a735078a00fbc0510087db37394089f09b4d905be193a94d1d3cf999f60bbece6`;
+- contract hash:
+  `b4679084d69962ee3361139c33290ab97d217b38a7ea64e443d363356306e423e`;
+- artifact SHA-256:
+  `2e2fbb946e4b2f0d9e6969f09962db96c0ed7cefc8197068049279d5de07877d`;
+- earliest time-based unblind boundary: `1795413742099`, still subject to the
+  independent 60-day and 500-event minimums.
+
+The artifact is `root:quantos` mode `0440`. A deliberate second recording was
+rejected with `FileExistsError` and left the digest unchanged. The global trial
+count remained 2,860; `outcomes_accessed=false`,
+`return_statistics_computed=false`, `trial_registry_mutated=false`, and
+`alpha_eligible_count=0`. This is evidence that the experiment is frozen and
+collecting, not evidence that the Alpha works.
