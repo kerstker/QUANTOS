@@ -219,3 +219,71 @@ The following remain false and are not changed by this work:
 - exact event/receive/process clocks survive stream reduction and persistence;
 - legacy lifecycle and trading safety gates are unchanged;
 - local canonical validation and ARM64 DGX tests must pass before deployment.
+
+## Fourth development slice: outcome-blind maturity authority
+
+`services/research/liquidation_mechanism.py` and
+`tools/cross_venue_liquidation_health.py` close the operational gap between a
+frozen preregistration and a future terminal evaluator. The pure mechanism
+core consumes only liquidation identity, instrument, liquidated-position side,
+source event time, local receive time and local processing time. It deliberately
+does not expose price, quantity, returns, labels, candidate identity or any
+outcome statistic.
+
+Prints are grouped by instrument and side while consecutive receive clocks are
+no more than five seconds apart. A burst is counted only after a quiet period
+has closed it at a fixed observation boundary. The independent unit then uses
+the preregistered 30-minute instrument lockout regardless of side. This makes
+the maturity counter deterministic, restart-safe and resistant to inflating
+breadth with many prints from one liquidation cascade.
+
+The worker verifies the frozen preregistration intrinsically and by exact
+artifact SHA-256, then verifies the Bybit authority from a trusted local
+checkpoint through the current suffix. It publishes only collection elapsed
+time, raw print count, closed-burst count, independent-episode count, eligible
+UTC event days and per-instrument counts. Price and quantity mutations cannot
+change maturity. The output contract always keeps interim outcome access,
+labels, returns, trial-registry mutation and Alpha eligibility disabled.
+
+The worker runs every 30 minutes at minute 17/47 with a ten-minute bound and a
+two-hour watchdog freshness contract. Its status artifact and the immutable
+preregistration artifact are included as optional sources in encrypted backup
+contract v9. The first DGX v9 backup included 23 real files and passed source
+contract, encryption, separate-filesystem, manifest, SQLite integrity, restore,
+restore-history, RPO and RTO checks.
+
+## DGX release evidence and public-book resilience
+
+The canonical gate for source commit `1e86dd7c` completed 27/27 checks: 6,685
+core tests passed with 19 skipped, 2,886 live/trading/tools tests passed with two
+skipped, 199 frontend tests passed, and all 24 Phase 13 audit tests passed. The
+evidence-bound ARM64 release is
+`fd5f31c4d5c53587aec3687c6a95a8c0cc655861`; 305 focused ARM64 tests passed on
+the DGX.
+
+Production observation exposed repeated TLS EOFs on the public Bybit REST path
+used by the paper multi-venue SOR. The HTTP boundary now retries only transient
+URL/timeout transport failures with fixed 0.25-second and 0.75-second delays.
+Explicit HTTP responses and malformed payloads remain immediate failures, and
+the third transport failure still blocks the whole canary. No alternate domain,
+stale-cache substitution, private endpoint or execution capability was added.
+After deployment, one manual and one independently scheduled 14-instrument
+canary both passed with four approved simulation intents, zero rejects, no
+Binance REST failover and every credential/broker/order/live flag false.
+
+All 39 non-Attention workers and four special unit files now bind the new
+release and passed `systemd-analyze verify`. The separately frozen Wikimedia
+Attention service and timer retained their exact hashes and older release.
+Binance and Bybit resident streams restarted into the new release and returned
+safe semantic PASS receipts. A deployment-time overlap between the manual SOR
+and domain-event projection produced one retained SQLite OperationalError; the
+normal idempotent recovery worker cleared the single pending event with all
+three append-only chains valid and zero dead letters.
+
+The final watchdog snapshot had zero breaches, 34 passes, nine partial results
+and three operator-owned unconfigured external authorities. The blind sample
+at that snapshot had 394 forward liquidation prints, 122 closed bursts and only
+12 independent episodes across one UTC event day (four each for BTC, ETH and
+SOL). Every maturity gate remains false, unblinding remains prohibited, formal
+Alpha eligibility remains zero, and the platform remains `L2_DRY_RUN_ONLY` and
+`NOT_TOP_TIER` (14/22).

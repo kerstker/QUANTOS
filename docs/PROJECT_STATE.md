@@ -1,5 +1,39 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-25 双场所强平机制的盲化成熟度与 DGX 发布已收口：** 新增的
+> outcome-blind health worker 只把预注册后的 Bybit `allLiquidation` 原始打印按
+> 同币种/同方向、5 秒接收时钟间隔聚成已静默闭合的 burst，再施加 30 分钟币种级
+> lockout；它不读取价格、数量、标签、收益或 Sharpe。每 30 分钟的 L2 timer 只检查
+> 冻结预注册 SHA、可信本地 checkpoint/后缀哈希链、事件日和独立 episode 数，且
+> `unblind_allowed=false`、`outcomes_accessed=false`、`trial_registry_mutated=false`、
+> `alpha_eligible_count=0`。最新 DGX receipt 为 operational `PASS` / readiness
+> `COLLECTING`：394 条前向强平打印形成 122 个闭合 burst、12 个独立 episode、1 个
+> 事件日，BTC/ETH/SOL 各 4 个；90 天、60 事件日、500 episode、每币 75 episode
+> 四道成熟度门全部仍为 false，最早揭盲时间仍是 2026-11-23 19:28:34.273 CST。
+>
+> 公共多场所 paper SOR 在旧 release 上连续被 Bybit public REST 的瞬态 TLS EOF
+> fail-closed。新实现只对同一个公开 GET 的 `URLError`/timeout 做 0.25 秒、0.75 秒
+> 两次有限重试；HTTP 响应、JSON/业务错误不重试，第三次传输失败仍 `BLOCKED`。
+> source commit `1e86dd7c...` 经 canonical gate 27/27 PASS（core 6685 passed /
+> 19 skipped，live/trading/tools 2886 passed / 2 skipped，frontend 199，Phase 13
+> 24）；证据 release `fd5f31c4d5c53587aec3687c6a95a8c0cc655861` 在 ARM64 上
+> 305/305 passed。DGX 随后的手工 canary 与正常定时 canary 连续两次 PASS：14 币双
+> 场所真实公开盘口、4 intents、4 approved、0 rejected，且
+> `strategy_edge_claim=false`、凭证/私有流/broker/下单/live 全为 false。
+>
+> 39 个非 Attention worker 的 78 个 systemd 文件和 4 个 special 文件已绑定
+> `fd5f31c...` 并通过 `systemd-analyze verify`；Binance/Bybit resident stream
+> 受控重启后分别以 PID 3462027 / 3462077 运行在该 release。冻结的 Wikimedia
+> Attention 仍固定 `af41c762...`，service/timer SHA-256 保持
+> `6f4a00e7...` / `6f65417e...`。一次手工 SOR 与 21:31 的 domain-event 投影重叠
+> 触发 SQLite `OperationalError` 并留下 1 个待处理事件；append-only 链、consumer
+> 链、coordination 链均有效，幂等 recovery 补跑后 pending=0、dead-letter=0、
+> `domain_event_ops=PASS`。最终 watchdog 为 0 BREACH / 34 PASS / 9 PARTIAL /
+> 3 UNAVAILABLE；三个 UNAVAILABLE 仍是 operator-owned heartbeat/event seal/
+> artifact seal 未配置，backup 仍按自然时间积累纵向成熟度。系统保持
+> `L2_DRY_RUN_ONLY`、`NOT_TOP_TIER 14/22`，本轮形成的是可审计的盲化研究过程，
+> 不是已经盈利或可实盘的 Alpha。
+>
 > **2026-08-25 首个双场所强平机制候选已盲化预注册：** 研究对象不是新公式，而是
 > “Bybit 被强平账户以急迫成交消耗本场所深度、受资本约束的 Binance/Bybit 跨场所资金
 > 不能立即补平价差，强平静默与盘口恢复后超调回归”的可证伪机制。独立下注定义为一次
