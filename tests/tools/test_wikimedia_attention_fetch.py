@@ -1,3 +1,5 @@
+import urllib.error
+
 import pytest
 
 from services.data.fundamental_store import SqliteFundamentalStore
@@ -74,6 +76,53 @@ def test_fetch_uses_encoded_article_and_user_only_endpoint() -> None:
         "/en.wikipedia.org/all-access/user/Bitcoin%20Cash/daily/20231115/20231116"
     )
     assert "User-Agent" in calls[0][1]
+
+
+def test_fetch_honors_retry_after_for_rate_limit(monkeypatch) -> None:
+    attempts = []
+    sleeps = []
+
+    def fake_get(url, _headers):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {"Retry-After": "7"}, None
+            )
+        return {"items": [_item("Bitcoin", T0, 100)]}
+
+    monkeypatch.setattr(attention.time, "sleep", sleeps.append)
+    result = attention.fetch_article_pageviews(
+        article="Bitcoin",
+        start_day="20231115",
+        end_day="20231116",
+        http_get=fake_get,
+        max_attempts=2,
+        retry_sleep=1.0,
+    )
+
+    assert result["items"][0]["views"] == 100
+    assert len(attempts) == 2
+    assert sleeps == [7.0]
+
+
+def test_fetch_does_not_retry_non_transient_http_error(monkeypatch) -> None:
+    sleeps = []
+
+    def fake_get(url, _headers):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(attention.time, "sleep", sleeps.append)
+    with pytest.raises(urllib.error.HTTPError) as captured:
+        attention.fetch_article_pageviews(
+            article="Bitcoin",
+            start_day="20231115",
+            end_day="20231116",
+            http_get=fake_get,
+            max_attempts=3,
+        )
+
+    assert captured.value.code == 404
+    assert sleeps == []
 
 
 def test_snapshot_is_diagnostic_only_and_forward_rows_use_common_day() -> None:

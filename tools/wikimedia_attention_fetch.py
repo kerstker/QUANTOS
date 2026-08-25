@@ -36,6 +36,9 @@ DEFAULT_VINTAGE_DB = os.path.join(
 )
 FORWARD_FEATURE_ID = "wikimedia_crypto_attention_pageviews_forward_vintage"
 DEFAULT_LOOKBACK_DAYS = 120
+REQUEST_INTERVAL_SECONDS = 0.25
+MAX_RETRY_AFTER_SECONDS = 60.0
+RETRYABLE_HTTP_STATUS = frozenset({429, 500, 502, 503, 504})
 
 # Pinned canonical English-Wikipedia titles. Redirect aliases are deliberately
 # excluded because Wikimedia does not attribute redirect views to the target.
@@ -86,8 +89,8 @@ def fetch_article_pageviews(
     start_day: str,
     end_day: str,
     http_get=_http_get_json,
-    max_attempts: int = 3,
-    retry_sleep: float = 1.0,
+    max_attempts: int = 4,
+    retry_sleep: float = 5.0,
 ):
     if max_attempts <= 0:
         raise ValueError("max_attempts must be positive")
@@ -99,8 +102,20 @@ def fetch_article_pageviews(
     for attempt in range(max_attempts):
         try:
             return http_get(url, headers)
-        except urllib.error.HTTPError:
-            raise
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRYABLE_HTTP_STATUS or attempt + 1 >= max_attempts:
+                raise
+            raw_retry_after = (
+                exc.headers.get("Retry-After") if exc.headers is not None else None
+            )
+            try:
+                retry_after = float(raw_retry_after)
+            except (TypeError, ValueError):
+                retry_after = 0.0
+            if not math.isfinite(retry_after) or retry_after < 0.0:
+                retry_after = 0.0
+            delay = max(retry_sleep * (2 ** attempt), retry_after)
+            time.sleep(min(delay, MAX_RETRY_AFTER_SECONDS))
         except (TimeoutError, urllib.error.URLError, ConnectionError):
             if attempt + 1 >= max_attempts:
                 raise
@@ -317,7 +332,7 @@ def main(argv=None) -> dict:
     end_day = args.end_day or default_end
     article_map = dict(ATTENTION_ARTICLES)
     series_by_instrument: dict[str, dict[int, float]] = {}
-    for instrument, article in ATTENTION_ARTICLES:
+    for index, (instrument, article) in enumerate(ATTENTION_ARTICLES):
         raw = fetch_article_pageviews(
             article=article, start_day=start_day, end_day=end_day
         )
@@ -344,6 +359,8 @@ def main(argv=None) -> dict:
                 parse_diagnostics=diagnostics,
             )
         series_by_instrument[instrument] = parsed
+        if index + 1 < len(ATTENTION_ARTICLES):
+            time.sleep(REQUEST_INTERVAL_SECONDS)
     snapshot = build_snapshot(
         series_by_instrument,
         article_map=article_map,
