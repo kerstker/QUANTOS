@@ -1,6 +1,6 @@
 # Crypto attention forward channel
 
-Status: IMPLEMENTED, VALIDATION AND DGX FIRST CAPTURE PENDING
+Status: IMPLEMENTED, VALIDATED, AND COLLECTING FORWARD VINTAGES ON DGX
 
 ## Purpose
 
@@ -44,6 +44,13 @@ L2 schedule entrypoint. It uses no credentials, account endpoints, broker SDK,
 or order surface. The collector itself cannot create an Alpha, evaluate
 returns, enter Shadow/Testnet, or grant live authority.
 
+The public endpoint is rate limited. The reviewed collector spaces article
+requests by 250 ms and retries HTTP 429/500/502/503/504 responses. It honors a
+numeric `Retry-After` header, otherwise uses bounded exponential backoff, and
+caps any single wait at 60 seconds. A non-transient response such as 404 fails
+immediately. Exhausted retries fail the whole refresh before any partial
+forward cross-section is committed.
+
 ## Research admission boundary
 
 Historical pageviews cannot support promotion because QUANTOS did not capture
@@ -57,3 +64,30 @@ and rejection bars before any return outcome is accessed. Required controls at
 minimum are the price-only rule, a deterministic timestamp placebo, source
 outage handling, and turnover/crowding pressure. No parameter scan is allowed
 on the forward sample.
+
+## DGX deployment evidence
+
+The rate-limit-hardened release is the complete Git checkout at commit
+`af41c762f82d14cd6ccebf00ec9408df21a2ea5f`. Its transfer bundle SHA-256 is
+`7b636a87633597c705dab3038495eff796fba42b527fd78660c729c3bb42a1f8`.
+The local canonical validation gate passed all 27 selected stages with zero
+failures or timeouts. The immutable DGX checkout then passed 187 focused tests
+covering the fetcher, forward worker, scheduler entrypoint, watchdog, channel
+registry, and systemd/data governance boundaries.
+
+The final immutable entrypoint and the installed systemd service each completed
+successfully with 13 instruments, 119 retrospective common days, and 13 new
+forward-vintage rows. The timer is enabled and waiting for its daily 09:45
+Asia/Shanghai trigger. Its unit binds the exact release commit above and keeps
+all five non-negotiable live-safety flags literal and fail-closed.
+
+At verification time the forward database contained 52 rows: 13 instruments,
+one distinct event day (`1787443200000`), and four distinct fetch-time
+knowledge vintages (`1787617550963` through `1787620110457`). This is still one
+forward observation date, not four independent forward days. The snapshot
+SHA-256 is
+`7d0557a3614f9eb759b9406d27bcb091f725ac619a7cc7eab86950b33aa64702`;
+the bitemporal database SHA-256 is
+`fe07cd4e74d4d4d13056bec55327f11929219823dfcb320a3c79596e07abe725`.
+The methodology audit therefore remains honestly
+`FORWARD_PREREG_REQUIRED`, with `alpha_eligible_count=0`.
