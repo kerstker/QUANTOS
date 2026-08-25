@@ -1021,6 +1021,11 @@
           "path": "services/research/funding_settlement.py"
         },
         {
+          "line": 20,
+          "module": "services.alpha.panel_backtest",
+          "path": "services/research/idiosyncratic_volatility.py"
+        },
+        {
           "line": 16,
           "module": "services.alpha.panel_backtest",
           "path": "services/research/interaction_factors.py"
@@ -1355,7 +1360,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "b84a283c35219dc971a4208bf623ed568486bf58b2c3da67a0300ecf89bfa59c",
+  "graph_sha256": "baf4b74442297f783ac3cad6fad29d7d322c10f2bbbb6abd26c05ce8847058cf",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1393,7 +1398,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 479,
+  "source_file_count": 480,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
