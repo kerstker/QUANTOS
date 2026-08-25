@@ -266,3 +266,26 @@ def test_cross_venue_liquidation_method_names_payer_and_forward_authorities() ->
     assert method.system_modules == (
         "tools/cross_venue_liquidation_preregistration.py",
     )
+
+
+def test_borrow_pressure_method_is_forward_only_and_mechanism_bound() -> None:
+    method = next(
+        item for item in ALPHA_METHODS
+        if item.method_id == "cross_venue_borrow_short_pressure"
+    )
+
+    assert method.system_disposition == "FORWARD_EXPERIMENT_GAP"
+    assert method.required_channel_ids == (
+        "okx_public_borrow_rates",
+        "binance_usdm_websocket_stream",
+    )
+    assert method.payer_ids == (
+        EconomicPayer.LEVERAGED_CROWD,
+        EconomicPayer.CAPITAL_CONSTRAINED_CROSS_VENUE,
+    )
+    assert "seven-day" in method.independent_bet_unit
+    assert "unobservable lendable quantity" in method.cost_risks
+    assert method.system_modules == (
+        "tools/okx_borrow_fetch.py",
+        "tools/borrow_pressure_preregistration.py",
+    )

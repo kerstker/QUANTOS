@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-26 借贷成本机制实验已完成本地开发、尚未在 DGX 冻结：** 新增的不是
+> 单因子 Sharpe 排名，而是“谁付钱”的联合合同：OKX 14 币公开借贷成本处于截面前
+> 20% 且继续上升，同时 Binance 永续资金费为负、mark/index 基差不高于 -2bps、
+> 过去 24 小时下跌至少 2% 时，假设拥挤空头与受跨场所融资约束者的平仓为 24 小时
+> 反弹付费。主候选与反号、borrow-only、funding-only、低借贷成本四个控制一次冻结；
+> 每币七天 lockout，正式前向至少 120 天/75 个有效日/100 个独立事件。OKX 已抓取历史
+> 只在实际 fetch knowledge time 后可知，公开 amount 字段废弃，因此借贷可用数量仍为
+> `UNAVAILABLE`，绝不拿 rate 冒充 borrow capacity。最终只按增量净利润、正交性、成交
+> 可信度、永续盘口容量、换手和尾部风险评审；即使 PASS 也只进入人工 L2 paper review。
+> 当前 27 项最小相关测试通过，尚未生成 DGX append-once preregistration，尚未访问结果，
+> `alpha_eligible_count=0`，实盘边界不变。设计见
+> `docs/engineering/specs/2026-08-26-borrow-pressure-forward-experiment.md`。
+
 > **2026-08-26 DGX Binance 全链证明扩展性故障与本地修复：** 真机游标权威已约
 > 45.9M 事件；90 分钟隔离全审计超时。随后五分钟 realtime-feature worker 在源证明
 > 过期后自行从创世扫描，约 45 分钟达到 9.7 GiB 峰值并被 systemd 限时终止，timer
