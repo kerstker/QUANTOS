@@ -81,14 +81,16 @@ forward-vintage rows. The timer is enabled and waiting for its daily 09:45
 Asia/Shanghai trigger. Its unit binds the exact release commit above and keeps
 all five non-negotiable live-safety flags literal and fail-closed.
 
-At verification time the forward database contained 52 rows: 13 instruments,
-one distinct event day (`1787443200000`), and four distinct fetch-time
-knowledge vintages (`1787617550963` through `1787620110457`). This is still one
-forward observation date, not four independent forward days. The snapshot
-SHA-256 is
-`7d0557a3614f9eb759b9406d27bcb091f725ac619a7cc7eab86950b33aa64702`;
+At final verification time the forward database contained 65 rows: 13
+instruments, one distinct event day (`1787443200000`), and five distinct
+fetch-time knowledge vintages (`1787617550963` through `1787622302559`). This
+is still one forward observation date, not five independent forward days. The
+fifth vintage came from the first unattended 09:45 systemd trigger, which used
+the pinned `af41c762f82d14cd6ccebf00ec9408df21a2ea5f` collector release and
+exited successfully. The final snapshot SHA-256 is
+`fb60d47f7cb787c08d5637ae70cbc0be1ff30fdf862a94da813688b1555e9261`;
 the bitemporal database SHA-256 is
-`fe07cd4e74d4d4d13056bec55327f11929219823dfcb320a3c79596e07abe725`.
+`c9a6d0061fa87c62f3b6a6836afe3896c4c98f1600c0273b72061cfa57054083`.
 The methodology audit therefore remains honestly
 `FORWARD_PREREG_REQUIRED`, with `alpha_eligible_count=0`.
 
@@ -124,3 +126,23 @@ outcome access and must apply DSR, PBO, cost, drawdown, participation,
 incremental-vs-price-only, timestamp-placebo, crowding/capacity, regime, and
 tail-risk bars. Even a terminal pass can authorize only a human-reviewed L2
 paper admission; it grants no Testnet or live authority.
+
+The protocol release is
+`f358411c763f85a87b97b022814bdfb09db8c946`; its complete-history bundle
+SHA-256 is
+`49ed249dd22f6cd1b624c8c81557a884903c60138c4e90ae86fee032236fa938`.
+The canonical gate passed all 27 stages after 6,593 core tests, 2,821
+live/trading/tools tests, 199 frontend tests, and 24 final-audit tests. The DGX
+ARM64 release passed the 12 new protocol tests.
+
+DGX recorded the append-once contract at `1787623101762` with contract hash
+`dd5fdc45b744adb76caf3a64f5966e4cc853e335a4aa93d62b91d303026b848b`
+and preregistration ID
+`a5697ed13d555817a2652fb947b8e4511571b960bca2f382c87cec26f5b08788`.
+The artifact SHA-256 is
+`db38bbc95eba3d49fd26aaebbae5b8d716d8aa162c3c4e35a31a44c2020ce4e0`;
+it is owned by `root:quantos` with mode `0440`. A deliberate second recording
+failed with `FileExistsError` and left the hash unchanged. Because the
+preregistration timestamp is later than the current maximum captured knowledge
+time (`1787622302559`), none of the already observed vintages is admissible to
+the terminal experiment.
