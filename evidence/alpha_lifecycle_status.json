@@ -16,9 +16,9 @@
     "path": "evidence/alpha_lifecycle_cockpit.json",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "09f408479e1dd4f7ec0ac30b21837cbbdb50eefe",
+  "commit": "91c00465cb87973bb5b6ee3fee80c743407761ce",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1787643328497,
+  "generated_at_ms": 1787649010058,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
@@ -28,7 +28,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "45363cc51e6f0d386677e6bf7e8ccb87e9958620c0cbf4f48f70d58fed7fef8d",
+  "input_hash": "1f7af4cc4010e47bc620e666466b6514aa0a020d868d0fa4688cd7e7c95a5313",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -56,8 +56,8 @@
     },
     "services/alpha": {
       "exists": true,
-      "file_count": 39,
-      "files_sha256": "66decfe6c66b3914ccf1d8adc3a6a79baf20b1499ea49115bc7903cd7a62e0cb",
+      "file_count": 40,
+      "files_sha256": "b8990f923225edfb1cdaad60cc6f89e1f6b210ff552d2ed669057dd395828cbe",
       "kind": "python_directory"
     },
     "services/alpha_factory": {
@@ -68,8 +68,8 @@
     },
     "tests/alpha": {
       "exists": true,
-      "file_count": 41,
-      "files_sha256": "e6ea58d8b1b42800ba4d13196e2246b7dc86085e4256bc56ce7b042a31ffadcc",
+      "file_count": 42,
+      "files_sha256": "1a02b0f1443c4d25d7fa963cf5afed486544302465bbe02542eeb89cb55f8b12",
       "kind": "python_directory"
     },
     "tests/alpha_factory": {
@@ -98,9 +98,9 @@
   "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
     "current": true,
-    "head_commit": "09f408479e1dd4f7ec0ac30b21837cbbdb50eefe",
+    "head_commit": "91c00465cb87973bb5b6ee3fee80c743407761ce",
     "overall_status": "PASS",
-    "reported_commit": "09f408479e1dd4f7ec0ac30b21837cbbdb50eefe",
+    "reported_commit": "91c00465cb87973bb5b6ee3fee80c743407761ce",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
