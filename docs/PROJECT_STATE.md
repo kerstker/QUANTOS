@@ -2424,3 +2424,33 @@ rescued by reversing the sign, lowering costs, reducing the universe, or
 changing the window after seeing the result. Formal Alpha eligibility remains
 **zero**; no forward admission, Testnet intent, credentials, broker connection,
 order submission, or live authority was created.
+
+## 2026-08-25 crypto weekly MAX falsification on DGX
+
+Two conflicting peer-reviewed direct-crypto priors were resolved through one
+frozen experiment rather than by choosing the winning sign after inspection.
+The primary was Grobys-Junttila low prior-week MAX; Li-Urquhart-Wang-Zhang
+high-MAX continuation was a non-rescuing sign control. Ordinary weekly
+reversal, a fixed-hash placebo, and a nested top-30 investability control made
+five preregistered candidates in total. The sample retained 305 non-overlapping
+weekly periods, one XMR forced exit, and excluded the first 46-name clustered
+right-censoring boundary without later sample re-entry.
+
+The only formal run on immutable ARM64 release `34d5792` registered exactly
+five trials (global count 2,855 to 2,860) and returned
+`REJECTED_HISTORICAL`. The low-MAX primary had net Sharpe `-0.254`, net return
+`-48.18%`, maximum drawdown `68.92%`, DSR `1.43e-10`, PBO `0.40`, and maximum
+participation `18.79%`; its last 61 periods and double-cost replay were also
+negative. High MAX also lost money (Sharpe `-0.194`, return `-41.56%`). The
+top-30 low-MAX control's weak base result (Sharpe `0.193`, return `+7.43%`)
+became `-23.38%` under double cost/impact and did not pass investability bars.
+
+The 6.51 MB immutable artifact is retained on DGX as
+`/srv/quantos/state/evidence/crypto_weekly_lottery_max_34d5792.json`, SHA-256
+`d8ad393e9b3565efcc29b9717a5984490483d8eeab11505c59998df76f318eea`, with
+`root:quantos` ownership and mode `0440`. An overwrite attempt failed before
+registry mutation, leaving both the trial count and hash unchanged. This exact
+MAX family is now an `EXISTING_FALSIFIED_IMPLEMENTATION`; neither literature
+sign may be recycled through post-hoc tuning. Formal Alpha eligibility remains
+**zero**, and no forward, Testnet, credential, broker, order, or live authority
+was created.

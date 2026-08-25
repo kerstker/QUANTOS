@@ -156,7 +156,7 @@ def test_direct_crypto_ivol_result_is_internalized_as_falsified() -> None:
     )
 
 
-def test_conflicting_crypto_max_priors_are_bound_to_one_open_experiment() -> None:
+def test_conflicting_crypto_max_priors_are_internalized_as_falsified() -> None:
     sources = {item.source_id: item for item in SOURCES}
     method = next(
         item for item in ALPHA_METHODS if item.method_id == "crypto_lottery_max"
@@ -171,5 +171,9 @@ def test_conflicting_crypto_max_priors_are_bound_to_one_open_experiment() -> Non
         for source_id in method.source_ids
     )
     assert method.portability == "DIRECT_CRYPTO"
-    assert method.system_disposition == "NEW_EXPERIMENT_GAP"
+    assert method.system_disposition == "EXISTING_FALSIFIED_IMPLEMENTATION"
     assert "high-MAX sign control" in method.falsification_tests
+    assert method.system_modules == (
+        "services/research/lottery_max.py",
+        "tools/lottery_max_research.py",
+    )

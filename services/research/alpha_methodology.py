@@ -169,7 +169,7 @@ SOURCES: tuple[SourceSpec, ...] = (
         "https://www.sciencedirect.com/science/article/pii/S1042443121000081",
         "10.1016/j.intfin.2021.101289",
         False,
-        "Direct weekly crypto evidence for low-MAX minus high-MAX returns; competing peer-reviewed crypto evidence makes the sign a load-bearing falsification control.",
+        "Direct weekly crypto evidence for low-MAX minus high-MAX returns; the frozen QUANTOS translation and its competing sign were independently costed and historically falsified on DGX, so neither sign may be re-mined under the same specification.",
     ),
     SourceSpec(
         "crypto_max_momentum_li_urquhart_wang_zhang",
@@ -180,7 +180,7 @@ SOURCES: tuple[SourceSpec, ...] = (
         "https://research.birmingham.ac.uk/en/publications/max-momentum-in-cryptocurrency-markets/",
         "10.1016/j.irfa.2021.101829",
         False,
-        "Direct crypto evidence for the opposite high-MAX sign; retained as a competing prior rather than used to rescue a failed primary.",
+        "Direct crypto evidence for the opposite high-MAX sign; its frozen DGX control also lost money and remains a falsified competing prior rather than a post-hoc rescue.",
     ),
     SourceSpec(
         "crypto_price_discovery_makarov_schoar",
@@ -409,7 +409,7 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
             "services/research/lottery_max.py",
             "tools/lottery_max_research.py",
         ),
-        "NEW_EXPERIMENT_GAP",
+        "EXISTING_FALSIFIED_IMPLEMENTATION",
     ),
     AlphaMethodSpec(
         "ict_liquidity_sweep_session",

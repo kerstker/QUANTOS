@@ -78,3 +78,35 @@ The implementation is deterministic offline research. It imports no broker
 SDK, reads no credentials, cannot submit orders, cannot mutate Alpha lifecycle
 state, and cannot enable live flags. Mainnet remains structurally blocked and
 human approval remains mandatory.
+
+## Frozen DGX outcome
+
+The only formal evaluation ran on immutable ARM64 release
+`34d5792cacb514a4b8749b566de1216d11911596`. It registered the five frozen
+candidates exactly once, moving the global trial population from 2,855 to
+2,860 under search `search-e5af5b0fa7e757a5133dfda4d`. The dataset version
+was `459742219157f0556518313ec279864611fb2e96dfb64fbdf9169f5b32e978234`
+and the contract hash was
+`78d1bc96c6d4378f7288920e1cdc64c4bc8acce99a869f18b7a84bfd2cef56751`.
+
+The primary low-MAX book was rejected: net Sharpe `-0.2540`, net return
+`-48.18%`, maximum drawdown `68.92%`, DSR `1.43e-10`, PBO `0.40`, and maximum
+participation `18.79%`. Its final 61-period chronological suffix also failed
+(Sharpe `-0.0119`, return `-1.81%`), and double cost/impact reduced total return
+to `-64.10%`. The peer-reviewed high-MAX competing sign also lost money
+(Sharpe `-0.1939`, return `-41.56%`), so the literature conflict did not reveal
+an implementable sign in this market/data/cost contract. The top-30 low-MAX
+control had only Sharpe `0.1926`; its `+7.43%` base return became `-23.38%`
+under double cost/impact. It therefore cannot rescue the primary.
+
+The decision is `REJECTED_HISTORICAL`. The immutable 6,507,040-byte artifact is
+retained at
+`/srv/quantos/state/evidence/crypto_weekly_lottery_max_34d5792.json` with
+SHA-256
+`d8ad393e9b3565efcc29b9717a5984490483d8eeab11505c59998df76f318eea`,
+owner/group `root:quantos`, and mode `0440`. A deliberate overwrite attempt was
+rejected before registry mutation; the trial population stayed at 2,860 and
+the artifact hash was unchanged. This exact specification is now an
+`EXISTING_FALSIFIED_IMPLEMENTATION`. No sign flip, cost reduction, threshold
+change, forward admission, Testnet authority, or live authority follows from
+the result.
