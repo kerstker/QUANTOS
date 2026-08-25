@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal, ROUND_CEILING
@@ -75,6 +76,7 @@ MAX_FUTURE_SKEW_MS = 30_000
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60_000
 BINANCE_DEPTH_LIMITS = (20, 50, 100, 500)
 BYBIT_DEPTH_LIMITS = (20, 50, 200, 500)
+PUBLIC_HTTP_RETRY_DELAYS_SECONDS = (0.25, 0.75)
 FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
     "binance_usdm": Decimal("5"),
@@ -105,8 +107,19 @@ def _http_get_json(url: str) -> object:
         },
         method="GET",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    for attempt in range(len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            # An explicit HTTP response is not a transport interruption and
+            # must not be hidden behind retries.
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt >= len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS):
+                raise
+            time.sleep(PUBLIC_HTTP_RETRY_DELAYS_SECONDS[attempt])
+    raise AssertionError("bounded public HTTP retry loop exhausted")
 
 
 def _decimal(value: object, field: str) -> Decimal:

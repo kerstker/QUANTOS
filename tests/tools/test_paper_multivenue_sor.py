@@ -1,4 +1,5 @@
 import hashlib
+import urllib.error
 from dataclasses import replace
 from decimal import Decimal
 from types import SimpleNamespace
@@ -86,6 +87,57 @@ def _bybit_payload(instrument_id: str, base: str, now_ms: int) -> dict:
             ],
         },
     }
+
+
+def test_public_http_get_retries_transient_transport_failures(monkeypatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        @staticmethod
+        def read() -> bytes:
+            return b'{"ok":true}'
+
+    def flaky_urlopen(_request, *, timeout: int):
+        nonlocal attempts
+        assert timeout == 30
+        attempts += 1
+        if attempts < 3:
+            raise urllib.error.URLError("transient TLS EOF")
+        return Response()
+
+    monkeypatch.setattr(paper_sor.urllib.request, "urlopen", flaky_urlopen)
+    monkeypatch.setattr(paper_sor.time, "sleep", sleeps.append)
+
+    assert paper_sor._http_get_json("https://api.bybit.com/public") == {"ok": True}
+    assert attempts == 3
+    assert sleeps == list(paper_sor.PUBLIC_HTTP_RETRY_DELAYS_SECONDS)
+
+
+def test_public_http_get_fails_closed_after_bounded_retries(monkeypatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def failing_urlopen(_request, *, timeout: int):
+        nonlocal attempts
+        assert timeout == 30
+        attempts += 1
+        raise urllib.error.URLError("persistent TLS EOF")
+
+    monkeypatch.setattr(paper_sor.urllib.request, "urlopen", failing_urlopen)
+    monkeypatch.setattr(paper_sor.time, "sleep", sleeps.append)
+
+    with pytest.raises(urllib.error.URLError, match="persistent TLS EOF"):
+        paper_sor._http_get_json("https://api.bybit.com/public")
+
+    assert attempts == 3
+    assert sleeps == list(paper_sor.PUBLIC_HTTP_RETRY_DELAYS_SECONDS)
 
 
 def _binance_rest_payload(base: str, now_ms: int) -> dict:
