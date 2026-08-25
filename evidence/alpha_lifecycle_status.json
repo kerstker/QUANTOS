@@ -16,9 +16,9 @@
     "path": "evidence/alpha_lifecycle_cockpit.json",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "1ccb9e9d4ff55e220f4a5254d6f1e9c6e40f2184",
+  "commit": "1e86dd7c0526463bce86286095668cc1e80a4083",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1787660891566,
+  "generated_at_ms": 1787664157754,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
@@ -98,9 +98,9 @@
   "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
     "current": true,
-    "head_commit": "1ccb9e9d4ff55e220f4a5254d6f1e9c6e40f2184",
+    "head_commit": "1e86dd7c0526463bce86286095668cc1e80a4083",
     "overall_status": "PASS",
-    "reported_commit": "1ccb9e9d4ff55e220f4a5254d6f1e9c6e40f2184",
+    "reported_commit": "1e86dd7c0526463bce86286095668cc1e80a4083",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
