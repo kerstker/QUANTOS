@@ -14,6 +14,7 @@ from services.research.idiosyncratic_volatility import (
     find_contiguous_sample_stop_row,
     find_first_eligible_decision_row,
     ivol_signal_leakage_ok,
+    sample_stop_diagnostics,
     signal_snapshot,
 )
 
@@ -51,6 +52,8 @@ def test_config_rejects_invalid_or_non_nested_universes() -> None:
         IvolExperimentConfig(return_lookback_rows=0)
     with pytest.raises(ValueError, match="liquid_size"):
         IvolExperimentConfig(universe_size=8, liquid_size=8)
+    with pytest.raises(ValueError, match="terminal"):
+        IvolExperimentConfig(max_terminal_events_per_period=-1)
 
 
 def test_ivol_is_market_residual_volatility_not_total_volatility() -> None:
@@ -224,3 +227,22 @@ def test_sample_stops_at_first_scheduled_primary_breadth_failure() -> None:
     )
     assert [plan.decision_row for plan in plans] == [6, 8, 10]
     assert len(periods) == 3
+    assert sample_stop_diagnostics(panel, 12, config)["reason"] == (
+        "PRIMARY_SIGNAL_BREADTH_FAILURE"
+    )
+
+
+def test_clustered_terminal_labels_stop_before_systemic_right_censoring() -> None:
+    panel = _panel()
+    config = _config()
+    start = config.return_lookback_rows + 1
+    for row in range(12, len(panel.event_times)):
+        for column in (5, 6, 7):
+            panel.matrices["close"][row][column] = None
+            panel.matrices["volume"][row][column] = None
+
+    assert find_contiguous_sample_stop_row(panel, start, config) == 10
+    diagnostic = sample_stop_diagnostics(panel, 10, config)
+    assert diagnostic["reason"] == "CLUSTERED_TERMINAL_RIGHT_CENSORING"
+    assert diagnostic["terminal_count"] == 3
+    assert diagnostic["terminal_names"] == ("c5", "c6", "c7")

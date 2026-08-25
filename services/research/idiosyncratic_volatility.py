@@ -65,6 +65,7 @@ class IvolExperimentConfig:
     holding_rows: int = 7
     universe_size: int = 60
     liquid_size: int = 30
+    max_terminal_events_per_period: int = 2
 
     def __post_init__(self) -> None:
         values = (
@@ -72,11 +73,14 @@ class IvolExperimentConfig:
             self.holding_rows,
             self.universe_size,
             self.liquid_size,
+            self.max_terminal_events_per_period,
         )
         if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
             raise TypeError("experiment dimensions must be integers")
-        if any(value <= 0 for value in values):
+        if any(value <= 0 for value in values[:-1]):
             raise ValueError("experiment dimensions must be positive")
+        if self.max_terminal_events_per_period < 0:
+            raise ValueError("max terminal events per period cannot be negative")
         if self.liquid_size >= self.universe_size:
             raise ValueError("liquid_size must be smaller than universe_size")
 
@@ -295,7 +299,7 @@ def find_contiguous_sample_stop_row(
     signal-time data availability and is computed before any return statistic.
     """
 
-    _validate_panel(panel)
+    close, _volume = _validate_panel(panel)
     if isinstance(start_row, bool) or not isinstance(start_row, int):
         raise TypeError("start_row must be an integer")
     if start_row < config.return_lookback_rows + 1:
@@ -303,13 +307,80 @@ def find_contiguous_sample_stop_row(
     decision_row = start_row
     while decision_row + config.holding_rows < len(panel.event_times):
         try:
-            build_decision_plan(
+            plan = build_decision_plan(
                 panel, decision_row, config.universe_size, config
             )
         except IvolBreadthError:
             return decision_row
+        label_row = decision_row + config.holding_rows
+        column_by_name = {
+            name: index for index, name in enumerate(panel.instruments)
+        }
+        terminal_count = 0
+        for instrument in plan.ranked_universe:
+            column = column_by_name[instrument]
+            if _positive(close[label_row][column]):
+                continue
+            if not any(
+                _positive(close[row][column])
+                for row in range(label_row + 1, len(close))
+            ):
+                terminal_count += 1
+        if terminal_count > config.max_terminal_events_per_period:
+            return decision_row
         decision_row += config.holding_rows
     return decision_row
+
+
+def sample_stop_diagnostics(
+    panel: FieldPanel,
+    stop_row: int,
+    config: IvolExperimentConfig = IvolExperimentConfig(),
+) -> dict[str, object]:
+    """Explain a frozen exclusive sample boundary without return statistics."""
+
+    close, _volume = _validate_panel(panel)
+    try:
+        plan = build_decision_plan(panel, stop_row, config.universe_size, config)
+    except IvolBreadthError as failure:
+        return {
+            "reason": "PRIMARY_SIGNAL_BREADTH_FAILURE",
+            "available_names": failure.available,
+            "required_names": failure.required,
+            "terminal_count": 0,
+            "terminal_names": (),
+        }
+    label_row = stop_row + config.holding_rows
+    if label_row >= len(panel.event_times):
+        return {
+            "reason": "PANEL_END_NO_COMPLETE_LABEL",
+            "available_names": plan.universe_size,
+            "required_names": config.universe_size,
+            "terminal_count": 0,
+            "terminal_names": (),
+        }
+    column_by_name = {name: index for index, name in enumerate(panel.instruments)}
+    terminal_names = []
+    for instrument in plan.ranked_universe:
+        column = column_by_name[instrument]
+        if _positive(close[label_row][column]):
+            continue
+        if not any(
+            _positive(close[row][column])
+            for row in range(label_row + 1, len(close))
+        ):
+            terminal_names.append(instrument)
+    return {
+        "reason": (
+            "CLUSTERED_TERMINAL_RIGHT_CENSORING"
+            if len(terminal_names) > config.max_terminal_events_per_period
+            else "CALLER_DEFINED_STOP"
+        ),
+        "available_names": plan.universe_size,
+        "required_names": config.universe_size,
+        "terminal_count": len(terminal_names),
+        "terminal_names": tuple(sorted(terminal_names)),
+    }
 
 
 def _holding_outcome(
@@ -599,5 +670,6 @@ __all__ = [
     "find_first_eligible_decision_row",
     "find_contiguous_sample_stop_row",
     "ivol_signal_leakage_ok",
+    "sample_stop_diagnostics",
     "signal_snapshot",
 ]

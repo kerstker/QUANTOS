@@ -20,10 +20,13 @@ liquidity families. The paper is a prior, not a profitability guarantee.
 - Decision universe: top 60 by median dollar ADV over the previous 28 completed
   daily rows. The investability control uses the nested top 30.
 - Sample end: the first scheduled decision after sample start with fewer than
-  60 complete signal-time names is excluded, as are all later rows even if
-  breadth later recovers. This is a data-availability boundary computed before
-  any return statistic; bad weeks are never skipped and the universe is not
-  reduced after observing the DGX coverage failure.
+  60 complete signal-time names, or more than two terminal labels in the same
+  primary holding period, is excluded. All later rows stay excluded even if
+  breadth recovers. A singleton such as the observed XMR termination remains a
+  forced exit; a large terminal cluster is systematic source right-censoring,
+  not dozens of invented delistings. This boundary is computed before any
+  return statistic; bad weeks are never skipped and the universe is not reduced
+  after observing the DGX coverage failure.
 - Signal window: 28 completed daily returns ending at `t-1`; row `t` is used
   only to prove entry availability.
 - Market factor: equal-weight daily return of the decision-time liquid universe.

@@ -32,6 +32,7 @@ from services.research.idiosyncratic_volatility import (
     find_contiguous_sample_stop_row,
     find_first_eligible_decision_row,
     ivol_signal_leakage_ok,
+    sample_stop_diagnostics,
 )
 from services.research.research_budget import ResearchBudget
 from tools.cache_io import atomic_write_json
@@ -93,8 +94,9 @@ EVALUATION_CONTRACT = {
     "liquidity_measure": "median(close_times_base_volume)_over_prior_28_rows",
     "sample_start_rule": "earliest_decision_with_60_complete_trailing_names",
     "sample_end_rule": (
-        "exclusive_first_scheduled_decision_with_fewer_than_60_complete_names"
+        "exclusive_first_scheduled_primary_breadth_failure_or_more_than_2_terminal_labels"
     ),
+    "max_terminal_events_per_period": IVOL_CONFIG.max_terminal_events_per_period,
     "holding_rows": IVOL_CONFIG.holding_rows,
     "rebalance": "every_7_rows_non_overlapping_no_skips",
     "universe_size": IVOL_CONFIG.universe_size,
@@ -460,6 +462,7 @@ def run(
     definitions = candidate_definitions()
     start_row = find_first_eligible_decision_row(panel, IVOL_CONFIG)
     stop_row = find_contiguous_sample_stop_row(panel, start_row, IVOL_CONFIG)
+    stop_diagnostics = sample_stop_diagnostics(panel, stop_row, IVOL_CONFIG)
     built: dict[
         str,
         tuple[
@@ -682,6 +685,7 @@ def run(
             ),
             "rule": EVALUATION_CONTRACT["sample_end_rule"],
             "later_recovery_not_reentered": True,
+            "diagnostics": stop_diagnostics,
         },
         "trial_registry": {
             "trial_count_before": trial_count_before,
