@@ -22,9 +22,17 @@ from services.research.alpha_expression import FieldPanel
 
 
 IvolSignalMode = Literal[
-    "idiosyncratic", "low_idiosyncratic", "total", "hash"
+    "idiosyncratic",
+    "low_idiosyncratic",
+    "total",
+    "hash",
+    "low_max",
+    "high_max",
+    "short_term_reversal",
+    "lottery_hash",
 ]
 _HASH_SALT = "quantos.crypto-ivol.hash-control.v1"
+_LOTTERY_HASH_SALT = "quantos.crypto-lottery-max.hash-control.v1"
 _DAY_MS = 86_400_000
 
 
@@ -62,6 +70,7 @@ class IvolBreadthError(ValueError):
 @dataclass(frozen=True)
 class IvolExperimentConfig:
     return_lookback_rows: int = 28
+    liquidity_lookback_rows: int | None = None
     holding_rows: int = 7
     universe_size: int = 60
     liquid_size: int = 30
@@ -81,8 +90,23 @@ class IvolExperimentConfig:
             raise ValueError("experiment dimensions must be positive")
         if self.max_terminal_events_per_period < 0:
             raise ValueError("max terminal events per period cannot be negative")
+        if self.liquidity_lookback_rows is not None and (
+            isinstance(self.liquidity_lookback_rows, bool)
+            or not isinstance(self.liquidity_lookback_rows, int)
+        ):
+            raise TypeError("liquidity_lookback_rows must be an integer or None")
+        if self.liquidity_lookback_rows is not None and self.liquidity_lookback_rows <= 0:
+            raise ValueError("liquidity_lookback_rows must be positive")
         if self.liquid_size >= self.universe_size:
             raise ValueError("liquid_size must be smaller than universe_size")
+
+    @property
+    def effective_liquidity_lookback_rows(self) -> int:
+        return (
+            self.return_lookback_rows
+            if self.liquidity_lookback_rows is None
+            else self.liquidity_lookback_rows
+        )
 
 
 @dataclass(frozen=True)
@@ -95,6 +119,8 @@ class IvolDecisionPlan:
     trailing_median_adv: tuple[float, ...]
     idiosyncratic_volatility: tuple[float, ...]
     total_volatility: tuple[float, ...]
+    maximum_daily_log_return: tuple[float, ...]
+    cumulative_return: tuple[float, ...]
     eligible_adv: tuple[tuple[str, float], ...]
 
 
@@ -189,12 +215,15 @@ def build_decision_plan(
         raise TypeError("universe_size must be an integer")
     if universe_size <= 1:
         raise ValueError("universe_size must be greater than one")
-    earliest = config.return_lookback_rows + 1
+    earliest = max(
+        config.return_lookback_rows + 1,
+        config.effective_liquidity_lookback_rows,
+    )
     if decision_row < earliest or decision_row >= len(panel.event_times):
         raise ValueError("decision_row lacks a complete pre-decision return window")
 
     close_start = decision_row - config.return_lookback_rows - 1
-    adv_start = decision_row - config.return_lookback_rows
+    adv_start = decision_row - config.effective_liquidity_lookback_rows
     eligible: list[tuple[str, int, float, tuple[float, ...]]] = []
     for column, instrument in enumerate(panel.instruments):
         close_window = [close[row][column] for row in range(close_start, decision_row)]
@@ -232,6 +261,8 @@ def build_decision_plan(
     )
     ivol = tuple(_residual_volatility(item[3], market) for item in ranked)
     total = tuple(max(statistics.pstdev(item[3]), 1e-12) for item in ranked)
+    maximum = tuple(max(math.log1p(value) for value in item[3]) for item in ranked)
+    cumulative = tuple(math.prod(1.0 + value for value in item[3]) - 1.0 for item in ranked)
     return IvolDecisionPlan(
         decision_row=decision_row,
         lookback_start=close_start,
@@ -241,12 +272,14 @@ def build_decision_plan(
         trailing_median_adv=tuple(float(item[2]) for item in ranked),
         idiosyncratic_volatility=ivol,
         total_volatility=total,
+        maximum_daily_log_return=maximum,
+        cumulative_return=cumulative,
         eligible_adv=tuple(sorted((item[0], float(item[2])) for item in eligible)),
     )
 
 
-def _hash_signal(instrument: str) -> float:
-    digest = hashlib.sha256(f"{_HASH_SALT}:{instrument}".encode("utf-8")).digest()
+def _hash_signal(instrument: str, *, salt: str = _HASH_SALT) -> float:
+    digest = hashlib.sha256(f"{salt}:{instrument}".encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64)
 
 
@@ -266,10 +299,21 @@ def signal_snapshot(
         signals = plan.total_volatility
     elif mode == "hash":
         signals = tuple(_hash_signal(name) for name in plan.ranked_universe)
+    elif mode == "low_max":
+        signals = tuple(-value for value in plan.maximum_daily_log_return)
+    elif mode == "high_max":
+        signals = plan.maximum_daily_log_return
+    elif mode == "short_term_reversal":
+        signals = tuple(-value for value in plan.cumulative_return)
+    elif mode == "lottery_hash":
+        signals = tuple(
+            _hash_signal(name, salt=_LOTTERY_HASH_SALT)
+            for name in plan.ranked_universe
+        )
     else:
-        raise ValueError(f"unsupported ivol signal mode: {mode}")
+        raise ValueError(f"unsupported cross-sectional signal mode: {mode}")
     if not all(math.isfinite(value) for value in signals):
-        raise ValueError("ivol signals must be finite")
+        raise ValueError("cross-sectional signals must be finite")
     return plan.ranked_universe, signals, plan.trailing_median_adv
 
 
@@ -278,7 +322,11 @@ def find_first_eligible_decision_row(
     config: IvolExperimentConfig = IvolExperimentConfig(),
 ) -> int:
     _validate_panel(panel)
-    for decision_row in range(config.return_lookback_rows + 1, len(panel.event_times)):
+    earliest = max(
+        config.return_lookback_rows + 1,
+        config.effective_liquidity_lookback_rows,
+    )
+    for decision_row in range(earliest, len(panel.event_times)):
         try:
             build_decision_plan(panel, decision_row, config.universe_size, config)
         except ValueError:
@@ -302,7 +350,10 @@ def find_contiguous_sample_stop_row(
     close, _volume = _validate_panel(panel)
     if isinstance(start_row, bool) or not isinstance(start_row, int):
         raise TypeError("start_row must be an integer")
-    if start_row < config.return_lookback_rows + 1:
+    if start_row < max(
+        config.return_lookback_rows + 1,
+        config.effective_liquidity_lookback_rows,
+    ):
         raise ValueError("start_row lacks a complete trailing return window")
     decision_row = start_row
     while decision_row + config.holding_rows < len(panel.event_times):
@@ -459,7 +510,10 @@ def build_ivol_periods(
     )
     if isinstance(decision_row, bool) or not isinstance(decision_row, int):
         raise TypeError("start_row must be an integer or None")
-    if decision_row < config.return_lookback_rows + 1:
+    if decision_row < max(
+        config.return_lookback_rows + 1,
+        config.effective_liquidity_lookback_rows,
+    ):
         raise ValueError("start_row lacks a complete trailing return window")
     sample_stop = (
         find_contiguous_sample_stop_row(panel, decision_row, config)
