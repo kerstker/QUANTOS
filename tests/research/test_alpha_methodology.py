@@ -154,3 +154,22 @@ def test_direct_crypto_ivol_result_is_internalized_as_falsified() -> None:
         "services/research/idiosyncratic_volatility.py",
         "tools/idiosyncratic_volatility_research.py",
     )
+
+
+def test_conflicting_crypto_max_priors_are_bound_to_one_open_experiment() -> None:
+    sources = {item.source_id: item for item in SOURCES}
+    method = next(
+        item for item in ALPHA_METHODS if item.method_id == "crypto_lottery_max"
+    )
+
+    assert method.source_ids == (
+        "crypto_lottery_grobys_junttila",
+        "crypto_max_momentum_li_urquhart_wang_zhang",
+    )
+    assert all(
+        sources[source_id].evidence_tier is EvidenceTier.PEER_REVIEWED
+        for source_id in method.source_ids
+    )
+    assert method.portability == "DIRECT_CRYPTO"
+    assert method.system_disposition == "NEW_EXPERIMENT_GAP"
+    assert "high-MAX sign control" in method.falsification_tests
