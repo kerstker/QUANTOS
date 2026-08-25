@@ -3,12 +3,12 @@
   "blockers": [
     "PAPER_EVIDENCE_MALFORMED"
   ],
-  "commit": "f93ff22543bc07af9ec9508951691f796a03bd01",
+  "commit": "ea01dabbdf65834029aa1d7fa2ff55f4bd494a34",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1787669358573,
+  "generated_at_ms": 1787674162630,
   "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "83af29447ff735e7cd0a026f7ff21b094bc25cf40102d17318a2a73a4786a69f",
+  "input_hash": "3a84f66a127f1a2a00e758c8520c11936f2e591ea2041888f7a2b930bb09bc38",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": false,
@@ -43,13 +43,13 @@
     "tests/live": {
       "exists": true,
       "file_count": 68,
-      "files_sha256": "e50032db24b405f7fa21a4c7cb9fb76c06f8773da39ae1d4b6485598128a4e9e",
+      "files_sha256": "7bd8eb617898c4bfaaebcbc8904b71d3434315f1b407a78eb80cfde49fc6e3df",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
       "file_count": 181,
-      "files_sha256": "858d05aef4faf1358fbe595f674d2135e6193fec30b0a41daa628c5679dde375",
+      "files_sha256": "34b931c7534f3258cc1a81b91e719851399c052a9ce99c610e7393c5b2bf9985",
       "kind": "python_directory"
     }
   },
@@ -88,9 +88,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "f93ff22543bc07af9ec9508951691f796a03bd01",
+    "head_commit": "ea01dabbdf65834029aa1d7fa2ff55f4bd494a34",
     "overall_status": "PASS",
-    "reported_commit": "f93ff22543bc07af9ec9508951691f796a03bd01",
+    "reported_commit": "ea01dabbdf65834029aa1d7fa2ff55f4bd494a34",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"

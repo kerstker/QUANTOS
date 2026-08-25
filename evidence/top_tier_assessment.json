@@ -746,6 +746,11 @@
               "role": "mft_testnet_soak_evidence_authority"
             },
             {
+              "relative_path": "data/cache/okx_borrow_vintages.db",
+              "required": false,
+              "role": "okx_public_borrow_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
               "role": "factory_candidate_admission"
@@ -776,7 +781,7 @@
               "role": "cross_venue_liquidation_preregistration"
             }
           ],
-          "version": 10
+          "version": 11
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -935,6 +940,11 @@
               "role": "mft_testnet_soak_evidence_authority"
             },
             {
+              "relative_path": "data/cache/okx_borrow_vintages.db",
+              "required": false,
+              "role": "okx_public_borrow_forward_vintages"
+            },
+            {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
               "role": "factory_candidate_admission"
@@ -965,7 +975,7 @@
               "role": "cross_venue_liquidation_preregistration"
             }
           ],
-          "version": 10
+          "version": 11
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1640,9 +1650,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1787668370798,
-    "run_id": "fe5f31a70d248dd2e3d92dc80e9934da7a1abda3a69c7b5e83d731d867c3b95b",
-    "source_commit": "f93ff22543bc07af9ec9508951691f796a03bd01"
+    "generated_at": 1787673133421,
+    "run_id": "d0eda56b6a1d3f4b4bd6731bdc3cac2c6dd35801dd3bdb72ef2ecf096509a139",
+    "source_commit": "ea01dabbdf65834029aa1d7fa2ff55f4bd494a34"
   },
   "verdict": "NOT_TOP_TIER"
 }
