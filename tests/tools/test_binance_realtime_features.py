@@ -22,6 +22,8 @@ def _snapshot(instrument_id: str, index: int) -> dict:
         "instrument_id": instrument_id,
         "event_time_ms": observed - 1,
         "knowledge_time_ms": observed,
+        "received_at_ms": observed - 1,
+        "processed_at_ms": observed,
         "observed_at_ms": observed,
         "quality": {
             "complete_core": True,

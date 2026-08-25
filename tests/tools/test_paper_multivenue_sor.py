@@ -53,6 +53,8 @@ def _binance_snapshot(instrument_id: str, base: str, now_ms: int) -> dict:
         "instrument_id": instrument_id,
         "event_time_ms": now_ms - 100,
         "knowledge_time_ms": now_ms - 100,
+        "received_at_ms": now_ms - 100,
+        "processed_at_ms": now_ms - 100,
         "observed_at_ms": now_ms - 100,
         "depth20": _depth(base),
         "quality": {
