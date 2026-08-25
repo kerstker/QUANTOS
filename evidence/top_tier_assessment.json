@@ -1244,6 +1244,7 @@
         "services/promotion_api/main.py",
         "services/research/alpha_family_registry.py",
         "services/research/alpha_production_workflow.py",
+        "services/research/borrow_pressure.py",
         "services/research/experiment_registry/registry.py",
         "services/research/experiment_registry/store.py",
         "services/research/liquidation_mechanism.py",
@@ -1315,6 +1316,7 @@
         "tests/monitoring/test_mft_soak.py",
         "tests/research/test_alpha_family_registry.py",
         "tests/research/test_alpha_production_workflow.py",
+        "tests/research/test_borrow_pressure.py",
         "tests/research/test_console_api_contract.py",
         "tests/research/test_console_event_projection.py",
         "tests/research/test_experiment_event_outbox.py",
@@ -1329,6 +1331,7 @@
         "tests/tools/test_alpha_maintenance_sweep.py",
         "tests/tools/test_alpha_production_workflow.py",
         "tests/tools/test_artifact_admission_seal.py",
+        "tests/tools/test_borrow_pressure_preregistration.py",
         "tests/tools/test_bybit_realtime_stream.py",
         "tests/tools/test_cross_venue_liquidation_health.py",
         "tests/tools/test_cross_venue_liquidation_preregistration.py",
@@ -1356,6 +1359,7 @@
         "tools/alpha_maintenance_sweep.py",
         "tools/alpha_production_workflow.py",
         "tools/artifact_admission_seal.py",
+        "tools/borrow_pressure_preregistration.py",
         "tools/build_reproducible_source_bundle.py",
         "tools/bybit_realtime_stream.py",
         "tools/cross_venue_liquidation_health.py",
@@ -1650,9 +1654,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1787674407386,
-    "run_id": "028e30cb142678cfd434837ed3cb0f715a1cb283ec3edefcf20b60b0ea38afc2",
-    "source_commit": "def76f81a5f2eab7a3b76df9a281cc8a0dd251db"
+    "generated_at": 1787677753957,
+    "run_id": "c9d462787d00bba8eae31a4e3284212ca15e03884627c43df746d3e026aa96bf",
+    "source_commit": "5421ad01a940809495f6d0de3060971b1644b6cd"
   },
   "verdict": "NOT_TOP_TIER"
 }
