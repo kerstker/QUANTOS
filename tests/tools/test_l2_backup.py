@@ -17,6 +17,8 @@ from tools.l2_backup import (
     BackupSource,
     DEFAULT_SOURCES,
     L2BackupError,
+    SNAPSHOT_POLICY_SQLITE_WAL_PINNED,
+    SNAPSHOT_POLICY_STANDARD,
     SOURCE_CONTRACT_VERSION,
     classify_destination,
     resolve_backup_passphrase,
@@ -761,6 +763,11 @@ def test_bybit_raw_and_outcome_free_resilience_are_optional_backup_sources(
 
     assert source.role == role
     assert source.required is False
+    assert source.snapshot_policy == (
+        SNAPSHOT_POLICY_SQLITE_WAL_PINNED
+        if relative_path == "data/cache/bybit_linear_events.db"
+        else SNAPSHOT_POLICY_STANDARD
+    )
 
 
 def test_okx_public_borrow_forward_vintages_are_an_optional_backup_source():
@@ -791,6 +798,18 @@ def test_liquidation_forward_contract_and_health_are_optional_backup_sources():
         for source in DEFAULT_SOURCES
         if source.relative_path in expected
     } == expected
+
+
+def test_borrow_pressure_preregistration_is_an_optional_backup_source():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path
+        == "evidence/borrow_pressure_preregistration_5eed0f1.json"
+    )
+
+    assert source.role == "borrow_pressure_preregistration"
+    assert source.required is False
 
 
 @pytest.mark.parametrize(
@@ -842,6 +861,51 @@ def test_online_sqlite_backup_is_paginated_and_yields_to_authority_writers(monke
     }
     assert 0 < l2_backup_module.SQLITE_BACKUP_PAGES <= 1_024
     assert pauses == [l2_backup_module.SQLITE_BACKUP_WRITER_YIELD_SECONDS]
+
+
+def test_wal_pinned_sqlite_backup_uses_one_fixed_step_without_yielding(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class SourceConnection:
+        def backup(self, target, *, pages, sleep):
+            calls.update(target=target, pages=pages, sleep=sleep)
+
+    target = object()
+    monkeypatch.setattr(
+        l2_backup_module.time,
+        "sleep",
+        lambda _seconds: pytest.fail("WAL-pinned backup must not yield between pages"),
+    )
+
+    l2_backup_module._online_sqlite_backup(
+        SourceConnection(),
+        target,
+        snapshot_policy=SNAPSHOT_POLICY_SQLITE_WAL_PINNED,
+    )
+
+    assert calls == {
+        "target": target,
+        "pages": -1,
+        "sleep": l2_backup_module.SQLITE_BACKUP_BUSY_SLEEP_SECONDS,
+    }
+
+
+def test_wal_pinned_snapshot_fails_closed_for_non_wal_database(tmp_path):
+    source = tmp_path / "authority.db"
+    connection = sqlite3.connect(source)
+    connection.execute("PRAGMA journal_mode=DELETE")
+    connection.execute("CREATE TABLE authority (id INTEGER PRIMARY KEY)")
+    connection.commit()
+    connection.close()
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    with pytest.raises(L2BackupError, match="not in WAL mode"):
+        l2_backup_module._snapshot_source_file(
+            source,
+            scratch,
+            snapshot_policy=SNAPSHOT_POLICY_SQLITE_WAL_PINNED,
+        )
 
 
 def test_online_sqlite_backup_allows_delete_journal_writer_to_commit(tmp_path, monkeypatch):
@@ -932,16 +996,25 @@ def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path
             "relative_path": "data/cache/authority.db",
             "required": True,
             "role": "event_authority",
+            "snapshot_policy": SNAPSHOT_POLICY_STANDARD,
         },
         {
             "relative_path": "data/cache/state.json",
             "required": True,
             "role": "operational_state",
+            "snapshot_policy": SNAPSHOT_POLICY_STANDARD,
         },
     ]
     assert len(result["source_contract_sha256"]) == 64
     assert result["source_contract_verified"] is True
-    assert result["backed_up_sources"] == result["source_contract"]["sources"]
+    assert result["backed_up_sources"] == [
+        {
+            "relative_path": source["relative_path"],
+            "required": source["required"],
+            "role": source["role"],
+        }
+        for source in result["source_contract"]["sources"]
+    ]
     assert json.loads(evidence.read_text(encoding="utf-8")) == result
     assert json.loads(status.read_text(encoding="utf-8"))["last_success_at_ms"] == result["observed_at_ms"]
 

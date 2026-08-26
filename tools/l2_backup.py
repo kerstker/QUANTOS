@@ -49,7 +49,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 11
+SOURCE_CONTRACT_VERSION = 12
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
@@ -59,9 +59,21 @@ L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 SQLITE_BACKUP_PAGES = 256
 SQLITE_BACKUP_BUSY_SLEEP_SECONDS = 0.05
 SQLITE_BACKUP_WRITER_YIELD_SECONDS = 0.002
+SNAPSHOT_POLICY_STANDARD = "STANDARD"
+SNAPSHOT_POLICY_SQLITE_WAL_PINNED = "SQLITE_WAL_PINNED"
+_SNAPSHOT_POLICIES = frozenset(
+    {SNAPSHOT_POLICY_STANDARD, SNAPSHOT_POLICY_SQLITE_WAL_PINNED}
+)
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
-_SNAPSHOT_METHODS = frozenset({"SQLITE_ONLINE_BACKUP", "STABLE_FILE_READ", "EMPTY_DB_PLACEHOLDER"})
+_SNAPSHOT_METHODS = frozenset(
+    {
+        "SQLITE_ONLINE_BACKUP",
+        "SQLITE_WAL_PINNED_BACKUP",
+        "STABLE_FILE_READ",
+        "EMPTY_DB_PLACEHOLDER",
+    }
+)
 _EXTERNAL_DESTINATION_CLASSES = _backup_boundary.EXTERNAL_DESTINATION_CLASSES
 _MAX_PASSPHRASE_FILE_BYTES = _backup_boundary._MAX_PASSPHRASE_FILE_BYTES
 _PERSISTENT_LINUX_FILESYSTEMS = _backup_boundary._PERSISTENT_LINUX_FILESYSTEMS
@@ -74,6 +86,7 @@ class BackupSource:
     relative_path: str
     role: str
     required: bool = False
+    snapshot_policy: str = SNAPSHOT_POLICY_STANDARD
 
 
 DEFAULT_SOURCES = (
@@ -149,6 +162,7 @@ DEFAULT_SOURCES = (
         "data/cache/bybit_linear_events.db",
         "bybit_public_linear_event_authority",
         False,
+        snapshot_policy=SNAPSHOT_POLICY_SQLITE_WAL_PINNED,
     ),
     BackupSource(
         "data/cache/bybit_market_resilience.db",
@@ -168,6 +182,11 @@ DEFAULT_SOURCES = (
     BackupSource(
         "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
         "cross_venue_liquidation_preregistration",
+        False,
+    ),
+    BackupSource(
+        "evidence/borrow_pressure_preregistration_5eed0f1.json",
+        "borrow_pressure_preregistration",
         False,
     ),
 )
@@ -233,6 +252,15 @@ def _source_contract(sources: Iterable[BackupSource]) -> dict:
             raise L2BackupError(f"duplicate backup source role: {source.role}")
         if type(source.required) is not bool:
             raise L2BackupError(f"backup source requiredness must be boolean: {relative.as_posix()}")
+        if source.snapshot_policy not in _SNAPSHOT_POLICIES:
+            raise L2BackupError(f"invalid backup snapshot policy for {relative.as_posix()}")
+        if (
+            source.snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
+            and relative.suffix.lower() != ".db"
+        ):
+            raise L2BackupError(
+                f"WAL-pinned backup policy requires a SQLite source: {relative.as_posix()}"
+            )
         seen_paths.add(relative)
         seen_roles.add(source.role)
         entries.append(
@@ -240,6 +268,7 @@ def _source_contract(sources: Iterable[BackupSource]) -> dict:
                 "relative_path": relative.as_posix(),
                 "required": source.required,
                 "role": source.role,
+                "snapshot_policy": source.snapshot_policy,
             }
         )
     if not entries:
@@ -445,8 +474,26 @@ def _sqlite_integrity(path: Path) -> None:
         raise L2BackupError(f"SQLite integrity check failed for {path.name}")
 
 
-def _online_sqlite_backup(source_connection, snapshot_connection) -> None:
-    """Copy a live authority in bounded steps without starving its writers."""
+def _online_sqlite_backup(
+    source_connection,
+    snapshot_connection,
+    *,
+    snapshot_policy: str = SNAPSHOT_POLICY_STANDARD,
+) -> None:
+    """Copy a live authority using its contract-bound concurrency policy."""
+
+    if snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED:
+        # A single SQLite backup step fixes the read snapshot. WAL writers can
+        # continue appending while the copy runs, so a high-churn authority
+        # cannot indefinitely invalidate already-copied pages.
+        source_connection.backup(
+            snapshot_connection,
+            pages=-1,
+            sleep=SQLITE_BACKUP_BUSY_SLEEP_SECONDS,
+        )
+        return
+    if snapshot_policy != SNAPSHOT_POLICY_STANDARD:
+        raise L2BackupError("unsupported SQLite snapshot policy")
 
     def yield_to_writers(_status: int, remaining: int, _total: int) -> None:
         if remaining > 0:
@@ -460,7 +507,19 @@ def _online_sqlite_backup(source_connection, snapshot_connection) -> None:
     )
 
 
-def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
+def _snapshot_source_file(
+    source: Path,
+    scratch: Path,
+    *,
+    snapshot_policy: str = SNAPSHOT_POLICY_STANDARD,
+) -> tuple[Path, str, int]:
+    if snapshot_policy not in _SNAPSHOT_POLICIES:
+        raise L2BackupError("unsupported backup snapshot policy")
+    if (
+        snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
+        and source.suffix.lower() != ".db"
+    ):
+        raise L2BackupError("WAL-pinned backup policy requires a SQLite source")
     identity = hashlib.sha256(os.fspath(source.resolve()).encode("utf-8")).hexdigest()[:12]
     snapshot = scratch / f"{identity}-{source.name}"
     if source.suffix.lower() != ".db":
@@ -479,14 +538,29 @@ def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
     try:
         with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as source_connection:
             source_connection.execute("PRAGMA query_only=ON")
+            if snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED:
+                journal_mode = source_connection.execute("PRAGMA journal_mode").fetchone()
+                if not journal_mode or str(journal_mode[0]).lower() != "wal":
+                    raise L2BackupError(
+                        f"WAL-pinned backup source is not in WAL mode: {source.name}"
+                    )
             with closing(sqlite3.connect(snapshot)) as snapshot_connection:
-                _online_sqlite_backup(source_connection, snapshot_connection)
+                _online_sqlite_backup(
+                    source_connection,
+                    snapshot_connection,
+                    snapshot_policy=snapshot_policy,
+                )
     except sqlite3.Error as exc:
         raise L2BackupError(f"failed to snapshot SQLite source: {source.name}") from exc
     # The encrypted round-trip compares this snapshot's manifest digest and
     # performs a full SQLite integrity check on the restored bytes. Repeating
     # the same multi-GB integrity scan here adds no independent evidence.
-    return snapshot, "SQLITE_ONLINE_BACKUP", source.stat().st_mtime_ns
+    method = (
+        "SQLITE_WAL_PINNED_BACKUP"
+        if snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
+        else "SQLITE_ONLINE_BACKUP"
+    )
+    return snapshot, method, source.stat().st_mtime_ns
 
 
 def _snapshot_source(source: Path, scratch: Path) -> tuple[bytes, str, int]:
@@ -630,6 +704,17 @@ def restore_l2_batch(
             snapshot_method = entry.get("snapshot_method")
             if snapshot_method not in _SNAPSHOT_METHODS:
                 raise L2BackupError("restored backup source entry has an unsupported snapshot method")
+            expected_policy = expected_source["snapshot_policy"]
+            if (
+                expected_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
+                and snapshot_method != "SQLITE_WAL_PINNED_BACKUP"
+            ) or (
+                expected_policy == SNAPSHOT_POLICY_STANDARD
+                and snapshot_method == "SQLITE_WAL_PINNED_BACKUP"
+            ):
+                raise L2BackupError(
+                    "restored backup source entry violates its snapshot policy"
+                )
             present_paths.add(relative_path)
             source = flat / artifact
             if not source.is_file():
@@ -644,7 +729,10 @@ def restore_l2_batch(
             output = tree.joinpath(*relative.parts)
             output.parent.mkdir(parents=True, exist_ok=True)
             os.replace(source, output)
-            if snapshot_method == "SQLITE_ONLINE_BACKUP":
+            if snapshot_method in {
+                "SQLITE_ONLINE_BACKUP",
+                "SQLITE_WAL_PINNED_BACKUP",
+            }:
                 _sqlite_integrity(output)
             if expected_source["role"] == "l2_restore_history_authority":
                 history_store = None
@@ -799,7 +887,11 @@ def run_l2_backup(
         with tempfile.TemporaryDirectory(prefix="quantos-l2-backup-") as scratch_name:
             scratch = Path(scratch_name)
             for index, (source_spec, relative, source_path) in enumerate(discovered, start=1):
-                snapshot, snapshot_method, source_mtime_ns = _snapshot_source_file(source_path, scratch)
+                snapshot, snapshot_method, source_mtime_ns = _snapshot_source_file(
+                    source_path,
+                    scratch,
+                    snapshot_policy=source_spec.snapshot_policy,
+                )
                 artifact = _artifact_name(index, relative)
                 encrypt_file(
                     os.fspath(snapshot),
