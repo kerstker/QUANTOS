@@ -312,7 +312,7 @@
     "deploy/systemd/README.md": "487b68ca883b29f431f5041d472fd1e743687cac05ebded692b74b8e86133727",
     "deploy/systemd/quantos-binance-realtime-stream.service": "8c473defaca59b4b36ee03e8e87821e36d440a4c52e0b8a18ae8078adeff0ef4",
     "deploy/systemd/quantos-bybit-realtime-stream.service": "fea57bb61b2863ded7cd737af4d8429252ae301c196bed9dd002501739bf0c2e",
-    "deploy/systemd/quantos-l2-watchdog.service": "82eda2a408d019bef07735b7e6f0e20509164dc61c487ba22bd883b5e2787eea",
+    "deploy/systemd/quantos-l2-watchdog.service": "d6af7e19edbf4d106165c3581003705ecd98b4fda90da75a8356e85f609136c2",
     "deploy/systemd/quantos-l2-watchdog.timer": "b3ed3555fb6f29e28632fcf0da3af1ad4d817710da5ce8bd92eb2ab395432f27",
     "deploy/systemd/quantos-l2@.service": "e7ff8661d36ccc0dd902ac66f148930468e2ccdf24b948886d8b68536931ac3f",
     "deploy/systemd/quantos-l2@.timer": "7c8545425d297a9c0126d4242beaf3f9d8571e817c1f033f8d160434ba170534",
@@ -477,7 +477,7 @@
     "tests/governance/test_strong_identity.py": "899582108139294de82b9971f61df9bd46e984ac3937e5228a35dd0ec526601f",
     "tests/governance/test_strong_identity_evidence.py": "8fd5f5b4d533f709c9900be256db9655ca0f40d6c0a3d1648f5769d726a9d741",
     "tests/governance/test_supply_chain_evidence.py": "7bf6ea601c104eddb698b9ce306dafe277a1a08349aaf758896aa953fd04654c",
-    "tests/governance/test_systemd_l2_boundary.py": "594532f8f43bb54cb930c0be456652c03a2b72c49f42fb176f57025ec163e2bc",
+    "tests/governance/test_systemd_l2_boundary.py": "550dd1fd5b5ec83156d91a17d2b9e82450c254442ede3fe70485af0bb48a6615",
     "tests/governance/test_top_tier_assessment.py": "1d925c679066e246f7e4199c0c90221a6888e18d55a89e686ede9254ecfb5955",
     "tests/intelligence/test_external_provider_runtime.py": "b2772ee1538b0703ca8e8fbc2c915ad1c8de856b89eb246799355d73c64933a8",
     "tests/live/test_kill_switch_reset_cli.py": "d8aa208fdb35230e51290c7f9d1fc6c485709b652712796c17d37d71bbe90678",
@@ -602,9 +602,9 @@
   "unresolved_python_optional_dependencies": [],
   "validation": {
     "current": true,
-    "generated_at": 1787708960032,
-    "run_id": "3f791c0207f6cb7652ce4a00816ec3d2b200f187a02ad6178f5b82bcd17688bb",
-    "source_commit": "3ef3abc2f9bf0595d5d9ae6d6bdcad64df66650c"
+    "generated_at": 1787711455933,
+    "run_id": "784ea08e42c2ba50190b070454c7efc39ca6db40b90bc4645e47b5066ad96db0",
+    "source_commit": "b7ba5be58a4f2fcef487dcf2d69a51e1e6d04128"
   },
   "verdict": "PARTIAL",
   "vulnerability_scan_status": "PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"
