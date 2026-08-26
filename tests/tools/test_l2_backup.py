@@ -763,11 +763,7 @@ def test_bybit_raw_and_outcome_free_resilience_are_optional_backup_sources(
 
     assert source.role == role
     assert source.required is False
-    assert source.snapshot_policy == (
-        SNAPSHOT_POLICY_SQLITE_WAL_PINNED
-        if relative_path == "data/cache/bybit_linear_events.db"
-        else SNAPSHOT_POLICY_STANDARD
-    )
+    assert source.snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
 
 
 def test_okx_public_borrow_forward_vintages_are_an_optional_backup_source():
