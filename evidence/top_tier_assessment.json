@@ -638,150 +638,185 @@
             {
               "relative_path": "data/cache/alpha_maintenance.db",
               "required": false,
-              "role": "alpha_maintenance"
+              "role": "alpha_maintenance",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/alpha_production_workflow.db",
               "required": true,
-              "role": "alpha_production_workflow"
+              "role": "alpha_production_workflow",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/approvals.db",
               "required": false,
-              "role": "approval_authority"
+              "role": "approval_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/artifact_admission.db",
               "required": false,
-              "role": "artifact_admission_authority"
+              "role": "artifact_admission_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/binance_book_depth_archive.db",
               "required": false,
-              "role": "binance_book_depth_archive_authority"
+              "role": "binance_book_depth_archive_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/bybit_linear_events.db",
               "required": false,
-              "role": "bybit_public_linear_event_authority"
+              "role": "bybit_public_linear_event_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
             },
             {
               "relative_path": "data/cache/bybit_market_resilience.db",
               "required": false,
-              "role": "outcome_free_market_resilience_authority"
+              "role": "outcome_free_market_resilience_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
             },
             {
               "relative_path": "data/cache/cross_venue_liquidation_health.json",
               "required": false,
-              "role": "cross_venue_liquidation_health"
+              "role": "cross_venue_liquidation_health",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/data_quality_admission.db",
               "required": true,
-              "role": "data_quality_admission"
+              "role": "data_quality_admission",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/defillama_stablecoin_vintages.db",
               "required": false,
-              "role": "defillama_stablecoin_forward_vintages"
+              "role": "defillama_stablecoin_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/defillama_tvl_vintages.db",
               "required": false,
-              "role": "defillama_tvl_forward_vintages"
+              "role": "defillama_tvl_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/deployment_state.db",
               "required": false,
-              "role": "deployment_state"
+              "role": "deployment_state",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/domain_event_projection.db",
               "required": true,
-              "role": "domain_event_projection"
+              "role": "domain_event_projection",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/domain_events.db",
               "required": true,
-              "role": "domain_event_authority"
+              "role": "domain_event_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/dry_run.db",
               "required": true,
-              "role": "dry_run_ledger"
+              "role": "dry_run_ledger",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/experiment_registry.db",
               "required": true,
-              "role": "experiment_registry"
+              "role": "experiment_registry",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/governance_audit.db",
               "required": true,
-              "role": "governance_audit"
+              "role": "governance_audit",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/identity_authorization.db",
               "required": false,
-              "role": "identity_authorization_authority"
+              "role": "identity_authorization_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/l2_restore_history.db",
               "required": true,
-              "role": "l2_restore_history_authority"
+              "role": "l2_restore_history_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/live_kill_switch.db",
               "required": false,
-              "role": "kill_switch_authority"
+              "role": "kill_switch_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/live_refresh_history.db",
               "required": true,
-              "role": "data_refresh_history"
+              "role": "data_refresh_history",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/mft_testnet_soak.db",
               "required": false,
-              "role": "mft_testnet_soak_evidence_authority"
+              "role": "mft_testnet_soak_evidence_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/okx_borrow_vintages.db",
               "required": false,
-              "role": "okx_public_borrow_forward_vintages"
+              "role": "okx_public_borrow_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
-              "role": "factory_candidate_admission"
+              "role": "factory_candidate_admission",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/paper_track.db",
               "required": true,
-              "role": "paper_track"
+              "role": "paper_track",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/realtime_alpha_execution_paper.db",
               "required": true,
-              "role": "realtime_engineering_execution_paper"
+              "role": "realtime_engineering_execution_paper",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/research_runs.db",
               "required": true,
-              "role": "research_run_registry"
+              "role": "research_run_registry",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/vendor_delivery_history.db",
               "required": false,
-              "role": "vendor_delivery_history_authority"
+              "role": "vendor_delivery_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
+              "required": false,
+              "role": "borrow_pressure_preregistration",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
               "required": false,
-              "role": "cross_venue_liquidation_preregistration"
+              "role": "cross_venue_liquidation_preregistration",
+              "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 11
+          "version": 13
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -832,150 +867,185 @@
             {
               "relative_path": "data/cache/alpha_maintenance.db",
               "required": false,
-              "role": "alpha_maintenance"
+              "role": "alpha_maintenance",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/alpha_production_workflow.db",
               "required": true,
-              "role": "alpha_production_workflow"
+              "role": "alpha_production_workflow",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/approvals.db",
               "required": false,
-              "role": "approval_authority"
+              "role": "approval_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/artifact_admission.db",
               "required": false,
-              "role": "artifact_admission_authority"
+              "role": "artifact_admission_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/binance_book_depth_archive.db",
               "required": false,
-              "role": "binance_book_depth_archive_authority"
+              "role": "binance_book_depth_archive_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/bybit_linear_events.db",
               "required": false,
-              "role": "bybit_public_linear_event_authority"
+              "role": "bybit_public_linear_event_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
             },
             {
               "relative_path": "data/cache/bybit_market_resilience.db",
               "required": false,
-              "role": "outcome_free_market_resilience_authority"
+              "role": "outcome_free_market_resilience_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
             },
             {
               "relative_path": "data/cache/cross_venue_liquidation_health.json",
               "required": false,
-              "role": "cross_venue_liquidation_health"
+              "role": "cross_venue_liquidation_health",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/data_quality_admission.db",
               "required": true,
-              "role": "data_quality_admission"
+              "role": "data_quality_admission",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/defillama_stablecoin_vintages.db",
               "required": false,
-              "role": "defillama_stablecoin_forward_vintages"
+              "role": "defillama_stablecoin_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/defillama_tvl_vintages.db",
               "required": false,
-              "role": "defillama_tvl_forward_vintages"
+              "role": "defillama_tvl_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/deployment_state.db",
               "required": false,
-              "role": "deployment_state"
+              "role": "deployment_state",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/domain_event_projection.db",
               "required": true,
-              "role": "domain_event_projection"
+              "role": "domain_event_projection",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/domain_events.db",
               "required": true,
-              "role": "domain_event_authority"
+              "role": "domain_event_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/dry_run.db",
               "required": true,
-              "role": "dry_run_ledger"
+              "role": "dry_run_ledger",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/experiment_registry.db",
               "required": true,
-              "role": "experiment_registry"
+              "role": "experiment_registry",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/governance_audit.db",
               "required": true,
-              "role": "governance_audit"
+              "role": "governance_audit",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/identity_authorization.db",
               "required": false,
-              "role": "identity_authorization_authority"
+              "role": "identity_authorization_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/l2_restore_history.db",
               "required": true,
-              "role": "l2_restore_history_authority"
+              "role": "l2_restore_history_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/live_kill_switch.db",
               "required": false,
-              "role": "kill_switch_authority"
+              "role": "kill_switch_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/live_refresh_history.db",
               "required": true,
-              "role": "data_refresh_history"
+              "role": "data_refresh_history",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/mft_testnet_soak.db",
               "required": false,
-              "role": "mft_testnet_soak_evidence_authority"
+              "role": "mft_testnet_soak_evidence_authority",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/okx_borrow_vintages.db",
               "required": false,
-              "role": "okx_public_borrow_forward_vintages"
+              "role": "okx_public_borrow_forward_vintages",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/paper_candidate_registry.db",
               "required": false,
-              "role": "factory_candidate_admission"
+              "role": "factory_candidate_admission",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/paper_track.db",
               "required": true,
-              "role": "paper_track"
+              "role": "paper_track",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/realtime_alpha_execution_paper.db",
               "required": true,
-              "role": "realtime_engineering_execution_paper"
+              "role": "realtime_engineering_execution_paper",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/research_runs.db",
               "required": true,
-              "role": "research_run_registry"
+              "role": "research_run_registry",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "data/cache/vendor_delivery_history.db",
               "required": false,
-              "role": "vendor_delivery_history_authority"
+              "role": "vendor_delivery_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
+              "required": false,
+              "role": "borrow_pressure_preregistration",
+              "snapshot_policy": "STANDARD"
             },
             {
               "relative_path": "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
               "required": false,
-              "role": "cross_venue_liquidation_preregistration"
+              "role": "cross_venue_liquidation_preregistration",
+              "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 11
+          "version": 13
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1654,9 +1724,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1787677753957,
-    "run_id": "c9d462787d00bba8eae31a4e3284212ca15e03884627c43df746d3e026aa96bf",
-    "source_commit": "5421ad01a940809495f6d0de3060971b1644b6cd"
+    "generated_at": 1787708975510,
+    "run_id": "3f791c0207f6cb7652ce4a00816ec3d2b200f187a02ad6178f5b82bcd17688bb",
+    "source_commit": "3ef3abc2f9bf0595d5d9ae6d6bdcad64df66650c"
   },
   "verdict": "NOT_TOP_TIER"
 }
