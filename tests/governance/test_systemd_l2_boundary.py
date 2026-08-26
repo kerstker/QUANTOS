@@ -414,6 +414,9 @@ def test_renderer_binds_resident_stream_and_watchdog_without_installing(
     assert "PassEnvironment=" not in _text(
         output / "quantos-l2-watchdog.service"
     )
+    assert _text(output / "quantos-l2-watchdog.service").count(
+        "SuccessExitStatus=2"
+    ) == 1
     assert "WantedBy=timers.target" in _text(
         output / "quantos-l2-watchdog.timer"
     )

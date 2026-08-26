@@ -6,6 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Exit 2 is the watchdog's reviewed fail-closed PARTIAL outcome.  Keep the
+# detailed result in scheduler_watchdog_status.json without making systemd
+# report a failed unit when there are no BREACH checks.
+SuccessExitStatus=2
 User=quantos
 Group=quantos
 UMask=0077
