@@ -11,6 +11,40 @@ from tools import binance_realtime_market as realtime
 _NOW = 1_800_000_000_000
 
 
+class _JsonResponse:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self._payload
+
+
+def test_public_http_retries_one_transport_failure(monkeypatch):
+    calls = []
+    sleeps = []
+
+    def urlopen(_request, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise TimeoutError("transient proxy TLS timeout")
+        return _JsonResponse(b'{"serverTime": 123}')
+
+    monkeypatch.setattr(realtime.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(realtime.time, "sleep", sleeps.append)
+
+    assert realtime._http_get_json("https://fapi.binance.com/fapi/v1/time") == {
+        "serverTime": 123
+    }
+    assert calls == [realtime.PUBLIC_HTTP_TIMEOUT_SECONDS] * 2
+    assert sleeps == [realtime.PUBLIC_HTTP_RETRY_DELAYS_SECONDS[0]]
+
+
 def _symbol(url):
     return parse_qs(urlparse(url).query).get("symbol", [""])[0]
 

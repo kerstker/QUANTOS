@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from quantos.runtime_paths import STATE_ROOT_ENV, runtime_state_root
 from services.research.experiment_registry.store import _SEARCH_SCHEMA_VERSION
 
 SCHEMA_VERSION = 2
@@ -155,13 +156,13 @@ def _input_manifest(
     ledger: Path,
     *,
     ledger_content: Path | None = None,
+    ledger_path_label: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Expose every read-only input so retained live snapshots are verifiable."""
 
     source = ledger if ledger_content is None else ledger_content
-    inputs = {
-        _input_key(root, ledger): _file_snapshot(source),
-    }
+    ledger_key = ledger_path_label or _input_key(root, ledger)
+    inputs = {ledger_key: _file_snapshot(source)}
     for path in (
         root / "services" / "research" / "experiment_registry" / "store.py",
         root / "services" / "research" / "trial_provenance.py",
@@ -540,12 +541,18 @@ def _build_report_from_snapshot(
     root: Path,
     ledger: Path,
     read_ledger: Path,
+    ledger_path_label: str | None = None,
 ) -> dict[str, Any]:
     root = root.resolve()
     ledger = ledger.resolve()
     read_ledger = read_ledger.resolve()
-    inputs = _input_manifest(root, ledger, ledger_content=read_ledger)
-    ledger_key = _input_key(root, ledger)
+    inputs = _input_manifest(
+        root,
+        ledger,
+        ledger_content=read_ledger,
+        ledger_path_label=ledger_path_label,
+    )
+    ledger_key = ledger_path_label or _input_key(root, ledger)
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "mode": ARTIFACT_MODE,
@@ -748,7 +755,12 @@ def _snapshot_sqlite(source: Path, destination: Path) -> None:
             source_connection.close()
 
 
-def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
+def build_report(
+    *,
+    root: Path,
+    ledger: Path,
+    ledger_path_label: str | None = None,
+) -> dict[str, Any]:
     """Build one internally consistent report without pausing live research."""
 
     resolved_root = root.resolve()
@@ -758,6 +770,7 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
             root=resolved_root,
             ledger=resolved_ledger,
             read_ledger=resolved_ledger,
+            ledger_path_label=ledger_path_label,
         )
     with tempfile.TemporaryDirectory(prefix="quantos-trial-ledger-snapshot-") as scratch:
         snapshot = Path(scratch) / "experiment_registry.db"
@@ -769,11 +782,13 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
                 root=resolved_root,
                 ledger=resolved_ledger,
                 read_ledger=resolved_ledger,
+                ledger_path_label=ledger_path_label,
             )
         return _build_report_from_snapshot(
             root=resolved_root,
             ledger=resolved_ledger,
             read_ledger=snapshot,
+            ledger_path_label=ledger_path_label,
         )
 
 
@@ -820,10 +835,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.repo_root).resolve()
-    ledger = Path(args.ledger).resolve() if args.ledger else (root / "data" / "cache" / "experiment_registry.db")
-    output = Path(args.output).resolve() if args.output else (root / "evidence" / "trial_ledger_integrity.json")
+    configured_state_root = os.environ.get(STATE_ROOT_ENV, "").strip()
+    mutable_root = runtime_state_root() if configured_state_root else root
+    ledger = Path(args.ledger).resolve() if args.ledger else (
+        mutable_root / "data" / "cache" / "experiment_registry.db"
+    )
+    output = Path(args.output).resolve() if args.output else (
+        mutable_root / "evidence" / "trial_ledger_integrity.json"
+    )
+    ledger_path_label = (
+        "data/cache/experiment_registry.db"
+        if not args.ledger and configured_state_root
+        else None
+    )
 
-    report = build_report(root=root, ledger=ledger)
+    report = build_report(
+        root=root,
+        ledger=ledger,
+        ledger_path_label=ledger_path_label,
+    )
 
     if args.check:
         if not output.is_file():

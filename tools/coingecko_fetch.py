@@ -16,9 +16,12 @@ import json
 import math
 import os
 import time
+import urllib.error
 import urllib.request
 
 DEMO_BASE = "https://api.coingecko.com/api/v3"
+PUBLIC_HTTP_TIMEOUT_SECONDS = 30
+PUBLIC_HTTP_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5)
 
 # CoinGecko OHLC auto-granularity by `days` (ms per candle). days=1 → 30-minute (finest).
 _INTERVAL_MS = {1: 30 * 60 * 1000, 7: 4 * 3600 * 1000, 14: 4 * 3600 * 1000,
@@ -42,10 +45,26 @@ def _read_key() -> str:
 
 
 def _http_get_json(url: str, headers: dict) -> object:
-    """The ONLY network call in the codebase. Read-only GET, JSON. timeout-bounded."""
+    """Read-only JSON GET with bounded transport retries.
+
+    Public-data proxies can reset a TLS tunnel before an HTTP response exists.
+    Retry only those transport failures; an explicit HTTP response remains a
+    fail-fast provider decision and is never hidden.
+    """
     req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=30) as resp:   # noqa: S310 (https public data only)
-        return json.loads(resp.read().decode("utf-8"))
+    for attempt in range(len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urllib.request.urlopen(  # noqa: S310 (https public data only)
+                req, timeout=PUBLIC_HTTP_TIMEOUT_SECONDS
+            ) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt >= len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS):
+                raise
+            time.sleep(PUBLIC_HTTP_RETRY_DELAYS_SECONDS[attempt])
+    raise AssertionError("bounded public HTTP retry loop exhausted")
 
 
 def fetch_ohlc(coin_id: str = "bitcoin", *, vs_currency: str = "usd", days: int = 1,

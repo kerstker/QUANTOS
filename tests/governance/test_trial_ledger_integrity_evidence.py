@@ -381,3 +381,22 @@ def test_cli_returns_nonzero_on_blocked(tmp_path) -> None:
             str(tmp_path / "out.json"),
         ]
     ) == 1
+
+
+def test_cli_defaults_mutable_artifacts_to_runtime_state_root(
+    tmp_path, monkeypatch
+) -> None:
+    state_root = tmp_path / "state"
+    ledger_parent = state_root / "data" / "cache"
+    ledger_parent.mkdir(parents=True)
+    _ledger(ledger_parent)
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state_root))
+
+    assert main(["--repo-root", str(release_root)]) == 0
+
+    output = state_root / "evidence" / "trial_ledger_integrity.json"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["ledger"]["path"] == "data/cache/experiment_registry.db"
+    assert payload["inputs"]["data/cache/experiment_registry.db"]["exists"] is True

@@ -11,6 +11,7 @@ import json
 import math
 import os
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -38,6 +39,8 @@ MAX_CANDLE_AGE_MS = 5 * 60_000
 MAX_ROLLING_TICKER_AGE_MS = 5 * 60_000
 MAX_POSITIONING_AGE_MS = 15 * 60_000
 MAX_FUNDING_AGE_MS = 12 * 60 * 60_000
+PUBLIC_HTTP_TIMEOUT_SECONDS = 30
+PUBLIC_HTTP_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5)
 _LAST_RELEASE_RUN_ATTESTATION: dict[str, Any] | None = None
 
 
@@ -180,8 +183,19 @@ def _http_get_json(url: str) -> object:
         },
         method="GET",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:  # public data only
-        return json.loads(response.read().decode("utf-8"))
+    for attempt in range(len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urllib.request.urlopen(  # public data only
+                request, timeout=PUBLIC_HTTP_TIMEOUT_SECONDS
+            ) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt >= len(PUBLIC_HTTP_RETRY_DELAYS_SECONDS):
+                raise
+            time.sleep(PUBLIC_HTTP_RETRY_DELAYS_SECONDS[attempt])
+    raise AssertionError("bounded public HTTP retry loop exhausted")
 
 
 def _url(path: str, params: Mapping[str, object] | None = None) -> str:

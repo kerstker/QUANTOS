@@ -4,6 +4,7 @@ import math
 import pytest
 
 from services.data.raw_archive import summarize_archive
+from tools import coingecko_fetch
 from tools.binance_funding_fetch import (
     FundingDataError,
     fetch_daily_funding,
@@ -13,6 +14,41 @@ from tools.binance_funding_fetch import (
 _DAY = 86_400_000
 _HOUR = 3_600_000
 _NOW = 10 * _DAY
+
+
+class _JsonResponse:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self._payload
+
+
+def test_shared_public_http_retries_one_transport_failure(monkeypatch):
+    calls = []
+    sleeps = []
+
+    def urlopen(_request, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise TimeoutError("transient proxy TLS timeout")
+        return _JsonResponse(b'[{"ok": true}]')
+
+    monkeypatch.setattr(coingecko_fetch.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(coingecko_fetch.time, "sleep", sleeps.append)
+
+    assert coingecko_fetch._http_get_json(
+        "https://fapi.binance.com/fapi/v1/fundingRate",
+        {"accept": "application/json"},
+    ) == [{"ok": True}]
+    assert calls == [coingecko_fetch.PUBLIC_HTTP_TIMEOUT_SECONDS] * 2
+    assert sleeps == [coingecko_fetch.PUBLIC_HTTP_RETRY_DELAYS_SECONDS[0]]
 
 
 def _http(payload):
