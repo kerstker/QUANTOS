@@ -137,6 +137,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "cross_venue_liquidation_preregistration",
             False,
         ),
+        "evidence/borrow_pressure_preregistration_5eed0f1.json": (
+            "borrow_pressure_preregistration",
+            False,
+        ),
     }
     assert all(
         path.startswith("data/cache/") or path.startswith("evidence/")
@@ -144,7 +148,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
     )
     assert {
         path for path in actual if path.startswith("evidence/")
-    } == {"evidence/cross_venue_liquidation_preregistration_764e5b5.json"}
+    } == {
+        "evidence/borrow_pressure_preregistration_5eed0f1.json",
+        "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
+    }
     assert all(not path.startswith("key/") for path in actual)
     assert all(
         "secret" not in path.lower() and "credential" not in path.lower()
@@ -169,6 +176,7 @@ def test_top_tier_backup_and_restore_require_the_exact_l2_source_contract():
                     "relative_path": source.relative_path.replace("\\", "/"),
                     "required": source.required,
                     "role": source.role,
+                    "snapshot_policy": source.snapshot_policy,
                 }
                 for source in DEFAULT_SOURCES
             ),
