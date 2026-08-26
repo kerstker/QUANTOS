@@ -1142,6 +1142,32 @@ def test_systemd_collector_accepts_exact_backup_boundary() -> None:
     assert dict(snapshot.configured_environment)["QUANTOS_BACKUP_DEST"] == "/mnt/backup"
 
 
+def test_systemd_contract_accepts_watchdog_safe_partial_exit(tmp_path: Path) -> None:
+    from tools.l2_scheduler_watchdog import (
+        _parse_systemd_unit_text,
+        _unit_directives_exact,
+    )
+    from tools.render_systemd_l2_units import render_special_units
+
+    output = tmp_path / "special"
+    render_special_units(
+        output_root=output,
+        release_commit=RELEASE_COMMIT,
+        attention_release_commit="a" * 40,
+    )
+    directives = _parse_systemd_unit_text(
+        (output / "quantos-l2-watchdog.service").read_text(encoding="utf-8")
+    )
+
+    contract_ok, _environment = _unit_directives_exact(
+        directives,
+        module="l2_scheduler_watchdog",
+        release_commit=RELEASE_COMMIT,
+    )
+
+    assert contract_ok is True
+
+
 @pytest.mark.parametrize(
     "module,task_name",
     [

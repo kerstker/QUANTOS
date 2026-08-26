@@ -712,12 +712,11 @@ def _unit_directives_exact(
     inherits_public_proxy_transport = module != "l2_scheduler_watchdog"
     if inherits_public_proxy_transport:
         required_keys.add("Service.PassEnvironment")
-    ordinary_worker = module not in {
+    accepts_safe_partial_exit = module not in {
         "binance_realtime_stream",
         "bybit_realtime_stream",
-        "l2_scheduler_watchdog",
     }
-    if ordinary_worker:
+    if accepts_safe_partial_exit:
         required_keys.add("Service.SuccessExitStatus")
     optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
     if expected_mounts:
@@ -750,7 +749,7 @@ def _unit_directives_exact(
         and _one_directive(directives, "Service.Type")
         == ("simple" if module in _RESIDENT_STREAM_MODULES else "oneshot")
         and (
-            not ordinary_worker
+            not accepts_safe_partial_exit
             or _one_directive(directives, "Service.SuccessExitStatus") == "2"
         )
         and _one_directive(directives, "Service.ExecStart") == expected_exec
