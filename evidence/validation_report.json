@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "466ffda0d17c1ef11ac286aab7a9f25af69befeb74c42b08bbf71b02dd956f87",
-  "commit": "aa9c9d0ff604b9409a771de380ff4bf56a4f782e",
-  "derived_refresh_manifest_sha256": "b1d387eaecd873e53185ad6a137f0cbc000c5335b1be5ea12f842e67273f7c71",
-  "duration_ms": 1216863,
-  "generated_at_ms": 1787718853071,
+  "checks_manifest_sha256": "c474fc82bb0974e9c54ba6f88a291900682741867f3748139150313cc6419e6c",
+  "commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+  "derived_refresh_manifest_sha256": "8ddd41eb76a75834782f61cd0d443dbe0377013fffa9f6302eaac76fb2eaba2c",
+  "duration_ms": 1108675,
+  "generated_at_ms": 1787927753823,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "d9021ccc49353e4cc8481ee6f804127f23798ccae8c29a715175e8cf14420ed5",
+  "phase13_manifest_sha256": "68523c5ff60e46820e610407f860d22f4277ffd6bcf7b5e3acf9bf3e5d23b014",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -15,11 +15,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_python_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 161,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 83,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -28,11 +28,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_npm_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 145,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 77,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -41,11 +41,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_actions_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 183,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 96,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -54,11 +54,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_container_audit_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 147,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 78,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -67,11 +67,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_container_reproducibility_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 132,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 75,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -80,11 +80,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_event_schema_catalog.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 547,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 326,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -93,11 +93,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_service_import_graph.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 1776,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 1167,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -106,10 +106,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\tools\\provision_artifact_admission_authority.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\tools\\provision_artifact_admission_authority.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 303,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 171,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -118,11 +118,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\update_model_risk_history.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 537,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 318,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -135,8 +135,8 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 760,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 491,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -149,8 +149,8 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 7020,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 5454,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -159,11 +159,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\check_backup_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 114,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 73,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -172,10 +172,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\run_risk_recovery_gate.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\run_risk_recovery_gate.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 651,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 473,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -184,10 +184,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 4291,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 3341,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -196,10 +196,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_supply_chain_evidence.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_supply_chain_evidence.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 2193,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 1242,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -208,11 +208,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_supply_chain_evidence.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 2801,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 1494,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -221,10 +221,10 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\assess_top_tier.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\assess_top_tier.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 16081,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 12744,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -233,11 +233,11 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\assess_top_tier.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\assess_top_tier.py",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 16478,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 12814,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -272,8 +272,8 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 964993,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 828738,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -289,8 +289,8 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 117725,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 125244,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -302,8 +302,8 @@
         "run",
         "typecheck"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 2377,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\apps\\research-console",
+      "duration_ms": 3939,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -315,8 +315,8 @@
         "run",
         "eslint"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 3938,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\apps\\research-console",
+      "duration_ms": 20891,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -330,8 +330,8 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 24849,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\apps\\research-console",
+      "duration_ms": 40644,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -343,8 +343,8 @@
         "run",
         "build"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\apps\\research-console",
-      "duration_ms": 4090,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\apps\\research-console",
+      "duration_ms": 4288,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -353,12 +353,12 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 3725,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 3680,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -367,13 +367,13 @@
     {
       "command": [
         "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\scripts\\generate_727_final_audit.py",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\scripts\\generate_727_final_audit.py",
         "--repo-root",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
         "--check"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 3708,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 3693,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -385,10 +385,10 @@
         "-m",
         "pytest",
         "-q",
-        "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823\\tests\\governance\\test_727_final_audit.py"
+        "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828\\tests\\governance\\test_727_final_audit.py"
       ],
-      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-opt-20260823",
-      "duration_ms": 36646,
+      "cwd": "H:\\code\\QUANTOS\\.worktrees\\dgx-runtime-repair-20260828",
+      "duration_ms": 36797,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -426,7 +426,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1787717636207,
+  "started_at_ms": 1787926645147,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -438,8 +438,8 @@
   "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
   "validation": {
     "current": true,
-    "generated_at": 1787718853071,
-    "run_id": "b90d15a2f8de1a0a92da479dff54c6abe50b6eb32910122cc0f2e5e257ff4c49",
-    "source_commit": "aa9c9d0ff604b9409a771de380ff4bf56a4f782e"
+    "generated_at": 1787927753823,
+    "run_id": "5b25c9cb05a9fa19a9a05c50aa4ef6e872102721e68a90b44cbe48c2f7248e57",
+    "source_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775"
   }
 }
