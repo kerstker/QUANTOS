@@ -110,6 +110,124 @@ def _write_stream_status(
     path.write_text(json.dumps(status, sort_keys=True), encoding="utf-8")
 
 
+def _full_bootstrap_checkpoint() -> dict:
+    return {
+        "checkpoint_seq": 0,
+        "checkpoint_row_hash": "",
+        "full_verified_at_ms": None,
+        "verification_mode": "FULL_BOOTSTRAP",
+    }
+
+
+def test_resident_attestation_accepts_bounded_refresh_after_worker_start(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA",))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+        cursor = StreamCursorStore(str(source_path), create=True)
+        try:
+            cursor.observe(
+                channel="depth20",
+                instrument_id="AAAUSDT",
+                first_update_id=1,
+                final_update_id=2,
+                previous_final_update_id=0,
+                event_time_ms=19_998,
+                observed_at_ms=19_999,
+            )
+            cursor_verification = cursor.verify_chain_from()
+        finally:
+            cursor.close()
+        status_path = tmp_path / "stream-status.json"
+        status_now_ms = 20_000 + realtime.MAX_STREAM_STATUS_FUTURE_SKEW_MS
+        _write_stream_status(
+            status_path,
+            source_path,
+            now_ms=status_now_ms,
+            cursor_verification=cursor_verification,
+        )
+
+        _, source_verification = realtime._source_chain_verification(
+            source,
+            limit=1,
+            checkpoint=_full_bootstrap_checkpoint(),
+            stream_status_path=str(status_path),
+            now_ms=20_000,
+        )
+        cursor_chain_verification = realtime._cursor_chain_verification(
+            str(source_path),
+            checkpoint=_full_bootstrap_checkpoint(),
+            stream_status_path=str(status_path),
+            now_ms=20_000,
+        )
+    finally:
+        source.close()
+
+    assert source_verification["basis"] == (
+        "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
+    assert cursor_chain_verification is not None
+    assert cursor_chain_verification["basis"] == (
+        "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
+
+
+def test_resident_attestation_rejects_excessive_future_skew(tmp_path):
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+        cursor = StreamCursorStore(str(source_path), create=True)
+        try:
+            cursor.observe(
+                channel="depth20",
+                instrument_id="AAAUSDT",
+                first_update_id=1,
+                final_update_id=2,
+                previous_final_update_id=0,
+                event_time_ms=19_998,
+                observed_at_ms=19_999,
+            )
+            cursor_verification = cursor.verify_chain_from()
+        finally:
+            cursor.close()
+        status_path = tmp_path / "stream-status.json"
+        _write_stream_status(
+            status_path,
+            source_path,
+            now_ms=20_001 + realtime.MAX_STREAM_STATUS_FUTURE_SKEW_MS,
+            cursor_verification=cursor_verification,
+        )
+
+        with pytest.raises(
+            realtime.BinanceRealtimeFeatureError,
+            match="source full-audit attestation is unavailable or invalid",
+        ):
+            realtime._source_chain_verification(
+                source,
+                limit=1,
+                checkpoint=_full_bootstrap_checkpoint(),
+                stream_status_path=str(status_path),
+                now_ms=20_000,
+            )
+        with pytest.raises(
+            realtime.BinanceRealtimeFeatureError,
+            match="cursor full-audit attestation is unavailable or invalid",
+        ):
+            realtime._cursor_chain_verification(
+                str(source_path),
+                checkpoint=_full_bootstrap_checkpoint(),
+                stream_status_path=str(status_path),
+                now_ms=20_000,
+            )
+    finally:
+        source.close()
+
+
 def test_execute_materializes_complete_drift_ready_feature_cache(
     tmp_path,
     monkeypatch,

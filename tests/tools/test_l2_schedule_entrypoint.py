@@ -579,6 +579,21 @@ def test_release_identity_verifies_clean_head_without_optional_git_locks(
         return results.pop(0)
 
     assert _verify_release_identity(tmp_path.resolve(), COMMIT, runner=runner) == COMMIT
+    safe_directory = f"safe.directory={tmp_path.resolve()}"
+    assert calls[0][0][:5] == [
+        "git",
+        "-c",
+        safe_directory,
+        "-C",
+        str(tmp_path.resolve()),
+    ]
+    assert calls[1][0][:5] == [
+        "git",
+        "-c",
+        safe_directory,
+        "-C",
+        str(tmp_path.resolve()),
+    ]
     assert calls[0][0][-3:] == ["rev-parse", "--verify", "HEAD"]
     assert calls[1][0][-4:] == [
         "--porcelain=v1",

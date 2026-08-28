@@ -209,6 +209,8 @@ def _verify_release_identity(
         head = runner(
             [
                 "git",
+                "-c",
+                f"safe.directory={release_root}",
                 "-C",
                 str(release_root),
                 "rev-parse",
@@ -229,6 +231,8 @@ def _verify_release_identity(
         status = runner(
             [
                 "git",
+                "-c",
+                f"safe.directory={release_root}",
                 "-C",
                 str(release_root),
                 "status",

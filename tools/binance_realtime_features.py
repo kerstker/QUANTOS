@@ -20,7 +20,10 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SUCCESS,
 )
-from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.binance_realtime_store import (
+    MAX_FUTURE_SKEW_MS,
+    BinanceRealtimeStore,
+)
 from services.data.binance_stream_cursor import (
     StreamCursorStore,
     StreamCursorStoreError,
@@ -72,6 +75,7 @@ WORKER_VERSION = "binance-realtime-feature-worker.v2"
 FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
 CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
 MAX_STREAM_STATUS_AGE_MS = 15 * 60 * 1_000
+MAX_STREAM_STATUS_FUTURE_SKEW_MS = MAX_FUTURE_SKEW_MS
 CALIBRATION_POLICY = DriftCalibrationPolicy(
     baseline_window=60,
     recent_window=20,
@@ -111,6 +115,18 @@ def _is_sha256(value: object) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
+
+
+def _attestation_time_is_fresh(
+    value: object,
+    *,
+    now_ms: int,
+    max_age_ms: int,
+) -> bool:
+    if type(value) is not int:
+        return False
+    age_ms = now_ms - value
+    return -MAX_STREAM_STATUS_FUTURE_SKEW_MS <= age_ms < max_age_ms
 
 
 def _feature_input_contract_hash(*, source_row_limit: int) -> str:
@@ -318,9 +334,11 @@ def _source_chain_verification(
             attested_frontier_hash = chain.get("verified_row_hash")
             valid_status = bool(
                 status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
-                and type(generated_at_ms) is int
-                and 0 <= validation_now_ms - generated_at_ms
-                < MAX_STREAM_STATUS_AGE_MS
+                and _attestation_time_is_fresh(
+                    generated_at_ms,
+                    now_ms=validation_now_ms,
+                    max_age_ms=MAX_STREAM_STATUS_AGE_MS,
+                )
                 and store_status.get("chain_valid") is True
                 and chain.get("valid") is True
                 and bootstrap_mode
@@ -328,9 +346,11 @@ def _source_chain_verification(
                     "FULL_SUBPROCESS_BOOTSTRAP",
                     "FULL_PERIODIC_SUBPROCESS_AUDIT",
                 }
-                and type(full_verified_at_ms) is int
-                and 0 <= validation_now_ms - full_verified_at_ms
-                < FULL_CHAIN_AUDIT_INTERVAL_MS
+                and _attestation_time_is_fresh(
+                    full_verified_at_ms,
+                    now_ms=validation_now_ms,
+                    max_age_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
+                )
                 and type(attested_frontier_seq) is int
                 and attested_frontier_seq >= 0
                 and (
@@ -422,9 +442,11 @@ def _cursor_chain_verification(
             attested_frontier_hash = chain.get("verified_row_hash")
             valid_status = bool(
                 status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
-                and type(generated_at_ms) is int
-                and 0 <= validation_now_ms - generated_at_ms
-                < MAX_STREAM_STATUS_AGE_MS
+                and _attestation_time_is_fresh(
+                    generated_at_ms,
+                    now_ms=validation_now_ms,
+                    max_age_ms=MAX_STREAM_STATUS_AGE_MS,
+                )
                 and isinstance(chain, dict)
                 and chain.get("valid") is True
                 and bootstrap_mode
@@ -432,9 +454,11 @@ def _cursor_chain_verification(
                     "FULL_SUBPROCESS_BOOTSTRAP",
                     "FULL_PERIODIC_SUBPROCESS_AUDIT",
                 }
-                and type(full_verified_at_ms) is int
-                and 0 <= validation_now_ms - full_verified_at_ms
-                < CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS
+                and _attestation_time_is_fresh(
+                    full_verified_at_ms,
+                    now_ms=validation_now_ms,
+                    max_age_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
+                )
                 and type(attested_frontier_seq) is int
                 and attested_frontier_seq >= 0
                 and (

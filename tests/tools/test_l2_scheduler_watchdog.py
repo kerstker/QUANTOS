@@ -1189,6 +1189,7 @@ def test_systemd_collector_excludes_only_exact_non_scheduled_support_units() -> 
         "quantos-console-api.service",
         "quantos-console-frontend.service",
         "quantos-proxy-environment.service",
+        "quantos-public-proxy-runtime.service",
     )
 
     def runner(command, **kwargs):

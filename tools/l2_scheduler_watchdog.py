@@ -60,6 +60,7 @@ SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS = frozenset(
         "quantos-console-api.service",
         "quantos-console-frontend.service",
         "quantos-proxy-environment.service",
+        "quantos-public-proxy-runtime.service",
     }
 )
 

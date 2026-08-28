@@ -43,6 +43,7 @@ ISSUER = "https://identity.example.test"
 ALL_ROLES = tuple(GovernanceRole)
 ACCESS_REVIEWED_AT_MS = 1_780_000_000_000
 ACCESS_REVIEW_EXPIRES_AT_MS = ACCESS_REVIEWED_AT_MS + 90 * 24 * 60 * 60 * 1_000
+FIXED_API_NOW_SECONDS = ACCESS_REVIEWED_AT_MS // 1_000 + 1
 
 
 def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2):
@@ -180,6 +181,7 @@ def _seed_identity_authorization(tmp_path: Path) -> tuple[Path, Path]:
 def client(tmp_path, monkeypatch):
     _seed(tmp_path)
     authorization_registry, authorization_store = _seed_identity_authorization(tmp_path)
+    monkeypatch.setattr(m, "_now", lambda: FIXED_API_NOW_SECONDS)
     monkeypatch.setattr(m, "_APPROVALS_DB", str(tmp_path / "approvals.db"))
     monkeypatch.setattr(m, "_EXP_DB", str(tmp_path / "experiments_reg.db"))
     monkeypatch.setattr(m, "_PAPER_DB", str(tmp_path / "paper_track.db"))
