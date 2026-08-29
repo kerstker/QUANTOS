@@ -421,135 +421,56 @@ def test_l2_backup_checker_requires_external_encrypted_restore_verified_evidence
     assert report["requirements"][0]["status"] == "PASS"
 
 
-def test_l2_backup_checker_accepts_v3_v4_and_v5_source_contracts(tmp_path):
+def test_l2_backup_checker_accepts_v2_through_v8_and_rejects_v9(tmp_path):
     """The checker must accept every released source-contract version.
 
-    v5 added the Task 39 soak evidence authority.  A future unreviewed version
-    must still fail closed instead of being accepted by a broad integer check.
+    v8 is current. A future unreviewed version must still fail closed instead
+    of being accepted by a broad integer check.
     """
     for relative in ("tools/l2_backup.py", "tools/l2_scheduler_watchdog.py"):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("implementation", encoding="utf-8")
-    contract = _l2_source_contract()
-    contract["version"] = 3
-    registry = _write_registry(
-        tmp_path,
-        [
-            _requirement(
-                "OPS.BACKUP.ENCRYPTED",
-                domain="reliability_operations",
-                target_maturity="M3",
-                checker="l2_backup_evidence",
-                checker_args={
-                    "path": "evidence/l2_backup_latest.json",
-                    "implementation_paths": [
-                        "tools/l2_backup.py",
-                        "tools/l2_scheduler_watchdog.py",
-                    ],
-                    "expected_source_contract": contract,
-                    "max_rpo_ms": 100,
-                    "max_rto_ms": 100,
-                    "pass_maturity": "M3",
-                },
-            )
-        ],
-    )
     evidence = tmp_path / "evidence" / "l2_backup_latest.json"
     evidence.parent.mkdir()
     payload = _valid_l2_backup_evidence()
-    payload["source_contract"] = contract
-    payload["source_contract_sha256"] = _l2_source_contract_sha256(contract)
-    evidence.write_text(json.dumps(payload), encoding="utf-8")
-    report = assess_repository(tmp_path, registry)
-    assert report["requirements"][0]["status"] == "PASS"
 
-    contract_v4 = dict(contract)
-    contract_v4["version"] = 4
-    registry_v4 = _write_registry(
-        tmp_path,
-        [
-            _requirement(
-                "OPS.BACKUP.ENCRYPTED",
-                domain="reliability_operations",
-                target_maturity="M3",
-                checker="l2_backup_evidence",
-                checker_args={
-                    "path": "evidence/l2_backup_latest.json",
-                    "implementation_paths": [
-                        "tools/l2_backup.py",
-                        "tools/l2_scheduler_watchdog.py",
-                    ],
-                    "expected_source_contract": contract_v4,
-                    "max_rpo_ms": 100,
-                    "max_rto_ms": 100,
-                    "pass_maturity": "M3",
-                },
-            )
-        ],
-    )
-    payload["source_contract"] = contract_v4
-    payload["source_contract_sha256"] = _l2_source_contract_sha256(contract_v4)
-    evidence.write_text(json.dumps(payload), encoding="utf-8")
-    report = assess_repository(tmp_path, registry_v4)
-    assert report["requirements"][0]["status"] == "PASS"
+    def assess_version(version: int) -> dict:
+        contract = _l2_source_contract()
+        contract["version"] = version
+        registry = _write_registry(
+            tmp_path,
+            [
+                _requirement(
+                    "OPS.BACKUP.ENCRYPTED",
+                    domain="reliability_operations",
+                    target_maturity="M3",
+                    checker="l2_backup_evidence",
+                    checker_args={
+                        "path": "evidence/l2_backup_latest.json",
+                        "implementation_paths": [
+                            "tools/l2_backup.py",
+                            "tools/l2_scheduler_watchdog.py",
+                        ],
+                        "expected_source_contract": contract,
+                        "max_rpo_ms": 100,
+                        "max_rto_ms": 100,
+                        "pass_maturity": "M3",
+                    },
+                )
+            ],
+        )
+        payload["source_contract"] = contract
+        payload["source_contract_sha256"] = _l2_source_contract_sha256(contract)
+        evidence.write_text(json.dumps(payload), encoding="utf-8")
+        return assess_repository(tmp_path, registry)["requirements"][0]
 
-    contract_v5 = dict(contract)
-    contract_v5["version"] = 5
-    registry_v5 = _write_registry(
-        tmp_path,
-        [
-            _requirement(
-                "OPS.BACKUP.ENCRYPTED",
-                domain="reliability_operations",
-                target_maturity="M3",
-                checker="l2_backup_evidence",
-                checker_args={
-                    "path": "evidence/l2_backup_latest.json",
-                    "implementation_paths": [
-                        "tools/l2_backup.py",
-                        "tools/l2_scheduler_watchdog.py",
-                    ],
-                    "expected_source_contract": contract_v5,
-                    "max_rpo_ms": 100,
-                    "max_rto_ms": 100,
-                    "pass_maturity": "M3",
-                },
-            )
-        ],
-    )
-    payload["source_contract"] = contract_v5
-    payload["source_contract_sha256"] = _l2_source_contract_sha256(contract_v5)
-    evidence.write_text(json.dumps(payload), encoding="utf-8")
-    report = assess_repository(tmp_path, registry_v5)
-    assert report["requirements"][0]["status"] == "PASS"
+    for version in range(2, 9):
+        assert assess_version(version)["status"] == "PASS", f"v{version}"
 
-    contract_v6 = dict(contract)
-    contract_v6["version"] = 6
-    registry_v6 = _write_registry(
-        tmp_path,
-        [
-            _requirement(
-                "OPS.BACKUP.ENCRYPTED",
-                domain="reliability_operations",
-                target_maturity="M3",
-                checker="l2_backup_evidence",
-                checker_args={
-                    "path": "evidence/l2_backup_latest.json",
-                    "implementation_paths": [
-                        "tools/l2_backup.py",
-                        "tools/l2_scheduler_watchdog.py",
-                    ],
-                    "expected_source_contract": contract_v6,
-                    "max_rpo_ms": 100,
-                    "max_rto_ms": 100,
-                    "pass_maturity": "M3",
-                },
-            )
-        ],
-    )
-    report = assess_repository(tmp_path, registry_v6)
-    assert report["requirements"][0]["status"] == "UNVERIFIED"
+    future = assess_version(9)
+    assert future["status"] == "UNVERIFIED"
+    assert "source contract version" in future["detail"]
 
 
 @pytest.mark.parametrize(

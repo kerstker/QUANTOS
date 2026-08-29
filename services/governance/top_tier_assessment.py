@@ -2175,11 +2175,13 @@ def _alpha_trial_ledger_evidence(
 def _l2_source_contract_error(contract: Any) -> str | None:
     if not isinstance(contract, dict) or set(contract) != {"version", "sources"}:
         return "source contract must contain only version and sources"
-    # v4 (2026-08-04) added the autonomous realtime engineering execution-paper
-    # ledger. v5 added the Task 39 soak evidence authority. Keep the accepted
-    # set finite so a future contract version still requires explicit review.
-    if contract.get("version") not in (2, 3, 4, 5):
-        return "source contract version must be 2, 3, 4, or 5"
+    # v4 added the autonomous realtime engineering execution-paper ledger; v5
+    # added the Task 39 soak evidence authority; v6/v7 added the retained
+    # DefiLlama TVL/stablecoin vintages; and v8 added the governed Binance book
+    # depth archive. Keep the accepted set finite so a future contract version
+    # still requires explicit review.
+    if contract.get("version") not in (2, 3, 4, 5, 6, 7, 8):
+        return "source contract version must be one of 2, 3, 4, 5, 6, 7, or 8"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"
