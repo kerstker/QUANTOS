@@ -46,7 +46,7 @@
     "source_db_sha256": "98b9e79820c15e5c3ba090f48817403fbc6c7e5705ffc21ce392c06889b80b58"
   },
   "evidence_id": "quantos-multi-asset-research-fx-v1",
-  "evidence_sha256": "87583dc3b473fe446fe22acae5f2882349bed990795f4962784114b7474252c3",
+  "evidence_sha256": "c17121894361de74fc9a19352c8c9477f6d156f96e77485e742f713fcc2ea92d",
   "factor_contract": [
     {
       "factor_id": "fx_momentum_120",
@@ -402,13 +402,13 @@
   "implementation_sha256": {
     "quantos/contracts/multi_asset.py": "bda69ca821409cbde49ded61996f2b3f37cecfd6b18d246ca030d1dc50a0f35d",
     "scripts/generate_multi_asset_research_evidence.py": "8b52017a89275b66de6241931b04b78919b18884bfc65c5b557fc833fc148dea",
-    "services/governance/model_risk_dataset.py": "1cc12840e2d6e2ecdc4ca1a9749358e076b944ae05bde463964f9d2ccbb806c1",
+    "services/governance/model_risk_dataset.py": "9e323ccad79c35efde921bccf647257d8611d2bb6c8e69f2fa94b1dc3136ddf1",
     "services/governance/multi_asset_research_evidence.py": "b1a4c23009a61f166c4850a9bc30ff2ee37ad97f87e0e5a00c4ed73bdfb779bf",
     "services/research/ic_panel.py": "26eb7e0681c7b51af211823030b84dec75fd44d681431ac5a61e609fca09d6e4",
     "services/research/signals.py": "ce1d4cc985b17b046f8c0ed3c13387ccf9a1b20dd1188011f645c40dc81a543f",
     "tools/fx_pit_bundle.py": "40f41e3293fd18eda0d90a62561e5f7d61923620e7b94327b2ab03abdfc22d82",
-    "tools/ic_panel_registry.py": "2d0d5e76a54cc722e93747771995677c0e9da3bf161971ed30fc0df079e36c65",
-    "tools/ic_panel_research.py": "128467ddc43b72490d898727c680372c6662af9589cd0114760262c5df4c0dce"
+    "tools/ic_panel_registry.py": "613466fe99c20a1155707b9455def67c0946c0cfe4334defb446f95ca2ea4cd4",
+    "tools/ic_panel_research.py": "797cea16cfaf47b19d626932d5ba9fbdca4d1fc0fccd6f22703cf327264b8b25"
   },
   "limitations": [
     "Frankfurter/ECB reference rates are end-of-day reference observations, not executable bid/ask quotes",
@@ -442,6 +442,6 @@
     "tests/governance/test_multi_asset_research_evidence.py": "43efa0fdb60bfdb2b1af9064544c5a9d852750f01fa18684654b7c3e2cbf1072",
     "tests/research/test_fx_pit_bundle.py": "30665edf34399b1eaad215b937d7fb2a0e4c96b2a33054ea7fd3996e9061c1b4",
     "tests/research/test_ic_panel.py": "362aa28abd2c3704db7121b64ef9b2633404d565ccd28619a965c7bd9693eccd",
-    "tests/research/test_ic_panel_registry.py": "491f4d441180c9f2830be57dcb56af4d107357d67f72874ef616ae850f9db5bf"
+    "tests/research/test_ic_panel_registry.py": "a2231dbcb95730e08bea776e05e4749593c9600a0655e283c5f7fc3b9dfdad30"
   }
 }

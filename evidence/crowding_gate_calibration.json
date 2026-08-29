@@ -1,7 +1,12 @@
 {
+  "calibration_authoritative": false,
+  "counted_as_calibration_evidence": false,
+  "counted_as_completion_evidence": false,
   "dataset": {
     "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
     "bundle_sha256": "960c6de33a3ae5f3bf6cc14c973aeacd099e429367fe93d9d13701d37b62c77d",
+    "bundle_version": "CROWDING_GATE_CALIBRATION_V1",
+    "calibration_authoritative": false,
     "instruments": [
       "AAVE",
       "ADA",
@@ -31,47 +36,67 @@
     "manifest_sha256": "835ad3fbd1b18d3c8b1b38cd7041ffb804bd4f08ec14c943fe1fa8605c129838",
     "max_period": 1785974400000,
     "min_period": 1642636800000,
+    "purpose": "DIAGNOSTIC_ONLY",
+    "retention_status": "INVALIDATED_PERP_LEDGER_V1",
     "row_count": 238,
     "source_sha256": {
       "data/cache/crypto_funding.db": "024645cc4e0931f4684f6609a00318af764ede104288fd704ea92c018799afc7",
       "data/cache/crypto_funding_rates.json": "9ffb23f93863b71db6c8f94fda8f8413273a4a4a617c01b2ab35305d499c4635",
       "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
       "data/cache/crypto_oi_metrics.json": "01be1a969761b1b98244d19cb717514fce4f0007f94bedab4e14a242f1835e45"
-    }
+    },
+    "source_verification_policy": "ALL_DECLARED_FILES_SHA256_MATCH_OR_ALL_ABSENT;PARTIAL_REJECTED"
   },
-  "evidence_sha256": "7296407c9b70d3699a3c00aebb3f402a27f9ea973d952c2c02f8345c73fed5a0",
+  "document_type": "CROWDING_CALIBRATION_INVALIDATION",
+  "evidence_sha256": "43eff13a5034de836cdc6c2c5fb025d5c19aed9c9899eb4952041ac3054a26fb",
+  "future_authority": {
+    "automatic_upgrade_from_v1": false,
+    "current_entrypoint_can_grant_authority": false,
+    "required_bundle_version": "CROWDING_GATE_CALIBRATION_V2",
+    "requires_explicit_reviewed_entrypoint": true,
+    "requires_independent_pit_bundle": true,
+    "requires_independently_controlled_signed_source_result_authority": true,
+    "self_generated_hashes_can_grant_authority": false
+  },
+  "implementation_binding_role": "DIAGNOSTIC_RECONSTRUCTION_ONLY",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
-    "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
-    "services/portfolio/crowding_gate.py": "28d09e42404ffb51f552af4b7b0c9602b6058fc6f059b9305d1077f3e066d0cf",
-    "tools/crowding_metric_research.py": "f7bbe196e34f43fd882f44677073b6039a70769bdd2b22938997fb87fc14c297",
-    "tools/dry_run_crowd_contra_multi.py": "1bf04d044c2eb5913788f25e824053b0a850327b91b2556a2db4d2b1a1dbc885",
-    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "e87ec50ae01442ef82f36b2baa51abd5279c5b348de40e6b4cdaa5e912e1e2ad",
-    "tools/live_track_advance.py": "dfdf4ade6c7144fa2bbdf59e9e4a9e676a4e1a294fa12f6ca135f54d0bc08795"
+    "services/portfolio/crowding_calibration.py": "9911f0f1db762347020bbf231f4f293ba6b108ec916afe017be77b554bbf8145",
+    "services/portfolio/crowding_gate.py": "299dcae094e2c01aa895cea15c546de1ff92e23c6403b3aceee56c4ea57d88bb",
+    "tools/crowding_metric_research.py": "a7ca28ba2309a943c65bd9ed73aed047bd73b350a270b9d3a0c815c539720949",
+    "tools/dry_run_crowd_contra_multi.py": "f8c0a01cbcf29b599f37e8321ba84cf7cef7cb2a8c7d4d6c3b2514b68f5b15ae",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "08b2fe4d36e5a103f226d45d9e1edcb490666c4a86be7d1b1f40f7e3ade325d5",
+    "tools/live_track_advance.py": "ed47f4604f7f71d984027d13205c938afa6d405c956cc27c82847a0544f3a92c"
   },
+  "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
   "limitations": [
-    "Sensitivity replay is historical and not causal proof of loss prevention.",
-    "No venue order-book, liquidation, or production-fill sample is available at L2.",
-    "Generic average/concentration/exit-day defaults are not promoted to calibrated production limits."
+    "The retained V1 bundle cannot establish causal PIT calibration: its source timing does not satisfy the current minimum knowledge-lag contract.",
+    "All retained replay counts and sensitivity statistics are diagnostic history invalidated with the legacy perpetual-ledger semantics.",
+    "The deployed numeric threshold is an uncalibrated conservative safety limit, not a validated production calibration.",
+    "Authority requires a separately reviewed V2 entrypoint backed by an independent PIT bundle and independently controlled signed source/result authority; self-generated hashes cannot grant authority and V1 can never upgrade automatically."
   ],
+  "load_bearing": false,
   "policy": {
     "average_rank_path": "WARN_ONLY",
+    "calibration_authoritative": false,
     "entrypoint_assignments": {
       "dry_run": 3.0,
       "live": 3.0,
       "signal_adapter_dry_run": 3.0
     },
+    "legacy_recorded_on": "2026-07-07",
     "signed_max_crowding_z": 3.0,
-    "signed_on": "2026-07-07"
+    "threshold_status": "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT"
   },
   "rank_semantics": {
-    "block_authority": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
+    "authority_status": "INVALIDATED_PERP_LEDGER_V1",
     "dry_run": "TRAILING_GLOBAL_LS_CROSS_SECTIONAL_RANK",
+    "legacy_block_rule": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
     "live": "CURRENT_ABS_GLOBAL_LS_MINUS_ONE_CROSS_SECTIONAL_RANK"
   },
-  "readiness": "L2_DRY_RUN_ONLY",
-  "schema_version": 1,
-  "status": "SENSITIVITY_EVIDENCE_COMPLETE_SIGNED_Z_GATE",
+  "readiness": "NOT_READY",
+  "schema_version": 2,
+  "status": "INVALIDATED_PERP_LEDGER_V1",
   "summary": {
     "absolute_statistics": {
       "short_max_z": {
@@ -102,6 +127,7 @@
         "p90": 4.150884
       }
     },
+    "calibration_authoritative": false,
     "gate_at_signed_threshold": {
       "block_periods_equal": true,
       "dry_run": {
@@ -163,6 +189,7 @@
         "n_warn": 217
       }
     },
+    "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
     "max_name_weight": {
       "max": 0.125,
       "mean": 0.073654,
@@ -175,7 +202,7 @@
     "max_period": 1785974400000,
     "min_period": 1642636800000,
     "n_periods": 238,
-    "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
+    "provenance": "RETAINED_V1_DIAGNOSTIC_INVALIDATED",
     "rank_statistics": {
       "dry_run_average": {
         "max": 0.5,
@@ -233,6 +260,8 @@
       }
     },
     "signed_max_crowding_z": 3.0,
+    "status": "INVALIDATED_PERP_LEDGER_V1",
+    "threshold_status": "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT",
     "z_threshold_sensitivity": {
       "2.0": {
         "block_periods_equal": true,
