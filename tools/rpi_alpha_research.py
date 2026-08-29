@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict
 import json
 from pathlib import Path
 import statistics
@@ -41,6 +42,7 @@ from services.research.experiment_registry.store import (
     SqliteExperimentStore,
 )
 from services.research.realtime_alpha_discovery import (
+    LABEL_POLICY,
     RealtimeAlphaPolicy,
     RealtimeFrame,
     RealtimeHypothesisEvaluation,
@@ -144,9 +146,68 @@ def _definition(spec) -> AlphaDefinition:
             "mechanism": spec.mechanism,
             "horizon_ms": str(spec.horizon_ms),
             "signal_version": spec.signal_version,
-            "label_policy": "post_latency_first_known_mid",
+            "label_policy": LABEL_POLICY,
             "rpi_dataset": RPI_DATASET_ID,
         },
+    )
+
+
+def _rpi_dataset_version(
+    *,
+    rpi_authority_hash: str,
+    research_plan_hash: str | None,
+    admission: Mapping[str, Any],
+    manifest: Sequence[Mapping[str, Any]],
+    policy: RealtimeAlphaPolicy,
+    frames: Mapping[str, Sequence[RealtimeFrame]],
+) -> str:
+    """Bind every input that can affect the shared realtime evaluator.
+
+    The RPI mechanisms currently consume RPI/depth/spread signals, causal
+    knowledge times, entry/exit mids and funding.  Retaining the complete
+    ``RealtimeFrame`` contract also prevents a future mechanism from silently
+    making one of the other public realtime fields load-bearing without first
+    changing the dataset identity.
+    """
+
+    return stable_hash(
+        {
+            "schema_version": 2,
+            "rpi_authority_hash": rpi_authority_hash,
+            "research_plan_hash": research_plan_hash,
+            "admission": dict(admission),
+            "manifest": [dict(item) for item in manifest],
+            "label_policy": LABEL_POLICY,
+            "evaluation_policy": asdict(policy),
+            "frame_view": {
+                instrument: [
+                    {
+                        "instrument_id": frame.instrument_id,
+                        "event_time_ms": frame.event_time_ms,
+                        "knowledge_time_ms": frame.knowledge_time_ms,
+                        "decision_time_ms": frame.decision_time_ms,
+                        "mid_price": frame.mid_price,
+                        "spread_bps": frame.spread_bps,
+                        "depth_imbalance_5": frame.depth_imbalance_5,
+                        "mark_basis_bps": frame.mark_basis_bps,
+                        "funding_rate": frame.funding_rate,
+                        "taker_imbalance_5s": frame.taker_imbalance_5s,
+                        "liquidation_imbalance_5s": (
+                            frame.liquidation_imbalance_5s
+                        ),
+                        "trailing_return_8h": frame.trailing_return_8h,
+                        "trailing_realized_vol_8h": (
+                            frame.trailing_realized_vol_8h
+                        ),
+                        "rpi_notional_imbalance_1000": (
+                            frame.rpi_notional_imbalance_1000
+                        ),
+                    }
+                    for frame in rows
+                ]
+                for instrument, rows in sorted(frames.items())
+            },
+        }
     )
 
 
@@ -464,28 +525,15 @@ def _run_cycle(
         item.candidate_id: evaluate_hypothesis(item, enriched, policy=policy)
         for item in specs
     }
-    dataset_version = stable_hash(
-        {
-            "rpi_authority_hash": dataset.authority_hash,
-            "research_plan_hash": (
-                None if research_plan is None else research_plan.plan_hash
-            ),
-            "admission": admission.as_dict(),
-            "manifest": [item.as_dict() for item in specs],
-            "frame_view": {
-                instrument: [
-                    {
-                        "decision_time_ms": frame.decision_time_ms,
-                        "mid_price": frame.mid_price,
-                        "spread_bps": frame.spread_bps,
-                        "depth_imbalance_5": frame.depth_imbalance_5,
-                        "rpi_notional_imbalance_1000": frame.rpi_notional_imbalance_1000,
-                    }
-                    for frame in rows
-                ]
-                for instrument, rows in sorted(enriched.items())
-            },
-        }
+    dataset_version = _rpi_dataset_version(
+        rpi_authority_hash=dataset.authority_hash,
+        research_plan_hash=(
+            None if research_plan is None else research_plan.plan_hash
+        ),
+        admission=admission.as_dict(),
+        manifest=[item.as_dict() for item in specs],
+        policy=policy,
+        frames=enriched,
     )
 
     store = SqliteExperimentStore(str(experiment_db), create=False)

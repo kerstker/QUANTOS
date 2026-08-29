@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 
+import pytest
+
 from services.research.experiment_registry.store import SqliteExperimentStore
-from services.research.realtime_alpha_discovery import DAY_MS, RealtimeFrame
+from services.research.realtime_alpha_discovery import (
+    DAY_MS,
+    LABEL_POLICY,
+    RealtimeAlphaPolicy,
+    RealtimeFrame,
+)
 from services.research.rpi_alpha import (
     RPI_V2_LOCKED_OOS_START_MS,
     RpiDataset,
     RpiDepthObservation,
+    default_rpi_hypotheses,
 )
+from tools import rpi_alpha_research as rpi_driver
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.rpi_alpha_research import (
     DEFAULT_FRAME_CACHE,
@@ -77,6 +87,86 @@ def _frames(*_args, **_kwargs):
 def _empty_experiment_db(path) -> None:
     store = SqliteExperimentStore(str(path), create=True)
     store.close()
+
+
+def test_rpi_definition_binds_shared_evaluator_label_policy() -> None:
+    definition = rpi_driver._definition(default_rpi_hypotheses()[0])
+
+    assert definition.params["label_policy"] == LABEL_POLICY
+
+
+def _identity_frame() -> RealtimeFrame:
+    return RealtimeFrame(
+        instrument_id="BTCUSDT",
+        event_time_ms=100,
+        knowledge_time_ms=150,
+        decision_time_ms=200,
+        mid_price=100.0,
+        spread_bps=1.0,
+        depth_imbalance_5=0.2,
+        mark_basis_bps=0.1,
+        funding_rate=0.0001,
+        taker_imbalance_5s=0.3,
+        liquidation_imbalance_5s=-0.2,
+        trailing_return_8h=0.01,
+        trailing_realized_vol_8h=0.02,
+        rpi_notional_imbalance_1000=0.4,
+    )
+
+
+def _identity_hash(
+    frame: RealtimeFrame,
+    *,
+    policy: RealtimeAlphaPolicy | None = None,
+) -> str:
+    return rpi_driver._rpi_dataset_version(
+        rpi_authority_hash="a" * 64,
+        research_plan_hash=None,
+        admission={"status": "EXPLORATION_READY"},
+        manifest=[default_rpi_hypotheses()[0].as_dict()],
+        policy=policy or RealtimeAlphaPolicy(),
+        frames={"BTCUSDT": (frame,)},
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "changed"),
+    (
+        ("instrument_id", "ETHUSDT"),
+        ("event_time_ms", 101),
+        ("knowledge_time_ms", 151),
+        ("decision_time_ms", 201),
+        ("mid_price", 101.0),
+        ("spread_bps", 1.1),
+        ("depth_imbalance_5", 0.21),
+        ("mark_basis_bps", 0.11),
+        ("funding_rate", 0.0002),
+        ("taker_imbalance_5s", 0.31),
+        ("liquidation_imbalance_5s", -0.21),
+        ("trailing_return_8h", 0.011),
+        ("trailing_realized_vol_8h", 0.021),
+        ("rpi_notional_imbalance_1000", 0.41),
+    ),
+)
+def test_rpi_dataset_identity_binds_every_realtime_frame_field(
+    field: str,
+    changed: object,
+) -> None:
+    frame = _identity_frame()
+
+    assert _identity_hash(frame) != _identity_hash(
+        replace(frame, **{field: changed})
+    )
+
+
+def test_rpi_dataset_identity_binds_evaluation_policy() -> None:
+    frame = _identity_frame()
+    policy = RealtimeAlphaPolicy()
+
+    assert _identity_hash(frame, policy=policy) != _identity_hash(
+        frame,
+        policy=replace(policy, fee_bps=policy.fee_bps + 0.1),
+    )
 
 
 def test_rpi_cycle_registers_fixed_trials_but_cannot_formally_pass_before_30d(tmp_path):
