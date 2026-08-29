@@ -8,10 +8,32 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.alpha.evaluator import AlphaEvaluator
-from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.alpha.evaluator import AlphaEvaluator as PublicAlphaEvaluator
+from services.alpha.panel_backtest import (
+    PanelPeriod,
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+)
+from services.validation.selection_authority import SelectionAuthorityBlocked
 from services.research.backtest_engine.costs import CostModel
 from services.validation.pbo_evidence import create_batch_pbo_evidence
+
+
+class AlphaEvaluator(PublicAlphaEvaluator):
+    """Explicit V1 diagnostic evaluator used only by this mechanics suite."""
+
+    evaluate = PublicAlphaEvaluator._evaluate_legacy_diagnostic
+    prepare_catalog_observation = (
+        PublicAlphaEvaluator._prepare_catalog_observation_legacy_diagnostic
+    )
+
+
+def test_public_alpha_evaluator_is_quarantined_before_catalog_mutation():
+    catalog = _cat()
+    evaluator = PublicAlphaEvaluator(catalog)
+    with pytest.raises(SelectionAuthorityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        evaluator.evaluate("a1", _panel())
+    with pytest.raises(SelectionAuthorityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        evaluator.prepare_catalog_observation("a1", _panel())
 
 
 def _panel(n_periods=15, n_inst=12):
@@ -61,7 +83,9 @@ def test_periods_per_year_default_is_252_and_matches_sharpe_directly():
     panel_to_periods(non_overlapping=True)) must be able to annualize correctly. Default (252,
     unspecified) must reproduce the exact value services.research.backtest_engine.metrics.sharpe
     itself would give at its own default ppy — i.e. this is genuinely wired through, not ignored."""
-    from services.alpha.panel_backtest import run_panel_backtest
+    from services.alpha.panel_backtest import (
+        _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+    )
     from services.research.backtest_engine.metrics import sharpe as _sharpe
     cost = CostModel(0, 0)
     periods = _panel()

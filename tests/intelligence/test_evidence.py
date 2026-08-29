@@ -127,9 +127,9 @@ class _SpyEvaluator(AlphaEvaluator):
         super().__init__(*a, **k)
         self.calls = []
 
-    def evaluate(self, alpha_id, periods, **kw):
+    def _evaluate_legacy_diagnostic(self, alpha_id, periods, **kw):
         self.calls.append(dict(kw))
-        return super().evaluate(alpha_id, periods, **kw)
+        return super()._evaluate_legacy_diagnostic(alpha_id, periods, **kw)
 
 
 def test_guided_loop_forwards_provider_leakage_to_the_gate():
@@ -139,6 +139,6 @@ def test_guided_loop_forwards_provider_leakage_to_the_gate():
     catalog = AlphaCatalog()
     spy = _SpyEvaluator(catalog, AlphaFactoryConfig())
     loop = GuidedSearchLoop(space, inner_loop=ResearchAgentLoop(catalog=catalog, evaluator=spy))
-    loop.search(rounds=1, batch_size=1, periods_provider=prov)
+    loop.search(rounds=1, batch_size=1, periods_provider=prov, diagnostic_only=True)
     assert spy.calls                                                 # the loop evaluated at least one candidate
     assert all(c.get("leakage_ok") is True for c in spy.calls)       # provider's real verdict reached the gate

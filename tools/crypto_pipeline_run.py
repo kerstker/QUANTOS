@@ -12,6 +12,7 @@ import os
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.alpha_pipeline import run_alpha_asset_pipeline
 from services.validation.cpcv import cpcv_summary
@@ -45,13 +46,21 @@ def _label(expr) -> str:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_pipeline_run")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     event_times = sorted({b.event_time for inst in instruments
                           for b in store.fetch_bars(inst, -10**18, 10**18)})
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in json.load(open(_FUND_CACHE, encoding="utf-8")).items()}
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
     T, N = len(panel.event_times), len(panel.instruments)

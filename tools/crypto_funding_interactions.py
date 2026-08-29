@@ -11,6 +11,7 @@ import json
 import os
 import statistics
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.expression_leakage import compute_leakage_ok
@@ -54,6 +55,7 @@ def _net_by_fee(price_r, turn_r, fees=(0, 5, 10, 20)):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_funding_interactions")
     panel, instruments = build_panel(add_basis=True)
     px, fund_mat = panel.matrices["close"], panel.matrices["funding"]
     has_basis = "basis" in panel.matrices

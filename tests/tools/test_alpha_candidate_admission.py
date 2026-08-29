@@ -6,7 +6,7 @@ from quantos.contracts.hashing import stable_hash
 from services.research import alpha_expression as ax
 from services.research.paper_candidate_registry import PaperCandidateRegistry
 from tools.alpha_candidate_admission import admit_factory_candidates
-from tools.alpha_candidate_admission import run
+from tools.alpha_candidate_admission import _run_legacy_diagnostic as run
 
 
 EXPRESSION = ("cs_rank", ("neg", ("field", "oi_value")))

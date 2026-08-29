@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from services.execution.dry_run_pipeline import (plan_target_quantities,
-                                                 run_multi_period_dry_run)
+from services.execution.dry_run_pipeline import (
+    _run_multi_period_dry_run_legacy_diagnostic as run_multi_period_dry_run,
+    plan_target_quantities,
+)
 from services.research.promotion_checks import (CONCENTRATION_THRESHOLDS,
                                                 COST_STRESS_THRESHOLDS,
                                                 PERTURBATION_THRESHOLDS,
@@ -319,9 +321,9 @@ def test_attribution_hand_computed_two_instruments():
     assert pi["ETH"]["price_pnl"] == pytest.approx(50000 + (-5556) * 9)     # 50000 - 50004
     assert pi["BTC"]["cost"] == pytest.approx(500.0 + 50.05 + 49.973)
     assert pi["ETH"]["cost"] == pytest.approx(500.0 + 50.04 + 49.995)
-    # t1 资金费(仅 t1 有费率):BTC -0.001*4545*110 = -499.95;ETH -(-0.002)*(-5556)*90 = -1000.08
-    assert pi["BTC"]["funding"] == pytest.approx(-499.95)
-    assert pi["ETH"]["funding"] == pytest.approx(-1000.08)
+    # t1 settlement 先于 t1 调仓，故作用于从 t0 携入的 5000/-5000 手。
+    assert pi["BTC"]["funding"] == pytest.approx(-550.0)
+    assert pi["ETH"]["funding"] == pytest.approx(-900.0)
     # per_period 总和 == Σ 标的 total == 恒等式两侧
     assert sum(out["per_period"]) == pytest.approx(sum(s["total"] for s in pi.values()))
     assert len(out["per_period"]) == 3

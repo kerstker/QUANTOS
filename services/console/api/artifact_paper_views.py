@@ -15,6 +15,7 @@ from quantos.contracts.hashing import stable_hash
 from quantos.runtime_paths import runtime_state_root
 from services.execution.paper_tca_history import build_paper_tca_history
 from services.execution.dry_run_store import DryRunStore
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from .artifact_diagnostic_views import router as diagnostic_router
 
 
@@ -2451,7 +2452,15 @@ def _dry_run_payload() -> Dict:
 
 @router.get("/api/v1/console/dry-run")
 async def dry_run() -> Dict:
-    return _dry_run_payload()
+    payload = _dry_run_payload()
+    scrubbed = scrub_backtest_payload(payload)
+    # These children are real read-only operational observations, not
+    # profitability evidence.  Keep them intact while the V1 dry-run, paper,
+    # and candidate-selection branches remain scrubbed.
+    for key in ("data_refresh", "scheduler_watchdog"):
+        if key in payload:
+            scrubbed[key] = payload[key]
+    return scrubbed
 
 
 def _ic_panel_payload() -> Dict:
@@ -2512,7 +2521,7 @@ def _research_findings_payload() -> Dict:
 
 @router.get("/api/v1/console/research-findings")
 async def research_findings() -> Dict:
-    return _research_findings_payload()
+    return scrub_backtest_payload(_research_findings_payload())
 
 
 def _lance_1m_validation_payload() -> Dict:

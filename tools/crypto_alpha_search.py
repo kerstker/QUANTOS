@@ -21,6 +21,7 @@ import time
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.research_adapter import adapt_research_market_data
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
@@ -122,6 +123,7 @@ def _run_registered_pool(
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.crypto_alpha_search")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     now_ms = int(time.time() * 1000)
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
@@ -130,7 +132,14 @@ def _main(registry: ExperimentRegistry) -> None:
     funding = _load_funding(instruments, now_ms)
 
     t0 = time.perf_counter()
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
     alphas = generate_alphas()
@@ -254,6 +263,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_alpha_search")
     with production_experiment_registry() as registry:
         _main(registry)
 

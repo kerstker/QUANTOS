@@ -23,6 +23,7 @@ _SEARCH_SEQUENCE = itertools.count()
 
 def run_research_session(*args, **kwargs):
     """Every test states durable versus intentionally process-local execution."""
+    kwargs["diagnostic_only"] = True
     if kwargs.get("registry") is None:
         kwargs["ephemeral"] = True
     else:

@@ -9,6 +9,16 @@ from services.execution.paper_execution_store import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _exercise_store_mechanics_behind_admission(monkeypatch):
+    """These tests cover append-only mechanics; admission is tested separately."""
+    monkeypatch.setattr(
+        PaperExecutionStore,
+        "_require_authoritative_write",
+        staticmethod(lambda _payload, _authority: None),
+    )
+
+
 def _preview(alpha="crowd_contra", decision_ts=1000, quantity=2):
     return {
         "alpha_id": alpha,

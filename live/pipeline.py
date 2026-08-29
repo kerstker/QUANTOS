@@ -1,5 +1,10 @@
 """管线编排(Stage 1)。设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.7。
 
+``submit_live_batch`` 是常规 live 提交的公开边界。当前没有独立控制的外部签名/验证信任根，
+所以它在接触 audit、venue、ledger、gate 之前无条件 fail-closed。历史执行算法只保留为下划线
+私有、显式 ``diagnostic_only=True`` 的离线技术测试接缝；production runtime 不得引用它。
+独立的紧急 reduce-only 通道位于 ``live/execution/emergency.py``，不经过本入口。
+
 决策(权重)→ 缩放整数 intents → `PreTradeRiskGate`(复用既有 9 引擎风控,零重造)→ 交易所过滤器 →
 mandate 分级 → AUTO 提交 venue / NEEDS_HUMAN_REVIEW 留存不提交 → ledger 记录 → 审计
 (`GlobalAuditLog`,复用)。墙钟(now/decided_ts)由调用方边界注入,本文件无内部墙钟/RNG——与仓库
@@ -48,6 +53,11 @@ from quantos.contracts.trading import OrderSide
 from services.execution.dry_run_pipeline import screen_intents
 from services.execution.intent_builder import build_intents
 from services.monitoring.audit_log import GlobalAuditLog
+from services.validation.live_submission_authority import (
+    LiveSubmissionAuthorityBlocked,
+    require_live_submission_authority,
+    require_live_submission_diagnostic_seam,
+)
 
 UNIT_SCALE = 1_000_000     # 1 unit = 1e-6 coin;仅 gate 出入段使用,见模块 docstring
 # MARKET 单可能长期停在 PARTIALLY_FILLED(理论上罕见,但不假装它是终态);只有这四种才算"问完了"。
@@ -236,6 +246,38 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       unknown_order_store: Optional[SqliteOrderRecoveryStore] = None,
                       startup_recovery: Optional[object] = None,
                       ) -> LiveBatchResult:
+    """Public ordinary-submission boundary; unavailable without external authority."""
+    require_live_submission_authority("live.pipeline.submit_live_batch")
+    # Defense in depth if a future refactor accidentally changes the helper to
+    # return without installing a verified dispatch binding. Caller data still
+    # cannot select the private technical algorithm.
+    raise LiveSubmissionAuthorityBlocked(
+        "LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE: authority returned without a "
+        "verified dispatch binding"
+    )
+
+
+def _submit_live_batch_technical_diagnostic(
+                      *, weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
+                      current_positions: Mapping[str, float], gate, ctx_factory: Callable,
+                      venue: VenueAdapter, mandate: Optional[Mandate],
+                      validation_attestation: Optional[ValidationAttestation], ledger: LiveLedger,
+                      audit: GlobalAuditLog, strategy_id: str, decided_ts: int, now: int,
+                      account_positions: Optional[Mapping[str, float]] = None,
+                      unit_scale: int = UNIT_SCALE,
+                      max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
+                      poll_sleep: Callable[[], None] = lambda: None,
+                      slicer: Optional[Callable] = None,
+                      frozen: frozenset = frozenset(),
+                      limit_pricing: Optional[LimitPricing] = None,
+                      limit_max_confirm_polls: int = DEFAULT_LIMIT_MAX_CONFIRM_POLLS,
+                      arrival_snapshots: Optional[Mapping[str, ArrivalSnapshot]] = None,
+                      arrival_max_age_ms: Optional[int] = 5 * 60 * 1000,
+                      arrival_expected_source: Optional[str] = None,
+                      unknown_order_store: Optional[SqliteOrderRecoveryStore] = None,
+                      startup_recovery: Optional[object] = None,
+                      diagnostic_only: bool,
+                      ) -> LiveBatchResult:
     """`current_positions` vs `account_positions` 口径分离(2026-07-06 战线③,评审 #1):
     `current_positions` = **本策略**的分账仓位——目标增量必须对着本策略自己的仓位算,否则第二条
     策略的 delta 会去 net 第一条策略的持仓(把别人的仓当自己的平掉);`account_positions` =
@@ -251,6 +293,10 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
     `max_confirm_polls`**(不因为加了 LIMIT 就悄悄改变 MARKET 的既有可配行为);LIMIT 单
     用独立的 `limit_max_confirm_polls`(挂单不成交是 LIMIT 的正常路径,需要远大于 MARKET
     的等待窗口)。"""
+    require_live_submission_diagnostic_seam(
+        "live.pipeline._submit_live_batch_technical_diagnostic",
+        diagnostic_only=diagnostic_only,
+    )
     # run_id 含 now:同一决策在同一轮内确定,但两次独立调用(如提额后的调仓批)是两次运行,
     # 审计事件 id 不能撞(GlobalAuditLog 防重放会拒绝重复 event_id)
     run_id = _det_id(strategy_id, decided_ts, now, tuple(sorted(weights.items())))

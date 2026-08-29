@@ -6,7 +6,7 @@ DSR trial 记账 / 诚实拒绝)。
 簇定义(spec §6):Mean Reversion = 短期残差回归、价差回复 —— 盘口、短周期 bars、残差;
 首要风险: 结构变化、趋势碾压。**数据诚实约束(预注册声明):本地无盘口/order-book、无分钟级
 intraday bars——微观结构 MR(盘口价差回复、短周期 bars)按定义出范围,不检验、不声称。** 存在的
-数据:~115 币日频 OHLCV(data/cache/crypto_funding.db,经 fetch_bars_pit 批量 PIT 读)+ 资金费/OI
+数据:~115 币日频 OHLCV(data/cache/crypto_funding.db,经显式 t+1d available-time 批量读)+ 资金费/OI
 JSON。因此本簇在**日频 horizon** 构造:① 残差均值回归(币日收益 − 等权市场日收益的残差,k 日
 累积,2–10 日回归窗)② 截面短期反转基线。
 
@@ -63,6 +63,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -188,7 +189,7 @@ PRE_REGISTRATION = {
     "trial_count_planned": 8,
     "verdict_bar": dict(VERDICT_BAR),
     "data_scope": {
-        "in_scope": "日频残差均值回归(2–10 日回归窗)+ 截面短期反转,115 币日频 OHLCV(fetch_bars_pit)",
+        "in_scope": "日频残差均值回归(2–10 日回归窗)+ 截面短期反转,115 币日频 OHLCV(t+1d available-time)",
         "out_of_scope": ("微观结构 MR(盘口价差回复、短周期 bars)——本地无 order-book/分钟级数据,"
                          "按定义不检验、不声称;spec『盘口、短周期 bars』一支留作数据到位后的后续 slice"),
     },
@@ -525,13 +526,19 @@ def register_family_trials(specs, signals, panel, *, registry: ExperimentRegistr
 
 
 def _mr_panel(only=None):
-    """115 币日频 close+volume+funding 面板(PIT):复用 tools/ic_panel_registry._build
-    (event_time 网格走该模块已钉死的存量裸读点,bar 本体全走 fetch_bars_pit——本驱动器
-    **零新增裸读**,棘轮不动)。funding 供 carry 参照流与证伪 econ 流(与 verify 同法)。"""
+    """115 币日频 close+volume+funding 面板(PIT):复用 tools/ic_panel_registry._build，
+    Binance close 仅在 t+1d 决策时点可用且旧 open-time vintage 被拒绝。funding 供 carry
+    参照流与证伪 econ 流(与 verify 同法)。"""
     instruments = sorted(_load_json("crypto_funding_snapshot.json")["instruments"])
     if only is not None:
         instruments = [i for i in instruments if i in only]
-    panel = _pit_build("crypto_funding.db", instruments, fields=("close", "volume"))
+    panel = _pit_build(
+        "crypto_funding.db",
+        instruments,
+        fields=("close", "volume"),
+        decision_lag=86_400_000,
+        minimum_knowledge_lag=86_400_000,
+    )
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in _load_json("crypto_funding_rates.json").items()}
     panel.matrices["funding"] = [[funding.get(i, {}).get(t) for i in panel.instruments]
@@ -553,6 +560,7 @@ def _fmt_money(v):
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.mean_reversion_cluster")
     recorded_at = int(time.time() * 1000)
     specs = build_variant_specs()
     panel = _mr_panel()
@@ -712,6 +720,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.mean_reversion_cluster")
     with production_experiment_registry() as registry:
         _main(registry)
 

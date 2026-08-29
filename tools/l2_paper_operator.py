@@ -18,6 +18,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from tools.cache_io import atomic_write_json
 from tools.paper_candidate_universe import paper_candidate_ids
 from tools.paper_order_preview import run_preview
@@ -135,7 +136,12 @@ def _run_candidate_mining(
 
 
 def _run_candidate_risk_bundle() -> dict[str, Any]:
-    """Build the dynamic nine-engine input preflight and persist it."""
+    """Block the legacy evaluation-to-risk bundle before any read or write."""
+    quarantine_legacy_backtest("tools.l2_paper_operator.candidate_risk_bundle")
+
+    # The implementation below is retained only as a reviewable migration
+    # target.  In particular, do not move ``paper_candidate_ids`` above the
+    # quarantine: it reads legacy workflow/evaluation artifacts.
     from pathlib import Path
 
     from tools.paper_research_risk_bundle import (

@@ -26,6 +26,7 @@ from typing import Any
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.factor_garden.canonical import (
     CROWD_CONTRA_EXPRESSION,
     TOP_CONTRA_EXPRESSION,
@@ -432,7 +433,7 @@ def _run_positioning_spec(
     return document
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     output: str | Path = DEFAULT_OUTPUT,
     recorded_at: int | None = None,
@@ -465,7 +466,12 @@ def run(
     )
 
 
+def run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.positioning_composite_evaluation.run")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    quarantine_legacy_backtest("tools.positioning_composite_evaluation.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--source-commit", required=True)

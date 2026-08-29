@@ -7,6 +7,7 @@ import os
 import time
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.research.cftc_positioning import (
     DAY_MS,
     align_forward_returns,
@@ -104,7 +105,14 @@ def historical_signal_observations(spec: dict, snapshot: dict) -> list[tuple[int
 def _price_rows(path: str):
     store = SqlitePITStore(path, create=False)
     return [(int(bar.event_time), float(bar.close))
-            for bar in store.fetch_bars_pit("BTC", 0, 10 ** 18)]
+            for bar in fetch_bars_for_event_decisions(
+                store,
+                "BTC",
+                0,
+                10**18,
+                decision_lag=86_400_000,
+                minimum_knowledge_lag=86_400_000,
+            )]
 
 
 def _lagged(aligned):
@@ -233,4 +241,3 @@ __all__ = [
     "PRE_REGISTRATION", "WEEKDAY_UTC", "build_variant_specs",
     "historical_signal_observations", "run_research",
 ]
-

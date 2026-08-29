@@ -23,6 +23,7 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 
@@ -47,6 +48,7 @@ FEE_BPS = (0, 2, 5, 10, 20)        # per unit traded notional, one-way (perp: ~2
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_carry_strategy")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     event_times = sorted({b.event_time for inst in instruments
@@ -54,7 +56,14 @@ def main() -> None:
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in json.load(open(_FUND_CACHE, encoding="utf-8")).items()}
 
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     fund_mat = [[funding.get(inst, {}).get(t) for inst in panel.instruments] for t in panel.event_times]
     panel.matrices["funding"] = fund_mat
     sig = ax.evaluate(COMPOSITE, panel)

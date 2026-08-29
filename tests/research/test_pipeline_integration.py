@@ -38,13 +38,16 @@ def _provider(store):
 def test_guided_search_runs_on_persisted_data_and_is_contained():
     store = _store()
     loop = GuidedSearchLoop(_space())
-    out = loop.search(rounds=4, batch_size=2, periods_provider=_provider(store))
+    out = loop.search(rounds=4, batch_size=2, periods_provider=_provider(store),
+                      diagnostic_only=True)
     assert out["report"]                                 # produced evaluations on real data
     cat = loop.inner_loop.catalog
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())   # contained
 
 
 def test_integration_is_deterministic():
-    a = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider(_store()))
-    b = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider(_store()))
+    a = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2,
+                                          periods_provider=_provider(_store()), diagnostic_only=True)
+    b = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2,
+                                          periods_provider=_provider(_store()), diagnostic_only=True)
     assert a["arm_means"] == b["arm_means"]

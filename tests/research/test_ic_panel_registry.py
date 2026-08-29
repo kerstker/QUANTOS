@@ -6,7 +6,10 @@ import math
 
 import pytest
 
+from quantos.contracts.data import Bar
+from services.data.persistent_store import SqlitePITStore
 from services.research import alpha_expression as ax
+from tools import ic_panel_registry as registry_module
 from tools.ic_panel_registry import (
     FACTOR_REGISTRY,
     UNIVERSE_REGISTRY,
@@ -93,3 +96,57 @@ def test_versioned_fx_universe_and_factors_are_registered():
 
 def test_every_registered_universe_declares_its_local_artifacts():
     assert set(UNIVERSE_REQUIRED_FILES) == set(UNIVERSE_REGISTRY)
+
+
+def _bar(instrument: str, event_time: int, knowledge_time: int, close: float) -> Bar:
+    return Bar(
+        instrument_id=instrument,
+        event_time=event_time,
+        knowledge_time=knowledge_time,
+        open=close,
+        high=close,
+        low=close,
+        close=close,
+        volume=1_000.0,
+    )
+
+
+def test_binance_registry_panel_uses_close_time_vintage_in_mixed_cache(
+    tmp_path,
+    monkeypatch,
+):
+    day = 86_400_000
+    store = SqlitePITStore(str(tmp_path / "mixed.db"), create=True)
+    for instrument, offset in (("A", 0.0), ("B", 10.0)):
+        store.add(instrument, _bar(instrument, 0, 0, 100.0 + offset))
+        store.add(instrument, _bar(instrument, 0, day, 101.0 + offset))
+    store._conn.close()
+    monkeypatch.setattr(registry_module, "_CACHE", str(tmp_path))
+
+    panel = registry_module._build(
+        "mixed.db",
+        ("A", "B"),
+        decision_lag=day,
+        minimum_knowledge_lag=day,
+    )
+
+    assert panel.event_times == (0,)
+    assert panel.decision_times == (day,)
+    assert panel.matrices["close"] == [[101.0, 111.0]]
+
+
+def test_non_binance_registry_panel_keeps_existing_own_event_time_contract(
+    tmp_path,
+    monkeypatch,
+):
+    store = SqlitePITStore(str(tmp_path / "equity.db"), create=True)
+    for instrument, close in (("A", 100.0), ("B", 110.0)):
+        store.add(instrument, _bar(instrument, 20260102, 20260102, close))
+    store._conn.close()
+    monkeypatch.setattr(registry_module, "_CACHE", str(tmp_path))
+
+    panel = registry_module._build("equity.db", ("A", "B"))
+
+    assert panel.event_times == (20260102,)
+    assert panel.decision_times == (20260102,)
+    assert panel.matrices["close"] == [[100.0, 110.0]]

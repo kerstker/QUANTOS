@@ -2,11 +2,43 @@ from pathlib import Path
 
 import pytest
 
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from tools import build_evidence_digests as evidence_digests
 from tools.build_evidence_digests import (
     _git_sha,
     extract_macro_regime,
     extract_scenario_tail,
 )
+
+
+def test_dry_run_digest_builder_quarantines_before_store_read(monkeypatch, tmp_path):
+    dry_run_db = tmp_path / "dry_run.db"
+    monkeypatch.setattr(evidence_digests, "_DRY_RUN_DB", str(dry_run_db))
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        evidence_digests.build_dry_run_digest()
+
+    assert not dry_run_db.exists()
+
+
+def test_digest_cli_quarantines_before_output_directory_or_json_write(
+    monkeypatch, tmp_path
+):
+    output_dir = tmp_path / "evidence"
+    monkeypatch.setattr(evidence_digests, "_EVIDENCE", str(output_dir))
+    monkeypatch.setattr(
+        evidence_digests,
+        "build_json_digest",
+        lambda *_args, **_kwargs: pytest.fail("artifact input read before quarantine"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        evidence_digests.main()
+
+    assert not output_dir.exists()
 
 
 def _scenario_book(seed: float) -> dict:

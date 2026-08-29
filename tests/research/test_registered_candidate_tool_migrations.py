@@ -63,6 +63,11 @@ def test_migrated_tool_registers_complete_pool_before_agent(
         "run",
         assert_complete_pool,
     )
+    monkeypatch.setattr(
+        module,
+        "run_registered_candidate_batch",
+        batch_module._run_registered_candidate_batch_legacy_diagnostic,
+    )
     result = module._run_registered_pool(
         candidates,
         registry=registry,

@@ -23,6 +23,16 @@ from services.execution.simulated_tca import RouteExecution, build_route_tca
 from services.risk.research_risk.events import research_risk_evaluated_event
 
 
+@pytest.fixture(autouse=True)
+def _exercise_store_mechanics_behind_admission(monkeypatch):
+    """These tests cover SQLite/hash mechanics; admission has dedicated tests."""
+    monkeypatch.setattr(
+        DryRunStore,
+        "_require_authoritative_write",
+        staticmethod(lambda _run, _authority: None),
+    )
+
+
 def _run(rid="r1"):
     return DryRunRun(run_id=rid, strategy_id="carry", timestamp=1000, n_intents=5, n_approved=4,
                      n_rejected=1, rejected_reasons=["FAT_FINGER"], pnl={"net": 0.012},

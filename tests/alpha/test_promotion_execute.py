@@ -4,6 +4,7 @@ consume 前预检(评审 #4:错的执行人 / 非法转换不白烧)、experimen
 import json
 import os
 import threading
+from dataclasses import replace
 
 import pytest
 
@@ -23,10 +24,39 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
+from services.risk.research_risk.dry_run_guard import FULL_RESEARCH_RISK_ENGINES
 from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 S = AlphaState
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
+
+
+def _full_risk_result():
+    engines = {name: True for name in FULL_RESEARCH_RISK_ENGINES}
+    gate_count = len(FULL_RESEARCH_RISK_ENGINES)
+    return {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+        "gates_run": gate_count,
+        "gates_passed": gate_count,
+        "engines_run": engines,
+        "engines_skipped": {},
+        "engines_pending": {},
+    }
+
+
+def _test_authority_record():
+    risk = _full_risk_result()
+    return {
+        "run_id": "signed-authority-run",
+        "test_external_signature": "VALID",
+        "detail": {
+            "engine_attestations": {"risk_history_ledger_replayed": True},
+            "research_risk": risk,
+            "research_risk_history": [{"decision_id": "decision-1", "result": risk}],
+        },
+    }
 
 
 def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
@@ -73,14 +103,30 @@ def _approved_request(store, alpha_id="a1", request_id="req-1"):
 
 
 @pytest.fixture()
-def env(tmp_path):
-    return {
+def env(tmp_path, monkeypatch):
+    environment = {
         "store": ApprovalStore(str(tmp_path / "approvals.db")),
         "registry": _seed_registry(tmp_path),
         "paper": _seed_paper(tmp_path),
         "audit": DurableAuditLog(str(tmp_path / "gov_audit.db")),
         "tmp": tmp_path,
     }
+    original_gather = promotion_mod.gather_promotion_evidence
+
+    def admitted_gather(*args, **kwargs):
+        return replace(
+            original_gather(*args, **kwargs),
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=True,
+            full_research_risk_9_of_9=True,
+            profitability_projection_verified=True,
+            authoritative_backtest_run_id="controlled-test-authority",
+            backtest_sharpe=1.2,
+            paper_sharpe=1.1,
+        )
+
+    monkeypatch.setattr(promotion_mod, "gather_promotion_evidence", admitted_gather)
+    return environment
 
 
 def _execute(env, request_id="req-1", executor="carol", now=20, nonce="n1"):
@@ -94,11 +140,76 @@ def _execute(env, request_id="req-1", executor="carol", now=20, nonce="n1"):
 
 def test_gather_evidence_from_real_artifacts(env):
     ev = gather_promotion_evidence(env["registry"], env["paper"], "a1")
-    assert ev.backtest_sharpe == 1.2            # 来自 evaluation artifact 的 net_sharpe
-    assert ev.paper_sharpe is not None          # 来自 paper_track.db track(a1)
+    assert ev.backtest_sharpe is None
+    assert ev.paper_sharpe is None
     assert ev.eval_trial_count == 2
     assert ev.eval_catalog_evidence_hash is not None
-    assert ev.notes == ()
+    assert ev.authoritative_backtest_present is False
+    assert ev.authoritative_backtest_verified is False
+    assert ev.full_research_risk_9_of_9 is False
+    assert ev.profitability_projection_verified is False
+    assert ev.promotion_authority_ready is False
+    assert "NO_AUTHORITATIVE_BACKTEST_RECORD" in ev.notes
+    assert "AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED" in ev.notes
+
+
+def test_gather_explicit_authority_requires_verifier_and_full_9_of_9(monkeypatch):
+    record = _test_authority_record()
+    payload = {
+        "net_sharpe": 1.2,
+        "catalog_trial_count": 2,
+        "authoritative_backtest_record": record,
+    }
+
+    class Registry:
+        @staticmethod
+        def list_evaluations(_alpha_id):
+            return [{"run_id": "eval-1", "evaluation_json": json.dumps(payload)}]
+
+        @staticmethod
+        def verify_evaluation(_run_id):
+            return True
+
+    class Paper:
+        @staticmethod
+        def track(_alpha_id):
+            return {"paper_sharpe": 1.1}
+
+    unadmitted = gather_promotion_evidence(Registry(), Paper(), "a1")
+    assert unadmitted.authoritative_backtest_present is True
+    assert unadmitted.authoritative_backtest_verified is False
+    assert unadmitted.full_research_risk_9_of_9 is True
+    assert unadmitted.promotion_authority_ready is False
+    assert "AUTHORITATIVE_BACKTEST_RECORD_NOT_ADMITTED" in unadmitted.notes
+
+    monkeypatch.setattr(
+        promotion_mod,
+        "selection_authority_admitted",
+        lambda *, requested, authoritative_backtest_record: (
+            requested
+            and authoritative_backtest_record.get("test_external_signature")
+            == "VALID"
+        ),
+    )
+    ev = gather_promotion_evidence(Registry(), Paper(), "a1")
+    assert ev.backtest_sharpe is None
+    assert ev.paper_sharpe is None
+    assert ev.authoritative_backtest_present is True
+    assert ev.authoritative_backtest_verified is True
+    assert ev.full_research_risk_9_of_9 is True
+    assert ev.profitability_projection_verified is False
+    assert ev.promotion_authority_ready is False
+    assert "AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED" in ev.notes
+    assert "INVALIDATED_PERP_LEDGER_V1" in ev.notes
+
+
+def test_full_risk_result_cannot_launder_unreplayed_history_into_promotion():
+    record = _test_authority_record()
+    record["detail"]["engine_attestations"][
+        "risk_history_ledger_replayed"
+    ] = False
+
+    assert promotion_mod._has_full_research_risk_9_of_9(record) is False
 
 
 def test_gather_evidence_fail_closed_when_missing(tmp_path):
@@ -189,7 +300,7 @@ def test_concurrent_execute_promotion_same_request_id_is_serialized(env, monkeyp
     assert env["store"].load("req-1").state == ApprovalState.CONSUMED
 
 
-def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_path):
+def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_path, monkeypatch):
     # 按 request_id 分片的锁不能变成全局互斥——两个不相干的晋级请求必须能各自独立通过。
     exp_path = str(tmp_path / "exp.db")
     paper_path = str(tmp_path / "paper_track.db")
@@ -210,6 +321,20 @@ def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_pat
         paper.append_periods(alpha_id, [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
         paper.recompute_summary(alpha_id, backtest_sharpe=1.2)
     registry.save(cat, now=3)
+    original_gather = promotion_mod.gather_promotion_evidence
+
+    def admitted_gather(*args, **kwargs):
+        return replace(
+            original_gather(*args, **kwargs),
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=True,
+            full_research_risk_9_of_9=True,
+            profitability_projection_verified=True,
+            backtest_sharpe=1.2,
+            paper_sharpe=1.1,
+        )
+
+    monkeypatch.setattr(promotion_mod, "gather_promotion_evidence", admitted_gather)
 
     for req_id, alpha_id in (("req-1", "a1"), ("req-2", "a2")):
         subject = promotion_subject(alpha_id, S.APPROVED)
@@ -273,6 +398,142 @@ def test_single_flight_lock_prechecks_busy(env):
         os.remove(lock_path)
 
 
+def test_execute_rejects_legacy_metrics_before_burning_grant(tmp_path):
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    registry = _seed_registry(tmp_path)
+    paper = _seed_paper(tmp_path)
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    _approved_request(store)
+
+    with pytest.raises(
+        PromotionPrecheckError, match="AUTHORITATIVE_BACKTEST_RECORD_REQUIRED"
+    ):
+        execute_promotion(
+            store=store,
+            registry=registry,
+            audit=audit,
+            request_id="req-1",
+            executor_id="carol",
+            now=20,
+            paper_store=paper,
+        )
+
+    assert store.load("req-1").state == ApprovalState.APPROVED
+    fresh = AlphaCatalog()
+    registry.load_into(fresh)
+    assert fresh.state("a1") == S.PAPER_TRADING
+
+
+def test_execute_rejects_unadmitted_authority_evidence_before_burning_grant(
+    tmp_path, monkeypatch
+):
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    registry = _seed_registry(tmp_path)
+    paper = _seed_paper(tmp_path)
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    _approved_request(store)
+    original_gather = promotion_mod.gather_promotion_evidence
+    monkeypatch.setattr(
+        promotion_mod,
+        "gather_promotion_evidence",
+        lambda *args, **kwargs: replace(
+            original_gather(*args, **kwargs),
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=False,
+            full_research_risk_9_of_9=True,
+        ),
+    )
+
+    with pytest.raises(
+        PromotionPrecheckError, match="AUTHORITATIVE_BACKTEST_RECORD_NOT_ADMITTED"
+    ):
+        execute_promotion(
+            store=store,
+            registry=registry,
+            audit=audit,
+            request_id="req-1",
+            executor_id="carol",
+            now=20,
+            paper_store=paper,
+        )
+
+    assert store.load("req-1").state == ApprovalState.APPROVED
+
+
+def test_execute_requires_full_9_of_9_even_when_authority_verifier_admits(
+    tmp_path, monkeypatch
+):
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    registry = _seed_registry(tmp_path)
+    paper = _seed_paper(tmp_path)
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    _approved_request(store)
+    original_gather = promotion_mod.gather_promotion_evidence
+    monkeypatch.setattr(
+        promotion_mod,
+        "gather_promotion_evidence",
+        lambda *args, **kwargs: replace(
+            original_gather(*args, **kwargs),
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=True,
+            full_research_risk_9_of_9=False,
+        ),
+    )
+
+    with pytest.raises(
+        PromotionPrecheckError, match="FULL_RESEARCH_RISK_9_OF_9_REQUIRED"
+    ):
+        execute_promotion(
+            store=store,
+            registry=registry,
+            audit=audit,
+            request_id="req-1",
+            executor_id="carol",
+            now=20,
+            paper_store=paper,
+        )
+
+    assert store.load("req-1").state == ApprovalState.APPROVED
+
+
+def test_execute_requires_bound_profitability_projection_before_burning_grant(
+    tmp_path, monkeypatch
+):
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    registry = _seed_registry(tmp_path)
+    paper = _seed_paper(tmp_path)
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    _approved_request(store)
+    original_gather = promotion_mod.gather_promotion_evidence
+    monkeypatch.setattr(
+        promotion_mod,
+        "gather_promotion_evidence",
+        lambda *args, **kwargs: replace(
+            original_gather(*args, **kwargs),
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=True,
+            full_research_risk_9_of_9=True,
+            profitability_projection_verified=False,
+        ),
+    )
+
+    with pytest.raises(
+        PromotionPrecheckError,
+        match="AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED",
+    ):
+        execute_promotion(
+            store=store,
+            registry=registry,
+            audit=audit,
+            request_id="req-1",
+            executor_id="carol",
+            now=20,
+            paper_store=paper,
+        )
+
+    assert store.load("req-1").state == ApprovalState.APPROVED
+
+
 # --- 烧毁语义 + 落盘 + 审计 -----------------------------------------------------
 
 def test_execute_promotion_happy_path_persists_catalog(env):
@@ -297,11 +558,19 @@ def test_execute_promotion_happy_path_persists_catalog(env):
     assert env["audit"].chain_valid()
 
 
-def test_execute_promotion_burns_grant_before_advance(env, tmp_path):
+def test_execute_promotion_burns_grant_before_advance(env, tmp_path, monkeypatch):
     """guard 拒绝(paper 证据缺失)时:grant 已 CONSUMED(烧毁),状态未推进,审计落
     PROMOTION_EXECUTION_FAILED;再次 execute → 预检拒绝(一次性,须重走三方)。"""
     _approved_request(env["store"])
     env["paper"] = PaperTrackStore(str(tmp_path / "empty_paper.db"), create=True)   # 无 track 行
+    admitted_gather = promotion_mod.gather_promotion_evidence
+    monkeypatch.setattr(
+        promotion_mod,
+        "gather_promotion_evidence",
+        lambda *args, **kwargs: replace(
+            admitted_gather(*args, **kwargs), paper_sharpe=None
+        ),
+    )
     outcome = _execute(env)
     assert not outcome.ok and outcome.burned
     assert any("NO_PAPER" in r or "PAPER_EVIDENCE" in r for r in outcome.reasons)
@@ -316,9 +585,17 @@ def test_execute_promotion_burns_grant_before_advance(env, tmp_path):
         _execute(env, now=21, nonce="n2")
 
 
-def test_execute_promotion_audits_failure_with_reasons(env, tmp_path):
+def test_execute_promotion_audits_failure_with_reasons(env, tmp_path, monkeypatch):
     _approved_request(env["store"])
     env["paper"] = PaperTrackStore(str(tmp_path / "empty_paper.db"), create=True)
+    admitted_gather = promotion_mod.gather_promotion_evidence
+    monkeypatch.setattr(
+        promotion_mod,
+        "gather_promotion_evidence",
+        lambda *args, **kwargs: replace(
+            admitted_gather(*args, **kwargs), paper_sharpe=None
+        ),
+    )
     outcome = _execute(env)
     assert outcome.audit_ok
     failed = [e for e in env["audit"].events if e.action == "PROMOTION_EXECUTION_FAILED"]

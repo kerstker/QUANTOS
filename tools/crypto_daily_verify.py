@@ -17,6 +17,8 @@ Prints a table. Records nothing, promotes nothing, fetches nothing.
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 
@@ -50,6 +52,7 @@ def _net_returns(periods, one_way_bps):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_daily_verify")
     store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     # instrument list comes from the daily snapshot's coin metadata (the store has no list-API)
     snap_path = os.path.join("data", "cache", "crypto_research_snapshot.json")

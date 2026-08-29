@@ -1,7 +1,10 @@
 """Driver tests for tools/candidate_portfolio_evidence.py (WP4 W4-1).
 
-All stores live in tmp_path with real DryRunStore persistence; the population
-and factor builder are injected fakes (no network, no real market data). Pins:
+All stores live in tmp_path.  Historical rows are seeded directly into the
+legacy SQLite schema because the production writer now correctly rejects every
+unsigned aggregate; the consumer authority verifier is the injected test
+double.  The population and factor builder are injected fakes (no network, no
+real market data). Pins:
 MISSING_RUN rows for runless challengers, idempotent re-publish, safety flags,
 artifact schema, missing inventory, and fail-closed behavior on invalid inputs.
 """
@@ -14,6 +17,7 @@ import pytest
 from services.execution.dry_run_store import DryRunRun, DryRunStore
 from services.research import factor_decomp as fd
 from services.research import portfolio_evidence as pe
+import tools.candidate_portfolio_evidence as candidate_portfolio_evidence
 from tools.candidate_portfolio_evidence import (
     FLOW,
     POLICY_VERSION,
@@ -29,6 +33,39 @@ POPULATION = LEGACY + (CHALLENGER,)
 _DB_SID = {"carry_oi_majors": "carry", "crowd_contra": "crowd_contra", "top_contra": "top_contra"}
 
 
+@pytest.fixture(autouse=True)
+def _backtest_authority_contract_double(monkeypatch):
+    monkeypatch.setattr(
+        candidate_portfolio_evidence,
+        "is_authoritative_backtest_record",
+        lambda record: bool(
+            isinstance(record, dict)
+            and isinstance(record.get("detail"), dict)
+            and record["detail"].get("_test_manifest_valid") is True
+        ),
+    )
+
+
+def _full_risk() -> dict:
+    engines = {
+        name: True
+        for name in (
+            "market", "liquidity", "concentration", "correlation", "drawdown",
+            "regime", "stress", "capacity", "model_alpha",
+        )
+    }
+    return {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_passed": 9,
+        "gates_run": 9,
+        "engines_run": engines,
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
+
+
 def _curve(seed: int) -> list[dict]:
     return [
         {
@@ -40,14 +77,19 @@ def _curve(seed: int) -> list[dict]:
     ]
 
 
-def _fake_run(candidate: str, seed: int, *, crowding: bool) -> DryRunRun:
+def _fake_run(
+    candidate: str, seed: int, *, crowding: bool, authoritative: bool = True
+) -> DryRunRun:
     curve = _curve(seed)
     detail = {
         "mode": "multi_period",
         "n_periods": N,
         "equity_curve": curve,
         "equity_curve_vt": curve,
+        "research_risk": _full_risk(),
     }
+    if authoritative:
+        detail["_test_manifest_valid"] = True
     if crowding:
         detail["crowding_gate"] = {"n_periods": N, "n_pass": 0, "n_warn": N - 2, "n_block": 2}
     return DryRunRun(
@@ -64,11 +106,37 @@ def _fake_run(candidate: str, seed: int, *, crowding: bool) -> DryRunRun:
     )
 
 
-def _write_store(path, candidates=LEGACY) -> None:
+def _write_store(path, candidates=LEGACY, *, authoritative: bool = True) -> None:
     store = DryRunStore(str(path), create=True)
     try:
         for seed, candidate in enumerate(candidates):
-            store.save_run(_fake_run(candidate, seed, crowding=candidate != "carry_oi_majors"))
+            run = _fake_run(
+                candidate,
+                seed,
+                crowding=candidate != "carry_oi_majors",
+                authoritative=authoritative,
+            )
+            # Simulate an on-disk row written by the pre-authority V1 store.
+            # Calling save_run() here would test (and require weakening) the
+            # production admission boundary rather than the legacy reader.
+            store._conn.execute(  # noqa: SLF001 - explicit legacy fixture
+                "INSERT OR IGNORE INTO dry_run(run_id, strategy_id, timestamp, n_intents, "
+                "n_approved, n_rejected, rejected_reasons, pnl, audit_root, detail) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    run.run_id,
+                    run.strategy_id,
+                    run.timestamp,
+                    run.n_intents,
+                    run.n_approved,
+                    run.n_rejected,
+                    json.dumps(run.rejected_reasons),
+                    json.dumps(run.pnl),
+                    run.audit_root,
+                    json.dumps(run.detail),
+                ),
+            )
+        store._conn.commit()  # noqa: SLF001 - explicit legacy fixture
     finally:
         store.close()
 
@@ -111,7 +179,8 @@ def _sor_doc() -> dict:
 
 
 def _kwargs(tmp_path, **overrides):
-    _write_store(tmp_path / "dry_run.db")
+    authoritative_records = overrides.pop("_authoritative_records", True)
+    _write_store(tmp_path / "dry_run.db", authoritative=authoritative_records)
     _write_json(tmp_path / "capacity.json", _capacity_doc())
     _write_json(tmp_path / "sor.json", _sor_doc())
     kwargs = {
@@ -231,3 +300,18 @@ def test_missing_dry_run_store_fails_closed(tmp_path):
     (tmp_path / "dry_run.db").unlink()
     with pytest.raises(RuntimeError, match="dry-run store missing"):
         build_portfolio_evidence(**kwargs)
+
+
+def test_legacy_runs_without_manifest_v2_are_excluded_from_portfolio(tmp_path):
+    """A legacy DB row is not a portfolio/search/promotion input.
+
+    The old records have internally consistent curves, but no RunManifestV2
+    binding.  They must therefore remain visible only as missing diagnostic
+    evidence and may not become incumbent-book members.
+    """
+    payload = build_portfolio_evidence(
+        **_kwargs(tmp_path, _authoritative_records=False)
+    )
+    assert payload["incumbent_book"]["members_with_runs"] == []
+    for candidate in LEGACY:
+        assert payload["alphas"][candidate]["status"] == "MISSING_RUN"

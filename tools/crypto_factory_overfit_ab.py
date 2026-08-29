@@ -14,6 +14,7 @@ import json
 import os
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 import services.research.alpha_expression as ax
 from services.research.alpha_factory import run_alpha_factory
 from services.research.carry_pnl import economic_return_series
@@ -81,6 +82,7 @@ def _arm(panel, basis, lam, *, dataset_version, recorded_at):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_factory_overfit_ab")
     recorded_at = time.time_ns() // 1_000_000
     panel, instruments = build_panel()
     dataset_version = field_panel_dataset_version(panel)

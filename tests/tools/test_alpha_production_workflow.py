@@ -6,6 +6,10 @@ import sqlite3
 import pytest
 
 from quantos.contracts.hashing import stable_hash
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research import alpha_expression as ax
 from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
@@ -18,6 +22,7 @@ from services.research.alpha_production_workflow import (
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.portfolio_evidence import PortfolioGatePolicy
+from tools import alpha_production_workflow as workflow_driver
 from tools.alpha_production_workflow import (
     _build_release_run_attestation,
     _realtime_formal_shadow_required,
@@ -36,6 +41,50 @@ _ADMISSION_REF = ForwardAdmissionRef(
     price_basis="PERP_MARK_PRICE",
     instrument_scope=("BTC",),
 )
+
+
+def test_public_entrypoints_quarantine_before_evidence_or_workflow_mutation(
+    tmp_path, monkeypatch
+) -> None:
+    touched: list[str] = []
+    database = tmp_path / "workflow.db"
+    output = tmp_path / "workflow.json"
+    database.write_bytes(b"existing-workflow-authority")
+    output.write_bytes(b"existing-workflow-projection")
+    prior_attestation = {"complete": True, "marker": "must-survive"}
+    monkeypatch.setattr(
+        workflow_driver,
+        "_LAST_RELEASE_RUN_ATTESTATION",
+        prior_attestation,
+    )
+
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} touched before legacy authority quarantine")
+
+        return _forbidden
+
+    monkeypatch.setattr(
+        workflow_driver,
+        "build_candidate_identities",
+        forbidden("candidate registries"),
+    )
+    monkeypatch.setattr(
+        workflow_driver,
+        "_read_optional",
+        forbidden("workflow evidence"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        workflow_driver.run(db_path=database, output_path=output)
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        workflow_driver.main(["--not-a-real-argument"])
+
+    assert touched == []
+    assert database.read_bytes() == b"existing-workflow-authority"
+    assert output.read_bytes() == b"existing-workflow-projection"
+    assert workflow_driver._LAST_RELEASE_RUN_ATTESTATION is prior_attestation
 
 
 def _identity(candidate_id: str) -> CandidateIdentity:

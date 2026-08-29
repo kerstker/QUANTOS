@@ -16,6 +16,7 @@ from services.governance.l2_restore_history import (
 )
 from tools.l2_scheduler_watchdog import (
     EXPECTED_TASKS,
+    QUARANTINED_TASKS,
     SchedulerInspectionError,
     TaskSnapshot,
     collect_systemd_units,
@@ -280,11 +281,120 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
 
     assert result["verdict"] == "PASS"
     assert result["summary"] == {
-        "PASS": len(EXPECTED_TASKS),
+        "PASS": len(EXPECTED_TASKS) + len(QUARANTINED_TASKS),
         "PARTIAL": 0,
         "UNAVAILABLE": 0,
         "BREACH": 0,
     }
+
+
+def test_invalidated_v1_tasks_are_explicitly_quarantined_not_expected():
+    assert QUARANTINED_TASKS == {
+        "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
+        "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
+        "QUANTOS_factory_loop": "crypto_factory_loop",
+        "QUANTOS_ic_panel_refresh": "ic_panel_research",
+        "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
+        "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
+        "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
+        "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
+        "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
+        "QUANTOS_paper_realtime": "paper_realtime",
+        "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
+        "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
+    }
+    assert not set(QUARANTINED_TASKS) & set(EXPECTED_TASKS)
+
+
+def test_quarantined_tasks_may_be_absent_or_disabled(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    disabled_name = "QUANTOS_paper_alpha_evaluation"
+    snapshots.append(
+        TaskSnapshot(
+            name=disabled_name,
+            state="Disabled",
+            last_run_ms=NOW_MS - 3_600_000,
+            last_result=0,
+            next_run_ms=None,
+            execute="C:/Python/python.exe",
+            arguments=_launcher_arguments(
+                tmp_path, QUARANTINED_TASKS[disabled_name]
+            ),
+            working_directory=str(tmp_path),
+        )
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    checks = {
+        row["task_name"]: row
+        for row in result["checks"]
+        if row["task_name"] in QUARANTINED_TASKS
+    }
+    assert result["verdict"] == "PASS"
+    assert checks[disabled_name]["code"] == "DISABLED_EXPECTED"
+    assert checks["QUANTOS_alpha_production_workflow"]["code"] == (
+        "QUARANTINED_NOT_REGISTERED"
+    )
+    assert checks["QUANTOS_paper_research_risk_bundle"]["code"] == (
+        "QUARANTINED_NOT_REGISTERED"
+    )
+
+
+def test_quarantined_task_that_remains_enabled_is_a_breach(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    enabled_states = {
+        "QUANTOS_factory_loop": "Ready",
+        "QUANTOS_alpha_production_workflow": "Ready",
+        "QUANTOS_paper_realtime": "Ready",
+        "QUANTOS_paper_realtime_10k": "Running",
+        "QUANTOS_paper_research_risk_bundle": "Running",
+    }
+    snapshots.extend(
+        TaskSnapshot(
+            name=name,
+            state=state,
+            last_run_ms=NOW_MS - 1_000,
+            last_result=0,
+            next_run_ms=NOW_MS + 1_000,
+            execute="C:/Python/python.exe",
+            arguments=_launcher_arguments(tmp_path, QUARANTINED_TASKS[name]),
+            working_directory=str(tmp_path),
+        )
+        for name, state in enabled_states.items()
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    assert result["verdict"] == "BREACH"
+    checks = {
+        row["task_name"]: row
+        for row in result["checks"]
+        if row["task_name"] in enabled_states
+    }
+    assert all(row["status"] == "BREACH" for row in checks.values())
+    assert all(
+        row["code"] == "QUARANTINED_TASK_ENABLED"
+        for row in checks.values()
+    )
 
 
 def test_running_task_ignores_prior_overlap_result_until_current_instance_completes(
@@ -474,6 +584,47 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
     assert rpi.max_age_ms == 3 * 3_600_000
 
 
+def test_paper_multivenue_sor_safe_block_is_an_accepted_partial_result(tmp_path):
+    spec = EXPECTED_TASKS["QUANTOS_paper_multivenue_sor"]
+    assert spec.partial_results == frozenset({2})
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    index = next(
+        index
+        for index, row in enumerate(snapshots)
+        if row.name == "QUANTOS_paper_multivenue_sor"
+    )
+    current = snapshots[index]
+    snapshots[index] = TaskSnapshot(
+        name=current.name,
+        state=current.state,
+        last_run_ms=current.last_run_ms,
+        last_result=2,
+        next_run_ms=current.next_run_ms,
+        execute=current.execute,
+        arguments=current.arguments,
+        working_directory=current.working_directory,
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+    check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_paper_multivenue_sor"
+    )
+    assert check["status"] == "PARTIAL"
+    assert check["code"] == "RESULT_2"
+    assert result["verdict"] == "PARTIAL"
+
+
 def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
     expected = {
         "QUANTOS_binance_book_depth_forward_refresh": (
@@ -539,12 +690,12 @@ def test_liquidation_health_worker_is_pinned_to_two_hour_freshness() -> None:
     assert health.partial_results == frozenset()
 
 
-def test_lifecycle_and_formal_shadow_workers_are_pinned_in_watchdog_contract():
-    lifecycle = EXPECTED_TASKS["QUANTOS_alpha_lifecycle_cockpit"]
+def test_lifecycle_is_quarantined_and_formal_shadow_remains_pinned():
     formal_shadow = EXPECTED_TASKS["QUANTOS_realtime_alpha_formal_shadow"]
 
-    assert lifecycle.module == "alpha_lifecycle_cockpit"
-    assert lifecycle.max_age_ms == 15 * 60_000
+    assert QUARANTINED_TASKS["QUANTOS_alpha_lifecycle_cockpit"] == (
+        "alpha_lifecycle_cockpit"
+    )
     assert formal_shadow.module == "realtime_alpha_formal_shadow"
     assert formal_shadow.max_age_ms == 5 * 60_000
     assert formal_shadow.partial_results == frozenset({2})
@@ -719,20 +870,22 @@ def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp
     snapshots = _healthy_tasks(
         tmp_path, include_backup=True, include_external=True
     )
-    snapshots = [item for item in snapshots if item.name != "QUANTOS_factory_loop"]
+    snapshots = [
+        item for item in snapshots if item.name != "QUANTOS_binance_realtime_market"
+    ]
     snapshots = [
         TaskSnapshot(**{**item.__dict__, "state": "Disabled"})
-        if item.name == "QUANTOS_ic_panel_refresh"
+        if item.name == "QUANTOS_binance_rpi_depth"
         else TaskSnapshot(**{**item.__dict__, "last_run_ms": NOW_MS - 10 * 86_400_000})
         if item.name == "QUANTOS_forward_track"
         else TaskSnapshot(
             **{
                 **item.__dict__,
                 "execute": "cmd.exe",
-                "arguments": "/c python -m tools.alpha_maintenance_sweep --submit",
+                "arguments": "/c python -m tools.paper_health --submit",
             }
         )
-        if item.name == "QUANTOS_alpha_maintenance"
+        if item.name == "QUANTOS_paper_health"
         else item
         for item in snapshots
     ]
@@ -748,10 +901,10 @@ def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp
 
     assert result["verdict"] == "BREACH"
     statuses = {check["task_name"]: check["status"] for check in result["checks"]}
-    assert statuses["QUANTOS_factory_loop"] == "BREACH"
-    assert statuses["QUANTOS_ic_panel_refresh"] == "BREACH"
+    assert statuses["QUANTOS_binance_realtime_market"] == "BREACH"
+    assert statuses["QUANTOS_binance_rpi_depth"] == "BREACH"
     assert statuses["QUANTOS_forward_track"] == "BREACH"
-    assert statuses["QUANTOS_alpha_maintenance"] == "BREACH"
+    assert statuses["QUANTOS_paper_health"] == "BREACH"
 
 
 def test_unconfigured_backup_is_unavailable_but_enabled_legacy_action_is_breach(tmp_path):
@@ -1675,7 +1828,9 @@ def test_default_collector_follows_platform_provider(monkeypatch, tmp_path):
 
     assert observed == ["systemd"]
     assert result["verdict"] == "BREACH"
-    assert result["checks"][0]["task_name"] == "QUANTOS_factory_loop"
+    checks = {row["task_name"]: row for row in result["checks"]}
+    assert checks["QUANTOS_cross_venue_liquidation_health"]["code"] == "MISSING"
+    assert checks["QUANTOS_factory_loop"]["code"] == "QUARANTINED_NOT_REGISTERED"
 
 
 def test_systemd_watchdog_applies_frozen_attention_release_from_unit_environment(

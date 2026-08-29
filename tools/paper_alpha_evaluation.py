@@ -1,4 +1,4 @@
-"""Evaluate the three deployed paper Alphas under immutable research identities.
+"""Legacy V1 paper-Alpha evaluation diagnostics.
 
 Deployment aliases such as ``crowd_contra`` are intentionally stable, while
 their research definitions may evolve.  The experiment registry is
@@ -8,8 +8,10 @@ identity from each exact definition hash, evaluates the complete current pool,
 and publishes the verified deployment-to-research mapping consumed by the
 paper research-risk producer.
 
-The driver is L2 research only.  It has no broker, credential, order, approval,
-or live-trading path.
+The return/evaluation construction predates the causal linear-perpetual V2
+authority boundary.  Pure builders and explicitly private diagnostic runners
+remain available for regression archaeology, but every public execution entry
+point is quarantined before data, registry, clock, or output access.
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ if str(_REPO_ROOT) not in sys.path:
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import (
     run_registered_candidate_batch,
 )
@@ -365,7 +368,7 @@ def _forward_period_counts(
     return result
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     output: str | Path = DEFAULT_OUTPUT,
     recorded_at: int | None = None,
@@ -461,7 +464,7 @@ def run(
     return document
 
 
-def run_forward(
+def _run_forward_legacy_diagnostic(
     *,
     output: str | Path = DEFAULT_FORWARD_OUTPUT,
     recorded_at: int | None = None,
@@ -553,7 +556,7 @@ def run_forward(
     return document
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _main_legacy_diagnostic(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Evaluate L2 paper Alphas and forward challengers with immutable evidence."
     )
@@ -564,8 +567,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="publish independent evaluation evidence for every forward challenger",
     )
     args = parser.parse_args(argv)
-    document = run(output=args.output)
-    forward_document = run_forward(output=args.forward_output)
+    document = _run_legacy_diagnostic(output=args.output)
+    forward_document = _run_forward_legacy_diagnostic(output=args.forward_output)
     print(
         "paper alpha evaluation: "
         f"status={document['status']} "
@@ -578,6 +581,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{len(forward_document['alphas'])}"
     )
     return 0 if document["status"] == "VERIFIED" and forward_document["status"] == "VERIFIED" else 2
+
+
+def run(
+    *,
+    output: str | Path = DEFAULT_OUTPUT,
+    recorded_at: int | None = None,
+) -> dict[str, Any]:
+    """Block legacy evaluation persistence before any runtime dependency is used."""
+
+    quarantine_legacy_backtest("tools.paper_alpha_evaluation.run")
+
+
+def run_forward(
+    *,
+    output: str | Path = DEFAULT_FORWARD_OUTPUT,
+    recorded_at: int | None = None,
+    forward_status: str | Path = "data/cache/forward_track_status.json",
+) -> dict[str, Any]:
+    """Block legacy forward-label registration before any input is read."""
+
+    quarantine_legacy_backtest("tools.paper_alpha_evaluation.run_forward")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Block the CLI before argument parsing, data reads, or registry mutation."""
+
+    quarantine_legacy_backtest("tools.paper_alpha_evaluation.main")
 
 
 if __name__ == "__main__":

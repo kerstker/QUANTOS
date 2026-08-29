@@ -85,6 +85,11 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     assert len(frames) == 10
     assert all(len(rows) == 24 for rows in frames.values())
     assert all(row.event_time_ms <= row.decision_time_ms for rows in frames.values() for row in rows)
+    assert all(
+        row.event_time_ms <= row.knowledge_time_ms <= row.decision_time_ms
+        for rows in frames.values()
+        for row in rows
+    )
     assert all(row.decision_time_ms % 30_000 == 0 for rows in frames.values() for row in rows)
     cache_path = tmp_path / "decision-frames.db"
     cached_first = load_bucketed_frames(
@@ -300,6 +305,7 @@ def test_bucket_loader_selects_latest_complete_snapshot_without_lookahead(tmp_pa
 
     assert len(frames["BTCUSDT"]) == 1
     assert frames["BTCUSDT"][0].mid_price == 120.0
+    assert frames["BTCUSDT"][0].knowledge_time_ms == 20_000
 
 
 def test_bucket_tail_query_does_not_scan_unbounded_feature_history(

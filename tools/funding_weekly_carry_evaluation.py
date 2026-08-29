@@ -27,11 +27,15 @@ if __package__ in {None, ""}:  # pragma: no cover - direct CLI compatibility
 
     _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
-from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.alpha.panel_backtest import (
+    PanelPeriod,
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+)
 from services.intelligence.registered_candidate_batch import (
     run_registered_candidate_batch,
 )
@@ -255,7 +259,7 @@ def _decision(
     }
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     source_snapshot: str | Path = DEFAULT_SOURCE,
     output: str | Path = DEFAULT_OUTPUT,
@@ -372,7 +376,12 @@ def run(
     return document
 
 
+def run(*args, **kwargs) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.funding_weekly_carry_evaluation.run")
+
+
 def main() -> None:
+    quarantine_legacy_backtest("tools.funding_weekly_carry_evaluation.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))

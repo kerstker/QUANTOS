@@ -26,7 +26,10 @@ BN_SPEC = SourceSpec(
     name="binance-klines", asset_class="CRYPTO", time_unit="ms",
     field_map={"instrument_id": "sym", "event_time": "ts", "open": "o", "high": "h",
                "low": "l", "close": "c", "volume": "v"},
-    knowledge_lag=0,
+    # Binance's daily timestamp is the kline OPEN.  OHLCV, especially close,
+    # is not knowable until that UTC day has completed.  Keep the open bucket
+    # as event_time for panel alignment, but make availability explicit.
+    knowledge_lag=_DAY_MS,
     volume_unit=VolumeUnit.BASE_ASSET,
     volume_semantics=VolumeSemantics.PER_BAR,
 )

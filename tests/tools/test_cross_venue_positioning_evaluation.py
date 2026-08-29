@@ -143,7 +143,7 @@ def test_registered_run_is_research_only_with_closed_budget(tmp_path, monkeypatc
         lambda: nullcontext(fake_registry),
     )
 
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "result.json",
         recorded_at=123,
         source_commit="a" * 40,

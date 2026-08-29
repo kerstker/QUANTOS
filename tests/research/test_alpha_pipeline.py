@@ -13,7 +13,12 @@ import pytest
 
 import services.research.alpha_expression as ax
 from services.alpha.catalog import AlphaCatalog
-from services.research.alpha_pipeline import run_alpha_asset_pipeline
+from services.research.alpha_pipeline import run_alpha_asset_pipeline as _run_alpha_asset_pipeline
+
+
+def run_alpha_asset_pipeline(*args, **kwargs):
+    kwargs["diagnostic_only"] = True
+    return _run_alpha_asset_pipeline(*args, **kwargs)
 
 
 def _panel():
@@ -55,6 +60,20 @@ def test_pipeline_runs_end_to_end_and_computes_leakage():
     # economic (carry-aware: price + funding collected) returns are computed when funding is present
     assert set(out["economic_returns_by_id"]) <= {a["alpha_id"] for a in out["assets"]}
     assert any(a["economic_sharpe"] is not None for a in out["assets"])
+
+
+def test_public_default_pipeline_is_blocked_before_expression_evaluation(monkeypatch):
+    called = False
+
+    def evaluate(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("must not evaluate")
+
+    monkeypatch.setattr(ax, "evaluate", evaluate)
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
+        _run_alpha_asset_pipeline(_panel(), EXPRS)
+    assert called is False
 
 
 def test_pipeline_is_deterministic():

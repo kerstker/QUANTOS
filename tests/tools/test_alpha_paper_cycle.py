@@ -1,5 +1,45 @@
+import pytest
+
+import tools.alpha_paper_cycle as alpha_paper_cycle
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from tools.alpha_paper_cycle import build_report
 from tools.forward_track_advance import _ALPHAS, TOP_CONTRA
+
+
+@pytest.fixture(autouse=True)
+def _authority_contract_double(monkeypatch):
+    monkeypatch.setattr(
+        alpha_paper_cycle,
+        "is_authoritative_backtest_record",
+        lambda record: bool(
+            isinstance(record, dict)
+            and isinstance(record.get("detail"), dict)
+            and record["detail"].get("_test_manifest_valid") is True
+        ),
+    )
+
+
+def _full_risk() -> dict:
+    engines = {
+        name: True
+        for name in (
+            "market", "liquidity", "concentration", "correlation", "drawdown",
+            "regime", "stress", "capacity", "model_alpha",
+        )
+    }
+    return {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_passed": 9,
+        "gates_run": 9,
+        "engines_run": engines,
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
 
 
 def _artifacts():
@@ -44,6 +84,17 @@ def _artifacts():
         "event_consistency": {"verdict": "BREACH"},
         "gonogo": {"forward_evidence": {"present": False}},
     }
+
+
+def test_cli_quarantines_legacy_profitability_before_read_or_write(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        pytest.fail("legacy artifact access must remain behind authority quarantine")
+
+    monkeypatch.setattr(alpha_paper_cycle, "build_report", fail_if_called)
+    monkeypatch.setattr(alpha_paper_cycle, "atomic_write_json", fail_if_called)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        alpha_paper_cycle.main([])
 
 
 def test_report_keeps_three_candidates_separate_and_fail_closed():
@@ -104,6 +155,7 @@ def test_report_surfaces_authoritative_top_contra_dry_run(tmp_path):
         "authoritative": True,
         "evidence_class": "CANONICAL_L2_DRY_RUN",
         "run_id": "top-run-1",
+        "detail": {"_test_manifest_valid": True},
         "n_periods": 192,
         "pnl": {
             "sharpe": 1.5246,
@@ -122,12 +174,8 @@ def test_report_surfaces_authoritative_top_contra_dry_run(tmp_path):
         paths[name] = str(path)
     report = build_report(artifact_paths=paths)
     top = report["alphas"]["top_contra"]
-    assert top["dry_run"]["authoritative"] is True
-    assert top["dry_run"]["sharpe"] == 1.5246
-    assert top["canonical_dry_run"]["n_periods"] == 192
-    assert top["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
-    assert top["canonical_dry_run"]["crowding_gate_blocks"] == 11
-    assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in top["blockers"]
+    assert top["canonical_dry_run"]["authoritative"] is not True
+    assert "DRY_RUN_RESEARCH_RISK_NOT_FULL" in top["blockers"]
 
 
 def test_report_surfaces_authoritative_carry_and_crowd_dry_runs(tmp_path):
@@ -142,6 +190,7 @@ def test_report_surfaces_authoritative_carry_and_crowd_dry_runs(tmp_path):
             "authoritative": True,
             "evidence_class": "CANONICAL_L2_DRY_RUN",
             "run_id": f"{alpha_id}-run-1",
+            "detail": {"_test_manifest_valid": True},
             "n_periods": 200,
             "pnl": {
                 "sharpe": 0.7,
@@ -161,11 +210,8 @@ def test_report_surfaces_authoritative_carry_and_crowd_dry_runs(tmp_path):
     report = build_report(artifact_paths=paths)
     for alpha_id in ("carry_oi_majors", "crowd_contra"):
         row = report["alphas"][alpha_id]
-        assert row["canonical_dry_run"]["authoritative"] is True
-        assert row["canonical_dry_run"]["run_id"] == f"{alpha_id}-run-1"
-        assert row["canonical_dry_run"]["reconciliation_residual"] == 1e-9
-        assert row["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
-        assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in row["blockers"]
+        assert row["canonical_dry_run"]["authoritative"] is not True
+        assert "DRY_RUN_RESEARCH_RISK_NOT_FULL" in row["blockers"]
 
 
 def test_risk_approved_canonical_dry_run_is_not_false_blocked(tmp_path):
@@ -176,9 +222,14 @@ def test_risk_approved_canonical_dry_run_is_not_false_blocked(tmp_path):
         "authoritative": True,
         "evidence_class": "CANONICAL_L2_DRY_RUN",
         "run_id": "carry-approved-1",
+        "strategy_id": "carry",
         "n_periods": 10,
         "pnl": {"sharpe": 0.4, "residual": 1e-9},
-        "research_risk": {"decision": "RISK_APPROVED"},
+        "research_risk": _full_risk(),
+        "detail": {
+            "_test_manifest_valid": True,
+            "research_risk": _full_risk(),
+        },
     }
     paths = {}
     for name, payload in artifacts.items():
@@ -188,6 +239,35 @@ def test_risk_approved_canonical_dry_run_is_not_false_blocked(tmp_path):
     report = build_report(artifact_paths=paths)
     assert report["alphas"]["carry_oi_majors"]["canonical_dry_run"]["research_risk_decision"] == "RISK_APPROVED"
     assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" not in report["alphas"]["carry_oi_majors"]["blockers"]
+
+
+def test_legacy_authoritative_flag_and_subset_approval_do_not_admit_backtest(tmp_path):
+    import json
+
+    artifacts = _artifacts()
+    artifacts["carry_dry_run_authoritative"] = {
+        "authoritative": True,
+        "evidence_class": "CANONICAL_L2_DRY_RUN",
+        "run_id": "legacy-carry",
+        "pnl": {"sharpe": 99.0, "residual": 0.0},
+        # This is the historical four-engine result: the decision label alone
+        # is not an admission contract and there is no RunManifestV2.
+        "research_risk": {
+            "decision": "RISK_APPROVED",
+            "status": "APPROVED",
+            "gates_run": 4,
+            "gates_passed": 4,
+            "provenance": "REAL_RESEARCH_RISK_SUBSET",
+        },
+    }
+    paths = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = str(path)
+    row = build_report(artifact_paths=paths)["alphas"]["carry_oi_majors"]
+    assert row["canonical_dry_run"]["authoritative"] is not True
+    assert "DRY_RUN_AUTHORITY_INVALID" in row["blockers"]
 
 
 def test_report_describes_daily_forward_polling(tmp_path):

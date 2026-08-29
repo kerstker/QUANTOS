@@ -332,21 +332,28 @@ foreach ($taskName in $legacyLiveTasks) {
   Disable-TaskIfPresent -Name $taskName
 }
 
-$factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Sunday -At "20:00"
-$icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Sunday -At "20:30"
-$paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Sunday -At "20:45"
-# Refresh the read-only per-alpha lifecycle cockpit before the five-minute
-# production-workflow reconciliation consumes its candidate rows.  The
-# cockpit has no network, credential, or promotion capability.
-$alphaLifecycleCockpitTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
-# Reconcile candidate identity and every evidence stage before the next
-# five-minute paper worker. The job is read-mostly, idempotent, and L2-only.
-$alphaProductionWorkflowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# These historical workers can launder invalid V1 returns/evaluations into
+# durable registry, risk-READY, or workflow authority.  Quiesce existing task
+# definitions (including owned subprocesses) and deliberately do not register
+# replacements until a signed V2 backtest authority exists.
+$invalidatedV1AuthorityTasks = @(
+  [pscustomobject]@{ Name = "QUANTOS_candidate_dry_run"; Module = "dry_run_candidate_multi" },
+  [pscustomobject]@{ Name = "QUANTOS_candidate_portfolio_evidence"; Module = "candidate_portfolio_evidence" },
+  [pscustomobject]@{ Name = "QUANTOS_factory_loop"; Module = "crypto_factory_loop" },
+  [pscustomobject]@{ Name = "QUANTOS_ic_panel_refresh"; Module = "ic_panel_research" },
+  [pscustomobject]@{ Name = "QUANTOS_alpha_lifecycle_cockpit"; Module = "alpha_lifecycle_cockpit" },
+  [pscustomobject]@{ Name = "QUANTOS_alpha_maintenance"; Module = "alpha_maintenance_sweep" },
+  [pscustomobject]@{ Name = "QUANTOS_alpha_paper_cycle"; Module = "alpha_paper_cycle" },
+  [pscustomobject]@{ Name = "QUANTOS_paper_alpha_evaluation"; Module = "paper_alpha_evaluation" },
+  [pscustomobject]@{ Name = "QUANTOS_alpha_production_workflow"; Module = "alpha_production_workflow" },
+  [pscustomobject]@{ Name = "QUANTOS_paper_realtime"; Module = "paper_realtime" },
+  [pscustomobject]@{ Name = "QUANTOS_paper_realtime_10k"; Module = "paper_realtime_10k" },
+  [pscustomobject]@{ Name = "QUANTOS_paper_research_risk_bundle"; Module = "paper_research_risk_bundle" }
+)
+foreach ($task in $invalidatedV1AuthorityTasks) {
+  Disable-TaskIfPresent -Name $task.Name -Module $task.Module
+}
+
 # Candidate backtests are deliberately outside the five-minute mark-to-market
 # path. Run them after the daily forward refresh, then build portfolio evidence
 # from their persisted authoritative runs. The gap prevents the second task
@@ -357,8 +364,6 @@ $candidatePortfolioEvidenceTrigger = New-ScheduledTaskTrigger -Daily -DaysInterv
 # watermark is consumed promptly; the worker's internal seven-day due check
 # remains authoritative.
 $forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:00"
-$maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Monday -At "09:05"
 # DefiLlama exposes no historical vintages.  Capture one new public, keyless
 # completed-day TVL cross-section every morning so a real PIT history begins
 # accumulating without credentials or any venue/order capability.
@@ -394,14 +399,8 @@ $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $rawArchiveAuditTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "04:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
 $paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
-$paperRiskBundleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:08"
 $paperPreviewTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:10"
 $paperShadowAutoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:20"
-# Public-mark paper valuation is a short-lived L2 worker. It refreshes the
-# current paper account without creating a resident process or touching a
-# private venue/order path.
-$paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Collect the complete public Binance USD-M surface before paper valuation.
 # This task is market-data only and has no credential or broker capability.
 $binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
@@ -455,11 +454,6 @@ $binanceRealtimeStreamTrigger = @(
 # has flushed fresh depth. This remains simulation-only and has no credentials.
 $paperMultiVenueSorTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
-# Keep the isolated 10,000 USD paper profile on the same five-minute cadence,
-# offset from the default account so the two short-lived workers do not start
-# together.  The worker includes its own semantic health check.
-$paperRealtime10kTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(7) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
 $paperShadowRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Retain one semantic observation after the shadow mark cycle.  Maturity is
@@ -472,27 +466,11 @@ $paperOperationalEvidenceTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date)
 $paperHealthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 
-Register-L2Task -Name "QUANTOS_factory_loop" -Module "crypto_factory_loop" `
-  -Trigger $factoryTrigger
-Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
-  -Trigger $icTrigger
-Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_evaluation" `
-  -Trigger $paperAlphaEvaluationTrigger
-Register-L2Task -Name "QUANTOS_alpha_lifecycle_cockpit" -Module "alpha_lifecycle_cockpit" `
-  -Trigger $alphaLifecycleCockpitTrigger
-Register-L2Task -Name "QUANTOS_alpha_production_workflow" -Module "alpha_production_workflow" `
-  -Trigger $alphaProductionWorkflowTrigger
-Register-L2Task -Name "QUANTOS_candidate_dry_run" -Module "dry_run_candidate_multi" `
-  -Trigger $candidateDryRunTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-Register-L2Task -Name "QUANTOS_candidate_portfolio_evidence" -Module "candidate_portfolio_evidence" `
-  -Trigger $candidatePortfolioEvidenceTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 # The forward worker includes the public-data refresh budget (30 minutes) and
 # needs only a small compute margin.  Bound the task so one hung refresh cannot
 # monopolize the daily cadence or leave the next run permanently stale.
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 35)
-Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
-  -Trigger $maintenanceTrigger
 Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama_tvl_forward_refresh" `
   -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" -Module "defillama_stablecoin_forward_refresh" `
@@ -514,10 +492,6 @@ Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdo
   -Trigger $schedulerWatchdogTrigger
 Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
   -Trigger $gonogoTrigger
-Register-L2Task -Name "QUANTOS_alpha_paper_cycle" -Module "alpha_paper_cycle" `
-  -Trigger $paperCycleTrigger
-Register-L2Task -Name "QUANTOS_paper_research_risk_bundle" -Module "paper_research_risk_bundle" `
-  -Trigger $paperRiskBundleTrigger
 Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview" `
   -Trigger $paperPreviewTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtime_market" `
@@ -544,10 +518,6 @@ Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtim
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `
   -Trigger $paperMultiVenueSorTrigger
-Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
-  -Trigger $paperRealtimeTrigger
-Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `
-  -Trigger $paperRealtime10kTrigger
 Register-L2Task -Name "QUANTOS_paper_shadow_auto" -Module "paper_shadow_auto" `
   -Trigger $paperShadowAutoTrigger
 Register-L2Task -Name "QUANTOS_paper_shadow_realtime" -Module "paper_shadow_realtime" `

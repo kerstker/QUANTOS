@@ -8,6 +8,7 @@ from typing import Callable, Dict, List
 
 from fastapi import APIRouter, Query
 
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from services.research.factor_engine.domain.model import (
     compute_max_drawdown,
     compute_sharpe,
@@ -228,7 +229,7 @@ router = APIRouter()
 
 @router.get("/api/v1/console/overview")
 async def overview() -> Dict:
-    return _overview_payload()
+    return scrub_backtest_payload(_overview_payload())
 
 
 # ---- research-ops console: dynamic, registry-backed run list + generic detail (read-only) -----------
@@ -241,7 +242,7 @@ async def overview() -> Dict:
 async def alpha_factory() -> Dict:
     candidates = _alpha_candidates()
     screening = _alpha_screening_payload(candidates)
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -256,7 +257,7 @@ async def alpha_factory() -> Dict:
         "screening": screening,
         "correlation_matrix": _alpha_correlation_matrix(candidates),
         "lineage": [item for item in _lineage() if item["layer"] in {"Alpha", "Paper"}],
-    }
+    })
 
 
 @router.get("/api/v1/console/risk-dashboard")
@@ -281,7 +282,7 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
         "admission_allowed": False,
         "diagnostic_only": True,
     }
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -291,13 +292,13 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
         "primary_report": primary_report,
         "reports": [primary_report, control_report],
         "lineage": [item for item in _lineage() if item["layer"] == "Risk"],
-    }
+    })
 
 
 @router.get("/api/v1/console/validation")
 async def validation_dashboard() -> Dict:
     reports = _validation_reports()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "validation_backend": "REAL_LEAKAGE_DETECTOR_v1",
         "read_only": True,
@@ -306,13 +307,13 @@ async def validation_dashboard() -> Dict:
         "selected_report": reports[0],
         "reports": reports,
         "lineage": [item for item in _lineage() if item["layer"] == "Alpha"],
-    }
+    })
 
 
 @router.get("/api/v1/console/paper-trading")
 async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
     run = _paper_run(alpha_id)
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -320,20 +321,20 @@ async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
         "selected_alpha_id": run["alpha_id"],  # resolved id — matches the rendered data
         "run": run,
         "lineage": [item for item in _lineage() if item["layer"] == "Paper"],
-    }
+    })
 
 
 @router.get("/api/v1/console/portfolio")
 async def portfolio_dashboard() -> Dict:
     payload = _portfolio_simulation()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in _lineage() if item["layer"] in {"Alpha", "Paper", "Risk"}],
-    }
+    })
 
 
 @router.get("/api/v1/console/safety-primitives")
@@ -399,7 +400,7 @@ async def computation_lab(
         "reasons": [] if net_sharpe > 0.5 else ["Net Sharpe below approval threshold after cost/stress adjustment"],
     }
 
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -421,4 +422,4 @@ async def computation_lab(
         "drawdown_curve": drawdowns,
         "risk_report": _risk_decision(alpha["candidate_id"], returns, equity_points, alpha["capacity_estimate"]),
         "lineage": _lineage(),
-    }
+    })

@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from quantos.contracts.hashing import stable_hash
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
@@ -1351,7 +1352,7 @@ def release_run_attestation() -> dict[str, Any] | None:
     )
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     db_path: str | Path = DEFAULT_DB,
     output_path: str | Path = DEFAULT_OUTPUT,
@@ -1436,7 +1437,7 @@ def run(
     return snapshot
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _main_legacy_diagnostic(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", default=str(DEFAULT_DB))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
@@ -1463,7 +1464,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--release-commit", default=None)
     args = parser.parse_args(argv)
     try:
-        snapshot = run(
+        snapshot = _run_legacy_diagnostic(
             db_path=args.db,
             output_path=args.output,
             candidate_registry_path=args.candidate_registry,
@@ -1494,6 +1495,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"execution={len(snapshot['execution_paper_ids'])}"
     )
     return 0 if snapshot["status"] == "VERIFIED" else 2
+
+
+def run(
+    *,
+    db_path: str | Path = DEFAULT_DB,
+    output_path: str | Path = DEFAULT_OUTPUT,
+    candidate_registry_path: str | Path = DEFAULT_CANDIDATE_REGISTRY,
+    realtime_registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
+    realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_formal_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_FORMAL_SHADOW,
+    realtime_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_SHADOW,
+    realtime_execution_path: str | Path = DEFAULT_REALTIME_ALPHA_EXECUTION,
+    historical_evaluations_path: str | Path = DEFAULT_HISTORICAL_EVALUATIONS,
+    forward_evaluations_path: str | Path = DEFAULT_FORWARD_EVALUATIONS,
+    forward_status_path: str | Path = DEFAULT_FORWARD_STATUS,
+    risk_path: str | Path = DEFAULT_RISK_BUNDLE,
+    portfolio_evidence_path: str | Path = DEFAULT_PORTFOLIO_EVIDENCE,
+    realtime_path: str | Path = DEFAULT_PAPER_REALTIME,
+    lifecycle_path: str | Path = DEFAULT_LIFECYCLE,
+    paper_track_path: str | Path = DEFAULT_PAPER_TRACK,
+    regime_marks_path: str | Path = DEFAULT_REGIME_MARKS,
+    regime_funding_path: str | Path = DEFAULT_REGIME_FUNDING,
+    unblinding_policy: UnblindingPolicy | None = None,
+    portfolio_policy: PortfolioGatePolicy | None = None,
+    portfolio_reference_aum: float | None = None,
+    release_commit: str | None = None,
+) -> dict[str, Any]:
+    """Block legacy evidence reconciliation before any authority is touched."""
+
+    quarantine_legacy_backtest("tools.alpha_production_workflow.run")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Block the CLI before argument parsing, evidence reads, or workflow writes."""
+
+    quarantine_legacy_backtest("tools.alpha_production_workflow.main")
 
 
 if __name__ == "__main__":

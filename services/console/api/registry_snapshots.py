@@ -11,6 +11,7 @@ from typing import Callable, Dict, List, Sequence
 from fastapi import APIRouter
 
 from quantos.runtime_paths import runtime_state_root
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from services.console.api.common import short_hash
 
 
@@ -479,7 +480,7 @@ def _lifecycle_monitor_payload() -> Dict:
     }
 
 
-def _experiments_payload() -> Dict:
+def _experiments_payload_raw() -> Dict:
     st = _load_experiment_store()
     if st is not None:
         try:
@@ -610,28 +611,34 @@ def _experiments_payload() -> Dict:
     }
 
 
+def _experiments_payload() -> Dict:
+    """Public registry projection with retained V1 evaluations scrubbed."""
+
+    return scrub_backtest_payload(_experiments_payload_raw())
+
+
 router = APIRouter()
 
 
 @router.get("/api/v1/console/experiments")
 async def experiments() -> Dict:
     payload = _experiments_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })
 
 
 @router.get("/api/v1/console/lifecycle-monitor")
 def lifecycle_monitor() -> Dict:
     payload = _lifecycle_monitor_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })

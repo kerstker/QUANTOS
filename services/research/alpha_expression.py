@@ -32,13 +32,23 @@ _EPS = 1e-12
 
 
 class FieldPanel:
-    """PIT-safe field matrices aligned to (event_times x instruments)."""
+    """PIT-safe field matrices aligned to (event_times x instruments).
 
-    __slots__ = ("instruments", "event_times", "matrices")
+    ``decision_times`` records the as-of clock used for every event row.  It
+    intentionally need not equal ``event_times``: a daily bar is commonly
+    bucketed by its open while its close becomes available one day later.
+    """
 
-    def __init__(self, instruments, event_times, matrices) -> None:
+    __slots__ = ("instruments", "event_times", "decision_times", "matrices")
+
+    def __init__(self, instruments, event_times, matrices, decision_times=None) -> None:
         self.instruments = tuple(instruments)
         self.event_times = tuple(event_times)
+        self.decision_times = tuple(
+            self.event_times if decision_times is None else decision_times
+        )
+        if len(self.decision_times) != len(self.event_times):
+            raise ValueError("decision_times must align one-to-one with event_times")
         self.matrices = matrices            # {field_name: Matrix}
 
     @property
@@ -47,23 +57,49 @@ class FieldPanel:
 
 
 def build_field_panel(store, instruments: Sequence[str], event_times: Sequence[int],
-                      fields: Sequence[str] = ("close", "volume")) -> FieldPanel:
-    """PIT field matrices: cell[t][i] = instrument i's field at event_time t, KNOWABLE AT t
-    (latest_as_of with event_time_max=t, used only if the latest knowable bar's event_time == t;
-    else None). Restatement-safe and no-lookahead. With CachingPITStore this is an in-memory build."""
+                      fields: Sequence[str] = ("close", "volume"), *,
+                      decision_times: Sequence[int] | None = None,
+                      minimum_knowledge_lag: int = 0) -> FieldPanel:
+    """Build PIT matrices on separate event and decision clocks.
+
+    ``cell[t][i]`` is instrument ``i``'s field for the row's event time, but
+    only when its knowledge time is no later than the corresponding decision
+    time.  With no explicit decision clock, decisions remain at event time and
+    delayed data therefore fail closed instead of being silently backdated.
+    """
+    if (
+        isinstance(minimum_knowledge_lag, bool)
+        or not isinstance(minimum_knowledge_lag, int)
+        or minimum_knowledge_lag < 0
+    ):
+        raise ValueError("minimum_knowledge_lag must be a non-negative integer")
     insts = sorted(instruments)
-    ets = sorted(event_times)
+    raw_ets = list(event_times)
+    raw_dts = list(raw_ets if decision_times is None else decision_times)
+    if len(raw_dts) != len(raw_ets):
+        raise ValueError("decision_times must align one-to-one with event_times")
+    aligned = sorted(zip(raw_ets, raw_dts, strict=True))
+    ets = [item[0] for item in aligned]
+    dts = [item[1] for item in aligned]
+    if any(type(value) is not int for value in dts):
+        raise ValueError("decision_times must contain integers")
     mats = {f: [] for f in fields}
-    for t in ets:
+    for t, decision_time in zip(ets, dts, strict=True):
+        if decision_time < t:
+            raise ValueError("decision_time cannot precede event_time")
         rows = {f: [] for f in fields}
         for inst in insts:
-            bar = store.latest_as_of(inst, t, t)        # latest bar with event_time<=t, knowledge<=t
-            present = bar is not None and bar.event_time == t
+            bar = store.latest_as_of(inst, decision_time, t)
+            present = (
+                bar is not None
+                and bar.event_time == t
+                and bar.knowledge_time >= t + minimum_knowledge_lag
+            )
             for f in fields:
                 rows[f].append(float(getattr(bar, f)) if present else None)
         for f in fields:
             mats[f].append(rows[f])
-    return FieldPanel(insts, ets, mats)
+    return FieldPanel(insts, ets, mats, dts)
 
 
 # ---- matrix helpers -------------------------------------------------------------------------
@@ -451,6 +487,12 @@ def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
     every period whose row is >= fwd_horizon rows past the last KEPT one). Default False: zero
     behavior change for every existing caller (all currently use fwd_horizon=1, where overlap is
     moot — a 1-row-ahead forward return never overlaps a neighboring 1-row-ahead forward return)."""
+    if panel.decision_times != panel.event_times:
+        raise ValueError(
+            "panel_to_periods cannot label delayed-knowledge data with same-row "
+            "prices; use a causal converter with explicit post-decision execution "
+            "events and prices"
+        )
     px = panel.matrices[price_field]
     t, n = _dims(alpha)
     periods = []

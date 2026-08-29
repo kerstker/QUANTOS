@@ -172,19 +172,12 @@ def test_shadow_worker_recovers_all_books_and_replays_idempotently_after_restart
         generated_at_ms=3_000,
     )
 
-    assert first["status"] == "RUNNING"
-    assert first["candidate_universe"]["running_count"] == 10
-    assert first["candidate_universe"]["coverage_complete"] is True
-    assert restarted["status"] == "RUNNING"
-    assert all(row["replayed_from_store"] is True for row in restarted["alphas"].values())
-
-    recovered = PaperExecutionStore(str(store_path), create=False)
-    try:
-        assert len(recovered.rows()) == 10
-        assert recovered.chain_valid() is True
-        assert all(recovered.latest(alpha_id)["paper_positions"] == {"BTC": 1} for alpha_id in alpha_ids)
-    finally:
-        recovered.close()
+    assert first["status"] == "SAFE_BLOCKED"
+    assert first["verdict"]["shadow_paper_running"] is False
+    assert first["ledger"]["write_attempted"] is False
+    assert restarted["status"] == "SAFE_BLOCKED"
+    assert restarted["alphas"] == {}
+    assert not store_path.exists()
 
 
 def test_shadow_worker_opens_new_account_through_persisted_multivenue_sor(
@@ -254,16 +247,8 @@ def test_shadow_worker_opens_new_account_through_persisted_multivenue_sor(
         generated_at_ms=execution_ts,
     )
 
-    row = result["alphas"]["crowd_contra"]
-    assert result["status"] == "RUNNING"
-    assert result["execution_profile"] == "REAL_PUBLIC_BOOK_SIMULATED_SOR_V2"
-    assert row["paper_execution"] == "PAPER_FILLED"
-    assert row["execution_tca"]["route_tca_available"] is True
-    assert row["execution_tca"]["routing_snapshot_id"] == "a" * 64
-    assert row["execution_tca"]["route_tca"][0]["venues"][0]["venue_id"] == "binance_usdm"
-    assert row["reconciliation_residual"] == 0.0
-    assert result["routing"]["routing_snapshot_ids"] == ["a" * 64]
-    assert result["routing"]["routed_account_count"] == 1
-    assert result["routing"]["routed_order_count"] == 1
-    assert result["routing"]["simulation_only"] is True
-    assert result["ledger"]["chain_valid"] is True
+    assert result["status"] == "SAFE_BLOCKED"
+    assert result["alphas"] == {}
+    assert result["routing"]["mode"] == "NOT_RUN"
+    assert result["ledger"]["write_attempted"] is False
+    assert not (tmp_path / "routed.db").exists()

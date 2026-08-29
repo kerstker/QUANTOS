@@ -88,7 +88,7 @@ def test_fast_run_registers_complete_family_and_never_grants_testnet(
         lambda: nullcontext(fake_registry),
     )
 
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "fast.json",
         recorded_at=123,
         source_commit="a" * 40,

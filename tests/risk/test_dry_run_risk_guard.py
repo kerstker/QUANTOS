@@ -10,6 +10,7 @@ from services.risk.research_risk.domain.models import RiskConfig
 from services.risk.research_risk.dry_run_guard import (
     DryRunResearchRiskInputs,
     evaluate_dry_run_risk,
+    full_research_risk_approved,
 )
 
 
@@ -30,6 +31,8 @@ def test_benign_book_is_risk_approved_over_the_four_honest_engines():
     returns, weights, equity, ts = _benign()
     d = evaluate_dry_run_risk(returns, weights, equity, timestamps=ts)
     assert d["decision"] == "RISK_APPROVED"
+    assert d["status"] == "DIAGNOSTIC_ONLY"
+    assert full_research_risk_approved(d) is False
     assert d["gates_passed"] == 4 and d["gates_run"] == 4
     assert set(d["engines_run"]) == {"market", "drawdown", "concentration", "stress"}
     assert d["provenance"] == "REAL_RESEARCH_RISK_SUBSET"

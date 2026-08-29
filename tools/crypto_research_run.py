@@ -29,6 +29,7 @@ import sys
 from services.data.persistent_store import SqlitePITStore
 from services.data.research_adapter import adapt_research_market_data
 from services.data.market_provider import ingest_provider_rows
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.research_session import run_research_session
 from tools.search_trial_registry import (
@@ -99,6 +100,7 @@ def _build_factors(report: dict) -> list:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_research_run")
     now_ms = int(time.time() * 1000)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
     store = SqlitePITStore(os.path.join("data", "cache", "crypto.db"), create=True)

@@ -17,6 +17,8 @@ from scripts.evidence_binding import (
 from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
+    _alpha_lifecycle,
+    _paper_shadow,
     _validation,
     _working_tree_dirty,
     _write_json,
@@ -25,12 +27,33 @@ from scripts.generate_727_final_audit import (
     phase13_artifact_matches,
 )
 from scripts.generate_trial_ledger_integrity import build_report as build_trial_report
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.trial_provenance import ActorType, TrialProvenance, TrialStatus
 
 
 ROOT = Path(__file__).resolve().parents[2]
 JSON_OUTPUTS = OUTPUTS[:-1]
+
+_SAFE_FLAGS = {
+    "LIVE_TRADING_ENABLED": False,
+    "REAL_BROKER_ENABLED": False,
+    "ALLOW_ORDER_SUBMISSION": False,
+    "ALLOW_AI_DIRECT_TRADING": False,
+    "REQUIRE_HUMAN_APPROVAL": True,
+}
+
+
+def _write_payload(root: Path, relative_path: str, payload: object) -> None:
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def _seed_python_bundle(root: Path, relative_path: str) -> None:
+    path = root / relative_path
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "placeholder.py").write_text("VALUE = 1\n", encoding="utf-8")
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -454,6 +477,140 @@ def test_paper_shadow_does_not_promote_marks_only_replay() -> None:
     assert paper_shadow["paper"]["paper_ready"] is False
     assert paper_shadow["paper"]["status"] == "NOT_READY"
     assert paper_shadow["status"] in {"READY_FOR_SHADOW", "NOT_READY"}
+
+
+def test_nonempty_legacy_lifecycle_artifacts_are_retention_not_readiness(
+    tmp_path: Path,
+) -> None:
+    for bundle in (
+        "services/alpha",
+        "services/alpha_factory",
+        "tests/alpha",
+        "tests/alpha_factory",
+        "tests/lifecycle",
+    ):
+        _seed_python_bundle(tmp_path, bundle)
+    _write_payload(
+        tmp_path,
+        "evidence/alpha_lifecycle_cockpit.json",
+        {
+            "status": "READY_FOR_RESEARCH_AUTONOMY",
+            "authoritative_backtest_record": {"self_asserted": True},
+            "alphas": [
+                {
+                    "derived_stage": "LIVE_TRACK",
+                    "sharpe": 99.0,
+                    "max_drawdown": 0.0,
+                }
+            ],
+        },
+    )
+    _write_payload(
+        tmp_path,
+        "evidence/alpha_paper_cycle.json",
+        {"status": "READY", "sharpe": 99.0, "max_drawdown": 0.0},
+    )
+
+    report = _alpha_lifecycle(
+        tmp_path,
+        1_800_000_000_000,
+        _SAFE_FLAGS,
+        {"current": True},
+    )
+
+    assert report["status"] == "NOT_READY"
+    assert LEGACY_INVALIDATION_CODE in report["blockers"]
+    assert report["authoritative_backtest"] == {
+        "source_path": "evidence/alpha_lifecycle_cockpit.json",
+        "required_field": "authoritative_backtest_record",
+        "record_present": True,
+        "independently_admitted": False,
+        "status": LEGACY_INVALIDATION_CODE,
+        "counted_as_completion_evidence": False,
+    }
+    assert report["cockpit"]["retained_alpha_count"] == 1
+    assert report["cockpit"]["counted_as_completion_evidence"] is False
+    assert "derived_stage_counts" not in report["cockpit"]
+    retained = report["inputs"]["evidence/alpha_lifecycle_cockpit.json"]
+    assert retained["exists"] is True
+    assert len(retained["sha256"]) == 64
+    serialized = json.dumps(report).lower()
+    assert '"sharpe"' not in serialized
+    assert '"max_drawdown"' not in serialized
+
+
+def test_legacy_paper_ready_flags_and_metrics_cannot_promote_paper(
+    tmp_path: Path,
+) -> None:
+    _write_payload(
+        tmp_path,
+        "data/cache/paper_health_10k.json",
+        {
+            "authoritative_backtest_record": {"self_asserted": True},
+            "verdict": {
+                "paper_ready": True,
+                "paper_mark_ready": True,
+                "paper_preview_ready": True,
+            },
+            "blockers": [],
+            "forward_evidence": {"sharpe": 99.0, "max_drawdown": 0.0},
+        },
+    )
+    _write_payload(
+        tmp_path,
+        "evidence/shadow_status.json",
+        {
+            "readiness": {
+                "shadow_ready": True,
+                "chain_valid": True,
+                "outbox_chain_valid": True,
+                "blockers": [],
+                "observation_count": 1,
+            },
+            "safety": {"order_path_touched": False},
+        },
+    )
+    for path in (
+        "evidence/alpha_paper_cycle.json",
+        "evidence/three_alpha_paper_flow.json",
+        "data/cache/binance_usdt_continuous_paper.json",
+    ):
+        _write_payload(
+            tmp_path,
+            path,
+            {"status": "READY", "sharpe": 99.0, "max_drawdown": 0.0},
+        )
+
+    report = _paper_shadow(
+        tmp_path,
+        1_800_000_000_000,
+        _SAFE_FLAGS,
+        {"current": True},
+    )
+
+    assert report["status"] == "NOT_READY"
+    assert report["paper"]["status"] == "NOT_READY"
+    assert report["paper"]["paper_ready"] is False
+    assert report["paper"]["paper_mark_ready"] is False
+    assert report["paper"]["paper_preview_ready"] is False
+    assert report["paper"]["forward_evidence"] == {}
+    assert report["paper"]["retained_forward_evidence_present"] is True
+    assert LEGACY_INVALIDATION_CODE in report["paper"]["blockers"]
+    authority = report["paper"]["authoritative_backtest"]
+    assert authority["record_present"] is True
+    assert authority["independently_admitted"] is False
+    assert authority["status"] == LEGACY_INVALIDATION_CODE
+    assert report["shadow"]["status"] == "READY_FOR_SHADOW"
+    for path in (
+        "evidence/alpha_paper_cycle.json",
+        "evidence/three_alpha_paper_flow.json",
+        "data/cache/binance_usdt_continuous_paper.json",
+    ):
+        assert report["inputs"][path]["exists"] is True
+        assert len(report["inputs"][path]["sha256"]) == 64
+    serialized = json.dumps(report).lower()
+    assert '"sharpe"' not in serialized
+    assert '"max_drawdown"' not in serialized
 
 
 def test_binance_testnet_evidence_does_not_promote_mexc_or_production() -> None:

@@ -189,17 +189,23 @@ def test_forward_paper_decision_is_frozen_before_post_latency_realization() -> N
             60_000,
             mid=100.0,
             depth=-0.9 + index * 0.2,
-            spread=1.0,
+            spread=100.0,
         )
         for index in range(10)
     ]
     decision = build_forward_paper_decision(spec, decision_frames)
     assert decision["decision_time_ms"] == 60_000
+    assert decision["entry_target_time_ms"] == 60_250
+    assert decision["exit_target_time_ms"] == 90_250
     assert decision["target_time_ms"] == 90_250
+    assert decision["decision_cost"] is None
     assert sum(abs(value) for value in decision["weights"].values()) == 1.0
 
     too_early = {
-        frame.instrument_id: _frame(frame.instrument_id, 90_000, mid=101.0)
+        frame.instrument_id: (
+            _frame(frame.instrument_id, 90_000, knowledge_ms=60_249, mid=100.0),
+            _frame(frame.instrument_id, 120_000, knowledge_ms=90_249, mid=101.0),
+        )
         for frame in decision_frames
         if frame.instrument_id in decision["weights"]
     }
@@ -211,16 +217,29 @@ def test_forward_paper_decision_is_frozen_before_post_latency_realization() -> N
         raise AssertionError("a pre-target mark must never realize forward paper")
 
     future = {
-        instrument: _frame(
-            instrument,
-            90_250,
-            mid=(101.0 if weight > 0 else 99.0),
+        instrument: (
+            _frame(
+                instrument,
+                90_000,
+                knowledge_ms=60_250,
+                mid=100.0,
+                spread=2.0,
+            ),
+            _frame(
+                instrument,
+                120_000,
+                knowledge_ms=90_250,
+                mid=(101.0 if weight > 0 else 99.0),
+            ),
         )
         for instrument, weight in decision["weights"].items()
     }
     realized = realize_forward_paper_decision(decision, future)
     assert realized["gross_return"] > 0
     assert realized["net_return"] < realized["gross_return"]
+    # 6bps fixed fee/slippage + half of the actual 2bps entry spread.  The
+    # decision frame's deliberately huge 100bps spread must not enter cost.
+    assert abs(realized["decision_cost"] - 0.0007) < 1e-12
     assert realized["live_allowed"] is False
 
 
@@ -237,10 +256,17 @@ def _frame(
     spread: float = 0.0,
     trailing_return: float | None = None,
     trailing_vol: float | None = None,
+    knowledge_ms: int | None = None,
 ) -> RealtimeFrame:
     return RealtimeFrame(
         instrument_id=instrument,
-        event_time_ms=max(0, decision_ms - 1),
+        event_time_ms=max(
+            0,
+            min(
+                decision_ms - 1,
+                (decision_ms if knowledge_ms is None else knowledge_ms) - 1,
+            ),
+        ),
         decision_time_ms=decision_ms,
         mid_price=mid,
         spread_bps=spread,
@@ -251,6 +277,7 @@ def _frame(
         liquidation_imbalance_5s=liquidation,
         trailing_return_8h=trailing_return,
         trailing_realized_vol_8h=trailing_vol,
+        knowledge_time_ms=decision_ms if knowledge_ms is None else knowledge_ms,
     )
 
 
@@ -395,7 +422,16 @@ def test_evaluator_uses_only_post_latency_labels_and_finds_designed_edge() -> No
             rows.append(
                 _frame(
                     instrument,
+                    decision + 1_000,
+                    knowledge_ms=decision + 1_000,
+                    mid=100.0,
+                )
+            )
+            rows.append(
+                _frame(
+                    instrument,
                     decision + 31_000,
+                    knowledge_ms=decision + 31_000,
                     mid=100.0 * (1.0 + signal * 0.001),
                     taker=signal,
                     depth=signal,
@@ -409,7 +445,43 @@ def test_evaluator_uses_only_post_latency_labels_and_finds_designed_edge() -> No
     assert result.n_periods == 8
     assert result.mean_ic is not None and result.mean_ic > 0.99
     assert result.net_return > 0
-    assert result.label_policy == "FIRST_KNOWN_MID_AT_OR_AFTER_DECISION_PLUS_LATENCY_PLUS_HORIZON"
+    assert result.label_policy == (
+        "FIRST_KNOWN_ENTRY_AT_OR_AFTER_DECISION_PLUS_LATENCY_"
+        "AND_EXIT_AT_OR_AFTER_ENTRY_PLUS_HORIZON"
+    )
+
+
+def test_evaluator_measures_from_post_latency_entry_not_decision_mid() -> None:
+    spec = next(
+        item
+        for item in default_realtime_hypotheses()
+        if item.mechanism == "flow_continuation" and item.horizon_ms == 30_000
+    )
+    policy = RealtimeAlphaPolicy(
+        min_cross_section=2,
+        min_evaluation_periods=1,
+        execution_latency_ms=1_000,
+        max_label_lateness_ms=30_000,
+        fee_bps=0.0,
+        slippage_bps=0.0,
+    )
+    frames = {
+        "AUSDT": [
+            _frame("AUSDT", 0, knowledge_ms=0, mid=50.0, taker=-0.5, depth=-0.5),
+            _frame("AUSDT", 30_000, knowledge_ms=1_000, mid=100.0),
+            _frame("AUSDT", 60_000, knowledge_ms=31_000, mid=99.0),
+        ],
+        "BUSDT": [
+            _frame("BUSDT", 0, knowledge_ms=0, mid=200.0, taker=0.5, depth=0.5),
+            _frame("BUSDT", 30_000, knowledge_ms=1_000, mid=100.0),
+            _frame("BUSDT", 60_000, knowledge_ms=31_000, mid=101.0),
+        ],
+    }
+
+    result = evaluate_hypothesis(spec, frames, policy=policy)
+
+    assert result.n_periods == 1
+    assert result.net_return > 0
 
 
 def test_evaluator_does_not_consume_a_pre_latency_future_price() -> None:

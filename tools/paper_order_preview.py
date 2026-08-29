@@ -37,7 +37,10 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
-from services.execution.dry_run_pipeline import run_dry_run_pipeline
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    quarantine_legacy_backtest,
+)
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.risk.research_risk.bundle import load_research_risk_bundle
@@ -637,10 +640,11 @@ def _aligned_full_risk_series(
     return returns, equity, timestamps
 
 
-def build_alpha_preview(
+def _build_alpha_preview_legacy_diagnostic(
     alpha_id: str,
     pending: Mapping[str, Any],
     *,
+    runner: Callable,
     mark_by_ticker: Mapping[str, Mapping[int, float]],
     status: Mapping[str, Any],
     current_positions: Mapping[str, int] | None = None,
@@ -777,7 +781,7 @@ def build_alpha_preview(
             max_staleness=10**15,
         )
 
-    run = run_dry_run_pipeline(
+    run = runner(
         weights=weights,
         prices=prices,
         current_positions=held,
@@ -955,6 +959,10 @@ def build_alpha_preview(
     }
 
 
+def build_alpha_preview(*_args, **_kwargs) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.paper_order_preview.build_alpha_preview")
+
+
 def _sizing_mismatch_preview(
     alpha_id: str,
     *,
@@ -1023,9 +1031,83 @@ def run_preview(
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Build previews for the complete current forward-paper universe."""
+    """Write a fail-closed report while the V1 paper ledger is quarantined."""
     global _LAST_RELEASE_RUN_ATTESTATION
     _LAST_RELEASE_RUN_ATTESTATION = None
+    generated_at = int(
+        generated_at_ms if generated_at_ms is not None else time.time() * 1000
+    )
+    selected = tuple(ALPHA_IDS if alpha_ids is None else alpha_ids)
+    if (
+        not selected
+        or len(selected) != len(set(selected))
+        or any(not isinstance(alpha_id, str) or not alpha_id for alpha_id in selected)
+    ):
+        raise ValueError("alpha_ids must be a non-empty subset of the attested paper candidates")
+    try:
+        quarantine_legacy_backtest("paper_order_preview_execution")
+    except BacktestIntegrityBlocked as exc:
+        previews = {
+            alpha_id: {
+                "alpha_id": alpha_id,
+                "generated_at": generated_at,
+                "paper_execution": "PAPER_BLOCKED",
+                "authoritative": False,
+                "evidence_status": "LEGACY_UNATTESTED_DISPLAY_ONLY",
+                "rejected_reasons": ["INVALIDATED_PERP_LEDGER_V1"],
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            }
+            for alpha_id in selected
+        }
+        report = {
+            "schema_version": 2,
+            "flow": "PAPER_ORDER_PREVIEW_QUARANTINE",
+            "readiness": "L2_DRY_RUN_ONLY",
+            "generated_at": generated_at,
+            "alphas": previews,
+            "errors": {
+                alpha_id: {
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "reason": "INVALIDATED_PERP_LEDGER_V1",
+                    "paper_execution": "PAPER_BLOCKED",
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                }
+                for alpha_id in selected
+            },
+            "verdict": {
+                "paper_preview_ready": False,
+                "paper_execution_universe": list(selected),
+                "forward_candidates_pending": [],
+                "forward_candidate_count": 0,
+                "workflow_admission_valid": False,
+                "workflow_authorized_ids": [],
+                "live_allowed": False,
+                "order_submission_allowed": False,
+                "human_review_required": True,
+            },
+            "safety": {
+                "paper_only": True,
+                "broker_connectivity": False,
+                "broker_order_submission": False,
+                "credentials_accessed": False,
+                "private_binance_access": False,
+            },
+            "honesty": {
+                "legacy_paper_fill_persistence_allowed": False,
+                "raw_collection_allowed": True,
+                "read_only_forward_observation_allowed": True,
+                "required_engine": "LINEAR_PERPETUAL_EVENT_V2",
+            },
+        }
+        atomic_write_json(output_path, report, indent=2)
+        return report
+
+    # ``quarantine_legacy_backtest`` is intentionally unconditional.  The
+    # historical implementation below remains only as a reviewable migration
+    # target for the V2 paper engine.
     candidate_universe = paper_candidate_ids(
         forward_status=status_path,
         evaluations=DEFAULT_FORWARD_EVALUATIONS,

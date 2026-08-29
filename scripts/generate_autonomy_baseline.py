@@ -27,8 +27,21 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from services.execution.backtest_authority import (
+    AUTHORITATIVE_EVIDENCE_STATUS,
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
+)
 
-REQUIRED_INPUTS = (
+LEGACY_PROFITABILITY_INPUTS = (
+    "evidence/alpha_lifecycle_cockpit.json",
+    "evidence/alpha_paper_cycle.json",
+    "evidence/three_alpha_paper_flow.json",
+    "data/cache/paper_health_10k.json",
+    "data/cache/binance_usdt_continuous_paper.json",
+)
+
+REQUIRED_COMPLETION_INPUTS = (
     "AGENTS.md",
     "QUANTOS_MASTER_BLUEPRINT.md",
     "docs/PROJECT_STATE.md",
@@ -36,12 +49,9 @@ REQUIRED_INPUTS = (
     "docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md",
     "evidence/top_tier_assessment.json",
     "evidence/data_quality_admission.json",
-    "evidence/alpha_paper_cycle.json",
-    "evidence/three_alpha_paper_flow.json",
-    "data/cache/paper_health_10k.json",
-    "data/cache/binance_usdt_continuous_paper.json",
     "evidence/raw_data_lineage_backfill.json",
 )
+REQUIRED_INPUTS = REQUIRED_COMPLETION_INPUTS + LEGACY_PROFITABILITY_INPUTS
 
 
 def _sha256(path: Path) -> str | None:
@@ -73,6 +83,14 @@ def _artifact(root: Path, relative_path: str) -> dict[str, Any]:
         "size_bytes": path.stat().st_size if digest is not None else None,
         "sha256": digest,
     }
+    if relative_path in LEGACY_PROFITABILITY_INPUTS:
+        result.update(
+            {
+                "retention_status": LEGACY_INVALIDATION_CODE,
+                "counted_as_completion_evidence": False,
+            }
+        )
+        return result
     if digest is None:
         return result
     payload = _load_json(root, relative_path)
@@ -91,6 +109,26 @@ def _artifact(root: Path, relative_path: str) -> dict[str, Any]:
     if isinstance(payload.get("summary"), dict):
         result["summary"] = payload["summary"]
     return result
+
+
+def _backtest_authority_admission(root: Path) -> dict[str, Any]:
+    source_path = "data/cache/paper_health_10k.json"
+    payload = _load_json(root, source_path)
+    record = payload.get("authoritative_backtest_record")
+    present = isinstance(record, dict)
+    admitted = present and is_authoritative_backtest_record(record)
+    return {
+        "source_path": source_path,
+        "required_field": "authoritative_backtest_record",
+        "record_present": present,
+        "independently_admitted": admitted,
+        "status": (
+            AUTHORITATIVE_EVIDENCE_STATUS
+            if admitted
+            else LEGACY_INVALIDATION_CODE
+        ),
+        "counted_as_completion_evidence": admitted,
+    }
 
 
 def _git_commit(root: Path) -> str:
@@ -134,6 +172,7 @@ def _phase_status(
     admission: dict[str, Any],
     lineage: dict[str, Any],
     validation: dict[str, Any],
+    backtest_authority: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     safety_ok = (
         safety_flags["LIVE_TRADING_ENABLED"] is False
@@ -143,7 +182,9 @@ def _phase_status(
         and safety_flags["REQUIRE_HUMAN_APPROVAL"] is True
     )
     missing_inputs = sorted(
-        path for path, artifact in inputs.items() if artifact["exists"] is not True
+        path
+        for path in REQUIRED_COMPLETION_INPUTS
+        if inputs[path]["exists"] is not True
     )
     full_validation_pass = (
         validation.get("selection_scope") == "ALL"
@@ -156,6 +197,8 @@ def _phase_status(
         phase0_reasons.append(f"REQUIRED_INPUTS_MISSING:{missing_inputs}")
     if not full_validation_pass:
         phase0_reasons.append("FULL_VALIDATION_REPORT_NOT_PASS")
+    if backtest_authority["independently_admitted"] is not True:
+        phase0_reasons.append(LEGACY_INVALIDATION_CODE)
 
     admission_pass = (
         admission.get("verdict") == "PASS"
@@ -173,7 +216,10 @@ def _phase_status(
         "phase_0": {
             "status": "PASS" if not phase0_reasons else "PARTIAL",
             "reasons": phase0_reasons,
-            "acceptance": "safety freeze, evidence inventory, and full gate report",
+            "acceptance": (
+                "safety freeze, evidence inventory, full gate report, and "
+                "independently admitted backtest authority"
+            ),
         },
         "phase_1": {
             "status": "PASS" if not phase1_reasons else "BLOCKED",
@@ -194,7 +240,7 @@ def build_baseline(*, root: Path = ROOT, now_ms: int | None = None) -> dict[str,
     admission = _load_json(root, "evidence/data_quality_admission.json")
     lineage = _load_json(root, "evidence/raw_data_lineage_backfill.json")
     top_tier = _load_json(root, "evidence/top_tier_assessment.json")
-    paper_health = _load_json(root, "data/cache/paper_health_10k.json")
+    backtest_authority = _backtest_authority_admission(root)
     validation = _load_json(root, "evidence/validation_report.json")
     project_state_path = root / "docs" / "PROJECT_STATE.md"
     try:
@@ -233,11 +279,6 @@ def build_baseline(*, root: Path = ROOT, now_ms: int | None = None) -> dict[str,
 
     input_hash = _canonical_hash(inputs)
     generator_path = root / "scripts" / "generate_autonomy_baseline.py"
-    paper_verdict = (
-        paper_health.get("readiness_class")
-        or paper_health.get("readiness")
-        or "MISSING"
-    )
     baseline = {
         "schema_version": 1,
         "report_kind": "AUTONOMY_BASELINE",
@@ -247,7 +288,8 @@ def build_baseline(*, root: Path = ROOT, now_ms: int | None = None) -> dict[str,
         "evidence_priority": [
             "current_executable_source",
             "current_tests_and_governance",
-            "current_hashed_json_sqlite_event_artifacts",
+            "independently_admitted_authoritative_records",
+            "retained_hashed_artifacts_for_audit_only",
             "current_live_documents",
             "historical_reports",
         ],
@@ -282,24 +324,17 @@ def build_baseline(*, root: Path = ROOT, now_ms: int | None = None) -> dict[str,
                 "block_reasons": lineage.get("block_reasons", []),
             },
             "paper_health_10k": {
-                "verdict": paper_verdict,
-                "readiness": paper_health.get("readiness"),
-                "blockers": paper_health.get("blockers", []),
-                "paper_ready": (paper_health.get("verdict") or {}).get("paper_ready")
-                if isinstance(paper_health.get("verdict"), dict)
-                else paper_health.get("paper_ready"),
-                "paper_mark_ready": (paper_health.get("verdict") or {}).get("paper_mark_ready")
-                if isinstance(paper_health.get("verdict"), dict)
-                else paper_health.get("paper_mark_ready"),
-                "paper_preview_ready": (paper_health.get("verdict") or {}).get("paper_preview_ready")
-                if isinstance(paper_health.get("verdict"), dict)
-                else paper_health.get("paper_preview_ready"),
-                "research_risk_bundle_complete": (
-                    (paper_health.get("verdict") or {}).get("paper_research_risk_bundle_complete")
-                    if isinstance(paper_health.get("verdict"), dict)
-                    else paper_health.get("research_risk_bundle_complete")
-                ),
+                "verdict": LEGACY_INVALIDATION_CODE,
+                "readiness": "BLOCKED",
+                "blockers": [LEGACY_INVALIDATION_CODE],
+                "paper_ready": False,
+                "paper_mark_ready": False,
+                "paper_preview_ready": False,
+                "research_risk_bundle_complete": False,
+                "retained_artifact": inputs["data/cache/paper_health_10k.json"],
+                "counted_as_completion_evidence": False,
             },
+            "backtest_authority": backtest_authority,
             "top_tier": {
                 "verdict": top_tier.get("verdict", "MISSING"),
                 "summary": top_tier.get("summary", {}),
@@ -318,10 +353,11 @@ def build_baseline(*, root: Path = ROOT, now_ms: int | None = None) -> dict[str,
         admission=admission,
         lineage=lineage,
         validation=validation,
+        backtest_authority=backtest_authority,
     )
     baseline["remaining_blockers"] = [
-        "PAPER_RESEARCH_RISK_BUNDLE_PENDING",
-        "FORWARD_PAPER_EVIDENCE_0_OF_8_OR_CURRENT_ARTIFACT_REQUIRED",
+        LEGACY_INVALIDATION_CODE,
+        "INDEPENDENTLY_ADMITTED_AUTHORITATIVE_BACKTEST_RECORD_REQUIRED",
         "TOP_TIER_RED_LINES_OPEN",
         "EXTERNAL_IDENTITY_DATA_EXECUTION_AND_ARCHIVAL_EVIDENCE",
     ]
@@ -348,6 +384,7 @@ def render_gap_report(baseline: dict[str, Any]) -> str:
     paper = baseline["current_evidence"]["paper_health_10k"]
     top_tier = baseline["current_evidence"]["top_tier"]
     validation = baseline["current_evidence"]["validation_report"]
+    backtest_authority = baseline["current_evidence"]["backtest_authority"]
     conflicts = baseline["evidence_conflicts"]
     lines = [
         "# QUANTOS 自治能力基线与差距分析",
@@ -376,6 +413,8 @@ def render_gap_report(baseline: dict[str, Any]) -> str:
         f"- Raw lineage/backfill：`{lineage['verdict']}`。",
         f"- Paper 10k：`{paper['verdict']}`；paper_ready=`{paper['paper_ready']}`，"
         f"paper_mark_ready=`{paper['paper_mark_ready']}`，paper_preview_ready=`{paper['paper_preview_ready']}`。",
+        f"- Backtest authority：`{backtest_authority['status']}`；independently_admitted="
+        f"`{backtest_authority['independently_admitted']}`。旧制品仅保留哈希与存在性审计。",
         f"- Top-tier：`{top_tier['verdict']}`；摘要=`{json.dumps(top_tier['summary'], ensure_ascii=False, sort_keys=True)}`。",
         f"- Full validation report：scope=`{validation['selection_scope']}`，status=`{validation['overall_status']}`。",
         "",
@@ -413,14 +452,14 @@ def render_gap_report(baseline: dict[str, Any]) -> str:
             "",
             "## 尚未完成的真实缺口",
             "",
-            "- 完整九引擎 Paper 风险输入包与至少 8 个有效前向周期仍未满足；不能以默认值、旧快照或合成数据替代。",
+            "- 缺少经独立信任根准入的 `authoritative_backtest_record`；旧生命周期、Paper、三 Alpha 与连续回放制品均为 `INVALIDATED_PERP_LEDGER_V1` 诊断留存。",
             "- 新研究入口已接入 TrialRecord 与 OOS access 哈希链；2533 条历史 bare trial 的缺失字段不可事后伪造。独立模型风险审查身份、外部 OIDC/mTLS、授权数据、跨场所执行和外部封存仍需真实证据。",
             "- 主网 broker、真实凭证和真实下单路径不属于当前 L2 开发范围，且必须继续保持结构性拒绝。",
             "",
             "## 下一项唯一最高优先级",
             "",
-            "在当前 admission 已 PASS 的前提下，生成并绑定三条 Alpha 的完整九引擎 Paper 风险输入包；"
-            "缺失项必须继续输出 `PAPER_BLOCKED`，并为每条 Alpha 保留拒单、对账和审计证据。",
+            "接入独立控制、可验证签名的原始输入与结果权威，并让明确的 `authoritative_backtest_record` 通过统一准入；"
+            "在此之前所有旧盈利制品只能保留作审计历史，不能参与 READY、晋级或完成度计算。",
             "",
         ]
     )

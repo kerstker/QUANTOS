@@ -1,8 +1,14 @@
-"""Rank #19 — reproducibility base: build committed `evidence/*.json` digests of the load-bearing
+"""Rank #19 — reproducibility helpers for committed ``evidence/*.json`` digests.
+
+The legacy dry-run profitability digest is quarantined.  Numeric extractors
+remain importable for read-only verification, but neither the direct dry-run
+builder nor the CLI may read V1 rows or publish refreshed evidence.
+
+Historically this tool built committed digests of the load-bearing
 numbers that otherwise live ONLY in gitignored data/cache/. A digest records each number + a
 tolerance + the code version that produced it, so the repo can self-verify its cited conclusions
 (the gate test tests/reproducibility/test_evidence_snapshots.py checks them when the cache is
-present, skips honestly in CI). Re-run this after a driver refresh to update the digests.
+present, skips honestly in CI).
 
 Network-free: reads only the local offline artifacts. Wall-clock/git only at this tool boundary."""
 from __future__ import annotations
@@ -10,6 +16,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
+from services.execution.backtest_authority import quarantine_legacy_backtest
 
 _EVIDENCE = "evidence"
 _DRY_RUN_DB = os.path.join("data", "cache", "dry_run.db")
@@ -166,6 +174,8 @@ def _git_sha(repo_root: str | os.PathLike[str] = ".") -> str:
 def build_dry_run_digest() -> dict:
     """Digest the deployable dry-run book conclusions (return/sharpe/maxdd) + the reconciliation
     residual bound — the most-cited load-bearing numbers in the docs."""
+    quarantine_legacy_backtest("tools.build_evidence_digests.build_dry_run_digest")
+
     from services.execution.dry_run_store import DryRunStore
     books = {}
     for r in DryRunStore(_DRY_RUN_DB).all_runs():
@@ -205,6 +215,8 @@ def build_json_digest(artifact_name: str, extractor: str, rel_tol: float, abs_to
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.build_evidence_digests")
+
     os.makedirs(_EVIDENCE, exist_ok=True)
     digests = {
         "dry_run_books.json": build_dry_run_digest(),

@@ -2,7 +2,7 @@
 
 from live.execution.order_recovery import SqliteOrderRecoveryStore
 from live.execution.position_ledger import LiveLedger
-from live.pipeline import submit_live_batch
+from live.pipeline import _submit_live_batch_technical_diagnostic as submit_live_batch
 from live.governance.mandate import NEEDS_HUMAN_REVIEW
 from services.monitoring.audit_log import GlobalAuditLog
 
@@ -23,6 +23,7 @@ def _minimal_kwargs():
         "strategy_id": "alpha-a",
         "decided_ts": 100,
         "now": 200,
+        "diagnostic_only": True,
     }
 
 

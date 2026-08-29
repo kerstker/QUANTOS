@@ -1,6 +1,12 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from tools import paper_research_risk_bundle as bundle
 
 
@@ -370,7 +376,7 @@ def test_main_does_not_publish_pending_artifact_without_complete_attestation(
         lambda **_kwargs: document,
     )
 
-    assert bundle.main(["--output", str(output)]) == 0
+    assert bundle._main_legacy_diagnostic(["--output", str(output)]) == 0
     assert not output.exists()
     attestation = bundle.release_run_attestation()
     assert attestation is not None and attestation["complete"] is False
@@ -392,7 +398,7 @@ def test_main_returns_failure_when_bundle_cannot_be_computed(
 
     monkeypatch.setattr(bundle, "build_automatic_research_risk_bundle", fail)
 
-    assert bundle.main(["--output", str(tmp_path / "risk.json")]) == 1
+    assert bundle._main_legacy_diagnostic(["--output", str(tmp_path / "risk.json")]) == 1
 
 
 def test_main_attests_published_pending_bundle_and_exact_source_view(
@@ -439,7 +445,7 @@ def test_main_attests_published_pending_bundle_and_exact_source_view(
     )
     monkeypatch.setattr(bundle, "_source_authority_view", lambda _paths: source_view)
 
-    assert bundle.main(["--output", str(output)]) == 0
+    assert bundle._main_legacy_diagnostic(["--output", str(output)]) == 0
 
     published = json.loads(output.read_text(encoding="utf-8"))
     assert published["safety"]["paper_only"] is True
@@ -482,7 +488,7 @@ def test_main_failure_clears_prior_release_attestation(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(bundle, "build_automatic_research_risk_bundle", fail)
 
-    assert bundle.main(["--output", str(tmp_path / "risk.json")]) == 1
+    assert bundle._main_legacy_diagnostic(["--output", str(tmp_path / "risk.json")]) == 1
     assert bundle.release_run_attestation() is None
 
 
@@ -526,7 +532,7 @@ def test_main_marks_attestation_incomplete_when_source_changes_mid_run(
     )
     monkeypatch.setattr(bundle, "_source_authority_view", lambda _paths: next(views))
 
-    assert bundle.main(["--output", str(output)]) == 0
+    assert bundle._main_legacy_diagnostic(["--output", str(output)]) == 0
     attestation = bundle.release_run_attestation()
     assert attestation is not None
     assert attestation["complete"] is False
@@ -596,3 +602,38 @@ def test_verified_evaluation_view_rejects_malformed_consumed_hash() -> None:
     view = bundle._verified_evaluation_evidence_view(document)
 
     assert bundle._verified_evaluation_evidence_complete(view) is False
+
+
+def test_public_entrypoints_quarantine_before_read_write_or_global_mutation(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import paper_candidate_universe
+
+    touched: list[str] = []
+    output = tmp_path / "risk.json"
+    output.write_bytes(b"existing-risk-authority")
+    prior_attestation = {"complete": True, "marker": "must-survive"}
+    monkeypatch.setattr(bundle, "_LAST_RELEASE_RUN_ATTESTATION", prior_attestation)
+
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} touched before legacy authority quarantine")
+
+        return _forbidden
+
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        forbidden("candidate universe"),
+    )
+    monkeypatch.setattr(bundle, "_write", forbidden("risk output"))
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        bundle.run_bundle(output=output)
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        bundle.main(["--not-a-real-argument"])
+
+    assert touched == []
+    assert output.read_bytes() == b"existing-risk-authority"
+    assert bundle._LAST_RELEASE_RUN_ATTESTATION is prior_attestation

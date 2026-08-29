@@ -27,6 +27,7 @@ import json
 import os
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.research import alpha_expression as ax
 from services.research.promotion_checks import (CONCENTRATION_THRESHOLDS, COST_STRESS_THRESHOLDS,
@@ -321,6 +322,7 @@ def gate_reasons_for_display(gate: dict) -> list:
 
 
 def _main(registry) -> None:
+    quarantine_legacy_backtest("tools.promotion_gate_crowd_contra")
     recorded_at = int(time.time() * 1000)
     specs = build_grid_specs()
     center_spec = next(s for s in specs if s["role"] == "center")
@@ -486,6 +488,7 @@ def _main(registry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.promotion_gate_crowd_contra")
     with production_experiment_registry() as registry:
         _main(registry)
 

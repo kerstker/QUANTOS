@@ -179,6 +179,40 @@ def test_every_production_live_batch_call_requires_validation_attestation():
         f"production submit_live_batch call missing validation_attestation: {offenders}"
 
 
+def test_public_live_submission_authority_is_the_first_operation():
+    path = os.path.join(_LIVE, "pipeline.py")
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    submit_def = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "submit_live_batch"
+    )
+    body = list(submit_def.body)
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        body = body[1:]
+    first = body[0]
+    assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
+    assert isinstance(first.value.func, ast.Name)
+    assert first.value.func.id == "require_live_submission_authority", \
+        "public submit must deny before audit, venue, ledger, gate, or planning"
+
+
+def test_private_live_technical_seam_has_no_production_caller():
+    private_name = "_submit_live_batch_technical_diagnostic"
+    pipeline_path = os.path.normpath(os.path.join(_LIVE, "pipeline.py"))
+    offenders = []
+    for root in (_LIVE, _SERVICES, os.path.join(_ROOT, "tools")):
+        for path in _all_py_files(root):
+            if os.path.normpath(path) == pipeline_path:
+                continue
+            source = open(path, encoding="utf-8").read()
+            if private_name in source:
+                offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, \
+        f"private live technical seam referenced by production runtime: {offenders}"
+
+
 def test_live_ledger_never_silently_ignores_id_conflicts():
     path = os.path.join(_LIVE, "execution", "position_ledger.py")
     source = open(path, encoding="utf-8").read()
@@ -196,7 +230,8 @@ def test_live_pipeline_prejournal_failure_is_fail_closed():
     tree = ast.parse(source)
     submit_def = next(
         node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "submit_live_batch"
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_submit_live_batch_technical_diagnostic"
     )
     record_line = min(
         node.lineno for node in ast.walk(submit_def)

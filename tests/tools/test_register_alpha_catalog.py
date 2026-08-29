@@ -5,6 +5,10 @@ import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.catalog import AlphaCatalog
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research.alpha_expression import FieldPanel
 from tools.register_alpha_catalog import (
     build_candidates,
@@ -113,7 +117,7 @@ def test_main_uses_fail_closed_registry_and_weekly_registered_batch(
     monkeypatch.setattr(driver, "run_registered_candidate_batch", fake_batch)
     monkeypatch.setattr(driver.time, "time_ns", lambda: 123_456_789_000_000)
 
-    search_id = driver.main()
+    search_id = driver._main_legacy_diagnostic()
 
     assert captured["registry_opened"] is True
     assert len(captured["candidates"]) == 2
@@ -126,3 +130,32 @@ def test_main_uses_fail_closed_registry_and_weekly_registered_batch(
     assert kwargs["config"].compute_regime_evidence is True
     assert kwargs["search_id"] == search_id
     assert f"search_id={search_id}" in capsys.readouterr().out
+
+
+def test_public_main_quarantines_before_clock_cache_or_registry_access(
+    monkeypatch,
+) -> None:
+    from tools import crypto_oi_research
+    from tools import register_alpha_catalog as driver
+
+    touched: list[str] = []
+
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} touched before legacy authority quarantine")
+
+        return _forbidden
+
+    monkeypatch.setattr(driver.time, "time_ns", forbidden("clock"))
+    monkeypatch.setattr(crypto_oi_research, "build_panel", forbidden("panel"))
+    monkeypatch.setattr(
+        driver,
+        "production_experiment_registry",
+        forbidden("experiment registry"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        driver.main()
+
+    assert touched == []

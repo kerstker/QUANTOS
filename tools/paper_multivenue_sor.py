@@ -21,10 +21,16 @@ from urllib.parse import urlencode
 
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.cross_venue_order_book_store import CrossVenueOrderBookStore
+from services.execution.backtest_authority import (
+    LEGACY_INVALIDATION_CODE,
+    BacktestIntegrityBlocked,
+    quarantine_legacy_backtest,
+)
 from services.execution.dry_run_pipeline import run_dry_run_pipeline
 from services.execution.dry_run_store import DryRunStore
 from services.execution.simulated_sor import (
@@ -1006,6 +1012,10 @@ def execute(
         books={instrument: books[instrument] for instrument in INSTRUMENTS},
         snapshot_id=str(bundle["snapshot_id"]),
     )
+    # Public book capture and in-memory routing diagnostics may continue.  The
+    # V1 int/spot canary cannot enter canonical stores or issue a complete
+    # release attestation.
+    quarantine_legacy_backtest("paper_multivenue_sor_persistence")
     event_bus = open_domain_event_bus()
     dry_store = DryRunStore(dry_run_store_path, create=True)
     try:
@@ -1091,14 +1101,19 @@ def main() -> int:
     try:
         status = execute()
     except Exception as exc:
+        expected_quarantine = isinstance(exc, BacktestIntegrityBlocked)
         failure = {
             "schema_version": 1,
             "generated_at_ms": int(time.time() * 1000),
-            "status": "BLOCKED",
+            "status": "SAFE_BLOCKED" if expected_quarantine else "BLOCKED",
             "mode": "L2_PAPER_EXECUTION_CANARY",
             "simulation_only": True,
             "error_type": type(exc).__name__,
             "error": str(exc),
+            "reason_code": (
+                LEGACY_INVALIDATION_CODE if expected_quarantine else "WORKER_FAILURE"
+            ),
+            "readiness_eligible": False,
             "safety": {
                 "private_access": False,
                 "credentials": False,
@@ -1109,7 +1124,11 @@ def main() -> int:
         }
         atomic_write_json(DEFAULT_STATUS, failure)
         print(json.dumps(failure, ensure_ascii=False, sort_keys=True))
-        return SCHEDULE_EXIT_FAILURE
+        return (
+            SCHEDULE_EXIT_SAFE_BLOCKED
+            if expected_quarantine
+            else SCHEDULE_EXIT_FAILURE
+        )
     print(json.dumps(status, ensure_ascii=False, sort_keys=True))
     return SCHEDULE_EXIT_SUCCESS
 

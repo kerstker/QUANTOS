@@ -101,7 +101,7 @@ def test_registered_run_uses_fixed_quantile_closed_budget_and_no_testnet(
         lambda: nullcontext(fake_registry),
     )
 
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "result.json",
         recorded_at=123,
         source_commit="a" * 40,

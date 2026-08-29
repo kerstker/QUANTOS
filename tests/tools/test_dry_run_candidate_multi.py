@@ -136,55 +136,63 @@ def test_risk_provenance_label_is_per_cadence_and_never_weekly_for_non_7d():
     assert risk_provenance_for_cadence(14) != _WEEKLY_RISK_PROVENANCE
 
 
-def test_existing_candidate_run_matches_strategy_and_provenance(tmp_path):
+def test_existing_legacy_candidate_run_is_never_reused(tmp_path):
     db_path = tmp_path / "dry_run.db"
     store = DryRunStore(str(db_path), create=True)
     run = _fake_run(CHALLENGER_3D)
     run.detail["research_risk"] = {"config_provenance": risk_provenance_for_cadence(3)}
-    store.save_run(run)
+    # Seed a row exactly as the pre-authority V1 writer did.  The hardened
+    # production save_run() must stay unavailable without an external signed
+    # authority; this test is about refusing reuse of an already-retained row.
+    store._conn.execute(  # noqa: SLF001 - explicit legacy fixture
+        "INSERT INTO dry_run(run_id, strategy_id, timestamp, n_intents, "
+        "n_approved, n_rejected, rejected_reasons, pnl, audit_root, detail) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            run.run_id,
+            run.strategy_id,
+            run.timestamp,
+            run.n_intents,
+            run.n_approved,
+            run.n_rejected,
+            json.dumps(run.rejected_reasons),
+            json.dumps(run.pnl),
+            run.audit_root,
+            json.dumps(run.detail),
+        ),
+    )
+    store._conn.commit()  # noqa: SLF001 - explicit legacy fixture
     store.close()
 
-    found = _existing_candidate_run(CHALLENGER_3D, 3, str(db_path))
-    assert found is not None and found["run_id"] == f"run-{CHALLENGER_3D}"
-    # A different strategy or a mismatched cadence label is not a valid reuse.
+    assert _existing_candidate_run(CHALLENGER_3D, 3, str(db_path)) is None
+    assert _existing_candidate_run(
+        CHALLENGER_3D, 3, str(db_path), manifest_hash="0" * 64
+    ) is None
     assert _existing_candidate_run("crowd_contra_q35_3d", 3, str(db_path)) is None
     assert _existing_candidate_run(CHALLENGER_3D, 14, str(db_path)) is None
     assert _existing_candidate_run(CHALLENGER_3D, 3, str(tmp_path / "missing.db")) is None
 
 
-def test_run_candidate_dry_runs_persists_then_reuses_idempotently(tmp_path):
+def test_run_candidate_dry_runs_is_quarantined_without_core_or_store_access(tmp_path):
     kwargs = _run_kwargs(tmp_path, [CHALLENGER_3D, CHALLENGER_14D])
+    calls = []
+    kwargs["panel_builder"] = lambda: calls.append("panel")
+    kwargs["signal_evaluator"] = lambda *_args: calls.append("signal")
+    kwargs["core"] = lambda *_args, **_kwargs: calls.append("core")
 
     first = run_candidate_dry_runs(**kwargs)
-    assert [row["status"] for row in first["candidates"]] == ["PERSISTED", "PERSISTED"]
+    assert [row["status"] for row in first["candidates"]] == ["BLOCKED", "BLOCKED"]
+    assert {row["reason"] for row in first["candidates"]} == {"INVALIDATED_PERP_LEDGER_V1"}
     assert first["summary"] == {
         "n_candidates": 2,
-        "n_persisted": 2,
+        "n_persisted": 0,
         "n_reused": 0,
         "n_errors": 0,
+        "n_blocked": 2,
     }
-    assert _row_count(kwargs["db_path"]) == 2
-
-    for row, cadence in zip(first["candidates"], (3, 14)):
-        assert row["cadence_days"] == cadence
-        assert row["risk_config_provenance"] == risk_provenance_for_cadence(cadence)
-        assert row["snapshot"]["run_id"] == f"run-{row['alpha_id']}"
-        assert row["snapshot"]["source"] == "dry_run_store"
-        report = json.loads(
-            (tmp_path / f"candidate_{row['alpha_id']}_dry_run.json").read_text(encoding="utf-8")
-        )
-        assert report["authoritative"] is True
-        assert report["research_risk"]["config_provenance"] == row["risk_config_provenance"]
-        assert report["research_risk"]["series"] == "vol_target"
-
-    second = run_candidate_dry_runs(**kwargs)
-    assert [row["status"] for row in second["candidates"]] == [
-        "REUSED_EXISTING_RUN",
-        "REUSED_EXISTING_RUN",
-    ]
-    assert second["summary"]["n_persisted"] == 0
-    assert second["summary"]["n_reused"] == 2
-    assert _row_count(kwargs["db_path"]) == 2  # idempotent re-run appends nothing
+    assert calls == []
+    assert not (tmp_path / "dry_run.db").exists()
+    assert not (tmp_path / "domain_events.db").exists()
 
 
 def test_summary_artifact_carries_safety_flags_and_population(tmp_path):
@@ -192,8 +200,10 @@ def test_summary_artifact_carries_safety_flags_and_population(tmp_path):
     payload = run_candidate_dry_runs(**kwargs)
     on_disk = json.loads((tmp_path / "candidate_dry_run.json").read_text(encoding="utf-8"))
     assert on_disk == payload
-    assert payload["schema_version"] == 1
-    assert payload["flow"] == "CANDIDATE_AUTHORITATIVE_DRY_RUN"
+    assert payload["schema_version"] == 2
+    assert payload["flow"] == "CANDIDATE_BACKTEST_QUARANTINE"
+    assert payload["authoritative"] is False
+    assert payload["evidence_class"] == "LEGACY_UNATTESTED_DISPLAY_ONLY"
     assert payload["readiness"] == "L2_DRY_RUN_ONLY"
     assert payload["population"]["candidate_ids"] == [CHALLENGER_7D]
     assert payload["safety"] == {
@@ -208,18 +218,13 @@ def test_summary_artifact_carries_safety_flags_and_population(tmp_path):
 def test_legacy_plain_tuple_ids_are_structurally_excluded(tmp_path):
     kwargs = _run_kwargs(tmp_path, ["crowd_contra"])
     payload = run_candidate_dry_runs(**kwargs)
-    assert payload["candidates"] == [
-        {
-            "alpha_id": "crowd_contra",
-            "status": "ERROR",
-            "reason": "NOT_A_CHALLENGER_DICT_SPEC",
-        }
-    ]
-    assert payload["summary"]["n_errors"] == 1
+    assert payload["candidates"][0]["alpha_id"] == "crowd_contra"
+    assert payload["candidates"][0]["status"] == "BLOCKED"
+    assert payload["summary"]["n_blocked"] == 1
     assert not (tmp_path / "dry_run.db").exists()
 
 
-def test_candidate_hard_failure_is_recorded_without_poisoning_others(tmp_path):
+def test_quarantine_prevents_even_injected_failing_core_from_running(tmp_path):
     kwargs = _run_kwargs(tmp_path, [CHALLENGER_3D, CHALLENGER_14D])
 
     def failing_core(_panel, spec, _sig, *, event_bus=None):
@@ -229,9 +234,7 @@ def test_candidate_hard_failure_is_recorded_without_poisoning_others(tmp_path):
 
     kwargs["core"] = failing_core
     payload = run_candidate_dry_runs(**kwargs)
-    by_id = {row["alpha_id"]: row for row in payload["candidates"]}
-    assert by_id[CHALLENGER_3D]["status"] == "ERROR"
-    assert by_id[CHALLENGER_3D]["error_type"] == "RuntimeError"
-    assert by_id[CHALLENGER_14D]["status"] == "PERSISTED"
-    assert payload["summary"]["n_errors"] == 1
-    assert _row_count(kwargs["db_path"]) == 1
+    assert [row["status"] for row in payload["candidates"]] == ["BLOCKED", "BLOCKED"]
+    assert payload["summary"]["n_errors"] == 0
+    assert payload["summary"]["n_blocked"] == 2
+    assert not (tmp_path / "dry_run.db").exists()

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from quantos.contracts.cost import CostModel
+from services.validation.selection_authority import require_diagnostic_selection_seam
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ def _dollar_neutral_weights(instruments, long_idx, short_idx, gross: float) -> d
     return w
 
 
-def run_panel_backtest(
+def _run_panel_backtest_legacy_diagnostic(
     periods: Sequence[PanelPeriod],
     cost: CostModel = CostModel(),
     *,
@@ -181,4 +182,13 @@ def run_panel_backtest(
         tuple(costs),
         tuple(turnovers),
         tuple(max_participations),
+    )
+
+
+def run_panel_backtest(*args, **kwargs) -> PanelResult:
+    """Block the public V1 panel-return engine before it scores a candidate."""
+
+    require_diagnostic_selection_seam(
+        "services.alpha.panel_backtest.run_panel_backtest",
+        diagnostic_only=False,
     )

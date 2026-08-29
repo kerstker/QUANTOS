@@ -1,9 +1,26 @@
 import json
 
 from services.data.raw_archive import summarize_archive
-from tools.binance_klines_fetch import fetch_daily_rows
+from tools.binance_klines_fetch import BN_SPEC, fetch_daily_rows
 
 _DAY = 86_400_000
+
+
+def test_daily_close_is_not_knowable_at_its_open_time():
+    assert BN_SPEC.knowledge_lag == _DAY
+
+    day = 8 * _DAY
+    rows = fetch_daily_rows(
+        "BTC",
+        days=5,
+        http_get=lambda _url, _headers: [
+            [day, "100", "110", "90", "105", "10"],
+        ],
+        now_ms=10 * _DAY,
+    )
+
+    assert rows[0]["event_time"] == day
+    assert rows[0]["knowledge_time"] == day + _DAY
 
 
 def test_daily_klines_archive_canonical_response_and_parse_diagnostics(tmp_path):

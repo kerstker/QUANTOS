@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from services.execution.dry_run_store import (
     DryRunOutboxEvent,
     DryRunRun,
@@ -15,6 +17,16 @@ from tools.domain_event_outbox_drain import (
     default_outbox_sources,
     drain_domain_event_outboxes,
 )
+
+
+@pytest.fixture(autouse=True)
+def _exercise_outbox_mechanics_behind_admission(monkeypatch):
+    """The recovery tests seed a mechanically valid historical fixture."""
+    monkeypatch.setattr(
+        DryRunStore,
+        "_require_authoritative_write",
+        staticmethod(lambda _run, _authority: None),
+    )
 
 
 class _Store:

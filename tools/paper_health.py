@@ -22,9 +22,10 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
+from services.execution.backtest_authority import is_authoritative_backtest_record
 from services.research.paper_trading.forward import DEFAULT_MIN_GAP_MS
+from services.validation.research_risk_authority import full_research_risk_approved
 from tools.cache_io import atomic_write_json
-from tools.paper_order_preview import _full_research_risk_approved
 
 
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
@@ -383,11 +384,20 @@ def evaluate_paper_health(
     for alpha_id in realtime_candidate_ids:
         row = backtests.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
-        if (
-            alpha_id in required_operational_ids
-            and row.get("provenance") != "REAL_AUTHORITATIVE_L2_DRY_RUN"
-        ):
-            block(f"{alpha_id}:BACKTEST_PROVENANCE_INVALID")
+        if alpha_id in required_operational_ids:
+            if row.get("provenance") != "REAL_AUTHORITATIVE_L2_DRY_RUN":
+                block(f"{alpha_id}:BACKTEST_PROVENANCE_INVALID")
+            detail = row.get("detail")
+            detail = detail if isinstance(detail, Mapping) else {}
+            risk = detail.get("research_risk")
+            if not isinstance(risk, Mapping):
+                risk = row.get("research_risk")
+            if (
+                not is_authoritative_backtest_record(row)
+                or not isinstance(risk, Mapping)
+                or not full_research_risk_approved(risk)
+            ):
+                block(f"{alpha_id}:BACKTEST_AUTHORITY_INVALID")
 
     if preview_verdict.get("paper_preview_ready") is not True:
         block("PAPER_ORDER_PREVIEW_NOT_READY")
@@ -430,7 +440,10 @@ def evaluate_paper_health(
             block(f"{alpha_id}:PAPER_ORDER_REJECTED")
         if residual is None or abs(residual) > RECONCILIATION_TOLERANCE:
             block(f"{alpha_id}:PAPER_ORDER_RECONCILIATION_FAILED")
-        if not _full_research_risk_approved(row.get("research_risk")):
+        if not (
+            isinstance(row.get("research_risk"), Mapping)
+            and full_research_risk_approved(row["research_risk"])
+        ):
             preview_research_risk_complete = False
             block(f"{alpha_id}:PAPER_RESEARCH_RISK_NOT_FULL")
 

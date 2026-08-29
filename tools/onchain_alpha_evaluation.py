@@ -25,6 +25,7 @@ from typing import Any
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research import alpha_expression as ax
 from services.research.expression_leakage import compute_leakage_ok
@@ -453,7 +454,7 @@ def _panel_coverage(panel) -> dict[str, Any]:
     }
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     output: str | Path = DEFAULT_OUTPUT,
     recorded_at: int | None = None,
@@ -586,7 +587,12 @@ def run(
     return document
 
 
+def run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.onchain_alpha_evaluation.run")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    quarantine_legacy_backtest("tools.onchain_alpha_evaluation.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))

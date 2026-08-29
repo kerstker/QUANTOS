@@ -23,6 +23,7 @@ import sqlite3
 import time
 from typing import Any
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.paper_trading.store import PaperTrackStore
 from tools.cache_io import atomic_write_json
 
@@ -369,6 +370,7 @@ def build_summary(
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.all_alpha_realistic_paper")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", default=DEFAULT_REPORT)
     parser.add_argument("--dry-run-db", default=DEFAULT_DRY_RUN_DB)

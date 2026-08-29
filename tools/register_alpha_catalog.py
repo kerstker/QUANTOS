@@ -1,4 +1,4 @@
-"""Re-evaluate carry_composite and crowd_contra through the durable search ledger.
+"""Legacy V1 carry/crowd catalog-registration diagnostics.
 
 The complete two-candidate pool is registered before scoring through
 ``run_registered_candidate_batch``. Each invocation creates an exact search attempt, binds the
@@ -6,8 +6,10 @@ real cached panel into the dataset version, preserves weekly annualization, and 
 evaluation links. Existing alpha state is never overwritten and a non-human research actor cannot
 reach APPROVED.
 
-The production registry is opened fail-closed with ``create=False`` by the shared helper. This tool
-uses only cached research data and has no network, broker, credential, order, or live-trading path.
+The historical period-return construction is invalid under the causal
+linear-perpetual V2 authority boundary.  Pure candidate construction and an
+explicitly private diagnostic runner remain for regression archaeology; the
+public entry point is quarantined before clock, cache, or registry access.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from typing import Dict, Tuple
 
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import (
     run_registered_candidate_batch,
 )
@@ -94,7 +97,7 @@ def registration_dataset_version(panel) -> str:
     )
 
 
-def main() -> str:
+def _main_legacy_diagnostic() -> str:
     recorded_at = time.time_ns() // 1_000_000
     from tools.crypto_oi_research import build_panel   # deferred: touches real cached data files
     panel, _instruments = build_panel()
@@ -134,6 +137,12 @@ def main() -> str:
     print("saved catalog snapshot -> data/cache/experiment_registry.db")
     print(f"search_id={search_id}")
     return search_id
+
+
+def main() -> str:
+    """Block legacy ExperimentRegistry writes before any runtime side effect."""
+
+    quarantine_legacy_backtest("tools.register_alpha_catalog.main")
 
 
 if __name__ == "__main__":

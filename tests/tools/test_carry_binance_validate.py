@@ -37,12 +37,17 @@ def test_build_carry_pit_store_writes_readable_bars(tmp_path):
     )
 
     store = SqlitePITStore(db_path, create=False)
-    # as_of 接受单个 key，逐币读取最新 Bar（PIT 时间戳为毫秒）
+    # Binance 1d kline 用开盘时刻标识，但 close 到下一 UTC 边界才可知。
     last_et_ms = 1609632000000
     bars = []
     for inst in instruments:
-        bar = store.latest_as_of(inst, last_et_ms)
+        bar = store.latest_as_of(
+            inst,
+            last_et_ms + 86_400_000,
+            last_et_ms,
+        )
         assert bar is not None, f"no bar for {inst}"
+        assert bar.knowledge_time == bar.event_time + 86_400_000
         bars.append(bar)
     assert len(bars) == 2
     assert bars[0].close > 0

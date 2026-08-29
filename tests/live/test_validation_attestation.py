@@ -142,7 +142,31 @@ def test_template_covers_all_registered_alphas_and_stays_placeholder_only():
     template = build_template()
     assert set(template) == {"crowd_contra", "carry_oi_majors", "top_contra"}
     for strategy_id, attestation in template.items():
-        assert attestation["kind"] == "human_override"
+        assert attestation["kind"] == "blocked_missing_authoritative_backtest_record"
         assert attestation["attested_by"] == "REPLACE_WITH_YOUR_REAL_NAME"
         assert attestation["attested_at"] == "REPLACE_WITH_EPOCH_MS_INTEGER"
         assert strategy_id in attestation["reason"] or strategy_id == "top_contra"
+
+    serialized = json.dumps(template).lower()
+    assert "authoritative_backtest_record" in serialized
+    assert "independently admitted" in serialized
+    assert "invalidated_perp_ledger_v1" in serialized
+    assert "sharpe" not in serialized
+    assert "maxdd" not in serialized
+    assert "max_drawdown" not in serialized
+
+
+def test_template_stays_blocked_even_if_identity_placeholders_are_replaced(tmp_path):
+    from tools.create_validation_attestation_template import build_template
+
+    template = build_template()
+    for attestation in template.values():
+        attestation["attested_by"] = "alice"
+        attestation["attested_at"] = 1_700_000_000_000
+    path = _write(tmp_path, template)
+    loaded = load_attestations(path)
+
+    for strategy_id in template:
+        assert require_validation_attestation(strategy_id, loaded) == (
+            "unknown_attestation_kind:blocked_missing_authoritative_backtest_record"
+        )

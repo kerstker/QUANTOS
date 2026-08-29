@@ -14,6 +14,7 @@ from pathlib import Path
 import time
 from typing import Any, Mapping, Sequence
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.paper_candidate_registry import (
     PaperCandidate,
@@ -146,7 +147,7 @@ def admit_factory_candidates(
     }
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     factory_path: str | Path = DEFAULT_FACTORY,
     registry_path: str | Path = DEFAULT_REGISTRY,
@@ -179,6 +180,10 @@ def run(
     return report
 
 
+def run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.alpha_candidate_admission")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--factory", default=str(DEFAULT_FACTORY))
@@ -186,6 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     args = parser.parse_args(argv)
     try:
+        quarantine_legacy_backtest("tools.alpha_candidate_admission")
         report = run(
             factory_path=args.factory,
             registry_path=args.registry,

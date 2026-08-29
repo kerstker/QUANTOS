@@ -12,6 +12,8 @@ research evidence, and has no credential, broker, promotion, or order path.
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import argparse
 import hashlib
 import json
@@ -27,7 +29,10 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
-from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.alpha.panel_backtest import (
+    PanelPeriod,
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+)
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.funding_settlement import (
     HOUR_MS,
@@ -346,7 +351,7 @@ def _decision(
     }
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     source_snapshot: str | Path = DEFAULT_SOURCE,
     output: str | Path = DEFAULT_OUTPUT,
@@ -469,7 +474,12 @@ def run(
     return document
 
 
+def run(*args, **kwargs) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.funding_settlement_evaluation.run")
+
+
 def main() -> None:
+    quarantine_legacy_backtest("tools.funding_settlement_evaluation.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))

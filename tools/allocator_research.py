@@ -23,7 +23,8 @@ vol-target 块(EW/CRP + 10% ann 目标,lev_cap 2)= 杠杆诊断,与 unlevered �
 不进判定(杠杆口径不可与等权对照直接比)。单策略参考行(crowd_contra 等)= 无配置层换手的
 上下文(先前诚实发现:naive blend 净口径跑输 crowd_contra 单条),不参与判定但如实列出。
 
-纯离线读本地库(fetch_bars_pit / latest_as_of / JSON,零新增裸 fetch_bars)、无网络、无真单;
+纯离线读本地库(Binance 价格走显式 t+1d available-time；Deribit/FRED 维持各自 PIT
+接口；JSON),无网络、无真单;
 研究诊断非门禁,不接任何 live 路径。无墙钟输出(证据确定性)。
 """
 from __future__ import annotations
@@ -34,8 +35,10 @@ import os
 import time
 
 from services.data.caching_store import CachingPITStore
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.fundamental_store import SqliteFundamentalStore
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from services.research import allocators as al
 from services.research import factor_decomp as fd
@@ -179,6 +182,7 @@ def locked_rel_indices(weeks: list, start_idx: int, lock_week: str = _LOCK_WEEK)
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.allocator_research")
     store = DryRunStore(_DRY_RUN_DB, create=False)
     canonical = canonical_runs(store.all_runs())
     raw_series, meta = {}, {}
@@ -207,7 +211,14 @@ def main() -> None:
     funding_mean = fd.cross_sectional_mean(
         {c: weekly_funding(funding_json[c]) for c in FACTOR_UNIVERSE if c in funding_json}, weeks)
     px_store = CachingPITStore(SqlitePITStore(_PRICE_DB, create=False))
-    btc_bars = px_store.fetch_bars_pit("BTC", 0, 10 ** 18)
+    btc_bars = fetch_bars_for_event_decisions(
+        px_store,
+        "BTC",
+        0,
+        10**18,
+        decision_lag=86_400_000,
+        minimum_knowledge_lag=86_400_000,
+    )
     btc_rv = {w: fd.annualized_vol(a["daily_ret"])
               for w, a in weekly_price_agg(btc_bars).items()}
 
@@ -258,7 +269,8 @@ def main() -> None:
     snap = {
         "provenance": "REAL_ALLOCATOR_RESEARCH",
         "spec": "profit-maximization §9 W5: conditional portfolio allocator vs retained baselines",
-        "generated_from": {"dry_run_db": _DRY_RUN_DB, "price_db": _PRICE_DB + " (fetch_bars_pit)",
+        "generated_from": {"dry_run_db": _DRY_RUN_DB,
+                           "price_db": _PRICE_DB + " (available at t+1d; legacy rows rejected)",
                            "deribit_db": _DERIBIT_DB, "macro_db": _MACRO_DB,
                            "funding_json": _FUNDING_JSON, "w3_cluster_map": _W3_EVIDENCE},
         "strategies": meta,

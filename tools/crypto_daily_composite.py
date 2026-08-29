@@ -17,6 +17,8 @@ section; market-trend label uses strictly-past returns). Records/promotes/fetche
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import math
 import os
@@ -162,6 +164,7 @@ def _trend_labels(mkt, window):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_daily_composite")
     store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     instruments = _instruments()
     event_times = sorted({b.event_time for inst in instruments

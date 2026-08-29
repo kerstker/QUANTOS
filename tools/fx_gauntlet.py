@@ -9,6 +9,8 @@ local store only. HONEST: reports the curve as-is; a signal that dies by ~5-10bp
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 import time
@@ -61,6 +63,7 @@ def _aligned(factor_ret, min_len=1500):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.fx_gauntlet")
     if not os.path.exists(_DB):
         print("no data/cache/fx.db — run tools.frankfurter_fetch first")
         return

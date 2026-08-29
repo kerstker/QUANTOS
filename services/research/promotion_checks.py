@@ -389,7 +389,7 @@ def attribute_period_contributions(*, periods, weights_by_period, prices_by_peri
 
     与 run_multi_period_dry_run 逐位相同的语义:整手目标数量(_plan_quantities 镜像)→
     按决策价成交(价缺失的平仓单跳过、持仓延续,镜像 simulate_fills)→ 平 cost_bps 佣金
-    按成交增量计 → 调仓后簿上按 funding_rate_by_period 计资金费(−rate·qty·price,
+    按成交增量计；每个 t 的 settlement 先对调仓前持仓计资金费(−rate·qty·price,
     与 crypto 干跑驱动器 cash_flow_fn 同式;价缺失时该名贡献 0,与管线一致不用回退价)→
     持仓期价格变动按 t_k→t_{k+1} 归属;**标记缺失时回退最后成交价**(镜像
     paper_reconciliation.reconcile 的 resolved_marks.setdefault(instrument, last_price))。
@@ -398,8 +398,9 @@ def attribute_period_contributions(*, periods, weights_by_period, prices_by_peri
     == Σ per_period == 管线同输入的 equity_final − aum。**前提:门全批准**
     (若门拒绝过意图,持仓簿与管线分叉,残差会如实变大——驱动器必须记录 n_rejected 与残差)。
 
-    per_period[k] = 归属到 periods[k] 决策的 P&L:[t_k→t_{k+1}] 价格变动 + t_k 资金费
-    − t_k 佣金(末日无价格变动)。返回 {"per_instrument": {inst: {...}}, "per_period": [...]}。
+    per_period[k] = 在 periods[k] 入账的 settlement + 该次调仓佣金 + 调仓后持仓的
+    [t_k→t_{k+1}] 价格变动(末日无价格变动)。返回
+    {"per_instrument": {inst: {...}}, "per_period": [...]}。
     """
     rates_by = funding_rate_by_period or {}
     held: dict = {}
@@ -421,6 +422,15 @@ def attribute_period_contributions(*, periods, weights_by_period, prices_by_peri
 
     for k, t in enumerate(periods):
         prices_t = prices_by_period.get(t, {}) or {}
+        # Settlement belongs to the position carried into t.  Booking it after
+        # the rebalance would charge a newly opened position for a prior event.
+        period_funding = 0.0
+        rates = rates_by.get(t, {}) or {}
+        for inst in sorted(held):
+            f = -rates.get(inst, 0.0) * held[inst] * prices_t.get(inst, 0.0)
+            _slot(inst)["funding"] += f
+            period_funding += f
+
         targets = _plan_quantities(weights_by_period.get(t, {}), prices_t, aum)
         # 1) 成交增量 → 佣金(价缺失的意图被适配器接缝跳过,持仓延续)。
         period_cost = 0.0
@@ -439,13 +449,6 @@ def attribute_period_contributions(*, periods, weights_by_period, prices_by_peri
                 held.pop(inst, None)
             else:
                 held[inst] = targets[inst]
-        # 2) 资金费:调仓后簿上,t 期费率(cash_flow_fn 同式;价缺失贡献 0,不回退)。
-        period_funding = 0.0
-        rates = rates_by.get(t, {}) or {}
-        for inst in sorted(held):
-            f = -rates.get(inst, 0.0) * held[inst] * prices_t.get(inst, 0.0)
-            _slot(inst)["funding"] += f
-            period_funding += f
         # 3) 价格变动 t_k → t_{k+1}(末日无;标记缺失回退最后成交价,镜像 reconcile)。
         period_price = 0.0
         if k + 1 < len(periods):

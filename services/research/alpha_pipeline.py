@@ -32,6 +32,10 @@ from services.alpha.registry import AlphaAssetRegistry
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 
 from services.validation.performance import sharpe
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 
 from . import alpha_expression as ax
 from .carry_pnl import economic_return_series
@@ -59,7 +63,8 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
                              max_k: int = 8, min_periods: int = 2,
                              adapter_config: Optional[SignalAdapterConfig] = None,
                              bred_by: Optional[Mapping[str, tuple]] = None,
-                             catalog: Optional[AlphaCatalog] = None) -> dict:
+                             catalog: Optional[AlphaCatalog] = None,
+                             diagnostic_only: bool = False) -> dict:
     """Run the contained research-to-portfolio pipeline over `exprs` (nested-tuple cs alphas) on `panel`.
     Returns the evaluated assets (with COMPUTED leakage_ok), the populated registry + memory, the
     optimized portfolio, the Signal->Portfolio target book, and the auto research brief.
@@ -74,6 +79,9 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
     skipped exactly like an in-batch duplicate — never re-registered, never raises. The returned
     `catalog` is also exposed in the result dict so the caller can persist it afterward; this
     function itself never writes to any store — no IO here, same as before."""
+    require_diagnostic_selection_seam(
+        "run_alpha_asset_pipeline", diagnostic_only=diagnostic_only
+    )
     catalog = catalog if catalog is not None else AlphaCatalog()
     evaluator = AlphaEvaluator(catalog)
     registry = AlphaAssetRegistry()
@@ -115,8 +123,10 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         if len(periods) < min_periods:
             ev = None
         else:
-            ev = evaluator.evaluate(aid, periods, leakage_ok=leak_ok, as_of=timestamp,
-                                    dataset_version=dataset_version)
+            ev = evaluator._evaluate_legacy_diagnostic(
+                aid, periods, leakage_ok=leak_ok, as_of=timestamp,
+                dataset_version=dataset_version
+            )
 
         # ECONOMIC (carry-aware) return: price_LS + funding_collected when the panel carries funding.
         # This is the "money" series — the perp book's real yield, not just the price-prediction Sharpe.
@@ -173,6 +183,9 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         "leakage_summary": {"proven": proven, "leaked": leaked, "unassessed": unassessed},
         "catalog": catalog,   # 2026-07-10: the (possibly caller-supplied) catalog this run used —
                               # exposed so a caller can persist it (this function performs no IO itself)
+        "diagnostic_only": True,
+        "selection_authority": False,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }
 
 

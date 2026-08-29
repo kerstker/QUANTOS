@@ -3,6 +3,8 @@
 诚实第一:训练 purged+embargo,裁决用 OOS,不报样本内分数。读本地库,无网络;墙钟只在此边界。"""
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 import sys
@@ -57,6 +59,7 @@ def main(
     accelerator: str = "cpu",
     output_path: str | None = None,
 ) -> None:
+    quarantine_legacy_backtest("tools.ml_stack_research")
     db, fwd, pool = _POOLS[asset]
     if not os.path.exists(db):
         print(f"no {db} — fetch first"); return

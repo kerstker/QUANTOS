@@ -9,7 +9,7 @@ import os
 import pytest
 
 from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
-from services.data.persistent_store import SqlitePITStore
+from services.data.persistent_store import DataStoreError, SqlitePITStore
 from services.data.quality import (VolumeDispersionError, assert_volume_dispersion,
                                    build_ingestion_report, check_volume_dispersion)
 
@@ -82,11 +82,13 @@ def test_strict_ingestion_raises_on_bad_quality(tmp_path):
     assert store.as_of("BTC", as_of_time=99999999) == []
 
 
-def test_non_strict_default_does_not_raise(tmp_path):
+def test_non_strict_quality_mode_still_rejects_identity_conflict(tmp_path):
     store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
-    rep = ingest_bars_csv(_csv(tmp_path, _DUP), store, dataset_id="BTC")   # default strict=False
-    assert rep.quality.passed is False                                    # quality still reported
-    assert rep.rows_read == 2                                             # but no raise (zero regression)
+    # ``strict=False`` controls quality-report escalation; it must not turn an
+    # immutable PIT identity conflict into a silent first-write-wins result.
+    with pytest.raises(DataStoreError, match="identity conflict"):
+        ingest_bars_csv(_csv(tmp_path, _DUP), store, dataset_id="BTC")
+    assert store.as_of("BTC", as_of_time=99999999) == []
 
 
 def test_strict_passes_clean_dataset(tmp_path):

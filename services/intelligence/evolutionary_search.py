@@ -24,6 +24,10 @@ from services.research.interaction_factors import interaction_definition, make_i
 from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
 from services.research.ports.persistence import TrialPersistenceError
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 from services.research import gp_tree, gp_genome
 from services.research.subtree_stats import structural_commonness, update_corpus
 
@@ -229,7 +233,12 @@ class EvolutionarySearchLoop:
             return
         # 断点1 (方案A): provider-supplied real leakage_ok evidence -> evaluator gate (else {} = fail-closed).
         evidence = provider_leakage_evidence(self.provider, candidates)
-        out = self.inner_loop.run(candidates, timestamp=timestamp, evidence=evidence)
+        out = self.inner_loop.run(
+            candidates,
+            timestamp=timestamp,
+            evidence=evidence,
+            diagnostic_only=True,
+        )
         report.update(out["report"])
         red_lambda = self.vocab.get("redundancy_lambda", 0.0)
         div_lambda = self.vocab.get("diversity_lambda", 0.0)
@@ -286,7 +295,11 @@ class EvolutionarySearchLoop:
         return basis
 
     def run(self, seed_genomes: Sequence, *, generations: int, population_size: int,
-            elite_k: int, timestamp: int = 0) -> dict:
+            elite_k: int, timestamp: int = 0,
+            diagnostic_only: bool = False) -> dict:
+        require_diagnostic_selection_seam(
+            "EvolutionarySearchLoop.run", diagnostic_only=diagnostic_only
+        )
         if not seed_genomes:
             raise ValueError("seed_genomes must be non-empty")
         if generations < 0 or population_size < 1 or elite_k < 1:
@@ -316,4 +329,7 @@ class EvolutionarySearchLoop:
                                                 key=lambda gr: (-gr[1], gr[0]))[:population_size]]
 
         best = sorted(evaluated.items(), key=lambda gr: (-gr[1], gr[0]))
-        return {"best": best, "history": history, "report": report, "n_evaluated": len(evaluated)}
+        return {"best": best, "history": history, "report": report,
+                "n_evaluated": len(evaluated), "diagnostic_only": True,
+                "selection_authority": False,
+                "invalidation_code": LEGACY_INVALIDATION_CODE}

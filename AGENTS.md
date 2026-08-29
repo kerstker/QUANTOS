@@ -7,6 +7,21 @@ Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](QUANTOS_MASTER_BLUEPRINT.md)
 
 Readiness: **L2_DRY_RUN_ONLY (default)** — 分层表述,三层实况:
 
+> **2026-08-29 RED/P0 authority override:** The legacy multi-period dry-run,
+> candidate-selection, score reuse, and V1 paper-fill paths have invalid daily
+> available-time, same-period execution, perpetual cash-flow, contract-quantity,
+> margin/liquidation, capacity/risk, and run-identity semantics.  Every historical
+> Sharpe/P&L or statement below that calls those paths "authoritative",
+> "deployable", or paper/live evidence is superseded and must be treated as
+> `INVALIDATED_PERP_LEDGER_V1` diagnostic history only.  Those entrypoints are
+> quarantined.  The Decimal linear-perpetual V2 runner produces
+> `TECHNICAL_VALIDATION_ONLY`, never authority.  Until an independently controlled
+> signed source/result authority is integrated, `is_authoritative_backtest_record`
+> deliberately admits no record; candidate promotion and new paper-fill
+> persistence remain blocked.  Raw public-data collection and read-only forward
+> observation may continue.  Do not regenerate or reuse historical profitability
+> claims through the legacy paths.
+
 - **L2 研究 + 干跑(默认态)**:研究与全量测试默认运行在 L2,mainnet
   实盘被多重结构性人工门封锁(见下)。
 - **Testnet 已联通**:`live/` 执行栈已存在并联调 —— Binance/Bybit

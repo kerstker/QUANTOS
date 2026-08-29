@@ -54,14 +54,48 @@ class SqlitePITStore:
             (key, event_time, knowledge_time)).fetchone()
         return row is not None
 
+    @staticmethod
+    def _payload(bar: Bar) -> str:
+        if not isinstance(bar, Bar):
+            raise TypeError("bar must be a Bar")
+        return json.dumps(bar.model_dump(mode="json"), sort_keys=True)
+
     def add(self, key: str, bar: Bar) -> bool:
         self._require_schema()
-        cur = self._conn.execute(
-            "INSERT OR IGNORE INTO bars(key, event_time, knowledge_time, payload_json) VALUES (?,?,?,?)",
-            (key, bar.event_time, bar.knowledge_time,
-             json.dumps(bar.model_dump(mode="json"), sort_keys=True)))
-        self._conn.commit()
-        return cur.rowcount == 1
+        payload = self._payload(bar)
+        if key != bar.instrument_id:
+            raise DataStoreError(
+                "store key must exactly match bar.instrument_id"
+            )
+        identity = (key, bar.event_time, bar.knowledge_time)
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                "SELECT payload_json FROM bars "
+                "WHERE key=? AND event_time=? AND knowledge_time=?",
+                identity,
+            ).fetchone()
+            if existing is not None:
+                if existing["payload_json"] != payload:
+                    raise DataStoreError(
+                        "bar identity conflict: the same key/event_time/knowledge_time "
+                        "already has different content"
+                    )
+                self._conn.rollback()
+                return False
+            self._conn.execute(
+                "INSERT INTO bars(key,event_time,knowledge_time,payload_json) "
+                "VALUES (?,?,?,?)",
+                (*identity, payload),
+            )
+            self._conn.commit()
+            return True
+        except DataStoreError:
+            self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            self._conn.rollback()
+            raise DataStoreError(f"bar insert failed: {exc}") from exc
 
     def add_many(self, key: str, bars) -> int:
         return sum(1 for b in bars if self.add(key, b))
@@ -69,31 +103,55 @@ class SqlitePITStore:
     def add_batch_atomic(self, bars) -> int:
         """Insert a normalized batch in one SQLite transaction.
 
-        This is the load-bearing writer for strict ingestion: serialization or
-        database failure rolls the entire batch back, while primary-key repeats
-        remain idempotent no-ops.
+        This is the load-bearing writer for file ingestion: serialization,
+        identity conflict, or database failure rolls the entire batch back,
+        while exact primary-key replays remain idempotent no-ops.
         """
         self._require_schema()
         batch = tuple(bars)
         try:
-            rows = [
-                (
+            unique_rows: dict[tuple[str, int, int], str] = {}
+            for bar in batch:
+                payload = self._payload(bar)
+                identity = (
                     bar.instrument_id,
                     bar.event_time,
                     bar.knowledge_time,
-                    json.dumps(bar.model_dump(mode="json"), sort_keys=True),
                 )
-                for bar in batch
-            ]
-            before = self._conn.total_changes
-            self._conn.executemany(
-                "INSERT OR IGNORE INTO bars(key, event_time, knowledge_time, payload_json) "
-                "VALUES (?,?,?,?)",
-                rows,
-            )
-            inserted = self._conn.total_changes - before
+                prior = unique_rows.get(identity)
+                if prior is not None and prior != payload:
+                    raise DataStoreError(
+                        "atomic batch identity conflict: conflicting content for the "
+                        "same key/event_time/knowledge_time"
+                    )
+                unique_rows[identity] = payload
+
+            self._conn.execute("BEGIN IMMEDIATE")
+            inserted = 0
+            for identity, payload in unique_rows.items():
+                existing = self._conn.execute(
+                    "SELECT payload_json FROM bars "
+                    "WHERE key=? AND event_time=? AND knowledge_time=?",
+                    identity,
+                ).fetchone()
+                if existing is not None:
+                    if existing["payload_json"] != payload:
+                        raise DataStoreError(
+                            "atomic batch identity conflict: stored content differs "
+                            "for key/event_time/knowledge_time"
+                        )
+                    continue
+                self._conn.execute(
+                    "INSERT INTO bars(key,event_time,knowledge_time,payload_json) "
+                    "VALUES (?,?,?,?)",
+                    (*identity, payload),
+                )
+                inserted += 1
             self._conn.commit()
             return inserted
+        except DataStoreError:
+            self._conn.rollback()
+            raise
         except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
             self._conn.rollback()
             raise DataStoreError(f"atomic batch insert failed: {exc}") from exc

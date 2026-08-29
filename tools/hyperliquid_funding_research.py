@@ -16,6 +16,7 @@ import time
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.panel_backtest import PanelPeriod
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research import alpha_expression as ax
 from services.research.alpha_expression import FieldPanel
@@ -443,6 +444,7 @@ def run_research(
     output_path: str = DEFAULT_EVIDENCE,
     recorded_at: int | None = None,
 ) -> dict:
+    quarantine_legacy_backtest("tools.hyperliquid_funding_research")
     if recorded_at is None:
         recorded_at = int(time.time() * 1000)
     snapshot = _load_snapshot(snapshot_path)
@@ -597,6 +599,7 @@ def run_research(
 
 
 def main(argv=None) -> dict:
+    quarantine_legacy_backtest("tools.hyperliquid_funding_research")
     parser = argparse.ArgumentParser(
         description="Run pre-registered Hyperliquid/Binance/Bybit funding Alpha research"
     )

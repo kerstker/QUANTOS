@@ -1,5 +1,11 @@
-"""Rank #19 — the offline rebuild orchestrator's plan is well-formed and deterministic, and it
-skips honestly when an input cache is absent (never fabricates a snapshot)."""
+"""The retained V1 rebuild plan remains inspectable but cannot execute."""
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from tools import rebuild_snapshots
 from tools.rebuild_snapshots import plan, run
 
 
@@ -27,3 +33,14 @@ def test_list_mode_never_executes_and_reports_skips_for_absent_inputs():
     # every generator whose input DB is absent is reported skipped (honest, not faked)
     absent = [s["label"] for s in plan() if not s["input_present"]]
     assert set(absent) <= set(result["skipped"])
+
+
+def test_execute_blocks_before_importing_any_generator(monkeypatch):
+    monkeypatch.setattr(
+        rebuild_snapshots.importlib,
+        "import_module",
+        lambda *_args, **_kwargs: pytest.fail("must block before generator import"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        run(execute=True)

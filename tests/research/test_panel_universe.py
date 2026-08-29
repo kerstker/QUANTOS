@@ -20,6 +20,7 @@ _SEARCH_SEQUENCE = itertools.count()
 
 
 def run_research_session(*args, **kwargs):
+    kwargs["diagnostic_only"] = True
     if kwargs.get("registry") is None:
         kwargs["ephemeral"] = True
     else:

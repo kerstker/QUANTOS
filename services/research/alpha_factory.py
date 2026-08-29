@@ -30,6 +30,10 @@ from quantos.contracts.hashing import stable_hash
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.factor_set import incremental_ir
 from services.validation.performance import generalization_gap, sharpe
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 
 from . import alpha_expression as ax
 from . import cs_genome
@@ -117,6 +121,7 @@ def run_alpha_factory(
     ephemeral: bool = False,
     hypothesis_by_candidate: Optional[Mapping[str, str]] = None,
     code_hash: str = "",
+    diagnostic_only: bool = False,
 ) -> dict:
     """Run a selection-bearing factory search with durable trial provenance.
 
@@ -132,6 +137,9 @@ def run_alpha_factory(
     does no filesystem/git IO itself, so the default "" means UNPINNED, not
     "unknown but filled in".
     """
+    require_diagnostic_selection_seam(
+        "run_alpha_factory", diagnostic_only=diagnostic_only
+    )
     if search_registry is None:
         if not ephemeral:
             raise ValueError(
@@ -438,9 +446,12 @@ def _run_alpha_factory_impl(
 
     best = sorted(scored.values(), key=lambda sv: (-sv[0], ax.serialize(sv[1])))[:elite_k]
     best_exprs = [e for _s, e in best]
-    pipeline_out = run_alpha_asset_pipeline(panel, best_exprs, fwd_horizon=fwd_horizon,
-                                            dataset_version=dataset_version, timestamp=timestamp,
-                                            max_k=elite_k, bred_by=bred_by, catalog=catalog)   # P3-4:育种子代记谱系
+    pipeline_out = run_alpha_asset_pipeline(
+        panel, best_exprs, fwd_horizon=fwd_horizon,
+        dataset_version=dataset_version, timestamp=timestamp,
+        max_k=elite_k, bred_by=bred_by, catalog=catalog,
+        diagnostic_only=True,
+    )   # P3-4:育种子代记谱系
     return {
         "generations": generations,
         "population_size": population_size,
@@ -451,4 +462,7 @@ def _run_alpha_factory_impl(
         "best": [{"alpha_id": ax.alpha_id(e), "expr": ax.serialize(e), "score": round(s, 4),
                   "leakage_ok": compute_leakage_ok(e, panel)} for s, e in best],
         "pipeline": pipeline_out,
+        "diagnostic_only": True,
+        "selection_authority": False,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }

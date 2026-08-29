@@ -760,6 +760,22 @@ async def candidates(
                             ev.eval_catalog_evidence_hash
                         ),
                         "eval_run_id": ev.eval_run_id,
+                        "authoritative_backtest_present": (
+                            ev.authoritative_backtest_present
+                        ),
+                        "authoritative_backtest_verified": (
+                            ev.authoritative_backtest_verified
+                        ),
+                        "full_research_risk_9_of_9": (
+                            ev.full_research_risk_9_of_9
+                        ),
+                        "profitability_projection_verified": (
+                            ev.profitability_projection_verified
+                        ),
+                        "authoritative_backtest_run_id": (
+                            ev.authoritative_backtest_run_id
+                        ),
+                        "promotion_authority_ready": ev.promotion_authority_ready,
                         "notes": list(ev.notes),
                     },
                     "precheck_hints": hints,

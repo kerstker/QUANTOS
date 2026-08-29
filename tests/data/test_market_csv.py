@@ -3,7 +3,7 @@ import csv
 import itertools
 import pytest
 from quantos.contracts.research import AlphaState
-from services.data.persistent_store import SqlitePITStore
+from services.data.persistent_store import DataStoreError, SqlitePITStore
 from services.data.market_csv import ingest_market_csv
 from services.alpha.catalog import AlphaCatalog
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -18,6 +18,7 @@ _SEARCH_SEQUENCE = itertools.count()
 
 
 def run_research_session(*args, **kwargs):
+    kwargs["diagnostic_only"] = True
     if kwargs.get("registry") is None:
         kwargs["ephemeral"] = True
     else:
@@ -141,16 +142,17 @@ def test_explicit_knowledge_time_retains_restatement(tmp_path):
     assert store.latest_as_of("AAA", 20240320).close == 100.9          # 修正后:见最新已知值
 
 
-def test_default_knowledge_time_drops_restatement_as_duplicate(tmp_path):
-    # 默认 kt=event_time:同日期修正 PK 相同 → 被去重丢弃(首见为准,文档化的 v1 行为)
+def test_default_knowledge_time_rejects_ambiguous_restatement(tmp_path):
+    # 未提供真实修订可用时间时，同一 identity 的不同内容不能再被静默当作
+    # duplicate；调用者必须提供新的 knowledge_time 才能表达 PIT 修订。
     p = tmp_path / "AAA.csv"
     _write(p, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.5, 1000]])
     store = SqlitePITStore(":memory:", create=True)
     ingest_market_csv(str(p), store, instrument_id="AAA")
     p2 = tmp_path / "AAA2.csv"
     _write(p2, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.9, 1000]])
-    rep = ingest_market_csv(str(p2), store, instrument_id="AAA")
-    assert rep.bars_ingested == 0 and rep.duplicates == 1
+    with pytest.raises(DataStoreError, match="identity conflict"):
+        ingest_market_csv(str(p2), store, instrument_id="AAA")
     assert store.latest_as_of("AAA", 20240315).close == 100.5         # 首见为准
 
 

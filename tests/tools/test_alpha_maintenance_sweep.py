@@ -14,9 +14,9 @@ from services.monitoring.event_bus import DurableEventBus
 from services.research.paper_trading.store import PaperTrackStore
 
 from tools.alpha_maintenance_sweep import (
+    _run_sweep_legacy_diagnostic as run_sweep,
     build_status_snapshot,
     build_status_snapshot_with_events,
-    run_sweep,
     top_contra_quarantine_health,
 )
 

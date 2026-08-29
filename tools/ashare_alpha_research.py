@@ -40,6 +40,7 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
@@ -69,6 +70,7 @@ def _two_sided_p(t_stat):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.ashare_alpha_research")
     universe = json.load(open(_UNIVERSE, encoding="utf-8"))
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     codes = [c for c in eq_panel.universe_codes(universe) if c in set(store.keys())]

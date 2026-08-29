@@ -8,6 +8,7 @@ from typing import Callable, Dict, List
 
 from fastapi import APIRouter
 
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from services.console.api.common import short_hash
 from services.console.api.incident_views import _incident_response_payload
 from services.console.api.model_evidence_views import (
@@ -134,7 +135,7 @@ def _validation_decision(alpha: Dict) -> str:
     return promotion_view_runtime.require().validation_decision(alpha)
 
 
-def _promotion_control_payload() -> Dict:
+def _promotion_control_payload_raw() -> Dict:
     candidates = _alpha_candidates(count=6)
     validation_reports = _validation_reports()
     validation_by_alpha = {report["alpha_id"]: report for report in validation_reports}
@@ -432,16 +433,22 @@ def _promotion_control_payload() -> Dict:
     }
 
 
+def _promotion_control_payload() -> Dict:
+    """Public composition seam with no synthetic promotion authority."""
+
+    return scrub_backtest_payload(_promotion_control_payload_raw())
+
+
 router = APIRouter()
 
 
 @router.get("/api/v1/console/promotion-control")
 async def promotion_control() -> Dict:
     payload = _promotion_control_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })

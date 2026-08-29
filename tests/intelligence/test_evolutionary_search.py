@@ -89,7 +89,8 @@ def test_run_evolves_and_is_deterministic():
     seed = [("P", "momentum", "5"), ("P", "zscore", "3"), ("F", "eps", "ratio_to_price")]
     def run():
         return EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop()).run(
-            seed, generations=2, population_size=4, elite_k=2, timestamp=10)
+            seed, generations=2, population_size=4, elite_k=2, timestamp=10,
+            diagnostic_only=True)
     a = run()
     assert a["best"] and a["n_evaluated"] > len(seed)     # 后代(变异/交叉)被创造并评估
     b = run()
@@ -100,17 +101,27 @@ def test_containment_no_approved():
     loop = ResearchAgentLoop()
     EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
         [("P", "momentum", "5"), ("F", "eps", "ratio_to_price")],
-        generations=2, population_size=4, elite_k=2, timestamp=10)
+        generations=2, population_size=4, elite_k=2, timestamp=10, diagnostic_only=True)
     assert not loop.actor.is_human
     for aid in loop.catalog.all_ids():
         assert loop.catalog.state(aid) != AlphaState.APPROVED   # agent 永不可达 APPROVED
+
+
+def test_public_evolutionary_search_is_diagnostic_without_authority():
+    loop = ResearchAgentLoop()
+    out = EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
+        [("P", "momentum", "5"), ("F", "eps", "ratio_to_price")],
+        generations=0, population_size=2, elite_k=1, timestamp=10, diagnostic_only=True)
+    assert all(loop.catalog.state(aid) == AlphaState.DRAFT
+               for aid in loop.catalog.all_ids())
+    assert all(row["diagnostic_only"] is True for row in out["report"].values())
 
 
 def test_multiple_testing_trial_count_grows():
     loop = ResearchAgentLoop()
     EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
         [("P", "momentum", "5"), ("P", "zscore", "3")],
-        generations=2, population_size=4, elite_k=2, timestamp=10)
+        generations=2, population_size=4, elite_k=2, timestamp=10, diagnostic_only=True)
     assert loop.catalog.global_trial_count() >= 2          # 每个不同基因型计一次试验
 
 
@@ -119,7 +130,7 @@ def test_provider_error_isolated():
     prov = make_evolution_provider(_price(), None, INSTS, event_times=DATES, fwd_horizon=1)
     out = EvolutionarySearchLoop(prov, inner_loop=ResearchAgentLoop()).run(
         [("P", "momentum", "5"), ("F", "eps", "raw")],
-        generations=0, population_size=4, elite_k=2, timestamp=10)
+        generations=0, population_size=4, elite_k=2, timestamp=10, diagnostic_only=True)
     rewards = dict(out["best"])
     assert rewards[("F", "eps", "raw")] == 0.0
     assert ("P", "momentum", "5") in rewards
@@ -139,6 +150,7 @@ def test_evolutionary_trial_persistence_error_is_batch_fatal():
             generations=0,
             population_size=1,
             elite_k=1,
+            diagnostic_only=True,
         )
 
 
@@ -177,7 +189,8 @@ def test_gp_run_deterministic_and_contained():
     def run():
         loop = ResearchAgentLoop()
         out = EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
-            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10,
+            diagnostic_only=True)
         return out, loop
     a, la = run()
     b, _lb = run()
@@ -195,7 +208,8 @@ def test_gp_aliased_trees_count_one_trial():
     loop = ResearchAgentLoop()
     before = loop.catalog.global_trial_count()
     EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
-        [g1, g2], generations=0, population_size=4, elite_k=2, timestamp=10)
+        [g1, g2], generations=0, population_size=4, elite_k=2, timestamp=10,
+        diagnostic_only=True)
     assert loop.catalog.global_trial_count() - before == 1   # aliased trees = ONE trial (honest)
 
 
@@ -206,7 +220,8 @@ def test_redundancy_reward_deterministic_and_contained():
     def run():
         loop = ResearchAgentLoop()
         out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
-            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10,
+            diagnostic_only=True)
         return out, loop
     a, la = run()
     b, _lb = run()
@@ -222,7 +237,8 @@ def test_diversity_reward_deterministic_and_contained():
     def run():
         loop = ResearchAgentLoop()
         out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
-            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10,
+            diagnostic_only=True)
         return out, loop
     a, la = run()
     b, _lb = run()
@@ -235,10 +251,10 @@ def test_redundancy_default_off_matches_plain_run():
     # redundancy_lambda defaults to 0 -> identical to a run without the feature (regression)
     seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
     plain = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop()).run(
-        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7, diagnostic_only=True)
     explicit0 = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop(),
                                        vocab={**DEFAULT_VOCAB, "redundancy_lambda": 0.0}).run(
-        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7, diagnostic_only=True)
     assert plain["best"] == explicit0["best"]
 
 
@@ -249,7 +265,8 @@ def test_overfit_reward_deterministic_and_contained():
     def run():
         loop = ResearchAgentLoop()
         out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
-            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10,
+            diagnostic_only=True)
         return out, loop
     a, la = run()
     b, _lb = run()
@@ -262,11 +279,26 @@ def test_overfit_default_off_matches_plain_run():
     # overfit_lambda defaults to 0 -> identical to a run without the feature (opt-in regression guard)
     seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
     plain = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop()).run(
-        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7, diagnostic_only=True)
     explicit0 = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop(),
                                        vocab={**DEFAULT_VOCAB, "overfit_lambda": 0.0}).run(
-        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7, diagnostic_only=True)
     assert plain["best"] == explicit0["best"]
+
+
+def test_public_default_evolutionary_search_is_blocked_before_provider():
+    called = False
+
+    def provider(_definition):
+        nonlocal called
+        called = True
+        return []
+
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
+        EvolutionarySearchLoop(provider).run(
+            [("P", "momentum", "5")], generations=0, population_size=1, elite_k=1
+        )
+    assert called is False
 
 
 def test_gp_session_mode_smoke():
@@ -277,7 +309,7 @@ def test_gp_session_mode_smoke():
     out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
                                rounds=1, batch_size=1, timestamp=10, gp=True,
                                evo_generations=2, evo_population=8, evo_elite=3,
-                               ephemeral=True)
+                               ephemeral=True, diagnostic_only=True)
     assert out["mode"] == "gp" and out["n_evaluated"] > 0
     # every machine-discovered tree id is a GP id; nothing auto-approved
     assert all(aid.startswith("hgp_") for aid in out["report"])
@@ -299,7 +331,7 @@ def test_oos_validate_closes_the_factory_loop():
     out = run_research_session(st, INSTS, event_times=dates, fwd_horizon=1, space=space,
                                rounds=1, batch_size=1, timestamp=10, evolutionary=True,
                                evo_generations=2, evo_population=6, evo_elite=3,
-                               oos_validate=True, ephemeral=True)
+                               oos_validate=True, ephemeral=True, diagnostic_only=True)
     assert "oos" in out and out["oos"] is not None
     assert "folds" in out["oos"] and out["oos"]["n_folds"] >= 1                    # real OOS folds
     assert out["oos"]["mean_oos_sharpe"] is not None                              # IS-vs-OOS computed
@@ -312,6 +344,6 @@ def test_mcts_session_mode_smoke():
                             windows=(3, 5))
     out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
                                rounds=1, batch_size=1, timestamp=10, mcts=True,
-                               mcts_iterations=12, ephemeral=True)
+                               mcts_iterations=12, ephemeral=True, diagnostic_only=True)
     assert out["mode"] == "mcts" and out["n_evaluated"] > 0
     assert "synergistic_set" in out and all(aid.startswith("h_") for aid in out["report"])

@@ -19,6 +19,7 @@ import time
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.data.raw_archive import DEFAULT_RAW_ARCHIVE
 from services.data.research_adapter import adapt_research_market_data
 from services.research import alpha_expression as ax
@@ -105,6 +106,7 @@ def _run_registered_pool(
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.crypto_funding_research")
     cap = int(sys.argv[1]) if len(sys.argv) > 1 else 120
     now_ms = int(time.time() * 1000)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
@@ -162,7 +164,14 @@ def _main(registry: ExperimentRegistry) -> None:
         raise SystemExit(f"only {len(instruments)} usable perps")
     store = CachingPITStore(store)
     t0 = time.perf_counter()
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     # inject the funding field matrix aligned to (event_times x sorted instruments)
     panel.matrices["funding"] = [[funding_by_tk.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
@@ -266,6 +275,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_funding_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

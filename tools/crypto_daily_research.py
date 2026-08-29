@@ -35,6 +35,7 @@ from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.research_adapter import adapt_research_market_data
 from services.data.market_provider import ingest_provider_rows
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.evolutionary_search import genome_to_definition
 from services.intelligence.research_session import run_research_session
@@ -243,6 +244,7 @@ def _top_factor_diagnostics(store, instruments, factors):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_daily_research")
     # argv: [n_coins] [days]
     n = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_N
     days = int(sys.argv[2]) if len(sys.argv) > 2 else DAYS

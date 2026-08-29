@@ -7,6 +7,13 @@ import json
 
 import pytest
 
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from services.execution.dry_run_pipeline import (
+    _run_multi_period_dry_run_legacy_diagnostic,
+)
 from services.research import exit_policies as ep
 from tools import exit_policy_lab as lab
 
@@ -27,9 +34,53 @@ def _synth_book(prices, *, cost_bps=10.0, weight=0.5):
         cash_flow_fn=None, data_source="SYNTHETIC", note="synthetic plumbing book")
 
 
+def _run_book(book, *, policies=None):
+    return lab._run_book_legacy_diagnostic(
+        book,
+        runner=_run_multi_period_dry_run_legacy_diagnostic,
+        policies=policies,
+    )
+
+
+def test_main_quarantines_before_history_read_or_artifact_write(monkeypatch, tmp_path):
+    output = tmp_path / "exit_policy_lab.json"
+    monkeypatch.setattr(lab, "_OUT", str(output))
+    monkeypatch.setattr(
+        lab,
+        "build_crowd_book",
+        lambda: pytest.fail("legacy history was read before quarantine"),
+    )
+    monkeypatch.setattr(
+        lab,
+        "atomic_write_json",
+        lambda *_args, **_kwargs: pytest.fail("artifact write bypassed quarantine"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        lab.main()
+
+    assert not output.exists()
+
+
+def test_public_run_book_quarantines_before_book_policy_or_gate_access(monkeypatch):
+    monkeypatch.setattr(
+        lab,
+        "_make_gate_and_ctx",
+        lambda *_args, **_kwargs: pytest.fail("gate constructed before quarantine"),
+    )
+    monkeypatch.setattr(
+        ep,
+        "apply_exit_policy",
+        lambda *_args, **_kwargs: pytest.fail("policy evaluated before quarantine"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        lab.run_book(object(), policies=object())
+
+
 def test_run_book_structure_and_residuals():
     book = _synth_book([100, 103, 101, 99, 104, 106, 105, 108, 110, 112])
-    res = lab.run_book(book, policies=_POLICIES)
+    res = _run_book(book, policies=_POLICIES)
     for key in ("strategy_id", "baseline", "policies", "rankings", "verdict",
                 "worth_further_study", "n_periods", "cost_bps"):
         assert key in res
@@ -52,9 +103,17 @@ def test_run_book_structure_and_residuals():
 def test_baseline_matches_direct_pipeline_run():
     prices = [100, 102, 101, 105, 103, 107, 106, 109]
     book = _synth_book(prices)
-    res = lab.run_book(book, policies=_POLICIES)
+    res = _run_book(book, policies=_POLICIES)
     gate, ctx = lab._make_gate_and_ctx(book)
-    direct = lab._run_stream(book, book.weights_by_period, book.cost_bps, gate, ctx, "direct")
+    direct = lab._run_stream(
+        book,
+        book.weights_by_period,
+        book.cost_bps,
+        gate,
+        ctx,
+        "direct",
+        runner=_run_multi_period_dry_run_legacy_diagnostic,
+    )
     assert res["baseline"]["sharpe"] == direct.pnl["sharpe"]
     assert res["baseline"]["net_pnl"] == pytest.approx(direct.pnl["final_equity"] - lab._AUM)
 
@@ -62,7 +121,7 @@ def test_baseline_matches_direct_pipeline_run():
 def test_fixed_stop_cuts_crash_and_locks_out():
     # 期3 崩 -20%(>10% 止损)→ EXIT + 锁定至书末(信号恒 0.5 不复位)
     book = _synth_book([100, 100, 100, 80, 79, 78, 120, 130, 140, 150])
-    res = lab.run_book(book, policies=_POLICIES)
+    res = _run_book(book, policies=_POLICIES)
     pol = res["policies"]["fixed_stop"]
     assert pol["n_exit_events"] == 1 and pol["n_lockout_periods"] == 6
     assert pol["delta_max_drawdown"] <= 0.0       # 砍掉崩溃段 → 回撤不劣于基线
@@ -75,22 +134,38 @@ def test_fixed_stop_cuts_crash_and_locks_out():
 
 def test_zero_cost_twin_cost_total():
     book = _synth_book([100, 101, 102, 103, 104, 105, 106, 107], cost_bps=10.0)
-    res = lab.run_book(book, policies=_POLICIES)
+    res = _run_book(book, policies=_POLICIES)
     base = res["baseline"]
     assert base["cost_total"] > 0
     # 独立复算:直接各跑一遍 0/10bps,最终权益差必须等于 cost_total(孪生口径非恒真)
     gate, ctx = lab._make_gate_and_ctx(book)
-    rc = lab._run_stream(book, book.weights_by_period, 10.0, gate, ctx, "chk_c10")
+    rc = lab._run_stream(
+        book,
+        book.weights_by_period,
+        10.0,
+        gate,
+        ctx,
+        "chk_c10",
+        runner=_run_multi_period_dry_run_legacy_diagnostic,
+    )
     gate2, ctx2 = lab._make_gate_and_ctx(book)
-    r0 = lab._run_stream(book, book.weights_by_period, 0.0, gate2, ctx2, "chk_c0")
+    r0 = lab._run_stream(
+        book,
+        book.weights_by_period,
+        0.0,
+        gate2,
+        ctx2,
+        "chk_c0",
+        runner=_run_multi_period_dry_run_legacy_diagnostic,
+    )
     assert base["cost_total"] == pytest.approx(
         r0.pnl["final_equity"] - rc.pnl["final_equity"], abs=1e-6)
 
 
 def test_artifact_determinism_two_runs_identical():
     prices = [100, 103, 99, 97, 102, 105, 101, 98, 104, 108, 110, 106]
-    r1 = lab.run_book(_synth_book(prices), policies=_POLICIES)
-    r2 = lab.run_book(_synth_book(prices), policies=_POLICIES)
+    r1 = _run_book(_synth_book(prices), policies=_POLICIES)
+    r2 = _run_book(_synth_book(prices), policies=_POLICIES)
     assert r1 == r2
     r1["_as_of"] = r2["_as_of"] = 123456789
     a1 = lab.build_artifact({"synth": r1})
@@ -102,7 +177,7 @@ def test_artifact_determinism_two_runs_identical():
 
 
 def test_selection_rule_and_definitions_in_artifact():
-    res = lab.run_book(_synth_book([100, 101, 100, 102]), policies=_POLICIES)
+    res = _run_book(_synth_book([100, 101, 100, 102]), policies=_POLICIES)
     artifact = lab.build_artifact({"synth": res})
     rule = artifact["selection_rule"]
     assert rule["version"] == ep.SELECTION_RULE_VERSION

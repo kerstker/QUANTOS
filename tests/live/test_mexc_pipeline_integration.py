@@ -19,7 +19,10 @@ from live.exchange.mexc_spot import MexcSpotAdapter
 from live.execution.position_ledger import LiveLedger
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate
 from live.governance.validation_attestation import HUMAN_OVERRIDE, ValidationAttestation
-from live.pipeline import resolve_unconfirmed_orders, submit_live_batch
+from live.pipeline import (
+    _submit_live_batch_technical_diagnostic as submit_live_batch,
+    resolve_unconfirmed_orders,
+)
 from quantos.contracts.config import SafetyConfig
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
@@ -163,7 +166,7 @@ def _run_batch(transport, *, weights=None, mandate=_MANDATE, attestation=_ATTEST
         current_positions=current_positions or {}, gate=_spot_gate(), ctx_factory=_ctx(),
         venue=venue, mandate=mandate, validation_attestation=attestation,
         ledger=ledger, audit=audit, strategy_id="btc_spot_trend",
-        decided_ts=_NOW, now=_NOW, poll_sleep=lambda: None)
+        decided_ts=_NOW, now=_NOW, poll_sleep=lambda: None, diagnostic_only=True)
     return result, ledger, audit, venue
 
 
@@ -213,7 +216,8 @@ def test_futures_shaped_limits_would_reject_full_position():
         weights={"BTC": 1.0}, prices={"BTC": _PX}, aum=_EQUITY * 0.95, current_positions={},
         gate=gate, ctx_factory=_ctx(), venue=venue, mandate=_MANDATE,
         validation_attestation=_ATTESTATION, ledger=ledger, audit=GlobalAuditLog(),
-        strategy_id="btc_spot_trend", decided_ts=_NOW, now=_NOW, poll_sleep=lambda: None)
+        strategy_id="btc_spot_trend", decided_ts=_NOW, now=_NOW, poll_sleep=lambda: None,
+        diagnostic_only=True)
     assert result.rejected_by_gate, "futures-shaped net cap must reject a full-position long"
 
 

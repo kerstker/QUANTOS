@@ -15,7 +15,8 @@ import pytest
 
 from live.execution.drawdown_controller import (
     ComponentReading, DEGRADATION_ARTIFACT_MAX_AGE_MS, DrawdownController, DrawdownState,
-    DrawdownThresholds, combine_risk_multiplier, consecutive_below_caution_count,
+    DrawdownThresholds, _degradation_band_value, combine_risk_multiplier,
+    consecutive_below_caution_count,
     correlation_component, correlation_shock_from_artifact,
     degradation_component_from_artifact, drawdown_component,
     observations_since_new_low, snapshot_from_dict, snapshot_to_dict, state_ceiling,
@@ -367,7 +368,7 @@ def _w3_payload(*, in_shock_now=False, status="OK"):
 
 
 def test_correlation_shock_from_artifact_real_w3_schema():
-    assert correlation_shock_from_artifact(_w3_payload(in_shock_now=False)) is False
+    assert correlation_shock_from_artifact(_w3_payload(in_shock_now=False)) is None
     assert correlation_shock_from_artifact(_w3_payload(in_shock_now=True)) is True
 
 
@@ -395,13 +396,13 @@ def test_degradation_component_stale_artifact_is_unknown():
     payload = _w1_payload(generated_at_ms=_NOW - DEGRADATION_ARTIFACT_MAX_AGE_MS - 1)
     r = degradation_component_from_artifact(payload, "crowd_contra", "binance", now_ms=_NOW)
     assert r.status == "UNKNOWN" and "stale" in r.reason
-    # 恰好 7 天 = 不过期(边界);未来时间戳(负年龄,时钟偏差)也不过期
+    # 恰好 7 天和未来时间戳通过 freshness，但仍因缺独立 V2 authority 而 UNKNOWN。
     fresh_edge = _w1_payload(generated_at_ms=_NOW - DEGRADATION_ARTIFACT_MAX_AGE_MS)
     assert degradation_component_from_artifact(fresh_edge, "crowd_contra", "binance",
-                                               now_ms=_NOW).status == "OK"
+                                               now_ms=_NOW).status == "UNKNOWN"
     future = _w1_payload(generated_at_ms=_NOW + 60_000)
     assert degradation_component_from_artifact(future, "crowd_contra", "binance",
-                                               now_ms=_NOW).status == "OK"
+                                               now_ms=_NOW).status == "UNKNOWN"
 
 
 def test_degradation_component_requires_strategy_venue_report():
@@ -440,13 +441,24 @@ def test_degradation_component_small_sample_and_unrecognized_levels_are_unknown(
 
 
 def test_degradation_component_ratio_bands_uncalibrated():
-    # UNCALIBRATED 分档:ratio≥0.7 -> 1.0;0.4–0.7 -> 0.5;<0.4 -> 0.25(>1 也只缩不放)
+    # Retained pure mapping is testable, but the artifact consumer cannot reach
+    # it without independently admitted V2 authority.
     for ratio, expected in ((1.5, 1.0), (0.85, 1.0), (0.7, 1.0),
                             (0.55, 0.5), (0.4, 0.5), (0.39, 0.25), (0.0, 0.25), (-1.2, 0.25)):
-        r = degradation_component_from_artifact(_w1_payload(ratio=ratio),
-                                                "crowd_contra", "binance", now_ms=_NOW)
-        assert r.status == "OK" and r.value == pytest.approx(expected), ratio
-        assert "UNCALIBRATED" in r.reason
+        assert _degradation_band_value(ratio, DrawdownThresholds()) == pytest.approx(expected)
+
+
+def test_legacy_degradation_ratio_never_drives_deploy_scaling():
+    for ratio in (1.5, 0.85, 0.55, 0.1):
+        reading = degradation_component_from_artifact(
+            _w1_payload(ratio=ratio),
+            "crowd_contra",
+            "binance",
+            now_ms=_NOW,
+        )
+        assert reading.status == "UNKNOWN"
+        assert reading.value == DrawdownThresholds().defensive_ceiling
+        assert "authority" in reading.reason
 
 
 def test_combine_min_wins_and_binding_is_named():
@@ -639,7 +651,7 @@ def test_bridge_degradation_artifact_real_schema(tmp_path):
     deg = tmp_path / "deg.json"
     deg.write_text(json.dumps(_w1_payload(generated_at_ms=2, ratio=0.3)), encoding="utf-8")
     out = _bridge(tmp_path, equity=99.5, now=2, degradation_path=str(deg))
-    assert out["components"]["degradation"]["status"] == "OK"
+    assert out["components"]["degradation"]["status"] == "UNKNOWN"
     assert out["components"]["degradation"]["value"] == 0.25
     assert out["multiplier"] == 0.25
     assert "degradation" in out["binding"]
@@ -679,9 +691,9 @@ def test_bridge_correlation_shock_quiet_artifact_gives_ok_reading(tmp_path):
     w3 = tmp_path / "w3.json"
     w3.write_text(json.dumps(_w3_payload(in_shock_now=False)), encoding="utf-8")
     out = _bridge(tmp_path, equity=99.5, now=2, common_risk_path=str(w3))
-    assert out["state"] == "NORMAL"                        # 平静读数不触发任何升级
-    assert out["components"]["correlation"] == {"value": 1.0, "status": "OK",
-                                                "reason": "no correlation shock"}
+    assert out["state"] == "NORMAL"
+    assert out["components"]["correlation"]["value"] == 0.5
+    assert out["components"]["correlation"]["status"] == "UNKNOWN"
     # 其余 UNKNOWN 分量仍把乘数压在 0.5(接上真制品不等于放任满配)
     assert out["multiplier"] == 0.5
 

@@ -75,6 +75,14 @@ def _assert_agent_sees_complete_pool(monkeypatch, registry, expected_count: int)
     )
 
 
+def _enable_legacy_diagnostic_batch(monkeypatch, module) -> None:
+    monkeypatch.setattr(
+        module,
+        "run_registered_candidate_batch",
+        batch_module._run_registered_candidate_batch_legacy_diagnostic,
+    )
+
+
 @pytest.mark.parametrize("relative", TOOLS)
 def test_research_tools_use_only_registered_candidate_composition(relative: str) -> None:
     tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
@@ -181,6 +189,7 @@ def test_panel_tools_register_complete_pool_before_agent_score(
     }
     monkeypatch.setattr(module, "ALPHAS", alphas)
     _assert_agent_sees_complete_pool(monkeypatch, registry, expected_count=2)
+    _enable_legacy_diagnostic_batch(monkeypatch, module)
 
     candidate_rows, result, dataset_version = module._run_registered_panel(
         panel,
@@ -247,6 +256,7 @@ def test_history_tool_registers_complete_pool_before_agent_score(
         lambda *_args: True,
     )
     _assert_agent_sees_complete_pool(monkeypatch, registry, expected_count=2)
+    _enable_legacy_diagnostic_batch(monkeypatch, crypto_history_research)
 
     result = crypto_history_research._run_registered_history_pool(
         store,

@@ -34,16 +34,25 @@ def _provider(defn):
 
 def test_bandit_learns_good_window_outscores_bad():
     loop = GuidedSearchLoop(_space())
-    out = loop.search(rounds=4, batch_size=2, periods_provider=_provider)
+    out = loop.search(rounds=4, batch_size=2, periods_provider=_provider, diagnostic_only=True)
     means = out["arm_means"]
     assert means[("window", str(GOOD_WINDOW))] > means[("window", str(BAD_WINDOW))]
 
 
 def test_search_never_reaches_approved():
     loop = GuidedSearchLoop(_space())
-    loop.search(rounds=4, batch_size=2, periods_provider=_provider)
+    loop.search(rounds=4, batch_size=2, periods_provider=_provider, diagnostic_only=True)
     cat = loop.inner_loop.catalog
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
+
+
+def test_public_search_is_diagnostic_without_selection_authority():
+    loop = GuidedSearchLoop(_space())
+    out = loop.search(rounds=2, batch_size=2, periods_provider=_provider, diagnostic_only=True)
+    assert out["human_review_queue"] == []
+    assert all(loop.inner_loop.catalog.state(a) == AlphaState.DRAFT
+               for a in loop.inner_loop.catalog.all_ids())
+    assert all(row["diagnostic_only"] is True for row in out["report"].values())
 
 
 def test_provider_error_is_isolated_and_search_continues():
@@ -56,7 +65,7 @@ def test_provider_error_is_isolated_and_search_continues():
             raise RuntimeError("provider boom")
         return _provider(defn)
 
-    out = loop.search(rounds=4, batch_size=2, periods_provider=flaky)
+    out = loop.search(rounds=4, batch_size=2, periods_provider=flaky, diagnostic_only=True)
     assert any(h.get("error") for h in out["history"])          # failures recorded, not raised
     assert ("window", str(GOOD_WINDOW)) in out["arm_means"]     # good arm still learned
     cat = loop.inner_loop.catalog
@@ -72,10 +81,28 @@ def test_trial_persistence_error_from_provider_is_batch_fatal():
             rounds=1,
             batch_size=1,
             periods_provider=unavailable,
+            diagnostic_only=True,
         )
 
 
 def test_search_is_deterministic():
-    a = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider)
-    b = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider)
+    a = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider,
+                                          diagnostic_only=True)
+    b = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider,
+                                          diagnostic_only=True)
     assert a["arm_means"] == b["arm_means"]
+
+
+def test_public_default_is_blocked_before_provider_or_scoring():
+    called = False
+
+    def provider(_definition):
+        nonlocal called
+        called = True
+        return []
+
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
+        GuidedSearchLoop(_space()).search(
+            rounds=1, batch_size=1, periods_provider=provider
+        )
+    assert called is False

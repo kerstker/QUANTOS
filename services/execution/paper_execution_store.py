@@ -13,6 +13,11 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
+from services.execution.canonical_store_admission import (
+    CanonicalStoreAdmissionError,
+    require_authoritative_binding,
+)
+
 
 class PaperExecutionStoreError(RuntimeError):
     """The paper execution state is missing, corrupt, or conflicting."""
@@ -106,9 +111,43 @@ class PaperExecutionStore:
             raise PaperExecutionStoreError("paper preview payload hash mismatch")
         return payload
 
-    def append_preview(self, preview: Mapping[str, Any]) -> bool:
+    @staticmethod
+    def _require_authoritative_write(
+        payload: Mapping[str, Any],
+        authority_record: Mapping[str, Any] | None,
+    ) -> None:
+        embedded = payload.get("authoritative_backtest_record")
+        if not isinstance(embedded, Mapping) or embedded != authority_record:
+            raise PaperExecutionStoreError(
+                "canonical paper persistence blocked: exact authority record is missing"
+            )
+        try:
+            require_authoritative_binding(
+                authority_record,
+                run_id=str(payload.get("run_id", "")),
+                manifest_hash=payload.get("authority_manifest_hash"),
+                result_hash=payload.get("authority_result_hash"),
+            )
+        except CanonicalStoreAdmissionError as exc:
+            raise PaperExecutionStoreError(str(exc)) from exc
+        if (
+            payload.get("paper_execution") != "PAPER_FILLED"
+            or payload.get("execution_semantics") != "LINEAR_PERPETUAL_EVENT_V2"
+        ):
+            raise PaperExecutionStoreError(
+                "canonical paper persistence blocked: V2 filled execution semantics "
+                "are not bound"
+            )
+
+    def append_preview(
+        self,
+        preview: Mapping[str, Any],
+        *,
+        authority_record: Mapping[str, Any] | None = None,
+    ) -> bool:
         """Append one successful preview; exact retries return ``False``."""
         payload = self._stored_payload(preview)
+        self._require_authoritative_write(payload, authority_record)
         alpha_id = str(payload.get("alpha_id", ""))
         run_id = str(payload.get("run_id", ""))
         try:

@@ -13,6 +13,7 @@ import json
 import os
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.ic_panel import (aggregate_ic_series, compute_horizon_ic_series,
                                         compute_period_ic_series)
 from tools.ic_panel_registry import FACTOR_REGISTRY, UNIVERSE_REGISTRY
@@ -45,6 +46,7 @@ def factor_row(entry: dict, panel) -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.ic_panel_research")
     panel_cache = {}
     universes_meta = {}
     rows = []

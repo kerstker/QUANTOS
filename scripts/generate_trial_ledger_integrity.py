@@ -450,10 +450,19 @@ def _provenance_wiring() -> dict[str, Any]:
         ("run_registered_candidate_batch", run_registered_candidate_batch),
     ):
         params = inspect.signature(fn).parameters
+        source = inspect.getsource(fn)
+        quarantined = (
+            "quarantine_legacy_backtest" in source
+            or (
+                "require_diagnostic_selection_seam" in source
+                and "diagnostic_only" not in params
+            )
+        )
         entries[name] = {
-            "wired": "hypothesis_by_candidate" in params,
+            "wired": "hypothesis_by_candidate" in params and not quarantined,
             "hypothesis_binding": "hypothesis_by_candidate" in params,
             "code_hash_pin": "code_hash" in params,
+            "quarantined": quarantined,
         }
     core_params = inspect.signature(run_research_session_core).parameters
     entries["run_research_session"] = {
@@ -481,9 +490,8 @@ def _provenance_wiring() -> dict[str, Any]:
         ),
         "entries": entries,
         "wired_entry_count": sum(1 for e in entries.values() if e["wired"]),
-        # Honest: these are the FIVE known selection-bearing entries. Historical and
-        # custom drivers that register bare config hashes remain unwired — see
-        # open_gaps. This section is a code-level fact, not ledger coverage.
+        # This is a code-level fact, not ledger coverage.  Quarantined legacy
+        # entries remain visible but are not counted as active wiring.
         "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
     }
 

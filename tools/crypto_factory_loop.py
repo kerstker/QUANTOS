@@ -19,6 +19,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.alpha_factory import run_alpha_factory
 from services.research.carry_pnl import economic_return_series
@@ -120,6 +121,7 @@ def _nodes(t, path=()):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_factory_loop")
     panel, instruments = build_panel(add_basis=True)
     dataset_version = field_panel_dataset_version(panel)
     print(f"=== loop-until-dry orthogonal mining ({len(instruments)} coins, {len(FIELDS)} dims) ===")

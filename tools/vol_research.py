@@ -15,7 +15,8 @@
    依赖」(对照 VIX 发现:carry 爱平静、crowd 爱压力)。全样本分位 = 回顾性描述,非 PIT 择时。
 3. **诚实块**:实际数据深度、skew 无免费历史、基差深度、多重比较与全样本分位告诫。
 
-纯离线读本地库(网络在 tools/deribit_fetch.py,门外);PIT 读走 fetch_bars_pit/as_of,
+纯离线读本地库(网络在 tools/deribit_fetch.py,门外);Binance 价格走 t+1d available-time，
+Deribit 自身序列维持 own-event-time bulk PIT，
 零裸读;研究诊断,不驱动晋级/下单,不是门禁。
 """
 from __future__ import annotations
@@ -25,6 +26,8 @@ import os
 import time
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.available_time import fetch_bars_for_event_decisions
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research import vol_factors as vf
 from services.research.macro_regime import bucket_returns, tercile_labels
@@ -46,10 +49,29 @@ _FAR_MIN_GAP = 21
 
 # --- 数据装载(PIT 安全读;各自在工具内测过)---
 
-def _series_from_store(store, key):
-    """fetch_bars_pit(kt<=et 过滤;本驱动只把每根 bar 用在它自己的 event_date 上——
-    正是 fetch_bars_pit 的 PIT 安全消费形态)-> (times, closes) 升序。"""
-    bars = store.fetch_bars_pit(key, -10 ** 18, 10 ** 18)
+def _series_from_store(
+    store,
+    key,
+    *,
+    decision_lag=0,
+    minimum_knowledge_lag=0,
+):
+    """Return ``(times, closes)`` under the caller's explicit source clock.
+
+    Binance callers pass a one-day decision/minimum lag.  Other stores retain
+    the existing own-event-time bulk PIT contract.
+    """
+    if decision_lag or minimum_knowledge_lag:
+        bars = fetch_bars_for_event_decisions(
+            store,
+            key,
+            -10**18,
+            10**18,
+            decision_lag=decision_lag,
+            minimum_knowledge_lag=minimum_knowledge_lag,
+        )
+    else:
+        bars = store.fetch_bars_pit(key, -10**18, 10**18)
     times = [int(b.event_time) for b in bars]
     closes = [float(b.close) for b in bars]
     return times, closes
@@ -174,6 +196,7 @@ def _dvol_labels_for_weeks(dvol_map, week_ts):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.vol_research")
     dvol_store = SqlitePITStore(_DERIBIT_DB, create=False)
     px_store = SqlitePITStore(_PX_DB, create=False)
 
@@ -186,7 +209,12 @@ def main() -> None:
     # 1) 时序预测筛选
     for ccy in ("BTC", "ETH"):
         dt_, dc = _series_from_store(dvol_store, f"DVOL-{ccy}")
-        pt_, pc = _series_from_store(px_store, ccy)
+        pt_, pc = _series_from_store(
+            px_store,
+            ccy,
+            decision_lag=86_400_000,
+            minimum_knowledge_lag=86_400_000,
+        )
         dvol_map, px_map = _map_by_day(dt_, dc), _map_by_day(pt_, pc)
         grid = [t for t in dt_ if t in px_map]
         perp_map = _map_by_day(*_series_from_store(dvol_store, f"{ccy}-PERPETUAL"))

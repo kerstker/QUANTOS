@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.alpha.panel_backtest import run_panel_backtest
@@ -184,6 +185,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_alpha_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

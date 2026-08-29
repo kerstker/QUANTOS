@@ -21,6 +21,7 @@ from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe, max_drawdown
 from tools.crypto_carry_strategy import FUND, QUANTILE, _legs
@@ -82,6 +83,7 @@ def _blocks(net, k=N_BLOCKS):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_carry_walkforward")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     funding = {tk: {int(k): v for k, v in d.items()}
@@ -96,8 +98,16 @@ def main() -> None:
     slip = {inst: _slip_bps(pctile[inst]) for inst in instruments}
     liquid = [inst for inst in instruments if pctile[inst] >= 0.5]
 
-    panel = ax.build_field_panel(store, liquid, sorted({b.event_time for inst in liquid
-                                 for b in store.fetch_bars(inst, -10**18, 10**18)}), ("close", "volume"))
+    panel_event_times = sorted({b.event_time for inst in liquid
+                                for b in store.fetch_bars(inst, -10**18, 10**18)})
+    panel = ax.build_field_panel(
+        store,
+        liquid,
+        panel_event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in panel_event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     fmat = [[funding.get(inst, {}).get(t) for inst in panel.instruments] for t in panel.event_times]
     panel.matrices["funding"] = fmat
     px = panel.matrices["close"]

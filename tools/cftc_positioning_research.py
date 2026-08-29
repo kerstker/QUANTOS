@@ -10,7 +10,9 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.alpha.panel_backtest import PanelPeriod
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.persistent_store import SqlitePITStore
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.cftc_positioning import (
@@ -126,7 +128,14 @@ def _feature_rows(spec: dict, snapshot: dict) -> list[tuple[int, float]]:
 def _price_rows(store, instrument: str):
     return [
         (int(bar.event_time), float(bar.close))
-        for bar in store.fetch_bars_pit(instrument, 0, 10 ** 18)
+        for bar in fetch_bars_for_event_decisions(
+            store,
+            instrument,
+            0,
+            10**18,
+            decision_lag=86_400_000,
+            minimum_knowledge_lag=86_400_000,
+        )
     ]
 
 
@@ -301,7 +310,7 @@ def _summarize(aligned):
     }
 
 
-def run_research(
+def _run_research_legacy_diagnostic(
     *, registry: ExperimentRegistry, snapshot_path: str = DEFAULT_SNAPSHOT,
     price_db: str = PRICE_DB, output_path: str = DEFAULT_EVIDENCE,
     recorded_at: int | None = None,
@@ -375,7 +384,12 @@ def run_research(
     return payload
 
 
+def run_research(*_args, **_kwargs) -> dict:
+    quarantine_legacy_backtest("tools.cftc_positioning_research.run_research")
+
+
 def main(argv=None) -> dict:
+    quarantine_legacy_backtest("tools.cftc_positioning_research.main")
     parser = argparse.ArgumentParser(description="Run pre-registered CFTC positioning Alpha research")
     parser.add_argument("--snapshot", default=DEFAULT_SNAPSHOT)
     parser.add_argument("--price-db", default=PRICE_DB)

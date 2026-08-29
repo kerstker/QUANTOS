@@ -28,6 +28,7 @@ from services.validation.pbo_evidence import verify_batch_pbo_evidence
 from services.validation.catalog_evidence import (
     verify_catalog_evidence_against_catalog,
 )
+from services.validation.selection_authority import require_diagnostic_selection_seam
 
 from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
@@ -35,7 +36,10 @@ from .correlation import max_abs_corr_to_set
 from .metrics import series_metrics
 from .evaluation_evidence import bind_evaluation_reproducibility
 from .orthogonalize import orthogonalize
-from .panel_backtest import PanelPeriod, run_panel_backtest
+from .panel_backtest import (
+    PanelPeriod,
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+)
 from .walk_forward import walk_forward_oos
 
 
@@ -98,7 +102,7 @@ class AlphaEvaluator:
                                       n_regimes=2)
         return regime_profitable_frac(net, labels)
 
-    def prepare_catalog_observation(
+    def _prepare_catalog_observation_legacy_diagnostic(
         self, alpha_id: str, periods: Sequence[PanelPeriod]
     ) -> None:
         """Populate the batch-frozen catalog context before any verdict.
@@ -132,7 +136,7 @@ class AlphaEvaluator:
         self.catalog.set_returns(alpha_id, result.period_returns)
         self.catalog.set_pvalue(alpha_id, metrics["ic_pvalue"])
 
-    def evaluate(
+    def _evaluate_legacy_diagnostic(
         self,
         alpha_id: str,
         periods: Sequence[PanelPeriod],
@@ -346,4 +350,20 @@ class AlphaEvaluator:
         )
         return bind_evaluation_reproducibility(
             evaluation, dataset_version=dataset_version
+        )
+
+    def prepare_catalog_observation(self, *args, **kwargs) -> None:
+        """Block V1 return/IC observations from mutating the shared catalog."""
+
+        require_diagnostic_selection_seam(
+            "services.alpha.evaluator.AlphaEvaluator.prepare_catalog_observation",
+            diagnostic_only=False,
+        )
+
+    def evaluate(self, *args, **kwargs) -> AlphaEvaluation:
+        """Block the public V1 score/verdict engine before panel evaluation."""
+
+        require_diagnostic_selection_seam(
+            "services.alpha.evaluator.AlphaEvaluator.evaluate",
+            diagnostic_only=False,
         )

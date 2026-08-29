@@ -6,10 +6,12 @@
   2. **consume 前预检**(评审 #4,全部不烧 grant):subject 可解析且 dst 在白名单
      ({APPROVED} — 唯一 human-only 的晋级)、请求状态是 APPROVED、执行人 == grant 中
      APPROVED 步的 actor、experiments db 单飞锁可得(评审 #7)、catalog 可加载、alpha 存在
-     且 `can_alpha_transition(src, dst)`、证据可读(读失败的异常在烧之前抛出);
+     且 `can_alpha_transition(src, dst)`、证据可读，并且 evaluation 明确绑定经外部 authority
+     接纳的 backtest record 与完整 9/9 research-risk 历史(任一失败都在烧之前抛出);
   3. **先烧 grant**:`consume` 落库在 advance 之前 —— advance 失败 grant 即作废、必须重走
      三方;绝不出现「已推进但 grant 还能再花」或「崩溃留下半花 grant」;
-  4. `AlphaLifecycleManager.advance(grant=, eval_trial_count=)` —— 证据门一寸不松:
+  4. `AlphaLifecycleManager.advance(grant=, eval_trial_count=)` —— authority 预检通过后，
+     legacy 指标仍须走原有证据门:
      backtest_sharpe 来自该 alpha 的 evaluation artifact(net_sharpe)、paper_sharpe 来自
      paper_track.db 的 track(alpha_id)、eval 期 trial count 来自同一 artifact 的
      catalog_trial_count(评审 #1/#8,任一缺失 → guard 拒绝,绝不从请求体代填);
@@ -28,14 +30,20 @@ from __future__ import annotations
 import json
 import os
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from quantos.contracts.alpha import Actor, ActorKind, can_alpha_transition
 from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS
 from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.research import AlphaState
 from services.governance.approval import ApprovalState, consume
+from services.validation.research_risk_authority import full_research_risk_approved
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    selection_authority_admitted,
+)
 
 from .catalog import AlphaCatalog
 from .config import AlphaFactoryConfig
@@ -91,10 +99,54 @@ class PromotionEvidence:
     eval_trial_set_hash: Optional[str] = None  # exact catalog population bound at evaluation time
     eval_catalog_evidence_hash: Optional[str] = None
     eval_run_id: str = ""
+    authoritative_backtest_present: bool = False
+    authoritative_backtest_verified: bool = False
+    full_research_risk_9_of_9: bool = False
+    profitability_projection_verified: bool = False
+    authoritative_backtest_run_id: str = ""
     notes: tuple = ()
 
     def paper_evidence(self) -> dict:
         return {"backtest_sharpe": self.backtest_sharpe, "paper_sharpe": self.paper_sharpe}
+
+    @property
+    def promotion_authority_ready(self) -> bool:
+        return (
+            self.authoritative_backtest_present
+            and self.authoritative_backtest_verified
+            and self.full_research_risk_9_of_9
+            and self.profitability_projection_verified
+        )
+
+
+def _has_full_research_risk_9_of_9(record: Mapping[str, Any]) -> bool:
+    """Independently require every retained decision to be a real full 9/9 pass.
+
+    The external authority predicate authenticates the complete backtest record.
+    This separate check keeps promotion policy explicit instead of relying on an
+    implementation detail of that verifier.
+    """
+    detail = record.get("detail")
+    if not isinstance(detail, Mapping):
+        return False
+    attestations = detail.get("engine_attestations")
+    if (
+        not isinstance(attestations, Mapping)
+        or attestations.get("risk_history_ledger_replayed") is not True
+    ):
+        return False
+    history = detail.get("research_risk_history")
+    if not isinstance(history, (list, tuple)) or not history:
+        return False
+    results: list[Mapping[str, Any]] = []
+    for item in history:
+        if not isinstance(item, Mapping):
+            return False
+        result = item.get("result")
+        if not isinstance(result, Mapping) or not full_research_risk_approved(result):
+            return False
+        results.append(result)
+    return detail.get("research_risk") == results[-1]
 
 
 @dataclass(frozen=True)
@@ -112,14 +164,19 @@ class PromotionOutcome:
 
 def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> PromotionEvidence:
     """采集晋级证据。fail-closed:artifact 缺失/被篡改 → 对应字段 None + 诚实 note,由
-    guard 拒绝;绝不用请求体或默认值代填。registry/paper_store 只需鸭子类型
-    (list_evaluations/verify_evaluation、track)。"""
+    guard 拒绝;authority record 缺失/未接纳/非完整 9/9 → 显式 False + note,由执行
+    chokepoint 在 consume 前拒绝。绝不用请求体或默认值代填。registry/paper_store 只需
+    鸭子类型(list_evaluations/verify_evaluation、track)。"""
     notes: list[str] = []
     bt: Optional[float] = None
     etc: Optional[int] = None
     etsh: Optional[str] = None
     catalog_evidence_hash: Optional[str] = None
     run_id = ""
+    authority_present = False
+    authority_verified = False
+    full_risk = False
+    authority_run_id = ""
     evals = registry.list_evaluations(alpha_id)
     if not evals:
         notes.append("NO_EVALUATION_ARTIFACT")
@@ -130,23 +187,52 @@ def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> Promotion
             notes.append("EVALUATION_ARTIFACT_INVALID")
         else:
             payload = json.loads(latest["evaluation_json"])
-            bt = payload.get("net_sharpe")
             etc = payload.get("catalog_trial_count")
             etsh = payload.get("catalog_trial_set_hash")
             catalog_evidence_hash = payload.get("catalog_evidence_hash")
+            authority_record = payload.get("authoritative_backtest_record")
+            if not isinstance(authority_record, Mapping):
+                notes.append("NO_AUTHORITATIVE_BACKTEST_RECORD")
+            else:
+                authority_present = True
+                candidate_run_id = authority_record.get("run_id")
+                if isinstance(candidate_run_id, str):
+                    authority_run_id = candidate_run_id
+                try:
+                    authority_verified = selection_authority_admitted(
+                        requested=True,
+                        authoritative_backtest_record=authority_record,
+                    )
+                except Exception:
+                    authority_verified = False
+                if not authority_verified:
+                    notes.append("AUTHORITATIVE_BACKTEST_RECORD_NOT_ADMITTED")
+                try:
+                    full_risk = _has_full_research_risk_9_of_9(authority_record)
+                except Exception:
+                    full_risk = False
+                if not full_risk:
+                    notes.append("FULL_RESEARCH_RISK_9_OF_9_REQUIRED")
+            # The legacy evaluation's outer Sharpe/trial fields and the V1
+            # paper-track summary are not derived from the signed result hash.
+            # An admitted embedded record therefore cannot launder them into a
+            # promotion packet.  A future controlled projection must populate
+            # these fields from exact signed-result / forward-authority inputs.
+            notes.append("AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED")
+            notes.append(LEGACY_INVALIDATION_CODE)
     pp: Optional[float] = None
     if paper_store is None:
         notes.append("NO_PAPER_TRACK_STORE")
-    else:
-        row = paper_store.track(alpha_id)
-        if row is None or row.get("paper_sharpe") is None:
-            notes.append("NO_PAPER_TRACK")
-        else:
-            pp = row["paper_sharpe"]
     return PromotionEvidence(backtest_sharpe=bt, paper_sharpe=pp, eval_trial_count=etc,
                              eval_trial_set_hash=etsh,
                              eval_catalog_evidence_hash=catalog_evidence_hash,
-                             eval_run_id=run_id, notes=tuple(notes))
+                             eval_run_id=run_id,
+                             authoritative_backtest_present=authority_present,
+                             authoritative_backtest_verified=authority_verified,
+                             full_research_risk_9_of_9=full_risk,
+                             profitability_projection_verified=False,
+                             authoritative_backtest_run_id=authority_run_id,
+                             notes=tuple(notes))
 
 
 def _audit_event(audit, *, request_id: str, alpha_id: str, actor: str, action: str,
@@ -268,6 +354,23 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
                 raise PromotionPrecheckError(f"MODEL_CARD_GATE_FAILED: {exc}")
 
         evidence = gather_promotion_evidence(registry, paper_store, alpha_id)   # 纯读,在烧之前
+        if not evidence.authoritative_backtest_present:
+            raise PromotionPrecheckError(
+                "AUTHORITATIVE_BACKTEST_RECORD_REQUIRED: the latest evaluation artifact "
+                "does not bind an explicit authoritative_backtest_record")
+        if not evidence.authoritative_backtest_verified:
+            raise PromotionPrecheckError(
+                "AUTHORITATIVE_BACKTEST_RECORD_NOT_ADMITTED: external signed backtest "
+                "authority did not admit the record")
+        if not evidence.full_research_risk_9_of_9:
+            raise PromotionPrecheckError(
+                "FULL_RESEARCH_RISK_9_OF_9_REQUIRED: every retained backtest risk decision "
+                "must be an approved REAL_RESEARCH_RISK_FULL nine-engine result")
+        if not evidence.profitability_projection_verified:
+            raise PromotionPrecheckError(
+                "AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED: legacy evaluation and "
+                "paper Sharpe fields are not bound to controlled result authorities"
+            )
 
         # --- ① 先烧 grant(fail-closed 方向:宁可烧废也不留可复花的 grant)---
         actor = Actor(actor_id=executor_id, kind=ActorKind.HUMAN)   # 自报标签,见模块 docstring
@@ -277,6 +380,10 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
         # --- ② 烧毁之后:每条路径必落审计(评审 #3)---
         meta_base = {"request_id": request_id, "src": src.value, "dst": dst.value,
                      "eval_run_id": evidence.eval_run_id,
+                     "authoritative_backtest_run_id": evidence.authoritative_backtest_run_id,
+                     "authoritative_backtest_verified": evidence.authoritative_backtest_verified,
+                     "full_research_risk_9_of_9": evidence.full_research_risk_9_of_9,
+                     "profitability_projection_verified": evidence.profitability_projection_verified,
                      "evidence_notes": list(evidence.notes)}
         try:
             manager = AlphaLifecycleManager(catalog, config)

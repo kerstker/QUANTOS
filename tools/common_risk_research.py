@@ -2,12 +2,12 @@
 
 读 dry_run.db 的 canonical 干跑曲线(carry=carry_oi_majors / crowd_contra / top_contra /
 btc_spot_trend + 基准 btc_spot_trend_hold=买入持有 BTC,验证因子模型应 R²≈1/残差≈0),
-从既有本地数据构造 §7.1 因子库子集(crypto_funding.db 价格 PIT 读 fetch_bars_pit +
+从既有本地数据构造 §7.1 因子库子集(crypto_funding.db 价格按 t+1d 显式可知时间读取 +
 crypto_funding_rates.json + crypto_oi_metrics.json),过 services/research/factor_decomp.py
 纯核:OLS 因子模型 → 残差 → 原始/残差双相关矩阵 → complete-linkage 聚类 → 簇级组合输出
 (effective breadth)→ 26 周滚动相关冲击。
 
-纯离线读本地库、无网络、无真单;零新增裸 fetch_bars(PIT 安全读/JSON 读)。诊断非门禁。
+纯离线读本地库、无网络、无真单;Binance 旧 open-time 行显式拒绝。诊断非门禁。
 """
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ import os
 import statistics
 
 from services.data.caching_store import CachingPITStore
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from services.research import factor_decomp as fd
 from services.research.book_combine import combine_returns, inverse_vol_weights
@@ -250,6 +252,7 @@ def _load_book_series(store: DryRunStore, key: str) -> tuple:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.common_risk_research")
     # 1) 策略周收益(raw 主口径 = equity_curve;VT 稳健性 = equity_curve_vt)
     store = DryRunStore(_DRY_RUN_DB, create=False)
     raw_series, meta = _load_book_series(store, "equity_curve")
@@ -266,7 +269,14 @@ def main() -> None:
     store_px = CachingPITStore(SqlitePITStore(_PRICE_DB, create=False))
     price_agg, funding_w, oi_w, used = {}, {}, {}, []
     for coin in FACTOR_UNIVERSE:
-        bars = store_px.fetch_bars_pit(coin, 0, 10 ** 18)   # PIT 安全批量读(非裸 fetch_bars)
+        bars = fetch_bars_for_event_decisions(
+            store_px,
+            coin,
+            0,
+            10**18,
+            decision_lag=86_400_000,
+            minimum_knowledge_lag=86_400_000,
+        )
         if not bars or coin not in funding_json or coin not in oi_json:
             continue
         closes_by_day = {int(b.event_time): float(b.close) for b in bars}
@@ -319,7 +329,8 @@ def main() -> None:
     snap = {
         "provenance": "REAL_COMMON_RISK_DECOMPOSITION",
         "spec": "profit-maximization §7 W3: strategy cluster & common-risk decomposition",
-        "generated_from": {"dry_run_db": _DRY_RUN_DB, "price_db": _PRICE_DB + " (fetch_bars_pit)",
+        "generated_from": {"dry_run_db": _DRY_RUN_DB,
+                           "price_db": _PRICE_DB + " (available at t+1d; legacy rows rejected)",
                            "funding_json": _FUNDING_JSON, "oi_json": _OI_JSON},
         "strategies": meta,
         "factor_universe": used,

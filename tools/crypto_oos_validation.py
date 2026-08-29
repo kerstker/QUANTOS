@@ -24,6 +24,7 @@ import json
 import os
 
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.backtest_engine.metrics import sharpe
 from services.research.panel_builder import make_data_periods_provider
 from services.alpha.panel_backtest import run_panel_backtest
@@ -45,6 +46,7 @@ def _returns_for(provider, genome) -> list:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_oos_validation")
     if not os.path.exists(_SNAPSHOT):
         raise SystemExit(f"no snapshot at {_SNAPSHOT} — run tools/crypto_research_run.py first")
     with open(_SNAPSHOT, encoding="utf-8") as fh:

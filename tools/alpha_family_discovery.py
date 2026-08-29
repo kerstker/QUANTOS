@@ -42,6 +42,7 @@ from quantos.contracts.research import ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.data.caching_store import CachingPITStore
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from services.research import alpha_expression as ax
@@ -416,6 +417,7 @@ def discover(
     run_paper: bool = True,
 ) -> dict:
     """Run one deterministic discovery pass and persist all evidence."""
+    quarantine_legacy_backtest("tools.alpha_family_discovery")
     now = int(recorded_at if recorded_at is not None else time.time() * 1000)
     panel = panel or build_panel(add_basis=True, add_intraday=True)[0]
     source_files = [

@@ -12,17 +12,17 @@ import json
 import os
 from typing import Any, Mapping
 
+from services.execution.backtest_authority import (
+    is_authoritative_backtest_record,
+    quarantine_legacy_backtest,
+)
+from services.risk.research_risk.dry_run_guard import full_research_risk_approved
 from tools.cache_io import atomic_write_json
 from tools.forward_status import alpha_forward_status, forward_evidence_is_current
 
 
 DEFAULT_OUTPUT = os.path.join("evidence", "alpha_paper_cycle.json")
 REQUIRED_FORWARD_PERIODS = 8
-
-# The research-risk gate uses the canonical domain decision names.  ``PASS``
-# is retained for older paper artifacts, but an approved dry-run is not a
-# generic string PASS; it is explicitly ``RISK_APPROVED``.
-APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
 
 ALPHAS: dict[str, dict[str, str]] = {
     "carry_oi_majors": {
@@ -72,6 +72,16 @@ def _mapping_num(mapping: Any, key: int | str) -> float | None:
         return None
     value = mapping.get(key) if key in mapping else mapping.get(str(key))
     return _num(value)
+
+
+def _record_research_risk(record: object) -> Mapping[str, Any] | None:
+    if not isinstance(record, Mapping):
+        return None
+    detail = record.get("detail")
+    if isinstance(detail, Mapping) and isinstance(detail.get("research_risk"), Mapping):
+        return detail["research_risk"]
+    risk = record.get("research_risk")
+    return risk if isinstance(risk, Mapping) else None
 
 
 def _factor_row(research: Mapping[str, Any], alpha_id: str) -> dict[str, Any]:
@@ -248,8 +258,24 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
             "crowd_contra": "crowd_dry_run_authoritative",
             "top_contra": "top_dry_run_authoritative",
         }
-        canonical = artifacts.get(canonical_paths[alpha_id], {})
-        canonical = canonical if canonical.get("authoritative") is True else {}
+        canonical_candidate = artifacts.get(canonical_paths[alpha_id], {})
+        canonical_candidate = (
+            canonical_candidate if isinstance(canonical_candidate, Mapping) else {}
+        )
+        authority_valid = bool(
+            canonical_candidate
+            and is_authoritative_backtest_record(canonical_candidate)
+        )
+        candidate_risk = _record_research_risk(canonical_candidate)
+        risk_valid = bool(
+            isinstance(candidate_risk, Mapping)
+            and full_research_risk_approved(candidate_risk)
+        )
+        if not canonical_candidate or not authority_valid:
+            blockers.append("DRY_RUN_AUTHORITY_INVALID")
+        elif not risk_valid:
+            blockers.append("DRY_RUN_RESEARCH_RISK_NOT_FULL")
+        canonical = canonical_candidate if authority_valid and risk_valid else {}
         canonical_pnl = canonical.get("pnl")
         canonical_pnl = canonical_pnl if isinstance(canonical_pnl, dict) else {}
         if canonical:
@@ -264,12 +290,6 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
                 "evidence_class": canonical.get("evidence_class"),
                 "run_id": canonical.get("run_id"),
             }
-            risk = canonical.get("research_risk")
-            if (
-                isinstance(risk, dict)
-                and risk.get("decision") not in APPROVED_RESEARCH_RISK_DECISIONS
-            ):
-                blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
         if dry is None:
             blockers.append("DRY_RUN_EVIDENCE_MISSING")
         cap_key = f"{definition['capacity_id']}.participation_cap_aum"
@@ -295,8 +315,17 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
                 "vol_target_sharpe": _num(canonical_pnl.get("sharpe_vt")) if canonical else None,
                 "reconciliation_residual": _num(canonical_pnl.get("residual")) if canonical else None,
                 "run_id": canonical.get("run_id") if canonical else None,
+                "strategy_id": canonical.get("strategy_id") if canonical else None,
+                "timestamp": canonical.get("timestamp") if canonical else None,
+                "audit_root": canonical.get("audit_root") if canonical else None,
+                "detail": dict(canonical.get("detail"))
+                if canonical and isinstance(canonical.get("detail"), Mapping)
+                else {},
+                "research_risk": dict(candidate_risk)
+                if canonical and isinstance(candidate_risk, Mapping)
+                else {},
                 "research_risk_decision": (
-                    (canonical.get("research_risk") or {}).get("decision")
+                    candidate_risk.get("decision")
                     if canonical
                     else None
                 ),
@@ -403,6 +432,7 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
 
 
 def main(argv: list[str] | None = None) -> int:
+    quarantine_legacy_backtest("tools.alpha_paper_cycle")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     args = parser.parse_args(argv)

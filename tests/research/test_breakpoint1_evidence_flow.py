@@ -39,9 +39,9 @@ class _SpyEvaluator(AlphaEvaluator):
         super().__init__(*a, **k)
         self.calls = []
 
-    def evaluate(self, alpha_id, periods, **kw):
+    def _evaluate_legacy_diagnostic(self, alpha_id, periods, **kw):
         self.calls.append(dict(kw))
-        return super().evaluate(alpha_id, periods, **kw)
+        return super()._evaluate_legacy_diagnostic(alpha_id, periods, **kw)
 
 
 def _run(evidence):
@@ -49,7 +49,12 @@ def _run(evidence):
     spy = _SpyEvaluator(catalog, AlphaFactoryConfig(compute_regime_evidence=True))
     loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True),
                              evaluator=spy)
-    loop.run([(_defn(), _periods())], timestamp=1000, evidence=evidence)
+    loop.run(
+        [(_defn(), _periods())],
+        timestamp=1000,
+        evidence=evidence,
+        diagnostic_only=True,
+    )
     return spy, catalog
 
 

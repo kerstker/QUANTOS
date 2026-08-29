@@ -14,6 +14,7 @@ import statistics
 import time
 
 from services.data.fundamental_store import SqliteFundamentalStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.book_combine import align_on_common_weeks, combine_returns, inverse_vol_weights
 from services.research.macro_regime import bucket_returns, sign_regime, tercile_labels
@@ -62,6 +63,7 @@ def _corr(a, b):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.combo_book_research")
     cp = _carry_panel()
     cg, cts, _ = _book_series(cp.instruments, cp.matrices["close"], cp.matrices["funding"],
                               cp.event_times, ax.evaluate(CARRY_COMPOSITE, cp), carry_legs, CARRY_Q)

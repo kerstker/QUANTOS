@@ -33,7 +33,8 @@ def test_mcts_deterministic_and_contained():
     seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
     def run():
         loop = ResearchAgentLoop()
-        out = MCTSAlphaSearch(_provider(), inner_loop=loop).run(seed, iterations=12, timestamp=10)
+        out = MCTSAlphaSearch(_provider(), inner_loop=loop).run(
+            seed, iterations=12, timestamp=10, diagnostic_only=True)
         return out, loop
     a, la = run()
     b, _lb = run()
@@ -46,22 +47,34 @@ def test_mcts_deterministic_and_contained():
 def test_mcts_trial_count_grows_one_per_distinct_genome():
     loop = ResearchAgentLoop()
     MCTSAlphaSearch(_provider(), inner_loop=loop).run([("P", "momentum", "5")],
-                                                      iterations=8, timestamp=10)
+                                                      iterations=8, timestamp=10,
+                                                      diagnostic_only=True)
     assert loop.catalog.global_trial_count() >= 2          # each distinct alpha = one trial
+
+
+def test_public_mcts_search_is_diagnostic_without_authority():
+    loop = ResearchAgentLoop()
+    out = MCTSAlphaSearch(_provider(), inner_loop=loop).run(
+        [("P", "momentum", "5")], iterations=3, timestamp=10, diagnostic_only=True)
+    assert all(loop.catalog.state(aid) == AlphaState.DRAFT
+               for aid in loop.catalog.all_ids())
+    assert all(row["diagnostic_only"] is True for row in out["report"].values())
 
 
 def test_mcts_navigates_tree_genomes():
     out = MCTSAlphaSearch(_provider(), inner_loop=ResearchAgentLoop()).run(
-        [("T", ("leaf", "momentum", "5"))], iterations=6, timestamp=10)
+        [("T", ("leaf", "momentum", "5"))], iterations=6, timestamp=10,
+        diagnostic_only=True)
     assert out["best"] and all(isinstance(r, tuple) for r, _ in out["best"])
 
 
 def test_mcts_fail_closed_on_bad_args():
     import pytest
     with pytest.raises(ValueError):
-        MCTSAlphaSearch(_provider()).run([], iterations=5)            # empty seed
+        MCTSAlphaSearch(_provider()).run([], iterations=5, diagnostic_only=True)  # empty seed
     with pytest.raises(ValueError):
-        MCTSAlphaSearch(_provider()).run([("P", "momentum", "5")], iterations=0)
+        MCTSAlphaSearch(_provider()).run(
+            [("P", "momentum", "5")], iterations=0, diagnostic_only=True)
 
 
 def test_mcts_trial_persistence_error_is_batch_fatal():
@@ -74,4 +87,19 @@ def test_mcts_trial_persistence_error_is_batch_fatal():
         MCTSAlphaSearch(unavailable).run(
             [("P", "momentum", "5")],
             iterations=1,
+            diagnostic_only=True,
         )
+
+
+def test_public_default_mcts_is_blocked_before_provider():
+    called = False
+
+    def provider(_definition):
+        nonlocal called
+        called = True
+        return []
+
+    import pytest
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
+        MCTSAlphaSearch(provider).run([("P", "momentum", "5")], iterations=1)
+    assert called is False

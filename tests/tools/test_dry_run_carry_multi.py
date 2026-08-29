@@ -1,25 +1,27 @@
 from __future__ import annotations
 
+import pytest
+
+from services.execution.backtest_authority import BacktestIntegrityBlocked
 from tools import dry_run_carry_multi
 
 
-def test_default_driver_reuses_existing_run_without_recomputing(monkeypatch, tmp_path, capsys):
+def test_default_driver_blocks_before_reusing_invalidated_run(monkeypatch, tmp_path):
     output = tmp_path / "dry_run.db"
     monkeypatch.setattr(dry_run_carry_multi, "_OUT", str(output))
+
+    def fail_if_looked_up(*_args, **_kwargs):
+        pytest.fail("invalidated V1 records must not be looked up for silent reuse")
+
     monkeypatch.setattr(
         dry_run_carry_multi,
         "_existing_carry_run",
-        lambda path: {
-            "run_id": "existing-carry",
-            "pnl": {"sharpe": 0.5, "residual": 0.0},
-        },
+        fail_if_looked_up,
     )
 
     def fail_if_recomputed(*_args, **_kwargs):
-        raise AssertionError("existing append-only run must be reused")
+        pytest.fail("invalidated V1 records must not be recomputed")
 
     monkeypatch.setattr(dry_run_carry_multi, "run_multi_period_dry_run", fail_if_recomputed)
-    dry_run_carry_multi.main()
-
-    assert "existing-carry" in capsys.readouterr().out
-
+    with pytest.raises(BacktestIntegrityBlocked):
+        dry_run_carry_multi.main()

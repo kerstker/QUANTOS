@@ -19,9 +19,11 @@ maxDD 增量、盈利因子、右尾贡献(top-decile 期份额)、交易数、�
 2. 每个 book 名单全期定价(canonical crowd 驱动器只给当期腿定价——信号轮换出的名单
    平仓单缺价被跳过会留陈旧持仓;实验室全期定价保证轮换/退出干净成交)。
 
-实验数据全部 PIT:`fetch_bars_pit` 批量读 + 决策点 as_of 过滤(核心双保险)。
+实验数据全部 PIT:Binance 日线走 t+1d available-time 并拒绝旧 open-time 行；MEXC
+仍走其既有 own-event-time bulk 读；退出核心再按决策点过滤。
 不写 dry_run.db、不发事件、无网络、无墙钟进制品(as_of 取数据最大时间戳)。
-诊断非门禁:不碰晋级/实盘/mandate。用法: python -m tools.exit_policy_lab
+旧实现保留供合成输入下的纯函数测试和 V2 迁移审计；CLI 在读取历史缓存或写制品前
+无条件隔离，避免重新生成 `INVALIDATED_PERP_LEDGER_V1` 盈利声明。
 """
 from __future__ import annotations
 
@@ -31,9 +33,10 @@ from typing import Callable, Optional, Sequence
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.research import alpha_expression as ax
 from services.research import exit_policies as ep
-from services.execution.dry_run_pipeline import run_multi_period_dry_run
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
@@ -118,7 +121,14 @@ def build_crowd_book(db_path: str = _DB_FUNDING) -> LabBook:
     close_by_name = {n: {} for n in book_names}
     bars = {}
     for n in sorted(book_names):
-        rows_n = store.fetch_bars_pit(n, -10 ** 18, 10 ** 18)   # PIT 批量读(治理口径)
+        rows_n = fetch_bars_for_event_decisions(
+            store,
+            n,
+            -10**18,
+            10**18,
+            decision_lag=86_400_000,
+            minimum_knowledge_lag=86_400_000,
+        )
         bars[n] = _to_exit_bars(rows_n)
         for b in rows_n:
             close_by_name[n][int(b.event_time)] = float(b.close)
@@ -190,10 +200,18 @@ def _make_gate_and_ctx(book: LabBook):
     return gate, ctx_factory
 
 
-def _run_stream(book: LabBook, weights: dict, cost_bps: float, gate, ctx_factory,
-                suffix: str):
+def _run_stream(
+    book: LabBook,
+    weights: dict,
+    cost_bps: float,
+    gate,
+    ctx_factory,
+    suffix: str,
+    *,
+    runner: Callable,
+):
     """一条权重流过同一管线(不落库、不发事件)。返回 DryRunRun。"""
-    return run_multi_period_dry_run(
+    return runner(
         periods=book.periods, weights_by_period=weights, prices_by_period=book.prices_by_period,
         gate=gate, ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(),
         strategy_id=f"exitlab_{book.strategy_id}_{suffix}", aum=_AUM, cost_bps=cost_bps,
@@ -240,7 +258,12 @@ def _delta_metrics(base: dict, pol: dict) -> dict:
             "delta_cost_total": d("cost_total")}
 
 
-def run_book(book: LabBook, policies: Optional[Sequence[str]] = None) -> dict:
+def _run_book_legacy_diagnostic(
+    book: LabBook,
+    *,
+    runner: Callable,
+    policies: Optional[Sequence[str]] = None,
+) -> dict:
     """一本书 × 全部策略:同一门/同一成本/同一 AUM,逐策略后处理权重流 → 管线 → 增量指标。"""
     names = list(policies) if policies is not None else list(ep.POLICY_REGISTRY)
     if "baseline_signal_only" not in names:
@@ -251,8 +274,24 @@ def run_book(book: LabBook, policies: Optional[Sequence[str]] = None) -> dict:
         stream = ep.apply_exit_policy(periods=book.periods, weights_by_period=book.weights_by_period,
                                       bars_by_instrument=book.bars_by_instrument, policy=name)
         streams[name] = stream
-        runs[name] = _run_stream(book, stream.weights, book.cost_bps, gate, ctx_factory, name)
-        runs0[name] = _run_stream(book, stream.weights, 0.0, gate, ctx_factory, f"{name}_c0")
+        runs[name] = _run_stream(
+            book,
+            stream.weights,
+            book.cost_bps,
+            gate,
+            ctx_factory,
+            name,
+            runner=runner,
+        )
+        runs0[name] = _run_stream(
+            book,
+            stream.weights,
+            0.0,
+            gate,
+            ctx_factory,
+            f"{name}_c0",
+            runner=runner,
+        )
     base_abs = _abs_metrics(runs["baseline_signal_only"], runs0["baseline_signal_only"],
                             streams["baseline_signal_only"].events)
     base_pnls = ep.period_dollar_pnl([p["equity"] for p in _curve(runs["baseline_signal_only"])], _AUM)
@@ -301,6 +340,10 @@ def run_book(book: LabBook, policies: Optional[Sequence[str]] = None) -> dict:
             "worth_further_study": worth}
 
 
+def run_book(*_args, **_kwargs) -> dict:
+    quarantine_legacy_backtest("tools.exit_policy_lab.run_book")
+
+
 def build_artifact(book_results: dict, omitted: Optional[list] = None) -> dict:
     """组装制品(无墙钟——as_of 取数据最大期戳,两次运行逐字节一致)。"""
     as_of = 0
@@ -339,6 +382,10 @@ def build_artifact(book_results: dict, omitted: Optional[list] = None) -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.exit_policy_lab")
+
+    # Unreachable while V1 timing/perpetual-ledger semantics are invalidated.
+    # The pure builders/runners above remain available to synthetic unit tests.
     books = [build_crowd_book()]
     omitted = []
     if os.path.isfile(_DB_MEXC):

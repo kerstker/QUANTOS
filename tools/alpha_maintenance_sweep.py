@@ -50,6 +50,7 @@ from services.alpha.live_linkage import strategy_status_from_report
 from services.alpha.maintenance import run_maintenance
 from services.alpha.maintenance_events import maintenance_transition_events
 from services.alpha.maintenance_store import MaintenanceStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.monitoring.domain_event_runtime import dispatch_maintenance_event_outbox
 from services.research.paper_trading.health import paper_health_by_alpha
 from services.research.paper_trading.store import PaperTrackStore
@@ -227,12 +228,18 @@ def _seed_manager(alpha_ids) -> AlphaLifecycleManager:
     return AlphaLifecycleManager(cat, AlphaFactoryConfig())
 
 
-def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
-              backtest_refs: str = _BACKTEST_REFS, out: str = _SNAPSHOT_PATH,
-              maintenance_db: Optional[str] = None, event_bus=None,
-              continuous_paper: str = _CONTINUOUS_PAPER,
-              paper_cycle_path: str = _PAPER_CYCLE,
-              verify_path: str = _OI_TOP_VERIFY) -> dict:
+def _run_sweep_legacy_diagnostic(
+    *,
+    now: int,
+    paper_track_db: str = _PAPER_TRACK_DB,
+    backtest_refs: str = _BACKTEST_REFS,
+    out: str = _SNAPSHOT_PATH,
+    maintenance_db: Optional[str] = None,
+    event_bus=None,
+    continuous_paper: str = _CONTINUOUS_PAPER,
+    paper_cycle_path: str = _PAPER_CYCLE,
+    verify_path: str = _OI_TOP_VERIFY,
+) -> dict:
     """驱动器边界:载 paper_track.db + backtest 参照 -> 算 health_by_alpha -> 并入 top_contra
     quarantine 证据(spec §16.3)-> 播一次性 catalog -> 跑维护 -> 落只读快照。
     任何缺失/损坏 -> fail-closed 空快照(零动作)。"""
@@ -285,7 +292,12 @@ def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
     return snap
 
 
+def run_sweep(*_args, **_kwargs) -> dict:
+    quarantine_legacy_backtest("tools.alpha_maintenance_sweep")
+
+
 def main() -> None:
+    quarantine_legacy_backtest("tools.alpha_maintenance_sweep")
     now = int(time.time() * 1000)
     event_bus = open_domain_event_bus()
     try:

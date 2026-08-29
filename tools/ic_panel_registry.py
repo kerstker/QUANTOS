@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from quantos.contracts.multi_asset import RETAINED_FX_FACTOR_SPECS
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.caching_store import CachingPITStore
 from services.data.persistent_store import SqlitePITStore
 from services.research import alpha_expression as ax
@@ -66,22 +67,41 @@ def _load_json(name):
         return json.load(fh)
 
 
-def _build(db_name, instruments, fields=("close",)):
+def _build(
+    db_name,
+    instruments,
+    fields=("close",),
+    *,
+    decision_lag=0,
+    minimum_knowledge_lag=0,
+):
     store = CachingPITStore(SqlitePITStore(os.path.join(_CACHE, db_name), create=False))
-    event_times = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, -10 ** 18, 10 ** 18)})
-    # This panel is an own-event-time consumer: a bar is used only at its
-    # recorded event_time.  Use the store's bulk PIT contract once per
-    # instrument instead of calling latest_as_of() for every (time, instrument)
-    # cell.  The old loop performed hundreds of thousands of repeated in-memory
-    # scans on the 336-symbol Binance universe and made the registry test suite
-    # look hung, while the resulting values were identical.
-    bars_by_instrument = {
-        instrument: {
-            int(bar.event_time): bar
-            for bar in store.fetch_bars_pit(instrument, -10 ** 18, 10 ** 18)
+    bars_by_instrument = {}
+    for instrument in sorted(instruments):
+        if decision_lag or minimum_knowledge_lag:
+            bars = fetch_bars_for_event_decisions(
+                store,
+                instrument,
+                -10**18,
+                10**18,
+                decision_lag=decision_lag,
+                minimum_knowledge_lag=minimum_knowledge_lag,
+            )
+        else:
+            # Non-Binance providers retain their existing own-event-time
+            # contract.  Their clocks must be reviewed source by source rather
+            # than inheriting a Binance cache-epoch policy by filename shape.
+            bars = store.fetch_bars_pit(instrument, -10**18, 10**18)
+        bars_by_instrument[instrument] = {
+            int(bar.event_time): bar for bar in bars
         }
-        for instrument in sorted(instruments)
-    }
+    event_times = sorted(
+        {
+            event_time
+            for rows in bars_by_instrument.values()
+            for event_time in rows
+        }
+    )
     matrices = {field: [] for field in fields}
     for event_time in event_times:
         for field in fields:
@@ -93,14 +113,24 @@ def _build(db_name, instruments, fields=("close",)):
                 )
                 for instrument in sorted(instruments)
             ])
-    return ax.FieldPanel(sorted(instruments), event_times, matrices)
+    return ax.FieldPanel(
+        sorted(instruments),
+        event_times,
+        matrices,
+        decision_times=[t + decision_lag for t in event_times],
+    )
 
 
 @lru_cache(maxsize=None)
 def _crypto_funding_panel():
     """115 币 carry 宇宙(照抄 tools/crypto_carry_strategy.py 的配方)。"""
     instruments = sorted(_load_json("crypto_funding_snapshot.json")["instruments"])
-    panel = _build("crypto_funding.db", instruments)
+    panel = _build(
+        "crypto_funding.db",
+        instruments,
+        decision_lag=86_400_000,
+        minimum_knowledge_lag=86_400_000,
+    )
     funding = {tk: {int(k): v for k, v in d.items()} for tk, d in _load_json("crypto_funding_rates.json").items()}
     panel.matrices["funding"] = [[funding.get(i, {}).get(t) for i in panel.instruments] for t in panel.event_times]
     return panel
@@ -115,7 +145,12 @@ def _crypto_oi_majors_panel():
     tickers = sorted(tk for tk, d in oi_data.items() if not tk.startswith("_") and len(d) >= min_days)
     snap_insts = set(_load_json("crypto_funding_snapshot.json")["instruments"])
     instruments = sorted(tk for tk in tickers if tk in snap_insts)
-    panel = _build("crypto_funding.db", instruments)
+    panel = _build(
+        "crypto_funding.db",
+        instruments,
+        decision_lag=86_400_000,
+        minimum_knowledge_lag=86_400_000,
+    )
     oi_by_inst = {tk: {int(k): v for k, v in d.items()} for tk, d in oi_data.items() if not tk.startswith("_")}
     panel.matrices["global_ls"] = [[(oi_by_inst.get(i, {}).get(t) or {}).get("global_ls")
                                     for i in panel.instruments] for t in panel.event_times]
@@ -134,7 +169,12 @@ def _crypto_daily_panel():
 def _crypto_binance_wide_panel():
     """336 币宽宇宙——ingestion 时已过滤稳定币/包装币/太短历史,直接读快照的 instruments 即可。"""
     instruments = sorted(_load_json("crypto_binance_snapshot.json")["instruments"])
-    return _build("crypto_binance.db", instruments)
+    return _build(
+        "crypto_binance.db",
+        instruments,
+        decision_lag=86_400_000,
+        minimum_knowledge_lag=86_400_000,
+    )
 
 
 @lru_cache(maxsize=None)

@@ -22,6 +22,7 @@ import json
 import os
 import statistics
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos
@@ -73,6 +74,7 @@ def _per_year(series, times):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_oi_verify")
     panel, instruments = build_panel()
     px = panel.matrices["close"]; fm = panel.matrices["funding"]
     times = panel.event_times

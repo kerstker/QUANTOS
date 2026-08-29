@@ -38,6 +38,7 @@ from services.research.alpha_factory import (
 
 def run_alpha_factory(*args, **kwargs):
     kwargs["ephemeral"] = True
+    kwargs["diagnostic_only"] = True
     return _run_alpha_factory(*args, **kwargs)
 from services.research.carry_pnl import economic_return_series
 

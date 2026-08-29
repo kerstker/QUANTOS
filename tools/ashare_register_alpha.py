@@ -1,26 +1,9 @@
-"""把 A 股微盘复合 alpha 的身份注册进实验注册表(experiment_registry)。
+"""A 股微盘复合 alpha 的旧版注册计划转换器。
 
-镜像 tools/register_alpha_catalog.py 的承重约定,但诚实降级一层:crypto 的 carry/crowd 走
-run_registered_candidate_batch(真 evaluator 门禁 + 泄漏证据),而 A 股复合的证据目前只到
-研究快照(alpha_snapshot.json 的 train/test IC)+ 执行现实干跑(dry_run.db run
-11dae0671c13e2e2)——**没有过 evaluator 门禁**(无 DSR/PBO/walk-forward/leakage 证据)。
-因此本工具只写:
-
-  1. 一行 alpha_state:状态 DRAFT(注册表的研究初始态,catalog.register 的入场态,非人
-     actor 不需要 lifecycle 转换;非人永远到不了 APPROVED——本工具也结构性拒绝写 APPROVED)。
-     definition_json 是合法 AlphaDefinition(复合定义:因子清单+权重+cap30 换手规则+宇宙文件)。
-  2. 一条不可变 evaluations 记录:ic_mean/ic_t 取 alpha_snapshot combo test h1,sharpe 取
-     dry_run.db run 11dae0671c13e2e2 的 pn1.sharpe,verdict 诚实标 REQUIRES_HUMAN_REVIEW,
-     reasons 写明证据未过门禁。
-
-幂等:definition/evaluation 全部由快照+干跑 run 内容确定性导出(reproducibility_hash =
-内容哈希),重跑得到同一 run_id + 同一 content_hash -> insert_evaluation 幂等 no-op、
-upsert_alpha 覆盖同值,绝不产生重复行;若该 alpha 的生命周期已被(人工)推进到 DRAFT 之后,
-重跑保留现状状态、绝不回退。
-
-网络:无。生产注册表路径不在本文件构造(治理 test_experiment_registry_isolation 钉死:
-tools/*.py 不得出现生产 registry db 的字面量路径),经 tools/search_trial_registry 的
-PRODUCTION_EXPERIMENT_DB 共享常量,fail-closed(create=False,未初始化即抛错)。
+``DRY_RUN_ID`` 来自已经失效的 V1 永续账本，因此只能作为
+``INVALIDATED_PERP_LEDGER_V1`` 诊断历史。``build_registration_plan`` 保留为无 IO 的
+确定性转换函数，便于审计旧制品；``apply_registration`` 与 ``main`` 则在读取快照或
+打开任何注册表之前无条件隔离，禁止把旧 Sharpe/P&L 重新写入生产证据面。
 """
 from __future__ import annotations
 
@@ -33,6 +16,7 @@ from typing import Mapping, Optional
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import (
     ExperimentStoreError,
@@ -164,10 +148,12 @@ def apply_registration(
     *,
     recorded_at: Optional[int] = None,
 ) -> str:
-    """把注册计划落进注册表(fail-closed:库不存在/未初始化即抛错)。返回 evaluation run_id。
+    """隔离旧版注册写入；保留原签名以便调用方得到明确的完整性错误。
 
-    幂等:同 plan 重跑 -> 同 run_id 同 content_hash -> 幂等 no-op;alpha 行 upsert 同值。
-    已被推进到 DRAFT 之后的生命周期状态绝不回退;写 APPROVED 结构性拒绝。"""
+    quarantine 必须是首个运行时动作，确保即使传入不存在的路径也不会创建数据库，
+    传入现有注册表也不会读取或修改它。
+    """
+    quarantine_legacy_backtest("tools.ashare_register_alpha.apply_registration")
     if recorded_at is None:
         recorded_at = time.time_ns() // 1_000_000   # 墙钟只在驱动边界(工具入口)
     store = SqliteExperimentStore(registry_db, create=False)
@@ -219,6 +205,7 @@ def _load_dry_run_pnl(dry_run_db: str, run_id: str) -> Mapping:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.ashare_register_alpha.main")
     with open(_ALPHA_SNAPSHOT, encoding="utf-8") as fh:
         snapshot = json.load(fh)
     pnl = _load_dry_run_pnl(_DRY_RUN_DB, DRY_RUN_ID)

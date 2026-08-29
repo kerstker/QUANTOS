@@ -26,6 +26,7 @@ import time
 from quantos.contracts.hashing import stable_hash
 from quantos.runtime_paths import runtime_state_root
 from services.data.panel_quality import gate_decision_inputs
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
@@ -790,14 +791,12 @@ def _run() -> None:
                     alerts.append(f"{alpha_id}: no legs within this week's lookback of {t_last} "
                               f"— decision skipped")
 
-        first_dec_ts = (decs[0]["decided_ts"] if decs
-                        else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
-        # 2026-08-02 回归修复:f23713b0 丢回了变体节奏——参照 sharpe 必须按该候选
-        # 自己的 cadence 网格与 quantile 重算(否则 q20/taker/3d 变体全部误用
-        # 周度网格 + 默认分位,参照值逐位雷同、不可比)。
-        ref_sharpe, ref_weeks = _reference_sharpe(sig, _reference_grid(spec, ev),
-                                                  ev, insts, spot_prices, funding_sum,
-                                                  before_ts=first_dec_ts, quantile=spec["quantile"])
+        # The archived V1 historical approximation is retained only as code-level
+        # audit material.  It used spot returns plus an approximate funding model,
+        # so it cannot serve as an input or comparison value for the attested
+        # perpetual-ledger forward track.
+        ref_sharpe = None
+        ref_weeks = 0
         if admission_ref is None:
             out = {
                 "alerts": ["forward realization blocked: current data admission unavailable"],
@@ -818,7 +817,7 @@ def _run() -> None:
                 timestamps=realization_timestamps,
                 prices=prices,
                 funding_sum=funding_sum,
-                backtest_sharpe=ref_sharpe,
+                backtest_sharpe=None,
                 blocked_instruments=blocked_instruments,
                 admission_ref=admission_ref,
                 min_gap_ms=realization_min_gap_ms,
@@ -846,7 +845,9 @@ def _run() -> None:
             "paper_sharpe": attested["paper_sharpe"],
             "paper_ic": attested["paper_ic"],
             "cum_return": attested["cum_return"],
-            "backtest_reference_sharpe": ref_sharpe, "reference_weeks": ref_weeks,
+            "backtest_reference_sharpe": ref_sharpe,
+            "reference_weeks": ref_weeks,
+            "backtest_reference_status": LEGACY_INVALIDATION_CODE,
             "attested_pending_decisions": attested["attested_pending_decisions"],
             "legacy_unattested_decisions": attested["legacy_unattested_decisions"],
             "evidence_state": evidence_state,

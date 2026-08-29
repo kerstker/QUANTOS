@@ -7,7 +7,9 @@ import pytest
 
 from quantos.contracts.data import Bar
 from services.data.persistent_store import SqlitePITStore
-from services.alpha.panel_backtest import run_panel_backtest
+from services.alpha.panel_backtest import (
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+)
 from services.research import alpha_expression as ax
 
 
@@ -35,6 +37,59 @@ def test_future_bar_does_not_change_past_cells():
     p0 = ax.build_field_panel(s0, ["A", "B", "C"], ets)
     p1 = ax.build_field_panel(s1, ["A", "B", "C"], ets)   # same event_times -> future bar excluded
     assert p0.matrices["close"] == p1.matrices["close"]
+
+
+def test_field_panel_uses_explicit_decision_time_for_delayed_daily_close():
+    store = SqlitePITStore(":memory:", create=True)
+    store.add(
+        "A",
+        Bar(
+            instrument_id="A",
+            event_time=10,
+            knowledge_time=20,
+            open=9.0,
+            high=11.0,
+            low=8.0,
+            close=10.0,
+            volume=100.0,
+        ),
+    )
+
+    unavailable = ax.build_field_panel(store, ["A"], [10])
+    available = ax.build_field_panel(store, ["A"], [10], decision_times=[20])
+
+    assert unavailable.matrices["close"] == [[None]]
+    assert available.matrices["close"] == [[10.0]]
+    assert available.event_times == (10,)
+    assert available.decision_times == (20,)
+
+
+def test_field_panel_rejects_legacy_same_open_time_row_under_minimum_lag():
+    store = SqlitePITStore(":memory:", create=True)
+    store.add("A", _bar("A", 10, 10.0))
+
+    contaminated = ax.build_field_panel(
+        store,
+        ["A"],
+        [10],
+        decision_times=[20],
+        minimum_knowledge_lag=10,
+    )
+
+    assert contaminated.matrices["close"] == [[None]]
+
+
+def test_panel_to_periods_rejects_delayed_close_without_execution_clock():
+    panel = ax.FieldPanel(
+        ("A", "B"),
+        (10, 20),
+        {"close": [[10.0, 20.0], [11.0, 19.0]]},
+        decision_times=(20, 30),
+    )
+    alpha = [[1.0, -1.0], [1.0, -1.0]]
+
+    with pytest.raises(ValueError, match="explicit post-decision execution"):
+        ax.panel_to_periods(alpha, panel)
 
 
 def test_ts_op_at_row_t_ignores_future_rows():

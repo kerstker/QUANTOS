@@ -34,7 +34,8 @@ FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1_000
 SLOW_STATE_LOOKBACK_MS = 8 * 60 * 60 * 1_000
 SLOW_STATE_MIN_OBSERVATIONS = 768
 LABEL_POLICY = (
-    "FIRST_KNOWN_MID_AT_OR_AFTER_DECISION_PLUS_LATENCY_PLUS_HORIZON"
+    "FIRST_KNOWN_ENTRY_AT_OR_AFTER_DECISION_PLUS_LATENCY_"
+    "AND_EXIT_AT_OR_AFTER_ENTRY_PLUS_HORIZON"
 )
 # These versions are part of candidate identity.  The base version is kept
 # deliberately separate from feedback variants so an adaptive challenger can
@@ -210,15 +211,23 @@ class RealtimeFrame:
     # byte compatible, while the independent RPI research driver may attach
     # only observations whose knowledge_time is no later than this decision.
     rpi_notional_imbalance_1000: float | None = None
+    knowledge_time_ms: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instrument_id, str) or not self.instrument_id:
             raise RealtimeAlphaDiscoveryError("instrument_id is required")
+        knowledge_time = (
+            self.decision_time_ms
+            if self.knowledge_time_ms is None
+            else self.knowledge_time_ms
+        )
+        object.__setattr__(self, "knowledge_time_ms", knowledge_time)
         if (
             type(self.event_time_ms) is not int
             or type(self.decision_time_ms) is not int
+            or type(knowledge_time) is not int
             or self.event_time_ms < 0
-            or self.decision_time_ms < self.event_time_ms
+            or not self.event_time_ms <= knowledge_time <= self.decision_time_ms
         ):
             raise RealtimeAlphaDiscoveryError("frame violates PIT time ordering")
         numeric = (
@@ -790,38 +799,35 @@ def build_forward_paper_decision(
         for name in names
     }
     turnover = sum(abs(value) for value in deltas.values())
-    spread_cost = sum(
-        abs(delta)
-        * frame_by_instrument[name].spread_bps
-        / 2.0
-        / 10_000.0
-        for name, delta in deltas.items()
-    )
-    fixed_cost = turnover * (policy.fee_bps + policy.slippage_bps) / 10_000.0
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_id": spec.candidate_id,
         "family_id": spec.family_id,
         "mechanism": spec.mechanism,
         "signal_version": spec.signal_version,
         "decision_time_ms": decision_time,
+        "entry_target_time_ms": decision_time + policy.execution_latency_ms,
+        "exit_target_time_ms": (
+            decision_time + policy.execution_latency_ms + spec.horizon_ms
+        ),
+        # Compatibility alias for schedulers: this is the earliest possible
+        # exit.  Realization is based on actual entry knowledge time below.
         "target_time_ms": decision_time + policy.execution_latency_ms + spec.horizon_ms,
         "horizon_ms": spec.horizon_ms,
         "execution_latency_ms": policy.execution_latency_ms,
         "max_label_lateness_ms": policy.max_label_lateness_ms,
         "weights": dict(sorted(weights.items())),
         "previous_weights": dict(sorted(prior.items())),
+        "weight_deltas": dict(sorted(deltas.items())),
         "signals": dict(sorted(signals.items())),
-        "entry_mid_prices": {
+        "decision_mid_prices": {
             item.instrument_id: item.mid_price for item in ordered if item.instrument_id in weights
         },
-        "entry_funding_rates": {
-            item.instrument_id: item.funding_rate
-            for item in ordered
-            if item.instrument_id in weights
-        },
         "turnover": turnover,
-        "decision_cost": fixed_cost + spread_cost,
+        # The executable cost is unknowable at decision time.  Realization
+        # computes it from the actual post-latency entry frames.
+        "decision_cost": None,
+        "cost_policy": "POST_LATENCY_ENTRY_SPREAD_PLUS_FIXED_BPS",
         "fee_bps": policy.fee_bps,
         "slippage_bps": policy.slippage_bps,
         "label_policy": LABEL_POLICY,
@@ -834,51 +840,104 @@ def build_forward_paper_decision(
 
 def realize_forward_paper_decision(
     decision: Mapping[str, object],
-    future_frames: Mapping[str, RealtimeFrame],
+    future_frames: Mapping[str, Sequence[RealtimeFrame]],
 ) -> dict[str, object]:
-    """Realize a previously frozen decision from the first eligible future marks."""
+    """Realize a frozen decision from distinct post-latency entry/exit marks."""
     try:
-        target = int(decision["target_time_ms"])
+        if int(decision["schema_version"]) != 2:
+            raise RealtimeAlphaDiscoveryError(
+                "legacy forward decision lacks causal entry/exit evidence"
+            )
+        entry_target = int(decision["entry_target_time_ms"])
         lateness = int(decision["max_label_lateness_ms"])
         horizon = int(decision["horizon_ms"])
         weights = {str(k): float(v) for k, v in dict(decision["weights"]).items()}
-        entry_prices = {
-            str(k): float(v) for k, v in dict(decision["entry_mid_prices"]).items()
-        }
-        funding_rates = {
-            str(k): float(v) for k, v in dict(decision["entry_funding_rates"]).items()
+        deltas = {
+            str(k): float(v) for k, v in dict(decision["weight_deltas"]).items()
         }
         signals = {str(k): float(v) for k, v in dict(decision["signals"]).items()}
-        cost = float(decision["decision_cost"])
+        fee_bps = float(decision["fee_bps"])
+        slippage_bps = float(decision["slippage_bps"])
     except (KeyError, TypeError, ValueError) as exc:
         raise RealtimeAlphaDiscoveryError("forward decision payload is invalid") from exc
-    if not weights or set(weights) != set(entry_prices) or set(weights) != set(funding_rates):
+    if not weights or not deltas or set(weights) - set(signals):
         raise RealtimeAlphaDiscoveryError("forward decision evidence is incomplete")
-    if set(weights) - set(future_frames):
+    if set(deltas) - set(future_frames):
         raise RealtimeAlphaDiscoveryError("future marks do not cover every open leg")
     instrument_returns: dict[str, float] = {}
-    as_of = target
+    entry_prices: dict[str, float] = {}
+    exit_prices: dict[str, float] = {}
+    entry_times: dict[str, int] = {}
+    exit_times: dict[str, int] = {}
+    entry_spreads: dict[str, float] = {}
+    entry_frames: dict[str, RealtimeFrame] = {}
+    as_of = entry_target
+    for instrument in sorted(deltas):
+        marks = sorted(
+            tuple(future_frames[instrument]),
+            key=lambda item: (int(item.knowledge_time_ms), item.decision_time_ms),
+        )
+        entry = next(
+            (item for item in marks if int(item.knowledge_time_ms) >= entry_target),
+            None,
+        )
+        if entry is None:
+            raise RealtimeAlphaDiscoveryError("entry mark precedes the frozen target")
+        entry_known = int(entry.knowledge_time_ms)
+        if entry_known - entry_target > lateness:
+            raise RealtimeAlphaDiscoveryError("entry mark exceeds label lateness")
+        entry_frames[instrument] = entry
+        entry_prices[instrument] = entry.mid_price
+        entry_times[instrument] = entry_known
+        entry_spreads[instrument] = entry.spread_bps
+        as_of = max(as_of, entry_known)
+    fixed_cost = sum(abs(value) for value in deltas.values()) * (
+        fee_bps + slippage_bps
+    ) / 10_000.0
+    spread_cost = sum(
+        abs(delta) * entry_frames[instrument].spread_bps / 2.0 / 10_000.0
+        for instrument, delta in deltas.items()
+    )
+    cost = fixed_cost + spread_cost
     for instrument, weight in sorted(weights.items()):
-        frame = future_frames[instrument]
-        if frame.decision_time_ms < target:
-            raise RealtimeAlphaDiscoveryError("future mark precedes the frozen target")
-        if frame.decision_time_ms - target > lateness:
-            raise RealtimeAlphaDiscoveryError("future mark exceeds label lateness")
-        if entry_prices[instrument] <= 0 or not math.isfinite(weight):
+        marks = sorted(
+            tuple(future_frames[instrument]),
+            key=lambda item: (int(item.knowledge_time_ms), item.decision_time_ms),
+        )
+        entry = entry_frames[instrument]
+        entry_known = int(entry.knowledge_time_ms)
+        exit_target = entry_known + horizon
+        exit_frame = next(
+            (item for item in marks if int(item.knowledge_time_ms) >= exit_target),
+            None,
+        )
+        if exit_frame is None:
+            raise RealtimeAlphaDiscoveryError("exit mark precedes the entry-plus-horizon target")
+        exit_known = int(exit_frame.knowledge_time_ms)
+        if exit_known - exit_target > lateness:
+            raise RealtimeAlphaDiscoveryError("exit mark exceeds label lateness")
+        if entry.mid_price <= 0 or not math.isfinite(weight):
             raise RealtimeAlphaDiscoveryError("forward decision price/weight is invalid")
-        price_return = frame.mid_price / entry_prices[instrument] - 1.0
-        funding_cash_flow = -funding_rates[instrument] * horizon / FUNDING_INTERVAL_MS
+        price_return = exit_frame.mid_price / entry.mid_price - 1.0
+        funding_cash_flow = -entry.funding_rate * horizon / FUNDING_INTERVAL_MS
         instrument_returns[instrument] = price_return + funding_cash_flow
-        as_of = max(as_of, frame.decision_time_ms)
+        exit_prices[instrument] = exit_frame.mid_price
+        exit_times[instrument] = exit_known
+        as_of = max(as_of, exit_known)
     gross = sum(weights[name] * instrument_returns[name] for name in weights)
     signal_values = [signals[name] for name in sorted(instrument_returns)]
     return_values = [instrument_returns[name] for name in sorted(instrument_returns)]
     realized_ic = _rank_ic(signal_values, return_values)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_id": str(decision.get("candidate_id", "")),
         "decision_time_ms": int(decision["decision_time_ms"]),
         "as_of_ms": as_of,
+        "entry_knowledge_times_ms": entry_times,
+        "exit_knowledge_times_ms": exit_times,
+        "entry_mid_prices": entry_prices,
+        "exit_mid_prices": exit_prices,
+        "entry_spreads_bps": entry_spreads,
         "gross_return": gross,
         "decision_cost": cost,
         "net_return": gross - cost,
@@ -978,9 +1037,9 @@ def evaluate_hypothesis(
 
     Frames are expected to be the latest complete snapshot in each decision
     bucket.  The evaluator samples non-overlapping decisions at the hypothesis
-    horizon and looks up the first *known* future mid at or after
-    ``decision + latency + horizon``.  A future frame outside the configured
-    lateness tolerance is never consumed.
+    horizon, enters on the first price known at or after ``decision + latency``,
+    and exits on the first price known after a full horizon from that entry.
+    A frame outside the configured lateness tolerance is never consumed.
     """
     policy = policy or RealtimeAlphaPolicy()
     observations: dict[int, list[tuple[str, float, float, float]]] = {}
@@ -989,9 +1048,14 @@ def evaluate_hypothesis(
         frames = sorted(raw_frames, key=lambda item: item.decision_time_ms)
         if any(item.instrument_id != instrument for item in frames):
             raise RealtimeAlphaDiscoveryError("frame instrument does not match its series key")
-        times = [item.decision_time_ms for item in frames]
-        if len(times) != len(set(times)):
+        decision_times = [item.decision_time_ms for item in frames]
+        if len(decision_times) != len(set(decision_times)):
             raise RealtimeAlphaDiscoveryError("frame decision times must be unique per instrument")
+        known_frames = sorted(
+            frames,
+            key=lambda item: (int(item.knowledge_time_ms), item.decision_time_ms),
+        )
+        knowledge_times = [int(item.knowledge_time_ms) for item in known_frames]
         for frame in frames:
             if frame.decision_time_ms % policy.decision_interval_ms != 0:
                 continue
@@ -1009,22 +1073,29 @@ def evaluate_hypothesis(
                 and frame.rpi_notional_imbalance_1000 is None
             ):
                 continue
-            target = frame.decision_time_ms + policy.execution_latency_ms + spec.horizon_ms
-            future_index = bisect_left(times, target)
-            if future_index >= len(frames):
+            entry_target = frame.decision_time_ms + policy.execution_latency_ms
+            entry_index = bisect_left(knowledge_times, entry_target)
+            if entry_index >= len(known_frames):
                 continue
-            future = frames[future_index]
-            if future.decision_time_ms - target > policy.max_label_lateness_ms:
+            entry = known_frames[entry_index]
+            if int(entry.knowledge_time_ms) - entry_target > policy.max_label_lateness_ms:
                 continue
-            future_return = future.mid_price / frame.mid_price - 1.0
-            funding_cash_flow = -frame.funding_rate * spec.horizon_ms / FUNDING_INTERVAL_MS
+            exit_target = int(entry.knowledge_time_ms) + spec.horizon_ms
+            exit_index = bisect_left(knowledge_times, exit_target, lo=entry_index + 1)
+            if exit_index >= len(known_frames):
+                continue
+            exit_frame = known_frames[exit_index]
+            if int(exit_frame.knowledge_time_ms) - exit_target > policy.max_label_lateness_ms:
+                continue
+            future_return = exit_frame.mid_price / entry.mid_price - 1.0
+            funding_cash_flow = -entry.funding_rate * spec.horizon_ms / FUNDING_INTERVAL_MS
             economic_return = future_return + funding_cash_flow
             observations.setdefault(frame.decision_time_ms, []).append(
                 (
                     instrument,
                     signal_score(spec, frame),
                     economic_return,
-                    frame.spread_bps,
+                    entry.spread_bps,
                 )
             )
 

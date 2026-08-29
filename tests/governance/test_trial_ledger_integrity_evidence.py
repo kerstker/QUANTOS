@@ -122,8 +122,15 @@ def test_provenance_wiring_reports_both_canonical_entries() -> None:
 
     wiring = _provenance_wiring()
     assert wiring["available"] is True
-    assert wiring["wired_entry_count"] == 5
-    assert all(entry["wired"] for entry in wiring["entries"].values())
+    assert wiring["wired_entry_count"] == 4
+    registered = wiring["entries"]["run_registered_candidate_batch"]
+    assert registered["wired"] is False
+    assert registered["quarantined"] is True
+    assert all(
+        entry["wired"]
+        for name, entry in wiring["entries"].items()
+        if name != "run_registered_candidate_batch"
+    )
 
 
 def test_generator_does_not_mutate_the_ledger(tmp_path) -> None:

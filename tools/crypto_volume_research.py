@@ -19,6 +19,7 @@ from services.research.panel_builder import make_volume_periods_provider
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.volume_signals import VOLUME_OPS
 from services.alpha.config import AlphaFactoryConfig
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import (
     run_registered_candidate_batch,
 )
@@ -75,7 +76,7 @@ def _run_registered_pool(
     )
 
 
-def _main(registry: ExperimentRegistry) -> None:
+def _main_legacy_diagnostic(registry: ExperimentRegistry) -> None:
     # argv: [days] [n_coins] — fewer days -> fewer periods -> the O(periods^2) panel build is
     # dramatically faster (this is a CPU/algorithmic knob, not a GPU one; see module note).
     days = int(sys.argv[1]) if len(sys.argv) > 1 else DAYS
@@ -162,7 +163,12 @@ def _main(registry: ExperimentRegistry) -> None:
         print(f"{aid:28s} {ns_s:>10} {dsr_s:>9} {ic_s:>8} {br_s:>8}  {verdict}")
 
 
+def _main(_registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.crypto_volume_research._main")
+
+
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_volume_research.main")
     with production_experiment_registry() as registry:
         _main(registry)
 

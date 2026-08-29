@@ -22,6 +22,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 
@@ -90,6 +91,7 @@ def _per_year(series, times):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_oi_survivorship")
     # A) survivors-only (proxy price) — baseline on the SAME price source for apples-to-apples
     pS, insS, tS = _build(SURVIVORS)
     sigS = ax.evaluate(CROWD_CONTRA, pS)

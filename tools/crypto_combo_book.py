@@ -17,6 +17,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.alpha.population_optimizer import (
@@ -34,6 +35,7 @@ _OUT = os.path.join("data", "cache", "crypto_combo_book.json")
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_combo_book")
     panel, instruments = build_panel()
     px = panel.matrices["close"]; fm = panel.matrices["funding"]
     times = panel.event_times

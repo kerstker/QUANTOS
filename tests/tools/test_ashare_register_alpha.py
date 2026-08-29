@@ -1,21 +1,24 @@
-"""TDD for tools/ashare_register_alpha.py — A 股微盘复合 alpha 的注册表身份注册。
+"""TDD for tools/ashare_register_alpha.py — A 股旧版证据注册的隔离边界。
 
-钉死:DRAFT 初始态(绝不 APPROVED)、REQUIRES_HUMAN_REVIEW 诚实 verdict、确定性幂等
-(重跑无重复行、不推进/回退已有生命周期)、definition_json 可被 AlphaDefinition 校验。
+钉死:注册计划转换保持确定性纯函数，但任何持久化入口都必须在读快照或开注册表前
+以 INVALIDATED_PERP_LEDGER_V1 fail-closed，且不产生文件或修改已有数据库。
 """
 import json
 
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
-from quantos.contracts.research import AlphaState
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research.experiment_registry.store import (
     ExperimentStoreError,
     SqliteExperimentStore,
 )
+from tools import ashare_register_alpha
 from tools.ashare_register_alpha import (
     ALPHA_ID,
-    apply_registration,
     build_registration_plan,
 )
 
@@ -46,17 +49,13 @@ def _pnl():
             "residual": 1e-09}
 
 
-def _apply(plan, db_path):
-    return apply_registration(plan, str(db_path), recorded_at=1_000)
-
-
-def test_plan_is_deterministic_and_carries_real_evidence():
+def test_plan_is_deterministic_and_preserves_diagnostic_history():
     p1 = build_registration_plan(_snapshot(), _pnl())
     p2 = build_registration_plan(_snapshot(), _pnl())
     assert p1 == p2, "same inputs must produce a bit-identical plan (idempotency root)"
     assert p1.alpha_id == ALPHA_ID
     assert p1.state == "DRAFT"
-    assert p1.sharpe == 1.2285                      # dry_run.db run 11dae0671c13e2e2
+    assert p1.sharpe == 1.2285  # legacy diagnostic input; persistence is quarantined below
     ev = p1.evaluation
     assert ev.ic_mean == 0.0949 and ev.ic_tstat == 12.7552   # combo test h1
     assert ev.verdict.value == "REQUIRES_HUMAN_REVIEW"
@@ -84,68 +83,58 @@ def test_plan_fails_closed_on_missing_evidence():
         build_registration_plan(_snapshot(), {"total_return": 0.4})   # no sharpe
 
 
-def test_apply_writes_draft_alpha_and_evaluation_and_is_idempotent(tmp_path):
+def test_apply_quarantines_before_creating_missing_registry(tmp_path):
+    plan = build_registration_plan(_snapshot(), _pnl())
+    db = tmp_path / "does-not-exist.db"
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        ashare_register_alpha.apply_registration(plan, str(db), recorded_at=1_000)
+
+    assert not db.exists(), "quarantine must run before SQLite can create the path"
+
+
+def test_apply_quarantines_before_reading_or_modifying_existing_registry(
+    tmp_path, monkeypatch
+):
     db = tmp_path / "reg.db"
     SqliteExperimentStore(str(db), create=True).close()
     plan = build_registration_plan(_snapshot(), _pnl())
+    before = db.read_bytes()
 
-    run_id_1 = _apply(plan, db)
-    run_id_2 = _apply(plan, db)
-    assert run_id_1 == run_id_2
+    def forbidden_store(*_args, **_kwargs):
+        pytest.fail("registry opened before authority quarantine")
 
-    store = SqliteExperimentStore(str(db), create=False)
-    try:
-        alphas = [a for a in store.all_alphas() if a["alpha_id"] == ALPHA_ID]
-        assert len(alphas) == 1, "re-run must not duplicate the alpha row"
-        row = alphas[0]
-        assert row["state"] == "DRAFT"
-        assert row["sharpe"] == 1.2285
-        # definition_json must round-trip through the canonical contract (load_into path)
-        parsed = AlphaDefinition.model_validate(json.loads(row["definition_json"]))
-        assert parsed.alpha_id == ALPHA_ID
-        evals = store.list_evaluations(ALPHA_ID)
-        assert len(evals) == 1, "re-run must not duplicate the evaluation artifact"
-        assert evals[0]["verdict"] == "REQUIRES_HUMAN_REVIEW"
-        ej = json.loads(evals[0]["evaluation_json"])
-        assert ej["ic_mean"] == 0.0949 and ej["net_sharpe"] == 1.2285
-    finally:
-        store.close()
+    monkeypatch.setattr(ashare_register_alpha, "SqliteExperimentStore", forbidden_store)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        ashare_register_alpha.apply_registration(plan, str(db), recorded_at=1_000)
+
+    assert db.read_bytes() == before, "existing registry must remain byte-for-byte unchanged"
 
 
-def test_apply_never_writes_approved_and_preserves_advanced_state(tmp_path):
-    db = tmp_path / "reg.db"
-    SqliteExperimentStore(str(db), create=True).close()
-    plan = build_registration_plan(_snapshot(), _pnl())
-    _apply(plan, db)
+def test_main_quarantines_before_snapshot_dry_run_or_registry_access(monkeypatch):
+    touched = []
 
-    # simulate a human-advanced lifecycle state; a re-run must NOT regress it
-    store = SqliteExperimentStore(str(db), create=False)
-    try:
-        store.upsert_alpha(
-            ALPHA_ID,
-            json.dumps(plan.definition.model_dump(), sort_keys=True, default=str),
-            AlphaState.TESTING.value, "[]", plan.sharpe, None,
-        )
-    finally:
-        store.close()
-    _apply(plan, db)
-    store = SqliteExperimentStore(str(db), create=False)
-    try:
-        row = [a for a in store.all_alphas() if a["alpha_id"] == ALPHA_ID][0]
-        assert row["state"] == "TESTING", "re-run must preserve the advanced state"
-    finally:
-        store.close()
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} accessed before authority quarantine")
 
-    # a plan that somehow carries APPROVED must be structurally refused
-    bad = build_registration_plan(_snapshot(), _pnl())
-    object.__setattr__(bad, "state", AlphaState.APPROVED.value)
-    db2 = tmp_path / "reg2.db"
-    SqliteExperimentStore(str(db2), create=True).close()
-    with pytest.raises(ExperimentStoreError):
-        _apply(bad, db2)
+        return _forbidden
 
+    monkeypatch.setattr(ashare_register_alpha, "open", forbidden("snapshot"), raising=False)
+    monkeypatch.setattr(
+        ashare_register_alpha,
+        "_load_dry_run_pnl",
+        forbidden("dry-run store"),
+    )
+    monkeypatch.setattr(
+        ashare_register_alpha,
+        "apply_registration",
+        forbidden("production registry"),
+    )
 
-def test_apply_fails_closed_when_registry_missing(tmp_path):
-    plan = build_registration_plan(_snapshot(), _pnl())
-    with pytest.raises(Exception):
-        _apply(plan, tmp_path / "does-not-exist.db")
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        ashare_register_alpha.main()
+
+    assert touched == []

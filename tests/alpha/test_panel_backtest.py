@@ -6,7 +6,13 @@ import sys
 
 import pytest
 
-from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest, _dollar_neutral_weights
+from services.alpha.panel_backtest import (
+    PanelPeriod,
+    _dollar_neutral_weights,
+    _run_panel_backtest_legacy_diagnostic as run_panel_backtest,
+    run_panel_backtest as public_run_panel_backtest,
+)
+from services.validation.selection_authority import SelectionAuthorityBlocked
 from services.research.backtest_engine.costs import CostModel
 
 
@@ -14,6 +20,11 @@ def _period(signals, fwd, adv=None):
     insts = tuple(f"i{i}" for i in range(len(signals)))
     return PanelPeriod(instruments=insts, signals=tuple(signals),
                        forward_returns=tuple(fwd), adv_notional=tuple(adv or ()))
+
+
+def test_public_panel_backtest_is_quarantined_before_reading_periods():
+    with pytest.raises(SelectionAuthorityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        public_run_panel_backtest(object())
 
 
 def test_weights_are_dollar_neutral():
@@ -145,7 +156,7 @@ def test_panel_backtest_is_deterministic():
 
 def test_panel_backtest_is_bit_identical_across_python_hash_seeds():
     script = """
-from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.alpha.panel_backtest import PanelPeriod, _run_panel_backtest_legacy_diagnostic as run_panel_backtest
 from services.research.backtest_engine.costs import CostModel
 names = tuple(f"asset_{index}" for index in range(17))
 periods = []

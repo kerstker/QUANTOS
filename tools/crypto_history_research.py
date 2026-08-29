@@ -25,6 +25,7 @@ from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
 from services.data.research_adapter import adapt_research_market_data
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.signals import SIGNAL_OPS
 from services.research.leakage_evidence import signal_leakage_ok
 from services.research.backtest_engine.metrics import sharpe
@@ -341,6 +342,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_history_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

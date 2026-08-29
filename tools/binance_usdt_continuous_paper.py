@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from tools.binance_usdc_alpha_retest import DEFAULT_TAKER_BPS, run_retest
 
 
@@ -21,6 +22,7 @@ DEFAULT_USDT_LEDGER = "data/cache/binance_usdt_continuous_paper_24m.db"
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.binance_usdt_continuous_paper")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=DEFAULT_USDT_DAYS)
     parser.add_argument("--aum", type=float, default=1_000_000.0)

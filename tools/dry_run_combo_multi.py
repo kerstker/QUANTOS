@@ -19,6 +19,7 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.capacity_research import _carry_panel, _weekly_rows
@@ -44,6 +45,7 @@ def _add_global_ls(panel):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.dry_run_combo_multi")
     panel = _add_global_ls(_carry_panel())
     insts, close, fmat, ev = panel.instruments, panel.matrices["close"], panel.matrices["funding"], panel.event_times
     carry_sig = ax.evaluate(CARRY_COMPOSITE, panel)

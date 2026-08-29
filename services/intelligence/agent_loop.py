@@ -1,14 +1,16 @@
 """Guardrailed research agent loop (Phase 11).
 
-Drives the alpha pipeline as a NON-HUMAN actor: propose -> evaluate -> advance up
-to PAPER_TRADING, then hand candidates to a HUMAN review queue. Every step is
-checked against the guardrail policy AND the lifecycle state machine, so the agent
-cannot self-approve or reset the kill-switch (those raise). The loop physically has
-no path to APPROVE — it can only REQUEST human approval.
+Drives the alpha pipeline as a NON-HUMAN actor.  Candidate evaluation remains
+available for diagnostics, but lifecycle selection is fail-closed unless a
+separately admitted authoritative backtest record is supplied.  The currently
+deployed authority verifier intentionally admits no records, so public/default
+runs cannot advance a candidate or populate a human-review queue from legacy
+evaluator verdicts.
 """
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Mapping
+from typing import Any, Optional, Sequence
 
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.hashing import stable_hash
@@ -19,6 +21,11 @@ from services.alpha.catalog import AlphaCatalog
 from services.alpha.evaluator import AlphaEvaluator
 from services.alpha.factory import batch_pbo
 from services.alpha.lifecycle import AlphaLifecycleManager
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+    selection_authority_admitted,
+)
 from services.research.backtest_engine.costs import CostModel
 from services.research.ports.persistence import TrialPersistenceError
 
@@ -41,9 +48,16 @@ class ResearchAgentLoop:
 
     def run(self, candidates: Sequence[tuple], *, timestamp: int = 0,
             evidence: Optional[dict] = None,
-            runtime_context: Optional[dict] = None) -> dict:
-        """candidates: (AlphaDefinition, periods). Returns a report + the human
-        review queue (PAPER_TRADING alphas awaiting a human approval token).
+            runtime_context: Optional[dict] = None,
+            selection_authorized: bool = False,
+            authoritative_backtest_record: Optional[Mapping[str, Any]] = None,
+            diagnostic_only: bool = False) -> dict:
+        """Evaluate ``(AlphaDefinition, periods)`` candidates.
+
+        ``selection_authorized`` is only an intent bit; it is never authority by
+        itself.  Lifecycle mutation additionally requires a record admitted by
+        the independently controlled backtest-authority verifier.  This prevents
+        callers from restoring the legacy bypass with ``selection_authorized=True``.
 
         Evidence parity with AlphaFactory (the gauntlet ↔ evaluator wiring): the
         selection-level PBO is self-computed here for the whole batch via CSCV, and
@@ -51,13 +65,19 @@ class ResearchAgentLoop:
         for the two pieces that cannot be derived from pre-computed PanelPeriods alone
         (leakage needs the expression+panel; regime can also be self-computed by the
         evaluator under its opt-in flag). All default to None = NOT ASSESSED, so an
-        alpha with un-supplied evidence stays in TESTING (fail-closed) — never an
-        advance on a silent default. Containment is unchanged: the loop has no path
-        to APPROVED regardless of evidence.
+        alpha with un-supplied evidence remains diagnostic-only.  Containment is
+        unchanged: the loop has no path to APPROVED regardless of evidence.
 
         Each candidate is isolated: an error (evaluation failure, guardrail) is
         recorded and the loop continues — it never propagates uncaught nor orphans
         the others, and an errored alpha is NOT advanced (fail-closed, review P1)."""
+        require_diagnostic_selection_seam(
+            "ResearchAgentLoop.run", diagnostic_only=diagnostic_only
+        )
+        authority_admitted = selection_authority_admitted(
+            requested=selection_authorized,
+            authoritative_backtest_record=authoritative_backtest_record,
+        )
         candidate_pool = tuple(candidates)
         # Persist the complete batch before the selection-level PBO performs
         # any backtest. Provider-driven searches also record before provider
@@ -79,7 +99,9 @@ class ResearchAgentLoop:
                 }
 
         prepare_observation = getattr(
-            self.evaluator, "prepare_catalog_observation", None
+            self.evaluator,
+            "_prepare_catalog_observation_legacy_diagnostic",
+            getattr(self.evaluator, "prepare_catalog_observation", None),
         )
         if callable(prepare_observation):
             prepared_candidates = []
@@ -108,7 +130,12 @@ class ResearchAgentLoop:
                     "regime_profitable_frac": ev_in.get("regime_profitable_frac"),
                 }
                 if self.runtime is None:
-                    ev = self.evaluator.evaluate(
+                    evaluate = getattr(
+                        self.evaluator,
+                        "_evaluate_legacy_diagnostic",
+                        self.evaluator.evaluate,
+                    )
+                    ev = evaluate(
                         defn.alpha_id, periods, **evaluation_args)
                 else:
                     if not isinstance(runtime_context, dict) or not runtime_context:
@@ -129,12 +156,24 @@ class ResearchAgentLoop:
                         invocation_id=invocation_id,
                         action="EVALUATE",
                         input_payload=runtime_input,
-                        execute=lambda _payload: self.evaluator.evaluate(
-                            defn.alpha_id, periods, **evaluation_args
-                        ),
+                        execute=lambda _payload: getattr(
+                            self.evaluator,
+                            "_evaluate_legacy_diagnostic",
+                            self.evaluator.evaluate,
+                        )(defn.alpha_id, periods, **evaluation_args),
                         recorded_at=timestamp,
                     )
                     ev = runtime_result.value
+                if not authority_admitted:
+                    report[defn.alpha_id] = {
+                        "verdict": ev.verdict.value,
+                        "state": self._state_of(defn.alpha_id),
+                        "evaluation": ev,
+                        "diagnostic_only": True,
+                        "selection_authority": False,
+                        "invalidation_code": LEGACY_INVALIDATION_CODE,
+                    }
+                    continue
                 assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
                 self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
                 if ev.verdict == ValidationVerdict.PASS:

@@ -30,10 +30,6 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     )
     assert registered_modules
     assert registered_modules <= {
-        "alpha_lifecycle_cockpit",
-        "alpha_maintenance_sweep",
-        "alpha_production_workflow",
-        "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
         "artifact_admission_seal",
@@ -44,7 +40,6 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "binance_realtime_features",
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",
-        "candidate_portfolio_evidence",
         "cftc_tff_forward_refresh",
         "defillama_tvl_forward_refresh",
         "defillama_stablecoin_forward_refresh",
@@ -54,33 +49,23 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
         "external_heartbeat",
-        "dry_run_candidate_multi",
         "hyperliquid_public_forward_refresh",
         "okx_borrow_forward_refresh",
         "forward_track_advance",
         "gonogo_report",
-        "alpha_paper_cycle",
-        "paper_alpha_evaluation",
         "paper_multivenue_sor",
         "paper_operational_evidence",
-        "paper_research_risk_bundle",
         "paper_order_preview",
-        "paper_realtime",
-        "paper_realtime_10k",
         "paper_shadow_auto",
         "paper_shadow_realtime",
         "paper_health",
         "raw_archive_audit",
-        "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",
     }
     assert "domain_event_ops" in registered_modules
     assert "QUANTOS_domain_event_ops" in source
     assert "QUANTOS_scheduler_watchdog" in source
-    assert "QUANTOS_candidate_dry_run" in source
-    assert "QUANTOS_alpha_lifecycle_cockpit" in source
-    assert "QUANTOS_candidate_portfolio_evidence" in source
     assert "QUANTOS_binance_book_depth_forward_refresh" in source
     assert "QUANTOS_defillama_tvl_forward_refresh" in source
     assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
@@ -94,6 +79,39 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_external_heartbeat" in source
     assert "QUANTOS_domain_event_seal" in source
     assert "QUANTOS_artifact_admission_seal" in source
+
+
+def test_invalidated_v1_authority_tasks_are_quiesced_and_not_registered():
+    source = _source()
+    invalidated = {
+        "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
+        "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
+        "QUANTOS_factory_loop": "crypto_factory_loop",
+        "QUANTOS_ic_panel_refresh": "ic_panel_research",
+        "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
+        "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
+        "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
+        "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
+        "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
+        "QUANTOS_paper_realtime": "paper_realtime",
+        "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
+        "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
+    }
+
+    for task_name, module_name in invalidated.items():
+        assert not re.search(
+            rf'Register-L2Task -Name "{task_name}" -Module "{module_name}"',
+            source,
+        )
+        assert (
+            f'[pscustomobject]@{{ Name = "{task_name}"; '
+            f'Module = "{module_name}" }}'
+        ) in source
+
+    assert "INVALIDATED_PERP_LEDGER_V1" in (
+        ROOT / "tools" / "l2_schedule_entrypoint.py"
+    ).read_text(encoding="utf-8")
+    assert "Disable-TaskIfPresent -Name $task.Name -Module $task.Module" in source
 
 
 def test_domain_event_ops_has_frequent_bounded_recovery_schedule():

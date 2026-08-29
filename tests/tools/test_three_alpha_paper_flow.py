@@ -1,4 +1,12 @@
-from tools.three_alpha_paper_flow import run_flow
+import json
+
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from tools.three_alpha_paper_flow import _run_flow_legacy_diagnostic as run_flow
 import tools.three_alpha_paper_flow as paper_flow
 from services.execution.dry_run_store import DryRunRun, DryRunStore
 from tools.dry_run_crowd_contra_multi import _existing_crowd_run
@@ -51,6 +59,17 @@ def test_flow_executes_all_three_drivers_and_keeps_live_disabled(tmp_path):
     assert report["verdict"]["live_allowed"] is False
     assert report["verdict"]["order_submission_allowed"] is False
     assert report["safety"]["credential_access"] is False
+
+
+def test_public_flow_entrypoint_is_quarantined_before_legacy_io(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        pytest.fail("legacy flow must stop before artifact or store access")
+
+    monkeypatch.setattr(paper_flow, "_load_json", fail_if_called)
+    monkeypatch.setattr(paper_flow, "atomic_write_json", fail_if_called)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        paper_flow.run_flow()
 
 
 def test_flow_does_not_rewrite_evidence_when_only_runtime_changes(tmp_path, monkeypatch):
@@ -172,19 +191,37 @@ def test_flow_records_forward_failure_without_claiming_completion(tmp_path, monk
 def test_crowd_driver_reuses_existing_append_only_run(tmp_path):
     path = tmp_path / "dry_run.db"
     store = DryRunStore(str(path), create=True)
-    store.save_run(
-        DryRunRun(
-            run_id="crowd-run",
-            strategy_id="crowd_contra",
-            timestamp=1,
-            n_intents=1,
-            n_approved=1,
-            n_rejected=0,
-            rejected_reasons=[],
-            pnl={"sharpe": 1.0, "residual": 0.0},
-            audit_root="audit",
-        )
+    run = DryRunRun(
+        run_id="crowd-run",
+        strategy_id="crowd_contra",
+        timestamp=1,
+        n_intents=1,
+        n_approved=1,
+        n_rejected=0,
+        rejected_reasons=[],
+        pnl={"sharpe": 1.0, "residual": 0.0},
+        audit_root="audit",
     )
+    # Seed a retained pre-authority row without weakening the production
+    # canonical-store admission boundary.
+    store._conn.execute(  # noqa: SLF001 - explicit legacy fixture
+        "INSERT OR IGNORE INTO dry_run(run_id, strategy_id, timestamp, n_intents, "
+        "n_approved, n_rejected, rejected_reasons, pnl, audit_root, detail) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            run.run_id,
+            run.strategy_id,
+            run.timestamp,
+            run.n_intents,
+            run.n_approved,
+            run.n_rejected,
+            json.dumps(run.rejected_reasons),
+            json.dumps(run.pnl),
+            run.audit_root,
+            json.dumps(run.detail),
+        ),
+    )
+    store._conn.commit()  # noqa: SLF001 - explicit legacy fixture
     store.close()
 
     existing = _existing_crowd_run(str(path))

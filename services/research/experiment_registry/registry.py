@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
 from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.hashing import stable_hash
-from quantos.contracts.research import AlphaState
+from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
 from services.alpha.evaluation_evidence import (
     bind_evaluation_reproducibility,
@@ -38,6 +38,7 @@ from services.research.ports.persistence import (
 )
 from services.validation.pbo_evidence import verify_batch_pbo_evidence
 from services.validation.catalog_evidence import verify_catalog_evidence
+from services.validation.selection_authority import LEGACY_INVALIDATION_CODE
 
 
 def _triple_db_fields(triple: LifecycleTriple) -> dict:
@@ -403,6 +404,24 @@ class ExperimentRegistry:
             raise ValueError(
                 "evaluation catalog evidence is not bound to the search candidate"
             )
+
+        # This v2 registry stores legacy statistical evaluations, not an
+        # independently signed V2 perpetual-backtest authority record.  Keep
+        # the immutable metric artifact for audit, but never persist PASS as a
+        # selection-bearing verdict through this schema.
+        reasons = tuple(parsed.reasons)
+        if LEGACY_INVALIDATION_CODE not in reasons:
+            reasons += (LEGACY_INVALIDATION_CODE,)
+        parsed = parsed.model_copy(
+            update={
+                "verdict": (
+                    ValidationVerdict.REQUIRES_HUMAN_REVIEW
+                    if parsed.verdict == ValidationVerdict.PASS
+                    else parsed.verdict
+                ),
+                "reasons": reasons,
+            }
+        )
         parsed = bind_evaluation_reproducibility(
             parsed, dataset_version=dataset_version
         )
@@ -542,10 +561,23 @@ class ExperimentRegistry:
                 strategy.restore(payload)
 
     def get_evaluation(self, run_id: str) -> Optional[dict]:
-        return self._store.get_evaluation(run_id)
+        row = self._store.get_evaluation(run_id)
+        return None if row is None else self._diagnostic_evaluation_row(row)
 
     def list_evaluations(self, alpha_id: str) -> list[dict]:
-        return self._store.list_evaluations(alpha_id)
+        return [
+            self._diagnostic_evaluation_row(row)
+            for row in self._store.list_evaluations(alpha_id)
+        ]
+
+    @staticmethod
+    def _diagnostic_evaluation_row(row: dict) -> dict:
+        return {
+            **row,
+            "evidence_status": "DIAGNOSTIC_ONLY",
+            "selection_authority": False,
+            "invalidation_code": LEGACY_INVALIDATION_CODE,
+        }
 
     def verify_evaluation(self, run_id: str) -> bool:
         """Rank #12 — the missing verify half of the write-once evaluation store: recompute the

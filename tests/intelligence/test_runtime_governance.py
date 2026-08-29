@@ -447,9 +447,11 @@ def test_agent_loop_uses_runtime_boundary_when_configured(tmp_path):
             _runtime_candidates(),
             timestamp=7,
             runtime_context={"dataset_version": "fixture-v1"},
+            diagnostic_only=True,
         )
-        assert catalog.state("a0") == AlphaState.PAPER_TRADING
-        assert result["human_review_queue"] == ["a0", "a1"]
+        assert catalog.state("a0") == AlphaState.DRAFT
+        assert result["human_review_queue"] == []
+        assert result["report"]["a0"]["diagnostic_only"] is True
         rows = registry.runtime_rows()
         assert len(rows) == 2
         assert all(row["action"] == "EVALUATE" for row in rows)
@@ -467,7 +469,9 @@ def test_agent_loop_fails_closed_when_runtime_context_is_missing(tmp_path):
             evaluator=_EvaluationStub(catalog),
             runtime=runtime,
         )
-        result = loop.run(_runtime_candidates(), timestamp=7)
+        result = loop.run(
+            _runtime_candidates(), timestamp=7, diagnostic_only=True
+        )
         assert result["human_review_queue"] == []
         assert result["report"]["a0"]["error"] == "ValueError"
         assert catalog.state("a0") != AlphaState.APPROVED

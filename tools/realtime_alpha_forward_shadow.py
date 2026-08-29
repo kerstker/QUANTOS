@@ -532,7 +532,12 @@ def _common_latest_frames(
         return []
     common: set[int] | None = None
     for frames in frames_by_instrument.values():
-        times = {item.decision_time_ms for item in frames if item.decision_time_ms <= now_ms}
+        times = {
+            item.decision_time_ms
+            for item in frames
+            if item.decision_time_ms <= now_ms
+            and int(item.knowledge_time_ms) <= now_ms
+        }
         common = times if common is None else common & times
     if not common:
         return []
@@ -550,24 +555,42 @@ def _future_marks(
     frames_by_instrument: Mapping[str, Sequence[RealtimeFrame]],
     *,
     as_of_ms: int,
-) -> dict[str, RealtimeFrame]:
-    target = int(decision["target_time_ms"])
+) -> dict[str, tuple[RealtimeFrame, RealtimeFrame]]:
+    if int(decision.get("schema_version", 0)) != 2:
+        raise RealtimeAlphaForwardShadowError(
+            "legacy forward decision lacks causal entry/exit evidence"
+        )
+    entry_target = int(decision["entry_target_time_ms"])
+    horizon = int(decision["horizon_ms"])
     lateness = int(decision["max_label_lateness_ms"])
-    result: dict[str, RealtimeFrame] = {}
-    for instrument in decision.get("weights", {}):
+    result: dict[str, tuple[RealtimeFrame, RealtimeFrame]] = {}
+    weights = set(decision.get("weights", {}))
+    for instrument in decision.get("weight_deltas", {}):
         frames = sorted(
             frames_by_instrument.get(str(instrument), ()),
-            key=lambda item: item.decision_time_ms,
+            key=lambda item: (int(item.knowledge_time_ms), item.decision_time_ms),
         )
-        times = [item.decision_time_ms for item in frames]
-        index = bisect_left(times, target)
+        times = [int(item.knowledge_time_ms) for item in frames]
+        entry_index = bisect_left(times, entry_target)
         if (
-            index >= len(frames)
-            or frames[index].decision_time_ms > as_of_ms
-            or frames[index].decision_time_ms - target > lateness
+            entry_index >= len(frames)
+            or int(frames[entry_index].knowledge_time_ms) > as_of_ms
+            or int(frames[entry_index].knowledge_time_ms) - entry_target > lateness
         ):
             return {}
-        result[str(instrument)] = frames[index]
+        entry = frames[entry_index]
+        if str(instrument) not in weights:
+            result[str(instrument)] = (entry, entry)
+            continue
+        exit_target = int(entry.knowledge_time_ms) + horizon
+        exit_index = bisect_left(times, exit_target, lo=entry_index + 1)
+        if (
+            exit_index >= len(frames)
+            or int(frames[exit_index].knowledge_time_ms) > as_of_ms
+            or int(frames[exit_index].knowledge_time_ms) - exit_target > lateness
+        ):
+            return {}
+        result[str(instrument)] = (entry, frames[exit_index])
     return result
 
 
@@ -882,14 +905,17 @@ def run_cycle(
                             for event in store.pending(candidate_id):
                                 decision = event["payload"]
                                 target = int(decision["target_time_ms"])
+                                entry_target = int(decision["entry_target_time_ms"])
                                 lateness = int(decision["max_label_lateness_ms"])
                                 if now < target:
                                     continue
                                 future_series = load_bucketed_frames(
                                     feature_store_path,
-                                    instruments=tuple(decision.get("weights", {})),
-                                    start_ms=max(0, target - policy.decision_interval_ms),
-                                    end_ms=min(now, target + lateness),
+                                    instruments=tuple(decision.get("weight_deltas", {})),
+                                    start_ms=max(
+                                        0, entry_target - policy.decision_interval_ms
+                                    ),
+                                    end_ms=min(now, target + 2 * lateness),
                                     bucket_ms=policy.decision_interval_ms,
                                     frame_cache_path=decision_frame_cache_path,
                                     max_cache_lag_ms=policy.max_feature_age_ms,
@@ -901,9 +927,9 @@ def run_cycle(
                                         "decision_event_id": event.get("event_id"),
                                         "start_ms": max(
                                             0,
-                                            target - policy.decision_interval_ms,
+                                            entry_target - policy.decision_interval_ms,
                                         ),
-                                        "end_ms": min(now, target + lateness),
+                                        "end_ms": min(now, target + 2 * lateness),
                                         "view_hash": realtime_frame_view_hash(
                                             future_series
                                         ),

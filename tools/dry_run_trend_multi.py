@@ -22,6 +22,7 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
@@ -76,6 +77,7 @@ def _legs_and_prices(store, instruments, t):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.dry_run_trend_multi")
     snap = json.load(open(_SNAP, encoding="utf-8"))
     instruments = sorted(c["instrument_id"] for c in snap.get("meta", {}).get("coins", []))
     store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))

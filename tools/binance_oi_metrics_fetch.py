@@ -12,9 +12,9 @@ Each ZIP is one CSV of 5-minute intraday snapshots (288/day) with columns:
     count_toptrader_long_short_ratio, sum_toptrader_long_short_ratio,
     count_long_short_ratio, sum_taker_long_short_vol_ratio
 
-We collapse each UTC day to its END-OF-DAY snapshot (the last 5-min row), which is knowable at the end of
-day t — the same point-in-time convention as a daily close. Forward returns use t -> t+1, so a signal built
-from day-t metrics is PIT-safe by construction.
+We collapse each UTC day to its END-OF-DAY snapshot (the last 5-min row).  The cache retains the source
+event time, the actual ingestion time, and an availability time equal to at least both day-close and
+ingestion.  A historical archive first ingested later is therefore not backdated into earlier decisions.
 
 Read-only DATA only: stdlib `urllib` GET of public archive ZIPs, no key, NO exchange/broker SDK, NO order
 or transfer calls. Out-of-gate (governance scanner scopes to quantos/+services/); the boundary is still
@@ -22,10 +22,11 @@ machine-enforced by tests/governance/test_crypto_data_boundary.py. Wall-clock/ne
 
 Cache (resumable): data/cache/crypto_oi_metrics.json
     {"_meta": {ticker: {"start": day_ms, "through": day_ms}},
-     "data": {ticker: {day_ms_str: {"oi","oi_value","top_ls","global_ls","taker_ls"}}}}
+     "data": {ticker: {day_ms_str: {"oi",...,"source_event_time_ms",
+                                     "available_time_ms","ingestion_time_ms"}}}}
 Re-running only fetches days not already cached. `main()` writes a snapshot alongside it.
 REST gap-filled placeholder days (publication lag) carry an extra record field
-"source": "REST_GAP_FILL"; archive rows have no such field (archive is canonical, see
+"source": "REST_GAP_FILL"; archive rows omit only that source tag (archive is canonical, see
 tools/binance_rest_gap_fill.py for the precedence rule).
 """
 from __future__ import annotations
@@ -37,6 +38,7 @@ import sys
 import time
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        archive_response)
@@ -73,6 +75,71 @@ FORWARD_MAJOR_TICKERS = (
 # end-of-day fields we keep (column index in the metrics CSV, 0-based)
 _COLS = {"oi": 2, "oi_value": 3, "top_ls": 5, "global_ls": 6, "taker_ls": 7}
 _PROBE_FLOOR_MS = 1_598_918_400_000  # 2020-09-01 UTC — no metrics archive predates this
+
+
+def _utc_text_ms(value: str) -> int | None:
+    """Parse the archive's UTC ``create_time`` without consulting local TZ."""
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return int(datetime.strptime(text, fmt).replace(tzinfo=timezone.utc).timestamp() * 1_000)
+        except ValueError:
+            continue
+    return None
+
+
+def _archive_day_ms(name: str) -> int | None:
+    stem = str(name).rsplit("/", 1)[-1]
+    # The symbol prefix can itself contain dashes, so locate the date by shape.
+    text = stem[:-4] if stem.endswith(".csv") else stem
+    for index in range(max(0, len(text) - 10), -1, -1):
+        candidate = text[index:index + 10]
+        try:
+            parsed = datetime.strptime(candidate, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        return int(parsed.timestamp() * 1_000)
+    return None
+
+
+def _time_provenance(name: str, row: list[str]) -> dict | None:
+    if not row:
+        return None
+    source_event = _utc_text_ms(row[0])
+    archive_day = _archive_day_ms(name)
+    if source_event is None or archive_day is None:
+        return None
+    # The record is a full-day collapse.  Even when the last source print is
+    # stamped 23:55, the derived EOD feature is not available before UTC close.
+    available = max(source_event, archive_day + _DAY_MS)
+    return {
+        "source_event_time_ms": source_event,
+        "available_time_ms": available,
+        "ingestion_time_ms": None,
+    }
+
+
+def _with_time_provenance(record: dict, *, day_ms: int,
+                          ingestion_time_ms: int | None) -> dict:
+    result = dict(record)
+    source_event = result.get("source_event_time_ms")
+    available = result.get("available_time_ms")
+    if type(source_event) is not int or source_event < day_ms:
+        source_event = day_ms + _DAY_MS
+    if type(available) is not int or available < source_event:
+        available = max(day_ms + _DAY_MS, source_event)
+    ingestion = int(ingestion_time_ms) if ingestion_time_ms is not None else None
+    if ingestion is not None:
+        # Archive retrieval is itself an availability boundary.  A historical
+        # file first ingested today must not be backdated into yesterday's
+        # decision set merely because its source row carries an old timestamp.
+        available = max(available, ingestion)
+    result.update({
+        "source_event_time_ms": source_event,
+        "available_time_ms": available,
+        "ingestion_time_ms": ingestion,
+    })
+    return result
 
 
 def _http_get_bytes(url: str) -> bytes:
@@ -115,12 +182,16 @@ def parse_metrics_zip(raw: bytes) -> dict:
     need = max(_COLS.values())
     if len(last) <= need:
         return {}
+    timing = _time_provenance(names[0], last)
+    if timing is None:
+        return {}
     out = {}
     for name, idx in _COLS.items():
         try:
             out[name] = float(last[idx])
         except (ValueError, IndexError):
             out[name] = None
+    out.update(timing)
     return out
 
 
@@ -162,6 +233,12 @@ def parse_metrics_zip_intraday(raw: bytes) -> dict:
     if not names:
         return {}
     text = zf.open(names[0]).read().decode("utf-8")
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return {}
+    timing = _time_provenance(names[0], lines[-1].split(","))
+    if timing is None:
+        return {}
     oi = _csv_floats(text, _COLS["oi"])
     gls = _csv_floats(text, _COLS["global_ls"])
     tak = _csv_floats(text, _COLS["taker_ls"])
@@ -176,7 +253,7 @@ def parse_metrics_zip_intraday(raw: bytes) -> dict:
     for a, b in zip(oi, oi[1:]):
         if a > 0:
             surge = max(surge, abs(b - a) / a)
-    return {
+    result = {
         "oi_range": (max(oi) - min(oi)) / oi_mean,                 # intraday OI swing (vol of positioning size)
         "oi_trend": (oi[-1] - oi[0]) / oi[0] if oi[0] else 0.0,    # net intraday OI build (+) / unwind (-)
         "gls_trend": gls[-1] - gls[0],                             # net intraday shift in retail positioning
@@ -184,6 +261,8 @@ def parse_metrics_zip_intraday(raw: bytes) -> dict:
         "taker_mean": _mean(tak),                                  # mean intraday aggressor flow (vs eod print)
         "oi_surge": surge,                                         # largest single 5-min OI jump (flow shock)
     }
+    result.update(timing)
+    return result
 
 
 def find_start_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -> int | None:
@@ -243,6 +322,12 @@ def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
         try:
             raw = http_get_bytes(path)
             rec = parse_fn(raw)
+            if rec:
+                rec = _with_time_provenance(
+                    rec,
+                    day_ms=day,
+                    ingestion_time_ms=observed_at_ms,
+                )
             input_rows = _metrics_input_rows(raw)
             if not rec:
                 exc = ValueError("metrics archive parsed to an empty record")
@@ -335,6 +420,31 @@ def _load_cache(path) -> dict:
     return {"_meta": {}, "data": {}}
 
 
+def _has_current_time_provenance(record: object, *, day_ms: int) -> bool:
+    """Whether a cached daily collapse belongs to the current clock epoch.
+
+    Legacy rows carried only factor values and a day key.  Treating their key
+    as proof of availability prevents the archive worker from ever replacing
+    them, while every causal consumer correctly rejects them.  A current row
+    must carry all three clocks and prove that availability is no earlier than
+    both UTC close and the actual ingestion observation.
+    """
+    if not isinstance(record, dict) or type(day_ms) is not int:
+        return False
+    source_event = record.get("source_event_time_ms")
+    available = record.get("available_time_ms")
+    ingestion = record.get("ingestion_time_ms")
+    return (
+        type(source_event) is int
+        and type(available) is int
+        and type(ingestion) is int
+        and day_ms <= source_event <= day_ms + _DAY_MS
+        and available >= day_ms + _DAY_MS
+        and available >= source_event
+        and available >= ingestion
+    )
+
+
 def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
          parse_fn=parse_metrics_zip, cache_path=_CACHE, snap_path=_SNAP,
          http_get_bytes=_http_get_bytes, archive_root=None, rest_fetch=None,
@@ -353,7 +463,7 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
     cache = _load_cache(cache_path)
     meta, data = cache.setdefault("_meta", {}), cache.setdefault("data", {})
     now_ms = int(time.time() * 1000)
-    if archive_root is not None and observed_at_ms is None:
+    if observed_at_ms is None:
         observed_at_ms = now_ms
     today_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
     failure_details = []
@@ -363,9 +473,12 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
         sym_days = data.setdefault(ticker, {})
         # REST_GAP_FILL placeholder days are NOT "present": the archive re-attempts them every
         # run and supersedes the placeholder once Data Vision publishes the day (canonical).
-        present = {int(k) for k, rec in sym_days.items()
-                   if not (isinstance(rec, dict)
-                           and rec.get("source") == PROVENANCE_REST_GAP_FILL)}
+        present = {
+            int(k)
+            for k, rec in sym_days.items()
+            if _has_current_time_provenance(rec, day_ms=int(k))
+            and rec.get("source") != PROVENANCE_REST_GAP_FILL
+        }
         start = meta.get(ticker, {}).get("start")
         if start is None:
             start = find_start_ms(ticker, http_get_bytes=http_get_bytes, now_ms=now_ms)
@@ -394,17 +507,34 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
             # retention that are entirely absent; placeholders never overwrite archive rows.
             rest_floor = (max(int(start), today_ms - REST_RETENTION_DAYS * _DAY_MS)
                           // _DAY_MS) * _DAY_MS
-            rest_days = [day for day in range(rest_floor, today_ms, _DAY_MS)
-                         if str(day) not in sym_days]
+            rest_days = [
+                day
+                for day in range(rest_floor, today_ms, _DAY_MS)
+                if str(day) not in sym_days
+                or not _has_current_time_provenance(
+                    sym_days[str(day)],
+                    day_ms=day,
+                )
+            ]
             if rest_days:
                 rest_fresh = rest_fetch(
                     ticker, rest_days, now_ms=now_ms,
                     archive_root=archive_root, observed_at_ms=observed_at_ms,
                     failure_sink=failure_details)
                 for k, v in rest_fresh.items():
-                    if str(k) in sym_days:
+                    if str(k) in sym_days and _has_current_time_provenance(
+                        sym_days[str(k)],
+                        day_ms=int(k),
+                    ):
                         continue
-                    sym_days[str(k)] = dict(v, source=PROVENANCE_REST_GAP_FILL)
+                    sym_days[str(k)] = dict(
+                        _with_time_provenance(
+                            v,
+                            day_ms=int(k),
+                            ingestion_time_ms=observed_at_ms,
+                        ),
+                        source=PROVENANCE_REST_GAP_FILL,
+                    )
                 rest_filled += len(rest_fresh)
         all_days = sorted(int(k) for k in sym_days)
         meta[ticker] = {"start": start, "through": all_days[-1] if all_days else None}

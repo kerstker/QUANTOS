@@ -45,6 +45,7 @@ import statistics
 import time
 
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -590,6 +591,10 @@ def _fmt_money(v):
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    # This search nominates candidates from the quarantined V1 execution
+    # scores.  Registering more trials would contaminate the governed ledger,
+    # so block before panel construction or trial registration.
+    quarantine_legacy_backtest("crowd_contra_variants_selection")
     recorded_at = int(time.time() * 1000)
     specs = build_variant_specs()
     panel, instruments = build_panel()
@@ -751,6 +756,9 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    # Block before opening the production experiment registry.  The inner
+    # guard remains as defense in depth for direct orchestration calls.
+    quarantine_legacy_backtest("crowd_contra_variants_selection")
     with production_experiment_registry() as registry:
         _main(registry)
 

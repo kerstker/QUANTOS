@@ -10,11 +10,151 @@ from services.console.main import app
 
 client = TestClient(app)
 
+_INVALIDATION = "INVALIDATED_PERP_LEDGER_V1"
+
+
+def _assert_backtest_invalidated(payload):
+    assert payload["authoritative"] is False
+    assert payload["evidence_status"] == "DIAGNOSTIC_ONLY"
+    assert payload["invalidation_code"] == _INVALIDATION
+
+
+def _status_values(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in {
+                "state",
+                "lifecycle_state",
+                "status",
+                "decision",
+                "verdict",
+                "review_status",
+                "readiness",
+                "stage",
+                "outcome",
+                "result",
+                "classification",
+                "eligibility",
+                "decision_class",
+            }:
+                if isinstance(child, str):
+                    yield child
+            yield from _status_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _status_values(child)
+
 
 def test_health_read_only():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["mode"] == "READ_ONLY"
+
+
+def test_console_aggregate_cannot_be_unlocked_by_an_unbound_admitted_record(
+    monkeypatch,
+):
+    from services.console.api import backtest_evidence as boundary
+
+    monkeypatch.setattr(
+        boundary,
+        "is_authoritative_backtest_record",
+        lambda _record: True,
+    )
+    projected = boundary.scrub_backtest_payload(
+        {"status": "READY", "sharpe": 3.0},
+        authority_records=({"run_id": "unrelated-admitted-run"},),
+    )
+
+    _assert_backtest_invalidated(projected)
+    assert projected["status"] == _INVALIDATION
+    assert projected["sharpe"] is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/v1/console/experiments",
+        "/api/v1/console/lifecycle-monitor",
+        "/api/v1/console/population-optimizer",
+        "/api/v1/console/alpha-zoo",
+        "/api/v1/console/alpha-graph",
+        "/api/v1/console/crypto-live",
+        "/api/v1/console/promotion-control",
+        "/api/v1/console/overview",
+        "/api/v1/console/alpha-factory",
+        "/api/v1/console/risk-dashboard",
+        "/api/v1/console/validation",
+        "/api/v1/console/paper-trading",
+        "/api/v1/console/portfolio",
+        "/api/v1/console/computation-lab",
+        "/api/v1/console/backtest-explainability",
+        "/api/v1/console/scenario-stress",
+        "/api/v1/console/dry-run",
+        "/api/v1/console/research-findings",
+    ),
+)
+def test_backtest_bearing_console_routes_are_fail_closed(path):
+    payload = client.get(path).json()
+    _assert_backtest_invalidated(payload)
+    forbidden = {
+        "OK",
+        "READY",
+        "APPROVED",
+        "PAPER",
+        "PAPER_PASSED",
+        "RISK_APPROVED",
+        "COMPLETED",
+        "SUCCESS",
+        "ELIGIBLE",
+    }
+    assert not forbidden.intersection(_status_values(payload))
+
+
+def test_mexc_retained_v1_run_is_never_strategy_or_readiness_authority(monkeypatch):
+    from services.console.api import mexc_views as m
+
+    retained = {
+        "strategy_id": "btc_spot_trend",
+        "pnl": {"total_return": 0.42, "sharpe": 2.4, "capacity": 9_000_000},
+        "detail": {
+            "data_source": "MEXC_PIT",
+            "equity_curve": [{"t": 1, "equity": 1.0}, {"t": 2, "equity": 1.42}],
+        },
+    }
+
+    class FakeDryRunStore:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def all_runs(self):
+            return [retained]
+
+        def close(self):
+            pass
+
+    original_exists = m.os.path.exists
+    monkeypatch.setattr(m, "_DRY_RUN_DB", "/tmp/retained-v1-dry-run.db")
+    monkeypatch.setattr(m, "DryRunStore", FakeDryRunStore)
+    monkeypatch.setattr(
+        m.os.path,
+        "exists",
+        lambda path: True if path == m._DRY_RUN_DB else original_exists(path),
+    )
+
+    strategy = m._mexc_strategy_payload()
+    _assert_backtest_invalidated(strategy)
+    assert strategy["verdict"] == _INVALIDATION
+    assert strategy["metrics"]["sharpe"] is None
+    assert strategy["metrics"]["total_return"] is None
+    assert strategy["runs"] == []
+    assert strategy["latest"] == {}
+
+    readiness = m._mexc_readiness_payload()
+    dry_run = next(row for row in readiness["checks"] if row["id"] == "dry_run_evidence")
+    assert readiness["verdict"] == "BLOCKED"
+    assert dry_run["status"] == "BLOCKED"
+    assert dry_run["invalidation_code"] == _INVALIDATION
 
 
 def test_console_cors_echoes_explicit_frontend_origin():
@@ -51,7 +191,8 @@ def test_phase1b_real_series_back_engines(monkeypatch):
     af = client.get("/api/v1/console/alpha-factory").json()
     assert af["data_provenance"] == "REAL_CRYPTO_SERIES"
     assert any(c["expression"] == "h_real_zscore_3" for c in af["candidates"])  # real factor surfaced
-    assert any(round(c["ic"], 4) == 0.05 for c in af["candidates"])  # real IC, not synthetic
+    assert all(c["ic"] is None for c in af["candidates"])
+    _assert_backtest_invalidated(af)
     risk = client.get("/api/v1/console/risk-dashboard?alpha_id=alpha-1").json()
     assert risk["data_provenance"] == "REAL_CRYPTO_SERIES"
     assert risk["primary_report"]["gates_total"] == 9
@@ -71,10 +212,11 @@ def test_computation_lab_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
-    assert payload["metrics"]["gross_sharpe"] != 0
-    assert 0 < len(payload["equity_curve"]) <= 120  # real per-factor series may be shorter than synthetic 120
-    assert 0 < len(payload["drawdown_curve"]) <= 120
-    assert payload["risk_report"]["gates_total"] == 9
+    assert payload["metrics"]["gross_sharpe"] is None
+    assert payload["equity_curve"] == []
+    assert payload["drawdown_curve"] == []
+    assert payload["risk_report"] == {}
+    _assert_backtest_invalidated(payload)
     assert any(item["id"] == "IC" for item in payload["lineage"])
 
 
@@ -242,11 +384,12 @@ def test_backtest_explainability_snapshot_uses_backend_contract():
     assert payload["run"]["execution_mode"] == "L2_DRY_RUN_ONLY"
     assert payload["run"]["config_hash"]
     assert payload["run"]["reproducibility_hash"]
-    assert 0 < len(payload["equity_curve"]) <= 120  # real per-factor series may be shorter than synthetic 120
-    assert 0 < len(payload["drawdown_curve"]) <= 120
-    assert len(payload["segments"]) >= 1  # segment count scales with the (real) series length
+    assert payload["equity_curve"] == []
+    assert payload["drawdown_curve"] == []
+    assert payload["segments"] == []
+    _assert_backtest_invalidated(payload)
     assert len(payload["cost_breakdown"]) == 4
-    assert len(payload["drawdown_periods"]) == 5
+    assert payload["drawdown_periods"] == []
     assert any(driver["driver"] == "Transaction cost drag" for driver in payload["decision_drivers"])
     assert payload["explainability_policy"]["requires_cost_model"] is True
     assert payload["explainability_policy"]["mutable_results"] is False
@@ -267,12 +410,13 @@ def test_scenario_stress_snapshot_uses_backend_contract():
     assert len(payload["exposure_buckets"]) == 4
     assert payload["summary"]["worst_scenario_id"]
     first = payload["scenarios"][0]
-    assert first["metrics"]["stressed_max_drawdown"] >= 0
+    assert first["metrics"]["stressed_max_drawdown"] is None
     assert first["shocks"]["liquidity_haircut"] > 0
     assert any(driver["driver"] == "cost_shift" for driver in first["drivers"])
     assert payload["scenario_policy"]["requires_multi_scenario_replay"] is True
     assert payload["scenario_policy"]["authorizes_live_trading"] is False
     assert payload["scenario_policy"]["mutable_results"] is False
+    _assert_backtest_invalidated(payload)
 
 
 def test_model_risk_review_snapshot_uses_backend_contract():
@@ -818,6 +962,7 @@ def test_promotion_control_snapshot_uses_backend_contract():
     assert payload["release_policy"]["live_release_enabled"] is False
     assert payload["release_policy"]["authorizes_live_trading"] is False
     assert payload["safety_boundary"]["execution_boundary"] == "LIVE_TRADING_DISALLOWED"
+    _assert_backtest_invalidated(payload)
 
 
 def test_release_committee_snapshot_uses_backend_contract():
@@ -856,14 +1001,15 @@ def test_alpha_factory_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["summary"]["candidates"] == 12
-    assert payload["summary"]["avg_ic"] != 0
+    assert payload["summary"]["avg_ic"] is None
     assert len(payload["candidates"]) == 12
     assert all("candidate_id" in candidate for candidate in payload["candidates"])
     assert payload["screening"]["buckets"]["APPROVED"] >= 0
-    assert len(payload["screening"]["top_candidates"]) == 5
+    assert payload["screening"]["top_candidates"] == []
     assert payload["correlation_matrix"]["method"] == "BACKEND_RESEARCH_PROXY_EXPRESSION_SCORE_PENALTY"
     assert len(payload["correlation_matrix"]["ids"]) == 8
     assert len(payload["correlation_matrix"]["matrix"]) == 8
+    _assert_backtest_invalidated(payload)
 
 
 def test_risk_dashboard_snapshot_uses_backend_contract():
@@ -875,6 +1021,7 @@ def test_risk_dashboard_snapshot_uses_backend_contract():
     assert payload["selected_alpha_id"] == "alpha-2"
     assert payload["primary_report"]["gates_total"] == 9
     assert len(payload["reports"]) == 2
+    _assert_backtest_invalidated(payload)
 
 
 def test_validation_snapshot_uses_backend_contract():
@@ -883,12 +1030,13 @@ def test_validation_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["selected_report"]["alpha_id"] == "alpha-1"
+    assert payload["selected_report"]["oos_sharpe"] is None
     assert len(payload["reports"]) == 6
-    assert payload["selected_report"]["gates_total"] == 6
     # leakage_pass is now produced by the REAL leakage detector, not a modulo hack
     assert payload["validation_backend"] == "REAL_LEAKAGE_DETECTOR_v1"
     assert payload["reports"][2]["leakage_pass"] is False  # idx 2 injects a future-peeking feature
     assert payload["reports"][0]["leakage_pass"] is True
+    _assert_backtest_invalidated(payload)
 
 
 def test_paper_trading_snapshot_uses_backend_contract():
@@ -897,8 +1045,9 @@ def test_paper_trading_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["selected_alpha_id"] == "alpha-2"
-    assert payload["run"]["metrics"]["sharpe"] != 0
-    assert 0 < len(payload["run"]["equity_curve"]) <= 120
+    assert payload["run"]["metrics"]["sharpe"] is None
+    assert payload["run"]["equity_curve"] == []
+    _assert_backtest_invalidated(payload)
 
 
 def test_portfolio_snapshot_uses_backend_contract():
@@ -906,15 +1055,11 @@ def test_portfolio_snapshot_uses_backend_contract():
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
-    assert payload["simulation"]["status"] == "COMPLETED"
-    assert 0 < len(payload["simulation"]["equity_curve"]) <= 120
-    assert 0 < len(payload["drawdown_curve"]) <= 120
-    # weights now come from the REAL risk-parity optimizer (was hardcoded equal-weight); they sum to ~1
-    # (rounding to 4dp can make the gross 1.0001). method/optimizer_real expose whether they're real.
-    assert abs(payload["weights"]["gross_exposure"] - 1.0) < 0.01
-    assert payload["weights"]["method"] in {"RISK_PARITY", "EQUAL_WEIGHT_FALLBACK"}
-    assert len(payload["risk_contributions"]) == len(payload["weights"]["weights"])
-    assert len(payload["return_attribution"]) == len(payload["weights"]["weights"])
+    assert payload["simulation"]["status"] == _INVALIDATION
+    assert payload["simulation"]["equity_curve"] == []
+    assert payload["drawdown_curve"] == []
+    assert payload["weights"] == {}
+    _assert_backtest_invalidated(payload)
     assert payload["analytics_method"] == "BACKEND_RESEARCH_SIMULATION_ATTRIBUTION"
 
 

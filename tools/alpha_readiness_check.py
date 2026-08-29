@@ -15,6 +15,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from services.execution.backtest_authority import (
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
+)
+from services.validation.research_risk_authority import full_research_risk_approved
 from tools.cache_io import atomic_write_json
 from tools.forward_status import (
     alpha_forward_status,
@@ -25,8 +30,6 @@ from tools.forward_status import (
 
 REQUIRED_FORWARD_PERIODS = 8
 DEFAULT_OUTPUT = os.path.join("evidence", "alpha_readiness_crowd_contra.json")
-APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
-
 ALPHA_CATALOG: dict[str, dict[str, str]] = {
     "crowd_contra": {
         "expression": "cs_rank(neg(global_ls))",
@@ -99,6 +102,16 @@ def _ic_panel_row(payload: Mapping[str, Any], alpha_id: str) -> dict[str, Any]:
     return {}
 
 
+def _record_research_risk(record: object) -> Mapping[str, Any] | None:
+    if not isinstance(record, Mapping):
+        return None
+    detail = record.get("detail")
+    if isinstance(detail, Mapping) and isinstance(detail.get("research_risk"), Mapping):
+        return detail["research_risk"]
+    risk = record.get("research_risk")
+    return risk if isinstance(risk, Mapping) else None
+
+
 def evaluate_alpha_readiness(
     alpha_id: str,
     *,
@@ -125,120 +138,50 @@ def evaluate_alpha_readiness(
         cycle_rows = paper_cycle.get("alphas")
         if isinstance(cycle_rows, Mapping) and isinstance(cycle_rows.get(alpha_id), Mapping):
             cycle_row = cycle_rows[alpha_id]
-    cycle_research = cycle_row.get("research") if isinstance(cycle_row, Mapping) else None
-    # carry/top have Alpha-specific research snapshots in the paper-cycle
-    # artifact.  Never let a missing snapshot fall back to the crowd refutation
-    # artifact: that would make a report look complete while proving the wrong
-    # candidate.  crowd retains its dedicated legacy checks for compatibility.
-    use_cycle_research = alpha_id in {"carry_oi_majors", "top_contra"}
-
-    ref_checks = refutation.get("refutation_checks")
-    ref_checks = ref_checks if isinstance(ref_checks, dict) else {}
-    ref_pass_count = sum(bool(value) for value in ref_checks.values()) if ref_checks else None
-    refutation_pass = (
-        isinstance(refutation.get("verdict"), str)
-        and str(refutation["verdict"]).startswith("SURVIVES")
-        and ref_pass_count >= 4
+    canonical_cycle = cycle_row.get("canonical_dry_run")
+    canonical_cycle = canonical_cycle if isinstance(canonical_cycle, Mapping) else {}
+    canonical_risk = _record_research_risk(canonical_cycle)
+    canonical_authority_valid = bool(
+        canonical_cycle and is_authoritative_backtest_record(canonical_cycle)
     )
-    net_10bps = _number(
-        (refutation.get("net_sharpe_by_fee_bps") or {}).get(10)
-        or (refutation.get("net_sharpe_by_fee_bps") or {}).get("10")
+    canonical_risk_valid = bool(
+        isinstance(canonical_risk, Mapping)
+        and full_research_risk_approved(canonical_risk)
     )
-    lag_1d = _number(
-        (refutation.get("price_sharpe_by_lag") or {}).get(1)
-        or (refutation.get("price_sharpe_by_lag") or {}).get("1")
-    )
-    oos = refutation.get("embargoed_oos") or {}
-    oos_folds = oos.get("n_folds") if isinstance(oos, dict) else None
-    oos_sharpe = _number(oos.get("mean_oos") if isinstance(oos, dict) else None)
-
-    dry_books = dry_run.get("books") if isinstance(dry_run.get("books"), dict) else {}
-    dry_run_id = (definition or {}).get("dry_run_id", alpha_id)
-    capacity_id = (definition or {}).get("capacity_id", alpha_id)
-    dry_book = dry_books.get(dry_run_id) if isinstance(dry_books, dict) else None
-    dry_book = dry_book if isinstance(dry_book, dict) else {}
-    residual = _number(dry_run.get("residual_max"))
-    residual_limit = _number((dry_run.get("tolerances") or {}).get("residual"))
-    if residual_limit is None:
-        residual_limit = 1e-6
-
-    cap_numbers = capacity.get("numbers") if isinstance(capacity.get("numbers"), dict) else {}
-    cap = cap_numbers.get(f"{capacity_id}.participation_cap_aum")
-    cap_value = _number(cap.get("value") if isinstance(cap, dict) else None)
-
+    if not canonical_authority_valid:
+        blockers.append(LEGACY_INVALIDATION_CODE)
+        blockers.append("INDEPENDENT_AUTHORITATIVE_BACKTEST_RECORD_MISSING")
+        blockers.append("DRY_RUN_AUTHORITY_INVALID")
+    elif not canonical_risk_valid:
+        blockers.append("DRY_RUN_RESEARCH_RISK_NOT_FULL")
+        if not isinstance(canonical_risk, Mapping) or canonical_risk.get("decision") != "RISK_APPROVED":
+            blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
+    residual = _number(canonical_cycle.get("reconciliation_residual"))
+    residual_limit = 1e-6
+    admitted_residual = residual if canonical_authority_valid else None
     research_checks = {
         "registered_alpha": definition is not None,
-        "refutation_battery": refutation_pass,
-        "net_sharpe_at_10bps": net_10bps is not None and net_10bps > 0.5,
-        "survives_one_day_execution_lag": lag_1d is not None and lag_1d > 0.5,
-        "embargoed_oos_positive": (
-            isinstance(oos_folds, int) and oos_folds >= 5 and oos_sharpe is not None and oos_sharpe > 0
+        "independently_admitted_authoritative_backtest_record": canonical_authority_valid,
+        "full_research_risk_9_of_9": canonical_authority_valid and canonical_risk_valid,
+        "authoritative_backtest_reconciles": (
+            canonical_authority_valid
+            and canonical_risk_valid
+            and admitted_residual is not None
+            and admitted_residual <= residual_limit
         ),
-        "dry_run_reconciles": (
-            bool(dry_book)
-            and residual is not None
-            and residual <= residual_limit
-        ),
-        "capacity_diagnostic_present": cap_value is not None and cap_value > 0,
     }
-    if use_cycle_research:
-        cycle_verdict = cycle_research.get("verdict") if isinstance(cycle_research, Mapping) else None
-        research_checks = {
-            "registered_alpha": definition is not None,
-            "paper_cycle_research_evidence": cycle_verdict in {"PASS", "PASS_WITH_WARNINGS"},
-            "dry_run_reconciles": (
-                bool(dry_book)
-                and residual is not None
-                and residual <= residual_limit
-            ),
-            "capacity_diagnostic_present": cap_value is not None and cap_value > 0,
-        }
-        if not cycle_row:
-            blockers.append("PAPER_CYCLE_EVIDENCE_MISSING")
-        cycle_warnings = cycle_research.get("warnings") if isinstance(cycle_research, Mapping) else []
-        if isinstance(cycle_warnings, list):
-            warnings.extend(str(item) for item in cycle_warnings[:8])
-        cycle_blockers = cycle_row.get("blockers")
-        if isinstance(cycle_blockers, list):
-            blockers.extend(str(item) for item in cycle_blockers[:8])
-        if cycle_row.get("paper_verdict") == "BLOCKED":
-            blockers.append("PAPER_CYCLE_BLOCKED")
-        canonical_cycle = cycle_row.get("canonical_dry_run")
-        if isinstance(canonical_cycle, Mapping):
-            cycle_risk = canonical_cycle.get("research_risk_decision")
-            if cycle_risk is not None and cycle_risk not in APPROVED_RESEARCH_RISK_DECISIONS:
-                blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
-    else:
-        # The crowd candidate keeps its dedicated legacy research battery, but
-        # its execution evidence is still governed by the same unified paper
-        # cycle.  Do not let a clean refutation artifact hide a rejected
-        # canonical dry-run or a blocked cycle.
-        cycle_blockers = cycle_row.get("blockers")
-        if isinstance(cycle_blockers, list):
-            blockers.extend(str(item) for item in cycle_blockers[:8])
-        if cycle_row.get("paper_verdict") == "BLOCKED":
-            blockers.append("PAPER_CYCLE_BLOCKED")
-        canonical_cycle = cycle_row.get("canonical_dry_run")
-        if isinstance(canonical_cycle, Mapping):
-            cycle_risk = canonical_cycle.get("research_risk_decision")
-            if cycle_risk is not None and cycle_risk not in APPROVED_RESEARCH_RISK_DECISIONS:
-                blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
     if not research_checks["registered_alpha"]:
         blockers.append("ALPHA_NOT_REGISTERED")
     if not all(research_checks.values()):
         blockers.append("RESEARCH_EVIDENCE_INCOMPLETE")
 
     ic_row = _ic_panel_row(ic_panel or {}, alpha_id)
-    ic_t = _number(ic_row.get("t_stat"))
-    if ic_row and ic_t is not None and ic_t < 2.0:
-        warnings.append("IC_PANEL_DIAGNOSTIC_WEAK_TSTAT")
 
     forward_alphas = forward.get("alphas") if isinstance(forward.get("alphas"), dict) else {}
     forward_row = forward_alphas.get(alpha_id) if isinstance(forward_alphas, dict) else None
     forward_row = forward_row if isinstance(forward_row, dict) else {}
     forward_normalized = alpha_forward_status(forward, alpha_id)
     n_forward = forward_normalized["n_forward_periods"]
-    forward_sharpe = _number(forward_normalized["paper_sharpe"])
     admission_verdict = data_admission.get("verdict")
     # The clock-integrity forward driver renamed this field when it bound each
     # decision/realization to the data-admission authority. Accept the legacy
@@ -252,8 +195,12 @@ def evaluate_alpha_readiness(
         blockers.append("FORWARD_EVIDENCE_INSUFFICIENT")
     if not quality_current:
         blockers.append("FORWARD_QUALITY_EVIDENCE_UNAVAILABLE")
-    if n_forward and n_forward >= REQUIRED_FORWARD_PERIODS and (forward_sharpe is None or forward_sharpe <= 0):
-        blockers.append("FORWARD_PAPER_SHARPE_NON_POSITIVE")
+    # Clock/maturity observations may remain visible, but the V1 forward
+    # profitability ledger has no independent authority and can never clear a
+    # readiness gate.  A future forward authority needs a separate admission
+    # contract rather than a new boolean on this artifact.
+    blockers.append(LEGACY_INVALIDATION_CODE)
+    blockers.append("FORWARD_OBSERVATION_DIAGNOSTIC_ONLY")
 
     event_verdict = event_health.get("verdict")
     pending_events = event_health.get("pending_events")
@@ -287,8 +234,6 @@ def evaluate_alpha_readiness(
     # can only be reviewed for a later human-controlled phase, never executed here.
     unique_blockers = list(dict.fromkeys(blockers))
     research_verdict = "PASS" if all(research_checks.values()) else "BLOCKED"
-    if research_verdict == "PASS" and warnings:
-        research_verdict = "PASS_WITH_WARNINGS"
 
     next_action = (
         "修复数据准入与事件投影积压，重新积累至少 8 个真实前向 paper 周期；"
@@ -297,7 +242,12 @@ def evaluate_alpha_readiness(
     # Keep operator guidance aligned with the current evidence rather than
     # always claiming that admission or projection is broken. The report is
     # descriptive only and cannot relax any gate.
-    if admission_verdict != "PASS":
+    if not canonical_authority_valid:
+        next_action = (
+            "Produce and independently admit an authoritative_backtest_record before "
+            "any paper-readiness review; retained V1 history remains diagnostic only."
+        )
+    elif admission_verdict != "PASS":
         next_action = (
             "Wait for a clean data-admission PASS before recording another forward decision; "
             "the L2 system will not submit real orders."
@@ -316,32 +266,66 @@ def evaluate_alpha_readiness(
         )
     else:
         next_action = (
-            "Start the separately approved human multi-party review and post-L2 controls; "
-            "this report still cannot authorize real orders."
+            "Continue read-only observation while building an independently admitted V2 "
+            "forward-evidence authority; retained V1 profitability cannot support review."
         )
 
     return {
         "schema_version": 1,
+        "decision_class": "DIAGNOSTIC_ONLY",
+        "evidence_status": LEGACY_INVALIDATION_CODE,
+        "readiness_eligible": False,
         "alpha": {
             "id": alpha_id,
             "definition": definition,
-            "ic_panel": ic_row,
+            "ic_panel": {
+                "status": "DIAGNOSTIC_ONLY",
+                "evidence_status": LEGACY_INVALIDATION_CODE,
+                "row_present": bool(ic_row),
+                "load_bearing": False,
+            },
         },
         "research": {
             "verdict": research_verdict,
             "checks": research_checks,
-            "refutation_pass_count": ref_pass_count,
-            "net_sharpe_10bps": net_10bps,
-            "one_day_lag_sharpe": lag_1d,
-            "embargoed_oos_mean_sharpe": oos_sharpe,
-            "dry_run_residual_max": residual,
-            "capacity_participation_cap_aum": cap_value,
+            "authoritative_backtest_record_admitted": canonical_authority_valid,
+            "refutation_pass_count": None,
+            "net_sharpe_10bps": None,
+            "one_day_lag_sharpe": None,
+            "embargoed_oos_mean_sharpe": None,
+            "dry_run_residual_max": admitted_residual,
+            "capacity_participation_cap_aum": None,
             "warnings": warnings,
         },
+        "invalidated_history": {
+            "status": LEGACY_INVALIDATION_CODE,
+            "decision_class": "DIAGNOSTIC_ONLY",
+            "load_bearing": False,
+            "retained_artifacts": {
+                "refutation_present": bool(refutation),
+                "legacy_dry_run_present": bool(dry_run),
+                "capacity_present": bool(capacity),
+                "paper_cycle_present": bool(paper_cycle),
+                "forward_observation_present": bool(forward_row),
+            },
+            "suppressed_numeric_fields": [
+                "refutation_pass_count",
+                "net_sharpe_10bps",
+                "one_day_lag_sharpe",
+                "embargoed_oos_mean_sharpe",
+                "capacity_participation_cap_aum",
+                "paper_sharpe",
+                "ic_panel_metrics",
+            ],
+        },
         "forward_gate": {
+            "decision_class": "DIAGNOSTIC_ONLY",
+            "evidence_status": LEGACY_INVALIDATION_CODE,
+            "readiness_eligible": False,
             "data_admission_verdict": admission_verdict,
             "n_forward_periods": n_forward,
-            "paper_sharpe": forward_sharpe,
+            "paper_sharpe": None,
+            "profitability_status": LEGACY_INVALIDATION_CODE,
             "quality_evidence_current": quality_current,
             "attested_pending_decisions": forward_normalized[
                 "attested_pending_decisions"
@@ -370,7 +354,7 @@ def evaluate_alpha_readiness(
             "order_submission_allowed": False,
             "human_review_required": True,
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
-            "research_packet_ready_for_paper": research_verdict in {"PASS", "PASS_WITH_WARNINGS"}
+            "research_packet_ready_for_paper": research_verdict == "PASS"
             and not unique_blockers,
             "blockers": unique_blockers,
             "next_action": next_action,

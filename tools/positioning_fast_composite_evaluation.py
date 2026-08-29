@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from tools import positioning_composite_evaluation as common
 
@@ -54,7 +55,7 @@ def build_candidate_batch(panel):
     )
 
 
-def run(
+def _run_legacy_diagnostic(
     *,
     output: str | Path = DEFAULT_OUTPUT,
     recorded_at: int | None = None,
@@ -87,7 +88,12 @@ def run(
     )
 
 
+def run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.positioning_fast_composite_evaluation.run")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    quarantine_legacy_backtest("tools.positioning_fast_composite_evaluation.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--source-commit", required=True)

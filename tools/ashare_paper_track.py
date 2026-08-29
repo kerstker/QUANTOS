@@ -26,6 +26,7 @@ import json
 import os
 import sys
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.research import ic_panel
@@ -84,6 +85,7 @@ def build_champion_combo(store, codes):
 
 
 def main(variant: str = "baseline") -> None:
+    quarantine_legacy_backtest("tools.ashare_paper_track")
     if variant not in VARIANT_PARAMS:
         raise SystemExit(f"unknown variant {variant!r}; choose from {sorted(VARIANT_PARAMS)}")
     vparams = VARIANT_PARAMS[variant]

@@ -17,6 +17,7 @@ import statistics
 import time
 from datetime import datetime, timezone
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from tools.ic_panel_registry import FACTOR_REGISTRY, UNIVERSE_REGISTRY
 
 _OUT = os.path.join("data", "cache", "wide_factor_gauntlet.json")
@@ -97,6 +98,7 @@ def _evaluate(name: str, signal_fn, panel) -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.wide_factor_gauntlet")
     panel = UNIVERSE_REGISTRY["crypto_binance_wide"]()
     by_name = {f["name"]: f for f in FACTOR_REGISTRY}
     results = [_evaluate(n, by_name[n]["signal_fn"], panel) for n in _CANDIDATES if n in by_name]

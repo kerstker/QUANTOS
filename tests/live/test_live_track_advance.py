@@ -979,9 +979,24 @@ def test_research_readiness_blocks_explicit_alpha_blockers(tmp_path):
     assert reason == "alpha_paper_blocked:carry_oi_majors:FORWARD_EVIDENCE_INSUFFICIENT"
 
 
-def test_research_readiness_blocks_non_pass_canonical_risk(tmp_path):
+def test_research_readiness_blocks_non_pass_canonical_risk(tmp_path, monkeypatch):
     import json
+    import tools.live_track_advance as live_track_advance
     from tools.live_track_advance import research_readiness_skip_reason
+
+    monkeypatch.setattr(
+        live_track_advance, "is_authoritative_backtest_record", lambda _record: True
+    )
+    rejected_risk = {
+        "decision": "RISK_REJECTED",
+        "status": "REJECTED",
+        "gates_run": 9,
+        "gates_passed": 8,
+        "engines_run": {"capacity": False},
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
 
     path = tmp_path / "cycle.json"
     path.write_text(
@@ -989,7 +1004,10 @@ def test_research_readiness_blocks_non_pass_canonical_risk(tmp_path):
             {"alphas": {"top_contra": {
                 "paper_verdict": "PENDING_REVIEW",
                 "blockers": [],
-                "canonical_dry_run": {"research_risk_decision": "RISK_REJECTED"},
+                "canonical_dry_run": {
+                    "research_risk": rejected_risk,
+                    "detail": {"research_risk": rejected_risk},
+                },
             }}}
         ),
         encoding="utf-8",
@@ -998,7 +1016,7 @@ def test_research_readiness_blocks_non_pass_canonical_risk(tmp_path):
     assert reason == "research_risk_risk_rejected:top_contra"
 
 
-def test_research_readiness_allows_unblocked_pending_human_review(tmp_path):
+def test_research_readiness_rejects_legacy_pass_label(tmp_path):
     import json
     from tools.live_track_advance import research_readiness_skip_reason
 
@@ -1013,12 +1031,36 @@ def test_research_readiness_allows_unblocked_pending_human_review(tmp_path):
         ),
         encoding="utf-8",
     )
-    assert research_readiness_skip_reason("crowd_contra", path=str(path)) is None
+    assert research_readiness_skip_reason(
+        "crowd_contra", path=str(path)
+    ) == "backtest_authority_invalid:crowd_contra"
 
 
-def test_research_readiness_allows_canonical_risk_approved(tmp_path):
+def test_research_readiness_allows_canonical_risk_approved(tmp_path, monkeypatch):
     import json
+    import tools.live_track_advance as live_track_advance
     from tools.live_track_advance import research_readiness_skip_reason
+
+    monkeypatch.setattr(
+        live_track_advance, "is_authoritative_backtest_record", lambda _record: True
+    )
+    engines = {
+        name: True
+        for name in (
+            "market", "liquidity", "concentration", "correlation", "drawdown",
+            "regime", "stress", "capacity", "model_alpha",
+        )
+    }
+    approved_risk = {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_run": 9,
+        "gates_passed": 9,
+        "engines_run": engines,
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
 
     path = tmp_path / "cycle.json"
     path.write_text(
@@ -1026,12 +1068,42 @@ def test_research_readiness_allows_canonical_risk_approved(tmp_path):
             {"alphas": {"crowd_contra": {
                 "paper_verdict": "PENDING_REVIEW",
                 "blockers": [],
-                "canonical_dry_run": {"research_risk_decision": "RISK_APPROVED"},
+                "canonical_dry_run": {
+                    "research_risk": approved_risk,
+                    "detail": {"research_risk": approved_risk},
+                },
             }}}
         ),
         encoding="utf-8",
     )
     assert research_readiness_skip_reason("crowd_contra", path=str(path)) is None
+
+
+def test_research_readiness_rejects_scalar_approval_without_manifest_v2(tmp_path):
+    import json
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    path = tmp_path / "alpha_paper_cycle.json"
+    path.write_text(
+        json.dumps(
+            {
+                "alphas": {
+                    "crowd_contra": {
+                        "blockers": [],
+                        "paper_verdict": "PENDING_REVIEW",
+                        "canonical_dry_run": {
+                            "authoritative": True,
+                            "research_risk_decision": "RISK_APPROVED",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert research_readiness_skip_reason(
+        "crowd_contra", path=str(path)
+    ) == "backtest_authority_invalid:crowd_contra"
 
 
 # --- 2026-07-23 资金费实时交叉核对(funding_check 镜像跨源核价):可测桥 funding_cross_check ---

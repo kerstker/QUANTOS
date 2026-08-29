@@ -16,6 +16,7 @@ from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.backtest_engine.metrics import sharpe, max_drawdown
 from tools.crypto_carry_stress import _run_carry, _slip_bps
 
@@ -64,6 +65,7 @@ def _per_year(times, net):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_carry_voltarget")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     funding = {tk: {int(k): v for k, v in d.items()}

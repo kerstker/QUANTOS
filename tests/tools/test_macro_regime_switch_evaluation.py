@@ -144,7 +144,7 @@ def test_registered_run_uses_closed_budget_and_never_marks_testnet_eligible(
     )
 
     panel = _panel()
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "result.json",
         recorded_at=123,
         source_commit="a" * 40,

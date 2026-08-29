@@ -13,6 +13,7 @@ import os
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from tools.crypto_daily_research import _top_factor_diagnostics
 
 _SNAP = os.path.join("data", "cache", "crypto_research_snapshot.json")
@@ -20,6 +21,7 @@ _DB = os.path.join("data", "cache", "crypto_daily.db")
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_daily_diagnostics")
     if not os.path.exists(_SNAP):
         raise SystemExit(f"no snapshot at {_SNAP} — run tools/crypto_daily_research.py first")
     snap = json.load(open(_SNAP, encoding="utf-8"))

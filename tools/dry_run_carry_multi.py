@@ -21,6 +21,7 @@ from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.execution.impact_calibration import default_crypto_impact_calibration, scenario_impact
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
@@ -69,6 +70,7 @@ def _existing_carry_run(path: str = _OUT) -> dict | None:
 
 
 def main(max_weeks: int = 0) -> None:
+    quarantine_legacy_backtest("tools.dry_run_carry_multi")
     if max_weeks <= 0:
         existing = _existing_carry_run(_OUT)
         if existing is not None:
@@ -99,7 +101,14 @@ def main(max_weeks: int = 0) -> None:
     liquid = [inst for inst in instruments if pctile[inst] >= 0.5]
 
     ets = sorted({b.event_time for inst in liquid for b in store.fetch_bars(inst, -10 ** 18, 10 ** 18)})
-    panel = ax.build_field_panel(store, liquid, ets, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        liquid,
+        ets,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in ets],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(i, {}).get(t) for i in panel.instruments]
                                  for t in panel.event_times]
     sig = ax.evaluate(COMPOSITE, panel)

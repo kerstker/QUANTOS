@@ -1,6 +1,8 @@
 from dataclasses import replace
 from decimal import Decimal
 
+import pytest
+
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.events import (
     EVENT_DRY_RUN_COMPLETED,
@@ -10,9 +12,20 @@ from quantos.contracts.events import (
     EVENT_RESEARCH_RISK_EVALUATED,
 )
 
-from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
-                                                 plan_target_quantities, reconcile_run, run_dry_run_pipeline,
-                                                 run_multi_period_dry_run, screen_intents, simulate_fills)
+from services.execution.backtest_authority import BacktestIntegrityBlocked
+from services.execution.dry_run_pipeline import (
+    _ann_sharpe,
+    _max_drawdown_from_returns,
+    _run_dry_run_pipeline_legacy_diagnostic as run_dry_run_pipeline,
+    _run_multi_period_dry_run_legacy_diagnostic as run_multi_period_dry_run,
+    _vol_target_returns,
+    plan_target_quantities,
+    reconcile_run,
+    run_dry_run_pipeline as public_run_dry_run_pipeline,
+    run_multi_period_dry_run as public_run_multi_period_dry_run,
+    screen_intents,
+    simulate_fills,
+)
 from services.execution.intent_builder import build_intents
 from services.execution.simulated_sor import (
     BookLevel,
@@ -42,6 +55,12 @@ def _gate(kill_switch=None, fat_finger=10 ** 9):
         max_turnover=1e9, max_participation_rate=1e9, max_instrument_vol=10.0, daily_loss_limit=1e15,
         max_drawdown=1.0)
     return PreTradeRiskGate(limits, kill_switch=kill_switch)
+
+
+def test_public_v1_pipeline_entrypoints_fail_before_dependencies_run():
+    for runner in (public_run_dry_run_pipeline, public_run_multi_period_dry_run):
+        with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+            runner(object_that_must_not_be_touched=object())
 
 
 def _armed_gate():
@@ -776,6 +795,28 @@ def test_multi_period_funding_flows_into_equity():
     flat = _mp(cash_flow_fn=None).pnl["final_equity"]
     with_fund = _mp(cash_flow_fn=lambda held, prices, period: 1000.0 if held else 0.0).pnl["final_equity"]
     assert with_fund > flat
+
+
+def test_multi_period_cash_flow_uses_pre_rebalance_position_and_full_identity():
+    observed = []
+
+    def settlement(held, _prices, period):
+        observed.append((period, dict(held)))
+        return 25.0 if held else 0.0
+
+    run = _mp(cash_flow_fn=settlement)
+    assert observed[0] == (1, {})
+    assert observed[1][0] == 2 and observed[1][1]
+    assert run.detail["cash_flow_events"][0]["position_snapshot"] == {}
+    assert run.pnl["total_funding"] == 50.0
+    assert run.pnl["residual"] < 1e-6
+
+
+def test_multi_period_legacy_result_is_never_marked_authoritative():
+    run = _mp()
+    assert run.detail["authoritative"] is False
+    assert run.detail["evidence_status"] == "LEGACY_UNATTESTED_DISPLAY_ONLY"
+    assert run.detail["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
 
 
 def test_multi_period_deterministic():

@@ -39,7 +39,8 @@ def _ingest_records(records, parse, store, *, now, dataset_id, version, strict: 
     instrument_id/event_time/OHLCV,不含 knowledge_time。
 
     Rank #22:`strict=True` 时,若数据质量报告不通过(重复/乱序/缺失/未来时间戳)→ 抛
-    `FatalIngestionError`(fail-closed,承重数据集不得静默接入坏数据)。默认 False = 零回归。
+    `FatalIngestionError`(fail-closed,承重数据集不得静默接入坏数据)。`strict=False` 仅不把
+    质量报告升级为异常；不可变 identity 冲突仍失败，且支持原子批写的 store 不留部分前缀。
     质量报告的重复-时间戳检查以**单一时间序列**为前提,故 strict 用于单标的接入(逐 fetcher 常态)。"""
     rows_read = 0
     valid_bars, rejected = [], []
@@ -76,20 +77,25 @@ def _ingest_records(records, parse, store, *, now, dataset_id, version, strict: 
 
     bars_ingested = 0
     duplicates = 0
-    if strict:
-        atomic_writer = getattr(store, "add_batch_atomic", None)
-        if not callable(atomic_writer):
-            raise FatalIngestionError("strict ingestion requires an atomic batch store")
+    atomic_writer = getattr(store, "add_batch_atomic", None)
+    if strict and not callable(atomic_writer):
+        raise FatalIngestionError("strict ingestion requires an atomic batch store")
+    if callable(atomic_writer):
         try:
             bars_ingested = int(atomic_writer(valid_bars))
         except Exception as exc:
-            raise FatalIngestionError(f"strict ingestion atomic write failed: {exc}") from exc
+            if strict:
+                raise FatalIngestionError(
+                    f"strict ingestion atomic write failed: {exc}"
+                ) from exc
+            # Identity conflicts are integrity failures, not row-quality noise.
+            # Preserve their concrete store exception and the batch rollback so
+            # non-strict ingestion cannot leave a misleading partial prefix.
+            raise
         duplicates = len(valid_bars) - bars_ingested
     else:
         for bar in valid_bars:
-            if store.contains(bar.instrument_id, bar.event_time, bar.knowledge_time):
-                duplicates += 1
-            elif store.add(bar.instrument_id, bar):
+            if store.add(bar.instrument_id, bar):
                 bars_ingested += 1
             else:
                 duplicates += 1

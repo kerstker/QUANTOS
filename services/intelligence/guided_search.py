@@ -8,6 +8,10 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from services.research.ports.persistence import TrialPersistenceError
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 
 from .agent_loop import ResearchAgentLoop
 from .evidence import provider_leakage_evidence
@@ -24,7 +28,10 @@ class GuidedSearchLoop:
         self.inner_loop = inner_loop or ResearchAgentLoop()
 
     def search(self, rounds: int, batch_size: int, periods_provider: Callable,
-               *, timestamp: int = 0) -> dict:
+               *, timestamp: int = 0, diagnostic_only: bool = False) -> dict:
+        require_diagnostic_selection_seam(
+            "GuidedSearchLoop.search", diagnostic_only=diagnostic_only
+        )
         history, review_queue, report = [], [], {}
         for _ in range(rounds):
             assert_action_allowed(self.inner_loop.actor, AgentAction.PROPOSE)
@@ -51,7 +58,12 @@ class GuidedSearchLoop:
             # 断点1 (方案A): if the provider can self-assess leakage, feed it as evidence so the
             # evaluator's leakage gate participates with a real verdict (else {} -> fail-closed None).
             evidence = provider_leakage_evidence(periods_provider, candidates)
-            out = self.inner_loop.run(candidates, timestamp=timestamp, evidence=evidence)
+            out = self.inner_loop.run(
+                candidates,
+                timestamp=timestamp,
+                evidence=evidence,
+                diagnostic_only=True,
+            )
             report.update(out["report"])
             review_queue.extend(out["human_review_queue"])
             for h in hyps:
@@ -62,4 +74,6 @@ class GuidedSearchLoop:
                 self.strategy.update(h, reward)
                 history.append({"hypothesis": h, "reward": reward, "state": entry.get("state")})
         return {"history": history, "arm_means": self.strategy.arm_means(),
-                "human_review_queue": review_queue, "report": report}
+                "human_review_queue": review_queue, "report": report,
+                "diagnostic_only": True, "selection_authority": False,
+                "invalidation_code": LEGACY_INVALIDATION_CODE}

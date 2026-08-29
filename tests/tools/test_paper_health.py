@@ -1,7 +1,22 @@
 from __future__ import annotations
 
+import pytest
+
 import tools.paper_health as paper_health
 from tools.paper_health import ALPHA_IDS, DEFAULT_MAX_AGE_MS, evaluate_paper_health
+
+
+@pytest.fixture(autouse=True)
+def _authority_contract_double(monkeypatch):
+    monkeypatch.setattr(
+        paper_health,
+        "is_authoritative_backtest_record",
+        lambda record: bool(
+            isinstance(record, dict)
+            and isinstance(record.get("detail"), dict)
+            and record["detail"].get("_test_manifest_valid") is True
+        ),
+    )
 
 
 def _realtime(*, observed_at: int = 1_000) -> dict:
@@ -35,14 +50,21 @@ def _realtime(*, observed_at: int = 1_000) -> dict:
             for alpha in ALPHA_IDS
         },
         "backtests": {
-            alpha: {"provenance": "REAL_AUTHORITATIVE_L2_DRY_RUN"}
+            alpha: {
+                "provenance": "REAL_AUTHORITATIVE_L2_DRY_RUN",
+                "research_risk": _full_research_risk(),
+                "detail": {
+                    "_test_manifest_valid": True,
+                    "research_risk": _full_research_risk(),
+                },
+            }
             for alpha in ALPHA_IDS
         },
     }
 
 
-def _preview() -> dict:
-    full_research_risk = {
+def _full_research_risk() -> dict:
+    return {
         "decision": "RISK_APPROVED",
         "status": "APPROVED",
         "gates_passed": 9,
@@ -50,21 +72,18 @@ def _preview() -> dict:
         "engines_run": {
             name: True
             for name in (
-                "market",
-                "liquidity",
-                "concentration",
-                "correlation",
-                "drawdown",
-                "regime",
-                "stress",
-                "capacity",
-                "model_alpha",
+                "market", "liquidity", "concentration", "correlation",
+                "drawdown", "regime", "stress", "capacity", "model_alpha",
             )
         },
         "engines_skipped": {},
         "engines_pending": {},
         "provenance": "REAL_RESEARCH_RISK_FULL",
     }
+
+
+def _preview() -> dict:
+    full_research_risk = _full_research_risk()
     return {
         "verdict": {
             "paper_preview_ready": True,
@@ -269,6 +288,17 @@ def test_paper_health_blocks_four_engine_subset_even_when_fills_reconcile():
     assert report["verdict"]["paper_preview_ready"] is False
     assert report["verdict"]["paper_research_risk_complete"] is False
     assert "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL" in report["blockers"]
+
+
+def test_paper_health_does_not_trust_backtest_provenance_string_alone():
+    realtime = _realtime()
+    for row in realtime["backtests"].values():
+        row.pop("detail")
+    # Historical realtime summaries only self-labelled provenance; they did
+    # not retain a RunManifestV2 or the complete nine-engine risk packet.
+    report = evaluate_paper_health(realtime, _preview(), now_ms=2_000)
+    assert report["verdict"]["paper_ready"] is False
+    assert "crowd_contra:BACKTEST_AUTHORITY_INVALID" in report["blockers"]
 
 
 def test_paper_health_surfaces_missing_research_risk_bundle_without_inventing_a_blocker():

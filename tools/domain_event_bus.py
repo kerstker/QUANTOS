@@ -1,6 +1,9 @@
 """Open the shared offline domain-event database used by scheduled tool boundaries."""
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from services.execution.dry_run_store import (
     DryRunOutboxEvent,
     DryRunRun,
@@ -24,9 +27,20 @@ def dispatch_dry_run_outbox(
     *,
     at_ms: int,
     limit: int = 1_000,
+    authority_records: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict:
-    """Idempotently transfer pending dry-run events into the shared event log."""
+    """Transfer only externally admitted dry-run events into the shared log."""
     pending = store.pending_outbox(limit=limit)
+    resolved = authority_records if isinstance(authority_records, Mapping) else {}
+    # Validate the complete batch before the first publish.  One legacy or
+    # forged row must not cause a partially dispatched canonical batch.
+    for record in pending:
+        retained = store.get_run(record["run_id"])
+        if retained is None:
+            raise RuntimeError("dry-run outbox references a missing run")
+        store._require_authoritative_write(
+            DryRunRun(**retained), resolved.get(record["run_id"])
+        )
     dispatched = 0
     for record in pending:
         event = record["event"]
@@ -39,6 +53,7 @@ def dispatch_dry_run_outbox(
             record["outbox_id"],
             dispatched_at=at_ms,
             event_repro_hash=event.reproducibility_hash,
+            authority_record=resolved.get(record["run_id"]),
         )
         dispatched += 1
     return {
@@ -55,6 +70,7 @@ def save_and_project_dry_run(
     now_ms: int,
     projection_path: str = DOMAIN_EVENT_PROJECTION_DB,
     project: bool = True,
+    authority_record: Mapping[str, Any] | None = None,
 ) -> dict:
     """Atomically retain a run+completion outbox and dispatch it.
 
@@ -66,6 +82,10 @@ def save_and_project_dry_run(
     """
     if not isinstance(project, bool):
         raise TypeError("project must be a bool")
+    # Check before event construction, store transactions, outbox publication,
+    # or projection.  The currently disabled external verifier makes this an
+    # unconditional fail-closed boundary for legacy DryRunRun values.
+    store._require_authoritative_write(run, authority_record)
     mode = str(run.detail.get("mode") or "single_period")
     started = dry_run_started_event(
         run_id=run.run_id,
@@ -119,8 +139,14 @@ def save_and_project_dry_run(
         run,
         messages,
         require_completion=True,
+        authority_record=authority_record,
     )
-    dispatch = dispatch_dry_run_outbox(store, event_bus, at_ms=now_ms)
+    dispatch = dispatch_dry_run_outbox(
+        store,
+        event_bus,
+        at_ms=now_ms,
+        authority_records={run.run_id: authority_record},
+    )
     projection = (
         project_pending_domain_events(
             event_bus, now_ms=now_ms, projection_path=projection_path

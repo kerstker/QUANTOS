@@ -6,18 +6,21 @@ the carry return stream is already in the book — or is it redundant / null? It
 PIT-leakage proof, the carry strategy's exact dollar-neutral book + price/funding P&L, rank-IC, no-peek
 walk-forward SELECTION OOS, and Gram-Schmidt orthogonalization (explained_r2 + marginal_ir vs carry).
 
-Data: data/cache/crypto_oi_metrics.json (Binance Data Vision metrics archive, eod per UTC day, PIT-safe)
+Data: data/cache/crypto_oi_metrics.json (Binance Data Vision metrics archive, eod per UTC day, consumed
+only when its explicit availability is no later than the decision clock)
 aligned to the existing price+funding panel. Liquid majors only. Observed numbers only — no fabrication;
 the answer (edge / redundant / null) is whatever the machine reports.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 import statistics
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.expression_leakage import compute_leakage_ok
@@ -36,6 +39,39 @@ QUANTILE = 0.3            # top/bottom 30% — the OI universe is ~24 liquid maj
                           # divergence is deliberately NOT unified — recorded in canonical.py)
 MIN_DAYS = 300           # only include a ticker with at least this many OI days
 OI_FIELDS = ("oi", "oi_value", "top_ls", "global_ls", "taker_ls")
+
+
+def oi_field_as_of(record, field: str, *, decision_time_ms: int):
+    """Return an OI field only when its explicit availability precedes decision.
+
+    Legacy cache rows carried only a daily dictionary key and therefore cannot
+    prove when the final five-minute observation became usable.  They fail
+    closed until refreshed with source/availability/ingestion provenance.
+    ``ingestion_time_ms`` is retained for audit but is deliberately not used as
+    historical source availability: a later archive backfill must not rewrite
+    when Binance originally made the metric observable.
+    """
+    if not isinstance(record, dict) or type(decision_time_ms) is not int:
+        return None
+    source_event = record.get("source_event_time_ms")
+    available = record.get("available_time_ms")
+    ingestion = record.get("ingestion_time_ms")
+    if (
+        type(source_event) is not int
+        or type(available) is not int
+        or type(ingestion) is not int
+        or source_event < 0
+        or ingestion < 0
+        or available < source_event
+        or available < ingestion
+        or available > decision_time_ms
+    ):
+        return None
+    value = record.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
 
 # F2 (2026-07-27): CARRY and the shared _legs book-builder MOVED to the single source of
 # truth services/factor_garden/canonical.py (identical to crypto_carry_strategy.COMPOSITE —
@@ -130,32 +166,55 @@ def build_panel(only=None, add_basis=False, add_intraday=False):
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in json.load(open(_FUND, encoding="utf-8")).items()}
 
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    decision_times = [t + 86_400_000 for t in event_times]
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=decision_times,
+        # Reject legacy cache rows written under the former open-time
+        # knowledge policy even when they coexist with corrected rows.
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
     oi_by_inst = {tk: {int(k): v for k, v in d.items()} for tk, d in oi_data.items() if not tk.startswith("_")}
 
-    def _oi_cell(inst, t, fld):
+    def _oi_cell(inst, t, decision_time, fld):
         rec = oi_by_inst.get(inst, {}).get(t)
-        return rec.get(fld) if isinstance(rec, dict) else None
+        return oi_field_as_of(rec, fld, decision_time_ms=decision_time)
 
     for fld in OI_FIELDS:
-        panel.matrices[fld] = [[_oi_cell(inst, t, fld) for inst in panel.instruments]
-                               for t in panel.event_times]
+        panel.matrices[fld] = [
+            [_oi_cell(inst, t, decision_time, fld) for inst in panel.instruments]
+            for t, decision_time in zip(
+                panel.event_times, panel.decision_times, strict=True
+            )
+        ]
 
     if add_basis and os.path.exists(_SPOT_DB):
         # basis = perp_mark / spot - 1, the realized perp premium. The `close` in our perp DB is actually
         # the SPOT klines source; the true PERP mark is oi_value/oi (USD notional / base units) from the
         # metrics archive. So basis = (oi_value/oi) / spot_close - 1.
         spot_store = CachingPITStore(SqlitePITStore(_SPOT_DB, create=False))
-        spot = {inst: {b.event_time: b.close for b in spot_store.fetch_bars(inst, -10**18, 10**18)}
-                for inst in panel.instruments}
+        spot_panel = ax.build_field_panel(
+            spot_store,
+            panel.instruments,
+            panel.event_times,
+            ("close",),
+            decision_times=panel.decision_times,
+            # The spot cache can contain both legacy open-time rows and the
+            # corrected close-time vintage.  Only the latter is admissible.
+            minimum_knowledge_lag=86_400_000,
+        )
+        spot_close = spot_panel.matrices["close"]
         oi_m, oiv_m = panel.matrices["oi"], panel.matrices["oi_value"]
         basis = []
-        for ti, t in enumerate(panel.event_times):
+        for ti, _event_time in enumerate(panel.event_times):
             row = []
             for ii, inst in enumerate(panel.instruments):
-                sp = spot.get(inst, {}).get(t)
+                sp = spot_close[ti][ii]
                 o, ov = oi_m[ti][ii], oiv_m[ti][ii]
                 perp = (ov / o) if (o and ov is not None) else None
                 row.append((perp / sp - 1.0) if (sp and perp and sp > 0) else None)
@@ -167,17 +226,22 @@ def build_panel(only=None, add_basis=False, add_intraday=False):
                 for tk, d in json.load(open(_OI_INTRADAY, encoding="utf-8")).get("data", {}).items()
                 if not tk.startswith("_")}
 
-        def _intr_cell(inst, t, fld):
+        def _intr_cell(inst, t, decision_time, fld):
             rec = intr.get(inst, {}).get(t)
-            return rec.get(fld) if isinstance(rec, dict) else None
+            return oi_field_as_of(rec, fld, decision_time_ms=decision_time)
 
         for fld in INTRADAY_FIELDS:
-            panel.matrices[fld] = [[_intr_cell(inst, t, fld) for inst in panel.instruments]
-                                   for t in panel.event_times]
+            panel.matrices[fld] = [
+                [_intr_cell(inst, t, decision_time, fld) for inst in panel.instruments]
+                for t, decision_time in zip(
+                    panel.event_times, panel.decision_times, strict=True
+                )
+            ]
     return panel, instruments
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_oi_research")
     panel, instruments = build_panel()
     print(f"OI universe: {len(instruments)} liquid majors with >= {MIN_DAYS} days: {instruments}")
     px = panel.matrices["close"]; fund_mat = panel.matrices["funding"]

@@ -40,6 +40,27 @@ def test_dedup_identical_bar():
     assert len(s.as_of("X", as_of_time=60)) == 1
 
 
+def test_same_identity_with_changed_payload_fails_closed():
+    s = _store()
+    assert s.add("X", _bar("X", 10, 10, 100.0)) is True
+
+    with pytest.raises(DataStoreError, match="identity conflict"):
+        s.add("X", _bar("X", 10, 10, 200.0))
+
+    rows = s.as_of("X", as_of_time=60)
+    assert len(rows) == 1
+    assert rows[0].close == 100.0
+
+
+def test_add_rejects_key_and_payload_instrument_mismatch():
+    s = _store()
+
+    with pytest.raises(DataStoreError, match="bar.instrument_id"):
+        s.add("BTC", _bar("ETH", 10, 10, 100.0))
+
+    assert s.keys() == []
+
+
 def test_persists_across_connections(tmp_path):
     p = str(tmp_path / "lake.db")
     s1 = SqlitePITStore(p, create=True)
@@ -101,3 +122,33 @@ def test_atomic_batch_rolls_back_every_row_on_database_failure():
         ])
     assert store.as_of("X", as_of_time=60) == []
     assert store.as_of("BAD", as_of_time=60) == []
+
+
+def test_atomic_batch_conflict_rolls_back_new_rows_and_preserves_original():
+    store = _store()
+    store.add("X", _bar("X", 10, 10, 100.0))
+
+    with pytest.raises(DataStoreError, match="identity conflict"):
+        store.add_batch_atomic(
+            [
+                _bar("Y", 20, 20, 50.0),
+                _bar("X", 10, 10, 200.0),
+            ]
+        )
+
+    assert store.as_of("Y", as_of_time=60) == []
+    assert store.latest_as_of("X", as_of_time=60).close == 100.0
+
+
+def test_atomic_batch_rejects_internal_identity_conflict_before_writing():
+    store = _store()
+
+    with pytest.raises(DataStoreError, match="conflicting content"):
+        store.add_batch_atomic(
+            [
+                _bar("X", 10, 10, 100.0),
+                _bar("X", 10, 10, 200.0),
+            ]
+        )
+
+    assert store.keys() == []

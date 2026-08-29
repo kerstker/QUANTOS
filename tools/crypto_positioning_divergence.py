@@ -20,6 +20,7 @@ import json
 import os
 import statistics
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.expression_leakage import compute_leakage_ok
@@ -82,6 +83,7 @@ def _per_year(price_r, event_times):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_positioning_divergence")
     panel, instruments = build_panel()
     px = panel.matrices["close"]
     fund_mat = panel.matrices["funding"]

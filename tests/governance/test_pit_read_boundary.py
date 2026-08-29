@@ -30,8 +30,11 @@ _TOOLS = os.path.join(_ROOT, "tools")
 #   console_api    —— data-catalog 端点枚举数据集元数据(content_hash / 新鲜度),非回测
 #   persistent_store —— SqlitePITStore.fetch_bars_pit 内部复用 self.fetch_bars 再做
 #     knowledge_time<=event_time 过滤(数据层 infra 自身;PIT 安全批量读在此实现)
+#   available_time —— 显式 decision_lag/minimum_knowledge_lag 后才从版本窗口选取
+#     可知 vintage；用于 open-keyed/close-known 的日线，拒绝旧回填行
 #   session        —— _derive_dataset_version 对全窗口算 content_hash(版本指纹,非信号读)
 _SERVICES_WHITELIST = {
+    "services/data/available_time.py",
     "services/data/caching_store.py",
     "services/data/calendar_store.py",
     "services/console/data_console.py",
@@ -50,7 +53,10 @@ _SERVICES_WHITELIST = {
 # 已钉住驱动器同一 tools/ 门外 raw-window seam;MEXC 数据 knowledge_time=event_time EOD 可知、
 # ingest 有未来数据守卫)。同次把 live_data_refresh 的 MEXC 快照统计改为直接 SQL
 # MIN/MAX/COUNT(与 price_watermarks 同模式),未新增第二处裸读。
-_TOOLS_PINNED = 44
+# 2026-08-29: Binance daily availability migration removed two raw-window
+# callsites (the IC-registry event grid and OI spot-basis map).  The remaining
+# count is lowered; it must not grow back.
+_TOOLS_PINNED = 42
 
 
 def _fetch_bars_call_sites(path: str) -> list:

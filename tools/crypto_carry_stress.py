@@ -16,6 +16,7 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe, max_drawdown
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
@@ -31,7 +32,14 @@ def _slip_bps(pct):
 
 def _run_carry(store, funding, instruments, slip_by_inst, now_ms):
     ets = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, -10**18, 10**18)})
-    panel = ax.build_field_panel(store, instruments, ets, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        ets,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in ets],
+        minimum_knowledge_lag=86_400_000,
+    )
     fmat = [[funding.get(inst, {}).get(t) for inst in panel.instruments] for t in panel.event_times]
     panel.matrices["funding"] = fmat
     sig, px = ax.evaluate(COMPOSITE, panel), panel.matrices["close"]
@@ -67,6 +75,7 @@ def _per_year(times, series):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_carry_stress")
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     funding = {tk: {int(k): v for k, v in d.items()}

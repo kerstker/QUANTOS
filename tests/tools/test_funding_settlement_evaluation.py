@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import pytest
 
 from quantos.contracts.hashing import stable_hash
+from services.execution.backtest_authority import BacktestIntegrityBlocked
 from services.research.funding_settlement import HOUR_MS
 from tools import funding_settlement_evaluation as driver
 
@@ -44,6 +45,11 @@ def _snapshot(periods: int = 20) -> dict:
             "live_trading": False,
         },
     }
+
+
+def test_public_evaluation_is_quarantined_before_reading_source() -> None:
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        driver.run(source_commit="not-even-validated")
 
 
 def test_load_history_requires_real_provenance_hash_and_safety(tmp_path) -> None:
@@ -103,7 +109,7 @@ def test_run_registers_fixed_cost_family_but_never_claims_testnet_eligibility(
     monkeypatch.setattr(driver, "production_experiment_registry", registry_context)
     monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
 
-    result = driver.run(
+    result = driver._run_legacy_diagnostic(
         source_snapshot=source,
         output=output,
         source_commit="a" * 40,

@@ -14,6 +14,7 @@ WINDOWS = [3, 5, 7, 14]
 
 def run_alpha_factory(*args, **kwargs):
     kwargs["ephemeral"] = True
+    kwargs["diagnostic_only"] = True
     return _run_alpha_factory(*args, **kwargs)
 
 

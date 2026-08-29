@@ -163,8 +163,38 @@ def test_record_evaluation_is_reproducible_and_immutable():
     rid2 = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
     assert rid1 == rid2                                   # deterministic run_id
     stored = reg.get_evaluation(rid1)
-    assert stored["verdict"] == "PASS" and stored["content_hash"]
+    assert stored["verdict"] == "REQUIRES_HUMAN_REVIEW" and stored["content_hash"]
+    payload = json.loads(stored["evaluation_json"])
+    assert stored["evidence_status"] == "DIAGNOSTIC_ONLY"
+    assert stored["selection_authority"] is False
+    assert stored["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert "INVALIDATED_PERP_LEDGER_V1" in payload["reasons"]
     assert reg.list_evaluations("a1")[0]["run_id"] == rid1
+
+
+def test_self_described_backtest_authority_cannot_persist_a_pass():
+    evaluation = {
+        **_evaluation().model_dump(),
+        "evidence_status": "AUTHORITATIVE",
+        "authoritative_backtest_record": {
+            "status": "AUTHORITATIVE",
+            "run_id": "self-signed",
+        },
+    }
+    reg = _reg()
+
+    run_id = reg.record_evaluation(
+        evaluation,
+        dataset_version="v1",
+        recorded_ts=10,
+    )
+
+    stored = reg.get_evaluation(run_id)
+    assert stored["verdict"] == "REQUIRES_HUMAN_REVIEW"
+    payload = json.loads(stored["evaluation_json"])
+    assert stored["evidence_status"] == "DIAGNOSTIC_ONLY"
+    assert "evidence_status" not in payload
+    assert "authoritative_backtest_record" not in payload
 
 
 def test_record_evaluation_emits_audit_event():
@@ -382,7 +412,10 @@ def test_verify_evaluation_detects_a_tampered_metric():
     rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
     # edit the stored evaluation_json directly (verdict flipped) WITHOUT updating content_hash
     row = reg.get_evaluation(rid)
-    tampered = row["evaluation_json"].replace('"verdict": "PASS"', '"verdict": "FAIL"')
+    tampered = row["evaluation_json"].replace(
+        '"verdict": "REQUIRES_HUMAN_REVIEW"',
+        '"verdict": "FAIL"',
+    )
     assert tampered != row["evaluation_json"]                 # the edit actually landed
     reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
     reg._store._conn.execute("UPDATE evaluations SET evaluation_json=? WHERE run_id=?", (tampered, rid))

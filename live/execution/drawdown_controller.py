@@ -49,6 +49,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from services.execution.backtest_authority import (
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
+)
+
 
 class DrawdownState(str, Enum):
     NORMAL = "NORMAL"
@@ -500,7 +505,22 @@ def correlation_shock_from_artifact(payload: object) -> Optional[bool]:
     if not isinstance(block, dict) or block.get("status") != "OK":
         return None
     flag = block.get("in_shock_now")
-    return flag if isinstance(flag, bool) else None
+    if flag is True:
+        # A legacy positive alarm may only reduce risk, so retaining it is
+        # fail-safe even though the old profitability model is invalidated.
+        return True
+    if flag is not False:
+        return None
+    authority_record = payload.get("authoritative_backtest_record")
+    # A quiet reading relaxes the UNKNOWN multiplier from 0.5 to 1.0 and is
+    # therefore selection-bearing.  Never accept that direction from an old
+    # self-described artifact.
+    return (
+        False
+        if isinstance(authority_record, dict)
+        and is_authoritative_backtest_record(authority_record)
+        else None
+    )
 
 
 def _degradation_band_value(ratio: float, th: DrawdownThresholds) -> float:
@@ -562,6 +582,13 @@ def degradation_component_from_artifact(payload: object, strategy_id: str, venue
     if row is None:
         return _unknown(f"no degradation report for {strategy_id}@{venue} — "
                         "fail-closed conservative")
+    if payload.get("backtest_reference_status") == LEGACY_INVALIDATION_CODE:
+        return ComponentReading(
+            "degradation",
+            th.defensive_ceiling,
+            "UNKNOWN",
+            f"{LEGACY_INVALIDATION_CODE}: replay economics are not usable for deploy scaling",
+        )
     ratio = row.get("live_degradation_ratio")
     if ratio is None:
         return _unknown("degradation ratio meaningless "
@@ -577,6 +604,18 @@ def degradation_component_from_artifact(payload: object, strategy_id: str, venue
                         f"descriptive-only, not acted on ({significance.get('reason')})")
     if level != "DESCRIPTIVE_ONLY":
         return _unknown(f"unrecognized significance level {level!r} — fail-closed conservative")
+    authority_record = payload.get("authoritative_backtest_record")
+    if not (
+        isinstance(authority_record, dict)
+        and is_authoritative_backtest_record(authority_record)
+    ):
+        return ComponentReading(
+            "degradation",
+            th.defensive_ceiling,
+            "UNKNOWN",
+            "degradation replay lacks independently admitted V2 backtest authority — "
+            "legacy ratio ignored and defensive ceiling applied",
+        )
     value = _degradation_band_value(float(ratio), th)
     return ComponentReading(
         "degradation", value, "OK",

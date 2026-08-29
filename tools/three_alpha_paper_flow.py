@@ -24,6 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from tools.alpha_paper_cycle import build_report as build_paper_cycle_report
 from tools.alpha_readiness_check import build_report as build_alpha_readiness_report
@@ -311,7 +312,7 @@ def _run_gonogo_report() -> dict[str, Any]:
     }
 
 
-def run_flow(
+def _run_flow_legacy_diagnostic(
     *,
     run_drivers: bool = True,
     advance_forward: bool = False,
@@ -471,6 +472,10 @@ def run_flow(
     return _write_report_if_changed(output_path, report)
 
 
+def run_flow(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.three_alpha_paper_flow")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-dry-runs", action="store_true", help="only refresh reports; do not execute paper drivers")
@@ -483,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--cycle-output", default=DEFAULT_CYCLE_OUTPUT)
     args = parser.parse_args(argv)
+    quarantine_legacy_backtest("tools.three_alpha_paper_flow")
     report = run_flow(
         run_drivers=not args.no_dry_runs,
         advance_forward=args.advance_forward,

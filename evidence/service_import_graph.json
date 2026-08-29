@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 45,
+  "edge_count": 47,
   "edges": [
     {
       "references": [
@@ -11,7 +11,7 @@
           "path": "services/alpha/guards.py"
         },
         {
-          "line": 38,
+          "line": 41,
           "module": "services.governance.approval",
           "path": "services/alpha/promotion.py"
         }
@@ -88,13 +88,23 @@
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 93,
+          "line": 31,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 97,
           "module": "services.validation.regime",
           "path": "services/alpha/evaluator.py"
         },
         {
           "line": 25,
           "module": "services.validation.pbo_evidence",
+          "path": "services/alpha/factory.py"
+        },
+        {
+          "line": 26,
+          "module": "services.validation.selection_authority",
           "path": "services/alpha/factory.py"
         },
         {
@@ -121,6 +131,21 @@
           "line": 17,
           "module": "services.validation.effective_trials",
           "path": "services/alpha/multiple_testing.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/panel_backtest.py"
+        },
+        {
+          "line": 42,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/alpha/promotion.py"
+        },
+        {
+          "line": 43,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/promotion.py"
         }
       ],
       "source": "alpha",
@@ -176,7 +201,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 584,
+          "line": 585,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -186,12 +211,12 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 277,
+          "line": 278,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 358,
+          "line": 359,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -248,7 +273,12 @@
           "path": "services/console/api/artifact_paper_views.py"
         },
         {
-          "line": 40,
+          "line": 12,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/backtest_evidence.py"
+        },
+        {
+          "line": 45,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/mexc_views.py"
         }
@@ -275,7 +305,7 @@
           "path": "services/console/api/architecture_views.py"
         },
         {
-          "line": 41,
+          "line": 46,
           "module": "services.governance.json_integrity",
           "path": "services/console/api/mexc_views.py"
         },
@@ -291,7 +321,7 @@
     {
       "references": [
         {
-          "line": 33,
+          "line": 34,
           "module": "services.lifecycle",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -354,52 +384,52 @@
           "path": "services/console/api/alpha_family_views.py"
         },
         {
-          "line": 21,
+          "line": 22,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 245,
-          "module": "services.research.alpha_expression",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
           "line": 246,
-          "module": "services.research.dsl_checker",
+          "module": "services.research.alpha_expression",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
           "line": 247,
-          "module": "services.research.complexity",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 248,
-          "module": "services.research",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 295,
-          "module": "services.research.alpha_expression",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 296,
           "module": "services.research.dsl_checker",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 297,
+          "line": 248,
           "module": "services.research.complexity",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 298,
+          "line": 249,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 13,
+          "line": 296,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 297,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 298,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 299,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 14,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/backtest_views.py"
         },
@@ -434,22 +464,22 @@
           "path": "services/console/api/main.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/primary_views.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.research.paper_trading.domain.pnl",
           "path": "services/console/api/primary_views.py"
         },
         {
-          "line": 152,
+          "line": 153,
           "module": "services.research.experiment_registry.store",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 167,
+          "line": 168,
           "module": "services.research.paper_trading.store",
           "path": "services/console/api/registry_snapshots.py"
         },
@@ -475,7 +505,7 @@
           "path": "services/console/api/main.py"
         },
         {
-          "line": 630,
+          "line": 643,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/mexc_views.py"
         },
@@ -506,7 +536,7 @@
           "path": "services/console/api/main.py"
         },
         {
-          "line": 16,
+          "line": 17,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/primary_views.py"
         }
@@ -533,7 +563,7 @@
     {
       "references": [
         {
-          "line": 37,
+          "line": 38,
           "module": "services.monitoring.audit_log",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -544,17 +574,27 @@
     {
       "references": [
         {
-          "line": 41,
+          "line": 64,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/authoritative_perpetual_backtest.py"
+        },
+        {
+          "line": 65,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/authoritative_perpetual_backtest.py"
+        },
+        {
+          "line": 42,
           "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 46,
+          "line": 47,
           "module": "services.risk.research_risk.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 47,
+          "line": 48,
           "module": "services.risk.research_risk.events",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -565,18 +605,29 @@
     {
       "references": [
         {
-          "line": 39,
+          "line": 40,
           "module": "services.trading.broker_adapter",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 40,
+          "line": 41,
           "module": "services.trading.dry_run_adapters.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         }
       ],
       "source": "execution",
       "target": "trading"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/execution/backtest_authority.py"
+        }
+      ],
+      "source": "execution",
+      "target": "validation"
     },
     {
       "references": [
@@ -629,27 +680,27 @@
     {
       "references": [
         {
-          "line": 17,
+          "line": 19,
           "module": "services.alpha.config",
           "path": "services/intelligence/agent_loop.py"
         },
         {
-          "line": 18,
+          "line": 20,
           "module": "services.alpha.catalog",
           "path": "services/intelligence/agent_loop.py"
         },
         {
-          "line": 19,
+          "line": 21,
           "module": "services.alpha.evaluator",
           "path": "services/intelligence/agent_loop.py"
         },
         {
-          "line": 20,
+          "line": 22,
           "module": "services.alpha.factory",
           "path": "services/intelligence/agent_loop.py"
         },
         {
-          "line": 21,
+          "line": 23,
           "module": "services.alpha.lifecycle",
           "path": "services/intelligence/agent_loop.py"
         },
@@ -702,12 +753,12 @@
     {
       "references": [
         {
-          "line": 22,
+          "line": 29,
           "module": "services.research.backtest_engine.costs",
           "path": "services/intelligence/agent_loop.py"
         },
         {
-          "line": 23,
+          "line": 30,
           "module": "services.research.ports.persistence",
           "path": "services/intelligence/agent_loop.py"
         },
@@ -732,12 +783,12 @@
           "path": "services/intelligence/evolutionary_search.py"
         },
         {
-          "line": 27,
+          "line": 31,
           "module": "services.research",
           "path": "services/intelligence/evolutionary_search.py"
         },
         {
-          "line": 28,
+          "line": 32,
           "module": "services.research.subtree_stats",
           "path": "services/intelligence/evolutionary_search.py"
         },
@@ -752,22 +803,22 @@
           "path": "services/intelligence/mcts_search.py"
         },
         {
-          "line": 15,
+          "line": 20,
           "module": "services.research",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 16,
+          "line": 21,
           "module": "services.research.experiment_registry.registry",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 17,
+          "line": 22,
           "module": "services.research.research_budget",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 22,
+          "line": 27,
           "module": "services.research.trial_provenance",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
@@ -792,6 +843,36 @@
     },
     {
       "references": [
+        {
+          "line": 24,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 27,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 11,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/guided_search.py"
+        },
+        {
+          "line": 24,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/mcts_search.py"
+        },
+        {
+          "line": 15,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 20,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/research_session.py"
+        },
         {
           "line": 20,
           "module": "services.validation.performance",
@@ -1166,8 +1247,18 @@
           "path": "services/research/alpha_factory.py"
         },
         {
+          "line": 33,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/alpha_factory.py"
+        },
+        {
           "line": 34,
           "module": "services.validation.performance",
+          "path": "services/research/alpha_pipeline.py"
+        },
+        {
+          "line": 35,
+          "module": "services.validation.selection_authority",
           "path": "services/research/alpha_pipeline.py"
         },
         {
@@ -1188,6 +1279,11 @@
         {
           "line": 40,
           "module": "services.validation.catalog_evidence",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 41,
+          "module": "services.validation.selection_authority",
           "path": "services/research/experiment_registry/registry.py"
         },
         {
@@ -1216,7 +1312,12 @@
           "path": "services/research/regime.py"
         },
         {
-          "line": 127,
+          "line": 21,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/session.py"
+        },
+        {
+          "line": 131,
           "module": "services.validation.cpcv",
           "path": "services/research/session.py"
         },
@@ -1362,10 +1463,21 @@
       ],
       "source": "risk",
       "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 25,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/risk/research_risk/dry_run_guard.py"
+        }
+      ],
+      "source": "risk",
+      "target": "validation"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "77d49bfd4202046d1a17f10a4c6eed0ad92c1c7006f78010c3a376c3c7f90eef",
+  "graph_sha256": "8fe6856e52f9614a54f3bc86dc83d5a2159a484b7d35ba7b19f2ce0366e6da8a",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1403,7 +1515,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 489,
+  "source_file_count": 498,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

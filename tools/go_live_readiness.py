@@ -44,6 +44,10 @@ from typing import Any, Dict, Optional
 
 from live.governance.kill_switch_store import load_kill_switch_state
 from live.governance.mandate_store import load_mandate
+from services.execution.backtest_authority import (
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
+)
 from tools.cache_io import atomic_write_json
 from tools.crypto_oi_research import build_panel
 from tools.live_track_advance import _STRATEGIES, _VENUES, _venue_paths
@@ -497,7 +501,17 @@ def build_report(*, now_ms: Optional[int] = None,
     else:
         strategies = {sid: dict(snap) for sid, snap in strategies.items()}  # 不 mutate 调用方注入
 
-    capacity = _load_json_or_none(capacity_path)
+    capacity_document = _load_json_or_none(capacity_path)
+    capacity_record = (
+        capacity_document.get("authoritative_backtest_record")
+        if isinstance(capacity_document, dict)
+        else None
+    )
+    capacity_authoritative = bool(
+        isinstance(capacity_record, dict)
+        and is_authoritative_backtest_record(capacity_record)
+    )
+    capacity = capacity_document if capacity_authoritative else None
     # 每条 live-track 策略的容量利用率注记(只注有容量带的策略;spec §11.3 同一最保守 safe 口径)
     for sid, snap_i in strategies.items():
         if not isinstance(snap_i, dict):
@@ -552,6 +566,9 @@ def build_report(*, now_ms: Optional[int] = None,
         "artifact": "GO_LIVE_READINESS",
         "generated_at_ms": now,
         "readiness": "L2_DRY_RUN_ONLY",
+        "capacity_evidence_status": (
+            "AUTHORITATIVE" if capacity_authoritative else LEGACY_INVALIDATION_CODE
+        ),
         "venues": venues,
         "strategies": strategies,
         "guidance": guidance,

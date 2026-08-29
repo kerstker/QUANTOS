@@ -16,6 +16,8 @@ down/flat is a directional trend bet (the regime risk, quantified). Records/prom
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 
@@ -69,6 +71,7 @@ def _fmt(stats, names) -> str:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_daily_regime")
     store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     snap_path = os.path.join("data", "cache", "crypto_research_snapshot.json")
     instruments = sorted(c["instrument_id"] for c in

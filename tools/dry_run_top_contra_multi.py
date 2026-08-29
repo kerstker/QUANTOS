@@ -13,6 +13,7 @@ import os
 import time
 
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from services.portfolio.crowding_gate import summarize_gate_decisions
 from services.risk.pre_trade.config import RiskLimits
@@ -70,6 +71,7 @@ def _write_existing_report(record: dict) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("dry_run_top_contra_multi")
     existing_store = DryRunStore(_OUT, create=True)
     try:
         existing = [

@@ -9,6 +9,7 @@ import json
 import os
 import sys
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.backtest_engine.metrics import sharpe
 from services.research.paper_trading.store import PaperTrackStore
 from services.research.paper_trading.advance import advance_paper_track
@@ -38,6 +39,7 @@ def _factor_series() -> dict:
 
 
 def main(boundary_frac: float = 0.7) -> None:
+    quarantine_legacy_backtest("tools.crypto_paper_track")
     series = _factor_series()
     if not series:
         print("no factor_series in snapshot — run tools/crypto_research_offline first")

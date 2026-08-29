@@ -14,6 +14,7 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.realism.capacity_curve import capacity_band
 from services.research.realism.scenario import CRYPTO_CRISES, iso_to_ms, max_drawdown_window, window_stats
@@ -154,6 +155,7 @@ def _fmt(v):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.scenario_tail_research")
     snap = {"provenance": "REAL_HISTORICAL_REPLAY", "crises": [c[0] for c in CRYPTO_CRISES], "books": {}}
 
     cp = _carry_panel()

@@ -1,6 +1,7 @@
 """Contract tests for the evidence-first Phase 0/1 baseline."""
 
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -85,3 +86,65 @@ def test_baseline_cli_writes_requested_outputs(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert output.is_file()
     assert gap_report.is_file()
+
+
+def test_legacy_profitability_retention_cannot_satisfy_baseline(tmp_path):
+    baseline_module = _load_baseline_module()
+    for relative_path in baseline_module.REQUIRED_COMPLETION_INPUTS:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {}
+        if relative_path == "evidence/data_quality_admission.json":
+            payload = {
+                "verdict": "PASS",
+                "quality_verdict": "PASS",
+                "lineage_verdict": "PASS",
+            }
+        elif relative_path == "evidence/raw_data_lineage_backfill.json":
+            payload = {"verdict": "PASS"}
+        if path.suffix == ".json":
+            path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        else:
+            path.write_text("current source/document\n", encoding="utf-8")
+
+    validation = tmp_path / "evidence/validation_report.json"
+    validation.write_text(
+        json.dumps({"selection_scope": "ALL", "overall_status": "PASS"}) + "\n",
+        encoding="utf-8",
+    )
+    for relative_path in baseline_module.LEGACY_PROFITABILITY_INPUTS:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": "READY",
+            "paper_ready": True,
+            "summary": {"sharpe": 99.0, "max_drawdown": 0.0},
+        }
+        if relative_path == "data/cache/paper_health_10k.json":
+            payload["authoritative_backtest_record"] = {"self_asserted": True}
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    baseline = baseline_module.build_baseline(
+        root=tmp_path, now_ms=1_800_000_000_000
+    )
+
+    authority = baseline["current_evidence"]["backtest_authority"]
+    assert authority["record_present"] is True
+    assert authority["independently_admitted"] is False
+    assert authority["status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert baseline["phase_status"]["phase_0"]["status"] == "PARTIAL"
+    assert "INVALIDATED_PERP_LEDGER_V1" in baseline["phase_status"]["phase_0"]["reasons"]
+    paper = baseline["current_evidence"]["paper_health_10k"]
+    assert paper["readiness"] == "BLOCKED"
+    assert paper["paper_ready"] is False
+    for relative_path in baseline_module.LEGACY_PROFITABILITY_INPUTS:
+        artifact = baseline["inputs"][relative_path]
+        assert artifact["exists"] is True
+        assert len(artifact["sha256"]) == 64
+        assert artifact["retention_status"] == "INVALIDATED_PERP_LEDGER_V1"
+        assert artifact["counted_as_completion_evidence"] is False
+        assert "summary" not in artifact
+        assert "paper_ready" not in artifact
+    serialized = json.dumps(baseline).lower()
+    assert '"sharpe"' not in serialized
+    assert '"max_drawdown"' not in serialized

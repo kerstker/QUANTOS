@@ -20,6 +20,7 @@ from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from tools.cache_io import atomic_write_json
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
@@ -118,6 +119,7 @@ def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("dry_run_crowd_contra_multi")
     existing = _existing_crowd_run()
     if existing is not None:
         _write_existing_report(existing)

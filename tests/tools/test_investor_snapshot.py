@@ -158,7 +158,7 @@ def test_build_snapshot_end_to_end(tmp_path):
     assert snap["artifact"] == "INVESTOR_SNAPSHOT"
     assert snap["generated_at_ms"] == 123
     assert snap["readiness"] == "L2_DRY_RUN_ONLY"
-    assert snap["data_cutoff_ms"] == T0 + 3 * DAY                     # 源 artifact generated_at
+    assert snap["data_cutoff_ms"] == T0 + 3 * DAY
     assert len(snap["report_snapshot_hash"]) == 128
 
     b = snap["venues"][0]
@@ -174,25 +174,40 @@ def test_build_snapshot_end_to_end(tmp_path):
     assert b["risk"]["max_drawdown"] == pytest.approx(11.0)
     assert b["risk"]["recovery_days"] == 1 and b["risk"]["recovered"] is True
     assert b["risk"]["worst_day"]["pnl"] == pytest.approx(-11.0)
-    # 分解/三线来自注入的 W1 artifact
-    assert b["decomposition"][0]["net"] == 200.0
-    assert b["decomposition"][0]["fee_actual"] is None
-    assert b["three_line"][0]["replay"]["net"] == 209.0
-    assert b["three_line"][0]["paper"] is None
+    # The injected W1/cockpit/capacity fixtures are self-described legacy
+    # artifacts.  Live execution facts remain, but none of their backtest-
+    # derived economics or lifecycle labels may be republished.
+    assert b["decomposition"] == []
+    assert b["three_line"] == []
     # 对账/事故/版本/容量
     assert b["reconciliation"]["in_sync"] is True
     assert b["reconciliation"]["as_of_ms"] == T0 + 2 * DAY
     assert b["incidents"]["provenance"] == "KILL_SWITCH_AUTHORITY_DB"
     assert b["incidents"]["tripped"] is False
     assert [t["action"] for t in b["incidents"]["transitions"]] == ["BOOTSTRAP"]
-    assert b["versions"][0]["derived_stage"] == "LIVE_TRACK"
+    assert len(b["versions"]) == 1
+    assert b["versions"][0]["strategy_id"] == "crowd_contra"
+    assert b["versions"][0]["derived_stage"] is None
     assert b["versions"][0]["strategy_version"] is None
     assert b["capacity"]["mandate_present"] is True
-    assert b["capacity"]["capacity_safety"]["safe_capacity_est"] == 3.58e6
+    assert b["capacity"]["capacity_safety"] is None
     # summary + unknown
     assert snap["summary"]["venues_active"] == ["fv"]
     assert snap["summary"]["total_last_nav"] == 1010.0
-    assert "venue.fv.decomposition.crowd_contra.fee_actual" in snap["unknown_fields"]
+    assert "venue.fv.versions.crowd_contra.strategy_version" in snap["unknown_fields"]
+
+
+def test_legacy_profitability_artifacts_are_not_republished(tmp_path):
+    snap = drv.build_snapshot(now_ms=123, venues=["fv"], **_hermetic(tmp_path))
+    encoded = json.dumps(snap, sort_keys=True)
+
+    assert "209.0" not in encoded
+    assert all(
+        row["derived_stage"] is None
+        for venue in snap["venues"]
+        for row in venue["versions"]
+    )
+    assert "3580000.0" not in encoded
 
 
 def test_build_snapshot_hash_independent_of_now_ms(tmp_path):

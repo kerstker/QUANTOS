@@ -130,6 +130,7 @@ def realtime_frame_view_hash(
                     {
                         "instrument_id": frame.instrument_id,
                         "event_time_ms": frame.event_time_ms,
+                        "knowledge_time_ms": frame.knowledge_time_ms,
                         "decision_time_ms": frame.decision_time_ms,
                         "mid_price": frame.mid_price,
                         "spread_bps": frame.spread_bps,
@@ -325,6 +326,7 @@ def _complete_frame(
     return RealtimeFrame(
         instrument_id=instrument,
         event_time_ms=event_time_ms,
+        knowledge_time_ms=knowledge_time_ms,
         decision_time_ms=decision_time_ms,
         mid_price=float(values["rt_mid_price"]),
         spread_bps=float(values["rt_spread_bps"]),
@@ -666,7 +668,7 @@ def _definition(
         "mechanism": spec.mechanism,
         "horizon_ms": str(spec.horizon_ms),
         "signal_version": spec.signal_version,
-        "label_policy": "post_latency_first_known_mid",
+        "label_policy": "post_latency_entry_to_entry_plus_horizon",
     }
     if spec.lookback_ms > 0:
         params["lookback_ms"] = str(spec.lookback_ms)
@@ -776,6 +778,7 @@ def _frame_cache_connect(path: str | Path) -> sqlite3.Connection:
             instrument_id TEXT NOT NULL,
             decision_time INTEGER NOT NULL,
             event_time INTEGER NOT NULL,
+            knowledge_time INTEGER,
             mid_price REAL NOT NULL,
             spread_bps REAL NOT NULL,
             depth_imbalance_5 REAL NOT NULL,
@@ -787,6 +790,16 @@ def _frame_cache_connect(path: str | Path) -> sqlite3.Connection:
         )
         """
     )
+    columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(decision_frames)")
+    }
+    if "knowledge_time" not in columns:
+        # Derived caches are replaceable, but preserve old rows for audit and
+        # mark them unusable until the source query refreshes them.
+        connection.execute(
+            "ALTER TABLE decision_frames ADD COLUMN knowledge_time INTEGER"
+        )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS ix_decision_frames_time "
         "ON decision_frames (decision_time, instrument_id)"
@@ -806,7 +819,7 @@ def _frame_cache_bounds(
     placeholders = ",".join("?" for _ in selected)
     row = connection.execute(
         f"SELECT MIN(decision_time),MAX(decision_time) FROM decision_frames "
-        f"WHERE instrument_id IN ({placeholders})",
+        f"WHERE instrument_id IN ({placeholders}) AND knowledge_time IS NOT NULL",
         selected,
     ).fetchone()
     if row is None or row[0] is None or row[1] is None:
@@ -827,7 +840,7 @@ def _read_frame_cache(
     placeholders = ",".join("?" for _ in selected)
     rows = connection.execute(
         f"""
-        SELECT instrument_id,decision_time,event_time,mid_price,spread_bps,
+        SELECT instrument_id,decision_time,event_time,knowledge_time,mid_price,spread_bps,
                depth_imbalance_5,mark_basis_bps,funding_rate,
                taker_imbalance_5s,liquidation_imbalance_5s
         FROM decision_frames
@@ -839,9 +852,12 @@ def _read_frame_cache(
     )
     result: dict[str, list[RealtimeFrame]] = {}
     for row in rows:
+        if row["knowledge_time"] is None:
+            continue
         frame = RealtimeFrame(
             instrument_id=str(row["instrument_id"]),
             event_time_ms=int(row["event_time"]),
+            knowledge_time_ms=int(row["knowledge_time"]),
             decision_time_ms=int(row["decision_time"]),
             mid_price=float(row["mid_price"]),
             spread_bps=float(row["spread_bps"]),
@@ -864,6 +880,7 @@ def _write_frame_cache(
             frame.instrument_id,
             frame.decision_time_ms,
             frame.event_time_ms,
+            frame.knowledge_time_ms,
             frame.mid_price,
             frame.spread_bps,
             frame.depth_imbalance_5,
@@ -880,12 +897,13 @@ def _write_frame_cache(
     connection.executemany(
         """
         INSERT INTO decision_frames (
-            instrument_id,decision_time,event_time,mid_price,spread_bps,
+            instrument_id,decision_time,event_time,knowledge_time,mid_price,spread_bps,
             depth_imbalance_5,mark_basis_bps,funding_rate,
             taker_imbalance_5s,liquidation_imbalance_5s
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(instrument_id,decision_time) DO UPDATE SET
             event_time=excluded.event_time,
+            knowledge_time=excluded.knowledge_time,
             mid_price=excluded.mid_price,
             spread_bps=excluded.spread_bps,
             depth_imbalance_5=excluded.depth_imbalance_5,

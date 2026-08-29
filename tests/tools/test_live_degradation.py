@@ -9,6 +9,7 @@ UNKNOWN(绝不重算信号)、无活动 venue 不进 artifact、smoke 单无 tra
 from __future__ import annotations
 
 import json
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -109,7 +110,8 @@ def test_build_report_end_to_end_hand_computed(tmp_path):
     artifact = ld.build_report(now_ms=123, venues=["fv"], **_hermetic(tmp_path))
     assert artifact["artifact"] == "LIVE_DEGRADATION"
     assert artifact["generated_at_ms"] == 123
-    assert artifact["readiness"] == "L2_DRY_RUN_ONLY"
+    assert artifact["readiness"] == "TECHNICAL_VALIDATION_ONLY"
+    assert artifact["backtest_reference_status"] == "INVALIDATED_PERP_LEDGER_V1"
     assert len(artifact["reports"]) == 1
     rep = artifact["reports"][0]
     assert rep["venue"] == "fv" and rep["strategy_id"] == "crowd_contra"
@@ -118,18 +120,17 @@ def test_build_report_end_to_end_hand_computed(tmp_path):
     # live_gross = 5×38 + 10×1 = 200
     assert rep["live_net_pnl"] == pytest.approx(200.0)
     assert rep["live_gross_pnl"] == pytest.approx(200.0)
-    # replay:T0 行 @100/50 进场 5 BTC/空10 ETH,佣金 (500+500)×10bps = 1.0
-    # gross = 5×40 + 10×1 = 210;net = 209
-    assert rep["replay_gross_pnl"] == pytest.approx(210.0)
-    assert rep["replay_net_pnl"] == pytest.approx(209.0)
-    assert rep["components"]["replay_model_cost"] == pytest.approx(1.0)
-    assert rep["live_degradation_ratio"] == pytest.approx(200.0 / 209.0)
-    assert rep["degradation_ratio_reason"] is None
-    # 分解:slippage = 5×(102−100) = +10;trading_delta = 200−210 = −10;position_timing = 0
+    # V1 replay has been invalidated.  Real fills/TCA remain visible, while all
+    # replay-dependent economics stay explicitly unknown.
+    assert rep["replay_gross_pnl"] is None
+    assert rep["replay_net_pnl"] is None
+    assert rep["components"]["replay_model_cost"] is None
+    assert rep["live_degradation_ratio"] is None
+    assert rep["degradation_ratio_reason"] == "replay_net_unknown"
     assert rep["components"]["slippage_cost_actual"] == pytest.approx(10.0)
-    assert rep["components"]["trading_pnl_delta"] == pytest.approx(-10.0)
-    assert rep["components"]["position_timing_effect"] == pytest.approx(0.0)
-    assert abs(rep["components"]["residual"]) < 1e-6
+    assert rep["components"]["trading_pnl_delta"] is None
+    assert rep["components"]["position_timing_effect"] is None
+    assert rep["components"]["residual"] is None
     # UNKNOWN 纪律
     assert rep["cost_overrun"] is None
     unk = set(rep["unknown_fields"])
@@ -147,80 +148,31 @@ def test_build_report_end_to_end_hand_computed(tmp_path):
     assert rep["window"]["n_days"] == 5 and rep["window"]["mark_end_ts"] == _GRID[-1]
     assert len(rep["daily"]) == 5
     assert rep["daily"][0]["live_equity"] == pytest.approx(1000.0)
-    assert rep["daily"][0]["replay_equity"] == pytest.approx(999.0)   # 佣金已扣
+    assert rep["daily"][0]["replay_equity"] is None
     assert rep["daily"][-1]["live_equity"] == pytest.approx(1200.0)
-    assert rep["daily"][-1]["replay_equity"] == pytest.approx(1209.0)
-    assert rep["daily"][-1]["gap"] == pytest.approx(-9.0)
+    assert rep["daily"][-1]["replay_equity"] is None
+    assert rep["daily"][-1]["gap"] is None
     # summary
     assert artifact["summary"]["n_reports"] == 1
-    assert artifact["summary"]["n_with_ratio"] == 1
+    assert artifact["summary"]["n_with_ratio"] == 0
     leak = artifact["summary"]["biggest_leak_by_strategy"]["fv:crowd_contra"]
     assert leak is not None and leak["component"]
 
 
-def test_replay_curve_matches_canonical_multi_period_pipeline(tmp_path):
-    """同一决策簿过 _replay_book 与 canonical run_multi_period_dry_run:逐行权益精确一致
-    (同一套 plan_target_quantities 取整 + flat-bps 佣金 + reconcile + 资金费公式)。"""
-    from services.risk.pre_trade.config import RiskLimits
-    from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
-                                                 StrategyApproval)
-    from services.risk.pre_trade.gate import PreTradeRiskGate
-    from services.risk.pre_trade.kill_switch import KillSwitch
-    from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
-    from services.execution.dry_run_pipeline import run_multi_period_dry_run
+def test_production_report_never_invokes_legacy_replay(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ld,
+        "_replay_book",
+        lambda *_args, **_kwargs: pytest.fail("legacy replay must not be invoked"),
+    )
 
-    grid = [T0, T0 + 7 * DAY]
-    prices = [{"BTC": 100.0, "ETH": 50.0}, {"BTC": 120.0, "ETH": 45.0}]
-    rates = [{"BTC": 0.001, "ETH": -0.002}, {"BTC": 0.001, "ETH": -0.002}]
-    w1 = {"BTC": 0.5, "ETH": -0.5}
-    w2 = {"BTC": 0.25, "ETH": -0.75}
-    aum = 1000.0
-    decisions = [
-        {"decided_ts": T0, "weights": w1, "aum": aum, "executed": True},
-        {"decided_ts": T0 + 7 * DAY, "weights": w2, "aum": aum, "executed": True},
-    ]
-    replay, _ = ld._replay_book(decisions, grid,
-                                [dict(p) for p in prices], [dict(r) for r in rates],
-                                aum_replay=aum, cost_bps=10.0)
-    assert replay is not None
+    artifact = ld.build_report(now_ms=123, venues=["fv"], **_hermetic(tmp_path))
 
-    limits = RiskLimits(
-        allowed_instruments=frozenset({"BTC", "ETH"}), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0,
-        daily_loss_limit=1e14, max_drawdown=1.0)
-    gate = PreTradeRiskGate(limits, kill_switch=KillSwitch())
-
-    def ctx_factory(intent, prices_t, period):
-        return RiskContext(
-            account=AccountRiskState(account_id="paper", cash=aum * 10, equity=aum * 10,
-                                     day_pnl=0.0, peak_equity=aum * 10, positions=()),
-            market=MarketContext(instrument_id=intent.instrument_id, known=True,
-                                 reference_price=prices_t.get(intent.instrument_id, 1.0),
-                                 market_open=True, price_as_of=period,
-                                 est_daily_volume=1e12, instrument_vol=0.8),
-            strategy=StrategyApproval(strategy_id="crowd_contra", approved=True,
-                                      approval_id="test"),
-            now=period, max_staleness=10 ** 15)
-
-    def cash_flow_fn(held, prices_t, period):
-        idx = grid.index(period)
-        return sum(-rates[idx].get(i, 0.0) * q * prices_t.get(i, 0.0) for i, q in held.items())
-
-    run = run_multi_period_dry_run(
-        periods=grid, weights_by_period={T0: w1, T0 + 7 * DAY: w2},
-        prices_by_period={T0: prices[0], T0 + 7 * DAY: prices[1]},
-        gate=gate, ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(),
-        strategy_id="crowd_contra", aum=aum, cost_bps=10.0, cash_flow_fn=cash_flow_fn,
-        event_bus=None, publish_completion_event=False)
-
-    pipe_curve = run.detail["equity_curve"]
-    assert [c["equity"] for c in replay["curve"]] == pytest.approx(
-        [c["equity"] for c in pipe_curve], rel=1e-12, abs=1e-9)
-    assert replay["net_pnl"] == pytest.approx(run.pnl["final_equity"] - aum, rel=1e-12, abs=1e-9)
-    assert replay["funding"] == pytest.approx(run.pnl["total_funding"], rel=1e-12, abs=1e-9)
-    assert abs(replay["reconciliation_residual"]) < 1e-6
+    assert artifact["reports"][0]["replay_net_pnl"] is None
+    assert (
+        artifact["reports"][0]["replay_construction"]["skip_reason"]
+        == "INVALIDATED_PERP_LEDGER_V1"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,13 +189,33 @@ def test_executed_decision_missing_recorded_weights_makes_replay_unknown(tmp_pat
     artifact = ld.build_report(now_ms=1, venues=["fv"], **kw)
     rep = artifact["reports"][0]
     assert rep["replay_net_pnl"] is None
-    assert rep["replay_construction"]["skip_reason"] == "executed_decision_missing_recorded_weights"
+    assert rep["replay_construction"]["skip_reason"] == "INVALIDATED_PERP_LEDGER_V1"
     assert rep["live_degradation_ratio"] is None
     assert rep["degradation_ratio_reason"] == "replay_net_unknown"
     assert rep["live_net_pnl"] == pytest.approx(200.0)      # live 侧不受影响
     assert "replay_net_pnl" in rep["unknown_fields"]
     dec = rep["decisions"][0]
     assert dec["executed"] is True and dec["weights_provenance"] is None
+
+
+def test_unbound_legacy_forward_decision_is_never_loaded(tmp_path):
+    path = tmp_path / "legacy-forward.db"
+    _seed_forward(path, decision=False)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO forward_decisions(alpha_id,decided_ts,recorded_at,weights_json,"
+            "signals_json,source,realized) VALUES(?,?,?,?,?,?,0)",
+            (
+                "crowd_contra",
+                T0,
+                T0 + 1_000,
+                json.dumps({"BTC": 0.5, "ETH": -0.5}, sort_keys=True),
+                None,
+                "FORWARD_LIVE",
+            ),
+        )
+
+    assert ld.load_forward_decisions(str(path), "crowd_contra") == []
 
 
 def test_unexecuted_paper_decision_is_replayed_and_disclosed(tmp_path):
@@ -275,10 +247,10 @@ def test_unexecuted_paper_decision_is_replayed_and_disclosed(tmp_path):
     # BTC gross = 5×(140−100) − 9×(140−120) = 200−180 = 20
     # ETH gross = −10×(49−50) + 21×(49−45) = 10+84 = 94;总 gross = 114
     # 佣金 = (500+1080+500+945)×10bps = 3.025;funding=0 -> net = 110.975
-    assert rep["replay_gross_pnl"] == pytest.approx(114.0)
-    assert rep["replay_net_pnl"] == pytest.approx(110.975)
+    assert rep["replay_gross_pnl"] is None
+    assert rep["replay_net_pnl"] is None
     assert rep["live_net_pnl"] == pytest.approx(200.0)      # live 没翻仓,守着旧腿
-    assert rep["live_degradation_ratio"] == pytest.approx(200.0 / 110.975)
+    assert rep["live_degradation_ratio"] is None
 
 
 def test_smoke_order_without_trace_is_disclosed(tmp_path):

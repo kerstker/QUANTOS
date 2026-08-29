@@ -11,6 +11,7 @@ from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.backtest_engine.metrics import sharpe as _sharpe_fn, max_drawdown
 
 
@@ -47,7 +48,9 @@ def build_carry_pit_store(kline_data: dict, funding_data: dict, *,
             bar = Bar(
                 instrument_id=sym,
                 event_time=et,
-                knowledge_time=et,
+                # Binance timestamps a 1d kline by its open.  The completed
+                # OHLCV row is not knowable until the following UTC boundary.
+                knowledge_time=et + 86_400_000,
                 open=float(kline[1]),
                 high=float(kline[2]),
                 low=float(kline[3]),
@@ -135,7 +138,15 @@ def run_carry_walkforward(*, db_path: str = "", instruments: list[str] | None = 
     liquid = [inst for inst in instruments_with_data if pctile[inst] >= 0.5]
 
     # 构建 PIT panel（匹配 crypto_carry_walkforward.py 的 build_field_panel 调用）
-    panel = ax.build_field_panel(store, liquid, sorted(bar_times), ("close", "volume"))
+    panel_event_times = sorted(bar_times)
+    panel = ax.build_field_panel(
+        store,
+        liquid,
+        panel_event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in panel_event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     # 注入 funding 矩阵
     fmat = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
             for t in panel.event_times]
@@ -171,6 +182,7 @@ def main() -> None:
     1. data/cache/crypto_funding.db → 直接验证
     2. 缓存 JSON → 构建 PIT Store → 验证
     """
+    quarantine_legacy_backtest("tools.carry_binance_validate")
     _DB = os.path.join("data", "cache", "crypto_funding.db")
     _FUND_CACHE = os.path.join("data", "cache", "crypto_funding_rates.json")
     _KLINE_CACHE = os.path.join("data", "cache", "crypto_klines.json")

@@ -56,6 +56,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from tools.cache_io import atomic_write_json
 from tools.live_track_advance import _STRATEGIES
 
@@ -1140,6 +1141,7 @@ def build_report(*, paths: Optional[Paths] = None, now_ms: Optional[int] = None,
 
 
 def main(argv: Optional[list] = None) -> int:
+    quarantine_legacy_backtest("tools.alpha_lifecycle_cockpit")
     parser = argparse.ArgumentParser(
         description="Alpha 生命周期驾驶舱:聚合既有证据仓(dry_run.db / paper_track.db / IC 面板 / "
                     "证伪 / 情景尾部 / 容量 / 组合 / live-track status / maintenance 权威)成 "

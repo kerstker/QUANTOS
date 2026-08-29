@@ -172,7 +172,7 @@ def test_field_panel_dataset_version_binds_exact_inputs() -> None:
 
 
 def test_alpha_factory_requires_persistence_or_explicit_ephemeral() -> None:
-    with pytest.raises(ValueError, match="search_registry.*ephemeral"):
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
         alpha_factory.run_alpha_factory(
             _panel(),
             FIELDS,
@@ -182,6 +182,12 @@ def test_alpha_factory_requires_persistence_or_explicit_ephemeral() -> None:
             elite_k=2,
             dataset_version="dataset-v1",
             timestamp=40,
+        )
+    with pytest.raises(ValueError, match="search_registry.*ephemeral"):
+        alpha_factory.run_alpha_factory(
+            _panel(), FIELDS, WINDOWS, generations=1, population_size=4,
+            elite_k=2, dataset_version="dataset-v1", timestamp=40,
+            diagnostic_only=True,
         )
 
     result = alpha_factory.run_alpha_factory(
@@ -194,6 +200,7 @@ def test_alpha_factory_requires_persistence_or_explicit_ephemeral() -> None:
         dataset_version="dataset-v1",
         timestamp=40,
         ephemeral=True,
+        diagnostic_only=True,
     )
     assert result["n_evaluated"] >= 1
 
@@ -226,6 +233,7 @@ def test_alpha_factory_persists_candidates_before_scoring(monkeypatch) -> None:
         search_id="factory-search",
         search_kind="ALPHA_FACTORY",
         search_source="tests.alpha_factory",
+        diagnostic_only=True,
     )
 
     assert observed_candidate_counts
@@ -274,6 +282,7 @@ def test_alpha_factory_retains_failed_attempt_when_scoring_raises(monkeypatch) -
             search_id="factory-failed",
             search_kind="ALPHA_FACTORY",
             search_source="tests.alpha_factory",
+            diagnostic_only=True,
         )
 
     assert [row["status"] for row in registry.search_attempt_events("factory-failed")] == [
@@ -447,14 +456,19 @@ def test_failed_terminal_write_does_not_mask_the_scorer_error(monkeypatch) -> No
             search_id="terminal-failed",
             search_kind="ALPHA_FACTORY",
             search_source="tests.alpha_factory",
+            diagnostic_only=True,
         )
 
 
 def test_official_research_session_requires_registry_or_explicit_ephemeral(
     monkeypatch,
 ) -> None:
-    with pytest.raises(ValueError, match="registry.*ephemeral"):
+    with pytest.raises(RuntimeError, match="INVALIDATED_PERP_LEDGER_V1"):
         intelligence_session.run_research_session(store=object())
+    with pytest.raises(ValueError, match="registry.*ephemeral"):
+        intelligence_session.run_research_session(
+            store=object(), diagnostic_only=True
+        )
 
     monkeypatch.setattr(
         intelligence_session,
@@ -465,7 +479,7 @@ def test_official_research_session_requires_registry_or_explicit_ephemeral(
         intelligence_session, "adapt_research_market_data", lambda value: value
     )
     result = intelligence_session.run_research_session(
-        store=object(), ephemeral=True
+        store=object(), ephemeral=True, diagnostic_only=True
     )
     assert result["ephemeral"] is True
     assert "ephemeral" not in result["kwargs"]
@@ -503,6 +517,7 @@ def test_official_research_session_persists_actual_oos_access(monkeypatch) -> No
         search_id="oos-search",
         search_kind="GUIDED",
         search_source="tests.oos",
+        diagnostic_only=True,
     )
 
     assert result["oos"]["n_folds"] == 1

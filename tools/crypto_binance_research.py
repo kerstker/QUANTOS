@@ -21,6 +21,7 @@ import time
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
@@ -97,6 +98,7 @@ def _run_registered_panel(
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.crypto_binance_research")
     cap = int(sys.argv[1]) if len(sys.argv) > 1 else 0     # 0 = all USDT pairs
     now_ms = int(time.time() * 1000)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
@@ -131,7 +133,16 @@ def _main(registry: ExperimentRegistry) -> None:
         raise SystemExit(f"only {len(instruments)} usable coins — unexpected")
     store = CachingPITStore(store)
     t0 = time.perf_counter()
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        # Existing DBs may still contain the old open-time knowledge rows.
+        # Reject them even when corrected vintages coexist in the same store.
+        minimum_knowledge_lag=86_400_000,
+    )
     print(f"\n{len(instruments)} coins x {len(event_times)} daily periods "
           f"(dropped {dropped}, failed {failed}); panel built {time.perf_counter()-t0:.1f}s", flush=True)
 
@@ -190,6 +201,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_binance_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

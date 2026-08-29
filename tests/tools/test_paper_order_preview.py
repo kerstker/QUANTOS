@@ -6,6 +6,13 @@ from decimal import Decimal
 import pytest
 
 import tools.paper_order_preview as paper_preview
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from services.execution.dry_run_pipeline import (
+    _run_dry_run_pipeline_legacy_diagnostic,
+)
 from services.execution.simulated_sor import (
     BookLevel,
     SORPolicy,
@@ -49,8 +56,16 @@ def _workflow_admission(*authorized):
     }
 
 
-def test_build_preview_accepts_explicit_isolated_paper_authority() -> None:
-    with pytest.raises(ValueError, match="aum must be"):
+def _build_alpha_preview(*args, **kwargs):
+    return paper_preview._build_alpha_preview_legacy_diagnostic(
+        *args,
+        runner=_run_dry_run_pipeline_legacy_diagnostic,
+        **kwargs,
+    )
+
+
+def test_public_build_preview_parameter_validation_is_authority_blocked() -> None:
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
         build_alpha_preview(
             "rt-candidate",
             {},
@@ -60,7 +75,7 @@ def test_build_preview_accepts_explicit_isolated_paper_authority() -> None:
             supported_alpha_ids=("rt-candidate",),
         )
 
-    with pytest.raises(ValueError, match="supported alpha authority"):
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
         build_alpha_preview(
             "rt-candidate",
             {},
@@ -72,6 +87,30 @@ def test_build_preview_accepts_explicit_isolated_paper_authority() -> None:
 
 def test_public_exports_are_resolvable():
     assert all(hasattr(paper_preview, name) for name in paper_preview.__all__)
+    assert "_build_alpha_preview_legacy_diagnostic" not in paper_preview.__all__
+
+
+def test_public_build_preview_blocks_before_candidate_mark_status_or_gate(
+    monkeypatch,
+):
+    def fail_if_touched(*_args, **_kwargs):
+        pytest.fail("public preview touched a collaborator before quarantine")
+
+    for collaborator in (
+        "paper_candidate_ids",
+        "_decision_inputs",
+        "_status_guard",
+        "_paper_gate",
+    ):
+        monkeypatch.setattr(paper_preview, collaborator, fail_if_touched)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        build_alpha_preview(
+            object(),
+            object(),
+            mark_by_ticker=object(),
+            status=object(),
+        )
 
 
 def test_workflow_admission_is_fail_closed_and_identity_bound(tmp_path):
@@ -131,7 +170,7 @@ def test_workflow_admission_revalidation_detects_toctou(tmp_path):
 
 
 def test_build_alpha_preview_requires_complete_research_risk():
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125, "ETH": -0.125}),
         mark_by_ticker={
@@ -196,7 +235,7 @@ def test_build_alpha_preview_uses_aligned_pit_history_for_full_risk():
         timestamps=timestamps,
     )
 
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125, "ETH": -0.125}),
         mark_by_ticker={
@@ -223,7 +262,7 @@ def test_build_alpha_preview_uses_aligned_pit_history_for_full_risk():
 
 def test_build_alpha_preview_rejects_non_major_or_missing_price():
     with pytest.raises(RuntimeError, match="major-universe"):
-        build_alpha_preview(
+        _build_alpha_preview(
             "crowd_contra",
             _pending({"SHIB": 0.125}),
             mark_by_ticker={"SHIB": {DECISION_TS: 0.001}},
@@ -232,7 +271,7 @@ def test_build_alpha_preview_rejects_non_major_or_missing_price():
 
 
 def test_build_alpha_preview_does_not_fill_rebalance_without_full_research_risk():
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"ETH": 0.125}),
         mark_by_ticker={
@@ -255,7 +294,7 @@ def test_build_alpha_preview_does_not_fill_rebalance_without_full_research_risk(
     assert result["n_paper_fills"] == 0
     assert result["paper_execution"] == "PAPER_BLOCKED"
     with pytest.raises(RuntimeError, match="exact decision-time price"):
-        build_alpha_preview(
+        _build_alpha_preview(
             "crowd_contra",
             _pending({"BTC": 0.125}),
             mark_by_ticker={"BTC": {DECISION_TS + 1: 50_000.0}},
@@ -298,7 +337,7 @@ def test_exchange_filters_require_fresh_complete_public_snapshot(tmp_path):
 
 
 def test_build_preview_applies_exchange_step_size_to_targets():
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125}),
         mark_by_ticker={"BTC": {DECISION_TS: 50_000.0}},
@@ -312,7 +351,7 @@ def test_build_preview_applies_exchange_step_size_to_targets():
 
 
 def test_engineering_preview_exposes_reconciled_simulation_tca():
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125, "ETH": -0.125}),
         mark_by_ticker={
@@ -370,7 +409,7 @@ def test_engineering_preview_routes_new_fill_on_bound_public_book_snapshot():
             policy=policy,
         )
 
-    result = build_alpha_preview(
+    result = _build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125}),
         mark_by_ticker={"BTC": {DECISION_TS: 50_000.0}},
@@ -401,8 +440,6 @@ def test_engineering_preview_routes_new_fill_on_bound_public_book_snapshot():
 def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(
     tmp_path, monkeypatch
 ):
-    release_commit = "b" * 40
-    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", release_commit)
     output = tmp_path / "preview.json"
     report = run_preview(
         alpha_ids=("crowd_contra",),
@@ -421,32 +458,12 @@ def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(
     assert report["verdict"]["live_allowed"] is False
     assert report["errors"]["crowd_contra"]["paper_execution"] == "PAPER_BLOCKED"
     assert json.loads(output.read_text(encoding="utf-8"))["safety"]["paper_only"] is True
-    attestation = paper_preview.release_run_attestation()
-    assert attestation is not None and attestation["complete"] is True
-    assert attestation["module"] == "paper_order_preview"
-    assert attestation["release_commit"] == release_commit
-    assert set(attestation["input_hashes"]) == {
-        "candidate_universe",
-        "exchange_filter_views",
-        "forward_decision_views",
-        "mark_price_view",
-        "paper_preview_contract",
-        "paper_store_authority_before",
-        "research_risk_views",
-        "supporting_artifact_documents",
-        "workflow_admission_view",
-    }
-    assert set(attestation["output_hashes"]) == {
-        "paper_order_preview_report_file",
-        "paper_store_authority_after",
-    }
-    assert attestation["safety"] == {
-        "paper_only": True,
-        "live_allowed": False,
-        "order_submission_allowed": False,
-        "credentials_accessed": False,
-        "broker_connectivity": False,
-    }
+    assert report["flow"] == "PAPER_ORDER_PREVIEW_QUARANTINE"
+    assert report["alphas"]["crowd_contra"]["rejected_reasons"] == [
+        "INVALIDATED_PERP_LEDGER_V1"
+    ]
+    assert paper_preview.release_run_attestation() is None
+    assert not (tmp_path / "paper.db").exists()
 
 
 def test_run_preview_failure_clears_prior_release_attestation(tmp_path):
@@ -492,7 +509,7 @@ def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):
     assert report["verdict"]["paper_preview_ready"] is False
     assert row["paper_execution"] == "PAPER_BLOCKED"
     assert report["errors"]["crowd_contra"]["reason"] == (
-        "FULL_RESEARCH_RISK_NOT_APPROVED"
+        "INVALIDATED_PERP_LEDGER_V1"
     )
 
 
@@ -529,11 +546,11 @@ def test_run_preview_requires_workflow_authority_before_new_fill(monkeypatch, tm
 
     row = report["alphas"]["crowd_contra"]
     assert row["paper_execution"] == "PAPER_BLOCKED"
-    assert row["workflow_admission"]["candidate_authorized"] is False
     assert report["errors"]["crowd_contra"]["reason"] == (
-        "ALPHA_PRODUCTION_WORKFLOW_NOT_EXECUTION_PAPER_ELIGIBLE"
+        "INVALIDATED_PERP_LEDGER_V1"
     )
-    assert report["verdict"]["workflow_admission_valid"] is True
+    assert row["rejected_reasons"] == ["INVALIDATED_PERP_LEDGER_V1"]
+    assert report["verdict"]["workflow_admission_valid"] is False
     assert report["verdict"]["workflow_authorized_ids"] == []
 
 

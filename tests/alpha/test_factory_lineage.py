@@ -3,7 +3,12 @@ parent_ids/mutation_op/perf_delta。诚实边界:gp/evolutionary 路径不构造
 import math
 
 import services.research.alpha_expression as ax
-from services.research.alpha_factory import run_alpha_factory
+from services.research.alpha_factory import run_alpha_factory as _run_alpha_factory
+
+
+def run_alpha_factory(*args, **kwargs):
+    kwargs["diagnostic_only"] = True
+    return _run_alpha_factory(*args, **kwargs)
 
 FIELDS = ["close", "funding"]
 WINDOWS = [3, 5, 7, 14]

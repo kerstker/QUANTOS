@@ -1,4 +1,4 @@
-"""Run a non-authoritative execution diagnostic for ``top_contra``.
+"""Quarantined legacy execution diagnostic for ``top_contra``.
 
 ``top_contra`` is the third research candidate, but it is not yet a production
 alpha.  This driver deliberately exercises the same intent -> pre-trade gate ->
@@ -7,14 +7,16 @@ canonical event bus and ``DryRunStore`` write.  That distinction is important:
 the current canonical projection needs human review, so a local diagnostic must
 never masquerade as official dry-run evidence or a paper-track period.
 
-The driver is offline, deterministic for the cached panel, and has no broker,
-credential, or network path.  It writes only a clearly labelled JSON diagnostic
-under ``data/cache``; it cannot promote an alpha or enable live trading.
+The historical implementation remains below so its pure helpers can be tested
+while the V2 migration is audited.  The CLI entrypoint is fail-closed before it
+reads cached history or writes an artifact: even a labelled diagnostic would
+regenerate invalidated V1 profitability claims.
 """
 from __future__ import annotations
 
 import os
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.research import alpha_expression as ax
@@ -131,6 +133,11 @@ def _prepare(panel):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.top_contra_dry_run_diagnostic")
+
+    # Unreachable while V1 timing/perpetual-ledger semantics are invalidated.
+    # Keep the implementation as an explicit migration target and retain its
+    # pure helpers for synthetic unit tests.
     panel, instruments = build_panel()
     periods, weights_by_period, prices_by_period, rate_by_period, gate_decisions = _prepare(panel)
     if not periods:

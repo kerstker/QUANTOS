@@ -43,6 +43,7 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
@@ -71,6 +72,7 @@ _MAX_CROWDING_Z = 3.0   # 与基准驱动器相同(用户 2026-07-07 签署的�
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.dry_run_crowd_contra_signal_adapter_multi")
     panel, instruments = build_panel()
     insts = panel.instruments
     inst_idx = {name: i for i, name in enumerate(insts)}

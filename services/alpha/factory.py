@@ -1,16 +1,16 @@
 """Alpha Factory orchestrator (Phase 6, step 13).
 
-Thin, deterministic wiring over the parts — no new math: register candidates,
-evaluate them, and advance each as far as its evidence allows. It runs as a
-NON-HUMAN actor and therefore has NO code path to APPROVED: a great alpha stops
-at PAPER_TRADING; a FAIL is rejected; WARN / REQUIRES_HUMAN_REVIEW is parked in
-TESTING for a human. Promotion to APPROVED is exclusively a human action through
-the lifecycle manager.
+Thin, deterministic wiring over the parts — no new math: register candidates
+and evaluate them.  Lifecycle selection is fail-closed unless a separately
+admitted authoritative backtest record is supplied.  The deployed verifier
+currently admits no records, so legacy evaluator verdicts are diagnostic-only
+and cannot advance or reject an alpha.
 """
 from __future__ import annotations
 
 import sys
 import traceback
+from collections.abc import Mapping
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import (
@@ -23,12 +23,17 @@ from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.validation.pbo_evidence import create_batch_pbo_evidence
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+    selection_authority_admitted,
+)
 
 from .catalog import AlphaCatalog
 from .config import AlphaFactoryConfig
 from .evaluator import AlphaEvaluator
 from .lifecycle import AlphaLifecycleManager
-from .panel_backtest import run_panel_backtest
+from .panel_backtest import _run_panel_backtest_legacy_diagnostic
 
 _MAX_CSCV_BLOCKS = 8   # keep C(blocks, blocks/2) small + deterministic
 
@@ -93,7 +98,9 @@ def batch_pbo(
     times: list[list[int]] = []
     for definition, periods in candidates:
         try:
-            res = run_panel_backtest(periods, cost=cost, quantile=quantile, target_aum=target_aum)
+            res = _run_panel_backtest_legacy_diagnostic(
+                periods, cost=cost, quantile=quantile, target_aum=target_aum
+            )
         except Exception:
             traceback.print_exc(file=sys.stderr)
             return None
@@ -133,20 +140,38 @@ class AlphaFactory:
             raise ValueError("the automated factory must run as a non-human actor (no self-approval)")
 
     def run(self, candidates: Sequence[tuple[AlphaDefinition, object]], *, timestamp: int = 0,
-            evidence: Optional[dict] = None) -> dict:
+            evidence: Optional[dict] = None,
+            selection_authorized: bool = False,
+            authoritative_backtest_record: Optional[Mapping[str, object]] = None,
+            diagnostic_only: bool = False) -> dict:
         """`evidence` maps alpha_id -> {"leakage_ok": bool, "regime_profitable_frac": float}.
         Leakage and regime profitability cannot be derived from pre-computed
         PanelPeriods alone, so a candidate without supplied evidence is parked in
         TESTING for a human (fail-closed) rather than auto-advanced on a default.
-        The overfitting (PBO) input is computed here for the whole batch via CSCV."""
+        The overfitting (PBO) input is computed here for the whole batch via CSCV.
+
+        ``selection_authorized`` is only caller intent.  It cannot authorize a
+        transition without a record admitted by the independent authority
+        verifier; a caller-supplied boolean or self-described record is not a
+        trust root.
+        """
+        require_diagnostic_selection_seam(
+            "AlphaFactory.run", diagnostic_only=diagnostic_only
+        )
         evidence = evidence or {}
+        authority_admitted = selection_authority_admitted(
+            requested=selection_authorized,
+            authoritative_backtest_record=authoritative_backtest_record,
+        )
         candidate_pool = tuple(candidates)
         # Register the complete selection population before any backtest so the
         # retained candidate set is bound to the catalog trial ledger.
         for definition, _periods in candidate_pool:
             self.catalog.register(definition)
         prepare_observation = getattr(
-            self.evaluator, "prepare_catalog_observation", None
+            self.evaluator,
+            "_prepare_catalog_observation_legacy_diagnostic",
+            getattr(self.evaluator, "prepare_catalog_observation", None),
         )
         if callable(prepare_observation):
             for definition, periods in candidate_pool:
@@ -159,19 +184,37 @@ class AlphaFactory:
         report: dict[str, dict] = {}
         for defn, periods in candidate_pool:
             ev_in = evidence.get(defn.alpha_id, {})
-            ev = self.evaluator.evaluate(
+            evaluate = getattr(
+                self.evaluator,
+                "_evaluate_legacy_diagnostic",
+                self.evaluator.evaluate,
+            )
+            ev = evaluate(
                 defn.alpha_id, periods, as_of=timestamp, pbo_evidence=pbo_batch,
                 leakage_ok=ev_in.get("leakage_ok"),
                 regime_profitable_frac=ev_in.get("regime_profitable_frac"))
-            self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor,
-                                 timestamp=timestamp, evaluation=ev)
-            if ev.verdict == ValidationVerdict.PASS:
-                self.manager.advance(defn.alpha_id, AlphaState.VALIDATED, self.actor,
+            if authority_admitted:
+                self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor,
                                      timestamp=timestamp, evaluation=ev)
-                self.manager.advance(defn.alpha_id, AlphaState.PAPER_TRADING, self.actor,
-                                     timestamp=timestamp, evaluation=ev)
-            elif ev.verdict == ValidationVerdict.FAIL:
-                self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
-            # WARN / REQUIRES_HUMAN_REVIEW -> parked in TESTING for a human
-            report[defn.alpha_id] = {"evaluation": ev, "state": self.catalog.state(defn.alpha_id)}
+                if ev.verdict == ValidationVerdict.PASS:
+                    self.manager.advance(defn.alpha_id, AlphaState.VALIDATED, self.actor,
+                                         timestamp=timestamp, evaluation=ev)
+                    self.manager.advance(defn.alpha_id, AlphaState.PAPER_TRADING, self.actor,
+                                         timestamp=timestamp, evaluation=ev)
+                elif ev.verdict == ValidationVerdict.FAIL:
+                    self.manager.advance(
+                        defn.alpha_id,
+                        AlphaState.REJECTED,
+                        self.actor,
+                        timestamp=timestamp,
+                    )
+            report[defn.alpha_id] = {
+                "evaluation": ev,
+                "state": self.catalog.state(defn.alpha_id),
+                "diagnostic_only": not authority_admitted,
+                "selection_authority": authority_admitted,
+                "invalidation_code": (
+                    None if authority_admitted else LEGACY_INVALIDATION_CODE
+                ),
+            }
         return report

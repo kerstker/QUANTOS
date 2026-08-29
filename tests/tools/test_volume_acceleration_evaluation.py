@@ -80,7 +80,7 @@ def test_confirmatory_run_registers_closed_family_and_never_grants_testnet(
         lambda: nullcontext(fake_registry),
     )
 
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "volume.json",
         recorded_at=123,
         source_commit="a" * 40,
@@ -97,4 +97,3 @@ def test_confirmatory_run_registers_closed_family_and_never_grants_testnet(
     assert document["decision"]["formal_evaluation_pass"] is False
     assert document["decision"]["testnet_eligible"] is False
     assert document["safety"]["order_submission_allowed"] is False
-

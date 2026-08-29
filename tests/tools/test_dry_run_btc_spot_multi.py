@@ -4,6 +4,7 @@
 _existing_run 的 (strategy_id, data_source) 双键幂等(LEGACY 旧 run 不挡 MEXC 新跑)、
 _advance_paper_track 的诚实 train/paper 切分 + append-only 幂等。
 """
+import json
 import os
 
 import pytest
@@ -74,10 +75,31 @@ def test_build_periods_deterministic_on_pit_store(tmp_path):
 
 def _save_run(db_path, strategy_id, data_source):
     store = DryRunStore(db_path, create=True)
-    store.save_run(DryRunRun(run_id=f"r-{strategy_id}-{data_source}", strategy_id=strategy_id,
-                             timestamp=_T0, n_intents=0, n_approved=0, n_rejected=0,
-                             rejected_reasons=[], pnl={}, audit_root="x",
-                             detail=({"data_source": data_source} if data_source else {})))
+    run = DryRunRun(run_id=f"r-{strategy_id}-{data_source}", strategy_id=strategy_id,
+                    timestamp=_T0, n_intents=0, n_approved=0, n_rejected=0,
+                    rejected_reasons=[], pnl={}, audit_root="x",
+                    detail=({"data_source": data_source} if data_source else {}))
+    # Seed a retained pre-authority row directly.  Production save_run() must
+    # remain unavailable for unsigned aggregates; this test only exercises the
+    # legacy reader's (strategy_id, data_source) matching behavior.
+    store._conn.execute(  # noqa: SLF001 - explicit legacy fixture
+        "INSERT OR IGNORE INTO dry_run(run_id, strategy_id, timestamp, n_intents, "
+        "n_approved, n_rejected, rejected_reasons, pnl, audit_root, detail) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            run.run_id,
+            run.strategy_id,
+            run.timestamp,
+            run.n_intents,
+            run.n_approved,
+            run.n_rejected,
+            json.dumps(run.rejected_reasons),
+            json.dumps(run.pnl),
+            run.audit_root,
+            json.dumps(run.detail),
+        ),
+    )
+    store._conn.commit()  # noqa: SLF001 - explicit legacy fixture
     store.close()
 
 

@@ -10,11 +10,11 @@ def test_profile_delegates_to_paper_driver_with_fixed_isolated_paths(monkeypatch
 
     def fake_main(argv):
         captured["argv"] = tuple(argv)
-        return 0
+        return 2
 
     monkeypatch.setattr(profile.paper_realtime, "main", fake_main)
 
-    assert profile.main() == 0
+    assert profile.main() == 2
     assert captured["argv"] == profile.PROFILE_ARGS
     assert "--health-check" in captured["argv"]
     assert "data/cache/paper_order_ledger_10k.db" in captured["argv"]

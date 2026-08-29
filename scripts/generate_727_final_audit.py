@@ -76,9 +76,22 @@ from scripts.generate_trial_ledger_integrity import (
     _APPEND_ONLY_TABLES,
     build_report as build_trial_report,
 )
+from services.execution.backtest_authority import (
+    AUTHORITATIVE_EVIDENCE_STATUS,
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
+)
 from services.research.experiment_registry.store import _SEARCH_SCHEMA_VERSION
 
 _CURRENT_TRIAL_LEDGER_SCHEMA_VERSION = _SEARCH_SCHEMA_VERSION
+
+_AUTHORITATIVE_BACKTEST_FIELD = "authoritative_backtest_record"
+_LEGACY_PROFITABILITY_ARTIFACTS = (
+    "evidence/alpha_lifecycle_cockpit.json",
+    "evidence/alpha_paper_cycle.json",
+    "evidence/three_alpha_paper_flow.json",
+    "data/cache/binance_usdt_continuous_paper.json",
+)
 
 
 def _sha256(path: Path) -> str | None:
@@ -181,6 +194,36 @@ def _artifact(root: Path, relative_path: str) -> dict[str, Any]:
         if key in payload:
             result[key] = payload[key]
     return result
+
+
+def _backtest_authority_admission(
+    root: Path, relative_path: str
+) -> dict[str, Any]:
+    """Admit only an explicit record through the independent authority gate.
+
+    File retention, a content hash, a non-empty list, or a self-described READY
+    verdict is never authority.  The source artifact remains in the input
+    manifest for audit/reproduction, but its profitability claims are excluded
+    from readiness until its explicit record passes the separately controlled
+    admission predicate.
+    """
+
+    payload = _load_json(root, relative_path)
+    record = payload.get(_AUTHORITATIVE_BACKTEST_FIELD)
+    present = isinstance(record, dict)
+    admitted = present and is_authoritative_backtest_record(record)
+    return {
+        "source_path": relative_path,
+        "required_field": _AUTHORITATIVE_BACKTEST_FIELD,
+        "record_present": present,
+        "independently_admitted": admitted,
+        "status": (
+            AUTHORITATIVE_EVIDENCE_STATUS
+            if admitted
+            else LEGACY_INVALIDATION_CODE
+        ),
+        "counted_as_completion_evidence": admitted,
+    }
 
 
 def _safety_flags() -> dict[str, bool]:
@@ -422,10 +465,16 @@ def _alpha_lifecycle(root: Path, now_ms: int, flags: dict[str, bool], validation
     status, blockers = _research_status(
         validation=validation, flags=flags, source_bundles=bundles
     )
+    authority = _backtest_authority_admission(
+        root, "evidence/alpha_lifecycle_cockpit.json"
+    )
     cockpit = _load_json(root, "evidence/alpha_lifecycle_cockpit.json")
     alphas = cockpit.get("alphas") if isinstance(cockpit.get("alphas"), list) else []
     if not alphas:
         blockers.append("ALPHA_LIFECYCLE_COCKPIT_EMPTY_OR_MISSING")
+        status = "NOT_READY"
+    if not authority["independently_admitted"]:
+        blockers.append(LEGACY_INVALIDATION_CODE)
         status = "NOT_READY"
     report = _common(
         root=root,
@@ -441,9 +490,22 @@ def _alpha_lifecycle(root: Path, now_ms: int, flags: dict[str, bool], validation
         {
             "cockpit": {
                 "path": "evidence/alpha_lifecycle_cockpit.json",
+                "exists": (root / "evidence" / "alpha_lifecycle_cockpit.json").is_file(),
                 "sha256": _sha256(root / "evidence" / "alpha_lifecycle_cockpit.json"),
-                "alpha_count": len(alphas),
-                "derived_stage_counts": _stage_counts(alphas),
+                "retained_alpha_count": len(alphas),
+                "retention_status": LEGACY_INVALIDATION_CODE,
+                "counted_as_completion_evidence": False,
+            },
+            "authoritative_backtest": authority,
+            "legacy_profitability_artifacts": {
+                path: {
+                    "exists": (root / path).is_file(),
+                    "sha256": _sha256(root / path),
+                    "retention_status": LEGACY_INVALIDATION_CODE,
+                    "counted_as_completion_evidence": False,
+                }
+                for path in _LEGACY_PROFITABILITY_ARTIFACTS
+                if path in paths
             },
             "implementation": {
                 "research_state_machine": True,
@@ -453,25 +515,22 @@ def _alpha_lifecycle(root: Path, now_ms: int, flags: dict[str, bool], validation
                 "degradation_pause_retirement": True,
             },
             "acceptance": {
-                "research_lifecycle": status == "READY_FOR_RESEARCH_AUTONOMY",
+                "research_lifecycle": (
+                    status == "READY_FOR_RESEARCH_AUTONOMY"
+                    and authority["independently_admitted"]
+                ),
                 "external_approval": False,
                 "live_authority": False,
             },
             "honesty_note": (
-                "The cockpit is a read-only aggregation of current evidence. "
-                "Forward paper insufficiency and external approval remain visible."
+                "The cockpit and paper-cycle files are retained and hash-audited "
+                "diagnostic history. Their existence, non-empty rows, stages, or "
+                "hashes do not satisfy lifecycle acceptance without an independently "
+                "admitted authoritative_backtest_record."
             ),
         }
     )
     return report
-
-
-def _stage_counts(alphas: list[dict[str, Any]]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for alpha in alphas:
-        stage = str(alpha.get("derived_stage") or "UNTRACKED")
-        counts[stage] = counts.get(stage, 0) + 1
-    return dict(sorted(counts.items()))
 
 
 def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: dict[str, Any]) -> dict[str, Any]:
@@ -481,20 +540,31 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
         "data/cache/paper_health_10k.json",
         "evidence/shadow_status.json",
         "evidence/alpha_paper_cycle.json",
+        "evidence/three_alpha_paper_flow.json",
+        "data/cache/binance_usdt_continuous_paper.json",
         "tests/live",
         "tests/research",
     ]
     paper = _load_json(root, "data/cache/paper_health_10k.json")
     shadow = _load_json(root, "evidence/shadow_status.json")
+    paper_authority = _backtest_authority_admission(
+        root, "data/cache/paper_health_10k.json"
+    )
     paper_verdict = paper.get("verdict") if isinstance(paper.get("verdict"), dict) else {}
     paper_blockers = paper.get("blockers")
     if not isinstance(paper_blockers, list):
         paper_blockers = ["PAPER_EVIDENCE_MALFORMED"]
+    else:
+        paper_blockers = [str(item) for item in paper_blockers]
+    if not paper_authority["independently_admitted"]:
+        paper_blockers.append(LEGACY_INVALIDATION_CODE)
+    paper_blockers = list(dict.fromkeys(paper_blockers))
     paper_forward = paper.get("forward_evidence")
     if not isinstance(paper_forward, dict):
         paper_forward = {}
     paper_ready = (
-        paper_verdict.get("paper_ready") is True
+        paper_authority["independently_admitted"]
+        and paper_verdict.get("paper_ready") is True
         and bool(paper_forward)
         and not paper_blockers
     )
@@ -521,7 +591,11 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
             blockers.append("SHADOW_NOT_READY")
     if not _safety_ok(flags):
         blockers.append("SAFETY_FLAGS_NOT_RESEARCH_SAFE")
-    status = "READY_FOR_SHADOW" if shadow_ready and _safety_ok(flags) else "NOT_READY"
+    status = (
+        "READY_FOR_SHADOW"
+        if paper_ready and shadow_ready and _safety_ok(flags)
+        else "NOT_READY"
+    )
     report = _common(
         root=root,
         artifact="QUANTOS_727_PAPER_SHADOW_STATUS",
@@ -537,9 +611,23 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
             "paper": {
                 "status": "READY_FOR_FORWARD_PAPER" if paper_ready else "NOT_READY",
                 "paper_ready": paper_ready,
-                "paper_mark_ready": paper_verdict.get("paper_mark_ready"),
-                "paper_preview_ready": paper_verdict.get("paper_preview_ready"),
-                "forward_evidence": paper_forward,
+                "paper_mark_ready": (
+                    paper_verdict.get("paper_mark_ready")
+                    if paper_authority["independently_admitted"]
+                    else False
+                ),
+                "paper_preview_ready": (
+                    paper_verdict.get("paper_preview_ready")
+                    if paper_authority["independently_admitted"]
+                    else False
+                ),
+                "forward_evidence": (
+                    paper_forward
+                    if paper_authority["independently_admitted"]
+                    else {}
+                ),
+                "retained_forward_evidence_present": bool(paper_forward),
+                "authoritative_backtest": paper_authority,
                 "blockers": paper_blockers,
             },
             "shadow": {
@@ -551,8 +639,9 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
                 "safety": shadow_safety,
             },
             "honesty_note": (
-                "Shadow readiness is not fill or paper proof. Paper remains separate "
-                "and cannot be promoted from marks-only replay."
+                "Shadow readiness is not fill or paper proof. Legacy paper-cycle, "
+                "three-alpha, continuous-paper, and health artifacts remain hash-audited "
+                "diagnostic history and cannot become paper evidence through retention."
             ),
         }
     )

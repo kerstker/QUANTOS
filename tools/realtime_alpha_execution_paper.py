@@ -27,6 +27,11 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SUCCESS,
 )
 from quantos.runtime_paths import runtime_state_root
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+    quarantine_legacy_backtest,
+)
 from services.execution.lot_book import LotSpec, scale_snapshot_to_lots
 from services.execution.realtime_engineering_paper_store import (
     RealtimeEngineeringPaperStore,
@@ -934,6 +939,59 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--execution-store", default=str(DEFAULT_EXECUTION_STORE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     args = parser.parse_args(argv)
+    global _LAST_RELEASE_RUN_ATTESTATION
+    _LAST_RELEASE_RUN_ATTESTATION = None
+    try:
+        quarantine_legacy_backtest("realtime_alpha_execution_paper")
+    except BacktestIntegrityBlocked:
+        report = {
+            "schema_version": 2,
+            "flow": "REALTIME_ALPHA_EXECUTION_PAPER_QUARANTINE",
+            "status": "SAFE_BLOCKED",
+            "generated_at_ms": int(time.time() * 1_000),
+            "candidate_count": 0,
+            "cycle": {
+                "new_admissions": 0,
+                "new_executions": 0,
+                "new_no_actions": 0,
+                "new_missed_execution_windows": 0,
+            },
+            "errors": {"_system": LEGACY_INVALIDATION_CODE},
+            "ledger": {
+                "path": str(Path(args.execution_store)),
+                "write_attempted": False,
+                "chain_valid": None,
+                "legacy_v1_retained_read_only": True,
+            },
+            "verdict": {
+                "engineering_execution_paper_running": False,
+                "production_execution_seam_exercised": False,
+                "official_paper_ready": False,
+                "promotion_eligible": False,
+                "forward_evidence_eligible": False,
+                "deployment_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+            "safety": {
+                "paper_only": True,
+                "public_market_data_only": True,
+                "credentials_accessed": False,
+                "private_stream": False,
+                "broker_connectivity": False,
+                "broker_order_submission": False,
+                "raw_collection_allowed": True,
+                "read_only_forward_observation_allowed": True,
+            },
+        }
+        atomic_write_json(str(args.output), report, indent=2)
+        print(
+            "realtime engineering execution paper status=SAFE_BLOCKED "
+            f"reason={LEGACY_INVALIDATION_CODE}"
+        )
+        return SCHEDULE_EXIT_SAFE_BLOCKED
+    raise AssertionError("legacy realtime execution-paper quarantine unexpectedly returned")
+
     try:
         report = run_cycle(
             shadow_store_path=args.shadow_store,

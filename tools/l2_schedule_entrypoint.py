@@ -24,10 +24,6 @@ from types import ModuleType
 
 ALLOWED_L2_MODULES = frozenset(
     {
-        "alpha_paper_cycle",
-        "alpha_lifecycle_cockpit",
-        "alpha_production_workflow",
-        "alpha_maintenance_sweep",
         "artifact_admission_seal",
         "binance_book_depth_forward_refresh",
         "binance_realtime_market",
@@ -37,14 +33,11 @@ ALLOWED_L2_MODULES = frozenset(
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",
         "bybit_realtime_stream",
-        "candidate_portfolio_evidence",
         "cftc_tff_forward_refresh",
-        "crypto_factory_loop",
         "cross_venue_liquidation_health",
         "defillama_tvl_forward_refresh",
         "defillama_stablecoin_forward_refresh",
         "wikimedia_attention_forward_refresh",
-        "dry_run_candidate_multi",
         "hyperliquid_public_forward_refresh",
         "okx_borrow_forward_refresh",
         "domain_event_ops",
@@ -53,18 +46,13 @@ ALLOWED_L2_MODULES = frozenset(
         "forward_track_advance",
         "hourly_alpha_advance",
         "gonogo_report",
-        "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",
         "mft_l2_runtime",
         "paper_health",
-        "paper_alpha_evaluation",
         "paper_multivenue_sor",
         "paper_operational_evidence",
         "paper_order_preview",
-        "paper_research_risk_bundle",
-        "paper_realtime",
-        "paper_realtime_10k",
         "paper_shadow_auto",
         "paper_shadow_realtime",
         "raw_archive_audit",
@@ -73,6 +61,28 @@ ALLOWED_L2_MODULES = frozenset(
         "realtime_alpha_formal_shadow",
         "realtime_alpha_forward_shadow",
         "rpi_low_frequency_research",
+    }
+)
+
+# These workers can turn invalid V1 return/evaluation artifacts into durable
+# registry, risk-READY, or workflow authority.  Keep the names recognizable to
+# the launcher so an obsolete scheduled action fails with the machine-readable
+# invalidation code, but never classify them as allowlisted workers.
+QUARANTINED_LEGACY_AUTHORITY_MODULES = frozenset(
+    {
+        "alpha_paper_cycle",
+        "alpha_lifecycle_cockpit",
+        "alpha_maintenance_sweep",
+        "alpha_production_workflow",
+        "candidate_portfolio_evidence",
+        "dry_run_candidate_multi",
+        "crypto_factory_loop",
+        "ic_panel_research",
+        "paper_alpha_evaluation",
+        "paper_realtime",
+        "paper_realtime_10k",
+        "paper_research_risk_bundle",
+        "register_alpha_catalog",
     }
 )
 
@@ -88,15 +98,17 @@ _RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
 _STATE_ROOT_ENV = "QUANTOS_STATE_ROOT"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ATTESTABLE_EXIT_CODES = frozenset({0, 2})
+# The public SOR currently reaches an unconditional V1 persistence quarantine
+# after its read-only routing diagnostic.  Exit 2 carries no authoritative
+# output to attest; success (0) still requires the full input/output receipt.
+_UNATTESTED_EXPECTED_SAFE_BLOCK_MODULES = frozenset({"paper_multivenue_sor"})
 REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
     {
-        "alpha_production_workflow",
         "binance_realtime_features",
         "binance_realtime_market",
         "paper_multivenue_sor",
         "paper_operational_evidence",
         "paper_order_preview",
-        "paper_research_risk_bundle",
         "realtime_alpha_discovery",
         "realtime_alpha_execution_paper",
         "realtime_alpha_formal_shadow",
@@ -408,6 +420,11 @@ def run_scheduled_module(
     importer: Callable[[str], ModuleType] = importlib.import_module,
 ) -> int:
     """Run one fixed L2 module while preserving the caller's state directory."""
+    if module_name in QUARANTINED_LEGACY_AUTHORITY_MODULES:
+        raise ScheduleEntrypointError(
+            "INVALIDATED_PERP_LEDGER_V1: scheduled legacy authority worker "
+            f"tools.{module_name} is quarantined"
+        )
     if module_name not in ALLOWED_L2_MODULES:
         raise ScheduleEntrypointError("scheduled module is not allowlisted")
     release_root = (
@@ -472,6 +489,11 @@ def run_scheduled_module(
             raise ScheduleEntrypointError(
                 "scheduled module produced an ambiguous exit code"
             )
+        if (
+            result == 2
+            and module_name in _UNATTESTED_EXPECTED_SAFE_BLOCK_MODULES
+        ):
+            return result
         attestation_fn = getattr(module, "release_run_attestation", None)
         if callable(attestation_fn) and result in _ATTESTABLE_EXIT_CODES:
             try:
@@ -515,7 +537,10 @@ def run_scheduled_module(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an allowlisted QUANTOS L2 worker")
-    parser.add_argument("module", choices=sorted(ALLOWED_L2_MODULES))
+    parser.add_argument(
+        "module",
+        choices=sorted(ALLOWED_L2_MODULES | QUARANTINED_LEGACY_AUTHORITY_MODULES),
+    )
     parser.add_argument("--release-commit", required=True)
     args = parser.parse_args(argv)
     _configure_headless_logging(args.module)
@@ -641,6 +666,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "ALLOWED_L2_MODULES",
+    "QUARANTINED_LEGACY_AUTHORITY_MODULES",
     "REQUIRED_INPUT_ATTESTATION_MODULES",
     "ScheduleEntrypointError",
     "_configure_headless_logging",

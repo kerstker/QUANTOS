@@ -47,10 +47,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from services.data.caching_store import CachingPITStore
+from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import is_authoritative_backtest_record
 from services.execution.dry_run_store import DryRunStore
 from services.research import factor_decomp as fd
 from services.research import portfolio_evidence as pe
+from services.risk.research_risk.dry_run_guard import full_research_risk_approved
 from tools.cache_io import atomic_write_json
 from tools.common_risk_research import (
     FACTOR_UNIVERSE,
@@ -132,7 +135,14 @@ def _default_factor_maps(
     store_px = CachingPITStore(SqlitePITStore(price_db_path, create=False))
     price_agg, funding_w, oi_w = {}, {}, {}
     for coin in FACTOR_UNIVERSE:
-        bars = store_px.fetch_bars_pit(coin, 0, 10**18)  # PIT 安全批量读(非裸 fetch_bars)
+        bars = fetch_bars_for_event_decisions(
+            store_px,
+            coin,
+            0,
+            10**18,
+            decision_lag=86_400_000,
+            minimum_knowledge_lag=86_400_000,
+        )
         if not bars or coin not in funding_json or coin not in oi_json:
             continue
         closes_by_day = {int(b.event_time): float(b.close) for b in bars}
@@ -169,6 +179,15 @@ def _crowding_rows(gate: object) -> list[dict] | None:
     )
 
 
+def _load_bearing_backtest(record: object) -> bool:
+    """Require both immutable backtest identity and the full nine-engine gate."""
+    if not isinstance(record, dict) or not is_authoritative_backtest_record(record):
+        return False
+    detail = record.get("detail")
+    risk = detail.get("research_risk") if isinstance(detail, dict) else None
+    return isinstance(risk, dict) and full_research_risk_approved(risk)
+
+
 def build_portfolio_evidence(
     *,
     db_path: str = _DRY_RUN_DB,
@@ -187,13 +206,20 @@ def build_portfolio_evidence(
     store = DryRunStore(db_path, create=False)
     try:
         canonical = canonical_runs(store.all_runs())
+        authority_rejections: dict[str, str] = {}
         # book 成员 = 人口中有正典 run 者(legacy + challenger);db strategy_id 映射。
         book: dict[str, dict] = {}
         for candidate in population:
             sid = dict(LEGACY_BOOK).get(candidate, candidate)
             record = canonical.get(sid)
-            if record is not None:
+            if record is not None and _load_bearing_backtest(record):
                 book[candidate] = record
+            elif record is not None:
+                authority_rejections[candidate] = (
+                    "RUN_MANIFEST_V2_INVALID_OR_MISSING"
+                    if not is_authoritative_backtest_record(record)
+                    else "FULL_RESEARCH_RISK_NOT_APPROVED"
+                )
         # TCA:状态文档 + 其 run_id 的 route_tca 记录(取不到 → None,短点留白)。
         sor_doc = _load_json_soft(sor_status_path)
         route_records = None
@@ -295,6 +321,7 @@ def build_portfolio_evidence(
         },
         "incumbent_book": {
             "members_with_runs": sorted(book),
+            "excluded_non_authoritative": dict(sorted(authority_rejections.items())),
             "combine": "EQUAL_WEIGHT(刻意:权重估计吃样本;逆波动口径另属 common_risk 簇级组合)",
             "curve": "equity_curve(raw,与 common_risk 主口径一致)",
             "align": "ISO 年-周 N 路对齐(factor_decomp.align_weekly)",

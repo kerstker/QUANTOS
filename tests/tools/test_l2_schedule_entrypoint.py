@@ -12,6 +12,7 @@ import pytest
 
 from tools.l2_schedule_entrypoint import (
     ALLOWED_L2_MODULES,
+    QUARANTINED_LEGACY_AUTHORITY_MODULES,
     REQUIRED_INPUT_ATTESTATION_MODULES,
     ScheduleEntrypointError,
     _configure_headless_logging,
@@ -25,7 +26,7 @@ COMMIT = "a" * 40
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _worker_attestation(module: str = "alpha_production_workflow") -> dict:
+def _worker_attestation(module: str = "paper_order_preview") -> dict:
     return {
         "schema_version": 1,
         "module": module,
@@ -531,7 +532,7 @@ def test_required_worker_rejects_malformed_input_hash(tmp_path: Path) -> None:
 
     with pytest.raises(ScheduleEntrypointError, match="input/evidence attestation"):
         run_scheduled_module(
-            "alpha_production_workflow",
+            "paper_order_preview",
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
@@ -558,6 +559,26 @@ def test_required_worker_fatal_exit_preserves_result_without_attestation(
         on_worker_attested=lambda document, digest: observed.append((document, digest)),
     ) == 1
 
+    assert observed == []
+
+
+def test_paper_sor_expected_quarantine_preserves_safe_block_without_attestation(
+    tmp_path: Path,
+) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root, result=2)
+    module.release_run_attestation = lambda: None
+    observed = []
+
+    assert run_scheduled_module(
+        "paper_multivenue_sor",
+        code_root=code_root,
+        expected_release_commit=COMMIT,
+        release_verifier=_accept_release,
+        release_evidence_verifier=_accept_release_evidence,
+        importer=lambda _name: module,
+        on_worker_attested=lambda document, digest: observed.append((document, digest)),
+    ) == 2
     assert observed == []
 
 
@@ -708,10 +729,6 @@ def test_pythonw_mode_rejects_child_request_for_new_console(monkeypatch) -> None
 def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
     assert ALLOWED_L2_MODULES == frozenset(
         {
-            "alpha_paper_cycle",
-            "alpha_lifecycle_cockpit",
-            "alpha_production_workflow",
-            "alpha_maintenance_sweep",
             "artifact_admission_seal",
             "binance_book_depth_forward_refresh",
             "binance_realtime_market",
@@ -719,16 +736,13 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "binance_rpi_depth",
             "binance_realtime_features",
             "binance_realtime_drift_alerts",
-                "binance_realtime_stream",
-                "bybit_realtime_stream",
-            "candidate_portfolio_evidence",
+            "binance_realtime_stream",
+            "bybit_realtime_stream",
             "cftc_tff_forward_refresh",
-            "crypto_factory_loop",
             "cross_venue_liquidation_health",
             "defillama_tvl_forward_refresh",
             "defillama_stablecoin_forward_refresh",
             "wikimedia_attention_forward_refresh",
-            "dry_run_candidate_multi",
             "hyperliquid_public_forward_refresh",
             "okx_borrow_forward_refresh",
             "domain_event_ops",
@@ -737,18 +751,13 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "forward_track_advance",
             "hourly_alpha_advance",
             "gonogo_report",
-            "ic_panel_research",
             "l2_backup",
             "l2_scheduler_watchdog",
             "mft_l2_runtime",
             "paper_health",
-            "paper_alpha_evaluation",
             "paper_multivenue_sor",
             "paper_operational_evidence",
             "paper_order_preview",
-            "paper_research_risk_bundle",
-            "paper_realtime",
-            "paper_realtime_10k",
             "paper_shadow_auto",
             "paper_shadow_realtime",
             "raw_archive_audit",
@@ -764,13 +773,11 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
 def test_required_input_attestation_surface_is_explicit() -> None:
     assert REQUIRED_INPUT_ATTESTATION_MODULES == frozenset(
         {
-            "alpha_production_workflow",
             "binance_realtime_market",
             "binance_realtime_features",
             "paper_multivenue_sor",
             "paper_operational_evidence",
             "paper_order_preview",
-            "paper_research_risk_bundle",
             "realtime_alpha_discovery",
             "realtime_alpha_execution_paper",
             "realtime_alpha_formal_shadow",
@@ -778,6 +785,54 @@ def test_required_input_attestation_surface_is_explicit() -> None:
             "rpi_low_frequency_research",
         }
     )
+
+
+def test_legacy_authority_workers_are_quarantined_before_release_or_import(
+    tmp_path: Path,
+) -> None:
+    assert QUARANTINED_LEGACY_AUTHORITY_MODULES == frozenset(
+        {
+            "alpha_paper_cycle",
+            "alpha_lifecycle_cockpit",
+            "alpha_maintenance_sweep",
+            "alpha_production_workflow",
+            "candidate_portfolio_evidence",
+            "dry_run_candidate_multi",
+            "crypto_factory_loop",
+            "ic_panel_research",
+            "paper_alpha_evaluation",
+            "paper_realtime",
+            "paper_realtime_10k",
+            "paper_research_risk_bundle",
+            "register_alpha_catalog",
+        }
+    )
+    assert QUARANTINED_LEGACY_AUTHORITY_MODULES.isdisjoint(ALLOWED_L2_MODULES)
+
+    for module_name in sorted(QUARANTINED_LEGACY_AUTHORITY_MODULES):
+        touched: list[str] = []
+
+        def forbidden(label):
+            def _forbidden(*_args, **_kwargs):
+                touched.append(label)
+                pytest.fail(f"{label} ran before scheduler quarantine")
+
+            return _forbidden
+
+        with pytest.raises(
+            ScheduleEntrypointError,
+            match="INVALIDATED_PERP_LEDGER_V1",
+        ):
+            run_scheduled_module(
+                module_name,
+                code_root=tmp_path / "release",
+                expected_release_commit=COMMIT,
+                release_verifier=forbidden("release verifier"),
+                release_evidence_verifier=forbidden("release evidence"),
+                importer=forbidden("module importer"),
+            )
+
+        assert touched == []
 
 
 def test_every_registered_schedule_module_is_allowlisted() -> None:
@@ -871,14 +926,14 @@ def test_script_receipt_embeds_required_worker_input_attestation(
     tools.mkdir(parents=True)
     state.mkdir()
     (tools / "__init__.py").write_text("", encoding="utf-8")
-    (tools / "alpha_production_workflow.py").write_text(
+    (tools / "paper_order_preview.py").write_text(
         "import os\n"
         "def main():\n"
         "    return 0\n"
         "def release_run_attestation():\n"
         "    return {\n"
         "        'schema_version': 1,\n"
-        "        'module': 'alpha_production_workflow',\n"
+        "        'module': 'paper_order_preview',\n"
         "        'release_commit': os.environ['QUANTOS_RELEASE_COMMIT'],\n"
         "        'complete': True,\n"
         "        'input_hashes': {'candidate_identity_set': 'b' * 64},\n"
@@ -922,7 +977,7 @@ def test_script_receipt_embeds_required_worker_input_attestation(
         [
             sys.executable,
             str(launcher),
-            "alpha_production_workflow",
+            "paper_order_preview",
             "--release-commit",
             commit,
         ],

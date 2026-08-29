@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import inspect
 
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
+from services.execution.backtest_authority import BacktestIntegrityBlocked
 from services.intelligence import registered_candidate_batch as batch_module
 from services.research import alpha_expression as ax
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -84,6 +84,11 @@ def test_complete_candidate_pool_is_registered_before_scoring(
         }
 
     monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", assert_registered)
+    monkeypatch.setattr(
+        module,
+        "run_registered_candidate_batch",
+        batch_module._run_registered_candidate_batch_legacy_diagnostic,
+    )
     module._run_registered_pool(
         candidates,
         registry=registry,
@@ -109,7 +114,7 @@ def test_candidate_selection_and_ranking_follow_durable_registration() -> None:
     ):
         assert funding_registration < funding_source.index(marker)
 
-    volume_source = inspect.getsource(crypto_volume_research._main)
+    volume_source = inspect.getsource(crypto_volume_research._main_legacy_diagnostic)
     volume_registration = volume_source.index("out = _run_registered_pool")
     assert volume_registration < volume_source.index("rows_rep.sort")
 
@@ -178,20 +183,13 @@ def test_volume_dataset_version_binds_source_instruments_and_times() -> None:
     "module",
     (crypto_funding_research, crypto_volume_research),
 )
-def test_main_injects_production_registry_without_running_research(
+def test_legacy_main_blocks_before_opening_production_registry(
     module,
     monkeypatch,
 ) -> None:
-    registry = object()
-    observed = []
+    def fail_if_opened():
+        pytest.fail("legacy main must quarantine before opening the registry")
 
-    @contextmanager
-    def registry_context():
-        yield registry
-
-    monkeypatch.setattr(module, "production_experiment_registry", registry_context)
-    monkeypatch.setattr(module, "_main", observed.append)
-
-    module.main()
-
-    assert observed == [registry]
+    monkeypatch.setattr(module, "production_experiment_registry", fail_if_opened)
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        module.main()

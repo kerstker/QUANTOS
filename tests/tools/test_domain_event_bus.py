@@ -1,3 +1,5 @@
+import pytest
+
 from quantos.contracts.events import Event, EVENT_RESEARCH_RISK_EVALUATED
 from services.monitoring.event_bus import DurableEventBus
 from services.monitoring.event_projection import DomainEventProjection
@@ -9,6 +11,16 @@ from tools.domain_event_bus import (
     project_pending_domain_events,
     save_and_project_dry_run,
 )
+
+
+@pytest.fixture(autouse=True)
+def _exercise_event_mechanics_behind_admission(monkeypatch):
+    """Authority rejection itself is covered by canonical-store tests."""
+    monkeypatch.setattr(
+        DryRunStore,
+        "_require_authoritative_write",
+        staticmethod(lambda _run, _authority: None),
+    )
 
 
 def _event(event_id: str, timestamp: int) -> Event:

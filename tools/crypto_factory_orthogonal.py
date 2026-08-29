@@ -18,6 +18,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.alpha_factory import run_alpha_factory
 from services.research.carry_pnl import economic_return_series
@@ -47,6 +48,7 @@ ELITE = 16
 
 
 def main(generations: int = GENERATIONS, population: int = POP) -> None:
+    quarantine_legacy_backtest("tools.crypto_factory_orthogonal")
     recorded_at = time.time_ns() // 1_000_000
     elite = max(4, min(ELITE, population // 4))     # keep elite sane relative to a tuned population
     panel, instruments = build_panel()

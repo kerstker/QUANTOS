@@ -15,6 +15,8 @@ import argparse
 import importlib
 import os
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 _CACHE = os.path.join("data", "cache")
 
 # (label, generator module, the cached input DB it needs) — dependency order: raw DBs already exist;
@@ -44,6 +46,11 @@ def plan() -> list:
 
 
 def run(execute: bool = False) -> dict:
+    if execute:
+        # Fail before importing any generator.  Catching a quarantine from one
+        # child and continuing would still let later V1 engines overwrite
+        # retained Sharpe/PnL artifacts before the final digest step failed.
+        quarantine_legacy_backtest("tools.rebuild_snapshots")
     ran, skipped, failed = [], [], []
     for step in plan():
         if not step["input_present"]:

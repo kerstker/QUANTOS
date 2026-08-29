@@ -19,6 +19,7 @@ from decimal import Decimal
 from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from quantos.contracts.risk import RiskDecisionType
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunRun
 from services.execution.events import (
     dry_run_completed_event,
@@ -449,7 +450,7 @@ def reconcile_run(fills, marks: Dict[str, float], initial_capital: float) -> dic
     }
 
 
-def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
+def _run_dry_run_pipeline_legacy_diagnostic(*, weights: Dict[str, float], prices: Dict[str, float],
                          current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
                          adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
                          initial_capital: float = 1e7, cost_bps: float = 0.0,
@@ -627,6 +628,10 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         rejected_reasons=[rr for _, rs in screened["rejected"] for rr in rs], pnl=pnl,
         audit_root=str(audit_root),
         detail={"n_fills": len(filled["fills"]), "targets": targets,
+                "authoritative": False,
+                "evidence_status": "LEGACY_UNATTESTED_DISPLAY_ONLY",
+                "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
+                "engine_semantics": "LEGACY_SAME_PERIOD_SPOT_APPROXIMATION_V1",
                 "n_adapter_rejected": filled.get("n_adapter_rejected", 0),
                 "routing_snapshot_id": routing_snapshot_id or None,
                 "route_tca_schema_version": 1 if route_planner is not None else None,
@@ -727,7 +732,7 @@ def _tca_lite(impact, impact_trades) -> dict:
             "in_band": lo - 1e-6 <= charged <= hi + 1e-6, "provenance": cal.provenance}
 
 
-def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
+def _run_multi_period_dry_run_legacy_diagnostic(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
                              vol_target: dict = None, impact=None, adv_by_period: dict = None,
                              filters: Optional[Dict[str, Tuple[float, float, float]]] = None,
@@ -786,12 +791,28 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     tot_impact = tot_flat = 0
     route_cost_total = 0.0
     cum_cash = 0.0
+    cash_flow_events: list[dict] = []
     curve: list = []
     tot_appr = tot_rej = 0
     prev_equity = aum
     n_periods = len(periods)
     for i, t in enumerate(periods):
         prices_t = prices_by_period[t]
+        # A settlement at t belongs to the position carried into t.  Applying
+        # it after the rebalance charges a newly opened position for an event
+        # that occurred before it existed (the audited V1 bug).
+        if cash_flow_fn is not None:
+            cash_flow = float(cash_flow_fn(dict(held), prices_t, t))
+            if not math.isfinite(cash_flow):
+                raise ValueError(f"non-finite cash flow at period {t}")
+            cum_cash += cash_flow
+            cash_flow_events.append(
+                {
+                    "t": int(t),
+                    "amount": round(cash_flow, 9),
+                    "position_snapshot": dict(sorted(held.items())),
+                }
+            )
         adv_t = adv_by_period.get(t) if adv_by_period else None
         targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum, filters=filters)
         intents = build_intents(targets, held, strategy_id=strategy_id)
@@ -852,8 +873,6 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             all_fills.append(f)
             held[f.instrument_id] = held.get(f.instrument_id, 0) + (
                 f.quantity if f.side == PaperSide.BUY else -f.quantity)
-        if cash_flow_fn is not None:
-            cum_cash += float(cash_flow_fn(held, prices_t, t))
         equity_t = reconcile(all_fills, marks=prices_t, initial_capital=aum).equity + cum_cash
         ret = (equity_t / prev_equity - 1.0) if prev_equity else 0.0
         prev_equity = equity_t
@@ -884,8 +903,21 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             vt_curve.append({"t": p["t"], "equity": round(e, 6), "ret": round(r, 8)})
 
     final_equity = curve[-1]["equity"] if curve else aum
-    residual = (reconcile(all_fills, marks=prices_by_period[periods[-1]], initial_capital=aum)
-                .reconciliation_residual()) if periods else 0.0
+    if periods:
+        final_reconciliation = reconcile(
+            all_fills,
+            marks=prices_by_period[periods[-1]],
+            initial_capital=aum,
+        )
+        total_pnl_with_cashflows = final_equity - aum
+        explained_pnl = (
+            final_reconciliation.gross_trading_pnl
+            - final_reconciliation.total_costs
+            + cum_cash
+        )
+        residual = abs(total_pnl_with_cashflows - explained_pnl)
+    else:
+        residual = 0.0
     # sharpe_vt/max_drawdown_vt (审计发现 #10): same pure helpers applied to the VT curve's OWN `ret`
     # series -- this is what makes the "RAW -> VT" figures quoted in docs reproducible from this function's
     # output alone. vol_target=None -> honestly None (not 0, not omitted): callers must be able to tell
@@ -926,7 +958,12 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
         pnl=pnl, audit_root=str(audit.seal().head_hash),
         detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
+                "authoritative": False,
+                "evidence_status": "LEGACY_UNATTESTED_DISPLAY_ONLY",
+                "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
+                "engine_semantics": "LEGACY_SAME_PERIOD_SPOT_APPROXIMATION_V1",
                 "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve,
+                "cash_flow_events": cash_flow_events,
                 "routing_snapshot_id": routing_snapshot_id or None,
                 "route_tca_schema_version": 1 if route_planner is not None else None,
                 "routing": all_routing, "route_rejections": all_route_rejections,
@@ -970,3 +1007,17 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             causation_id=start_event_id,
         )
     return result
+
+
+def run_dry_run_pipeline(*args, **kwargs) -> DryRunRun:
+    """Block the public V1 single-period engine before any dependency runs."""
+
+    quarantine_legacy_backtest("services.execution.dry_run_pipeline.run_dry_run_pipeline")
+
+
+def run_multi_period_dry_run(*args, **kwargs) -> DryRunRun:
+    """Block the public V1 multi-period engine before PnL or events are produced."""
+
+    quarantine_legacy_backtest(
+        "services.execution.dry_run_pipeline.run_multi_period_dry_run"
+    )

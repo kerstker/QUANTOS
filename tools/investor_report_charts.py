@@ -2,6 +2,14 @@
 import sqlite3, json, sys
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
+quarantine_legacy_backtest("tools.investor_report_charts")
+
 sys.path.insert(0, str(Path(sys.executable).parent.parent.parent))
 from daimon_runtime import setup_plot
 import matplotlib.pyplot as plt

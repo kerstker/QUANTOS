@@ -31,6 +31,11 @@ from typing import Any, Dict, Iterator, List, Optional
 from fastapi import APIRouter
 
 from quantos.runtime_paths import runtime_state_root
+from services.console.api.backtest_evidence import (
+    authority_admitted,
+    invalidated_check,
+    scrub_backtest_payload,
+)
 from services.console.api.common import with_snapshot_metadata
 from services.console.api.sqlite_snapshot import (
     SqliteSnapshotError,
@@ -518,7 +523,7 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
     json_side = _bars_from_klines_json(_MEXC_KLINES_JSON)
     bars = json_side["bars"] or market_side["bars"]
     bnh = _buy_and_hold(bars, curve) if has else {"present": False}
-    return {
+    payload = {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -546,6 +551,7 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
         "venue": "MEXC",
         "strategy_id": _MEXC_STRATEGY_ID,
         "n_runs": len(canonical),
+        "retained_invalidated_run_count": len(runs),
         "canonical_data_source": canonical_source,
         "n_legacy_runs": len(runs) - len(canonical),
         "metrics": {
@@ -572,6 +578,13 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
             "的微小真实金额。L2_DRY_RUN_ONLY。"
         ),
     }
+    projected = scrub_backtest_payload(payload, authority_records=canonical)
+    # This endpoint is intrinsically a backtest-derived projection.  Preserve
+    # transport/store availability separately in ``snapshot_status`` while
+    # keeping its operator-facing verdict unambiguously non-authoritative even
+    # when the retained store cannot be opened.
+    projected["verdict"] = projected["invalidation_code"]
+    return projected
 
 
 @router.get("/api/v1/console/mexc-strategy")
@@ -760,6 +773,7 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
 
     strategy_runs = 0
     mexc_data_runs = 0
+    retained_mexc_data_runs = 0
     dry_run_readable = True
     try:
         with _sqlite_copy(_DRY_RUN_DB) as snapshot:
@@ -771,34 +785,49 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
                             continue
                         strategy_runs += 1
                         if (r.get("detail") or {}).get("data_source") == "MEXC_PIT":
-                            mexc_data_runs += 1
+                            retained_mexc_data_runs += 1
+                            if authority_admitted((r,)):
+                                mexc_data_runs += 1
                 finally:
                     store.close()
     except Exception:
         dry_run_readable = False
         strategy_runs = 0
         mexc_data_runs = 0
-    checks.append(
-        _readiness_check(
-            "dry_run_evidence",
-            "btc_spot_trend 干跑执行证据(dry_run.db,MEXC 数据口径)",
-            dry_run_readable and mexc_data_runs > 0,
-            (
-                f"{mexc_data_runs} 条 MEXC 数据干跑 run 在案"
-                if dry_run_readable and mexc_data_runs > 0
+        retained_mexc_data_runs = 0
+    dry_run_check = _readiness_check(
+        "dry_run_evidence",
+        "btc_spot_trend 干跑执行证据(dry_run.db,MEXC 数据口径)",
+        dry_run_readable and mexc_data_runs > 0,
+        (
+            f"{mexc_data_runs} 条 authoritative MEXC 数据干跑 run 在案"
+            if dry_run_readable and mexc_data_runs > 0
+            else (
+                "dry_run.db 无法取得稳定一致快照——UNAVAILABLE"
+                if not dry_run_readable
                 else (
-                    "dry_run.db 无法取得稳定一致快照——UNAVAILABLE"
-                    if not dry_run_readable
-                    else (
-                    f"无 MEXC 数据干跑 run(仅 {strategy_runs} 条 LEGACY/CoinGecko 切换前旧口径,"
-                    "不作数)——先跑 tools/live_data_refresh 再跑 tools/dry_run_btc_spot_multi"
+                    f"无 authoritative MEXC 干跑 run(保留 {retained_mexc_data_runs} 条 "
+                    "INVALIDATED_PERP_LEDGER_V1 MEXC 旧记录及 "
+                    f"{strategy_runs - retained_mexc_data_runs} 条其他旧口径,均不作数)"
                     if strategy_runs
                     else "无 btc_spot_trend 干跑 run——执行现实未检验"
-                    )
+                )
+            )
+        ),
+    )
+    if mexc_data_runs == 0:
+        dry_run_check = invalidated_check(
+            dry_run_check,
+            reason=(
+                "dry_run.db 无法取得稳定一致快照；无可验证 authority"
+                if not dry_run_readable
+                else (
+                    "缺少 independently admitted backtest authority；保留的 MEXC/V1 "
+                    "dry-run 记录仅为 INVALIDATED_PERP_LEDGER_V1 诊断历史"
                 )
             ),
         )
-    )
+    checks.append(dry_run_check)
 
     checks.append(
         _credential_boundary_check(

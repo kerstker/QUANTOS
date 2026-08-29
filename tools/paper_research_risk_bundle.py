@@ -30,6 +30,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from quantos.contracts.hashing import stable_hash
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.risk.research_risk.bundle import (
     BUNDLE_PROVENANCE,
     BUNDLE_SCHEMA_VERSION,
@@ -1266,7 +1267,7 @@ def _write(path: Path, document: Mapping[str, Any]) -> None:
     temporary.replace(path)
 
 
-def run_bundle(
+def _run_bundle_legacy_diagnostic(
     *,
     forward_db: str | Path = DEFAULT_FORWARD_DB,
     dataset_evidence: str | Path = DEFAULT_DATASET_EVIDENCE,
@@ -1365,7 +1366,7 @@ def run_bundle(
         staged_output.unlink(missing_ok=True)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _main_legacy_diagnostic(argv: Sequence[str] | None = None) -> int:
     global _LAST_RELEASE_RUN_ATTESTATION
     _LAST_RELEASE_RUN_ATTESTATION = None
     parser = argparse.ArgumentParser(description="Publish a fail-closed paper research-risk preflight")
@@ -1380,7 +1381,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     args = parser.parse_args(argv)
     try:
-        document = run_bundle(
+        document = _run_bundle_legacy_diagnostic(
             forward_db=args.forward_db,
             dataset_evidence=args.dataset_evidence,
             evaluations=args.evaluations,
@@ -1403,6 +1404,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     # publish must keep Task Scheduler and release receipts healthy; only the
     # exception path above returns non-zero.
     return 0
+
+
+def run_bundle(
+    *,
+    forward_db: str | Path = DEFAULT_FORWARD_DB,
+    dataset_evidence: str | Path = DEFAULT_DATASET_EVIDENCE,
+    evaluations: str | Path = DEFAULT_EVALUATIONS,
+    forward_evaluations: str | Path = DEFAULT_FORWARD_EVALUATIONS,
+    forward_status: str | Path = DEFAULT_FORWARD_STATUS,
+    fx_db: str | Path = DEFAULT_FX_DB,
+    maintenance: str | Path = DEFAULT_MAINTENANCE,
+    paper_aum_usd: float = DEFAULT_PAPER_AUM_USD,
+    output: str | Path = DEFAULT_OUTPUT,
+    alpha_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Block legacy evaluation-to-risk authority before any read or mutation."""
+
+    quarantine_legacy_backtest("tools.paper_research_risk_bundle.run_bundle")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Block the CLI before parsing arguments or clearing/writing state."""
+
+    quarantine_legacy_backtest("tools.paper_research_risk_bundle.main")
 
 
 if __name__ == "__main__":

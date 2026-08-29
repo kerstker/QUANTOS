@@ -127,28 +127,10 @@ class TaskSnapshot:
 
 
 EXPECTED_TASKS: dict[str, ExpectedTask] = {
-    "QUANTOS_factory_loop": ExpectedTask("crypto_factory_loop", 9 * _DAY_MS),
-    "QUANTOS_ic_panel_refresh": ExpectedTask("ic_panel_research", 9 * _DAY_MS),
-    "QUANTOS_paper_alpha_evaluation": ExpectedTask(
-        "paper_alpha_evaluation", 9 * _DAY_MS, frozenset({2})
-    ),
-    "QUANTOS_alpha_lifecycle_cockpit": ExpectedTask(
-        "alpha_lifecycle_cockpit", 15 * 60_000
-    ),
-    "QUANTOS_alpha_production_workflow": ExpectedTask(
-        "alpha_production_workflow", 15 * 60_000
-    ),
-    "QUANTOS_candidate_dry_run": ExpectedTask(
-        "dry_run_candidate_multi", 2 * _DAY_MS
-    ),
-    "QUANTOS_candidate_portfolio_evidence": ExpectedTask(
-        "candidate_portfolio_evidence", 2 * _DAY_MS
-    ),
     "QUANTOS_cross_venue_liquidation_health": ExpectedTask(
         "cross_venue_liquidation_health", 2 * _HOUR_MS
     ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
-    "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_binance_book_depth_forward_refresh": ExpectedTask(
         "binance_book_depth_forward_refresh", 2 * _DAY_MS
     ),
@@ -174,16 +156,11 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         "domain_event_ops", 3 * _HOUR_MS, frozenset({2})
     ),
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
-    "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
-    "QUANTOS_paper_research_risk_bundle": ExpectedTask(
-        "paper_research_risk_bundle", 2 * _DAY_MS, frozenset({2})
-    ),
     "QUANTOS_paper_order_preview": ExpectedTask(
         "paper_order_preview",
         2 * _DAY_MS,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
-    "QUANTOS_paper_realtime": ExpectedTask("paper_realtime", 15 * 60_000),
     "QUANTOS_binance_realtime_market": ExpectedTask(
         "binance_realtime_market", 15 * 60_000
     ),
@@ -231,15 +208,12 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         "bybit_realtime_stream", 15 * 60_000
     ),
     "QUANTOS_paper_multivenue_sor": ExpectedTask(
-        "paper_multivenue_sor", 15 * 60_000
-    ),
-    "QUANTOS_paper_operational_evidence": ExpectedTask(
-        "paper_operational_evidence",
+        "paper_multivenue_sor",
         15 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
-    "QUANTOS_paper_realtime_10k": ExpectedTask(
-        "paper_realtime_10k",
+    "QUANTOS_paper_operational_evidence": ExpectedTask(
+        "paper_operational_evidence",
         15 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
@@ -269,6 +243,24 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_artifact_admission_seal": ExpectedTask(
         "artifact_admission_seal", 2 * _DAY_MS, frozenset({2})
     ),
+}
+
+# These legacy V1 profitability/evaluation workers are deliberately absent or
+# disabled after their authority was invalidated.  Keep them in an explicit
+# denylist so a stale registration cannot become invisible to the watchdog.
+QUARANTINED_TASKS: dict[str, str] = {
+    "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
+    "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
+    "QUANTOS_factory_loop": "crypto_factory_loop",
+    "QUANTOS_ic_panel_refresh": "ic_panel_research",
+    "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
+    "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
+    "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
+    "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
+    "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
+    "QUANTOS_paper_realtime": "paper_realtime",
+    "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
+    "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
 }
 
 
@@ -1776,6 +1768,39 @@ def evaluate_schedule(
             check = _merge_backup_history(check, backup_history_health)
         checks.append(check)
 
+    for name in QUARANTINED_TASKS:
+        snapshot = by_name.get(name)
+        if snapshot is None:
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "PASS",
+                    "code": "QUARANTINED_NOT_REGISTERED",
+                    "detail": "invalidated legacy task is not registered",
+                }
+            )
+        elif snapshot.state == "Disabled":
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "PASS",
+                    "code": "DISABLED_EXPECTED",
+                    "detail": "invalidated legacy task remains disabled",
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "BREACH",
+                    "code": "QUARANTINED_TASK_ENABLED",
+                    "detail": (
+                        "invalidated legacy task must be absent or disabled; "
+                        f"task state is {snapshot.state}"
+                    ),
+                }
+            )
+
     for name in sorted(duplicates):
         checks.append(
             {
@@ -1786,7 +1811,11 @@ def evaluate_schedule(
             }
         )
     for name, snapshot in sorted(by_name.items()):
-        if name in EXPECTED_TASKS or snapshot.state == "Disabled":
+        if (
+            name in EXPECTED_TASKS
+            or name in QUARANTINED_TASKS
+            or snapshot.state == "Disabled"
+        ):
             continue
         checks.append(
             {

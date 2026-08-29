@@ -3,6 +3,12 @@ from __future__ import annotations
 from contextlib import nullcontext
 from types import SimpleNamespace
 
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research.alpha_expression import FieldPanel
 from tools import paper_alpha_evaluation as driver
 
@@ -143,7 +149,7 @@ def test_run_freezes_search_clock_after_expensive_candidate_assembly(
     )
     monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
 
-    driver.run(output=tmp_path / "paper.json")
+    driver._run_legacy_diagnostic(output=tmp_path / "paper.json")
 
     assert order == ["panel", "candidates", "clock", "batch"]
 
@@ -182,6 +188,51 @@ def test_forward_run_freezes_search_clock_after_candidate_assembly(
 
     monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
 
-    driver.run_forward(output=tmp_path / "forward.json")
+    driver._run_forward_legacy_diagnostic(output=tmp_path / "forward.json")
 
     assert order == ["panel", "candidates", "clock", "batch"]
+
+
+def test_public_entrypoints_quarantine_before_io_or_output_mutation(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import crypto_oi_research
+
+    touched: list[str] = []
+    paper_output = tmp_path / "paper.json"
+    forward_output = tmp_path / "forward.json"
+    forward_status = tmp_path / "forward-status.json"
+    paper_output.write_bytes(b"existing-paper-authority")
+    forward_output.write_bytes(b"existing-forward-authority")
+    forward_status.write_bytes(b"existing-forward-status")
+
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} touched before legacy authority quarantine")
+
+        return _forbidden
+
+    monkeypatch.setattr(crypto_oi_research, "build_panel", forbidden("panel"))
+    monkeypatch.setattr(driver.time, "time_ns", forbidden("clock"))
+    monkeypatch.setattr(
+        driver,
+        "production_experiment_registry",
+        forbidden("experiment registry"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        driver.run(output=paper_output, recorded_at=1)
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        driver.run_forward(
+            output=forward_output,
+            recorded_at=1,
+            forward_status=forward_status,
+        )
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        driver.main(["--not-a-real-argument"])
+
+    assert touched == []
+    assert paper_output.read_bytes() == b"existing-paper-authority"
+    assert forward_output.read_bytes() == b"existing-forward-authority"
+    assert forward_status.read_bytes() == b"existing-forward-status"

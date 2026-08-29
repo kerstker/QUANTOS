@@ -17,6 +17,10 @@ from quantos.contracts.events import (
     Event,
     event_timestamp_from_milliseconds,
 )
+from services.execution.canonical_store_admission import (
+    CanonicalStoreAdmissionError,
+    require_authoritative_binding,
+)
 from services.execution.simulated_tca import verify_route_tca_record
 
 
@@ -478,6 +482,38 @@ class DryRunStore:
     def _run_record(run: DryRunRun) -> dict:
         return run.as_record()
 
+    @staticmethod
+    def _require_authoritative_write(
+        run: DryRunRun,
+        authority_record: Mapping[str, object] | None,
+    ) -> None:
+        """Admit only an exact, externally verified aggregate.
+
+        Requiring equality with ``run.as_record()`` is load-bearing.  Merely
+        embedding a genuine V2 manifest inside an arbitrary legacy summary
+        would otherwise leave the outer P&L and approval counts forgeable.
+        """
+
+        if not isinstance(run, DryRunRun):
+            raise TypeError("run must be a DryRunRun")
+        detail = run.detail
+        manifest_hash = detail.get("manifest_hash") if isinstance(detail, Mapping) else None
+        result_hash = detail.get("result_hash") if isinstance(detail, Mapping) else None
+        try:
+            require_authoritative_binding(
+                authority_record,
+                run_id=run.run_id,
+                manifest_hash=manifest_hash,
+                result_hash=result_hash,
+            )
+        except CanonicalStoreAdmissionError as exc:
+            raise DryRunStoreError(str(exc)) from exc
+        if dict(authority_record) != run.as_record():
+            raise DryRunStoreError(
+                "canonical persistence blocked: signed authority does not bind the "
+                "exact retained dry-run aggregate"
+            )
+
     def _write_run_locked(self, run: DryRunRun) -> bool:
         self._validate_run_route_tca(run)
         existing = self._conn.execute(
@@ -507,7 +543,13 @@ class DryRunStore:
         )
         return True
 
-    def save_run(self, run: DryRunRun) -> None:
+    def save_run(
+        self,
+        run: DryRunRun,
+        *,
+        authority_record: Mapping[str, object] | None = None,
+    ) -> None:
+        self._require_authoritative_write(run, authority_record)
         try:
             self._conn.execute("BEGIN IMMEDIATE")
             self._write_run_locked(run)
@@ -523,7 +565,9 @@ class DryRunStore:
         messages: list[DryRunOutboxEvent],
         *,
         require_completion: bool = False,
+        authority_record: Mapping[str, object] | None = None,
     ) -> None:
+        self._require_authoritative_write(run, authority_record)
         self._require_outbox()
         messages = list(messages)
         if any(not isinstance(message, DryRunOutboxEvent) for message in messages):
@@ -678,6 +722,7 @@ class DryRunStore:
         *,
         dispatched_at: int,
         event_repro_hash: str,
+        authority_record: Mapping[str, object] | None = None,
     ) -> bool:
         self._require_outbox()
         if not isinstance(outbox_id, str) or not outbox_id:
@@ -690,6 +735,17 @@ class DryRunStore:
             raise ValueError("dispatched_at must be a non-negative integer")
         if not isinstance(event_repro_hash, str) or not event_repro_hash:
             raise ValueError("event_repro_hash must be non-empty")
+
+        outbox_run = self._conn.execute(
+            "SELECT r.* FROM dry_run_outbox o JOIN dry_run r ON r.run_id=o.run_id "
+            "WHERE o.outbox_id=?",
+            (outbox_id,),
+        ).fetchone()
+        if outbox_run is None:
+            raise DryRunStoreError("outbox dispatch reference mismatch")
+        self._require_authoritative_write(
+            DryRunRun(**self._row(outbox_run)), authority_record
+        )
 
         previous_outbox_head = self._outbox_head_hash
         previous_dispatch_head = self._dispatch_head_hash

@@ -34,9 +34,13 @@ def _zip_for(day_ms: int) -> bytes:
 
 
 def test_parse_takes_end_of_day_row():
-    rec = f.parse_metrics_zip(_zip_for(1_700_000_000_000 // _DAY * _DAY))
+    day = 1_700_000_000_000 // _DAY * _DAY
+    rec = f.parse_metrics_zip(_zip_for(day))
     assert rec == {"oi": 113512.884, "oi_value": 3041271241.99,
-                   "top_ls": 1.2777, "global_ls": 2.3994, "taker_ls": 0.8979}
+                   "top_ls": 1.2777, "global_ls": 2.3994, "taker_ls": 0.8979,
+                   "source_event_time_ms": day + 23 * 3_600_000 + 55 * 60_000,
+                   "available_time_ms": day + _DAY,
+                   "ingestion_time_ms": None}
 
 
 def test_parse_empty_or_garbage_is_empty():
@@ -76,10 +80,13 @@ def test_fetch_archives_exact_metrics_zip_with_parse_outcome(tmp_path):
         http_get_bytes=lambda _url: _zip_for(base),
         max_workers=1,
         archive_root=str(tmp_path),
-        observed_at_ms=base + _DAY,
+        observed_at_ms=base + 2 * _DAY,
     )
 
     assert set(out) == {base}
+    assert out[base]["source_event_time_ms"] == base + 23 * 3_600_000 + 55 * 60_000
+    assert out[base]["available_time_ms"] == base + 2 * _DAY
+    assert out[base]["ingestion_time_ms"] == base + 2 * _DAY
     lineage = summarize_archive(str(tmp_path))
     assert lineage["status"] == "PASS"
     assert lineage["datasets"] == {"oi_metrics": 1}
@@ -183,3 +190,67 @@ def test_find_end_bounds_delisted_coin():
     got = f.find_end_ms("DEAD", http_get_bytes=stub, now_ms=now)
     # backward month-step scan lands within ~a month of the true last day, never past it materially
     assert got is not None and abs(got - death) <= 31 * _DAY and got < now
+
+
+def test_main_refetches_legacy_cache_epoch_but_skips_current_row(
+    tmp_path,
+    monkeypatch,
+):
+    base = 1_700_000_000_000 // _DAY * _DAY
+    current_day = base + _DAY
+    cache_path = tmp_path / "oi.json"
+    snap_path = tmp_path / "oi-snapshot.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "_meta": {"BTC": {"start": base, "through": current_day}},
+                "data": {
+                    "BTC": {
+                        str(base): {
+                            "oi": 1.0,
+                            "oi_value": 2.0,
+                            "top_ls": 1.0,
+                            "global_ls": 1.0,
+                            "taker_ls": 1.0,
+                        },
+                        str(current_day): {
+                            "oi": 3.0,
+                            "oi_value": 4.0,
+                            "top_ls": 1.0,
+                            "global_ls": 1.0,
+                            "taker_ls": 1.0,
+                            "source_event_time_ms": current_day + _DAY - 300_000,
+                            "available_time_ms": current_day + _DAY,
+                            "ingestion_time_ms": current_day + _DAY,
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    requested = []
+
+    def fetch(url: str) -> bytes:
+        requested.append(url)
+        assert f._day_str(base) in url
+        return _zip_for(base)
+
+    monkeypatch.setattr(f.time, "time", lambda: (base + 2 * _DAY) / 1_000)
+    result = f.main(
+        ["BTC"],
+        sleep=0,
+        cache_path=str(cache_path),
+        snap_path=str(snap_path),
+        http_get_bytes=fetch,
+        observed_at_ms=base + 3 * _DAY,
+    )
+
+    saved = json.loads(cache_path.read_text(encoding="utf-8"))
+    repaired = saved["data"]["BTC"][str(base)]
+    assert len(requested) == 1
+    assert repaired["source_event_time_ms"] == base + _DAY - 300_000
+    assert repaired["available_time_ms"] == base + 3 * _DAY
+    assert repaired["ingestion_time_ms"] == base + 3 * _DAY
+    assert saved["data"]["BTC"][str(current_day)]["oi"] == 3.0
+    assert result["failed_tickers"] == []

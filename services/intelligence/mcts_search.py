@@ -21,6 +21,10 @@ import math
 from typing import Callable, Optional, Sequence
 
 from services.research.ports.persistence import TrialPersistenceError
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 
 from .agent_loop import ResearchAgentLoop
 from .evidence import provider_leakage_evidence
@@ -64,7 +68,12 @@ class MCTSAlphaSearch:
         cands = [(defn, periods)]
         # 断点1 (方案A): provider-supplied real leakage_ok evidence -> evaluator gate (else {} = fail-closed).
         evidence = provider_leakage_evidence(self.provider, cands)
-        out = self.inner_loop.run(cands, timestamp=timestamp, evidence=evidence)
+        out = self.inner_loop.run(
+            cands,
+            timestamp=timestamp,
+            evidence=evidence,
+            diagnostic_only=True,
+        )
         report.update(out["report"])
         entry = out["report"].get(defn.alpha_id, {})
         r = evaluation_reward(entry.get("evaluation"))
@@ -112,7 +121,11 @@ class MCTSAlphaSearch:
                 node.value = v
             node = node.parent
 
-    def run(self, seed_genomes: Sequence, *, iterations: int, timestamp: int = 0) -> dict:
+    def run(self, seed_genomes: Sequence, *, iterations: int, timestamp: int = 0,
+            diagnostic_only: bool = False) -> dict:
+        require_diagnostic_selection_seam(
+            "MCTSAlphaSearch.run", diagnostic_only=diagnostic_only
+        )
         if not seed_genomes:
             raise ValueError("seed_genomes must be non-empty")
         if iterations < 1:
@@ -130,4 +143,6 @@ class MCTSAlphaSearch:
             self._backprop(child if child is not None else node)
 
         best = sorted(evaluated.items(), key=lambda gr: (-gr[1], repr(gr[0])))
-        return {"best": best, "report": report, "n_evaluated": len(evaluated)}
+        return {"best": best, "report": report, "n_evaluated": len(evaluated),
+                "diagnostic_only": True, "selection_authority": False,
+                "invalidation_code": LEGACY_INVALIDATION_CODE}

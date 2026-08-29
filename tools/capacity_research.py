@@ -13,6 +13,7 @@ import statistics
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.realism.capacity_curve import capacity_band
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE, QUANTILE as CARRY_Q, _legs as carry_legs
@@ -91,7 +92,14 @@ def _carry_panel():
     pctile = {inst: (i + 1) / len(ranked) for i, inst in enumerate(ranked)}
     liquid = [inst for inst in instruments if pctile[inst] >= 0.5]
     ets = sorted({b.event_time for inst in liquid for b in store.fetch_bars(inst, -10 ** 18, 10 ** 18)})
-    panel = ax.build_field_panel(store, liquid, ets, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        liquid,
+        ets,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in ets],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(i, {}).get(t) for i in panel.instruments]
                                  for t in panel.event_times]
     return panel
@@ -133,6 +141,7 @@ def _fmt(v):
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.capacity_research")
     snap = {"provenance": "UNCALIBRATED_PRINCIPLED", "aum_grid": _AUM_GRID,
             "impact_coef_lo_hi": _COEF_LO_HI, "sharpe_floor": 0.3, "books": {},
             "note": "冲击系数未校准(L2 无 tick),容量为区间带;trend(PIT as_of 无 volume)本轮未算,留 RE-1 后续。"}

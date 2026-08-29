@@ -11,6 +11,7 @@ MODEL_RISK M1→M2)。
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import tempfile
 from pathlib import Path
@@ -180,7 +181,7 @@ def test_promotion_model_card_gate_approved_missing(tmp_path):
         pass
 
 
-def test_promotion_model_card_gate_approved_present(tmp_path):
+def test_promotion_model_card_gate_approved_present(tmp_path, monkeypatch):
     """→APPROVED 晋级且 model_card 存在 → 通过 gate,正常 consume。"""
     # 创建 model_card 文件
     model_cards_dir = tmp_path / "model_cards"
@@ -200,7 +201,7 @@ def test_promotion_model_card_gate_approved_present(tmp_path):
     # Patch promotion.verify_model_card_exists(promotion imports it directly)
     import services.alpha.promotion as promotion_mod
 
-    original_verify = promotion_mod.verify_model_card_exists
+    original_gather = promotion_mod.gather_promotion_evidence
 
     def patched_verify(strategy_id, *, base_dir=None):
         # Always pass tmp_path as base_dir
@@ -208,7 +209,21 @@ def test_promotion_model_card_gate_approved_present(tmp_path):
 
         return real_verify(strategy_id, base_dir=str(tmp_path))
 
-    promotion_mod.verify_model_card_exists = patched_verify
+    def patched_gather(*args, **kwargs):
+        evidence = original_gather(*args, **kwargs)
+        return replace(
+            evidence,
+            authoritative_backtest_present=True,
+            authoritative_backtest_verified=True,
+            full_research_risk_9_of_9=True,
+            profitability_projection_verified=True,
+            authoritative_backtest_run_id="model-card-gate-test-authority",
+            backtest_sharpe=1.2,
+            paper_sharpe=1.1,
+        )
+
+    monkeypatch.setattr(promotion_mod, "verify_model_card_exists", patched_verify)
+    monkeypatch.setattr(promotion_mod, "gather_promotion_evidence", patched_gather)
     try:
         outcome = execute_promotion(
             store=approval_store,
@@ -229,8 +244,7 @@ def test_promotion_model_card_gate_approved_present(tmp_path):
         # 审计日志写入
         assert outcome.audit_ok
     finally:
-        # 恢复 + cleanup
-        promotion_mod.verify_model_card_exists = original_verify
+        # cleanup
         try:
             approval_store._c.close()
         except:

@@ -12,6 +12,7 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.alpha_factory import run_alpha_factory
 from services.validation.cpcv import cpcv_summary
@@ -30,6 +31,7 @@ WINDOWS = [3, 5, 7, 14]
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_factory_run")
     recorded_at = time.time_ns() // 1_000_000
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
@@ -37,7 +39,14 @@ def main() -> None:
                           for b in store.fetch_bars(inst, -10**18, 10**18)})
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in json.load(open(_FUND_CACHE, encoding="utf-8")).items()}
-    panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        instruments,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
     dataset_version = field_panel_dataset_version(panel)

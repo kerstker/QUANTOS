@@ -1,7 +1,7 @@
 import csv
 import pytest
-from services.data.persistent_store import SqlitePITStore
-from services.data.file_ingest import ingest_bars_csv
+from services.data.persistent_store import DataStoreError, SqlitePITStore
+from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
 
 # bitemporal invariant: knowledge_time >= event_time
 _HEADER = ["instrument_id", "event_time", "knowledge_time", "open", "high", "low", "close", "volume"]
@@ -46,6 +46,34 @@ def test_reingest_is_idempotent_same_hash(tmp_path):
     assert a.bars_ingested == 1 and b.bars_ingested == 0 and b.duplicates == 1
     assert a.content_hash == b.content_hash
     assert len(store.as_of("X", as_of_time=60)) == 1
+
+
+def test_reingest_same_identity_with_changed_content_is_not_a_duplicate(tmp_path):
+    first = tmp_path / "first.csv"
+    changed = tmp_path / "changed.csv"
+    _write_csv(first, [["X", 10, 10, 100, 101, 99, 100, 1000]])
+    _write_csv(changed, [["X", 10, 10, 200, 201, 199, 200, 1000]])
+    store = SqlitePITStore(":memory:", create=True)
+    ingest_bars_csv(str(first), store)
+
+    with pytest.raises(DataStoreError, match="identity conflict"):
+        ingest_bars_csv(str(changed), store)
+
+    assert store.latest_as_of("X", as_of_time=60).close == 100.0
+
+
+def test_strict_reingest_content_conflict_fails_and_preserves_store(tmp_path):
+    first = tmp_path / "first-strict.csv"
+    changed = tmp_path / "changed-strict.csv"
+    _write_csv(first, [["X", 10, 10, 100, 101, 99, 100, 1000]])
+    _write_csv(changed, [["X", 10, 10, 200, 201, 199, 200, 1000]])
+    store = SqlitePITStore(":memory:", create=True)
+    ingest_bars_csv(str(first), store, strict=True)
+
+    with pytest.raises(FatalIngestionError, match="atomic write failed"):
+        ingest_bars_csv(str(changed), store, strict=True)
+
+    assert store.latest_as_of("X", as_of_time=60).close == 100.0
 
 
 def test_future_knowledge_time_rejected(tmp_path):

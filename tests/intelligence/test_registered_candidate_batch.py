@@ -8,6 +8,10 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.cost import CostModel
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    SelectionAuthorityBlocked,
+)
 from services.intelligence import registered_candidate_batch as batch_module
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
@@ -15,8 +19,18 @@ from services.research.ports.persistence import ExperimentStoreError
 from tools import crypto_alpha_search
 
 
+run_registered_candidate_batch = (
+    batch_module._run_registered_candidate_batch_legacy_diagnostic
+)
+
+
 def _registry() -> ExperimentRegistry:
     return ExperimentRegistry(SqliteExperimentStore(":memory:", create=True))
+
+
+def test_public_registered_batch_is_quarantined_before_validation():
+    with pytest.raises(SelectionAuthorityBlocked, match=LEGACY_INVALIDATION_CODE):
+        batch_module.run_registered_candidate_batch(object())
 
 
 def _candidates(count: int):
@@ -84,7 +98,7 @@ def test_candidate_pool_is_durable_before_agent_scoring(monkeypatch) -> None:
         "run",
         assert_pre_registered,
     )
-    result = batch_module.run_registered_candidate_batch(
+    result = run_registered_candidate_batch(
         candidates,
         registry=registry,
         search_id="registered-batch",
@@ -95,6 +109,9 @@ def test_candidate_pool_is_durable_before_agent_scoring(monkeypatch) -> None:
     )
 
     assert result["registered_candidate_count"] == len(candidates)
+    assert result["selection_authority"] is False
+    assert result["evidence_status"] == "DIAGNOSTIC_ONLY"
+    assert result["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
     assert [
         row["status"]
         for row in registry.search_attempt_events("registered-batch")
@@ -137,7 +154,7 @@ def test_registered_batch_passes_explicit_execution_contract_to_evaluator(monkey
     monkeypatch.setattr(batch_module, "AlphaEvaluator", capture_evaluator)
     monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", no_score)
 
-    batch_module.run_registered_candidate_batch(
+    run_registered_candidate_batch(
         candidates,
         registry=registry,
         search_id="explicit-cost-batch",
@@ -195,7 +212,7 @@ def test_failed_agent_run_retains_candidates_and_failed_terminal(monkeypatch) ->
         fail_after_registration,
     )
     with pytest.raises(RuntimeError, match="agent scorer failed"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             candidates,
             registry=registry,
             search_id="failed-batch",
@@ -235,7 +252,7 @@ def test_batch_never_sweeps_stale_attempts_implicitly(monkeypatch) -> None:
         },
     )
     with pytest.raises(ValueError, match="automatic stale recovery is disabled"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             _candidates(2),
             registry=registry,
             search_id="recovery-batch",
@@ -254,7 +271,7 @@ def test_batch_never_sweeps_stale_attempts_implicitly(monkeypatch) -> None:
         recorded_at=100,
         timeout_ms=50,
     ) == ("crashed-prior-batch",)
-    result = batch_module.run_registered_candidate_batch(
+    result = run_registered_candidate_batch(
         _candidates(2),
         registry=registry,
         search_id="recovery-batch",
@@ -297,7 +314,7 @@ def test_failed_terminal_write_does_not_mask_original_agent_error(
     monkeypatch.setattr(registry, "finish_search_attempt", fail_terminal)
 
     with pytest.raises(RuntimeError, match="original scorer failure") as captured:
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             candidates,
             registry=registry,
             search_id="terminal-write-failed",
@@ -343,7 +360,7 @@ def test_agent_evaluations_and_catalog_are_saved_before_completion(
         "run",
         return_evaluations,
     )
-    result = batch_module.run_registered_candidate_batch(
+    result = run_registered_candidate_batch(
         candidates,
         registry=registry,
         search_id="saved-batch",
@@ -392,7 +409,7 @@ def test_periods_per_year_is_explicitly_owned_by_registered_batch(
         }
 
     monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", inspect_evaluator)
-    batch_module.run_registered_candidate_batch(
+    run_registered_candidate_batch(
         _candidates(1),
         registry=registry,
         search_id="weekly-batch",
@@ -405,7 +422,7 @@ def test_periods_per_year_is_explicitly_owned_by_registered_batch(
     assert observed == {"periods_per_year": 52}
     for invalid in (True, 0, -1, 52.0):
         with pytest.raises(ValueError, match="periods_per_year"):
-            batch_module.run_registered_candidate_batch(
+            run_registered_candidate_batch(
                 _candidates(1),
                 registry=registry,
                 search_id=f"invalid-{invalid}",
@@ -472,7 +489,7 @@ def test_two_dataset_reevaluations_preserve_existing_paper_lifecycle_row(
 
     for index, dataset_version in enumerate(("dataset-v1", "dataset-v2"), start=1):
         search_id = f"reevaluation-{index}"
-        result = batch_module.run_registered_candidate_batch(
+        result = run_registered_candidate_batch(
             candidates,
             registry=registry,
             search_id=search_id,
@@ -516,6 +533,11 @@ def test_crypto_alpha_search_registers_candidates_outside_top_fifteen(
         batch_module.ResearchAgentLoop,
         "run",
         assert_complete_pool,
+    )
+    monkeypatch.setattr(
+        crypto_alpha_search,
+        "run_registered_candidate_batch",
+        run_registered_candidate_batch,
     )
     crypto_alpha_search._run_registered_pool(
         candidates,

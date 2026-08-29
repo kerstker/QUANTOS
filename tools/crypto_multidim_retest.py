@@ -26,6 +26,7 @@ from collections import OrderedDict, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.robust_optimization import vol_target_returns
 from tools.crypto_oi_research import CARRY, _legs, build_panel
@@ -721,6 +722,7 @@ def run(*, report_path: str = DEFAULT_REPORT, cells_path: str = DEFAULT_CELLS, m
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    quarantine_legacy_backtest("tools.crypto_multidim_retest")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", default=DEFAULT_REPORT)
     parser.add_argument("--cells", default=DEFAULT_CELLS)

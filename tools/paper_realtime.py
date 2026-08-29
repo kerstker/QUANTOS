@@ -28,17 +28,19 @@ from quantos.contracts.paper import FillMethod, OrderSide, PaperFill
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SAFE_BLOCKED,
-    SCHEDULE_EXIT_SUCCESS,
+)
+from services.execution.backtest_authority import (
+    LEGACY_INVALIDATION_CODE,
+    is_authoritative_backtest_record,
 )
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.execution.paper_realtime_store import PaperRealtimeStore
 from services.execution.paper_reconciliation import reconcile
+from services.validation.research_risk_authority import full_research_risk_approved
 from tools.cache_io import atomic_write_json
 from tools.binance_perp_mark_fetch import load_mark_prices
-from tools.l2_paper_operator import run_operator
 from tools.paper_health import build_report
 from tools.paper_candidate_universe import paper_candidate_ids
-from tools.paper_order_preview import run_preview
 
 
 DEFAULT_OUTPUT = os.path.join("data", "cache", "paper_realtime_status.json")
@@ -59,6 +61,8 @@ DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
 REALTIME_HISTORY_LIMIT = 96
 MARK_ONLY_REPLAY_REASON = "EXISTING_FILLED_PAPER_LEDGER_REPLAY"
+DIAGNOSTIC_ONLY_STATUS = "DIAGNOSTIC_ONLY"
+READ_ONLY_MARK_OBSERVATION = "READ_ONLY_LEGACY_PAPER_MARK"
 
 
 class PublicMarkDataError(RuntimeError):
@@ -499,7 +503,17 @@ def build_mark_snapshot(
             10,
         ),
         "by_instrument": by_instrument,
-        "status": "PAPER_MARKED" if fills else "PAPER_NO_POSITION",
+        # V1 perpetual-ledger marks remain useful for operations, but they are
+        # not paper-readiness evidence.  Keep the valuation fields for a
+        # read-only operator while making the non-load-bearing status explicit
+        # in every persisted row.
+        "status": DIAGNOSTIC_ONLY_STATUS,
+        "observation_status": "MARK_OBSERVED" if fills else "NO_POSITION_OBSERVED",
+        "observation_kind": READ_ONLY_MARK_OBSERVATION,
+        "decision_class": DIAGNOSTIC_ONLY_STATUS,
+        "evidence_status": LEGACY_INVALIDATION_CODE,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+        "readiness_eligible": False,
         "paper_only": True,
         "live_allowed": False,
         "order_submission_allowed": False,
@@ -527,9 +541,25 @@ def _backtest_summary(flow: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         snap = row.get("snapshot")
         if not alpha_id or not isinstance(snap, Mapping):
             continue
+        detail = snap.get("detail")
+        detail = detail if isinstance(detail, Mapping) else {}
+        risk = detail.get("research_risk")
+        if not isinstance(risk, Mapping):
+            risk = snap.get("research_risk")
+        if (
+            not is_authoritative_backtest_record(snap)
+            or not isinstance(risk, Mapping)
+            or not full_research_risk_approved(risk)
+        ):
+            continue
         pnl = snap.get("pnl") if isinstance(snap.get("pnl"), Mapping) else {}
         result[alpha_id] = {
             "run_id": snap.get("run_id"),
+            "strategy_id": snap.get("strategy_id"),
+            "timestamp": snap.get("timestamp"),
+            "audit_root": snap.get("audit_root"),
+            "detail": dict(detail),
+            "research_risk": dict(risk),
             "n_periods": snap.get("n_periods"),
             "total_return": pnl.get("total_return"),
             "sharpe": pnl.get("sharpe"),
@@ -537,7 +567,7 @@ def _backtest_summary(flow: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             "max_drawdown": pnl.get("max_drawdown"),
             "max_drawdown_vt": pnl.get("max_drawdown_vt"),
             "reconciliation_residual": snap.get("reconciliation_residual"),
-            "research_risk_decision": snap.get("research_risk_decision"),
+            "research_risk_decision": risk.get("decision"),
             "provenance": "REAL_AUTHORITATIVE_L2_DRY_RUN",
         }
     return result
@@ -563,10 +593,16 @@ def _pending_candidate_snapshot(
     """Expose an unfilled challenger without putting it in the mark chain."""
     forward = preview.get("forward_observation")
     forward = forward if isinstance(forward, Mapping) else {}
-    risk = preview.get("research_risk")
-    risk = risk if isinstance(risk, Mapping) else {}
-    bundle = preview.get("research_risk_bundle")
-    bundle = bundle if isinstance(bundle, Mapping) else {}
+    # Retain only clock/maturity metadata.  Legacy evaluation verdicts and
+    # research-risk packets are selection-bearing and must not be carried into
+    # a new artifact under a fresh-looking realtime status.
+    forward_observation = {
+        "observed_periods": forward.get("observed_periods"),
+        "required_periods": forward.get("required_periods"),
+        "status": DIAGNOSTIC_ONLY_STATUS,
+        "evidence_status": LEGACY_INVALIDATION_CODE,
+        "readiness_eligible": False,
+    }
     return {
         "schema_version": 1,
         "flow": "PAPER_REALTIME_CANDIDATE_STATUS",
@@ -574,9 +610,9 @@ def _pending_candidate_snapshot(
         "observed_at": int(observed_at) if isinstance(observed_at, int) else None,
         "generated_at": int(generated_at),
         "provider": "BINANCE_PUBLIC_MARK_PRICE",
-        "status": "PAPER_PENDING",
-        "candidate_stage": "FORWARD_PENDING",
-        "forward_observation": dict(forward),
+        "status": DIAGNOSTIC_ONLY_STATUS,
+        "candidate_stage": "FORWARD_OBSERVATION_ONLY",
+        "forward_observation": forward_observation,
         "n_fills": 0,
         "positions": {},
         "cash": float(aum),
@@ -595,8 +631,10 @@ def _pending_candidate_snapshot(
         "return_on_aum": 0.0,
         "turnover": 0.0,
         "reconciliation_residual": 0.0,
-        "research_risk": dict(risk),
-        "research_risk_bundle": dict(bundle),
+        "decision_class": DIAGNOSTIC_ONLY_STATUS,
+        "evidence_status": LEGACY_INVALIDATION_CODE,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+        "readiness_eligible": False,
         "paper_execution": "PAPER_BLOCKED",
         "persisted_realtime_snapshot": False,
         "execution_eligible": False,
@@ -674,29 +712,29 @@ def run_cycle(
     generated_at = int(generated_at_ms if generated_at_ms is not None else time.time() * 1000)
     candidate_ids = paper_candidate_ids()
     if operator is None:
-        operator = dict(
-            operator_runner()
-            if operator_runner is not None
-            else run_operator(
-                advance_forward=False,
-                refresh_candidate_research=False,
-            )
-        )
+        # Observation is read-only by default.  A caller may supply a retained
+        # receipt loader, but this module never launches the quarantined V1
+        # operator/preview path on its own.
+        operator = dict(operator_runner() if operator_runner is not None else {})
     else:
         operator = dict(operator)
     operator_verdict = operator.get("verdict") if isinstance(operator, Mapping) else {}
-    operator_ready = bool(
+    legacy_operator_claimed_ready = bool(
         isinstance(operator_verdict, Mapping)
         and operator_verdict.get("operator_completed") is True
         and operator_verdict.get("paper_preview_ready") is True
     )
-    operator_execution_ready = operator_ready
+    observation_allowed = legacy_operator_claimed_ready
+    # The V1 operator/preview path is no longer an order or readiness authority.
+    # Even a retained receipt claiming readiness may only unlock read-only
+    # observation of rows that are already in the paper ledger.
+    operator_execution_ready = False
     mark_only_replay = False
-    if not operator_ready and _existing_paper_ledger_is_markable(paper_store_path):
+    if not observation_allowed and _existing_paper_ledger_is_markable(paper_store_path):
         # Existing paper fills remain observable when a *new* decision is
         # blocked by data admission.  This is deliberately a mark-only mode:
         # no order preview is created and no new paper order can be admitted.
-        operator_ready = True
+        observation_allowed = True
         mark_only_replay = True
     errors: dict[str, str] = {}
     snapshots: dict[str, dict[str, Any]] = {}
@@ -715,8 +753,10 @@ def run_cycle(
     history: list[dict[str, Any]] = []
     funding_rates = _load_json(funding_rates_path)
     funding_marks = _load_mark_history(mark_history_path)
-    if operator_ready:
-        order_store = PaperExecutionStore(paper_store_path, create=True)
+    if observation_allowed:
+        # The invalidated V1 order ledger is retention-only.  Never initialize
+        # or mutate its schema from the observation worker.
+        order_store = PaperExecutionStore(paper_store_path, create=False)
         try:
             order_rows = order_store.rows()
             paper_ledger_rows = len(order_rows)
@@ -853,30 +893,6 @@ def run_cycle(
                     if isinstance(preview, Mapping)
                     else {}
                 )
-                for alpha_id in execution_ids:
-                    if alpha_id in backtests:
-                        continue
-                    row = preview_rows.get(alpha_id) if isinstance(preview_rows, Mapping) else None
-                    if not isinstance(row, Mapping):
-                        continue
-                    risk = row.get("research_risk")
-                    risk = risk if isinstance(risk, Mapping) else {}
-                    returns = risk.get("alpha_returns")
-                    backtests[alpha_id] = {
-                        "run_id": row.get("run_id"),
-                        "n_periods": len(returns.get(alpha_id, ()))
-                        if isinstance(returns, Mapping)
-                        and isinstance(returns.get(alpha_id), (list, tuple))
-                        else None,
-                        "total_return": None,
-                        "sharpe": None,
-                        "sharpe_vt": None,
-                        "max_drawdown": None,
-                        "max_drawdown_vt": None,
-                        "reconciliation_residual": row.get("reconciliation_residual"),
-                        "research_risk_decision": risk.get("decision"),
-                        "provenance": "REAL_PAPER_CANDIDATE_RISK_INPUTS",
-                    }
                 # Keep every discovered challenger visible in the realtime
                 # artifact.  These rows are intentionally not appended to the
                 # immutable mark chain and can never count as execution rows.
@@ -903,32 +919,30 @@ def run_cycle(
         finally:
             order_store.close()
     else:
-        errors["operator"] = "L2 paper operator did not produce a ready paper preview"
+        errors["operator"] = (
+            f"{LEGACY_INVALIDATION_CODE}: no markable retained paper ledger was available"
+        )
         chain_valid = False
 
-    paper_ready = bool(
-        operator_ready
+    diagnostic_observation_completed = bool(
+        observation_allowed
         and not errors
         and all(
-            snapshots.get(alpha_id, {}).get("status") == "PAPER_MARKED"
+            snapshots.get(alpha_id, {}).get("status") == DIAGNOSTIC_ONLY_STATUS
+            and snapshots.get(alpha_id, {}).get("observation_status") == "MARK_OBSERVED"
             for alpha_id in ALPHA_IDS
         )
         and chain_valid
     )
     backtest_ready = all(alpha_id in backtests for alpha_id in execution_ids)
-    cycle_completed = paper_ready and backtest_ready
-    if paper_ready and mark_only_replay:
-        readiness_class = "PAPER_MARKS_ONLY_REPLAY"
-    elif paper_ready and operator_execution_ready:
-        readiness_class = "PAPER_MARKS_AND_NEW_ORDERS"
-    elif paper_ready:
-        readiness_class = "PAPER_MARKS_READY_PENDING_OPERATOR"
-    else:
-        readiness_class = "PAPER_MARKS_BLOCKED"
     report = {
         "schema_version": 1,
         "flow": "PAPER_REALTIME_CYCLE",
-        "readiness": "L2_DRY_RUN_ONLY",
+        "readiness": DIAGNOSTIC_ONLY_STATUS,
+        "decision_class": DIAGNOSTIC_ONLY_STATUS,
+        "evidence_status": LEGACY_INVALIDATION_CODE,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+        "readiness_eligible": False,
         "generated_at": generated_at,
         "observed_at": provider_payload.get("observed_at"),
         "provider": provider_payload.get("provider", "BINANCE_PUBLIC_MARK_PRICE"),
@@ -941,7 +955,7 @@ def run_cycle(
                 alpha_id
                 for alpha_id, row in snapshots.items()
                 if alpha_id not in execution_ids
-                and row.get("status") == "PAPER_PENDING"
+                and row.get("candidate_stage") == "FORWARD_OBSERVATION_ONLY"
             ),
         },
         "backtests": backtests,
@@ -961,16 +975,20 @@ def run_cycle(
         "history": history,
         "errors": errors,
         "operator_mode": (
-            "PAPER_OPERATOR_READY"
-            if operator_execution_ready
+            "LEGACY_OPERATOR_CLAIM_IGNORED_OBSERVATION_ONLY"
+            if legacy_operator_claimed_ready
             else MARK_ONLY_REPLAY_REASON
             if mark_only_replay
             else "PAPER_OPERATOR_BLOCKED"
         ),
-        "readiness_class": readiness_class,
+        "readiness_class": DIAGNOSTIC_ONLY_STATUS,
         "verdict": {
-            "cycle_completed": cycle_completed,
-            "paper_mark_ready": paper_ready,
+            "cycle_completed": False,
+            "paper_mark_ready": False,
+            "diagnostic_observation_completed": diagnostic_observation_completed,
+            "decision_class": DIAGNOSTIC_ONLY_STATUS,
+            "evidence_status": LEGACY_INVALIDATION_CODE,
+            "readiness_eligible": False,
             "backtest_reference_present_for_all_three": backtest_ready,
             "backtest_reference_present_for_all_execution_candidates": backtest_ready,
             "candidate_universe_count": len(candidate_ids),
@@ -1006,6 +1024,8 @@ def _print_summary(
         if isinstance(row, Mapping):
             alpha_summary[alpha_id] = {
                 "status": row.get("status"),
+                "observation_status": row.get("observation_status"),
+                "evidence_status": row.get("evidence_status"),
                 "equity": row.get("equity"),
                 "net_pnl": row.get("net_pnl"),
                 "funding_pnl": row.get("funding_pnl"),
@@ -1020,15 +1040,19 @@ def _print_summary(
         if isinstance(row, Mapping):
             backtest_summary[alpha_id] = {
                 "run_id": row.get("run_id"),
-                "sharpe": row.get("sharpe"),
-                "sharpe_vt": row.get("sharpe_vt"),
-                "max_drawdown": row.get("max_drawdown"),
+                "strategy_id": row.get("strategy_id"),
+                "provenance": row.get("provenance"),
             }
     print(
         json.dumps(
             {
                 "cycle_completed": verdict.get("cycle_completed", False),
                 "paper_mark_ready": verdict.get("paper_mark_ready", False),
+                "diagnostic_observation_completed": verdict.get(
+                    "diagnostic_observation_completed", False
+                ),
+                "decision_class": DIAGNOSTIC_ONLY_STATUS,
+                "evidence_status": LEGACY_INVALIDATION_CODE,
                 "backtest_reference_present_for_all_three": verdict.get(
                     "backtest_reference_present_for_all_three", False
                 ),
@@ -1074,8 +1098,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cycles", type=int, default=1, help="foreground cycles; ignored with --follow")
     parser.add_argument("--follow", action="store_true", help="keep polling in the foreground until Ctrl-C")
     parser.add_argument("--interval-seconds", type=float, default=30.0)
-    parser.add_argument("--refresh-paper", action="store_true", help="rerun the L2 paper operator every cycle")
-    parser.add_argument("--no-bootstrap", action="store_true", help="reuse the existing operator receipt on the first cycle")
+    parser.add_argument(
+        "--refresh-paper",
+        action="store_true",
+        help="retained compatibility flag; V1 operator refresh remains quarantined",
+    )
+    parser.add_argument(
+        "--no-bootstrap",
+        action="store_true",
+        help="retained compatibility flag; observation always reuses retained state",
+    )
     parser.add_argument("--aum", type=float, default=DEFAULT_AUM, help="paper notional only")
     parser.add_argument("--paper-store", default=DEFAULT_PAPER_STORE)
     parser.add_argument("--store", default=DEFAULT_STORE)
@@ -1097,7 +1129,6 @@ def main(argv: list[str] | None = None) -> int:
     if not math.isfinite(args.aum) or args.aum <= 0:
         parser.error("--aum must be positive")
     total = 0
-    first = True
     custom_profile = (
         not math.isclose(args.aum, DEFAULT_AUM, rel_tol=0.0, abs_tol=1e-9)
         or os.path.normcase(args.paper_store)
@@ -1114,23 +1145,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         while args.follow or total < args.cycles:
-            should_bootstrap = first and not args.no_bootstrap
-            should_refresh = args.refresh_paper or should_bootstrap
-            if should_refresh:
-                def operator_runner() -> Mapping[str, Any]:
-                    return run_operator(
-                        advance_forward=False,
-                        refresh_candidate_research=False,
-                        output_path=args.operator_receipt,
-                        preview_runner=lambda: run_preview(
-                            aum=args.aum,
-                            paper_store_path=args.paper_store,
-                            output_path=profile_preview_output,
-                        ),
-                    )
-            else:
-                def operator_runner() -> Mapping[str, Any]:
-                    return _load_json(args.operator_receipt)
+            def operator_runner() -> Mapping[str, Any]:
+                return _load_json(args.operator_receipt)
+
             report = run_cycle(
                 operator_runner=operator_runner,
                 paper_store_path=args.paper_store,
@@ -1149,28 +1166,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
             _print_summary(report, health_report=health_report)
             total += 1
-            first = False
             if not args.follow and total >= args.cycles:
                 break
             time.sleep(args.interval_seconds)
     except KeyboardInterrupt:
         print("paper_realtime: stopped by operator")
-        return SCHEDULE_EXIT_SUCCESS
+        return SCHEDULE_EXIT_SAFE_BLOCKED
     except Exception as exc:
         print(f"paper_realtime: {type(exc).__name__}: {str(exc)[:240]}")
         return SCHEDULE_EXIT_FAILURE
-    cycle_ok = bool(report.get("verdict", {}).get("cycle_completed"))
-    if args.health_check:
-        health_ok = bool(
-            isinstance(health_report, Mapping)
-            and isinstance(health_report.get("verdict"), Mapping)
-            and health_report["verdict"].get("paper_ready") is True
-        )
-    else:
-        health_ok = True
-    if not cycle_ok:
+    observation_ok = bool(
+        isinstance(report.get("verdict"), Mapping)
+        and report["verdict"].get("diagnostic_observation_completed") is True
+    )
+    if not observation_ok:
         return SCHEDULE_EXIT_FAILURE
-    return SCHEDULE_EXIT_SUCCESS if health_ok else SCHEDULE_EXIT_SAFE_BLOCKED
+    # A successful mark is still only a retained V1 observation.  Exit with the
+    # explicit partial/safe-blocked code so no launcher or watchdog can mistake
+    # it for paper readiness.
+    return SCHEDULE_EXIT_SAFE_BLOCKED
 
 
 if __name__ == "__main__":
@@ -1182,7 +1196,9 @@ __all__ = [
     "DEFAULT_HEALTH_OUTPUT",
     "DEFAULT_OUTPUT",
     "DEFAULT_STORE",
+    "DIAGNOSTIC_ONLY_STATUS",
     "MARK_ONLY_REPLAY_REASON",
+    "READ_ONLY_MARK_OBSERVATION",
     "PublicMarkDataError",
     "build_mark_snapshot",
     "fetch_public_funding_history",

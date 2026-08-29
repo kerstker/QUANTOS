@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query
 
 from quantos.runtime_paths import runtime_state_root
 from services.alpha.factor_set import select_synergistic_set
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from services.console.api.registry_snapshots import (
     _load_experiment_store,
     _load_paper_track_store,
@@ -713,14 +714,14 @@ router = APIRouter()
 @router.get("/api/v1/console/population-optimizer")
 async def population_optimizer() -> Dict:
     payload = _population_optimizer_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in _lineage() if item["layer"] == "Alpha"],
-    }
+    })
 
 
 @router.get("/api/v1/console/dsl-explorer")
@@ -754,29 +755,29 @@ async def dsl_explorer_check(expr: str = Query(...)) -> Dict:
 @router.get("/api/v1/console/alpha-zoo")
 def alpha_zoo() -> Dict:
     payload = _alpha_zoo_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in _lineage() if item["layer"] == "Alpha"],
-    }
+    })
 
 
 @router.get("/api/v1/console/alpha-graph")
 async def alpha_graph() -> Dict:
     payload = _alpha_graph_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in _lineage() if item["layer"] == "Alpha"],
-    }
+    })
 
 
 @router.get("/api/v1/console/crypto-live")
 async def crypto_live() -> Dict:
-    return _crypto_live_payload()
+    return scrub_backtest_payload(_crypto_live_payload())

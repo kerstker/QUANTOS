@@ -29,6 +29,11 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+    quarantine_legacy_backtest,
+)
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.execution.simulated_sor import (
     SORPolicy,
@@ -176,6 +181,74 @@ def run_shadow(
     generated_at = int(
         generated_at_ms if generated_at_ms is not None else time.time() * 1000
     )
+    try:
+        quarantine_legacy_backtest("paper_shadow_auto")
+    except BacktestIntegrityBlocked:
+        # Scheduled engineering-paper mutation used the invalidated V1
+        # int/spot ledger through build_alpha_preview.  Emit an operator-visible
+        # SAFE_BLOCKED status without reading authority inputs or creating the
+        # append-only paper ledger.  Raw collection and read-only forward
+        # observation are owned by separate workers and remain unaffected.
+        document = {
+            "schema_version": 2,
+            "flow": "AUTOMATED_SHADOW_PAPER_QUARANTINE",
+            "readiness": "L2_DRY_RUN_ONLY",
+            "generated_at": generated_at,
+            "status": "SAFE_BLOCKED",
+            "execution_profile": "QUARANTINED_LEGACY_PERP_LEDGER_V1",
+            "alphas": {},
+            "candidate_universe": {
+                "authority": "EXTERNAL_SIGNED_AUTHORITY_REQUIRED",
+                "scope": "NO_PAPER_MUTATION",
+                "expected": [],
+                "expected_count": 0,
+                "running_count": 0,
+                "coverage_complete": False,
+            },
+            "routing": {
+                "mode": "NOT_RUN",
+                "public_data_only": True,
+                "simulation_only": True,
+            },
+            "errors": {
+                "_system": {
+                    "error_type": "BacktestIntegrityBlocked",
+                    "error": LEGACY_INVALIDATION_CODE,
+                }
+            },
+            "verdict": {
+                "operator_completed": False,
+                "paper_preview_ready": False,
+                "shadow_paper_running": False,
+                "candidate_coverage_complete": False,
+                "candidate_count": 0,
+                "running_candidate_count": 0,
+                "official_paper_ready": False,
+                "promotion_eligible": False,
+                "forward_evidence_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+            "ledger": {
+                "path": store_path,
+                "write_attempted": False,
+                "chain_valid": None,
+                "legacy_v1_retained_read_only": True,
+            },
+            "safety": {
+                "paper_only": True,
+                "broker_connectivity": False,
+                "broker_order_submission": False,
+                "credentials_accessed": False,
+                "private_account_access": False,
+                "raw_collection_allowed": True,
+                "read_only_forward_observation_allowed": True,
+            },
+        }
+        atomic_write_json(output_path, document, indent=2)
+        return document
+    raise AssertionError("legacy paper-shadow quarantine unexpectedly returned")
+
     status = _load_json(status_path)
     mark_by_ticker = load_mark_prices(mark_cache)
     candidate_ids, realtime_handoff_ids = _shadow_candidate_scope()

@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from quantos.runtime_paths import runtime_state_root
+from services.data.available_time import fetch_bars_for_event_decisions
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.robust_optimization import (
     ALPHA_IDS,
     CandidateSpec,
@@ -143,7 +145,17 @@ def _prepare_carry() -> AlphaSchedule:
     try:
         names = sorted({name for target in weights.values() for name in target})
         bars = {
-            name: {int(bar.event_time): bar for bar in store.fetch_bars_pit(name, -10**18, 10**18)}
+            name: {
+                int(bar.event_time): bar
+                for bar in fetch_bars_for_event_decisions(
+                    store,
+                    name,
+                    -10**18,
+                    10**18,
+                    decision_lag=86_400_000,
+                    minimum_knowledge_lag=86_400_000,
+                )
+            }
             for name in names
         }
         funding = {
@@ -813,6 +825,7 @@ def _write_report(path: str, report: dict[str, Any]) -> None:
 
 
 def run(*, report_path: str = DEFAULT_REPORT, cells_path: str = DEFAULT_CELLS, registry_path: str = DEFAULT_REGISTRY, cpu_replay: bool = True) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.crypto_robust_optimization")
     started = int(time.time() * 1000)
     report: dict[str, Any] = {
         "schema_version": "crypto_robust_optimization.v1",

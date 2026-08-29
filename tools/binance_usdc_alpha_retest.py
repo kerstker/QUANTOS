@@ -46,6 +46,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlencode
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.impact import AlmgrenChrissImpact
 from services.deployment.runtime import (
     evaluate_and_record_deployment,
@@ -867,6 +868,7 @@ def run_retest(*, quote_asset: str = "USDC", days: int = DEFAULT_DAYS, aum: floa
                participation: float = DEFAULT_PARTICIPATION, output_path: str = DEFAULT_OUTPUT,
                now_ms: int | None = None, metrics_workers: int = 16,
                ledger_path: str | None = None) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.binance_usdc_alpha_retest")
     if days < 35:
         raise ValueError("days must be at least 35 to produce a meaningful weekly sample")
     if not math.isfinite(aum) or aum <= 0 or not math.isfinite(fee_bps) or fee_bps < 0:
@@ -1061,6 +1063,7 @@ def run_retest(*, quote_asset: str = "USDC", days: int = DEFAULT_DAYS, aum: floa
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.binance_usdc_alpha_retest")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quote-asset", choices=("USDT", "USDC"), default="USDC")
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS)

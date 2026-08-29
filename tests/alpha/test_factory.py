@@ -1,11 +1,11 @@
-"""Phase 6 step 13 — factory orchestration + the hard safety invariant: the
-automated factory can NEVER auto-approve."""
+"""Phase 6 factory orchestration stays diagnostic without signed authority."""
 import pytest
 
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.factory import AlphaFactory
+from services.validation.selection_authority import SelectionAuthorityBlocked
 from tests.alpha.fixtures import catalog_bound_evaluation
 
 
@@ -49,24 +49,50 @@ def _cands(n=1):
             for i in range(n)]
 
 
-def test_pass_advances_to_paper_but_never_approved():
+def _diagnostic_run(factory, candidates, **kwargs):
+    return factory.run(candidates, diagnostic_only=True, **kwargs)
+
+
+def test_public_factory_blocks_before_candidate_registration_or_scoring():
     fac, cat = _factory(ValidationVerdict.PASS)
-    report = fac.run(_real_cands(2))
-    assert report["rc0"]["state"] == AlphaState.PAPER_TRADING
-    # the safety invariant: nothing is APPROVED
-    assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
+    with pytest.raises(SelectionAuthorityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        fac.run(_cands(1))
+    assert cat.all_ids() == []
 
 
-def test_fail_is_rejected():
+def test_pass_remains_diagnostic_and_never_advances():
+    fac, cat = _factory(ValidationVerdict.PASS)
+    report = _diagnostic_run(fac, _real_cands(2))
+    assert report["rc0"]["state"] == AlphaState.DRAFT
+    assert report["rc0"]["diagnostic_only"] is True
+    assert report["rc0"]["selection_authority"] is False
+    assert report["rc0"]["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert all(cat.state(a) == AlphaState.DRAFT for a in cat.all_ids())
+
+
+def test_fail_remains_diagnostic_without_authority():
     fac, cat = _factory(ValidationVerdict.FAIL)
-    fac.run(_cands(1))
-    assert cat.state("a0") == AlphaState.REJECTED
+    report = _diagnostic_run(fac, _cands(1))
+    assert cat.state("a0") == AlphaState.DRAFT
+    assert report["a0"]["evaluation"].verdict == ValidationVerdict.FAIL
 
 
-def test_requires_human_review_is_parked_in_testing():
+def test_requires_human_review_does_not_mutate_lifecycle():
     fac, cat = _factory(ValidationVerdict.REQUIRES_HUMAN_REVIEW)
-    fac.run(_cands(1))
-    assert cat.state("a0") == AlphaState.TESTING        # parked for a human, not auto-rejected
+    _diagnostic_run(fac, _cands(1))
+    assert cat.state("a0") == AlphaState.DRAFT
+
+
+def test_boolean_and_self_described_record_cannot_restore_factory_selection():
+    fac, cat = _factory(ValidationVerdict.PASS)
+    report = _diagnostic_run(
+        fac,
+        _real_cands(1),
+        selection_authorized=True,
+        authoritative_backtest_record={"detail": {"evidence_status": "AUTHORITATIVE"}},
+    )
+    assert cat.state("rc0") == AlphaState.DRAFT
+    assert report["rc0"]["selection_authority"] is False
 
 
 def test_factory_must_run_as_non_human_actor():
@@ -77,9 +103,9 @@ def test_factory_must_run_as_non_human_actor():
 def test_factory_run_is_deterministic():
     r1, c1 = _factory(ValidationVerdict.PASS)
     r2, c2 = _factory(ValidationVerdict.PASS)
-    out1 = {k: v["state"] for k, v in r1.run(_real_cands(3)).items()}
-    out2 = {k: v["state"] for k, v in r2.run(_real_cands(3)).items()}
-    assert out1 == out2 and all(s == AlphaState.PAPER_TRADING for s in out1.values())
+    out1 = {k: v["state"] for k, v in _diagnostic_run(r1, _real_cands(3)).items()}
+    out2 = {k: v["state"] for k, v in _diagnostic_run(r2, _real_cands(3)).items()}
+    assert out1 == out2 and all(s == AlphaState.DRAFT for s in out1.values())
 
 
 # --- real-evaluator integration: PBO wiring + fail-closed evidence (audit P0/P1) ---
@@ -108,22 +134,22 @@ def _real_cands(n=3, n_periods=15, n_inst=12):
     return out
 
 
-def test_factory_parks_unassessed_candidates_for_human():
+def test_factory_keeps_unassessed_candidates_diagnostic():
     # the autonomous factory cannot assert no-leakage/regime from PanelPeriods alone,
     # so without supplied evidence each candidate fails closed to human review.
     fac = AlphaFactory(catalog=_seeded_catalog())   # real AlphaEvaluator
-    report = fac.run(_real_cands(3))
+    report = _diagnostic_run(fac, _real_cands(3))
     for aid in ("rc0", "rc1", "rc2"):
         ev = report[aid]["evaluation"]
         assert ev.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
         assert any("NOT_ASSESSED" in r for r in ev.reasons)
-        assert report[aid]["state"] == AlphaState.TESTING
+        assert report[aid]["state"] == AlphaState.DRAFT
 
 
 def test_factory_computes_and_stamps_a_real_batch_pbo():
     fac = AlphaFactory(catalog=_seeded_catalog())
     ev_map = {aid: {"leakage_ok": True, "regime_profitable_frac": 1.0} for aid in ("rc0", "rc1", "rc2")}
-    report = fac.run(_real_cands(3), evidence=ev_map)
+    report = _diagnostic_run(fac, _real_cands(3), evidence=ev_map)
     pbos = [report[aid]["evaluation"].pbo for aid in ("rc0", "rc1", "rc2")]
     assert all(0.0 <= p <= 1.0 for p in pbos)            # a real PBO, not the old 0.0 default-pass
     assert len({round(p, 9) for p in pbos}) == 1          # one batch-level selection PBO, shared
@@ -139,7 +165,7 @@ def test_factory_freezes_complete_catalog_before_first_dsr_verdict():
         aid: {"leakage_ok": True, "regime_profitable_frac": 1.0}
         for aid in ("rc0", "rc1", "rc2")
     }
-    report = fac.run(_real_cands(3), evidence=evidence)
+    report = _diagnostic_run(fac, _real_cands(3), evidence=evidence)
     catalog_evidence = [
         report[aid]["evaluation"].catalog_evidence
         for aid in ("rc0", "rc1", "rc2")

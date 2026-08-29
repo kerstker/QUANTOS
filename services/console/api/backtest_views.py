@@ -9,6 +9,7 @@ from typing import Callable, Dict, List
 
 from fastapi import APIRouter, Query
 
+from services.console.api.backtest_evidence import scrub_backtest_payload
 from services.console.api.common import short_hash as _short_hash
 from services.research.factor_engine.domain.model import (
     compute_max_drawdown,
@@ -168,7 +169,7 @@ def _monthly_returns(raw_returns: List[float], month_size: int = 21) -> List[Dic
     return months
 
 
-def _backtest_explainability_payload(alpha_id: str = "alpha-1") -> Dict:
+def _backtest_explainability_payload_raw(alpha_id: str = "alpha-1") -> Dict:
     idx = _alpha_index(alpha_id)
     alpha = _computed_alpha(idx)
     factors = _factor_values(idx)
@@ -299,7 +300,13 @@ def _backtest_explainability_payload(alpha_id: str = "alpha-1") -> Dict:
     }
 
 
-def _scenario_stress_payload(alpha_id: str = "alpha-1") -> Dict:
+def _backtest_explainability_payload(alpha_id: str = "alpha-1") -> Dict:
+    """Public composition seam; synthetic replay is never load-bearing."""
+
+    return scrub_backtest_payload(_backtest_explainability_payload_raw(alpha_id))
+
+
+def _scenario_stress_payload_raw(alpha_id: str = "alpha-1") -> Dict:
     idx = _alpha_index(alpha_id)
     alpha = _computed_alpha(idx)
     base_returns = _forward_returns(_factor_values(idx), idx)[:120]
@@ -517,28 +524,34 @@ def _scenario_stress_payload(alpha_id: str = "alpha-1") -> Dict:
     }
 
 
+def _scenario_stress_payload(alpha_id: str = "alpha-1") -> Dict:
+    """Public composition seam; synthetic stress output is diagnostic-only."""
+
+    return scrub_backtest_payload(_scenario_stress_payload_raw(alpha_id))
+
+
 router = APIRouter()
 
 
 @router.get("/api/v1/console/backtest-explainability")
 async def backtest_explainability(alpha_id: str = Query("alpha-1")) -> Dict:
     payload = _backtest_explainability_payload(alpha_id)
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })
 
 
 @router.get("/api/v1/console/scenario-stress")
 async def scenario_stress(alpha_id: str = Query("alpha-1")) -> Dict:
     payload = _scenario_stress_payload(alpha_id)
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })

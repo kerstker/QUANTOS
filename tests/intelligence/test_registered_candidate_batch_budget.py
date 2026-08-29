@@ -13,6 +13,11 @@ from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.research_budget import BudgetExhausted, ResearchBudget
 
 
+run_registered_candidate_batch = (
+    batch_module._run_registered_candidate_batch_legacy_diagnostic
+)
+
+
 def _registry() -> ExperimentRegistry:
     return ExperimentRegistry(SqliteExperimentStore(":memory:", create=True))
 
@@ -47,7 +52,7 @@ def _stub_agent_run(monkeypatch):
 
 
 def _run(registry, candidates, *, search_id="budget-batch", recorded_at=100, **kwargs):
-    return batch_module.run_registered_candidate_batch(
+    return run_registered_candidate_batch(
         candidates,
         registry=registry,
         search_id=search_id,

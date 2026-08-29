@@ -5,6 +5,14 @@ import ast
 import json
 from pathlib import Path
 
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
+from tools import top_contra_dry_run_diagnostic as diagnostic
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / "tools" / "top_contra_dry_run_diagnostic.py"
@@ -21,6 +29,28 @@ def test_top_diagnostic_does_not_import_canonical_event_or_store_writers():
     }
     forbidden = {"open_domain_event_bus", "save_and_project_dry_run", "DryRunStore"}
     assert imported.isdisjoint(forbidden)
+
+
+def test_top_diagnostic_main_quarantines_before_data_read_or_artifact_write(
+    monkeypatch, tmp_path
+):
+    output = tmp_path / "top_contra_dry_run_diagnostic.json"
+    monkeypatch.setattr(diagnostic, "OUTPUT", str(output))
+    monkeypatch.setattr(
+        diagnostic,
+        "build_panel",
+        lambda: pytest.fail("legacy history was read before quarantine"),
+    )
+    monkeypatch.setattr(
+        diagnostic,
+        "atomic_write_json",
+        lambda *_args, **_kwargs: pytest.fail("artifact write bypassed quarantine"),
+    )
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        diagnostic.main()
+
+    assert not output.exists()
 
 
 def test_top_diagnostic_report_is_not_official_paper_evidence():

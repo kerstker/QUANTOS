@@ -83,7 +83,13 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
         "_weights_and_signals",
         lambda sig, insts, **_kwargs: ({"BTC": 1.0}, {"BTC": 1.0}),
     )
-    monkeypatch.setattr(driver, "_reference_sharpe", lambda *args, **kwargs: (None, 0))
+    monkeypatch.setattr(
+        driver,
+        "_reference_sharpe",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy V1 reference must not be evaluated")
+        ),
+    )
     monkeypatch.setattr(driver, "staleness_days", lambda current, **_kwargs: {
         name: {"freshest_days": 0, "n_stale": 0, "n_total": 1}
         for name in driver.STALE_LIMITS
@@ -201,7 +207,13 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
         "_weights_and_signals",
         lambda sig, insts, **_kwargs: ({"BTC": 1.0}, {"BTC": 1.0}),
     )
-    monkeypatch.setattr(driver, "_reference_sharpe", lambda *args, **kwargs: (None, 0))
+    monkeypatch.setattr(
+        driver,
+        "_reference_sharpe",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy V1 reference must not be evaluated")
+        ),
+    )
     monkeypatch.setattr(driver, "staleness_days", lambda current, **_kwargs: {
         name: {"freshest_days": 0, "n_stale": 0, "n_total": 1}
         for name in driver.STALE_LIMITS
@@ -239,6 +251,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     assert calls["authority"] == 1
     assert calls["record"][0]["admission_ref"] is reference
     assert calls["realize"][0]["admission_ref"] is reference
+    assert calls["realize"][0]["backtest_sharpe"] is None
     assert calls["realize"][0]["committed_at_ms"] == now_ms
     status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
     assert (
@@ -247,3 +260,9 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     )
     assert status["quality_evidence_current"] is True
     assert status["raw_lineage_backfill"]["status"] == "PASS"
+    assert status["alphas"]["alpha"]["backtest_reference_sharpe"] is None
+    assert status["alphas"]["alpha"]["reference_weeks"] == 0
+    assert (
+        status["alphas"]["alpha"]["backtest_reference_status"]
+        == "INVALIDATED_PERP_LEDGER_V1"
+    )

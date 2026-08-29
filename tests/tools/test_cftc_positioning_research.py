@@ -52,6 +52,11 @@ def test_registration_records_trials_but_never_grants_promotion(monkeypatch):
             "human_review_queue": [],
         },
     )
+    monkeypatch.setattr(
+        research,
+        "run_registered_candidate_batch",
+        batch_module._run_registered_candidate_batch_legacy_diagnostic,
+    )
 
     result = research.register_family_trials(
         specs, aligned_by_id, registry=registry, recorded_at=10_000,
@@ -62,4 +67,3 @@ def test_registration_records_trials_but_never_grants_promotion(monkeypatch):
     assert result["trial_count_after"] == 6
     assert result["promotion_eligible"] is False
     assert result["live_allowed"] is False
-

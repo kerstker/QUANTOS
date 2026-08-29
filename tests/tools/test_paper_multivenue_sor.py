@@ -1,4 +1,4 @@
-import hashlib
+import json
 import urllib.error
 from dataclasses import replace
 from decimal import Decimal
@@ -8,6 +8,7 @@ import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.cross_venue_order_book_store import CrossVenueOrderBookStore
+from services.execution.backtest_authority import BacktestIntegrityBlocked
 from services.features.realtime_feature_batch_store import RealtimeFeatureBatchStore
 import tools.paper_multivenue_sor as paper_sor
 from tools.paper_multivenue_sor import (
@@ -215,7 +216,7 @@ def test_public_rest_parsers_allow_only_bounded_exchange_clock_lead():
         parse_bybit_book(bybit, "DOGEUSDT", observed_at_ms=now_ms)
 
 
-def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
+def test_public_two_venue_canary_is_quarantined_before_v1_dry_run(tmp_path):
     now_ms = 2_000_000
     bases = {
         "DOGEUSDT": "0.09",
@@ -249,25 +250,15 @@ def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
     assert len(bundle["books"]) == 8
     assert bundle["quality"]["simulation_only"] is True
 
-    run = run_canary(
-        now_ms=now_ms,
-        books=books,
-        snapshot_id=bundle["snapshot_id"],
-    )
-    assert run.n_approved == 4
-    assert len(run.detail["route_tca"]) == 4
-    assert {
-        item["venue_id"]
-        for route in run.detail["routing"]
-        for item in route["slices"]
-    } == {"binance_usdm", "bybit_linear"}
-    assert all(
-        route["status"] == "COMPLETE" for route in run.detail["routing"]
-    )
-    assert run.rejected_reasons == []
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        run_canary(
+            now_ms=now_ms,
+            books=books,
+            snapshot_id=bundle["snapshot_id"],
+        )
 
 
-def test_canary_pretrade_gate_rejects_stale_public_books(tmp_path):
+def test_stale_public_book_canary_cannot_bypass_v1_quarantine(tmp_path):
     now_ms = 2_000_000
     bases = {
         "DOGEUSDT": "0.20",
@@ -301,17 +292,15 @@ def test_canary_pretrade_gate_rejects_stale_public_books(tmp_path):
         for instrument_id, venue_books in books.items()
     }
 
-    run = run_canary(
-        now_ms=now_ms,
-        books=stale_books,
-        snapshot_id=bundle["snapshot_id"],
-    )
-
-    assert run.n_approved == 0
-    assert run.rejected_reasons == ["MARKET_CLOSED"] * 4
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        run_canary(
+            now_ms=now_ms,
+            books=stale_books,
+            snapshot_id=bundle["snapshot_id"],
+        )
 
 
-def test_canary_quantity_limit_remains_fail_closed(tmp_path, monkeypatch):
+def test_oversize_public_canary_cannot_bypass_v1_quarantine(tmp_path, monkeypatch):
     now_ms = 2_000_000
     bases = {
         "DOGEUSDT": "0.20",
@@ -339,15 +328,12 @@ def test_canary_quantity_limit_remains_fail_closed(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(paper_sor, "TARGET_NOTIONAL", Decimal("2100"))
 
-    run = paper_sor.run_canary(
-        now_ms=now_ms,
-        books=books,
-        snapshot_id=bundle["snapshot_id"],
-    )
-
-    assert run.n_approved == 0
-    assert run.n_rejected == 4
-    assert run.rejected_reasons.count("ORDER_SIZE_EXCEEDED") == 4
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        paper_sor.run_canary(
+            now_ms=now_ms,
+            books=books,
+            snapshot_id=bundle["snapshot_id"],
+        )
 
 
 def test_collect_books_reanchors_snapshot_time_after_chain_verification(tmp_path):
@@ -797,7 +783,9 @@ def test_persisted_routing_snapshot_rejects_unapproved_public_source(tmp_path):
         )
 
 
-def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch):
+def test_execute_quarantines_legacy_canary_before_canonical_persistence(
+    tmp_path, monkeypatch
+):
     rows = [
         {
             "instrument_id": instrument_id,
@@ -876,7 +864,6 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
             ],
         },
     )
-    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
     monkeypatch.setattr(
         paper_sor,
         "refresh_persisted_routing_snapshot",
@@ -891,53 +878,65 @@ def test_execute_emits_hash_bound_release_run_attestation(tmp_path, monkeypatch)
     monkeypatch.setattr(
         paper_sor,
         "open_domain_event_bus",
-        lambda: SimpleNamespace(close=lambda: None),
+        lambda: pytest.fail("quarantine must run before opening canonical stores"),
     )
     monkeypatch.setattr(
         paper_sor,
         "save_and_project_dry_run",
-        lambda *_args, **_kwargs: {"stored": True},
+        lambda *_args, **_kwargs: pytest.fail(
+            "quarantine must run before canonical persistence"
+        ),
     )
     status_path = tmp_path / "paper_sor_status.json"
+    store_path = tmp_path / "dry_run.db"
 
-    status = execute(
-        now_ms=2_000_000,
-        dry_run_store_path=str(tmp_path / "dry_run.db"),
-        status_path=str(status_path),
+    with pytest.raises(
+        BacktestIntegrityBlocked, match="paper_multivenue_sor_persistence"
+    ):
+        execute(
+            now_ms=2_000_000,
+            dry_run_store_path=str(store_path),
+            status_path=str(status_path),
+        )
+
+    assert release_run_attestation() is None
+    assert not store_path.exists()
+    assert not status_path.exists()
+
+
+def test_main_records_expected_legacy_quarantine_as_blocked(tmp_path, monkeypatch):
+    status_path = tmp_path / "paper_sor_status.json"
+    monkeypatch.setattr(paper_sor, "DEFAULT_STATUS", str(status_path))
+    monkeypatch.setattr(
+        paper_sor,
+        "execute",
+        lambda: (_ for _ in ()).throw(
+            BacktestIntegrityBlocked("legacy paper SOR persistence is quarantined")
+        ),
     )
-    attestation = release_run_attestation()
 
-    assert attestation is not None
-    assert attestation["complete"] is True
-    assert attestation["module"] == "paper_multivenue_sor"
-    assert attestation["release_commit"] == "a" * 40
-    assert attestation["input_hashes"]["public_cross_venue_books"] == status[
-        "snapshot_id"
-    ]
-    assert attestation["input_hashes"]["public_source_chain_view"] == (
-        paper_sor._canonical_sha256(bundle["source_chain"])
+    assert paper_sor.main() == paper_sor.SCHEDULE_EXIT_SAFE_BLOCKED
+    report = json.loads(status_path.read_text(encoding="utf-8"))
+    assert report["status"] == "SAFE_BLOCKED"
+    assert report["error_type"] == "BacktestIntegrityBlocked"
+    assert report["reason_code"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert report["readiness_eligible"] is False
+    assert report["safety"]["order_submission"] is False
+
+
+def test_main_keeps_unexpected_worker_error_as_failure(tmp_path, monkeypatch):
+    status_path = tmp_path / "paper_sor_status.json"
+    monkeypatch.setattr(paper_sor, "DEFAULT_STATUS", str(status_path))
+    monkeypatch.setattr(
+        paper_sor,
+        "execute",
+        lambda: (_ for _ in ()).throw(PaperMultiVenueSORError("books unavailable")),
     )
-    assert attestation["output_hashes"]["dry_run_reproducibility"] == "c" * 64
-    assert attestation["output_hashes"]["paper_sor_status_file"] == hashlib.sha256(
-        status_path.read_bytes()
-    ).hexdigest()
-    assert attestation["safety"] == {
-        "paper_only": True,
-        "live_allowed": False,
-        "order_submission_allowed": False,
-        "credentials_accessed": False,
-        "broker_connectivity": False,
-    }
-    assert status["n_approved"] == len(paper_sor.INSTRUMENTS)
-    assert status["n_rejected"] == 0
 
-    bundle["quality"]["private_access"] = True
-    assert paper_sor._build_release_run_attestation(
-        status,
-        bundle,
-        run,
-        output_path=status_path,
-    )["complete"] is False
+    assert paper_sor.main() == paper_sor.SCHEDULE_EXIT_FAILURE
+    report = json.loads(status_path.read_text(encoding="utf-8"))
+    assert report["status"] == "BLOCKED"
+    assert report["reason_code"] == "WORKER_FAILURE"
 
 
 def test_execute_clears_stale_attestation_before_failed_run(tmp_path, monkeypatch):

@@ -17,6 +17,7 @@ import time
 from services.data.caching_store import CachingPITStore
 from services.data.persistent_store import SqlitePITStore
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_store import DryRunStore
 from services.execution.impact_calibration import (
     default_crypto_impact_calibration,
@@ -107,7 +108,14 @@ def _prepare() -> tuple[list[int], dict, dict, dict, dict, dict, float, int]:
             for bar in store.fetch_bars(instrument, -10**18, 10**18)
         }
     )
-    panel = ax.build_field_panel(store, liquid, event_times, ("close", "volume"))
+    panel = ax.build_field_panel(
+        store,
+        liquid,
+        event_times,
+        ("close", "volume"),
+        decision_times=[t + 86_400_000 for t in event_times],
+        minimum_knowledge_lag=86_400_000,
+    )
     panel.matrices["funding"] = [
         [funding.get(instrument, {}).get(timestamp) for instrument in panel.instruments]
         for timestamp in panel.event_times
@@ -178,6 +186,7 @@ def _prepare() -> tuple[list[int], dict, dict, dict, dict, dict, float, int]:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("dry_run_carry_authoritative_multi")
     existing_store = DryRunStore(_OUT, create=True)
     try:
         existing = [

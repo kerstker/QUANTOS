@@ -15,6 +15,7 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.research_adapter import adapt_research_market_data
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.research_session import run_research_session
 from tools.search_trial_registry import make_search_id
@@ -57,6 +58,7 @@ def _factor_series(result: dict, factors: list, top_k: int = TOP_K_SERIES) -> di
 
 
 def regenerate(now_ms: int) -> dict:
+    quarantine_legacy_backtest("tools.crypto_research_offline.regenerate")
     if not os.path.exists(_DB_PATH):
         raise FileNotFoundError(f"{_DB_PATH} not found — run tools/crypto_research_run.py first to ingest data")
     store = SqlitePITStore(_DB_PATH, create=False)
@@ -156,6 +158,7 @@ def regenerate(now_ms: int) -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_research_offline")
     regenerate(int(time.time() * 1000))
 
 

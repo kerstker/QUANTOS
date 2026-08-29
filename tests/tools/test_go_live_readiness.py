@@ -493,11 +493,13 @@ def test_build_report_attaches_capacity_block_and_notes(tmp_path, monkeypatch):
                               attestations_path=str(tmp_path / "att.json"),
                               smoke_paths={}, capacity_path=str(cap_path))
     block = report["guidance"]["capacity_safety"]
-    assert block["passes"] is True
-    assert block["safe_capacity_est"] == pytest.approx(3_582_051.48)
-    # 有容量带的策略注记存在;btc_spot_trend 无带 -> 无注记键
-    assert "capacity_utilization_note" in report["strategies"]["carry_oi_majors"]
-    assert "capacity_utilization_note" in report["strategies"]["crowd_contra"]
+    assert block["passes"] is None
+    assert block["safe_capacity_est"] is None
+    assert report["capacity_evidence_status"] == "INVALIDATED_PERP_LEDGER_V1"
+    # Self-described V1 capacity bands are retained on disk but never copied
+    # into go-live guidance or per-strategy notes.
+    assert "capacity_utilization_note" not in report["strategies"]["carry_oi_majors"]
+    assert "capacity_utilization_note" not in report["strategies"]["crowd_contra"]
     assert "capacity_utilization_note" not in report["strategies"]["btc_spot_trend"]
     # 调用方注入的 strategies 不被 mutate(注记只加在报告副本上)
     assert "capacity_utilization_note" not in strategies["carry_oi_majors"]

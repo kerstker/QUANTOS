@@ -36,6 +36,7 @@ import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from live.execution import investor_snapshot as inv
+from services.execution.backtest_authority import is_authoritative_backtest_record
 from services.risk.pre_trade.kill_switch_store import kill_switch_authority_path
 from tools.cache_io import atomic_write_json
 from tools.live_track_advance import _VENUES, _venue_paths
@@ -201,6 +202,14 @@ def load_json_artifact(path: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
+def _has_authoritative_backtest(document: Mapping[str, Any]) -> bool:
+    record = document.get("authoritative_backtest_record")
+    return bool(
+        isinstance(record, Mapping)
+        and is_authoritative_backtest_record(record)
+    )
+
+
 # ---------------------------------------------------------------------------
 # artifact 装配
 # ---------------------------------------------------------------------------
@@ -219,11 +228,22 @@ def build_snapshot(*, now_ms: int, venues: Optional[Sequence[str]] = None,
     degradation = load_json_artifact(degradation_path) or {}
     go_live = load_json_artifact(go_live_path) or {}
     cockpit = load_json_artifact(cockpit_path) or {}
-    reports = [r for r in (degradation.get("reports") or []) if isinstance(r, dict)]
+    degradation_authoritative = _has_authoritative_backtest(degradation)
+    cockpit_authoritative = _has_authoritative_backtest(cockpit)
+    go_live_capacity_authoritative = _has_authoritative_backtest(go_live)
+    reports = (
+        [r for r in (degradation.get("reports") or []) if isinstance(r, dict)]
+        if degradation_authoritative
+        else []
+    )
     go_live_venues = {str(v["venue"]): v for v in (go_live.get("venues") or [])
                       if isinstance(v, dict) and v.get("venue")}
     guidance = go_live.get("guidance") or {}
-    alphas = [a for a in (cockpit.get("alphas") or []) if isinstance(a, dict)]
+    alphas = (
+        [a for a in (cockpit.get("alphas") or []) if isinstance(a, dict)]
+        if cockpit_authoritative
+        else []
+    )
 
     venue_inputs: List[dict] = []
     for venue in (venues or sorted(registry)):
@@ -234,7 +254,11 @@ def build_snapshot(*, now_ms: int, venues: Optional[Sequence[str]] = None,
         orders, fills, tca = load_ledger_rows(paths["ledger"])
         glv = go_live_venues.get(venue) or {}
         capacity_safety = None
-        if isinstance(guidance, Mapping) and guidance.get("venue") == venue:
+        if (
+            go_live_capacity_authoritative
+            and isinstance(guidance, Mapping)
+            and guidance.get("venue") == venue
+        ):
             cs = guidance.get("capacity_safety")
             capacity_safety = dict(cs) if isinstance(cs, Mapping) else None
         venue_inputs.append({
@@ -256,7 +280,7 @@ def build_snapshot(*, now_ms: int, venues: Optional[Sequence[str]] = None,
             "lifecycle_alphas": alphas,
         })
     source_generated = [a.get("generated_at_ms")
-                        for a in (degradation, go_live, cockpit)
+                        for a in (go_live,)
                         if isinstance(a.get("generated_at_ms"), int)]
     return inv.build_snapshot(now_ms=now_ms, venues=venue_inputs,
                               source_generated_at=source_generated)

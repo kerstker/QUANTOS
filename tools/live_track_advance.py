@@ -90,6 +90,7 @@ from services.alpha.live_linkage import maintenance_skip_reason
 from services.alpha.maintenance_store import MaintenanceStore
 from services.data.caching_store import CachingPITStore
 from services.data.persistent_store import SqlitePITStore
+from services.execution.backtest_authority import is_authoritative_backtest_record
 from quantos.contracts.config import SafetyConfig
 from services.portfolio.firm_gate import firm_gate_skip_reason
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
@@ -102,6 +103,7 @@ from services.risk.pre_trade.context import AccountRiskState, MarketContext, Ris
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.risk.pre_trade.kill_switch_runtime import arm_and_record
+from services.risk.research_risk.dry_run_guard import full_research_risk_approved
 from quantos.contracts.alpha import Actor, ActorKind
 from tools.alert_sink import emit
 from tools.coingecko_fetch import fetch_simple_price_observations
@@ -360,9 +362,6 @@ def _load_json_or_none(path: str) -> Optional[dict]:
 def _load_day_state(path: str) -> Optional[dict]:
     return _load_json_or_none(path)
 
-APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
-
-
 def research_readiness_skip_reason(
     strategy_id: str,
     *,
@@ -390,10 +389,16 @@ def research_readiness_skip_reason(
     if row.get("paper_verdict") == "BLOCKED":
         return f"alpha_paper_verdict_blocked:{strategy_id}"
     canonical = row.get("canonical_dry_run")
-    if isinstance(canonical, dict):
-        decision = canonical.get("research_risk_decision")
-        if decision is not None and decision not in APPROVED_RESEARCH_RISK_DECISIONS:
-            return f"research_risk_{decision.lower()}:{strategy_id}"
+    if not isinstance(canonical, dict) or not is_authoritative_backtest_record(canonical):
+        return f"backtest_authority_invalid:{strategy_id}"
+    detail = canonical.get("detail")
+    detail = detail if isinstance(detail, dict) else {}
+    risk = detail.get("research_risk")
+    if not isinstance(risk, dict):
+        risk = canonical.get("research_risk")
+    if not isinstance(risk, dict) or not full_research_risk_approved(risk):
+        decision = risk.get("decision") if isinstance(risk, dict) else "missing"
+        return f"research_risk_{str(decision).lower()}:{strategy_id}"
     return None
 
 

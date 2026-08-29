@@ -71,6 +71,7 @@ import os
 import statistics
 import time
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.data.caching_store import CachingPITStore
@@ -366,6 +367,7 @@ def register_family_trials(specs, signals, panel, *, registry: ExperimentRegistr
 
 
 def _main(registry: ExperimentRegistry) -> None:
+    quarantine_legacy_backtest("tools.cross_venue_research")
     recorded_at = int(time.time() * 1000)
     specs = build_variant_specs()
     panel, instruments = _xv_panel()
@@ -524,6 +526,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.cross_venue_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

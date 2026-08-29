@@ -23,6 +23,10 @@ from services.research.trial_provenance import (
     TrialStatus,
 )
 
+run_registered_candidate_batch = (
+    batch_module._run_registered_candidate_batch_legacy_diagnostic
+)
+
 FIELDS = ["close", "funding"]
 WINDOWS = [3, 5]
 
@@ -52,6 +56,7 @@ def _factory_run(registry: ExperimentRegistry, search_id: str, **overrides):
         search_id=search_id,
         search_kind="ALPHA_FACTORY",
         search_source="tests.alpha_factory",
+        diagnostic_only=True,
     )
     kwargs.update(overrides)
     return run_alpha_factory(_panel(), FIELDS, WINDOWS, **kwargs)
@@ -152,14 +157,14 @@ def test_ephemeral_factory_rejects_provenance_pins() -> None:
             _panel(), FIELDS, WINDOWS,
             generations=1, population_size=4, elite_k=2,
             dataset_version="dataset-v1", timestamp=50,
-            ephemeral=True, hypothesis_by_candidate={"a": "hyp_x"},
+            ephemeral=True, hypothesis_by_candidate={"a": "hyp_x"}, diagnostic_only=True,
         )
     with pytest.raises(ValueError, match="ephemeral"):
         run_alpha_factory(
             _panel(), FIELDS, WINDOWS,
             generations=1, population_size=4, elite_k=2,
             dataset_version="dataset-v1", timestamp=50,
-            ephemeral=True, code_hash="abc123",
+            ephemeral=True, code_hash="abc123", diagnostic_only=True,
         )
 
 
@@ -204,7 +209,7 @@ def _run_batch(registry: ExperimentRegistry, monkeypatch, **overrides):
         config=None,
     )
     kwargs.update(overrides)
-    return dsl, batch_module.run_registered_candidate_batch(pool, **kwargs)
+    return dsl, run_registered_candidate_batch(pool, **kwargs)
 
 
 def test_batch_writes_trial_record_per_candidate(monkeypatch) -> None:
@@ -253,7 +258,7 @@ def test_registered_batch_uses_explicit_evaluation_quantile(monkeypatch) -> None
 
     monkeypatch.setattr(batch_module.ResearchAgentLoop, "run", fake_run)
     (_dsl, _serialized, _expr), pool = _batch_candidates()
-    batch_module.run_registered_candidate_batch(
+    run_registered_candidate_batch(
         pool,
         registry=registry,
         search_id="batch-explicit-quantile",
@@ -275,7 +280,7 @@ def test_registered_batch_rejects_invalid_quantile_before_ledger(
     (_dsl, _serialized, _expr), pool = _batch_candidates()
 
     with pytest.raises(ValueError, match="quantile"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             pool,
             registry=registry,
             search_id="batch-invalid-quantile",
@@ -313,7 +318,7 @@ def test_batch_rejects_invalid_provenance_kwargs(monkeypatch) -> None:
     registry = _registry()
     (_dsl, _s, _e), pool = _batch_candidates()
     with pytest.raises(TypeError, match="hypothesis_by_candidate"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             pool,
             registry=registry,
             search_id="batch-bad",
@@ -324,7 +329,7 @@ def test_batch_rejects_invalid_provenance_kwargs(monkeypatch) -> None:
             hypothesis_by_candidate="not-a-mapping",
         )
     with pytest.raises(TypeError, match="code_hash"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             pool,
             registry=registry,
             search_id="batch-bad2",

@@ -103,7 +103,7 @@ def test_retrospective_history_blocks_before_trial_registration(monkeypatch) -> 
 
     monkeypatch.setattr(driver, "run_registered_candidate_batch", must_not_register)
     with pytest.raises(RuntimeError, match="not PIT-admissible"):
-        driver.run(source_commit="a" * 40)
+        driver._run_legacy_diagnostic(source_commit="a" * 40)
 
 
 def test_real_retrospective_artifact_blocks_before_loading_price_inputs(
@@ -123,7 +123,7 @@ def test_real_retrospective_artifact_blocks_before_loading_price_inputs(
     )
 
     with pytest.raises(RuntimeError, match="not PIT-admissible"):
-        driver.run(source_commit="a" * 40, source_snapshot=source)
+        driver._run_legacy_diagnostic(source_commit="a" * 40, source_snapshot=source)
 
 
 def test_candidate_batch_has_shared_no_overlap_calendar() -> None:
@@ -158,7 +158,7 @@ def test_registered_run_is_public_research_only(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         driver, "production_experiment_registry", lambda: nullcontext(fake_registry)
     )
-    document = driver.run(
+    document = driver._run_legacy_diagnostic(
         output=tmp_path / "result.json",
         recorded_at=123,
         source_commit="a" * 40,

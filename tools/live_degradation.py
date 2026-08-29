@@ -47,8 +47,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from live.execution import degradation as deg
 from quantos.contracts.paper import FillMethod, OrderSide as PaperSide, PaperFill
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 from services.execution.dry_run_pipeline import plan_target_quantities
 from services.execution.paper_reconciliation import reconcile
+from services.research.paper_trading.forward_store import ForwardLedger
+from services.research.ports.persistence import ForwardLedgerError
 from tools.cache_io import atomic_write_json
 from tools.crypto_oi_research import build_panel
 from tools.live_track_advance import _VENUES, _venue_paths
@@ -123,34 +126,27 @@ def load_ledger_rows(ledger_path: str, strategy_id: str
 
 
 def load_forward_decisions(forward_db: str, alpha_id: str) -> List[dict]:
-    """前向台账记录在案决策(纸面权威);缺库/缺表 -> [](fail-soft)。"""
+    """Load only decisions covered by the verified admission-binding chain."""
     if not os.path.exists(forward_db) or os.path.getsize(forward_db) == 0:
         return []
     try:
-        conn = _open_ro(forward_db)
-    except sqlite3.Error:
-        return []
-    try:
-        tables = {r["name"] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")}
-        if "forward_decisions" not in tables:
-            return []
+        with ForwardLedger(forward_db, read_only=True) as ledger:
+            rows = ledger.attested_decisions(alpha_id)
         out = []
-        for r in conn.execute(
-                "SELECT decided_ts, recorded_at, weights_json, source FROM forward_decisions"
-                " WHERE alpha_id=? ORDER BY decided_ts", (alpha_id,)):
+        for row in rows:
             try:
-                weights = {k: float(v) for k, v in json.loads(r["weights_json"]).items()}
+                weights = {
+                    key: float(value)
+                    for key, value in json.loads(row["weights_json"]).items()
+                }
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue
-            out.append({"decided_ts": int(r["decided_ts"]),
-                        "recorded_at": int(r["recorded_at"]),
-                        "weights": weights, "source": str(r["source"])})
+            out.append({"decided_ts": int(row["decided_ts"]),
+                        "recorded_at": int(row["recorded_at"]),
+                        "weights": weights, "source": str(row["source"])})
         return out
-    except sqlite3.Error:
+    except (ForwardLedgerError, sqlite3.Error):
         return []
-    finally:
-        conn.close()
 
 
 def load_parity_records(parity_path: str) -> List[dict]:
@@ -409,19 +405,12 @@ def strategy_report(*, venue: str, strategy_id: str, ledger_path: str,
     # replay aum = 最后一笔已执行决策记录的 deploy_aum;无 -> replay 不可构造(UNKNOWN)
     executed_aums = [d["aum"] for d in decisions if d["executed"] and d.get("aum")]
     aum_replay = executed_aums[-1] if executed_aums else None
+    # The retained replay primitive implements the invalidated V1 spot/funding
+    # approximation.  Production reporting must not turn it into a new PnL or
+    # degradation claim.  Real fills/TCA remain observable; the model side is
+    # UNKNOWN until an authoritative V2 replay is wired here.
     replay = None
-    replay_skip_reason = None
-    if not day_grid:
-        replay_skip_reason = "no_mark_days_in_window"
-    elif any(d["executed"] and d.get("weights") is None for d in decisions):
-        replay_skip_reason = "executed_decision_missing_recorded_weights"
-    elif aum_replay is None:
-        replay_skip_reason = "no_recorded_deploy_aum"
-    else:
-        replay, _ = _replay_book(decisions, day_grid, close_by_day, funding_by_day,
-                                 aum_replay=aum_replay, cost_bps=cost_bps)
-        if replay is None:
-            replay_skip_reason = "executed_decision_missing_recorded_weights"
+    replay_skip_reason = LEGACY_INVALIDATION_CODE
 
     window = {
         "first_decision_ts": first_dec_ts,
@@ -443,7 +432,7 @@ def strategy_report(*, venue: str, strategy_id: str, ledger_path: str,
     out["orders_without_decision_trace"] = sorted(untraced)
     out["replay_construction"] = {
         "aum": aum_replay,
-        "cost_bps": cost_bps,
+        "cost_bps": None,
         "skip_reason": replay_skip_reason,
         **({k: replay[k] for k in ("n_periods", "n_replay_fills", "reconciliation_residual",
                                    "funding_missing_cells")} if replay else {}),
@@ -527,11 +516,17 @@ def build_report(*, now_ms: int, venues: Optional[Sequence[str]] = None,
         "artifact": "LIVE_DEGRADATION",
         "schema_version": 1,
         "generated_at_ms": int(now_ms),
-        "readiness": "L2_DRY_RUN_ONLY",
-        "cost_model": {"cost_bps": cost_bps,
-                       "provenance": "FLAT_BPS — canonical dry-run assumption "
-                                     "(tools/dry_run_crowd_contra_multi.py::_COST_BPS)"},
-        "replay_construction": _REPLAY_CONSTRUCTION,
+        "readiness": "TECHNICAL_VALIDATION_ONLY",
+        "backtest_reference_status": LEGACY_INVALIDATION_CODE,
+        "cost_model": {
+            "cost_bps": None,
+            "status": LEGACY_INVALIDATION_CODE,
+            "provenance": "retained V1 flat-bps assumption; not evaluated",
+        },
+        "replay_construction": (
+            f"{LEGACY_INVALIDATION_CODE}: retained implementation is not invoked; "
+            "authoritative V2 replay is not yet integrated"
+        ),
         "honesty_note": _HONESTY_NOTE,
         "summary": summary,
         "reports": reports,

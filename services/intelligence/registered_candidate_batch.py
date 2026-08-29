@@ -12,6 +12,11 @@ from quantos.contracts.hashing import stable_hash
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.evaluator import AlphaEvaluator
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+    selection_authority_admitted,
+)
 from services.research import alpha_expression as ax
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.research_budget import (
@@ -127,7 +132,7 @@ def _materialize_candidates(candidates: Sequence[tuple]) -> tuple[tuple, ...]:
     return tuple(normalized)
 
 
-def run_registered_candidate_batch(
+def _run_registered_candidate_batch_legacy_diagnostic(
     candidates: Sequence[tuple],
     *,
     registry: ExperimentRegistry,
@@ -151,6 +156,7 @@ def run_registered_candidate_batch(
     uses_locked_oos: bool | None = None,
     hypothesis_by_candidate: Mapping[str, str] | None = None,
     code_hash: str = "",
+    authoritative_backtest_record: Mapping[str, object] | None = None,
 ) -> dict:
     """Pre-register a complete pool, then evaluate it through the agent loop.
 
@@ -234,6 +240,19 @@ def run_registered_candidate_batch(
         raise TypeError("hypothesis_by_candidate must be a mapping or None")
     if not isinstance(code_hash, str):
         raise TypeError("code_hash must be a string")
+    if authoritative_backtest_record is not None and not isinstance(
+        authoritative_backtest_record, Mapping
+    ):
+        raise TypeError("authoritative_backtest_record must be a mapping or None")
+    authority_claim_valid = selection_authority_admitted(
+        requested=authoritative_backtest_record is not None,
+        authoritative_backtest_record=authoritative_backtest_record,
+    )
+    if authority_claim_valid:
+        raise RuntimeError(
+            "authoritative evaluation persistence schema is not integrated"
+        )
+    selection_authorized = False
     if budget is None:
         if (
             parent_hypothesis is not None
@@ -341,6 +360,8 @@ def run_registered_candidate_batch(
             pool,
             timestamp=recorded_at,
             evidence=None if evidence is None else dict(evidence),
+            selection_authorized=selection_authorized,
+            diagnostic_only=True,
         )
 
         recorded_run_ids: list[str] = []
@@ -382,6 +403,15 @@ def run_registered_candidate_batch(
             "recorded_run_ids": recorded_run_ids,
             "registered_candidate_count": len(set(config_hashes)),
             "recovered_search_ids": recovered_search_ids,
+            "evidence_status": (
+                "AUTHORITATIVE"
+                if selection_authorized
+                else "DIAGNOSTIC_ONLY"
+            ),
+            "selection_authority": selection_authorized,
+            "invalidation_code": (
+                None if selection_authorized else LEGACY_INVALIDATION_CODE
+            ),
         }
         if budget_declaration is not None:
             # Additive run-artifact fields (spec §14.1): budget metadata +
@@ -401,6 +431,14 @@ def run_registered_candidate_batch(
                 f"{type(terminal_error).__name__}: {terminal_error}"
             )
         raise
+
+
+def run_registered_candidate_batch(*_args: Any, **_kwargs: Any) -> dict:
+    """Block the legacy PanelPeriods evaluator at its shared public boundary."""
+    require_diagnostic_selection_seam(
+        "services.intelligence.registered_candidate_batch",
+        diagnostic_only=False,
+    )
 
 
 __all__ = ["run_registered_candidate_batch"]

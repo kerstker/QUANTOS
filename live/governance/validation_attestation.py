@@ -1,18 +1,24 @@
-"""Live 部署前的验证证明门(审计 P1-1)。设计:docs/audit/RISK_REGISTER.md P1-1。
+"""Legacy live-deployment validation evidence (diagnostic only).
+
+``ValidationAttestation`` remains readable for immutable history and private
+offline pipeline tests. It is no longer authority for the public ordinary
+submission boundary: an in-process ``human_override`` is self-described and
+cannot substitute for an independently controlled signer/verifier.
+
+设计:docs/audit/RISK_REGISTER.md P1-1。
 
 回答的问题:一个 strategy_id 凭什么可以进入会动真钱的 live 提交路径?它必须**在案**证明自己要么
 (a) 通过了形式化验证门(一条 PASS ValidationResult,以其复现哈希引用),要么 (b) 有一条**可审计的
 人工 override**(某个真人 attested_by + 理由 + 时间)。二者皆无 → fail-closed 拒绝真提交,即便
 `--submit` + 已签 mandate。
 
-这是 PreTradeRiskGate(风控**许可**)/ mandate(分级**授权**)之外、更靠前的一道**策略级准入门**:
+历史上这是 PreTradeRiskGate(风控**许可**)/ mandate(分级**授权**)之外的策略级检查:
 风控门问"这笔订单安不安全",mandate 问"这批要不要人工在场",本门问"这个策略压根有没有资格上真钱"。
 现部署的 crowd_contra 从未走过形式化验证门(靠 IC 面板/干跑/现实主义等诊断 + 人工判断选出),所以
 它需要走 (b) 人工 override——由真人签署,不是代码/agent 能自签的。
 
-诚实边界(与全库同一威胁模型注脚):override 的"人工"是自报 `attested_by` 标签(与 mandate
-`approved_by`、promotion `X-Operator` 同性质),真身份认证/出进程签名是 Phase 14。本门结构性挡下的是
-"没有任何在案凭证就上真钱";它挡不住受信进程内代码伪造一条 attestation——那是 Phase 14 进程隔离的范畴。
+诚实边界:override 的"人工"是自报 `attested_by` 标签,因此只能做诊断证据；公开提交边界由
+``services.validation.live_submission_authority`` 独立拒绝。
 """
 from __future__ import annotations
 

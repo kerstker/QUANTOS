@@ -1,5 +1,11 @@
 import json
 
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 import tools.l2_paper_operator as operator_tool
 from tools.l2_paper_operator import run_operator
 
@@ -125,3 +131,43 @@ def test_bounded_mark_mode_skips_all_candidate_research(monkeypatch, tmp_path):
             "status": "SKIPPED",
             "reason": "INDEPENDENT_RESEARCH_SCHEDULE",
         }
+
+
+def test_candidate_risk_bundle_quarantines_before_legacy_read_or_write(
+    monkeypatch, tmp_path
+):
+    from tools import paper_research_risk_bundle
+
+    touched: list[str] = []
+    output = tmp_path / "research-risk.json"
+    output.write_bytes(b"existing-risk-bundle")
+
+    def forbidden(label):
+        def _forbidden(*_args, **_kwargs):
+            touched.append(label)
+            pytest.fail(f"{label} touched before legacy authority quarantine")
+
+        return _forbidden
+
+    monkeypatch.setattr(
+        operator_tool,
+        "paper_candidate_ids",
+        forbidden("candidate workflow/evaluation"),
+    )
+    monkeypatch.setattr(
+        paper_research_risk_bundle,
+        "build_automatic_research_risk_bundle",
+        forbidden("legacy risk inputs"),
+    )
+    monkeypatch.setattr(
+        paper_research_risk_bundle,
+        "_write",
+        forbidden("risk output"),
+    )
+    monkeypatch.setattr(paper_research_risk_bundle, "DEFAULT_OUTPUT", output)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        operator_tool._run_candidate_risk_bundle()
+
+    assert touched == []
+    assert output.read_bytes() == b"existing-risk-bundle"

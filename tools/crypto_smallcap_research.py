@@ -14,6 +14,8 @@ must stay 0 (containment). Trial/evaluation provenance is durable; nothing is pr
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 import sys
@@ -243,6 +245,7 @@ def _main(registry: ExperimentRegistry) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_smallcap_research")
     with production_experiment_registry() as registry:
         _main(registry)
 

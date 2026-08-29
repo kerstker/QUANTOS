@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import statistics
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.factor_set import incremental_ir
@@ -168,6 +169,7 @@ def run_top_refutation() -> dict:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.crypto_oi_top_verify")
     report = run_top_refutation()
     atomic_write_json(OUTPUT, report, indent=2)
     print(
@@ -179,4 +181,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

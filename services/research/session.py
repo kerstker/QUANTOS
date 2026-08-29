@@ -18,6 +18,10 @@ from typing import Callable, Optional, Sequence
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.factor_set import select_synergistic_set
+from services.validation.selection_authority import (
+    LEGACY_INVALIDATION_CODE,
+    require_diagnostic_selection_seam,
+)
 
 from .fundamental_factors import make_combined_periods_provider
 from .panel_builder import make_data_periods_provider, universe_data_gaps
@@ -188,7 +192,11 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
                          trial_provenance_recorder=None,
                          oos_access_recorder=None,
                          search_id: Optional[str] = None,
+                         diagnostic_only: bool = False,
                          search_runtime: ResearchSearchRuntime) -> dict:
+    require_diagnostic_selection_seam(
+        "run_research_session", diagnostic_only=diagnostic_only
+    )
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
     if registry is not None and (
@@ -262,7 +270,13 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
             loop.strategy,
             dataset_version=dataset_version,
         )
-    out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
+    out = loop.search(
+        rounds,
+        batch_size,
+        provider,
+        timestamp=timestamp,
+        diagnostic_only=True,
+    )
 
     # honesty signal: members with no bar on a trading day (survivorship-free run only)
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
@@ -307,6 +321,9 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
         "factor_returns": _factor_returns(catalog),
         "oos": oos,
         "cpcv": cpcv,
+        "diagnostic_only": True,
+        "selection_authority": False,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }
 
 
@@ -397,7 +414,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         vocab=vocab,
     )
     out = loop.run(seed, generations=generations, population_size=population_size,
-                   elite_k=elite_k, timestamp=timestamp)
+                   elite_k=elite_k, timestamp=timestamp, diagnostic_only=True)
 
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
         else {"total_gaps": 0, "by_date": {}}
@@ -427,6 +444,9 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "factor_returns": _factor_returns(catalog),
         "oos": oos,
         "cpcv": cpcv,
+        "diagnostic_only": True,
+        "selection_authority": False,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }
 
 
@@ -478,7 +498,9 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         ),
         vocab=vocab,
     )
-    out = search.run(seed, iterations=iterations, timestamp=timestamp)
+    out = search.run(
+        seed, iterations=iterations, timestamp=timestamp, diagnostic_only=True
+    )
 
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
         else {"total_gaps": 0, "by_date": {}}
@@ -508,4 +530,7 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         "factor_returns": _factor_returns(catalog),
         "oos": oos,
         "cpcv": cpcv,
+        "diagnostic_only": True,
+        "selection_authority": False,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }

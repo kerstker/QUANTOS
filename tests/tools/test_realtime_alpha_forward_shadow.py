@@ -395,12 +395,18 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
         **_kwargs,
     ):
         del start_ms, bucket_ms
+        label_times = (
+            (base + 30_250, base + 60_250)
+            if end_ms >= base + 60_250
+            else (end_ms,)
+        )
         return {
             instrument: [
                 RealtimeFrame(
                     instrument_id=instrument,
-                    event_time_ms=end_ms - 250,
-                    decision_time_ms=end_ms,
+                    event_time_ms=known_at - 1,
+                    knowledge_time_ms=known_at,
+                    decision_time_ms=known_at,
                     mid_price=100.0 + index,
                     spread_bps=1.0,
                     depth_imbalance_5=(index - 4.5) / 10.0,
@@ -409,6 +415,7 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
                     taker_imbalance_5s=(index - 4.5) / 10.0,
                     liquidation_imbalance_5s=0.0,
                 )
+                for known_at in label_times
             ]
             for index, instrument in enumerate(instruments)
         }

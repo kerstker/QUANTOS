@@ -1295,6 +1295,23 @@ class ForwardLedger:
             )
         ]
 
+    def attested_decisions(self, alpha_id: str) -> list[dict]:
+        """Return only decisions covered by the verified admission-binding chain."""
+        with self._read_snapshot():
+            if not self._decision_chain_valid():
+                raise ForwardLedgerError("invalid forward decision binding chain")
+            return [
+                dict(row)
+                for row in self._conn.execute(
+                    "SELECT d.decided_ts,d.recorded_at,d.weights_json,d.signals_json,"
+                    "d.source,d.realized FROM forward_decisions AS d INNER JOIN "
+                    "forward_decision_bindings AS b ON b.alpha_id=d.alpha_id "
+                    "AND b.decided_ts=d.decided_ts WHERE d.alpha_id=? "
+                    "ORDER BY d.decided_ts",
+                    (alpha_id,),
+                )
+            ]
+
     def pending(self, alpha_id: str) -> list[dict]:
         return [decision for decision in self.decisions(alpha_id) if not decision["realized"]]
 

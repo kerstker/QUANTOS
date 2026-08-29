@@ -203,6 +203,7 @@ def client(tmp_path, monkeypatch):
         "_IDENTITY_AUTHORIZATION_DB",
         str(authorization_store),
     )
+    monkeypatch.setattr(m, "_now", lambda: 1_780_000_100)
     m.app.dependency_overrides[m.require_governance_identity] = _identity_dependency
     try:
         yield TestClient(m.app)
@@ -387,9 +388,16 @@ def test_candidates_lists_paper_trading_alpha_with_evidence(client):
     assert "a1" in cands
     c = cands["a1"]
     assert c["state"] == "PAPER_TRADING"
-    assert c["evidence"]["backtest_sharpe"] == 1.2
-    assert c["evidence"]["paper_sharpe"] is not None
+    assert c["evidence"]["backtest_sharpe"] is None
+    assert c["evidence"]["paper_sharpe"] is None
     assert c["evidence"]["eval_trial_count"] == 2
+    assert c["evidence"]["authoritative_backtest_present"] is False
+    assert c["evidence"]["authoritative_backtest_verified"] is False
+    assert c["evidence"]["full_research_risk_9_of_9"] is False
+    assert c["evidence"]["profitability_projection_verified"] is False
+    assert c["evidence"]["promotion_authority_ready"] is False
+    assert "NO_AUTHORITATIVE_BACKTEST_RECORD" in c["precheck_hints"]
+    assert "AUTHORITATIVE_PROFITABILITY_PROJECTION_REQUIRED" in c["precheck_hints"]
 
 
 def test_open_request_for_unknown_alpha_is_409(client):
@@ -414,7 +422,7 @@ def test_same_operator_cannot_fill_two_roles(client):
     assert r.status_code == 409  # ApprovalViolation 原样透出
 
 
-def test_three_distinct_operators_full_loop_and_execute(client):
+def test_legacy_registry_and_paper_metrics_cannot_be_promoted_after_three_approvals(client):
     rid = _open(client, "alice")
     assert (
         _post_command(
@@ -442,27 +450,24 @@ def test_three_distinct_operators_full_loop_and_execute(client):
     execution_body = _command_body(execution_preview)
     execute_path = f"/api/v1/governance/promotion/requests/{rid}/execute"
     r = client.post(execute_path, json=execution_body, headers=_h("carol"))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["ok"] is True and body["alpha_id"] == "a1" and body["dst"] == "APPROVED"
-    assert body["event_outbox_id"]
-    assert body["event_delivery"]["ok"] is True
-    assert body["event_delivery"]["dispatch"] == {"dispatched": 1, "pending": 0}
-    assert body["authority_requery"]["research_state"] == "APPROVED"
-    replay = client.post(execute_path, json=execution_body, headers=_h("carol"))
-    assert replay.status_code == 200
-    assert replay.json() == body
-    # 详情端点显示完整步骤时间线(谁做的、何时)
+    assert r.status_code == 409, r.text
+    assert "AUTHORITATIVE_BACKTEST_RECORD_REQUIRED" in r.text
+
+    # 三方签完也不能把 legacy Sharpe 洗成 promotion authority;grant 未烧、alpha 未推进。
     detail = client.get(f"/api/v1/governance/promotion/requests/{rid}", headers=_h("alice")).json()
     states = [s["state"] for s in detail["steps"]]
     actors = [s["actor_id"] for s in detail["steps"]]
-    assert states == ["REQUESTED", "REVIEWED", "APPROVED", "CONSUMED"]
+    assert detail["state"] == "APPROVED"
+    assert states == ["REQUESTED", "REVIEWED", "APPROVED"]
     assert actors == [
         f"{ISSUER}|alice",
         f"{ISSUER}|bob",
         f"{ISSUER}|carol",
-        f"{ISSUER}|carol",
     ]
+    registry = m._registry()
+    catalog = AlphaCatalog()
+    registry.load_into(catalog)
+    assert catalog.state("a1") == S.PAPER_TRADING
 
 
 def test_execute_by_non_approver_is_409_and_grant_not_burned(client):

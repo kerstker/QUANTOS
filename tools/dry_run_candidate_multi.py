@@ -1,10 +1,17 @@
-"""权威候选(challenger)多期干跑驱动器:把 7 个预注册 crowd_contra 变体族 CANDIDATE
+"""已隔离的候选(challenger)历史多期干跑驱动器。
+
+P0 审计确认本文件所调用的旧内核具有同周期成交、资金费错位、整数永续数量、
+不完整 P&L 恒等式及不完整 run identity。入口现在只写 fail-closed 隔离报告，
+不会计算、复用或持久化任何历史收益，也不会产生权威/晋升证据。以下文字保留为
+被隔离实现的历史说明，便于迁移审计；它不再描述当前证据等级。
+
+历史实现把 7 个预注册 crowd_contra 变体族 CANDIDATE
 (forward_track_advance._ALPHAS 里的 dict spec:expr/quantile/cadence_days)跑过与官方
 crowd_contra 驱动器**同一条** run_multi_period_dry_run 路径(10bps 平费、fail-closed 预交易门、
 拥挤门 z>3.0 BLOCK 跳周、资金费现金流、raw+vol-target 双曲线),并把每条 DryRunRun **持久化进
 data/cache/dry_run.db**(与 5 条 legacy 策略共存,事件经 save_and_project_dry_run 事务性绑定进
 共享 domain event bus)——这是 challenger 赚取 paper 健康门所要求的
-provenance="REAL_AUTHORITATIVE_L2_DRY_RUN" 回测行的唯一诚实机器(此前它们只有
+provenance="REAL_AUTHORITATIVE_L2_DRY_RUN" 回测行的旧生产器(此前它们只有
 REAL_PAPER_CANDIDATE_RISK_INPUTS 占位,健康门报 <id>:BACKTEST_PROVENANCE_INVALID)。
 
 人口(谁算 challenger):顺序取 tools/paper_candidate_universe.paper_candidate_ids() 的非静态段
@@ -45,6 +52,11 @@ if str(_REPO_ROOT) not in sys.path:
 from services.research import alpha_expression as ax
 from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
 from services.risk.research_risk.domain.models import RiskConfig
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    is_authoritative_backtest_record,
+    quarantine_legacy_backtest,
+)
 from services.execution.dry_run_store import DryRunStore
 from services.monitoring.domain_event_runtime import DOMAIN_EVENT_DB
 from tools.cache_io import atomic_write_json
@@ -86,7 +98,13 @@ def candidate_ids(
     )
 
 
-def _existing_candidate_run(strategy_id: str, cadence_days: int, path: str = _OUT) -> dict | None:
+def _existing_candidate_run(
+    strategy_id: str,
+    cadence_days: int,
+    path: str = _OUT,
+    *,
+    manifest_hash: str | None = None,
+) -> dict | None:
     """Return the append-only candidate run when this driver has already persisted it.
 
     ``save_and_project_dry_run`` correctly rejects binding a second research-risk
@@ -95,7 +113,9 @@ def _existing_candidate_run(strategy_id: str, cadence_days: int, path: str = _OU
     than a reason to recompute and collide with the outbox (mirrors
     ``dry_run_crowd_contra_multi._existing_crowd_run``).
     """
-    if not os.path.isfile(path):
+    # V1 rows have no complete input identity.  They may remain in the
+    # append-only store for display/audit, but can never be silently reused.
+    if not manifest_hash or not os.path.isfile(path):
         return None
     store = None
     try:
@@ -105,6 +125,9 @@ def _existing_candidate_run(strategy_id: str, cadence_days: int, path: str = _OU
             record
             for record in store.all_runs()
             if isinstance(record, dict) and record.get("strategy_id") == strategy_id
+            and is_authoritative_backtest_record(record)
+            and isinstance(record.get("detail"), dict)
+            and record["detail"].get("manifest_hash") == manifest_hash
             and (
                 not isinstance(record.get("detail"), dict)
                 or not isinstance(record["detail"].get("research_risk"), dict)
@@ -186,9 +209,74 @@ def run_candidate_dry_runs(
     signal_evaluator=ax.evaluate,
     core=candidate_dry_run,
 ) -> dict:
-    """Run (or idempotently reuse) the authoritative dry-run for every challenger."""
+    """Fail closed while the legacy candidate engine is quarantined.
+
+    Raw public-data collection and forward observation are intentionally not
+    part of this function and continue elsewhere.  This historical-score
+    producer is blocked until the causal V2 perpetual engine supplies a fully
+    attested :class:`RunManifestV2`; existing V1 rows are never read or reused.
+    """
     generated_at = int(now_ms if now_ms is not None else time.time() * 1000)
     population = tuple(ids) if ids is not None else tuple(population_fn())
+    try:
+        quarantine_legacy_backtest("dry_run_candidate_multi")
+    except BacktestIntegrityBlocked as exc:
+        rows = [
+            {
+                "alpha_id": alpha_id,
+                "status": "BLOCKED",
+                "reason": "INVALIDATED_PERP_LEDGER_V1",
+                "detail": str(exc),
+            }
+            for alpha_id in population
+        ]
+        payload = {
+            "schema_version": 2,
+            "flow": "CANDIDATE_BACKTEST_QUARANTINE",
+            "readiness": "L2_DRY_RUN_ONLY",
+            "authoritative": False,
+            "evidence_class": "LEGACY_UNATTESTED_DISPLAY_ONLY",
+            "generated_at_ms": generated_at,
+            "population": {
+                "source": "paper_candidate_universe+forward_track_registered_alphas",
+                "candidate_ids": list(population),
+            },
+            "candidates": rows,
+            "summary": {
+                "n_candidates": len(rows),
+                "n_persisted": 0,
+                "n_reused": 0,
+                "n_errors": 0,
+                "n_blocked": len(rows),
+            },
+            "safety": {
+                "paper_only": True,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+                "credential_access": False,
+                "broker_order_submission": False,
+            },
+            "honesty": {
+                "status": "SUPERSEDED_INVALID_TIME_AND_PERP_SEMANTICS",
+                "selection_allowed": False,
+                "promotion_allowed": False,
+                "legacy_reuse_allowed": False,
+                "raw_collection_allowed": True,
+                "read_only_forward_observation_allowed": True,
+                "recovery_requirement": (
+                    "RunManifestV2 + causal next-event execution + Decimal linear-perpetual "
+                    "ledger + settlement-event funding + margin/liquidation + complete "
+                    "cash-flow identity + historical venue rules + 9/9 research risk"
+                ),
+            },
+        }
+        atomic_write_json(output_path, payload, indent=2)
+        return payload
+
+    # ``quarantine_legacy_backtest`` is intentionally unconditional.  Keeping
+    # the old implementation below preserves an auditable diff and makes the
+    # migration target explicit, but this branch is unreachable until the
+    # function is deliberately replaced by the V2 engine.
     rows: list[dict] = []
     panel = None
     store = None
@@ -326,12 +414,14 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
     summary = payload["summary"]
+    blocked = int(summary.get("n_blocked", 0))
     print(
         f"=== CANDIDATE 权威干跑: {summary['n_candidates']} 候选 · 新存 {summary['n_persisted']} · "
-        f"幂等复用 {summary['n_reused']} · 错误 {summary['n_errors']} -> {args.output} ===",
+        f"幂等复用 {summary['n_reused']} · 阻断 {blocked} · 错误 {summary['n_errors']} "
+        f"-> {args.output} ===",
         flush=True,
     )
-    return 0 if summary["n_errors"] == 0 else 1
+    return 0 if summary["n_errors"] == 0 and blocked == 0 else 2
 
 
 if __name__ == "__main__":

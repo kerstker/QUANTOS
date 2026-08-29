@@ -17,6 +17,49 @@ from tools.paper_realtime import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _seed_read_only_historical_paper_rows(monkeypatch):
+    """Marking tests read seeded history; canonical write admission is separate."""
+    monkeypatch.setattr(
+        PaperExecutionStore,
+        "_require_authoritative_write",
+        staticmethod(lambda _payload, _authority: None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _authority_contract_double(monkeypatch):
+    monkeypatch.setattr(
+        paper_realtime,
+        "is_authoritative_backtest_record",
+        lambda record: bool(
+            isinstance(record, dict)
+            and isinstance(record.get("detail"), dict)
+            and record["detail"].get("_test_manifest_valid") is True
+        ),
+    )
+
+
+def _full_risk() -> dict:
+    engines = {
+        name: True
+        for name in (
+            "market", "liquidity", "concentration", "correlation", "drawdown",
+            "regime", "stress", "capacity", "model_alpha",
+        )
+    }
+    return {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_passed": 9,
+        "gates_run": 9,
+        "engines_run": engines,
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
+
+
 def _row(alpha_id: str, *, decision_ts: int = 1000) -> dict:
     return {
         "alpha_id": alpha_id,
@@ -36,24 +79,29 @@ def _row(alpha_id: str, *, decision_ts: int = 1000) -> dict:
     }
 
 
-def test_print_summary_includes_paper_and_backtest_metrics(capsys):
+def test_print_summary_keeps_marks_but_suppresses_backtest_performance(capsys):
     paper_realtime._print_summary(
         {
             "verdict": {
-                "cycle_completed": True,
-                "paper_mark_ready": True,
+                "cycle_completed": False,
+                "paper_mark_ready": False,
+                "diagnostic_observation_completed": True,
                 "backtest_reference_present_for_all_three": True,
             },
             "persistence": {"new_snapshots": 3},
             "alphas": {
                 "carry_oi_majors": {
-                    "status": "PAPER_MARKED",
+                    "status": "DIAGNOSTIC_ONLY",
+                    "observation_status": "MARK_OBSERVED",
+                    "evidence_status": "INVALIDATED_PERP_LEDGER_V1",
                     "equity": 9_950.0,
                     "net_pnl": -50.0,
                     "reconciliation_residual": 0.0,
                 },
                 "challenger": {
-                    "status": "PAPER_MARKED",
+                    "status": "DIAGNOSTIC_ONLY",
+                    "observation_status": "MARK_OBSERVED",
+                    "evidence_status": "INVALIDATED_PERP_LEDGER_V1",
                     "equity": 10_010.0,
                     "net_pnl": 10.0,
                     "reconciliation_residual": 0.0,
@@ -68,7 +116,9 @@ def test_print_summary_includes_paper_and_backtest_metrics(capsys):
     )
     payload = json.loads(capsys.readouterr().out)
     assert payload["alphas"]["carry_oi_majors"] == {
-        "status": "PAPER_MARKED",
+        "status": "DIAGNOSTIC_ONLY",
+        "observation_status": "MARK_OBSERVED",
+        "evidence_status": "INVALIDATED_PERP_LEDGER_V1",
         "equity": 9_950.0,
         "net_pnl": -50.0,
         "funding_pnl": None,
@@ -78,12 +128,14 @@ def test_print_summary_includes_paper_and_backtest_metrics(capsys):
     }
     assert payload["backtests"]["carry_oi_majors"] == {
         "run_id": "run-1",
-        "sharpe": 0.42,
-        "sharpe_vt": None,
-        "max_drawdown": None,
+        "strategy_id": None,
+        "provenance": None,
     }
-    assert payload["alphas"]["challenger"]["status"] == "PAPER_MARKED"
+    assert payload["alphas"]["challenger"]["status"] == "DIAGNOSTIC_ONLY"
     assert payload["backtests"]["challenger"]["run_id"] == "run-2"
+    assert "sharpe" not in payload["backtests"]["carry_oi_majors"]
+    assert payload["decision_class"] == "DIAGNOSTIC_ONLY"
+    assert payload["evidence_status"] == "INVALIDATED_PERP_LEDGER_V1"
 
 
 def _operator() -> dict:
@@ -99,6 +151,7 @@ def _operator() -> dict:
                                 "status": "PASS",
                                 "snapshot": {
                                     "run_id": f"bt-{alpha}",
+                                    "strategy_id": alpha,
                                     "n_periods": 12,
                                     "pnl": {
                                         "sharpe": 1.1,
@@ -109,6 +162,11 @@ def _operator() -> dict:
                                     },
                                     "reconciliation_residual": 0.0,
                                     "research_risk_decision": "RISK_APPROVED",
+                                    "research_risk": _full_risk(),
+                                    "detail": {
+                                        "_test_manifest_valid": True,
+                                        "research_risk": _full_risk(),
+                                    },
                                 },
                             }
                             for alpha in ALPHA_IDS
@@ -195,7 +253,10 @@ def test_build_mark_snapshot_reconciles_current_equity():
         source_times={"BTC": 2000},
         aum=1000.0,
     )
-    assert result["status"] == "PAPER_MARKED"
+    assert result["status"] == "DIAGNOSTIC_ONLY"
+    assert result["observation_status"] == "MARK_OBSERVED"
+    assert result["evidence_status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert result["readiness_eligible"] is False
     assert result["positions"] == {"BTC": 1}
     assert result["equity"] == pytest.approx(1009.9)
     assert result["net_pnl"] == pytest.approx(9.9)
@@ -273,6 +334,39 @@ def test_build_mark_snapshot_reconstructs_multiple_rebalances():
     assert result["reconciliation_residual"] == pytest.approx(0.0)
 
 
+def test_pending_forward_observation_does_not_repackage_legacy_evaluation():
+    snapshot = paper_realtime._pending_candidate_snapshot(
+        "challenger",
+        {
+            "forward_observation": {
+                "observed_periods": 99,
+                "required_periods": 8,
+                "evaluation_status": "PASS",
+                "evaluation_verdict": "PASS_WITH_WARNINGS",
+            },
+            "research_risk": {"decision": "RISK_APPROVED"},
+            "research_risk_bundle": {"status": "READY"},
+        },
+        observed_at=3000,
+        generated_at=3001,
+        aum=1000.0,
+    )
+
+    assert snapshot["status"] == "DIAGNOSTIC_ONLY"
+    assert snapshot["evidence_status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert snapshot["readiness_eligible"] is False
+    assert snapshot["forward_observation"] == {
+        "observed_periods": 99,
+        "required_periods": 8,
+        "status": "DIAGNOSTIC_ONLY",
+        "evidence_status": "INVALIDATED_PERP_LEDGER_V1",
+        "readiness_eligible": False,
+    }
+    assert "evaluation_verdict" not in snapshot["forward_observation"]
+    assert "research_risk" not in snapshot
+    assert "research_risk_bundle" not in snapshot
+
+
 def test_run_cycle_persists_three_alpha_marks_and_backtests(tmp_path):
     paper_path = tmp_path / "paper-orders.db"
     order_store = PaperExecutionStore(str(paper_path), create=True)
@@ -301,8 +395,9 @@ def test_run_cycle_persists_three_alpha_marks_and_backtests(tmp_path):
         aum=1000.0,
         generated_at_ms=3000,
     )
-    assert report["verdict"]["cycle_completed"] is True
-    assert report["verdict"]["paper_mark_ready"] is True
+    assert report["verdict"]["cycle_completed"] is False
+    assert report["verdict"]["paper_mark_ready"] is False
+    assert report["verdict"]["diagnostic_observation_completed"] is True
     assert report["verdict"]["backtest_reference_present_for_all_three"] is True
     assert report["persistence"]["new_snapshots"] == 3
     assert report["persistence"]["chain_valid"] is True
@@ -313,7 +408,10 @@ def test_run_cycle_persists_three_alpha_marks_and_backtests(tmp_path):
     }
     assert len(report["history"]) == 3
     assert [point["alpha_id"] for point in report["history"]] == list(ALPHA_IDS)
-    assert all(row["status"] == "PAPER_MARKED" for row in report["alphas"].values())
+    assert all(row["status"] == "DIAGNOSTIC_ONLY" for row in report["alphas"].values())
+    assert report["readiness_class"] == "DIAGNOSTIC_ONLY"
+    assert report["evidence_status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert report["verdict"]["new_paper_orders_allowed"] is False
     assert json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))["verdict"]["live_allowed"] is False
 
 
@@ -348,12 +446,14 @@ def test_run_cycle_marks_existing_fills_when_new_operator_is_blocked(tmp_path):
     )
 
     assert report["operator_mode"] == paper_realtime.MARK_ONLY_REPLAY_REASON
-    assert report["readiness_class"] == "PAPER_MARKS_ONLY_REPLAY"
-    assert report["verdict"]["cycle_completed"] is True
+    assert report["readiness_class"] == "DIAGNOSTIC_ONLY"
+    assert report["verdict"]["cycle_completed"] is False
+    assert report["verdict"]["paper_mark_ready"] is False
+    assert report["verdict"]["diagnostic_observation_completed"] is True
     assert report["verdict"]["new_paper_orders_allowed"] is False
     assert report["verdict"]["live_allowed"] is False
     assert report["persistence"]["chain_valid"] is True
-    assert all(row["status"] == "PAPER_MARKED" for row in report["alphas"].values())
+    assert all(row["status"] == "DIAGNOSTIC_ONLY" for row in report["alphas"].values())
 
 
 def test_run_cycle_fails_closed_on_stale_public_marks(tmp_path):
@@ -394,6 +494,21 @@ def test_run_cycle_does_not_claim_complete_without_all_backtest_references(tmp_p
         order_store.close()
     operator = _operator()
     operator["stages"]["three_alpha_paper_flow"]["flow"]["stages"]["authoritative_dry_runs"] = []
+    operator["stages"]["paper_order_preview"] = {
+        "preview": {
+            "alphas": {
+                alpha: {
+                    "run_id": f"legacy-{alpha}",
+                    "reconciliation_residual": 0.0,
+                    "research_risk": {
+                        "decision": "RISK_APPROVED",
+                        "alpha_returns": {alpha: [0.5, 0.5, 0.5]},
+                    },
+                }
+                for alpha in ALPHA_IDS
+            }
+        }
+    }
     report = run_cycle(
         operator=operator,
         mark_provider=lambda _instruments: {
@@ -408,43 +523,36 @@ def test_run_cycle_does_not_claim_complete_without_all_backtest_references(tmp_p
         aum=1000.0,
         generated_at_ms=3000,
     )
-    assert report["verdict"]["paper_mark_ready"] is True
+    assert report["verdict"]["paper_mark_ready"] is False
+    assert report["verdict"]["diagnostic_observation_completed"] is True
     assert report["verdict"]["cycle_completed"] is False
     assert report["verdict"]["backtest_reference_present_for_all_three"] is False
+    assert report["backtests"] == {}
+    assert "REAL_PAPER_CANDIDATE_RISK_INPUTS" not in json.dumps(report)
 
 
-def test_main_passes_custom_paper_profile_to_order_preview(monkeypatch, tmp_path):
+def test_main_custom_profile_reads_retained_receipt_without_operator_refresh(
+    monkeypatch, tmp_path
+):
     captured = {}
 
-    def fake_preview(**kwargs):
-        captured["preview"] = kwargs
-        return {"verdict": {"paper_preview_ready": True}}
-
-    def fake_operator(**kwargs):
-        captured["operator"] = kwargs
-        preview = kwargs["preview_runner"]()
-        return {
-            "verdict": {
-                "operator_completed": True,
-                "paper_preview_ready": preview["verdict"]["paper_preview_ready"],
-            }
-        }
-
     def fake_cycle(**kwargs):
-        kwargs["operator_runner"]()
-        return {"verdict": {"cycle_completed": True}}
+        captured["retained_operator"] = kwargs["operator_runner"]()
+        captured["paper_store_path"] = kwargs["paper_store_path"]
+        captured["aum"] = kwargs["aum"]
+        return {"verdict": {"diagnostic_observation_completed": True}}
 
-    monkeypatch.setattr(paper_realtime, "run_preview", fake_preview)
-    monkeypatch.setattr(paper_realtime, "run_operator", fake_operator)
     monkeypatch.setattr(paper_realtime, "run_cycle", fake_cycle)
 
     paper_store = tmp_path / "small-paper.db"
     receipt = tmp_path / "small-operator.json"
+    receipt.write_text('{"verdict":{"paper_preview_ready":true}}', encoding="utf-8")
     assert (
         paper_realtime.main(
             [
                 "--cycles",
                 "1",
+                "--refresh-paper",
                 "--aum",
                 "10000",
                 "--paper-store",
@@ -457,30 +565,27 @@ def test_main_passes_custom_paper_profile_to_order_preview(monkeypatch, tmp_path
                 str(tmp_path / "realtime.db"),
             ]
         )
-        == 0
+        == 2
     )
-    assert captured["preview"]["aum"] == 10_000.0
-    assert captured["preview"]["paper_store_path"] == str(paper_store)
-    assert captured["preview"]["output_path"].endswith(
-        "small-operator_paper_order_preview_10000.json"
-    )
-    assert captured["operator"]["refresh_candidate_research"] is False
+    assert captured["retained_operator"] == {
+        "verdict": {"paper_preview_ready": True}
+    }
+    assert captured["paper_store_path"] == str(paper_store)
+    assert captured["aum"] == 10_000.0
 
 
-def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, tmp_path):
+def test_main_health_check_cannot_turn_diagnostic_observation_into_success(
+    monkeypatch, tmp_path
+):
     captured = {}
 
-    def fake_operator(**_kwargs):
-        return _operator()
-
     def fake_cycle(**_kwargs):
-        return {"verdict": {"cycle_completed": True}}
+        return {"verdict": {"diagnostic_observation_completed": True}}
 
     def fake_health(**kwargs):
         captured["health"] = kwargs
         return {"verdict": {"paper_ready": True}, "blockers": []}
 
-    monkeypatch.setattr(paper_realtime, "run_operator", fake_operator)
     monkeypatch.setattr(paper_realtime, "run_cycle", fake_cycle)
     monkeypatch.setattr(paper_realtime, "build_report", fake_health)
 
@@ -498,7 +603,7 @@ def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, 
                 str(health_path),
             ]
         )
-        == 0
+        == 2
     )
     assert captured["health"] == {
         "realtime_status_path": str(status_path),
@@ -526,7 +631,7 @@ def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, 
                 str(health_path),
             ]
         )
-        == 0
+        == 2
     )
     assert captured["health"]["order_preview_path"].endswith(
         "small-operator_paper_order_preview_10000.json"
@@ -548,13 +653,8 @@ def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, 
 def test_main_keeps_incomplete_cycle_as_operational_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(
         paper_realtime,
-        "run_operator",
-        lambda **_kwargs: _operator(),
-    )
-    monkeypatch.setattr(
-        paper_realtime,
         "run_cycle",
-        lambda **_kwargs: {"verdict": {"cycle_completed": False}},
+        lambda **_kwargs: {"verdict": {"diagnostic_observation_completed": False}},
     )
 
     assert (
@@ -575,6 +675,7 @@ def _candidate_stage_row(alpha_id: str, *, status: str = "PASS") -> dict:
     if status == "PASS":
         row["snapshot"] = {
             "run_id": f"bt-{alpha_id}",
+            "strategy_id": alpha_id,
             "n_periods": 81,
             "pnl": {
                 "sharpe": 0.6,
@@ -585,6 +686,11 @@ def _candidate_stage_row(alpha_id: str, *, status: str = "PASS") -> dict:
             },
             "reconciliation_residual": 0.0,
             "research_risk_decision": "RISK_APPROVED",
+            "research_risk": _full_risk(),
+            "detail": {
+                "_test_manifest_valid": True,
+                "research_risk": _full_risk(),
+            },
         }
     return row
 
@@ -596,7 +702,16 @@ def test_backtest_summary_maps_candidate_stage_to_authoritative_provenance():
                 {
                     "alpha_id": "crowd_contra",
                     "status": "PASS",
-                    "snapshot": {"run_id": "bt-crowd", "n_periods": 12, "pnl": {}},
+                    "snapshot": {
+                        "run_id": "bt-crowd",
+                        "n_periods": 12,
+                        "pnl": {},
+                        "research_risk": _full_risk(),
+                        "detail": {
+                            "_test_manifest_valid": True,
+                            "research_risk": _full_risk(),
+                        },
+                    },
                 }
             ],
             "candidate_authoritative_dry_runs": [
@@ -623,7 +738,16 @@ def test_backtest_summary_without_candidate_stage_keeps_legacy_only():
                 {
                     "alpha_id": "crowd_contra",
                     "status": "PASS",
-                    "snapshot": {"run_id": "bt-crowd", "n_periods": 12, "pnl": {}},
+                    "snapshot": {
+                        "run_id": "bt-crowd",
+                        "n_periods": 12,
+                        "pnl": {},
+                        "research_risk": _full_risk(),
+                        "detail": {
+                            "_test_manifest_valid": True,
+                            "research_risk": _full_risk(),
+                        },
+                    },
                 }
             ]
         }
@@ -631,6 +755,19 @@ def test_backtest_summary_without_candidate_stage_keeps_legacy_only():
     backtests = paper_realtime._backtest_summary(flow)
     assert set(backtests) == {"crowd_contra"}
     assert backtests["crowd_contra"]["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
+
+
+def test_backtest_summary_drops_legacy_snapshot_without_manifest_v2():
+    legacy = _candidate_stage_row("crowd_contra_3d")
+    legacy["snapshot"].pop("detail")
+    flow = {
+        "stages": {
+            "candidate_authoritative_dry_runs": [
+                legacy
+            ]
+        }
+    }
+    assert paper_realtime._backtest_summary(flow) == {}
 
 
 def test_run_cycle_maps_candidate_authoritative_backtest(tmp_path):
@@ -659,7 +796,9 @@ def test_run_cycle_maps_candidate_authoritative_backtest(tmp_path):
         aum=1000.0,
         generated_at_ms=3000,
     )
-    assert report["verdict"]["cycle_completed"] is True
+    assert report["verdict"]["cycle_completed"] is False
+    assert report["verdict"]["paper_mark_ready"] is False
+    assert report["verdict"]["diagnostic_observation_completed"] is True
     challenger = report["backtests"]["crowd_contra_3d"]
     assert challenger["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
     assert challenger["run_id"] == "bt-crowd_contra_3d"

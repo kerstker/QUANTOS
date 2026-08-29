@@ -14,7 +14,10 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.pricing import LimitPricing
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate
 from live.governance.validation_attestation import HUMAN_OVERRIDE, ValidationAttestation
-from live.pipeline import resolve_unconfirmed_orders, submit_live_batch as _submit_live_batch
+from live.pipeline import (
+    _submit_live_batch_technical_diagnostic as _submit_live_batch,
+    resolve_unconfirmed_orders,
+)
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.config import RiskLimits
@@ -34,6 +37,7 @@ _TERMINAL = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED"})
 
 
 def submit_live_batch(**kwargs):
+    kwargs["diagnostic_only"] = True
     if "validation_attestation" not in kwargs:
         kwargs["validation_attestation"] = ValidationAttestation(
             strategy_id=kwargs["strategy_id"], kind=HUMAN_OVERRIDE,

@@ -17,6 +17,7 @@ from services.research.session import (
 )
 from services.research.ports.persistence import TrialPersistenceError
 from services.research.trial_provenance import trial_provenance_for_definition
+from services.validation.selection_authority import require_diagnostic_selection_seam
 
 
 _SEARCH_RUNTIME = ResearchSearchRuntime(
@@ -41,6 +42,10 @@ def _inner_loop(catalog, regime_evidence: bool, fwd_horizon: int = 1):
 
 def run_research_session(*args, **kwargs):
     """Run the research core with the fixed, guardrailed intelligence runtime."""
+    require_diagnostic_selection_seam(
+        "services.intelligence.research_session.run_research_session",
+        diagnostic_only=kwargs.get("diagnostic_only", False),
+    )
     if "search_runtime" in kwargs:
         raise TypeError("search_runtime is fixed by the intelligence composition boundary")
     ephemeral = kwargs.pop("ephemeral", False)

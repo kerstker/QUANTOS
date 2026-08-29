@@ -10,6 +10,8 @@ a studied space — the no-peek OOS is the arbiter, exactly as for crypto.
 """
 from __future__ import annotations
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
+
 import json
 import os
 import time
@@ -189,6 +191,7 @@ def _run_research(registry: ExperimentRegistry, insts, ets) -> None:
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.fx_research")
     if not os.path.exists(_DB):
         print("no data/cache/fx.db — run tools.frankfurter_fetch first")
         return

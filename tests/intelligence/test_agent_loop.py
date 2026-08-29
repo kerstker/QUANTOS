@@ -1,5 +1,4 @@
-"""Phase 11 — research agent loop: advances to PAPER_TRADING + human handoff,
-and the agent can NEVER approve or reset the kill-switch."""
+"""Phase 11 research loop: evaluation is diagnostic without signed authority."""
 import pytest
 
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
@@ -10,6 +9,7 @@ from services.intelligence import agent_loop as agent_loop_module
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guardrails import ForbiddenAgentAction
 from services.research.ports.persistence import TrialPersistenceError
+from services.validation.selection_authority import SelectionAuthorityBlocked
 from tests.alpha.fixtures import catalog_bound_evaluation
 
 
@@ -61,18 +61,55 @@ def _cands(n=2):
     return candidates
 
 
-def test_loop_advances_pass_to_paper_and_queues_for_human():
+def _diagnostic_run(loop, candidates, **kwargs):
+    return loop.run(candidates, diagnostic_only=True, **kwargs)
+
+
+def test_public_loop_blocks_before_trial_or_catalog_registration():
+    recorded = []
+    cat = AlphaCatalog(trial_recorder=recorded.append)
+    loop = ResearchAgentLoop(
+        catalog=cat,
+        evaluator=_StubEval(cat, ValidationVerdict.PASS),
+    )
+    with pytest.raises(SelectionAuthorityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        loop.run(_cands(1))
+    assert recorded == []
+    assert cat.all_ids() == []
+
+
+def test_loop_keeps_pass_diagnostic_and_review_queue_empty_without_authority():
     loop = _loop(ValidationVerdict.PASS)
-    out = loop.run(_cands(2))
-    assert all(loop.catalog.state(f"a{i}") == AlphaState.PAPER_TRADING for i in range(2))
-    assert set(out["human_review_queue"]) == {"a0", "a1"}
+    out = _diagnostic_run(loop, _cands(2))
+    assert all(loop.catalog.state(f"a{i}") == AlphaState.DRAFT for i in range(2))
+    assert out["human_review_queue"] == []
+    assert all(row["diagnostic_only"] is True for row in out["report"].values())
+    assert all(row["selection_authority"] is False for row in out["report"].values())
+    assert all(
+        row["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
+        for row in out["report"].values()
+    )
     assert all(loop.catalog.state(a) != AlphaState.APPROVED for a in loop.catalog.all_ids())  # never approved
 
 
-def test_loop_rejects_fail():
+def test_loop_keeps_fail_diagnostic_without_authority():
     loop = _loop(ValidationVerdict.FAIL)
-    loop.run(_cands(1))
-    assert loop.catalog.state("a0") == AlphaState.REJECTED
+    out = _diagnostic_run(loop, _cands(1))
+    assert loop.catalog.state("a0") == AlphaState.DRAFT
+    assert out["report"]["a0"]["verdict"] == ValidationVerdict.FAIL.value
+
+
+def test_caller_boolean_and_self_described_record_cannot_restore_selection():
+    loop = _loop(ValidationVerdict.PASS)
+    out = _diagnostic_run(
+        loop,
+        _cands(1),
+        selection_authorized=True,
+        authoritative_backtest_record={"detail": {"evidence_status": "AUTHORITATIVE"}},
+    )
+    assert loop.catalog.state("a0") == AlphaState.DRAFT
+    assert out["human_review_queue"] == []
+    assert out["report"]["a0"]["selection_authority"] is False
 
 
 def test_agent_cannot_approve_or_reset_via_loop():
@@ -113,10 +150,10 @@ def test_loop_isolates_a_failing_candidate():
             )
 
     loop = ResearchAgentLoop(catalog=cat, evaluator=_FlakyEval(cat))
-    out = loop.run(_cands(2))                              # a0 ok, a1's eval raises
+    out = _diagnostic_run(loop, _cands(2))                 # a0 ok, a1's eval raises
     assert "error" in out["report"]["a1"]                 # recorded, not propagated
-    assert cat.state("a0") == AlphaState.PAPER_TRADING     # a0 still fully processed (not orphaned)
-    assert "a0" in out["human_review_queue"]
+    assert cat.state("a0") == AlphaState.DRAFT             # evaluated but not selected
+    assert out["human_review_queue"] == []
     assert cat.state("a1") != AlphaState.APPROVED          # failed alpha never advanced (fail-closed)
 
 
@@ -136,7 +173,7 @@ def test_complete_batch_is_recorded_before_selection_pbo(monkeypatch):
         return None
 
     monkeypatch.setattr(agent_loop_module, "batch_pbo", assert_recorded_before_backtest)
-    loop.run(candidates)
+    _diagnostic_run(loop, candidates)
 
 
 def test_trial_persistence_failure_prevents_selection_pbo(monkeypatch):
@@ -157,7 +194,7 @@ def test_trial_persistence_failure_prevents_selection_pbo(monkeypatch):
     monkeypatch.setattr(agent_loop_module, "batch_pbo", observe_pbo)
 
     with pytest.raises(TrialPersistenceError, match="ledger unavailable"):
-        loop.run(_cands(1))
+        _diagnostic_run(loop, _cands(1))
     assert pbo_called is False
 
 
@@ -194,15 +231,20 @@ class _EvidenceEval:
         )
 
 
-def test_loop_advances_when_real_evidence_is_supplied():
-    # the fix: supplying real gauntlet evidence (leakage_ok=True + regime) lets a genuinely-passing alpha
-    # advance TESTING -> VALIDATED -> PAPER_TRADING through the agent loop (the previously-frozen chain).
+def test_real_gate_evidence_does_not_substitute_for_selection_authority():
+    # Leakage/regime/PBO evidence still reaches the evaluator, but it is not an
+    # independently controlled signed backtest authority and cannot select.
     cat = AlphaCatalog()
     ev = _EvidenceEval(cat)
     loop = ResearchAgentLoop(catalog=cat, evaluator=ev)
-    out = loop.run(_cands(2), evidence={"a0": {"leakage_ok": True, "regime_profitable_frac": 0.8}})
-    assert cat.state("a0") == AlphaState.PAPER_TRADING
-    assert "a0" in out["human_review_queue"]
+    out = _diagnostic_run(
+        loop,
+        _cands(2),
+        evidence={"a0": {"leakage_ok": True, "regime_profitable_frac": 0.8}},
+    )
+    assert cat.state("a0") == AlphaState.DRAFT
+    assert out["human_review_queue"] == []
+    assert out["report"]["a0"]["diagnostic_only"] is True
     assert ev.seen["a0"]["leakage_ok"] is True and ev.seen["a0"]["regime"] == 0.8  # evidence threaded
     assert ev.seen["a0"]["pbo_evidence"] is not None
     assert cat.state("a0") != AlphaState.APPROVED                                  # containment intact
@@ -213,10 +255,10 @@ def test_loop_advances_when_real_evidence_is_supplied():
 
 
 def test_loop_stays_fail_closed_without_evidence():
-    # no evidence supplied -> leakage_ok None -> REQUIRES_HUMAN_REVIEW -> parked in TESTING (unchanged).
+    # no evidence supplied -> leakage_ok None and the lifecycle remains untouched.
     cat = AlphaCatalog()
     loop = ResearchAgentLoop(catalog=cat, evaluator=_EvidenceEval(cat))
-    out = loop.run(_cands(2))
-    assert cat.state("a0") == AlphaState.TESTING
+    out = _diagnostic_run(loop, _cands(2))
+    assert cat.state("a0") == AlphaState.DRAFT
     assert out["human_review_queue"] == []
     assert cat.state("a0") != AlphaState.APPROVED
