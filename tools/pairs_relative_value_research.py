@@ -23,6 +23,7 @@ from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.evaluation_evidence import verify_evaluation_reproducibility
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.pairs_relative_value import (
     PairCyclePlan,
@@ -320,6 +321,7 @@ def run(
     recover_search_id: str | None = None,
     recovery_tool_commit: str | None = None,
 ) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.pairs_relative_value_research.run")
     output = Path(output)
     if output.exists():
         raise FileExistsError(f"refusing to overwrite immutable result: {output}")
@@ -556,6 +558,7 @@ def run(
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.pairs_relative_value_research.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--source-commit", required=True)

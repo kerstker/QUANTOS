@@ -154,8 +154,12 @@ REGISTERED_CANDIDATE_BATCH_DRIVERS = frozenset(
         "funding_settlement_evaluation",
         "funding_weekly_carry_evaluation",
         "fx_research",
+        "idiosyncratic_volatility_research",
+        "liquidity_premium_research",
+        "lottery_max_research",
         "macro_regime_switch_evaluation",
         "onchain_alpha_evaluation",
+        "pairs_relative_value_research",
         "paper_alpha_evaluation",
         "positioning_composite_evaluation",
         "positioning_divergence_evaluation",
@@ -269,6 +273,14 @@ def test_production_code_cannot_import_private_legacy_diagnostic_runners() -> No
     (
         ("exit_policy_lab", "run_book"),
         ("paper_order_preview", "build_alpha_preview"),
+        ("pairs_relative_value_research", "run"),
+        ("pairs_relative_value_research", "main"),
+        ("idiosyncratic_volatility_research", "run"),
+        ("idiosyncratic_volatility_research", "main"),
+        ("liquidity_premium_research", "run"),
+        ("liquidity_premium_research", "main"),
+        ("lottery_max_research", "run"),
+        ("lottery_max_research", "main"),
         ("cross_venue_research", "register_family_trials"),
         ("cftc_positioning_research", "register_family_trials"),
         ("crowd_contra_variants", "register_family_trials"),
@@ -427,6 +439,49 @@ def test_registry_backed_cli_blocks_before_opening_registry(
     monkeypatch.setattr(module, "production_experiment_registry", fail_if_registry_opened)
     with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
         module.main(*args)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "entry_name"),
+    (
+        ("pairs_relative_value_research", "run"),
+        ("pairs_relative_value_research", "main"),
+        ("idiosyncratic_volatility_research", "run"),
+        ("idiosyncratic_volatility_research", "main"),
+        ("liquidity_premium_research", "run"),
+        ("liquidity_premium_research", "main"),
+        ("lottery_max_research", "run"),
+        ("lottery_max_research", "main"),
+    ),
+)
+def test_deployed_registered_batch_experiment_blocks_before_all_io(
+    module_name: str,
+    entry_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(f"tools.{module_name}")
+
+    def fail_if_touched(*_args, **_kwargs):
+        pytest.fail("quarantine must precede data, registry, and output collaborators")
+
+    for collaborator in (
+        "_research_panel",
+        "production_experiment_registry",
+        "atomic_write_json",
+    ):
+        monkeypatch.setattr(module, collaborator, fail_if_touched)
+
+    output = tmp_path / f"{module_name}.json"
+    kwargs = (
+        {"output": output, "source_commit": "a" * 40}
+        if entry_name == "run"
+        else {}
+    )
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        getattr(module, entry_name)(**kwargs)
+
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(

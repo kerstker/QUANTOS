@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from tools.idiosyncratic_volatility_research import (
     CONTRACT_HASH,
     EVALUATION_CONTRACT,
@@ -120,30 +126,23 @@ def _data_gap_panel() -> FieldPanel:
     return FieldPanel(instruments, event_times, {"close": close, "volume": volume})
 
 
-def test_data_preflight_rejects_before_opening_trial_registry(
+def test_public_run_blocks_before_data_preflight_or_trial_registry(
     monkeypatch, tmp_path
 ) -> None:
     from tools import idiosyncratic_volatility_research as research
 
-    monkeypatch.setattr(research, "_research_panel", _data_gap_panel)
-    monkeypatch.setattr(research.time, "time_ns", lambda: 123_000_000)
+    def fail_if_touched(*_args, **_kwargs):
+        pytest.fail("authority quarantine must precede panel and registry access")
+
+    monkeypatch.setattr(research, "_research_panel", fail_if_touched)
     monkeypatch.setattr(
         research,
         "production_experiment_registry",
-        lambda: (_ for _ in ()).throw(AssertionError("registry must not open")),
+        fail_if_touched,
     )
     output = tmp_path / "ivol-preflight-rejection.json"
 
-    document = run(output=output, source_commit="a" * 40)
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        run(output=output, source_commit="a" * 40)
 
-    assert output.is_file()
-    assert document["decision"]["status"] == "REJECTED_DATA_INTEGRITY"
-    assert document["preflight_failure"]["reason_code"] == (
-        "MISSING_NON_TERMINAL_HOLDING_LABEL"
-    )
-    assert document["trial_registry"] == {
-        "mutation_attempted": False,
-        "registered_candidate_count": 0,
-        "recorded_run_ids": [],
-    }
-    assert document["return_statistics_computed"] is False
+    assert not output.exists()

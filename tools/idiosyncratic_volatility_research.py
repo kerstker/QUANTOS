@@ -21,6 +21,7 @@ from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.idiosyncratic_volatility import (
     ForcedExitEvent,
@@ -447,6 +448,7 @@ def run(
     source_commit: str,
     recover_search_id: str | None = None,
 ) -> dict[str, Any]:
+    quarantine_legacy_backtest("tools.idiosyncratic_volatility_research.run")
     output = Path(output)
     if output.exists():
         raise FileExistsError(f"refusing to overwrite immutable result: {output}")
@@ -738,6 +740,7 @@ def run(
 
 
 def main() -> None:
+    quarantine_legacy_backtest("tools.idiosyncratic_volatility_research.main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--source-commit", required=True)

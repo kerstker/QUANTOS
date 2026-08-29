@@ -1,5 +1,9 @@
 import pytest
 
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from tools.liquidity_premium_research import (
     CONTRACT_HASH,
     EVALUATION_CONTRACT,
@@ -119,50 +123,44 @@ def _preflight_failure_panel() -> FieldPanel:
     return FieldPanel(instruments, event_times, {"close": close, "volume": volume})
 
 
-def test_audited_recorder_publishes_pre_registry_data_rejection(
+def test_public_run_blocks_before_audited_data_rejection_persistence(
     monkeypatch, tmp_path
 ) -> None:
     from tools import liquidity_premium_research as research
 
-    monkeypatch.setattr(research, "_research_panel", _preflight_failure_panel)
-    monkeypatch.setattr(research.time, "time_ns", lambda: 123_000_000)
+    def fail_if_touched(*_args, **_kwargs):
+        pytest.fail("authority quarantine must precede panel and registry access")
+
+    monkeypatch.setattr(research, "_research_panel", fail_if_touched)
     monkeypatch.setattr(
         research,
         "production_experiment_registry",
-        lambda: (_ for _ in ()).throw(AssertionError("registry must not open")),
+        fail_if_touched,
     )
     output = tmp_path / "preflight-rejection.json"
 
-    document = run(
-        output=output,
-        source_commit="a" * 40,
-        recovery_tool_commit="b" * 40,
-    )
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        run(
+            output=output,
+            source_commit="a" * 40,
+            recovery_tool_commit="b" * 40,
+        )
 
-    assert output.is_file()
-    assert document["decision"]["status"] == "REJECTED_DATA_INTEGRITY"
-    assert document["decision"]["economic_candidate"] is False
-    assert document["preflight_failure"]["reason_code"] == (
-        "MISSING_SELECTED_HOLDING_RETURN"
-    )
-    assert document["preflight_failure"]["instrument"] == "c49"
-    assert document["trial_registry"] == {
-        "mutation_attempted": False,
-        "registered_candidate_count": 0,
-        "recorded_run_ids": [],
-    }
-    assert document["return_statistics_computed"] is False
+    assert not output.exists()
 
 
-def test_preflight_failure_without_audited_recorder_still_raises(
+def test_public_run_blocks_before_unaudited_preflight(
     monkeypatch, tmp_path
 ) -> None:
     from tools import liquidity_premium_research as research
 
-    monkeypatch.setattr(research, "_research_panel", _preflight_failure_panel)
+    def fail_if_touched(*_args, **_kwargs):
+        pytest.fail("legacy preflight must not run before authority quarantine")
 
-    with pytest.raises(
-        research.LiquidityDataIntegrityError,
-        match="missing holding return",
-    ):
-        run(output=tmp_path / "must-not-exist.json", source_commit="a" * 40)
+    monkeypatch.setattr(research, "_research_panel", fail_if_touched)
+    output = tmp_path / "must-not-exist.json"
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        run(output=output, source_commit="a" * 40)
+
+    assert not output.exists()
