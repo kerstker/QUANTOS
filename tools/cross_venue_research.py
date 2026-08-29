@@ -79,7 +79,6 @@ from services.data.persistent_store import SqlitePITStore
 from services.research.research_budget import ResearchBudget
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from tools.cache_io import atomic_write_json
 from tools.crowd_contra_variants import cadence_rows, streams_cadence
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE
@@ -316,7 +315,15 @@ def _definition_for(spec):
                 "quantile": repr(spec["quantile"]), "cadence_days": str(spec["cadence_days"])})
 
 
-def register_family_trials(specs, signals, panel, *, registry: ExperimentRegistry, recorded_at: int):
+def _register_family_trials_legacy_diagnostic(
+    specs,
+    signals,
+    panel,
+    *,
+    registry: ExperimentRegistry,
+    recorded_at: int,
+    batch_runner,
+):
     """6 个候选单批(全 7d 节奏,ppy 52)经 run_registered_candidate_batch 注册并过评估器。
     注册先于本驱动器的四阶段流水线(纪律);W10 §14.2:RESEARCH_BUDGET + PARENT_HYPOTHESIS +
     SEARCH_SPACE 随批声明——注册 API 在任何落盘前 fail-closed 校验。"""
@@ -331,7 +338,7 @@ def register_family_trials(specs, signals, panel, *, registry: ExperimentRegistr
         source=_SOURCE, search_kind=_SEARCH_KIND, dataset_version=dataset_version,
         recorded_at=recorded_at,
         params={"family": _FAMILY, "cadence_days": _CADENCE_DAYS, "candidate_count": len(candidates)})
-    batch = run_registered_candidate_batch(
+    batch = batch_runner(
         candidates, registry=registry, search_id=search_id, search_kind=_SEARCH_KIND,
         search_source=_SOURCE, dataset_version=dataset_version, recorded_at=recorded_at,
         periods_per_year=52,
@@ -359,6 +366,11 @@ def register_family_trials(specs, signals, panel, *, registry: ExperimentRegistr
     out["trial_count_after"] = registry._store.trial_count()
     out["trial_count_delta"] = out["trial_count_after"] - out["trial_count_before"]
     return out
+
+
+def register_family_trials(*_args, **_kwargs):
+    """Reject the legacy selection-bearing registration API before all work."""
+    quarantine_legacy_backtest("tools.cross_venue_research.register_family_trials")
 
 
 # ---------------------------------------------------------------------------

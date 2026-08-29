@@ -1,4 +1,10 @@
+import pytest
+
 from services.intelligence import registered_candidate_batch as batch_module
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research.alpha_expression import FieldPanel, evaluate
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
@@ -144,8 +150,13 @@ def test_registration_path_records_six_trials_without_promotion(monkeypatch):
     signals = {spec["id"]: evaluate(spec["expr"], panel) for spec in specs}
     registry = ExperimentRegistry(SqliteExperimentStore(":memory:", create=True))
 
-    result = hfr.register_family_trials(
-        specs, signals, panel, registry=registry, recorded_at=1_000,
+    result = hfr._register_family_trials_legacy_diagnostic(
+        specs,
+        signals,
+        panel,
+        registry=registry,
+        recorded_at=1_000,
+        batch_runner=batch_module._run_registered_candidate_batch_legacy_diagnostic,
     )
 
     assert result["trial_count_before"] == 0
@@ -155,3 +166,14 @@ def test_registration_path_records_six_trials_without_promotion(monkeypatch):
     )
     assert result["promotion_eligible"] is False
     assert result["live_allowed"] is False
+
+
+def test_public_registration_api_blocks_before_registry_mutation():
+    registry = ExperimentRegistry(SqliteExperimentStore(":memory:", create=True))
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        hfr.register_family_trials(
+            object(), object(), object(), registry=registry, recorded_at=2_000
+        )
+
+    assert registry._store.trial_count() == 0

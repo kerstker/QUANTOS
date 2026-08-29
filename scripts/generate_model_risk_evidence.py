@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import copy
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -133,6 +134,21 @@ _ARTIFACT_MODELS = {
         ChallengerReview,
     )
 }
+
+
+@dataclass(frozen=True)
+class _RetainedDatasetAnchor:
+    """Immutable lineage required by the refresh-only no-source seam."""
+
+    schema_version: int
+    bundle_ref: str
+    bundle_sha256: str
+    manifest_ref: str
+    manifest_sha256: str
+    row_count: int
+    source_db_ref: str
+    source_db_sha256: str
+    source_query: str
 
 
 def _release_number(release_version: str) -> int:
@@ -904,7 +920,7 @@ def _merge_runtime_events(
     return merged, previous_hash
 
 
-def build_model_risk_evidence(
+def _build_model_risk_evidence(
     repo_root: str | Path = REPO,
     *,
     snapshot_path: str | Path = DEFAULT_SNAPSHOT,
@@ -916,6 +932,7 @@ def build_model_risk_evidence(
     include_longitudinal_v2: bool = True,
     prior_snapshot: Mapping[str, Any] | None = None,
     release_version: str = _CURRENT_RELEASE_VERSION,
+    retained_dataset_anchor: _RetainedDatasetAnchor | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     snapshot_file = Path(snapshot_path).resolve()
@@ -940,8 +957,6 @@ def build_model_risk_evidence(
         )
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read the ML snapshot: {exc}") from exc
-    if not dataset_file.is_file():
-        raise ValueError(f"source FX dataset is missing: {dataset_file}")
     bundle_manifest: dict[str, Any] | None = None
     dataset_artifact_file = dataset_file
     if bundle_file.exists() or manifest_file.exists():
@@ -952,11 +967,47 @@ def build_model_risk_evidence(
                 bundle_file,
                 manifest_file,
                 repo_root=root,
-                source_db_path=dataset_file,
+                source_db_path=(
+                    None
+                    if retained_dataset_anchor is not None
+                    else dataset_file
+                ),
             )
         except DatasetBundleError as exc:
             raise ValueError(f"model-risk dataset bundle is invalid: {exc}") from exc
         dataset_artifact_file = bundle_file
+    if retained_dataset_anchor is not None and bundle_manifest is None:
+        raise ValueError("verified retained bundle fallback requires bundle and manifest")
+    if retained_dataset_anchor is not None:
+        anchored = {
+            "schema_version": retained_dataset_anchor.schema_version,
+            "bundle_ref": retained_dataset_anchor.bundle_ref,
+            "bundle_sha256": retained_dataset_anchor.bundle_sha256,
+            "manifest_ref": retained_dataset_anchor.manifest_ref,
+            "manifest_sha256": retained_dataset_anchor.manifest_sha256,
+            "row_count": retained_dataset_anchor.row_count,
+            "source_db_ref": retained_dataset_anchor.source_db_ref,
+            "source_db_sha256": retained_dataset_anchor.source_db_sha256,
+            "source_query": retained_dataset_anchor.source_query,
+        }
+        observed = {
+            "schema_version": bundle_manifest.get("schema_version"),
+            "bundle_ref": bundle_manifest.get("bundle_ref"),
+            "bundle_sha256": bundle_manifest.get("bundle_sha256"),
+            "manifest_ref": _relative(root, manifest_file),
+            "manifest_sha256": bundle_manifest.get("manifest_sha256"),
+            "row_count": bundle_manifest.get("row_count"),
+            "source_db_ref": bundle_manifest.get("source_db_ref"),
+            "source_db_sha256": bundle_manifest.get("source_db_sha256"),
+            "source_query": bundle_manifest.get("source_query"),
+        }
+        if observed != anchored:
+            changed = sorted(key for key in anchored if observed[key] != anchored[key])
+            raise ValueError(
+                "verified retained bundle anchor mismatch: " + ", ".join(changed)
+            )
+    if not dataset_file.is_file() and bundle_manifest is None:
+        raise ValueError(f"source FX dataset is missing: {dataset_file}")
     baseline_artifacts = _model_artifacts(
         repo_root=root,
         snapshot_path=snapshot_file,
@@ -1048,8 +1099,16 @@ def build_model_risk_evidence(
         "source_result_verdict": snapshot["verdict"],
         "dataset_ref": artifact_dataset_ref,
         "dataset_sha256": artifact_dataset_sha,
-        "source_dataset_ref": _relative(root, dataset_file),
-        "source_dataset_sha256": _sha256_file(dataset_file),
+        "source_dataset_ref": (
+            retained_dataset_anchor.source_db_ref
+            if retained_dataset_anchor is not None
+            else _relative(root, dataset_file)
+        ),
+        "source_dataset_sha256": (
+            retained_dataset_anchor.source_db_sha256
+            if retained_dataset_anchor is not None
+            else _sha256_file(dataset_file)
+        ),
         "dataset_bundle_status": (
             "VERSIONED_PIT_SUBSET_BUNDLE" if bundle_manifest is not None else "HASH_IDENTIFIED_LOCAL_ONLY"
         ),
@@ -1101,6 +1160,68 @@ def build_model_risk_evidence(
     }
     build_model_risk_revision(evidence)
     return evidence
+
+
+def build_model_risk_evidence(
+    repo_root: str | Path = REPO,
+    *,
+    snapshot_path: str | Path = DEFAULT_SNAPSHOT,
+    dataset_path: str | Path = DEFAULT_DATASET,
+    dataset_bundle_path: str | Path | None = None,
+    dataset_manifest_path: str | Path | None = None,
+    baseline_recorded_at: int = BASELINE_RECORDED_AT,
+    recorded_at: int = DEFAULT_RECORDED_AT,
+    include_longitudinal_v2: bool = True,
+    prior_snapshot: Mapping[str, Any] | None = None,
+    release_version: str = _CURRENT_RELEASE_VERSION,
+) -> dict[str, Any]:
+    """Build evidence from present source files; missing sources fail closed."""
+
+    return _build_model_risk_evidence(
+        repo_root,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        dataset_bundle_path=dataset_bundle_path,
+        dataset_manifest_path=dataset_manifest_path,
+        baseline_recorded_at=baseline_recorded_at,
+        recorded_at=recorded_at,
+        include_longitudinal_v2=include_longitudinal_v2,
+        prior_snapshot=prior_snapshot,
+        release_version=release_version,
+    )
+
+
+def _build_model_risk_evidence_with_retained_bundle(
+    repo_root: str | Path = REPO,
+    *,
+    retained_dataset_anchor: _RetainedDatasetAnchor,
+    snapshot_path: str | Path = DEFAULT_SNAPSHOT,
+    dataset_path: str | Path = DEFAULT_DATASET,
+    dataset_bundle_path: str | Path | None = None,
+    dataset_manifest_path: str | Path | None = None,
+    baseline_recorded_at: int = BASELINE_RECORDED_AT,
+    recorded_at: int = DEFAULT_RECORDED_AT,
+    include_longitudinal_v2: bool = True,
+    prior_snapshot: Mapping[str, Any] | None = None,
+    release_version: str = _CURRENT_RELEASE_VERSION,
+) -> dict[str, Any]:
+    """Refresh-only seam requiring an immutable, independently checked anchor."""
+
+    if not isinstance(retained_dataset_anchor, _RetainedDatasetAnchor):
+        raise TypeError("retained dataset fallback requires a typed immutable anchor")
+    return _build_model_risk_evidence(
+        repo_root,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        dataset_bundle_path=dataset_bundle_path,
+        dataset_manifest_path=dataset_manifest_path,
+        baseline_recorded_at=baseline_recorded_at,
+        recorded_at=recorded_at,
+        include_longitudinal_v2=include_longitudinal_v2,
+        prior_snapshot=prior_snapshot,
+        release_version=release_version,
+        retained_dataset_anchor=retained_dataset_anchor,
+    )
 
 
 def _write(path: Path, document: dict[str, Any]) -> None:

@@ -53,6 +53,7 @@ INJECTED_LEGACY_MULTI_PERIOD_DIAGNOSTICS = frozenset({"exit_policy_lab"})
 
 INDIRECT_LEGACY_SELECTION_DRIVERS = frozenset(
     {
+        "cftc_positioning_research",
         "cross_venue_research",
         "hyperliquid_funding_research",
         "positioning_fast_composite_evaluation",
@@ -141,10 +142,7 @@ LEGACY_PANEL_SCORE_DRIVERS = frozenset(
 # cannot inherit the quarantine only after loading data/opening a registry.
 REGISTERED_CANDIDATE_BATCH_DRIVERS = frozenset(
     {
-        "cftc_positioning_research",
         "cross_venue_positioning_evaluation",
-        "cross_venue_research",
-        "crowd_contra_variants",
         "crypto_alpha_research",
         "crypto_alpha_search",
         "crypto_binance_research",
@@ -156,14 +154,11 @@ REGISTERED_CANDIDATE_BATCH_DRIVERS = frozenset(
         "funding_settlement_evaluation",
         "funding_weekly_carry_evaluation",
         "fx_research",
-        "hyperliquid_funding_research",
         "macro_regime_switch_evaluation",
-        "mean_reversion_cluster",
         "onchain_alpha_evaluation",
         "paper_alpha_evaluation",
         "positioning_composite_evaluation",
         "positioning_divergence_evaluation",
-        "promotion_gate_crowd_contra",
         "register_alpha_catalog",
         "volume_acceleration_evaluation",
     }
@@ -240,21 +235,28 @@ def test_every_registered_candidate_batch_tool_is_explicitly_classified() -> Non
     assert discovered == REGISTERED_CANDIDATE_BATCH_DRIVERS
 
 
-def test_production_code_cannot_import_private_v1_diagnostic_runners() -> None:
-    forbidden = {
-        "_run_dry_run_pipeline_legacy_diagnostic",
-        "_run_multi_period_dry_run_legacy_diagnostic",
+def test_production_code_cannot_import_private_legacy_diagnostic_runners() -> None:
+    forbidden_by_module = {
+        "services.execution.dry_run_pipeline": {
+            "_run_dry_run_pipeline_legacy_diagnostic",
+            "_run_multi_period_dry_run_legacy_diagnostic",
+        },
+        "services.intelligence.registered_candidate_batch": {
+            "_run_registered_candidate_batch_legacy_diagnostic",
+        },
     }
     violations: list[str] = []
     for root_name in ("services", "tools", "live"):
         for path in (ROOT / root_name).rglob("*.py"):
-            if path == ROOT / "services" / "execution" / "dry_run_pipeline.py":
-                continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if not isinstance(node, ast.ImportFrom):
                     continue
-                if node.module != "services.execution.dry_run_pipeline":
+                forbidden = forbidden_by_module.get(node.module or "")
+                if forbidden is None:
+                    continue
+                provider = ROOT / Path(*(node.module or "").split(".")).with_suffix(".py")
+                if path == provider:
                     continue
                 imported = forbidden & {alias.name for alias in node.names}
                 if imported:
@@ -267,6 +269,12 @@ def test_production_code_cannot_import_private_v1_diagnostic_runners() -> None:
     (
         ("exit_policy_lab", "run_book"),
         ("paper_order_preview", "build_alpha_preview"),
+        ("cross_venue_research", "register_family_trials"),
+        ("cftc_positioning_research", "register_family_trials"),
+        ("crowd_contra_variants", "register_family_trials"),
+        ("hyperliquid_funding_research", "register_family_trials"),
+        ("mean_reversion_cluster", "register_family_trials"),
+        ("promotion_gate_crowd_contra", "register_grid_trials"),
     ),
 )
 def test_public_tool_api_first_action_is_unconditional_authority_quarantine(
@@ -280,6 +288,28 @@ def test_public_tool_api_first_action_is_unconditional_authority_quarantine(
     assert isinstance(first.value, ast.Call)
     assert isinstance(first.value.func, ast.Name)
     assert first.value.func.id == "quarantine_legacy_backtest"
+
+
+@pytest.mark.parametrize(
+    ("module_name", "function_name"),
+    (
+        ("cftc_positioning_research", "register_family_trials"),
+        ("cross_venue_research", "register_family_trials"),
+        ("crowd_contra_variants", "register_family_trials"),
+        ("hyperliquid_funding_research", "register_family_trials"),
+        ("mean_reversion_cluster", "register_family_trials"),
+        ("promotion_gate_crowd_contra", "register_grid_trials"),
+    ),
+)
+def test_public_registration_api_blocks_without_arguments(
+    module_name: str,
+    function_name: str,
+) -> None:
+    module = importlib.import_module(f"tools.{module_name}")
+    entry = getattr(module, function_name)
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        entry()
 
 
 def test_explicit_diagnostics_are_quarantined() -> None:

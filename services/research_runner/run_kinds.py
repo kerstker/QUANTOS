@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
 
+from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.research.run_registry.indexer import (adapt_carry, adapt_combo, adapt_factory,
                                                     adapt_oi_research, adapt_survivorship)
 
@@ -49,6 +50,22 @@ SELECTION_BEARING = ProvenancePolicy(
 )
 DIAGNOSTIC_ONLY = ProvenancePolicy(RunPurpose.DIAGNOSTIC_ONLY)
 
+# These historical factory drivers still depend on the invalidated perpetual
+# ledger/timing path.  Keep the classification exact: selection-bearing is a
+# provenance policy, not by itself a reason to quarantine a future independent
+# implementation or a test-injected runner.
+LEGACY_QUARANTINED_RUN_KINDS = frozenset({
+    "factory_orthogonal",
+    "factory_loop",
+})
+
+
+def enforce_run_kind_authority(kind: str) -> None:
+    """Fail before a quarantined runner can import tools or touch data/output."""
+
+    if kind in LEGACY_QUARANTINED_RUN_KINDS:
+        quarantine_legacy_backtest(f"services.research_runner.{kind}")
+
 
 @dataclass(frozen=True)
 class RunSpec:
@@ -74,6 +91,15 @@ def _tool_then_json(module: str, out_json: str) -> Callable:
         importlib.import_module(module).main(**params)
         with open(os.path.join(_CACHE, out_json), encoding="utf-8") as f:
             return json.load(f)
+    return run
+
+
+def _quarantined_run_kind(kind: str) -> Callable:
+    """Return a no-import runner for an explicitly invalidated public kind."""
+
+    def run(_params):
+        enforce_run_kind_authority(kind)
+
     return run
 
 
@@ -313,14 +339,14 @@ RUN_KINDS: dict = {
                                   {"generations": int, "population": int},
                                   lambda j: adapt_factory("factory_orthogonal", j), "自主正交发现(放大)",
                                   SELECTION_BEARING,
-                                  runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json"),
+                                  runner=_quarantined_run_kind("factory_orthogonal"),
                                   # 2026-07-06 安全审查 punch-list:此前无上限,可提交一个跑到天荒地老的任务
                                   # (默认 generations=8/population=64,给"放大"留够头寸但不放行天文数字)
                                   param_bounds={"generations": (1, 500), "population": (1, 5000)}),
     "factory_loop": RunSpec("tools.crypto_factory_loop:main", {},
                             lambda j: adapt_factory("factory_loop", j), "自主正交发现(loop-until-dry)",
                             SELECTION_BEARING,
-                            runner=_tool_then_json("tools.crypto_factory_loop", "crypto_factory_loop.json")),
+                            runner=_quarantined_run_kind("factory_loop")),
     "data_refresh": RunSpec("tools.binance_oi_metrics_fetch:main", {"intraday": bool}, _adapt_refresh,
                             "刷新持仓数据", DIAGNOSTIC_ONLY, runner=_refresh_runner),
     "ic_panel": RunSpec("tools.ic_panel_research:main", {}, _adapt_ic_panel, "IC 面板", DIAGNOSTIC_ONLY,

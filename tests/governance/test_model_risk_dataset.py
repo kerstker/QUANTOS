@@ -69,3 +69,20 @@ def test_bundle_verifier_rejects_out_of_order_rows(tmp_path):
     bundle.write_bytes(output.getvalue())
     with pytest.raises(DatasetBundleError):
         verify_pit_bundle(bundle, manifest, repo_root=tmp_path)
+
+
+def test_bundle_verifier_binds_source_database_path_not_only_digest(tmp_path):
+    source = _source(tmp_path)
+    bundle = tmp_path / "bundle.jsonl.gz"
+    manifest = tmp_path / "bundle.manifest.json"
+    generate_bundle(source, bundle, manifest, keys=("AUD", "EUR"), repo_root=tmp_path)
+    replacement = tmp_path / "replacement.db"
+    replacement.write_bytes(source.read_bytes())
+
+    with pytest.raises(DatasetBundleError, match="source database identity"):
+        verify_pit_bundle(
+            bundle,
+            manifest,
+            repo_root=tmp_path,
+            source_db_path=replacement,
+        )

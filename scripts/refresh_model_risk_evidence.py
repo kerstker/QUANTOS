@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -35,6 +36,8 @@ from quantos.contracts.model_risk import (
     ToolManifest,
 )
 from scripts.generate_model_risk_evidence import (
+    _RetainedDatasetAnchor,
+    _build_model_risk_evidence_with_retained_bundle,
     build_model_risk_evidence,
     execute_agent_boundary_red_team,
     execute_runtime_boundary_red_team,
@@ -42,7 +45,12 @@ from scripts.generate_model_risk_evidence import (
 from services.governance.model_risk_history import (
     ModelRiskHistoryError,
     append_model_risk_revision,
+    build_model_risk_revision,
     validate_model_risk_history,
+)
+from services.governance.model_risk_dataset import (
+    DatasetBundleError,
+    verify_pit_bundle,
 )
 from services.governance.model_risk_registry import (
     MODEL_RISK_STORE_KIND,
@@ -94,6 +102,159 @@ def _write(path: Path, document: Mapping[str, Any]) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _repo_ref(root: Path, path: Path, *, label: str) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError as exc:
+        raise ModelRiskHistoryError(
+            f"{label} must stay within the repository"
+        ) from exc
+
+
+def _verify_refresh_snapshot(
+    *,
+    root: Path,
+    prior: Mapping[str, Any],
+    snapshot_path: str | Path,
+) -> None:
+    """Require the exact retained snapshot bytes; never rebuild legacy P&L."""
+
+    snapshot_file = Path(snapshot_path).resolve()
+    expected_ref = prior.get("source_snapshot_ref")
+    expected_sha = prior.get("source_snapshot_sha256")
+    if _repo_ref(root, snapshot_file, label="model-risk snapshot") != expected_ref:
+        raise ModelRiskHistoryError("model-risk snapshot identity changed")
+    if not snapshot_file.is_file():
+        raise ModelRiskHistoryError(
+            "model-risk snapshot source is missing; restore the retained exact bytes"
+        )
+    if _sha256_file(snapshot_file) != expected_sha:
+        raise ModelRiskHistoryError("model-risk snapshot digest changed")
+    snapshot = _read_object(snapshot_file, "model-risk snapshot")
+    if (
+        snapshot != prior.get("source_snapshot")
+        or snapshot.get("verdict") != prior.get("source_result_verdict")
+    ):
+        raise ModelRiskHistoryError("model-risk snapshot content or verdict changed")
+
+
+def _verify_retained_dataset_lineage(
+    *,
+    root: Path,
+    prior: Mapping[str, Any],
+    dataset_path: str | Path,
+    dataset_bundle_path: str | Path | None,
+    dataset_manifest_path: str | Path | None,
+) -> tuple[
+    bool,
+    _RetainedDatasetAnchor | None,
+    dict[str, Any] | None,
+]:
+    """Verify the retained bundle and decide whether the source DB may be ignored.
+
+    A missing or naturally advanced gitignored database is not evidence.  The
+    fallback is authorized only by the exact bundle identity already anchored
+    in the prior evidence/history; a newly self-signed manifest is rejected.
+    """
+
+    source = Path(dataset_path).resolve()
+    bundle = Path(
+        dataset_bundle_path
+        or root / "evidence/datasets/fx_pit_tradable_v1.jsonl.gz"
+    ).resolve()
+    manifest_file = Path(
+        dataset_manifest_path
+        or root / "evidence/datasets/fx_pit_tradable_v1.manifest.json"
+    ).resolve()
+    pair_present = bundle.exists() or manifest_file.exists()
+    if not pair_present:
+        if not source.is_file():
+            raise ModelRiskHistoryError(
+                "source FX dataset is missing and no retained bundle is available"
+            )
+        if (
+            _repo_ref(root, source, label="source FX dataset")
+            != prior.get("source_dataset_ref")
+            or _sha256_file(source) != prior.get("source_dataset_sha256")
+        ):
+            raise ModelRiskHistoryError(
+                "unbundled source FX dataset identity or digest changed"
+            )
+        return False, None, None
+    if not bundle.is_file() or not manifest_file.is_file():
+        raise ModelRiskHistoryError(
+            "model-risk dataset bundle and manifest must both be retained"
+        )
+    try:
+        manifest = verify_pit_bundle(
+            bundle,
+            manifest_file,
+            repo_root=root,
+            source_db_path=None,
+        )
+    except DatasetBundleError as exc:
+        raise ModelRiskHistoryError(
+            f"retained model-risk dataset bundle is invalid: {exc}"
+        ) from exc
+
+    requested_source_ref = _repo_ref(root, source, label="source FX dataset")
+    manifest_ref = _repo_ref(
+        root,
+        manifest_file,
+        label="model-risk dataset manifest",
+    )
+    if manifest.get("source_db_ref") != requested_source_ref:
+        raise ModelRiskHistoryError("retained source database identity mismatch")
+    expected = {
+        "dataset_bundle_status": "VERSIONED_PIT_SUBSET_BUNDLE",
+        "raw_dataset_retained_in_versioned_evidence": True,
+        "dataset_ref": manifest.get("bundle_ref"),
+        "dataset_sha256": manifest.get("bundle_sha256"),
+        "dataset_bundle_manifest_ref": manifest_ref,
+        "dataset_bundle_sha256": manifest.get("bundle_sha256"),
+        "dataset_bundle_manifest_sha256": manifest.get("manifest_sha256"),
+        "dataset_bundle_row_count": manifest.get("row_count"),
+        "source_dataset_ref": manifest.get("source_db_ref"),
+        "source_dataset_sha256": manifest.get("source_db_sha256"),
+    }
+    mismatched = sorted(
+        key for key, value in expected.items() if prior.get(key) != value
+    )
+    if mismatched:
+        raise ModelRiskHistoryError(
+            "retained model-risk dataset lineage mismatch: "
+            + ", ".join(mismatched)
+        )
+
+    source_matches = source.is_file() and _sha256_file(source) == manifest.get(
+        "source_db_sha256"
+    )
+    if source.exists() and not source.is_file():
+        raise ModelRiskHistoryError("source FX dataset is not a regular file")
+    # Exact source bytes keep the original strict verifier path.  A missing or
+    # advanced local DB is ignored, never substituted for the anchored source.
+    anchor = _RetainedDatasetAnchor(
+        schema_version=int(manifest["schema_version"]),
+        bundle_ref=str(manifest["bundle_ref"]),
+        bundle_sha256=str(manifest["bundle_sha256"]),
+        manifest_ref=manifest_ref,
+        manifest_sha256=str(manifest["manifest_sha256"]),
+        row_count=int(manifest["row_count"]),
+        source_db_ref=str(manifest["source_db_ref"]),
+        source_db_sha256=str(manifest["source_db_sha256"]),
+        source_query=str(manifest["source_query"]),
+    )
+    return not source_matches, anchor, expected
 
 
 def _replace_version(ref: str, version: str) -> str:
@@ -230,7 +391,31 @@ def refresh_model_risk_evidence(
     root = Path(repo_root).resolve()
     prior = _read_object(Path(prior_evidence_path), "prior model-risk evidence")
     history = _read_object(Path(prior_history_path), "prior model-risk history")
-    validate_model_risk_history(history)
+    history_summary = validate_model_risk_history(history)
+    prior_revision = build_model_risk_revision(prior)
+    if (
+        history_summary["current_revision_sha256"]
+        != prior_revision["revision_sha256"]
+    ):
+        raise ModelRiskHistoryError(
+            "prior model-risk evidence does not match the validated history tail"
+        )
+    _verify_refresh_snapshot(
+        root=root,
+        prior=prior,
+        snapshot_path=snapshot_path,
+    )
+    (
+        use_retained_bundle_fallback,
+        retained_dataset_anchor,
+        retained_dataset_identity,
+    ) = _verify_retained_dataset_lineage(
+        root=root,
+        prior=prior,
+        dataset_path=dataset_path,
+        dataset_bundle_path=dataset_bundle_path,
+        dataset_manifest_path=dataset_manifest_path,
+    )
     prior_records = prior.get("artifacts")
     prior_events = prior.get("runtime_events")
     if not isinstance(prior_records, list) or not isinstance(prior_events, list) or not prior_events:
@@ -249,16 +434,40 @@ def refresh_model_risk_evidence(
     if current_recorded_at <= int(prior.get("recorded_at", -1)):
         raise ModelRiskHistoryError("refresh recorded_at must advance the prior evidence")
 
-    candidate = build_model_risk_evidence(
-        root,
-        snapshot_path=snapshot_path,
-        dataset_path=dataset_path,
-        dataset_bundle_path=dataset_bundle_path,
-        dataset_manifest_path=dataset_manifest_path,
-        baseline_recorded_at=int(prior.get("recorded_at", current_recorded_at - 1)),
-        recorded_at=current_recorded_at,
-        include_longitudinal_v2=True,
-    )
+    build_kwargs = {
+        "snapshot_path": snapshot_path,
+        "dataset_path": dataset_path,
+        "dataset_bundle_path": dataset_bundle_path,
+        "dataset_manifest_path": dataset_manifest_path,
+        "baseline_recorded_at": int(
+            prior.get("recorded_at", current_recorded_at - 1)
+        ),
+        "recorded_at": current_recorded_at,
+        "include_longitudinal_v2": True,
+    }
+    if use_retained_bundle_fallback:
+        if retained_dataset_anchor is None:
+            raise ModelRiskHistoryError(
+                "retained dataset fallback lacks an immutable anchor"
+            )
+        candidate = _build_model_risk_evidence_with_retained_bundle(
+            root,
+            retained_dataset_anchor=retained_dataset_anchor,
+            **build_kwargs,
+        )
+    else:
+        candidate = build_model_risk_evidence(root, **build_kwargs)
+    if retained_dataset_identity is not None:
+        changed = sorted(
+            key
+            for key, value in retained_dataset_identity.items()
+            if candidate.get(key) != value
+        )
+        if changed:
+            raise ModelRiskHistoryError(
+                "fresh model-risk candidate changed retained dataset lineage: "
+                + ", ".join(changed)
+            )
     candidate_records = candidate.get("artifacts")
     if not isinstance(candidate_records, list):
         raise ModelRiskHistoryError("fresh model-risk candidate lacks artifacts")

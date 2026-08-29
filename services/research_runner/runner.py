@@ -26,7 +26,13 @@ from services.research.run_registry.contract import (
     make_run_identity_hash,
     normalize_invocation_id,
 )
-from .run_kinds import RUN_KINDS, RunPurpose, RunSpec, validate_params
+from .run_kinds import (
+    RUN_KINDS,
+    RunPurpose,
+    RunSpec,
+    enforce_run_kind_authority,
+    validate_params,
+)
 
 _PROVENANCE_SCHEMA = "quantos.research_runner.provenance.v1"
 _PROVENANCE_KEYS = {
@@ -291,6 +297,10 @@ class JobQueue:
         invocation_id: str | None = None,
     ) -> str:
         spec = RUN_KINDS[kind]                          # KeyError on unknown kind (fail-closed)
+        # Authority is checked before params, git, invocation lookup, registry
+        # persistence, or thread submission.  A legacy kind cannot turn its
+        # eventual tool-level quarantine into a persisted queued/error run.
+        enforce_run_kind_authority(kind)
         clean = validate_params(kind, params)
         if invocation_id is None:
             invocation_id = uuid.uuid4().hex

@@ -209,5 +209,15 @@ def test_oi_main_rest_fills_dead_window_then_archive_supersedes(tmp_path, monkey
     payload = json.load(open(cache_path, encoding="utf-8"))
     superseded = payload["data"]["BTC"][str(expected)]
     assert "source" not in superseded                    # 归档行无占位标记(canonical)
-    assert superseded == {"oi": 113512.884, "oi_value": 3041271241.99,
-                          "top_ls": 1.2777, "global_ls": 2.3994, "taker_ls": 0.8979}
+    assert {key: superseded[key] for key in _REST_OI_RECORD} == {
+        "oi": 113512.884,
+        "oi_value": 3041271241.99,
+        "top_ls": 1.2777,
+        "global_ls": 2.3994,
+        "taker_ls": 0.8979,
+    }
+    # Archive supersession must retain all three causal clocks; replacing a
+    # REST placeholder may change provenance/value, never erase time meaning.
+    assert superseded["source_event_time_ms"] == expected + _DAY - 300_000
+    assert superseded["available_time_ms"] == expected + _DAY
+    assert superseded["ingestion_time_ms"] == expected + _DAY

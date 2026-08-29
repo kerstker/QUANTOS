@@ -44,7 +44,6 @@ from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from tools.cache_io import atomic_write_json
 from tools.crowd_contra_variants import _ann, _mdd, cadence_rows, ppy_for_cadence
 from tools.crypto_oi_research import _legs, build_panel
@@ -219,7 +218,15 @@ def _definition_for(spec):
                 "cadence_days": str(spec["cadence_days"])})
 
 
-def register_grid_trials(specs, sig, panel, *, registry, recorded_at: int) -> dict:
+def _register_grid_trials_legacy_diagnostic(
+    specs,
+    sig,
+    panel,
+    *,
+    registry,
+    recorded_at: int,
+    batch_runner,
+) -> dict:
     """15 个网格点按节奏分 3 批注册并过评估器(DSR 按全 trial 总体泄气,逐候选收进 honesty)。"""
     dataset_version = field_panel_dataset_version(
         panel, source_versions={"family": _FAMILY, "universe": "crypto_oi_majors"})
@@ -235,7 +242,7 @@ def register_grid_trials(specs, sig, panel, *, registry, recorded_at: int) -> di
             source=_SOURCE, search_kind=_SEARCH_KIND, dataset_version=dataset_version,
             recorded_at=recorded_at,
             params={"family": _FAMILY, "cadence_days": cadence, "candidate_count": len(candidates)})
-        batch = run_registered_candidate_batch(
+        batch = batch_runner(
             candidates, registry=registry, search_id=search_id, search_kind=_SEARCH_KIND,
             search_source=_SOURCE, dataset_version=dataset_version, recorded_at=recorded_at,
             periods_per_year=ppy_for_cadence(cadence),
@@ -259,6 +266,13 @@ def register_grid_trials(specs, sig, panel, *, registry, recorded_at: int) -> di
     out["trial_count_after"] = registry._store.trial_count()
     out["trial_count_delta"] = out["trial_count_after"] - out["trial_count_before"]
     return out
+
+
+def register_grid_trials(*_args, **_kwargs) -> dict:
+    """Reject the legacy selection-bearing grid API before all work."""
+    quarantine_legacy_backtest(
+        "tools.promotion_gate_crowd_contra.register_grid_trials"
+    )
 
 
 # ---------------------------------------------------------------------------

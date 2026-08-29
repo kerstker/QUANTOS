@@ -14,7 +14,6 @@ from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.alpha.panel_backtest import PanelPeriod
 from services.data.available_time import fetch_bars_for_event_decisions
 from services.data.persistent_store import SqlitePITStore
-from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research.cftc_positioning import (
     align_forward_returns,
     evaluate_positions,
@@ -201,13 +200,14 @@ def _definition(spec: dict) -> AlphaDefinition:
     )
 
 
-def register_family_trials(
+def _register_family_trials_legacy_diagnostic(
     specs,
     aligned_by_id,
     *,
     registry: ExperimentRegistry,
     recorded_at: int,
     dataset_version: str,
+    batch_runner,
 ) -> dict:
     before = registry._store.trial_count()
     candidates = tuple(
@@ -215,7 +215,7 @@ def register_family_trials(
         for spec in specs
     )
     search_id = f"search-{stable_hash({'family': FAMILY, 'dataset': dataset_version})[:24]}"
-    batch = run_registered_candidate_batch(
+    batch = batch_runner(
         candidates,
         registry=registry,
         search_id=search_id,
@@ -261,6 +261,13 @@ def register_family_trials(
         "promotion_eligible": False,
         "live_allowed": False,
     }
+
+
+def register_family_trials(*_args, **_kwargs) -> dict:
+    """Reject the legacy selection-bearing registration API before all work."""
+    quarantine_legacy_backtest(
+        "tools.cftc_positioning_research.register_family_trials"
+    )
 
 
 def _lagged(aligned):

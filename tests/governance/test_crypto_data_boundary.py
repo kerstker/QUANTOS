@@ -145,6 +145,9 @@ _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "con
 # 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
 # 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
 _EXTRA_ALLOWED_BY_FILE = {
+    # Archive row/file dates are parsed as explicit UTC instants so source,
+    # availability, and ingestion clocks cannot inherit the host timezone.
+    "binance_oi_metrics_fetch.py": {"datetime"},
     # 纯 stdlib 有限数校验；只用于拒绝 NaN/Inf 源观测，不增加网络/交易/凭证能力。
     "coingecko_fetch.py": {"math"},
     "binance_funding_fetch.py": {"math"},

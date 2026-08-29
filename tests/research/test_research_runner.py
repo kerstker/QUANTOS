@@ -1,17 +1,21 @@
 """research_runner: the ONLY mutating surface — a guarded async trigger that runs WHITELISTED research
 kinds and writes results to the run_registry. It can never run anything but research (no order/broker/
 credential path); unknown kinds and unknown params are rejected fail-closed."""
-from contextlib import contextmanager
 from dataclasses import replace
 import json
 
 import pytest
 
+from services.execution.backtest_authority import (
+    BacktestIntegrityBlocked,
+    LEGACY_INVALIDATION_CODE,
+)
 from services.research.run_registry import contract
 from services.research.run_registry.store import ResearchRunStore
 from services.research.run_registry.registry import RunRegistry
 from services.research_runner.run_kinds import (
     DIAGNOSTIC_ONLY,
+    LEGACY_QUARANTINED_RUN_KINDS,
     RUN_KINDS,
     SELECTION_BEARING,
     RunPurpose,
@@ -24,58 +28,6 @@ from services.research_runner.runner import (
     _git_sha,
     validate_run_provenance,
 )
-
-
-def _factory_panel():
-    from services.research.alpha_expression import FieldPanel
-
-    return FieldPanel(
-        ["A", "B"],
-        [1, 2, 3, 4],
-        {
-            "close": [[100.0, 101.0]] * 4,
-            "funding": [[0.001, -0.001]] * 4,
-            "global_ls": [[1.1, 0.9]] * 4,
-            "top_ls": [[1.2, 0.8]] * 4,
-        },
-    )
-
-
-def _patch_factory_tool(monkeypatch, module, captured):
-    marker = object()
-
-    @contextmanager
-    def registry_context():
-        yield marker
-
-    def fake_factory(*_args, **kwargs):
-        captured.append(kwargs)
-        return {
-            "n_evaluated": 0,
-            "best": [],
-            "scored_by": "orthogonal_incremental_ir",
-        }
-
-    monkeypatch.setattr(module, "build_panel", lambda **_kwargs: (_factory_panel(), ["A", "B"]))
-    monkeypatch.setattr(module, "economic_return_series", lambda *_args, **_kwargs: [0.01] * 4)
-    monkeypatch.setattr(module, "sharpe", lambda *_args, **_kwargs: 1.0)
-    monkeypatch.setattr(
-        module,
-        "walk_forward_selection_oos",
-        lambda *_args, **_kwargs: {"n_folds": 0, "mean_oos_sharpe": None, "folds": []},
-    )
-    monkeypatch.setattr(module, "production_experiment_registry", registry_context)
-    monkeypatch.setattr(module, "run_alpha_factory", fake_factory)
-    return marker
-
-
-def _assert_persistent_factory_call(call, marker):
-    assert call["search_registry"] is marker
-    assert call["search_id"].startswith("search-")
-    assert call["search_kind"]
-    assert call["search_source"].startswith("tools.crypto_factory_")
-    assert call["dataset_version"]
-    assert isinstance(call["timestamp"], int)
 
 
 def _register_stub(name, spec):
@@ -159,47 +111,63 @@ def test_factory_params_reject_non_positive_population():
         validate_params("factory_orthogonal", {"population": -1})
 
 
-def test_factory_orthogonal_runner_kind_injects_durable_trial_provenance(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    ("kind", "params"),
+    [
+        ("factory_orthogonal", {"generations": 1, "population": 4}),
+        ("factory_loop", {}),
+    ],
+)
+def test_legacy_factory_runner_kind_blocks_before_tool_import(
+    monkeypatch, kind, params
 ):
-    import tools.crypto_factory_orthogonal as tool
+    import services.research_runner.run_kinds as run_kinds_module
 
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "data" / "cache").mkdir(parents=True)
-    captured = []
-    marker = _patch_factory_tool(monkeypatch, tool, captured)
+    class _NoImport:
+        @staticmethod
+        def import_module(module):
+            pytest.fail(f"quarantined runner imported {module}")
 
-    result = RUN_KINDS["factory_orthogonal"].runner(
-        {"generations": 1, "population": 4}
-    )
+    monkeypatch.setattr(run_kinds_module, "importlib", _NoImport())
 
-    assert result["containment"].startswith("research")
-    assert len(captured) == 1
-    _assert_persistent_factory_call(captured[0], marker)
+    assert LEGACY_QUARANTINED_RUN_KINDS == {
+        "factory_orthogonal",
+        "factory_loop",
+    }
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        RUN_KINDS[kind].runner(params)
 
 
-def test_factory_loop_runner_kind_injects_provenance_for_every_round(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    ("kind", "params"),
+    [
+        ("factory_orthogonal", {"generations": 1, "population": 4}),
+        ("factory_loop", {}),
+    ],
+)
+def test_legacy_factory_submit_blocks_before_params_git_registry_or_thread(
+    tmp_path, monkeypatch, kind, params
 ):
-    import tools.crypto_factory_loop as tool
+    import services.research_runner.runner as runner_module
 
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "data" / "cache").mkdir(parents=True)
-    captured = []
-    marker = _patch_factory_tool(monkeypatch, tool, captured)
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "blocked.db")))
+    queue = JobQueue(reg, max_workers=1)
 
-    result = RUN_KINDS["factory_loop"].runner({})
+    def forbidden(collaborator):
+        def call(*_args, **_kwargs):
+            pytest.fail(f"authority boundary called {collaborator}")
 
-    assert result["containment"].startswith("research")
-    assert len(captured) == tool.DRY_LIMIT
-    for call in captured:
-        _assert_persistent_factory_call(call, marker)
-        assert set(call["basis_returns"]) == {
-            "carry",
-            "crowd_contra",
-            "top_contra",
-        }
-    assert len({call["search_id"] for call in captured}) == len(captured)
+        return call
+
+    monkeypatch.setattr(runner_module, "validate_params", forbidden("validate_params"))
+    monkeypatch.setattr(runner_module, "_git_sha", forbidden("_git_sha"))
+    monkeypatch.setattr(reg, "get_by_invocation", forbidden("registry lookup"))
+    monkeypatch.setattr(reg, "insert_or_get", forbidden("registry insert"))
+    monkeypatch.setattr(queue._ex, "submit", forbidden("thread submit"))
+
+    with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
+        queue.submit(kind, params, now=1)
+    assert reg.list() == []
 
 
 def test_job_runs_and_writes_registry(tmp_path):

@@ -124,11 +124,13 @@ def test_whitelist_entrypoints_are_research_only():
 def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible():
     from services.research_runner.run_kinds import (
         GLOBAL_TRIAL_LEDGER,
+        LEGACY_QUARANTINED_RUN_KINDS,
         RUN_KINDS,
         RunPurpose,
     )
 
     expected_selection_bearing = {"factory_orthogonal", "factory_loop"}
+    assert LEGACY_QUARANTINED_RUN_KINDS == expected_selection_bearing
     actual_selection_bearing = {
         kind
         for kind, spec in RUN_KINDS.items()

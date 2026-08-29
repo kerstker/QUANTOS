@@ -17,7 +17,6 @@ from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.panel_backtest import PanelPeriod
 from services.execution.backtest_authority import quarantine_legacy_backtest
-from services.intelligence.registered_candidate_batch import run_registered_candidate_batch
 from services.research import alpha_expression as ax
 from services.research.alpha_expression import FieldPanel
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -310,13 +309,14 @@ def fixed_weekly_periods(specs, signals, panel) -> dict[str, tuple[PanelPeriod, 
     return output
 
 
-def register_family_trials(
+def _register_family_trials_legacy_diagnostic(
     specs,
     signals,
     panel,
     *,
     registry: ExperimentRegistry,
     recorded_at: int,
+    batch_runner,
 ) -> dict:
     dataset_version = field_panel_dataset_version(
         panel, source_versions={"family": FAMILY, "universe": UNIVERSE}
@@ -353,7 +353,7 @@ def register_family_trials(
             "candidate_count": len(candidates),
         },
     )
-    batch = run_registered_candidate_batch(
+    batch = batch_runner(
         candidates,
         registry=registry,
         search_id=search_id,
@@ -401,6 +401,13 @@ def register_family_trials(
         "promotion_eligible": False,
         "live_allowed": False,
     }
+
+
+def register_family_trials(*_args, **_kwargs) -> dict:
+    """Reject the legacy selection-bearing registration API before all work."""
+    quarantine_legacy_backtest(
+        "tools.hyperliquid_funding_research.register_family_trials"
+    )
 
 
 def verdict_for(stage_values: dict) -> dict:
