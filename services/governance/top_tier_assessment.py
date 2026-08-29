@@ -2176,12 +2176,14 @@ def _l2_source_contract_error(contract: Any) -> str | None:
     if not isinstance(contract, dict) or set(contract) != {"version", "sources"}:
         return "source contract must contain only version and sources"
     # v4 added the autonomous realtime engineering execution-paper ledger; v5
-    # added the Task 39 soak evidence authority; v6/v7 added the retained
-    # DefiLlama TVL/stablecoin vintages; and v8 added the governed Binance book
-    # depth archive. Keep the accepted set finite so a future contract version
-    # still requires explicit review.
-    if contract.get("version") not in (2, 3, 4, 5, 6, 7, 8):
-        return "source contract version must be one of 2, 3, 4, 5, 6, 7, or 8"
+    # added the Task 39 soak authority; v6-v8 added retained public-data
+    # vintages/book depth; v9-v11 added liquidation, Bybit resilience, and OKX
+    # borrow authorities; and v13 bound snapshot policies plus the frozen
+    # borrow-pressure preregistration. Keep the accepted set finite so a future
+    # contract version still requires explicit review.
+    version = contract.get("version")
+    if type(version) is not int or version not in range(2, 14):
+        return "source contract version must be an integer from 2 through 13"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"

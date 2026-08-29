@@ -421,10 +421,10 @@ def test_l2_backup_checker_requires_external_encrypted_restore_verified_evidence
     assert report["requirements"][0]["status"] == "PASS"
 
 
-def test_l2_backup_checker_accepts_v2_through_v8_and_rejects_v9(tmp_path):
+def test_l2_backup_checker_accepts_v2_through_v13_and_rejects_v14(tmp_path):
     """The checker must accept every released source-contract version.
 
-    v8 is current. A future unreviewed version must still fail closed instead
+    v13 is current. A future unreviewed version must still fail closed instead
     of being accepted by a broad integer check.
     """
     for relative in ("tools/l2_backup.py", "tools/l2_scheduler_watchdog.py"):
@@ -465,12 +465,16 @@ def test_l2_backup_checker_accepts_v2_through_v8_and_rejects_v9(tmp_path):
         evidence.write_text(json.dumps(payload), encoding="utf-8")
         return assess_repository(tmp_path, registry)["requirements"][0]
 
-    for version in range(2, 9):
+    for version in range(2, 14):
         assert assess_version(version)["status"] == "PASS", f"v{version}"
 
-    future = assess_version(9)
+    future = assess_version(14)
     assert future["status"] == "UNVERIFIED"
     assert "source contract version" in future["detail"]
+
+    non_integer = assess_version(13.0)
+    assert non_integer["status"] == "UNVERIFIED"
+    assert "source contract version" in non_integer["detail"]
 
 
 @pytest.mark.parametrize(
