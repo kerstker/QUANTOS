@@ -104,7 +104,28 @@ def test_market_and_strategy_read_committed_live_wal_without_source_writes(
     dry_path = cache / "dry_run.db"
     dry = DryRunStore(str(dry_path), create=True)
     dry._conn.execute("PRAGMA wal_autocheckpoint=0")
-    dry.save_run(_dry_run(1))
+    legacy = _dry_run(1)
+    legacy_record = legacy.as_record()
+    # Reproduce a retained pre-authority database row without using the current
+    # authoritative writer boundary: the console must treat this as read-only,
+    # invalidated history rather than silently upgrading it to evidence.
+    dry._conn.execute(
+        "INSERT INTO dry_run(run_id,strategy_id,timestamp,n_intents,n_approved,"
+        "n_rejected,rejected_reasons,pnl,audit_root,detail) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            legacy_record["run_id"],
+            legacy_record["strategy_id"],
+            legacy_record["timestamp"],
+            legacy_record["n_intents"],
+            legacy_record["n_approved"],
+            legacy_record["n_rejected"],
+            json.dumps(legacy_record["rejected_reasons"]),
+            json.dumps(legacy_record["pnl"]),
+            legacy_record["audit_root"],
+            json.dumps(legacy_record["detail"]),
+        ),
+    )
+    dry._conn.commit()
     try:
         assert Path(f"{market_path}-wal").stat().st_size > 0
         assert Path(f"{dry_path}-wal").stat().st_size > 0
@@ -119,7 +140,13 @@ def test_market_and_strategy_read_committed_live_wal_without_source_writes(
         assert market_payload["snapshot_status"] == "REAL"
         assert market_payload["latest_price"] == 102.0
         assert strategy_payload["snapshot_status"] == "REAL"
-        assert strategy_payload["n_runs"] == 1
+        assert strategy_payload["retained_invalidated_run_count"] == 1
+        assert strategy_payload["n_runs"] == 0
+        assert strategy_payload["authoritative"] is False
+        assert (
+            strategy_payload["invalidation_code"]
+            == "INVALIDATED_PERP_LEDGER_V1"
+        )
         assert before == {
             "market": _authority_state(market_path),
             "dry": _authority_state(dry_path),

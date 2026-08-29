@@ -233,9 +233,11 @@ def test_rpi_candidate_uses_only_post_latency_future_prices() -> None:
         rows = []
         for period in range(8):
             decision = period * 2 * HOUR_MS
+            pre_latency_mid = 100.0 * (1.0 + signal * 0.01)
+            entry_time = decision + 1_000
             rows.append(
                 replace(
-                    _frame(instrument, decision, mid=100.0),
+                    _frame(instrument, decision, mid=pre_latency_mid),
                     rpi_notional_imbalance_1000=signal,
                 )
             )
@@ -243,7 +245,23 @@ def test_rpi_candidate_uses_only_post_latency_future_prices() -> None:
                 replace(
                     _frame(
                         instrument,
-                        decision + HOUR_MS + 1_000,
+                        decision + 100,
+                        mid=pre_latency_mid,
+                    ),
+                    rpi_notional_imbalance_1000=signal,
+                )
+            )
+            rows.append(
+                replace(
+                    _frame(instrument, entry_time, mid=100.0),
+                    rpi_notional_imbalance_1000=signal,
+                )
+            )
+            rows.append(
+                replace(
+                    _frame(
+                        instrument,
+                        entry_time + HOUR_MS,
                         mid=100.0 * (1.0 + signal * 0.001),
                     ),
                     rpi_notional_imbalance_1000=signal,
