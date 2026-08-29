@@ -1,18 +1,18 @@
 {
   "schema_version": 1,
   "status": "KNOWN_ARCHITECTURE_DEBT_NOT_APPROVAL",
-  "reviewed_at": "2026-07-15",
+  "reviewed_at": "2026-08-29",
   "known_cycle_edges": [],
   "known_unresolved_dynamic_imports": [
     {
       "path": "services/research_runner/run_kinds.py",
-      "line": 67,
+      "line": 84,
       "function": "importlib.import_module",
       "boundary": "RunSpec.entrypoint is selected only from the static RUN_KINDS research whitelist."
     },
     {
       "path": "services/research_runner/run_kinds.py",
-      "line": 74,
+      "line": 91,
       "function": "importlib.import_module",
       "boundary": "The module argument is closed over from static _tool_then_json calls in RUN_KINDS."
     }

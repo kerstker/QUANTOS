@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 47,
+  "edge_count": 48,
   "edges": [
     {
       "references": [
@@ -1398,6 +1398,17 @@
     {
       "references": [
         {
+          "line": 19,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research_runner/run_kinds.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "execution"
+    },
+    {
+      "references": [
+        {
           "line": 27,
           "module": "services.monitoring.audit_store",
           "path": "services/research_runner/main.py"
@@ -1424,7 +1435,7 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 19,
+          "line": 20,
           "module": "services.research.run_registry.indexer",
           "path": "services/research_runner/run_kinds.py"
         },
@@ -1477,7 +1488,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "8fe6856e52f9614a54f3bc86dc83d5a2159a484b7d35ba7b19f2ce0366e6da8a",
+  "graph_sha256": "ae22956bdefac08a4dc1ff0f1a6cfef842b91065e9aedfed3a7d2125d9a41c05",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1512,19 +1523,19 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
+  "policy_sha256": "282790419831da3b39c12746de84888d0e3be309e4025c8d65a495deff0dd396",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
   "source_file_count": 498,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
-      "line": 67,
+      "line": 84,
       "path": "services/research_runner/run_kinds.py"
     },
     {
       "function": "importlib.import_module",
-      "line": 74,
+      "line": 91,
       "path": "services/research_runner/run_kinds.py"
     }
   ],
