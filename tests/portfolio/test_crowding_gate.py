@@ -146,14 +146,14 @@ def test_average_path_blocks_by_default():
 
 
 def test_average_warn_only_caps_average_at_warn():
-    # 用户 2026-07-07 签署:rank 平均分是结构性常数,不当 BLOCK 门 -> average_warn_only=True 封顶 WARN
+    # Rank average is low-information for this symmetric book; cap this diagnostic path at WARN.
     w, c = _diffuse_high_avg_book()
     d = evaluate_crowding_gate(w, c, threshold=0.60, warn_threshold=0.45, average_warn_only=True)
     assert d.status == "WARN"
 
 
 def test_absolute_z_gate_blocks_shorted_crowded_name():
-    # 正确统计量:被 short 的名字绝对拥挤 z > z* -> BLOCK(挤压风险)
+    # The uncalibrated conservative z safety rule blocks a crowded short name.
     d = evaluate_crowding_gate(
         {"A": -0.2, "B": 0.2}, {"A": 0.5, "B": 0.5},
         average_warn_only=True, crowding_z_by_symbol={"A": 3.5, "B": 0.1}, max_crowding_z=3.0)
@@ -237,13 +237,23 @@ def test_project_symbol_crowding_missing_factor_returns_empty_map():
     assert projected == {}
 
 
-# --- 校准 drift lock(Phase 3 子项3,P2-7):CALIBRATED_DEFAULTS 与签名默认不得漂移 ---
+# --- Conservative safety-limit drift lock; this is not calibration authority. ---
 
-def test_calibrated_defaults_match_signature_and_documented():
+def test_uncalibrated_safety_limits_match_signature_and_are_explicitly_invalidated():
     import inspect
-    from services.portfolio.crowding_gate import CALIBRATED_DEFAULTS, evaluate_crowding_gate
+    from services.portfolio.crowding_gate import (
+        CALIBRATED_DEFAULTS,
+        CONSERVATIVE_SAFETY_DEFAULTS,
+        evaluate_crowding_gate,
+    )
     sig = inspect.signature(evaluate_crowding_gate)
     for k in ("threshold", "warn_threshold", "min_coverage", "max_name_weight", "max_exit_days"):
         assert sig.parameters[k].default == CALIBRATED_DEFAULTS[k], f"{k} drifted from CALIBRATED_DEFAULTS"
     assert CALIBRATED_DEFAULTS["provenance"] == \
         "LEGACY_GENERIC_DEFAULTS_SCANNED_NOT_PRODUCTION_CALIBRATED"
+    assert CALIBRATED_DEFAULTS["threshold_status"] == \
+        "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT"
+    assert CALIBRATED_DEFAULTS["calibration_authoritative"] is False
+    assert CALIBRATED_DEFAULTS["invalidation_code"] == \
+        "INVALIDATED_PERP_LEDGER_V1"
+    assert CALIBRATED_DEFAULTS is CONSERVATIVE_SAFETY_DEFAULTS

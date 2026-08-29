@@ -15,18 +15,22 @@ GateStatus = Literal["PASS", "WARN", "BLOCK"]
 _EPS = 1e-12
 _SEVERITY = {"PASS": 0, "WARN": 1, "BLOCK": 2}
 
-# 拥挤门阈值来源(Phase 3 子项3,P2-7):2026-07-13 正式证据重放 234 周真实 global_ls，见
-# evidence/crowding_gate_calibration.json。干跑 trailing-rank 平均分恒 0.500；live extremity-rank 平均分
-# 0.500..0.655，两种 rank 语义均由调用方传 `average_warn_only=True` 封顶 WARN，绝不取得 BLOCK 权威。
-# 真正的 BLOCK 由**绝对 z-score 判据**给出：被 short 名字的 global_ls 时序 z > `max_crowding_z`。
-# 用户 2026-07-07 签署 z*=3.0；冻结输入重放结果 live/dry 阻断周逐项一致，234 周 BLOCK 21(8.97%)，
-# 2.0/2.5/3.0/3.5/4.0 的阻断数为 61/38/21/9/5。下方通用默认值只为旧调用方保留字节兼容，
-# **不因 z-gate 已校准而冒充通用生产阈值**；契约测试钉死它们不无声漂移。
-CALIBRATED_DEFAULTS = {
+# P0 authority correction (2026-08-29): the retained V1 replay cannot satisfy
+# the current PIT knowledge-lag contract and is INVALIDATED_PERP_LEDGER_V1.
+# Its historical counts are diagnostic only.  These numeric defaults remain in
+# place for caller compatibility as uncalibrated conservative safety limits;
+# neither their stability nor the V1 replay grants calibration authority.
+CONSERVATIVE_SAFETY_DEFAULTS = {
     "threshold": 0.60, "warn_threshold": 0.45, "min_coverage": 0.80,
     "max_name_weight": 0.25, "max_exit_days": 5.0,
     "provenance": "LEGACY_GENERIC_DEFAULTS_SCANNED_NOT_PRODUCTION_CALIBRATED",
+    "threshold_status": "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT",
+    "calibration_authoritative": False,
+    "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
 }
+# Compatibility alias for historical imports.  The mapping itself explicitly
+# denies calibration authority and must not be cited as calibrated evidence.
+CALIBRATED_DEFAULTS = CONSERVATIVE_SAFETY_DEFAULTS
 
 
 def _worst(a: GateStatus, b: GateStatus) -> GateStatus:
@@ -98,10 +102,10 @@ def evaluate_crowding_gate(
 ) -> CrowdingGateDecision:
     """Evaluate a long-short book against supplied crowding evidence.
 
-    Beyond the gross-weighted average crowding score, two Rank #10a criteria (thresholds sensitivity-
-    scanned 2026-07-07 — see CALIBRATED_DEFAULTS above + docs/engineering/specs/2026-07-07-crowding-gate-
-    calibration.md; the average score is low-information for dollar-neutral fade books, so lean on
-    concentration) evaluate independently so a few extreme names cannot hide behind the average:
+    Beyond the gross-weighted average crowding score, two Rank #10a criteria
+    evaluate independently so a few extreme names cannot hide behind the average.
+    Their current numeric values are uncalibrated conservative safety limits,
+    not production-calibrated thresholds:
     - concentration: a name that is BOTH concentrated (abs_weight/gross > max_name_weight) AND
       crowded (> concentrated_crowding_block, default = threshold) trips BLOCK on its own;
     - liquidity (optional, needs adv_by_symbol + book_notional): exit_days = position_notional/ADV
@@ -163,11 +167,10 @@ def evaluate_crowding_gate(
 
     score = weighted_score / covered_gross
 
-    # base verdict from the gross-weighted average. **average_warn_only**(用户 2026-07-07 签署,见
-    # docs/engineering/specs/2026-07-07-crowding-gate-calibration.md):对称 L/S fade book 的 gross 加权
-    # 平均拥挤分是**结构性常数**(实测恒 0.500,cross-sectional rank 天然),把它当 BLOCK 门是把数学常数
-    # 当风险信号。True -> 平均分路径封顶 WARN(诊断,永不 BLOCK);默认 False 保留旧行为(对 net-directional
-    # book 平均分仍有信息,可 BLOCK)。真正的 BLOCK 交给下方绝对 z-score 判据。
+    # The average-rank path is low-information for a symmetric L/S fade book.
+    # ``average_warn_only=True`` therefore caps this diagnostic path at WARN;
+    # the default False preserves compatibility for net-directional callers.
+    # This behavior is a conservative control, not evidence of calibration.
     status: GateStatus = "PASS"
     reasons: list[str] = []
     if score > float(threshold):
@@ -192,10 +195,10 @@ def evaluate_crowding_gate(
             status = _worst(status, "WARN")
             reasons.append(f"concentrated_crowded_warn:{symbol}:w={conc:.4f},c={crowding:.4f}")
 
-    # 绝对拥挤 z-score BLOCK 判据(**正确统计量**,用户 2026-07-07 签署 z*=3.0)。rank 分测"本周相对
-    # 排位"、结构性恒定;绝对 z = 被 short 名字的 global_ls 当前值 vs **它自己的时序历史**,真的区分
-    # "正常"与"这个拥挤多头现在异常拥挤=挤压风险"。只评 **short 腿**(挤压风险在被 short 的拥挤多头);
-    # 缺 z(历史不足)-> 该名不评 z 维(其它判据仍在);非有限 z -> fail-closed BLOCK。
+    # Absolute z-score is a conservative short-squeeze safety rule: compare a
+    # short name's current global_ls with its own history.  The present 3.0
+    # caller limit is explicitly uncalibrated.  Missing history skips only this
+    # dimension; non-finite supplied evidence still fails closed.
     if crowding_z_by_symbol is not None and max_crowding_z is not None:
         for symbol in sorted(weights):
             w = weights[symbol]

@@ -68,7 +68,7 @@ _ADAPTER_CFG = SignalAdapterConfig(
     winsorize_k=3.0, max_position=0.1, gross_target=1.0, dollar_neutral=True,
     half_spread_bps=0.0, max_participation=0.1, target_aum=_AUM)
 
-_MAX_CROWDING_Z = 3.0   # 与基准驱动器相同(用户 2026-07-07 签署的校准阈值)
+_MAX_CROWDING_Z = 3.0   # 与基准驱动器相同的未校准保守安全限
 
 
 def main() -> None:

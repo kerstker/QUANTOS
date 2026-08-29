@@ -36,7 +36,7 @@ def test_none_only_window_yields_no_evidence():
     assert _crowding_rank(gmat, r=1, idx=[0, 1], lookback=2) == {}
 
 
-# --- 绝对拥挤 z-score(正确统计量,用户签 z*=3.0)---
+# --- 绝对拥挤 z-score 未校准保守安全规则 ---
 
 def test_crowding_zscore_deviation_from_own_history():
     # 历史 [1..12] 均值 6.5,当前 20 -> 正 z(远高于自己历史)
@@ -55,6 +55,6 @@ def test_crowding_zscore_zero_variance_returns_none():
     assert _crowding_zscore(gmat, r=12, i=0, min_hist=12) is None
 
 
-def test_signed_max_crowding_z_is_active():
-    # 用户 2026-07-07 签署:绝对拥挤 z-score BLOCK 阈值 3.0(flag 最拥挤 ~10% 周)。drift-lock。
+def test_uncalibrated_conservative_max_crowding_z_is_active():
+    # 数值 drift-lock 仅维持保守安全行为，不授予校准权威。
     assert _MAX_CROWDING_Z == 3.0

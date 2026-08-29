@@ -130,10 +130,10 @@ def test_driver_wires_strategy_positions_into_batch_and_account_into_gates():
 
 def test_driver_wires_live_crowding_z_gate():
     # 源码结构钉子(2026-07-07 注册表 4->5 tuple 接线,main() 不可离线跑):拥挤 z-gate 用 average_warn_only
-    # + 用户签的 z*=3.0(挤压保护)。防止有人把接线悄悄改回默认门。
+    # + 未校准保守 z*=3.0(挤压保护)。防止有人把接线悄悄改回默认门。
     assert "average_warn_only=True" in _SRC
     assert "max_crowding_z=_MAX_CROWDING_Z" in _SRC
-    assert "_MAX_CROWDING_Z = 3.0" in _SRC                     # 签署值 drift-lock(源码级)
+    assert "_MAX_CROWDING_Z = 3.0" in _SRC  # 未校准保守安全限 drift-lock
 
 
 def test_driver_uses_contemporaneous_cross_source_prices_without_age_skip():

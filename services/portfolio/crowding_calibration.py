@@ -1,4 +1,4 @@
-"""Deterministic sensitivity analysis for the load-bearing crowding gate."""
+"""Deterministic diagnostics for retained, invalidated V1 crowding records."""
 from __future__ import annotations
 
 import math
@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 
 from services.portfolio.crowding_gate import evaluate_crowding_gate
 
-SIGNED_MAX_CROWDING_Z = 3.0
+CONSERVATIVE_MAX_CROWDING_Z = 3.0
+# Backward-compatible technical name used by the retained V1 summary schema.
+# It is not a signature, calibration, or authority claim.
+SIGNED_MAX_CROWDING_Z = CONSERVATIVE_MAX_CROWDING_Z
+CALIBRATION_INVALIDATION_CODE = "INVALIDATED_PERP_LEDGER_V1"
+THRESHOLD_STATUS = "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT"
 SENSITIVITY_THRESHOLDS = (2.0, 2.5, 3.0, 3.5, 4.0)
 
 
@@ -135,7 +140,7 @@ def summarize_calibration_records(
     signed_threshold: float = SIGNED_MAX_CROWDING_Z,
     sensitivity_thresholds: Sequence[float] = SENSITIVITY_THRESHOLDS,
 ) -> dict:
-    """Replay frozen per-period inputs through the production crowding gate."""
+    """Replay retained V1 inputs for diagnostics, never calibration authority."""
     if not _finite(signed_threshold):
         raise ValueError("signed_threshold must be finite")
     thresholds = tuple(float(value) for value in sensitivity_thresholds)
@@ -180,6 +185,9 @@ def summarize_calibration_records(
     ]
 
     return {
+        "calibration_authoritative": False,
+        "invalidation_code": CALIBRATION_INVALIDATION_CODE,
+        "threshold_status": THRESHOLD_STATUS,
         "n_periods": len(rows),
         "min_period": rows[0]["period"],
         "max_period": rows[-1]["period"],
@@ -211,5 +219,5 @@ def summarize_calibration_records(
             "block_periods_equal": dry_signed["block_periods"] == live_signed["block_periods"],
         },
         "z_threshold_sensitivity": sensitivity,
-        "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
+        "provenance": "RETAINED_V1_GATE_REPLAY_DIAGNOSTIC_INVALIDATED",
     }

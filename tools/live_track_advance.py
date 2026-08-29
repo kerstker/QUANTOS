@@ -133,8 +133,8 @@ _MAINTENANCE_STATUS_PATH = os.path.join("data", "cache", "alpha_maintenance_stat
 _ADV_WINDOW = 30
 _VOL_WINDOW = 30
 _VOL_ANNUALIZE = 365.0
-# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准 docs/engineering/specs/2026-07-07-crowding-
-# gate-calibration.md):被 short 名字 global_ls 时序 z > 3.0 -> BLOCK(挤压保护)。与干跑驱动器同一签署值。
+# 绝对拥挤 z-score BLOCK 的未校准保守安全限：被 short 名字 global_ls 时序 z > 3.0
+# 时 BLOCK（挤压保护）。旧 V1 replay 已失效，不能为该数值授予校准权威。
 _MAX_CROWDING_Z = 3.0
 
 def _binance_balances(account: dict, prices: Optional[dict] = None) -> tuple:
@@ -1190,9 +1190,8 @@ def main() -> None:
     strategy_cfg = _STRATEGIES[strategy_id]
     weights, prices, decided_ts, global_ls_row, evidence = strategy_cfg["signal"]()
 
-    # 拥挤度门(2026-07-05,机构审计 P1 quick win;2026-07-07 校准修正接线):crowd_contra 本身就是"反着做
-    # 拥挤的散户多空仓位"。**平均分是结构性常数**(校准文档),故 average_warn_only=True 把它降为诊断 WARN;
-    # 真正的 BLOCK 由**绝对 z-score 判据**给出——被 short 名字 global_ls 时序 z > 3.0(挤压保护,用户签)。
+    # 拥挤度门：average_warn_only=True 把低信息的平均 rank 限为诊断 WARN；真正的 BLOCK
+    # 由未校准保守 z-score 安全规则给出——被 short 名字 global_ls 时序 z > 3.0 时保护性阻断。
     # BLOCK -> 跳过整批(不动现有仓位,见 batch_skip_reason——2026-07-06 修复:BLOCK 不再置空 weights,
     # 避免生成真实平仓单);WARN -> 仅告警。证据不足(coverage 太低/无 global_ls)时门 fail-closed BLOCK。
     crowding_blocked = False

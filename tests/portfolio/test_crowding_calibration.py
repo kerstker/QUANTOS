@@ -1,5 +1,8 @@
 from services.portfolio.crowding_calibration import (
+    CALIBRATION_INVALIDATION_CODE,
+    CONSERVATIVE_MAX_CROWDING_Z,
     SIGNED_MAX_CROWDING_Z,
+    THRESHOLD_STATUS,
     summarize_calibration_records,
 )
 
@@ -21,12 +24,16 @@ def _record(period, short_max_z):
     }
 
 
-def test_signed_threshold_summary_replays_the_real_gate_for_both_rank_modes():
+def test_retained_threshold_summary_is_deterministic_for_both_rank_modes():
     summary = summarize_calibration_records(
         [_record(1, 2.0), _record(2, 3.1), _record(3, 4.2)]
     )
 
     assert SIGNED_MAX_CROWDING_Z == 3.0
+    assert CONSERVATIVE_MAX_CROWDING_Z == 3.0
+    assert summary["calibration_authoritative"] is False
+    assert summary["invalidation_code"] == CALIBRATION_INVALIDATION_CODE
+    assert summary["threshold_status"] == THRESHOLD_STATUS
     assert summary["n_periods"] == 3
     assert summary["signed_max_crowding_z"] == 3.0
     assert summary["gate_at_signed_threshold"]["dry_run"] == {
@@ -42,7 +49,7 @@ def test_signed_threshold_summary_replays_the_real_gate_for_both_rank_modes():
     assert summary["gate_at_signed_threshold"]["block_periods_equal"] is True
 
 
-def test_z_threshold_sensitivity_is_monotonic_and_includes_signed_value():
+def test_z_threshold_sensitivity_is_monotonic_and_includes_retained_value():
     summary = summarize_calibration_records(
         [_record(1, 1.9), _record(2, 2.6), _record(3, 3.1), _record(4, 4.2)]
     )
@@ -59,5 +66,6 @@ def test_rank_statistics_remain_diagnostic_not_block_authority():
     assert summary["rank_statistics"]["dry_run_average"]["n"] == 2
     assert summary["rank_statistics"]["live_average"]["n"] == 2
     assert summary["max_name_weight"]["max"] == 0.125
-    assert summary["provenance"] == "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS"
-
+    assert summary["provenance"] == (
+        "RETAINED_V1_GATE_REPLAY_DIAGNOSTIC_INVALIDATED"
+    )

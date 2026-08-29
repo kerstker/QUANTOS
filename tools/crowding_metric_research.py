@@ -1,8 +1,12 @@
-"""Build and verify reproducible crowding-gate calibration evidence.
+"""Verify retained crowding-gate V1 inputs and publish their invalidation.
 
-This tool is offline and read-only with respect to trading state. It freezes the
-minimum per-period inputs needed to replay the production crowding gate, then
-writes a deterministic dataset bundle, manifest, and evidence summary.
+The retained V1 bundle is useful diagnostic history, but it is not calibration
+authority: its source timing cannot satisfy the current PIT contract and its
+legacy perpetual-ledger semantics are invalidated.  The default ``generate``
+and ``check`` paths therefore only verify the immutable retained bundle and
+produce deterministic *invalidation* evidence.  They never rebuild or replace
+the V1 bundle/manifest, rebuild records from source, or invoke legacy profit
+execution.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ from typing import Mapping, Sequence
 
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
 from quantos.contracts.hashing import source_file_sha256
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 from services.portfolio.crowding_calibration import (
     SIGNED_MAX_CROWDING_Z,
     summarize_calibration_records,
@@ -41,6 +46,9 @@ _BUNDLE = Path("evidence/datasets/crowding_gate_calibration_v1.jsonl.gz")
 _MANIFEST = Path("evidence/datasets/crowding_gate_calibration_v1.manifest.json")
 _EVIDENCE = Path("evidence/crowding_gate_calibration.json")
 _SOURCE_REFS = tuple(Path(value).as_posix() for value in (_DB, _SNAP, _FUND, _OI))
+_V1_BUNDLE_VERSION = "CROWDING_GATE_CALIBRATION_V1"
+_THRESHOLD_STATUS = "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT"
+_FUTURE_AUTHORITY_VERSION = "CROWDING_GATE_CALIBRATION_V2"
 _IMPLEMENTATION_REFS = (
     "services/portfolio/crowding_gate.py",
     "services/portfolio/crowding_calibration.py",
@@ -87,7 +95,16 @@ def _repo_ref(path: Path, root: Path) -> str:
 
 
 def calibration_sources_available(repo_root: Path) -> bool:
-    return all((repo_root / reference).is_file() for reference in _SOURCE_REFS)
+    present = [
+        reference
+        for reference in _SOURCE_REFS
+        if (repo_root / reference).is_file()
+    ]
+    if present and len(present) != len(_SOURCE_REFS):
+        raise CrowdingCalibrationEvidenceError(
+            "partial calibration source set is not permitted"
+        )
+    return len(present) == len(_SOURCE_REFS)
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -218,6 +235,44 @@ def write_calibration_bundle(
     return manifest
 
 
+def _verify_declared_source_set(
+    source_hashes: Mapping[str, object], *, repo_root: Path
+) -> None:
+    """Verify all declared sources or none; a partial local set is ambiguous."""
+    paths: dict[str, Path] = {}
+    for reference, expected_hash in source_hashes.items():
+        if (
+            not isinstance(reference, str)
+            or not reference
+            or Path(reference).is_absolute()
+            or ".." in Path(reference).parts
+        ):
+            raise CrowdingCalibrationEvidenceError(
+                "invalid calibration source reference"
+            )
+        if (
+            not isinstance(expected_hash, str)
+            or len(expected_hash) != 64
+            or expected_hash.lower() != expected_hash
+            or any(character not in "0123456789abcdef" for character in expected_hash)
+        ):
+            raise CrowdingCalibrationEvidenceError("invalid calibration source hash")
+        paths[reference] = repo_root / reference
+
+    present = [reference for reference, path in paths.items() if path.is_file()]
+    if present and len(present) != len(paths):
+        raise CrowdingCalibrationEvidenceError(
+            "partial calibration source set is not permitted"
+        )
+    if not present:
+        return
+    for reference, path in paths.items():
+        if _sha256_file(path) != source_hashes[reference]:
+            raise CrowdingCalibrationEvidenceError(
+                f"calibration source drift: {reference}"
+            )
+
+
 def verify_calibration_bundle(
     bundle_path: Path,
     manifest_path: Path,
@@ -258,11 +313,19 @@ def verify_calibration_bundle(
     if not isinstance(source_hashes, dict) or not source_hashes:
         raise CrowdingCalibrationEvidenceError("calibration source hashes are missing")
     for reference, expected_hash in source_hashes.items():
-        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        if (
+            not isinstance(reference, str)
+            or not reference
+            or Path(reference).is_absolute()
+            or ".." in Path(reference).parts
+            or not isinstance(expected_hash, str)
+            or len(expected_hash) != 64
+            or expected_hash.lower() != expected_hash
+            or any(character not in "0123456789abcdef" for character in expected_hash)
+        ):
             raise CrowdingCalibrationEvidenceError("invalid calibration source hash")
-        source = repo_root / reference
-        if check_sources and source.is_file() and _sha256_file(source) != expected_hash:
-            raise CrowdingCalibrationEvidenceError(f"calibration source drift: {reference}")
+    if check_sources:
+        _verify_declared_source_set(source_hashes, repo_root=repo_root)
     summarize_calibration_records(records)
     return records
 
@@ -271,14 +334,11 @@ def verify_append_only_source_replay(
     frozen_records: Sequence[Mapping[str, object]],
     current_records: Sequence[Mapping[str, object]],
 ) -> None:
-    """Require the current PIT source to replay the frozen historical prefix.
+    """Compare a legacy diagnostic prefix; never used by generate/check.
 
-    The source SQLite files are append-only operational stores. Hashing the
-    complete database container makes a valid calibration become stale when a
-    realtime worker appends a later observation. The frozen bundle already
-    binds the exact consumed rows; this check rejects mutations or deletions in
-    that historical prefix while allowing observations strictly after its
-    maximum period.
+    This technical helper preserves an old fixture invariant while allowing
+    later observations.  Passing it does not make V1 PIT-valid, calibrated, or
+    authoritative.
     """
     if not frozen_records:
         raise CrowdingCalibrationEvidenceError("frozen calibration replay is empty")
@@ -323,33 +383,66 @@ def _signed_assignments(root: Path) -> dict[str, float]:
     }
 
 
-def build_calibration_evidence(
+def build_invalidated_calibration_evidence(
     records: Sequence[Mapping[str, object]], manifest: Mapping[str, object], *, repo_root: Path
 ) -> dict:
+    """Describe V1 as retained diagnostics without granting calibration authority."""
+    if manifest.get("schema_version") != 1:
+        raise CrowdingCalibrationEvidenceError("unsupported retained bundle version")
+    source_hashes = manifest.get("source_sha256")
+    if not isinstance(source_hashes, dict) or set(source_hashes) != set(_SOURCE_REFS):
+        raise CrowdingCalibrationEvidenceError(
+            "retained V1 source identity does not match the reviewed source set"
+        )
     assignments = _signed_assignments(repo_root)
     if any(value != SIGNED_MAX_CROWDING_Z for value in assignments.values()):
-        raise CrowdingCalibrationEvidenceError("signed z threshold drifted across entrypoints")
+        raise CrowdingCalibrationEvidenceError(
+            "conservative z safety limit drifted across entrypoints"
+        )
     summary = summarize_calibration_records(records)
     gate = summary["gate_at_signed_threshold"]
     if not gate["block_periods_equal"]:
-        raise CrowdingCalibrationEvidenceError("live and dry-run block periods diverged")
+        raise CrowdingCalibrationEvidenceError(
+            "retained diagnostic live and dry-run block periods diverged"
+        )
     sensitivity_counts = [
         item["n_block"] for item in summary["z_threshold_sensitivity"].values()
     ]
     if sensitivity_counts != sorted(sensitivity_counts, reverse=True):
-        raise CrowdingCalibrationEvidenceError("z sensitivity is not monotonic")
+        raise CrowdingCalibrationEvidenceError(
+            "retained diagnostic z sensitivity is not monotonic"
+        )
+    diagnostic_summary = {
+        **summary,
+        "status": LEGACY_INVALIDATION_CODE,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+        "calibration_authoritative": False,
+        "provenance": "RETAINED_V1_DIAGNOSTIC_INVALIDATED",
+    }
 
     evidence = {
-        "schema_version": 1,
-        "status": "SENSITIVITY_EVIDENCE_COMPLETE_SIGNED_Z_GATE",
-        "readiness": "L2_DRY_RUN_ONLY",
+        "schema_version": 2,
+        "document_type": "CROWDING_CALIBRATION_INVALIDATION",
+        "status": LEGACY_INVALIDATION_CODE,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+        "readiness": "NOT_READY",
+        "calibration_authoritative": False,
+        "load_bearing": False,
+        "counted_as_calibration_evidence": False,
+        "counted_as_completion_evidence": False,
         "policy": {
             "signed_max_crowding_z": SIGNED_MAX_CROWDING_Z,
-            "signed_on": "2026-07-07",
+            "threshold_status": _THRESHOLD_STATUS,
+            "calibration_authoritative": False,
+            "legacy_recorded_on": "2026-07-07",
             "entrypoint_assignments": assignments,
             "average_rank_path": "WARN_ONLY",
         },
         "dataset": {
+            "bundle_version": _V1_BUNDLE_VERSION,
+            "retention_status": LEGACY_INVALIDATION_CODE,
+            "purpose": "DIAGNOSTIC_ONLY",
+            "calibration_authoritative": False,
             "bundle_ref": manifest["bundle_ref"],
             "bundle_sha256": manifest["bundle_sha256"],
             "manifest_sha256": manifest["manifest_sha256"],
@@ -357,56 +450,88 @@ def build_calibration_evidence(
             "min_period": manifest["min_period"],
             "max_period": manifest["max_period"],
             "instruments": manifest.get("instruments", []),
-            "source_sha256": manifest["source_sha256"],
+            "source_sha256": source_hashes,
+            "source_verification_policy": (
+                "ALL_DECLARED_FILES_SHA256_MATCH_OR_ALL_ABSENT;PARTIAL_REJECTED"
+            ),
         },
         "rank_semantics": {
             "dry_run": "TRAILING_GLOBAL_LS_CROSS_SECTIONAL_RANK",
             "live": "CURRENT_ABS_GLOBAL_LS_MINUS_ONE_CROSS_SECTIONAL_RANK",
-            "block_authority": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
+            "legacy_block_rule": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
+            "authority_status": LEGACY_INVALIDATION_CODE,
         },
-        "summary": summary,
+        "summary": diagnostic_summary,
+        "future_authority": {
+            "required_bundle_version": _FUTURE_AUTHORITY_VERSION,
+            "requires_independent_pit_bundle": True,
+            "requires_explicit_reviewed_entrypoint": True,
+            "requires_independently_controlled_signed_source_result_authority": True,
+            "self_generated_hashes_can_grant_authority": False,
+            "automatic_upgrade_from_v1": False,
+            "current_entrypoint_can_grant_authority": False,
+        },
+        "implementation_binding_role": "DIAGNOSTIC_RECONSTRUCTION_ONLY",
         "implementation_sha256": _implementation_hashes(repo_root),
         "limitations": [
-            "Sensitivity replay is historical and not causal proof of loss prevention.",
-            "No venue order-book, liquidation, or production-fill sample is available at L2.",
-            "Generic average/concentration/exit-day defaults are not promoted to calibrated production limits.",
+            (
+                "The retained V1 bundle cannot establish causal PIT calibration: "
+                "its source timing does not satisfy the current minimum knowledge-lag contract."
+            ),
+            (
+                "All retained replay counts and sensitivity statistics are diagnostic "
+                "history invalidated with the legacy perpetual-ledger semantics."
+            ),
+            (
+                "The deployed numeric threshold is an uncalibrated conservative "
+                "safety limit, not a validated production calibration."
+            ),
+            (
+                "Authority requires a separately reviewed V2 entrypoint backed by an "
+                "independent PIT bundle and independently controlled signed source/result "
+                "authority; self-generated hashes cannot grant authority and V1 can never "
+                "upgrade automatically."
+            ),
         ],
     }
     evidence["evidence_sha256"] = _sha256_bytes(_canonical_bytes(evidence))
     return evidence
 
 
-def _source_hashes(root: Path) -> dict[str, str]:
-    result = {}
-    for reference in _SOURCE_REFS:
-        path = root / reference
-        if not path.is_file():
-            raise CrowdingCalibrationEvidenceError(f"missing calibration source: {reference}")
-        result[reference] = _sha256_file(path)
-    return result
+def _read_manifest(manifest_path: Path) -> dict:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CrowdingCalibrationEvidenceError("calibration manifest is unreadable") from exc
+    if not isinstance(manifest, dict):
+        raise CrowdingCalibrationEvidenceError("unsupported calibration manifest")
+    return manifest
 
 
-def generate(repo_root: Path = _ROOT) -> dict:
-    records, instruments = build_calibration_records()
+def generate(repo_root: Path = _ROOT, *, write_snapshot: bool = True) -> dict:
+    """Refresh only the invalidation evidence; retain V1 bundle bytes unchanged."""
     bundle = repo_root / _BUNDLE
     manifest_path = repo_root / _MANIFEST
-    manifest = write_calibration_bundle(
-        records,
-        bundle,
-        manifest_path,
-        source_hashes=_source_hashes(repo_root),
-        repo_root=repo_root,
-        instruments=instruments,
-    )
-    verified = verify_calibration_bundle(
+    records = verify_calibration_bundle(
         bundle, manifest_path, repo_root=repo_root, check_sources=True
     )
-    evidence = build_calibration_evidence(verified, manifest, repo_root=repo_root)
-    _write_json(repo_root / _EVIDENCE, evidence)
-    _write_json(
-        repo_root / _CACHE_SNAPSHOT,
-        {"schema": "crowding_metric.v2", **evidence["summary"]},
+    manifest = _read_manifest(manifest_path)
+    evidence = build_invalidated_calibration_evidence(
+        records, manifest, repo_root=repo_root
     )
+    _write_json(repo_root / _EVIDENCE, evidence)
+    if write_snapshot:
+        _write_json(
+            repo_root / _CACHE_SNAPSHOT,
+            {
+                "schema": "crowding_metric.invalidated.v1",
+                "status": LEGACY_INVALIDATION_CODE,
+                "readiness": "NOT_READY",
+                "calibration_authoritative": False,
+                "counted_as_calibration_evidence": False,
+                "retained_diagnostic_summary": evidence["summary"],
+            },
+        )
     return evidence
 
 
@@ -415,18 +540,12 @@ def check(repo_root: Path = _ROOT) -> dict:
     manifest_path = repo_root / _MANIFEST
     evidence_path = repo_root / _EVIDENCE
     records = verify_calibration_bundle(
-        bundle, manifest_path, repo_root=repo_root, check_sources=False
+        bundle, manifest_path, repo_root=repo_root, check_sources=True
     )
-    # CI intentionally does not carry the large local PIT caches. In that
-    # environment the retained bundle remains fully self-verifying, but a
-    # source replay would be fabricated. When every declared source is
-    # available (operator/research hosts), additionally prove that its frozen
-    # historical prefix has not changed while allowing later appends.
-    if calibration_sources_available(repo_root):
-        current_records, _ = build_calibration_records()
-        verify_append_only_source_replay(records, current_records)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    expected = build_calibration_evidence(records, manifest, repo_root=repo_root)
+    manifest = _read_manifest(manifest_path)
+    expected = build_invalidated_calibration_evidence(
+        records, manifest, repo_root=repo_root
+    )
     try:
         observed = json.loads(evidence_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -436,7 +555,8 @@ def check(repo_root: Path = _ROOT) -> dict:
     return observed
 
 
-def scan() -> dict:
+def _scan_current_pit_diagnostic() -> dict:
+    """Private current-PIT diagnostic; cannot promote retained V1 authority."""
     records, _ = build_calibration_records()
     return summarize_calibration_records(records)
 
@@ -445,16 +565,15 @@ def main() -> None:
     if "--check" in sys.argv:
         evidence = check()
         print(
-            "Crowding calibration evidence: current; "
-            f"weeks={evidence['summary']['n_periods']}; "
-            f"signed_z={evidence['policy']['signed_max_crowding_z']}; "
-            f"blocks={evidence['summary']['gate_at_signed_threshold']['live']['n_block']}"
+            "Crowding calibration evidence: invalidation current; "
+            f"status={evidence['status']}; "
+            f"retained_weeks={evidence['summary']['n_periods']}"
         )
         return
     evidence = generate()
     print(
-        f"-> {_EVIDENCE} ({evidence['summary']['n_periods']} weeks, "
-        f"signed-z blocks={evidence['summary']['gate_at_signed_threshold']['live']['n_block']})"
+        f"-> {_EVIDENCE} (status={evidence['status']}, "
+        f"retained_weeks={evidence['summary']['n_periods']})"
     )
 
 
