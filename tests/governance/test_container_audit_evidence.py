@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from pathlib import Path
 
 import pytest
 
+from services.governance import vulnerability_evidence
 from services.governance.vulnerability_evidence import (
     ContainerAuditEvidenceError,
     build_container_audit_evidence,
     verify_container_audit_evidence,
+    verify_trivy_release_archive,
 )
 
 
@@ -112,6 +115,68 @@ def test_container_audit_is_reproducible_and_accepts_remediated_base_findings(
         tmp_path,
         base_vulnerabilities=[_vulnerability("CVE-DEMO-1")],
     )
+
+
+def test_container_audit_accepts_pinned_linux_arm64_scanner_archive(
+    tmp_path: Path,
+) -> None:
+    _write_dockerfile(tmp_path)
+    evidence = build_container_audit_evidence(
+        tmp_path,
+        base_report=_report(BASE_REF, BASE_ID),
+        runtime_report=_report("quantos-console:hardened", RUNTIME_DIGEST),
+        observed_at=1_000_000,
+        database_updated_at="1970-01-12T12:00:00Z",
+        database_next_update="1970-01-13T12:00:00Z",
+        database_downloaded_at="1970-01-12T12:30:00Z",
+        scanner_archive_name="trivy_0.72.0_Linux-ARM64.tar.gz",
+    )
+
+    assert evidence["platform"] == "linux/amd64"
+    assert evidence["scanner_archive_name"] == (
+        "trivy_0.72.0_Linux-ARM64.tar.gz"
+    )
+    assert evidence["scanner_archive_sha256"] == (
+        "2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467"
+    )
+    assert verify_container_audit_evidence(evidence, tmp_path)["verdict"] == "PASS"
+
+
+def test_container_audit_rejects_untrusted_scanner_archive(tmp_path: Path) -> None:
+    _write_dockerfile(tmp_path)
+    with pytest.raises(ContainerAuditEvidenceError, match="pinned release trust root"):
+        build_container_audit_evidence(
+            tmp_path,
+            base_report=_report(BASE_REF, BASE_ID),
+            runtime_report=_report("quantos-console:hardened", RUNTIME_DIGEST),
+            observed_at=1_000_000,
+            database_updated_at="1970-01-12T12:00:00Z",
+            database_next_update="1970-01-13T12:00:00Z",
+            database_downloaded_at="1970-01-12T12:30:00Z",
+            scanner_archive_name="trivy-unpinned.tar.gz",
+        )
+
+
+def test_trivy_release_archive_verifier_checks_actual_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive = tmp_path / "trivy_0.72.0_Linux-ARM64.tar.gz"
+    archive.write_bytes(b"offline-pinned-fixture")
+    fixture_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+    monkeypatch.setitem(
+        vulnerability_evidence._TRIVY_RELEASE_ARCHIVES,
+        archive.name,
+        fixture_sha256,
+    )
+
+    assert verify_trivy_release_archive(archive) == {
+        "scanner_archive_name": archive.name,
+        "scanner_archive_sha256": fixture_sha256,
+        "scanner_version": "0.72.0",
+    }
+    archive.write_bytes(b"tampered")
+    with pytest.raises(ContainerAuditEvidenceError, match="pinned release checksum"):
+        verify_trivy_release_archive(archive)
 
 
 def test_container_audit_fails_on_base_high_or_any_runtime_finding(

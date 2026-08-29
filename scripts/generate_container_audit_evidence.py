@@ -18,6 +18,7 @@ from services.governance.vulnerability_evidence import (
     ContainerAuditEvidenceError,
     build_container_audit_evidence,
     verify_container_audit_evidence,
+    verify_trivy_release_archive,
 )
 
 
@@ -49,6 +50,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--base-report")
     parser.add_argument("--runtime-report")
+    parser.add_argument(
+        "--scanner-archive",
+        help=(
+            "local official Trivy release archive; generation verifies its "
+            "exact filename and pinned SHA-256 before retaining evidence"
+        ),
+    )
     parser.add_argument("--database-updated-at")
     parser.add_argument("--database-next-update")
     parser.add_argument("--database-downloaded-at")
@@ -90,6 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         required = {
             "base_report": args.base_report,
             "runtime_report": args.runtime_report,
+            "scanner_archive": args.scanner_archive,
             "database_updated_at": args.database_updated_at,
             "database_next_update": args.database_next_update,
             "database_downloaded_at": args.database_downloaded_at,
@@ -99,6 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ContainerAuditEvidenceError(
                 "generation requires: " + ", ".join(missing)
             )
+        scanner_archive = verify_trivy_release_archive(Path(args.scanner_archive))
         evidence = build_container_audit_evidence(
             root,
             base_report=_read_object(Path(args.base_report)),
@@ -109,6 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             database_updated_at=args.database_updated_at,
             database_next_update=args.database_next_update,
             database_downloaded_at=args.database_downloaded_at,
+            scanner_archive_name=scanner_archive["scanner_archive_name"],
         )
         _write(output, evidence)
         print(
