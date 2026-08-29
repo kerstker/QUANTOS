@@ -238,7 +238,7 @@
     "services/governance/l2_identity_deployment.py": "091ee84e2657a81abdab23e4a2e844a57fb6430964df48a23705b84828743dfc",
     "services/governance/oidc_key_registry.py": "9770247c35eec9cbdcae9284d5a771be09efa6d24f3a251e7cf4c746e04ac206",
     "services/governance/strong_identity.py": "f7a0c911a923dfd5639a7d8a94c04a2bf2432383e6454363345044f31f417282",
-    "services/promotion_api/main.py": "f0b2dce42c0b1a3499fa889cb4983222a31c7079d758eeeccbf6092edd7f6e5c",
+    "services/promotion_api/main.py": "54045e711d5ce4873f6b3bb59ad41de778f2a68189dbee2e93510100b32d91a0",
     "services/promotion_api/trusted_mtls_proxy.py": "d665067a3bf0fcbeb7b0ee27e35e9511a8899a3c04cb42cda526a168a126a5ef"
   },
   "legacy_shared_token_accepted": false,
