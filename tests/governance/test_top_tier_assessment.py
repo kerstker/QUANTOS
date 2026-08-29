@@ -261,9 +261,9 @@ def test_checker_pass_below_target_is_partial_and_red_line_remains_open(tmp_path
     assert report["verdict"] == "NOT_TOP_TIER"
 
 
-def _l2_source_contract() -> dict:
-    return {
-        "version": 2,
+def _l2_source_contract(*, version: int | float = 2) -> dict:
+    contract = {
+        "version": version,
         "sources": [
             {
                 "relative_path": "data/cache/approvals.db",
@@ -277,6 +277,10 @@ def _l2_source_contract() -> dict:
             },
         ],
     }
+    if version >= 12:
+        for source in contract["sources"]:
+            source["snapshot_policy"] = "STANDARD"
+    return contract
 
 
 def _l2_source_contract_sha256(contract: dict) -> str:
@@ -286,7 +290,10 @@ def _l2_source_contract_sha256(contract: dict) -> str:
 
 def _valid_l2_backup_evidence(*, external: bool = True) -> dict:
     contract = _l2_source_contract()
-    required_source = contract["sources"][1]
+    required_source = {
+        key: contract["sources"][1][key]
+        for key in ("relative_path", "required", "role")
+    }
     return {
         "schema_version": 1,
         "verdict": "PASS",
@@ -436,8 +443,7 @@ def test_l2_backup_checker_accepts_v2_through_v13_and_rejects_v14(tmp_path):
     payload = _valid_l2_backup_evidence()
 
     def assess_version(version: int) -> dict:
-        contract = _l2_source_contract()
-        contract["version"] = version
+        contract = _l2_source_contract(version=version)
         registry = _write_registry(
             tmp_path,
             [
@@ -475,6 +481,124 @@ def test_l2_backup_checker_accepts_v2_through_v13_and_rejects_v14(tmp_path):
     non_integer = assess_version(13.0)
     assert non_integer["status"] == "UNVERIFIED"
     assert "source contract version" in non_integer["detail"]
+
+
+def test_l2_backup_checker_accepts_policy_bound_v13_evidence_sources(tmp_path):
+    contract = _l2_source_contract(version=13)
+    contract["sources"].append(
+        {
+            "relative_path": "evidence/preregistration.json",
+            "required": False,
+            "role": "frozen_preregistration",
+            "snapshot_policy": "STANDARD",
+        }
+    )
+    contract["sources"].sort(key=lambda source: source["relative_path"])
+    checker_args = _l2_checker_args("evidence.json", pass_maturity="M3")
+    checker_args["expected_source_contract"] = contract
+    restore_args = {
+        "history_path": "data/cache/l2_restore_history.db",
+        "checkpoint_path": "evidence/l2_restore_history_checkpoint.json",
+        "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json",
+        "implementation_paths": [],
+        "expected_source_contract": contract,
+        "max_attempt_age_ms": 100,
+        "max_success_age_ms": 100,
+        "max_attempt_gap_ms": 150,
+        "max_success_gap_ms": 150,
+        "minimum_history_span_ms": 200,
+        "minimum_successes": 3,
+        "clean_lookback_ms": 300,
+        "attempt_timeout_ms": 50,
+        "required_checkpoint_issuer": "external-restore-authority",
+        "required_checkpoint_key_id": "restore-key",
+        "max_checkpoint_future_skew_ms": 5,
+        "max_checkpoint_age_ms": 100,
+        "minimum_checkpoint_retention_ms": 1_000,
+    }
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=checker_args,
+            ),
+            _requirement(
+                "OPS.RESTORE.DRILL",
+                domain="reliability_operations",
+                target_maturity="M4",
+                checker="l2_restore_history_evidence",
+                checker_args=restore_args,
+            ),
+        ],
+    )
+    payload = _valid_l2_backup_evidence()
+    payload["source_contract"] = contract
+    payload["source_contract_sha256"] = _l2_source_contract_sha256(contract)
+    payload["missing_optional_sources"] = [
+        "data/cache/approvals.db",
+        "evidence/preregistration.json",
+    ]
+    (tmp_path / "evidence.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    results = {
+        item["id"]: item
+        for item in assess_repository(tmp_path, registry)["requirements"]
+    }
+
+    assert results["OPS.BACKUP.ENCRYPTED"]["status"] == "PASS"
+    assert results["OPS.RESTORE.DRILL"]["status"] == "PARTIAL"
+    assert results["OPS.RESTORE.DRILL"]["current_maturity"] == "M3"
+    assert "not provisioned" in results["OPS.RESTORE.DRILL"]["detail"]
+
+
+@pytest.mark.parametrize(
+    ("case", "detail"),
+    [
+        ("missing_policy", "source entries for version 13"),
+        ("invalid_policy", "source snapshot policies"),
+        ("wal_policy_on_json", "WAL-pinned source snapshot policies"),
+        ("legacy_policy_field", "source entries for version 11"),
+        ("outside_allowed_roots", "data/cache or evidence paths"),
+    ],
+)
+def test_l2_backup_checker_rejects_invalid_versioned_source_contracts(
+    tmp_path, case, detail
+):
+    version = 11 if case == "legacy_policy_field" else 13
+    contract = _l2_source_contract(version=version)
+    source = contract["sources"][0]
+    if case == "missing_policy":
+        source.pop("snapshot_policy")
+    elif case == "invalid_policy":
+        source["snapshot_policy"] = "BEST_EFFORT"
+    elif case == "wal_policy_on_json":
+        source["relative_path"] = "evidence/approvals.json"
+        source["snapshot_policy"] = "SQLITE_WAL_PINNED"
+        contract["sources"].sort(key=lambda item: item["relative_path"])
+    elif case == "legacy_policy_field":
+        source["snapshot_policy"] = "STANDARD"
+    elif case == "outside_allowed_roots":
+        source["relative_path"] = "config/approvals.db"
+        contract["sources"].sort(key=lambda item: item["relative_path"])
+    checker_args = _l2_checker_args("evidence.json", pass_maturity="M3")
+    checker_args["expected_source_contract"] = contract
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=checker_args,
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "UNVERIFIED"
+    assert detail in result["detail"]
 
 
 @pytest.mark.parametrize(

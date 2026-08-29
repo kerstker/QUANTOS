@@ -11,7 +11,7 @@ import ast
 from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sqlite3
 import time
@@ -2177,10 +2177,11 @@ def _l2_source_contract_error(contract: Any) -> str | None:
         return "source contract must contain only version and sources"
     # v4 added the autonomous realtime engineering execution-paper ledger; v5
     # added the Task 39 soak authority; v6-v8 added retained public-data
-    # vintages/book depth; v9-v11 added liquidation, Bybit resilience, and OKX
-    # borrow authorities; and v13 bound snapshot policies plus the frozen
-    # borrow-pressure preregistration. Keep the accepted set finite so a future
-    # contract version still requires explicit review.
+    # vintages/book depth; and v9-v11 added liquidation, Bybit resilience, and
+    # OKX borrow authorities. v12 made snapshot policy part of every source
+    # entry and v13 pinned both high-churn Bybit authorities. Keep both the
+    # accepted version set and each version's entry schema finite so a future
+    # contract revision still requires explicit review.
     version = contract.get("version")
     if type(version) is not int or version not in range(2, 14):
         return "source contract version must be an integer from 2 through 13"
@@ -2190,24 +2191,38 @@ def _l2_source_contract_error(contract: Any) -> str | None:
 
     paths: list[str] = []
     roles: list[str] = []
+    legacy_entry_fields = {"relative_path", "required", "role"}
+    entry_fields = (
+        legacy_entry_fields | {"snapshot_policy"}
+        if version >= 12
+        else legacy_entry_fields
+    )
+    allowed_roots = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
+    snapshot_policies = {"STANDARD", "SQLITE_WAL_PINNED"}
     for source in sources:
-        if not isinstance(source, dict) or set(source) != {
-            "relative_path",
-            "required",
-            "role",
-        }:
-            return "source entries must contain only relative_path, required, and role"
+        if not isinstance(source, dict) or set(source) != entry_fields:
+            expected = ", ".join(sorted(entry_fields))
+            return f"source entries for version {version} must contain only {expected}"
         relative_path = source.get("relative_path")
         role = source.get("role")
         required = source.get("required")
+        relative = (
+            PurePosixPath(relative_path)
+            if isinstance(relative_path, str)
+            else None
+        )
         if (
-            not isinstance(relative_path, str)
-            or not relative_path.startswith("data/cache/")
+            relative is None
             or relative_path != relative_path.replace("\\", "/")
-            or Path(relative_path).is_absolute()
-            or ".." in Path(relative_path).parts
+            or relative_path != relative.as_posix()
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or not any(root in relative.parents for root in allowed_roots)
         ):
-            return "source paths must be normalized repository-local data/cache paths"
+            return (
+                "source paths must be normalized repository-local data/cache "
+                "or evidence paths"
+            )
         if (
             not isinstance(role, str)
             or not role
@@ -2217,6 +2232,18 @@ def _l2_source_contract_error(contract: Any) -> str | None:
             return "source roles must be non-empty normalized identifiers"
         if type(required) is not bool:
             return "source requiredness must be boolean"
+        if version >= 12:
+            snapshot_policy = source.get("snapshot_policy")
+            if (
+                not isinstance(snapshot_policy, str)
+                or snapshot_policy not in snapshot_policies
+            ):
+                return "source snapshot policies must be STANDARD or SQLITE_WAL_PINNED"
+            if (
+                snapshot_policy == "SQLITE_WAL_PINNED"
+                and relative.suffix.lower() != ".db"
+            ):
+                return "WAL-pinned source snapshot policies require SQLite paths"
         paths.append(relative_path)
         roles.append(role)
 
@@ -2325,6 +2352,14 @@ def _l2_backup_evidence(
     expected_sources = {
         source["relative_path"]: source for source in expected_contract["sources"]
     }
+    expected_backed_sources = {
+        path: {
+            "relative_path": source["relative_path"],
+            "required": source["required"],
+            "role": source["role"],
+        }
+        for path, source in expected_sources.items()
+    }
     required_paths = {
         path for path, source in expected_sources.items() if source["required"]
     }
@@ -2344,7 +2379,7 @@ def _l2_backup_evidence(
                 failures.append("backed_up_sources")
                 continue
             backed_paths.append(relative_path)
-            if source != expected_sources.get(relative_path):
+            if source != expected_backed_sources.get(relative_path):
                 failures.append("backed_up_sources")
         if backed_paths != sorted(backed_paths) or len(backed_paths) != len(
             set(backed_paths)
