@@ -1,19 +1,20 @@
 """Read-only Alpha Lifecycle Cockpit console route ("Alpha 生命周期驾驶舱" 后端半).
 
-Serves ``evidence/alpha_lifecycle_cockpit.json`` — produced by the offline driver
+Reads ``evidence/alpha_lifecycle_cockpit.json`` — produced by the offline driver
 ``tools/alpha_lifecycle_cockpit.py`` (aggregation of existing local evidence stores
 only: dry_run.db / paper_track.db / IC panel / falsification / scenario-tail /
 capacity / combo / live-track status / maintenance authority; no network, no new
-research math) — verbatim under the console's provenance/marker conventions.  When
+research math) — and exposes only an invalidated identity projection.  Schema-v1
+economic metrics and lifecycle stages are retained on disk for audit, but cannot
+cross the console boundary after ``INVALIDATED_PERP_LEDGER_V1``.  When
 the artifact has not been produced yet (fresh checkout / CI) the endpoint fails
 closed to an honest ``SYNTHETIC_DETERMINISTIC`` + ``NO_SNAPSHOT`` body with empty
 alphas, exactly like the other artifact-backed routes (go-live-readiness,
 mexc-market/mexc-strategy).
 
 This module never touches the network, never reads credentials, and never grants
-any capability: ``derived_stage`` is a mechanical evidence-chain derivation, not a
-promotion endorsement, and ``lifecycle_state`` stays null because no per-alpha
-lifecycle-SM state is persisted on disk.  L2_DRY_RUN_ONLY.
+any capability.  Every retained alpha is projected as non-authoritative and its
+derived stage is replaced by the legacy invalidation code.  L2_DRY_RUN_ONLY.
 """
 
 from __future__ import annotations
@@ -25,8 +26,13 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter
 
 from quantos.runtime_paths import runtime_state_root
+from services.console.api.backtest_evidence import (
+    DIAGNOSTIC_EVIDENCE_STATUS,
+    scrub_backtest_payload,
+)
 from services.console.api.common import with_snapshot_metadata
 from services.console.api.state_artifact import read_json_artifact
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 
 
 router = APIRouter()
@@ -51,13 +57,78 @@ _ABSENT_HONESTY_NOTE = (
 )
 
 _PRESENT_HONESTY_NOTE = (
-    "Alpha 生命周期驾驶舱:对既有证据仓的只读聚合,没有新研究数学;缺证据阶段即 ABSENT,"
-    "绝不编造。derived_stage 是机械推导(见 stage_legend),非晋级背书;lifecycle_state 恒为 "
-    "null(状态机无落盘)。capacity 为 UNCALIBRATED_PRINCIPLED 区间带(诊断非门禁);"
-    "attestation/mandate 就绪归 /api/v1/console/go-live-readiness。内容为 "
-    "tools/alpha_lifecycle_cockpit.py 的离线诊断原样 serve;L2 边界不变,本端点只读,"
-    "不授予任何能力。"
+    "Alpha 生命周期 schema-v1 artifact 仅为留存审计输入。因永续合约账本 v1 已整体失效,"
+    "本端点只暴露 alpha 身份和失效阶段,不返回历史回测、纸面、组合、容量、压力或执行指标;"
+    "所有行均为 DIAGNOSTIC_ONLY / INVALIDATED_PERP_LEDGER_V1,不可用于晋级、候选选择或"
+    "运行授权。原 artifact 不修改、不删除;L2 边界不变,本端点只读。"
 )
+
+_INVALIDATED_STAGE_NOTE = (
+    "Retained schema-v1 lifecycle evidence is non-authoritative because the "
+    "underlying perpetual ledger was invalidated."
+)
+
+
+def _invalidated_alpha(alpha: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep identity while removing every retained lifecycle claim and metric."""
+
+    alpha_id = str(alpha.get("alpha_id") or "UNKNOWN_ALPHA")
+    display_name = str(alpha.get("display_name") or alpha_id)
+    raw_stages = alpha.get("stages")
+    stage_names = (
+        sorted(str(name) for name in raw_stages)
+        if isinstance(raw_stages, dict)
+        else []
+    )
+    stages = {
+        name: {
+            "status": LEGACY_INVALIDATION_CODE,
+            "authoritative": False,
+            "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+            "invalidation_code": LEGACY_INVALIDATION_CODE,
+        }
+        for name in stage_names
+    }
+    projected: Dict[str, Any] = {
+        "alpha_id": alpha_id,
+        "display_name": display_name,
+        "derived_stage": LEGACY_INVALIDATION_CODE,
+        "lifecycle_state": None,
+        "stages": stages,
+        "warnings": [LEGACY_INVALIDATION_CODE],
+        "authoritative": False,
+        "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+    }
+    namespace = alpha.get("namespace")
+    if isinstance(namespace, str) and namespace.strip():
+        projected["namespace"] = namespace
+    return projected
+
+
+def _invalidated_projection(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a closed projection without mutating the retained artifact."""
+
+    raw_alphas = payload.get("alphas")
+    # Scrub the caller-composed envelope first. Rebuild the identity projection
+    # afterwards so stage names such as ``capacity`` or ``portfolio`` cannot be
+    # mistaken for an economic metric key by the generic boundary scrubber.
+    projected = scrub_backtest_payload(dict(payload))
+    projected["alphas"] = (
+        [
+            _invalidated_alpha(alpha)
+            for alpha in raw_alphas
+            if isinstance(alpha, dict)
+        ]
+        if isinstance(raw_alphas, list)
+        else []
+    )
+    projected["stage_legend"] = {
+        LEGACY_INVALIDATION_CODE: _INVALIDATED_STAGE_NOTE,
+    }
+    if projected.get("snapshot_present") is True:
+        projected["honesty_note"] = _PRESENT_HONESTY_NOTE
+    return projected
 
 
 def _valid_artifact(data: object) -> bool:
@@ -147,7 +218,7 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
             if fallback_suppressed
             else ""
         )
-        return {
+        return _invalidated_projection({
             "source": "BACKEND_COMPUTED_SNAPSHOT",
             "read_only": True,
             "api_version": "0.1.0",
@@ -164,9 +235,9 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
                 f"{suppressed_note}"
             ),
             **selection_metadata,
-        }
+        })
     if artifact is None:
-        return {
+        return _invalidated_projection({
             "source": "BACKEND_COMPUTED_SNAPSHOT",
             "read_only": True,
             "api_version": "0.1.0",
@@ -182,8 +253,8 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
             "stage_legend": {},
             "honesty_note": _ABSENT_HONESTY_NOTE,
             **selection_metadata,
-        }
-    return {
+        })
+    return _invalidated_projection({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
@@ -197,7 +268,7 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
         "stage_legend": artifact.get("stage_legend") or {},
         "honesty_note": _PRESENT_HONESTY_NOTE,
         **selection_metadata,
-    }
+    })
 
 
 @router.get("/api/v1/console/alpha-lifecycle")

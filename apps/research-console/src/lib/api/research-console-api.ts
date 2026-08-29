@@ -347,7 +347,12 @@ export async function fetchResearchRunsCompare(
   runIds: string[], signal?: AbortSignal): Promise<ResearchRunsComparePayload> {
   const payloads = await Promise.all(runIds.map(id => fetchResearchRun(id, signal)));
   const runs = payloads.map(p => p.run).filter((r): r is ResearchRunDetail => r != null);
-  return { source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, data_provenance: 'RESEARCH_RUN_REGISTRY', runs };
+  return {
+    source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, api_version: '0.1.0',
+    data_provenance: 'RESEARCH_RUN_REGISTRY', runs,
+    authoritative: false, evidence_status: 'DIAGNOSTIC_ONLY',
+    invalidation_code: 'INVALIDATED_PERP_LEDGER_V1', snapshot_status: 'DATA_BLOCKED',
+  };
 }
 
 export function fetchAlphaLifecycle(signal?: AbortSignal) {

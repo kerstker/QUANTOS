@@ -24,13 +24,31 @@ function unavailableReason<T>(result: SnapshotResult<T>): string {
   return result.error ?? 'UNAVAILABLE';
 }
 
-function zooEnrichment(result: SnapshotResult<AlphaZooPayload>): AlphaEnrichment<AlphaZooPayload> {
+function authorityDenial(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return 'MALFORMED_PAYLOAD';
+  const record = payload as Record<string, unknown>;
+  if (record.authoritative === false) return 'AUTHORITATIVE_FALSE';
+  if (typeof record.evidence_status === 'string'
+    && record.evidence_status.trim().toUpperCase() === 'DIAGNOSTIC_ONLY') {
+    return 'DIAGNOSTIC_ONLY';
+  }
+  if (typeof record.invalidation_code === 'string' && record.invalidation_code.trim()) {
+    return record.invalidation_code.trim();
+  }
+  return null;
+}
+
+export function zooEnrichment(result: SnapshotResult<AlphaZooPayload>): AlphaEnrichment<AlphaZooPayload> {
   if (!result.usingBackend || result.payload === null) {
     return {
       status: result.apiState === 'loading' ? 'LOADING' : 'UNAVAILABLE',
       payload: null,
       reason: unavailableReason(result),
     };
+  }
+  const denied = authorityDenial(result.payload);
+  if (denied !== null) {
+    return { status: 'UNAVAILABLE', payload: null, reason: `AUTHORITY_DENIED:${denied}` };
   }
   const provenance = result.payload.data_provenance;
   const accepted = provenance === 'EXPERIMENT_REGISTRY'
@@ -43,7 +61,7 @@ function zooEnrichment(result: SnapshotResult<AlphaZooPayload>): AlphaEnrichment
   return { status: 'AVAILABLE', payload: result.payload, reason: null };
 }
 
-function lifecycleEnrichment(
+export function lifecycleEnrichment(
   result: SnapshotResult<AlphaLifecyclePayload>,
 ): AlphaEnrichment<AlphaLifecyclePayload> {
   if (!result.usingBackend || result.payload === null) {
@@ -52,6 +70,10 @@ function lifecycleEnrichment(
       payload: null,
       reason: unavailableReason(result),
     };
+  }
+  const denied = authorityDenial(result.payload);
+  if (denied !== null) {
+    return { status: 'UNAVAILABLE', payload: null, reason: `AUTHORITY_DENIED:${denied}` };
   }
   if (result.payload.data_provenance !== 'REAL_ALPHA_LIFECYCLE'
     || result.payload.snapshot_present !== true) {

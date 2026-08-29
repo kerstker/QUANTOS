@@ -130,7 +130,20 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
     )
 
     expected_selection_bearing = {"factory_orthogonal", "factory_loop"}
-    assert LEGACY_QUARANTINED_RUN_KINDS == expected_selection_bearing
+    assert LEGACY_QUARANTINED_RUN_KINDS == {
+        "ashare_alpha",
+        "ashare_paper_track",
+        "carry_strategy",
+        "combo_book",
+        "factory_orthogonal",
+        "factory_loop",
+        "ic_panel",
+        "oi_research",
+        "paper_cycle",
+        "survivorship",
+        "wide_gauntlet",
+    }
+    assert set(RUN_KINDS) - LEGACY_QUARANTINED_RUN_KINDS == {"data_refresh"}
     actual_selection_bearing = {
         kind
         for kind, spec in RUN_KINDS.items()

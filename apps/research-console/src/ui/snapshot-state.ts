@@ -24,6 +24,8 @@ export interface SnapshotStateInput {
   /** Explicit state from a domain payload (preferred over string heuristics). */
   dataStatus?: SnapshotDisplayState;
   noDataYet?: boolean;
+  /** Explicit authority denial always outranks a positive data/provenance label. */
+  authorityDenied?: boolean;
 }
 
 /**
@@ -57,6 +59,7 @@ export function deriveSnapshotDisplayState(input: SnapshotStateInput): SnapshotD
   // enabled until revalidation completes.
   if (input.apiState === 'loading') return 'LOADING';
   if (input.apiState === 'error') return 'UNAVAILABLE';
+  if (input.authorityDenied) return 'BLOCKED';
   if (input.dataStatus) return input.dataStatus;
   if (!input.usingBackend) return 'MOCK';
   if (input.noDataYet) return 'NO_SNAPSHOT';

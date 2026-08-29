@@ -46,6 +46,8 @@ function Harness({ fetcher }: { fetcher: (signal: AbortSignal) => Promise<{ valu
       <span data-testid="state">{result.apiState}</span>
       <span data-testid="value">{result.payload?.value ?? 'none'}</span>
       <span data-testid="error">{result.error ?? 'none'}</span>
+      <span data-testid="snapshot-state">{result.snapshotState ?? 'none'}</span>
+      <span data-testid="actions-allowed">{String(result.actionsAllowed)}</span>
     </div>
   );
 }
@@ -97,5 +99,28 @@ describe('useConsoleSnapshot event stream transport', () => {
     expect(screen.getByTestId('state')).toHaveTextContent('error');
     expect(screen.getByTestId('value')).toHaveTextContent('none');
     expect(source.closed).toBe(true);
+  });
+
+  it('denies actions when a real-labelled snapshot is explicitly non-authoritative', () => {
+    render(<Harness fetcher={vi.fn(async () => ({ value: 'fetch' }))} />);
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      source.onmessage?.({
+        data: JSON.stringify({
+          source: 'BACKEND_COMPUTED_SNAPSHOT',
+          read_only: true,
+          value: 'retained-v1',
+          snapshot_status: 'REAL',
+          data_provenance: 'REAL_ALPHA_LIFECYCLE',
+          authoritative: false,
+          evidence_status: 'DIAGNOSTIC_ONLY',
+          invalidation_code: 'INVALIDATED_PERP_LEDGER_V1',
+        }),
+      } as MessageEvent<string>);
+    });
+
+    expect(screen.getByTestId('snapshot-state')).toHaveTextContent('BLOCKED');
+    expect(screen.getByTestId('actions-allowed')).toHaveTextContent('false');
   });
 });

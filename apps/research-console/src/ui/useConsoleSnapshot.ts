@@ -122,6 +122,15 @@ export function useConsoleSnapshot<T>(
   const qualityRecord = quality && typeof quality === 'object'
     ? quality as Record<string, unknown>
     : null;
+  const evidenceStatus = typeof payloadRecord?.evidence_status === 'string'
+    ? payloadRecord.evidence_status.trim().toUpperCase()
+    : null;
+  const invalidationCode = typeof payloadRecord?.invalidation_code === 'string'
+    ? payloadRecord.invalidation_code.trim()
+    : '';
+  const authorityDenied = payloadRecord?.authoritative === false
+    || evidenceStatus === 'DIAGNOSTIC_ONLY'
+    || invalidationCode.length > 0;
   const explicitStatus = normalizeSnapshotDisplayState(
     payloadRecord?.snapshot_status
       ?? qualityRecord?.status
@@ -131,6 +140,7 @@ export function useConsoleSnapshot<T>(
     apiState,
     usingBackend,
     dataStatus: explicitStatus,
+    authorityDenied,
     noDataYet: usingBackend && payloadRecord?.snapshot_present === false,
     realData: usingBackend && (
       payloadRecord?.data_provenance === 'REAL'

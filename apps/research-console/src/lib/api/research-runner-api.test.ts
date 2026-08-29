@@ -56,13 +56,13 @@ describe('research-runner-api runner token', () => {
   it('triggerRun sends the stored X-Runner-Token header', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ run_id: 'r1', status: 'queued', kind: 'carry_strategy' }),
+      json: async () => ({ run_id: 'r1', status: 'queued', kind: 'data_refresh' }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const { triggerRun, setRunnerToken } = await import('./research-runner-api');
     setRunnerToken('secret-abc');
 
-    await triggerRun('carry_strategy', {});
+    await triggerRun('data_refresh', { intraday: false });
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;

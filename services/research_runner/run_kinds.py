@@ -50,13 +50,22 @@ SELECTION_BEARING = ProvenancePolicy(
 )
 DIAGNOSTIC_ONLY = ProvenancePolicy(RunPurpose.DIAGNOSTIC_ONLY)
 
-# These historical factory drivers still depend on the invalidated perpetual
-# ledger/timing path.  Keep the classification exact: selection-bearing is a
-# provenance policy, not by itself a reason to quarantine a future independent
-# implementation or a test-injected runner.
+# These public run kinds still enter hard-quarantined schema-v1 workers.  The
+# boundary applies before params, registry persistence, imports, or threads.
+# Selection-bearing remains a separate provenance classification: a future
+# independent implementation must earn a new explicit admission contract.
 LEGACY_QUARANTINED_RUN_KINDS = frozenset({
+    "ashare_alpha",
+    "ashare_paper_track",
+    "carry_strategy",
+    "combo_book",
     "factory_orthogonal",
     "factory_loop",
+    "ic_panel",
+    "oi_research",
+    "paper_cycle",
+    "survivorship",
+    "wide_gauntlet",
 })
 
 

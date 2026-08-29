@@ -38,6 +38,10 @@ describe('snapshot display state contract', () => {
     [{ apiState: 'connected', usingBackend: true }, 'BACKEND_SYNTHETIC'],
     [{ apiState: 'connected', usingBackend: true, noDataYet: true }, 'NO_SNAPSHOT'],
     [{ apiState: 'connected', usingBackend: true, dataStatus: 'BLOCKED' }, 'BLOCKED'],
+    [{
+      apiState: 'connected', usingBackend: true, realData: true,
+      dataStatus: 'REAL', authorityDenied: true,
+    }, 'BLOCKED'],
     [{ apiState: 'connected', usingBackend: true, dataStatus: 'STALE' }, 'STALE'],
   ] as const)('classifies %j as %s', (input, expected) => {
     expect(deriveSnapshotDisplayState(input)).toBe(expected);
@@ -46,6 +50,13 @@ describe('snapshot display state contract', () => {
   it('keeps explicit admission state authoritative over transport/provenance flags', () => {
     expect(deriveSnapshotDisplayState({
       apiState: 'connected', usingBackend: true, realData: true, dataStatus: 'BLOCKED',
+    })).toBe('BLOCKED');
+  });
+
+  it('lets an explicit authority denial override a positive wire status', () => {
+    expect(deriveSnapshotDisplayState({
+      apiState: 'connected', usingBackend: true, realData: true,
+      dataStatus: 'REAL', authorityDenied: true,
     })).toBe('BLOCKED');
   });
 

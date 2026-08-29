@@ -50,7 +50,7 @@ def test_post_run_with_blank_operator_is_400(tmp_path, monkeypatch):
 
 def test_post_run_threads_operator_and_records_audit(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
-    r = client.post("/run", json={"kind": "carry_strategy", "params": {}},
+    r = client.post("/run", json={"kind": "data_refresh", "params": {}},
                     headers={"X-Operator": "alice", "X-Runner-Token": m._RUNNER_TOKEN})
     assert r.status_code == 200
     body = r.json()
@@ -63,7 +63,7 @@ def test_post_run_threads_operator_and_records_audit(tmp_path, monkeypatch):
     assert evs[0].action == "research.run.triggered"
     assert evs[0].actor == "alice"
     assert evs[0].target == body["run_id"]
-    assert evs[0].metadata["kind"] == "carry_strategy"
+    assert evs[0].metadata["kind"] == "data_refresh"
     assert m._audit.chain_valid()
 
 

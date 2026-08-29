@@ -177,6 +177,10 @@ export interface ConsolePayloadBase {
   snapshot_status?: 'REAL' | 'SYNTHETIC' | 'NO_SNAPSHOT' | 'STALE' | 'DATA_BLOCKED' | 'UNAVAILABLE' | string;
   snapshot_id?: string | null;
   snapshot_ids?: string[];
+  /** Explicitly fail-closed authority metadata for invalidated evidence views. */
+  authoritative?: boolean;
+  evidence_status?: string;
+  invalidation_code?: string;
   data_quality?: {
     status?: string;
     provenance?: string;
@@ -2291,9 +2295,10 @@ export interface ResearchRunSummary {
   run_id: string; kind: string; title: string; status: string; created_ts: number;
   headline: ResearchRunHeadline; verdict: string;
   params: Record<string, unknown>; code_version: string | null;
+  authoritative?: boolean; evidence_status?: string; invalidation_code?: string;
 }
-export interface ResearchRunsPayload {
-  source: string; read_only: boolean; api_version: string; data_provenance: string;
+export interface ResearchRunsPayload extends ConsolePayloadBase {
+  data_provenance: string;
   runs: ResearchRunSummary[];
 }
 export interface ResearchRunDetail {
@@ -2303,13 +2308,14 @@ export interface ResearchRunDetail {
   series: Record<string, Array<{ label: string; value: number }>>;
   verdict: string; caveats: string[]; provenance: string; error: string | null;
   log: string[]; code_version: string | null;
+  authoritative?: boolean; evidence_status?: string; invalidation_code?: string;
 }
-export interface ResearchRunPayload {
-  source: string; read_only: boolean; api_version: string; data_provenance: string;
+export interface ResearchRunPayload extends ConsolePayloadBase {
+  data_provenance: string;
   run: ResearchRunDetail | null;
 }
-export interface ResearchRunsComparePayload {
-  source: string; read_only: boolean; data_provenance: string;
+export interface ResearchRunsComparePayload extends ConsolePayloadBase {
+  data_provenance: string;
   runs: ResearchRunDetail[];
 }
 export interface PopOptSelected { alpha_id: string; weight: number; marginal_ir: number; marginal_dd: number; }
@@ -2325,8 +2331,8 @@ export interface BacktestRunBlock {
   metrics: Record<string, number | string | null>;
   series: Record<string, { label: string; value: number }[]>;
 }
-export interface BacktestResultsPayload {
-  source: string; read_only: boolean; api_version: string; data_provenance: string;
+export interface BacktestResultsPayload extends ConsolePayloadBase {
+  data_provenance: string;
   results_mode: string;
   carry: BacktestRunBlock | null;
   combo: BacktestRunBlock | null;
@@ -2672,13 +2678,15 @@ export interface AShareAlphaPayload {
 }
 
 /* ---------- Alpha 生命周期驾驶舱(alpha-lifecycle cockpit) -------------------
-   Contract for GET /api/v1/console/alpha-lifecycle — read-only verbatim serve of
-   the offline artifact evidence/alpha_lifecycle_cockpit.json
+   Contract for GET /api/v1/console/alpha-lifecycle — read-only invalidated
+   projection of the offline artifact evidence/alpha_lifecycle_cockpit.json
    (tools/alpha_lifecycle_cockpit.py: read-only aggregation of existing local
    evidence stores — dry_run.db / paper_track.db / IC panel / falsification /
    scenario-tail / capacity / combo / live-track status / maintenance authority;
    no network, no new research math).
-   Present: data_provenance REAL_ALPHA_LIFECYCLE / snapshot_status REAL.
+   Present: data_provenance REAL_ALPHA_LIFECYCLE / snapshot_status REAL, but all
+   schema-v1 alpha stages are identity-only DIAGNOSTIC_ONLY projections carrying
+   INVALIDATED_PERP_LEDGER_V1. No retained economic metric crosses this boundary.
    Absent (driver never ran, e.g. CI): SYNTHETIC_DETERMINISTIC / NO_SNAPSHOT with
    alphas=[] stage_legend={} — pages must render both honestly.
    derived_stage is a mechanical evidence-chain derivation (see stage_legend),

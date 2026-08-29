@@ -38,6 +38,19 @@ _NULL_METRIC_KEYS = frozenset(
         "avg_readiness_score",
         "observed_sr",
         "deflated_sharpe",
+        "annual_turnover",
+        "annual_volatility",
+        "avg_net_exposure_pct",
+        "current_equity",
+        "final_equity",
+        "funding_pnl",
+        "gross_exposure",
+        "initial_equity",
+        "net_exposure",
+        "n_days",
+        "total_funding",
+        "total_trades",
+        "volatility",
     }
 )
 _EMPTY_LIST_KEYS = frozenset(

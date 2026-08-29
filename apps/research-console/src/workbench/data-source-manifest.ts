@@ -43,12 +43,10 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
     authoritativeEndpoints: [
       '/api/v1/console/hourly-alpha',
       '/api/v1/console/alpha-zoo',
-      '/api/v1/console/alpha-lifecycle',
     ],
     acceptedProvenance: [
       'REAL_HOURLY_ALPHA_AUTHORITIES',
       'EXPERIMENT_REGISTRY',
-      'REAL_ALPHA_LIFECYCLE',
       'REAL',
       'REPOSITORY_EVIDENCE',
     ],

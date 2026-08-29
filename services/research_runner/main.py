@@ -25,10 +25,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from services.monitoring.audit_store import DurableAuditLog
+from services.execution.backtest_authority import BacktestIntegrityBlocked
 from services.research.run_registry.contract import InvocationConflictError
 from services.research.run_registry.registry import RunRegistry
 from services.research.run_registry.store import ResearchRunStore
 from .run_kinds import RUN_KINDS
+from .run_kinds import LEGACY_QUARANTINED_RUN_KINDS, enforce_run_kind_authority
 from .runner import JobQueue
 
 _RUNS_DB = os.path.join("data", "cache", "research_runs.db")
@@ -87,7 +89,11 @@ async def health() -> dict:
     return {
         "mode": "RESEARCH_RUNNER",
         "live_disallowed": True,
-        "kinds": sorted(RUN_KINDS),
+        "kinds": sorted(set(RUN_KINDS) - LEGACY_QUARANTINED_RUN_KINDS),
+        "quarantined_kinds": {
+            kind: "INVALIDATED_PERP_LEDGER_V1"
+            for kind in sorted(LEGACY_QUARANTINED_RUN_KINDS)
+        },
         "kind_policies": {
             kind: {
                 "purpose": spec.provenance_policy.purpose.value,
@@ -111,6 +117,10 @@ async def run(
     operator = (x_operator or "").strip()
     if not operator:
         raise HTTPException(status_code=400, detail="X-Operator header required (self-asserted operator tag)")
+    try:
+        enforce_run_kind_authority(req.kind)
+    except BacktestIntegrityBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     now = int(time.time())
     try:
         run_id = _queue.submit(

@@ -131,8 +131,17 @@ def test_legacy_factory_runner_kind_blocks_before_tool_import(
     monkeypatch.setattr(run_kinds_module, "importlib", _NoImport())
 
     assert LEGACY_QUARANTINED_RUN_KINDS == {
+        "ashare_alpha",
+        "ashare_paper_track",
+        "carry_strategy",
+        "combo_book",
         "factory_orthogonal",
         "factory_loop",
+        "ic_panel",
+        "oi_research",
+        "paper_cycle",
+        "survivorship",
+        "wide_gauntlet",
     }
     with pytest.raises(BacktestIntegrityBlocked, match=LEGACY_INVALIDATION_CODE):
         RUN_KINDS[kind].runner(params)
@@ -141,11 +150,20 @@ def test_legacy_factory_runner_kind_blocks_before_tool_import(
 @pytest.mark.parametrize(
     ("kind", "params"),
     [
+        ("ashare_alpha", {}),
+        ("ashare_paper_track", {}),
+        ("carry_strategy", {}),
+        ("combo_book", {}),
         ("factory_orthogonal", {"generations": 1, "population": 4}),
         ("factory_loop", {}),
+        ("ic_panel", {}),
+        ("oi_research", {}),
+        ("paper_cycle", {"small_10k": True}),
+        ("survivorship", {}),
+        ("wide_gauntlet", {}),
     ],
 )
-def test_legacy_factory_submit_blocks_before_params_git_registry_or_thread(
+def test_quarantined_submit_blocks_before_params_git_registry_or_thread(
     tmp_path, monkeypatch, kind, params
 ):
     import services.research_runner.runner as runner_module

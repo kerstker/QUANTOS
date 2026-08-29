@@ -1448,8 +1448,27 @@ def test_alpha_lifecycle_reads_mutable_l2_state_snapshot(monkeypatch, tmp_path):
             "schema_version": 1,
             "generated_at_ms": 200,
             "readiness": "L2_DRY_RUN_ONLY",
-            "alphas": [{"alpha_id": "rt_test", "namespace": "REALTIME"}],
-            "stage_legend": {},
+            "alphas": [{
+                "alpha_id": "rt_test",
+                "namespace": "REALTIME",
+                "derived_stage": "LIVE_TRACK",
+                "stages": {
+                    "backtest": {
+                        "status": "PRESENT",
+                        "sharpe_raw": 4.2,
+                        "final_equity": 2_000_000,
+                    },
+                    "paper": {
+                        "status": "PRESENT",
+                        "track": {"cum_return": 0.5, "paper_ic": 0.3},
+                    },
+                    "live": {
+                        "status": "PRESENT",
+                        "runs": [{"mode": "submit", "n_submitted": 12}],
+                    },
+                },
+            }],
+            "stage_legend": {"LIVE_TRACK": "legacy maturity claim"},
             "honesty_note": "test evidence",
         }),
         encoding="utf-8",
@@ -1477,6 +1496,25 @@ def test_alpha_lifecycle_reads_mutable_l2_state_snapshot(monkeypatch, tmp_path):
     payload = alpha_lifecycle_views._alpha_lifecycle_payload()
     assert payload["snapshot_status"] == "REAL"
     assert payload["alphas"][0]["namespace"] == "REALTIME"
+    assert payload["authoritative"] is False
+    assert payload["evidence_status"] == "DIAGNOSTIC_ONLY"
+    assert payload["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
+    alpha = payload["alphas"][0]
+    assert alpha["derived_stage"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert alpha["stages"]["backtest"] == {
+        "status": "INVALIDATED_PERP_LEDGER_V1",
+        "authoritative": False,
+        "evidence_status": "DIAGNOSTIC_ONLY",
+        "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
+    }
+    assert alpha["stages"]["paper"]["status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert alpha["stages"]["live"]["status"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert "sharpe_raw" not in alpha["stages"]["backtest"]
+    assert "track" not in alpha["stages"]["paper"]
+    assert "runs" not in alpha["stages"]["live"]
+    assert payload["stage_legend"] == {
+        "INVALIDATED_PERP_LEDGER_V1": alpha_lifecycle_views._INVALIDATED_STAGE_NOTE,
+    }
 
 
 def test_ashare_alpha_endpoint_numeric_sanity():

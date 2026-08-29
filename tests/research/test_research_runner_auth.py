@@ -53,7 +53,7 @@ def test_post_run_with_wrong_token_is_401(tmp_path, monkeypatch):
 
 def test_post_run_with_correct_token_succeeds(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
-    r = client.post("/run", json={"kind": "carry_strategy", "params": {}},
+    r = client.post("/run", json={"kind": "data_refresh", "params": {}},
                     headers={"X-Operator": "alice", "X-Runner-Token": m._RUNNER_TOKEN})
     assert r.status_code == 200
     assert stub.calls[0]["operator"] == "alice"
@@ -65,7 +65,7 @@ def test_post_run_maps_idempotency_conflict_to_409(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
     response = client.post(
         "/run",
-        json={"kind": "carry_strategy", "params": {}},
+        json={"kind": "data_refresh", "params": {}},
         headers={
             "X-Operator": "alice",
             "X-Runner-Token": m._RUNNER_TOKEN,
@@ -96,6 +96,20 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
     r = client.get("/health")
     assert r.status_code == 200
     policies = r.json()["kind_policies"]
+    assert r.json()["kinds"] == ["data_refresh"]
+    assert r.json()["quarantined_kinds"] == {
+        "ashare_alpha": "INVALIDATED_PERP_LEDGER_V1",
+        "ashare_paper_track": "INVALIDATED_PERP_LEDGER_V1",
+        "carry_strategy": "INVALIDATED_PERP_LEDGER_V1",
+        "combo_book": "INVALIDATED_PERP_LEDGER_V1",
+        "factory_loop": "INVALIDATED_PERP_LEDGER_V1",
+        "factory_orthogonal": "INVALIDATED_PERP_LEDGER_V1",
+        "ic_panel": "INVALIDATED_PERP_LEDGER_V1",
+        "oi_research": "INVALIDATED_PERP_LEDGER_V1",
+        "paper_cycle": "INVALIDATED_PERP_LEDGER_V1",
+        "survivorship": "INVALIDATED_PERP_LEDGER_V1",
+        "wide_gauntlet": "INVALIDATED_PERP_LEDGER_V1",
+    }
     assert policies["factory_loop"]["purpose"] == "SELECTION_BEARING"
     assert policies["factory_loop"]["evidence_authority"] == (
         "EXPERIMENT_REGISTRY_GLOBAL_TRIAL_LEDGER"
@@ -104,3 +118,16 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "purpose": "DIAGNOSTIC_ONLY",
         "evidence_authority": None,
     }
+
+
+def test_post_run_quarantines_legacy_kind_before_stub_queue(tmp_path, monkeypatch):
+    client, stub = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/run",
+        json={"kind": "carry_strategy", "params": {}},
+        headers={"X-Operator": "alice", "X-Runner-Token": m._RUNNER_TOKEN},
+    )
+
+    assert response.status_code == 409
+    assert "INVALIDATED_PERP_LEDGER_V1" in response.json()["detail"]
+    assert stub.calls == []

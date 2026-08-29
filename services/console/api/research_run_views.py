@@ -8,6 +8,11 @@ from typing import Dict
 from fastapi import APIRouter, Query
 
 from quantos.runtime_paths import runtime_state_root
+from services.console.api.backtest_evidence import (
+    DIAGNOSTIC_EVIDENCE_STATUS,
+    scrub_backtest_payload,
+)
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
 
 router = APIRouter()
 
@@ -48,45 +53,79 @@ def _runs_registry():
 
 
 def _run_summary(r) -> Dict:
-    metrics = r.metrics or {}
-    hk = next(iter(metrics), None)  # first metric = headline (set by adapters)
+    """Project operational identity without legacy economic result fields."""
+
     return {
         "run_id": r.run_id,
         "kind": r.kind,
         "title": r.title,
         "status": r.status,
         "created_ts": r.created_ts,
-        "headline": {"label": hk, "value": metrics.get(hk)},
-        "verdict": r.verdict,
-        # history retention at a glance: which params produced this run + the code (git sha) it ran on
-        "params": r.params or {},
+        "headline": {"label": None, "value": None},
+        "verdict": LEGACY_INVALIDATION_CODE,
+        "params": {},
         "code_version": r.code_version,
+        "authoritative": False,
+        "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
     }
+
+
+def _run_detail(r) -> Dict:
+    """Keep queue/audit identity while suppressing retained result content."""
+
+    return {
+        "run_id": r.run_id,
+        "kind": r.kind,
+        "title": r.title,
+        "params": {},
+        "status": r.status,
+        "created_ts": r.created_ts,
+        "finished_ts": r.finished_ts,
+        "metrics": {},
+        "series": {},
+        "verdict": LEGACY_INVALIDATION_CODE,
+        "caveats": [LEGACY_INVALIDATION_CODE],
+        "provenance": "RETAINED_RUN_REGISTRY_IDENTITY_ONLY",
+        "error": None,
+        "log": [],
+        "code_version": r.code_version,
+        "authoritative": False,
+        "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+    }
+
+
+def _invalidated_envelope(payload: Dict, **identity_fields: object) -> Dict:
+    projected = scrub_backtest_payload(payload)
+    projected.update(identity_fields)
+    return projected
 
 
 @router.get("/api/v1/console/research-runs")
 async def research_runs(kind: str = Query(None)) -> Dict:
     reg = _runs_registry()
-    return {
+    rows = [_run_summary(r) for r in reg.list(kind=kind)]
+    return _invalidated_envelope({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "RESEARCH_RUN_REGISTRY",
-        "runs": [_run_summary(r) for r in reg.list(kind=kind)],
-    }
+        "runs": [],
+    }, runs=rows)
 
 
 @router.get("/api/v1/console/research-run")
 async def research_run_detail(run_id: str = Query(...)) -> Dict:
     reg = _runs_registry()
     r = reg.get(run_id)
-    return {
+    return _invalidated_envelope({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "RESEARCH_RUN_REGISTRY",
-        "run": r.to_dict() if r else None,
-    }
+        "run": None,
+    }, run=_run_detail(r) if r else None)
 
 
 def _latest_done_run(reg, kind: str):
@@ -102,24 +141,7 @@ def _latest_done_run(reg, kind: str):
 
 
 def _backtest_results_payload() -> Dict:
-    """Aggregate the REAL run_registry results that back the Backtest Results page: one done run per role
-    (carry / combo / oi_research / survivorship) plus the factory runs for the honest discovery map. Each
-    block carries the run's real metrics + series + verdict. Fail-closed: provenance SYNTHETIC_DETERMINISTIC
-    and all blocks None when the registry is absent (CI / fresh checkout) — the page then renders its
-    OBSERVED constants. The few page figures with no run field (Carry per-year, R² vs carry, the 2.09
-    headline) stay OBSERVED on the frontend regardless; we never fabricate a run field for them here."""
-
-    def block(r):
-        if r is None:
-            return None
-        return {
-            "run_id": r.run_id,
-            "kind": r.kind,
-            "verdict": r.verdict or "",
-            "status": r.status,
-            "metrics": r.metrics or {},
-            "series": r.series or {},
-        }
+    """Expose no schema-v1 metrics while retaining honest registry presence."""
 
     try:
         reg = _runs_registry()
@@ -127,29 +149,27 @@ def _backtest_results_payload() -> Dict:
         combo = _latest_done_run(reg, "combo_book")
         oi = _latest_done_run(reg, "oi_research")
         surv = _latest_done_run(reg, "survivorship")
-        floop = _latest_done_run(reg, "factory_loop")
-        forth = _latest_done_run(reg, "factory_orthogonal")
     except Exception:
-        carry = combo = oi = surv = floop = forth = None
+        carry = combo = oi = surv = None
     have_real = any(x is not None for x in (carry, combo, oi, surv))
-    return {
+    return scrub_backtest_payload({
         "results_mode": "READ_ONLY_BACKTEST_RESULTS",
         "data_provenance": "RESEARCH_RUN_REGISTRY" if have_real else "SYNTHETIC_DETERMINISTIC",
-        "carry": block(carry),
-        "combo": block(combo),
-        "oi_research": block(oi),
-        "survivorship": block(surv),
-        "factory": {"loop": block(floop), "orthogonal": block(forth)},
-    }
+        "carry": None,
+        "combo": None,
+        "oi_research": None,
+        "survivorship": None,
+        "factory": {"loop": None, "orthogonal": None},
+    })
 
 
 @router.get("/api/v1/console/backtest-results")
 async def backtest_results() -> Dict:
     payload = _backtest_results_payload()
-    return {
+    return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
-    }
+    })

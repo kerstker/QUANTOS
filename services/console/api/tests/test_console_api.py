@@ -92,6 +92,7 @@ def test_console_aggregate_cannot_be_unlocked_by_an_unbound_admitted_record(
         "/api/v1/console/scenario-stress",
         "/api/v1/console/dry-run",
         "/api/v1/console/research-findings",
+        "/api/v1/console/alpha-lifecycle",
     ),
 )
 def test_backtest_bearing_console_routes_are_fail_closed(path):
@@ -805,26 +806,18 @@ def test_heavy_registry_routes_are_sync_for_fastapi_threadpool_dispatch():
     assert inspect.iscoroutinefunction(lifecycle_monitor) is False
 
 
-def test_backtest_results_aggregates_real_runs_or_fails_closed():
+def test_backtest_results_never_projects_retained_v1_metrics():
     response = client.get("/api/v1/console/backtest-results")
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
     assert payload["results_mode"] == "READ_ONLY_BACKTEST_RESULTS"
-    # Real path aggregates done run_registry runs by role; synthetic fallback is all-None blocks (CI).
     assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"}
     for role in ("carry", "combo", "oi_research", "survivorship"):
-        assert role in payload
-        block = payload[role]
-        if block is not None:
-            assert set(block) >= {"run_id", "kind", "verdict", "metrics", "series"}
-            assert block["status"] == "done"
-    assert "factory" in payload and set(payload["factory"]) == {"loop", "orthogonal"}
-    # When the registry is present (real), carry is the deployable funding-carry edge with its real metric.
-    if payload["data_provenance"] == "RESEARCH_RUN_REGISTRY":
-        assert payload["carry"] is not None
-        assert "net_sharpe_5bps" in payload["carry"]["metrics"]
+        assert payload[role] is None
+    assert payload["factory"] == {"loop": None, "orthogonal": None}
+    _assert_backtest_invalidated(payload)
 
 
 def test_alpha_decay_monitors_are_engine_computed():
@@ -863,9 +856,8 @@ def test_alpha_decay_monitors_are_engine_computed():
     assert engine_voiced >= 1
 
 
-def test_research_runs_list_and_detail_round_trip(tmp_path, monkeypatch):
-    """The research-ops console reads runs from the registry: list summaries + a generic detail.
-    Isolated against a seeded temp db (the real cached result JSONs are gitignored / CI-absent)."""
+def test_research_runs_expose_identity_but_not_retained_result_metrics(tmp_path, monkeypatch):
+    """Operational run identity remains visible; schema-v1 results do not."""
     from services.console.api import main as capi
     from services.console.api import research_run_views
     from services.research.run_registry.store import ResearchRunStore
@@ -898,13 +890,19 @@ def test_research_runs_list_and_detail_round_trip(tmp_path, monkeypatch):
     body = c.get("/api/v1/console/research-runs").json()
     assert body["read_only"] is True and body["data_provenance"] == "RESEARCH_RUN_REGISTRY"
     summ = next(r for r in body["runs"] if r["run_id"] == "rX")
-    assert summ["headline"] == {"label": "combo_sharpe", "value": 1.5} and summ["verdict"] == "ok"
-    # history retention: the list surfaces params + git sha at a glance (not only the detail view)
-    assert summ["params"] == {"n": 14} and summ["code_version"] == "abc123def456"
+    assert summ["headline"] == {"label": None, "value": None}
+    assert summ["verdict"] == _INVALIDATION
+    assert summ["params"] == {} and summ["code_version"] == "abc123def456"
+    _assert_backtest_invalidated(summ)
+    _assert_backtest_invalidated(body)
 
-    detail = c.get("/api/v1/console/research-run?run_id=rX").json()["run"]
-    assert detail["run_id"] == "rX" and detail["metrics"]["combo_sharpe"] == 1.5
-    assert detail["series"]["per_year"][0]["value"] == 2.2 and detail["caveats"] == ["c"]
+    detail_payload = c.get("/api/v1/console/research-run?run_id=rX").json()
+    detail = detail_payload["run"]
+    assert detail["run_id"] == "rX" and detail["metrics"] == {}
+    assert detail["series"] == {} and detail["caveats"] == [_INVALIDATION]
+    assert detail["log"] == [] and detail["params"] == {}
+    _assert_backtest_invalidated(detail)
+    _assert_backtest_invalidated(detail_payload)
 
     # unknown id -> visible null (fail-soft), not a 500
     assert c.get("/api/v1/console/research-run?run_id=nope").json()["run"] is None
@@ -1046,8 +1044,51 @@ def test_paper_trading_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["selected_alpha_id"] == "alpha-2"
     assert payload["run"]["metrics"]["sharpe"] is None
+    assert payload["run"]["metrics"]["volatility"] is None
+    assert payload["run"]["metrics"]["annual_turnover"] is None
+    assert payload["run"]["metrics"]["n_days"] is None
     assert payload["run"]["equity_curve"] == []
+    assert payload["run"]["total_trades"] is None
+    assert payload["run"]["final_equity"] is None
     _assert_backtest_invalidated(payload)
+
+
+def test_alpha_lifecycle_retained_v1_artifact_is_identity_only():
+    payload = client.get("/api/v1/console/alpha-lifecycle").json()
+    _assert_backtest_invalidated(payload)
+    if payload["snapshot_present"] is not True:
+        assert payload["alphas"] == []
+        return
+
+    assert payload["stage_legend"] == {
+        _INVALIDATION: (
+            "Retained schema-v1 lifecycle evidence is non-authoritative because "
+            "the underlying perpetual ledger was invalidated."
+        ),
+    }
+    for alpha in payload["alphas"]:
+        assert set(alpha) <= {
+            "alpha_id",
+            "display_name",
+            "namespace",
+            "derived_stage",
+            "lifecycle_state",
+            "stages",
+            "warnings",
+            "authoritative",
+            "evidence_status",
+            "invalidation_code",
+        }
+        assert alpha["derived_stage"] == _INVALIDATION
+        assert alpha["lifecycle_state"] is None
+        _assert_backtest_invalidated(alpha)
+        for stage in alpha["stages"].values():
+            assert stage == {
+                "status": _INVALIDATION,
+                "authoritative": False,
+                "evidence_status": "DIAGNOSTIC_ONLY",
+                "invalidation_code": _INVALIDATION,
+            }
 
 
 def test_portfolio_snapshot_uses_backend_contract():

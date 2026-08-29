@@ -24,6 +24,7 @@ export interface RunnerHealth {
   mode: string;
   live_disallowed: boolean;
   kinds: string[];
+  quarantined_kinds?: Record<string, string>;
 }
 
 // Rank #18: the runner requires an X-Operator tag on every trigger — a SELF-ASSERTED, UNAUTHENTICATED
@@ -97,16 +98,7 @@ export interface RunParamSpec {
 // The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo. A kind with a
 // non-empty `params` renders typed inputs in the trigger panel; the values are passed to POST /run.
 export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string; params?: RunParamSpec[] }> = [
-  { kind: 'paper_cycle', label: '执行纸面周期', params: [
-    { name: 'small_10k', type: 'bool', label: '10K 隔离账户', default: false },
+  { kind: 'data_refresh', label: '公开持仓数据刷新', params: [
+    { name: 'intraday', type: 'bool', label: '日内归档', default: false },
   ] },
-  { kind: 'combo_book', label: '双因子组合' },
-  { kind: 'oi_research', label: '持仓因子研究' },
-  { kind: 'survivorship', label: '幸存者重测' },
-  { kind: 'carry_strategy', label: '资金费 Carry' },
-  { kind: 'factory_orthogonal', label: '自主正交发现', params: [
-    { name: 'generations', type: 'int', label: '代数', default: 8, min: 1, max: 40 },
-    { name: 'population', type: 'int', label: '种群', default: 64, min: 8, max: 256 },
-  ] },
-  { kind: 'factory_loop', label: 'loop-until-dry' },
 ];
