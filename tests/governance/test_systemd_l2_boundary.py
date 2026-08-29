@@ -140,6 +140,7 @@ def test_supply_chain_manifest_binds_linux_systemd_surface() -> None:
         "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
+        "quantos/contracts/l2_schedule_policy.py",
         "services/data/public_market_event_store.py",
         "services/research/liquidation_mechanism.py",
         "tools/cross_venue_liquidation_health.py",
@@ -153,8 +154,8 @@ def test_renderer_is_non_installing_and_requires_clean_release_contract() -> Non
     assert "subprocess.run" not in text
     assert "os.system" not in text
     assert "__QUANTOS_RELEASE_SHA__" in text
-    assert "ALLOWED_L2_MODULES" in text
-    assert "EXPECTED_TASKS" in text
+    assert "MVP_SAFE_MODULES" in text
+    assert "MVP_EXPECTED_TASKS" in text
 
 
 def test_renderer_emits_only_requested_allowlisted_worker(tmp_path: Path) -> None:
@@ -321,28 +322,22 @@ def test_renderer_rejects_external_configuration_injection(tmp_path: Path) -> No
         )
 
 
-def test_renderer_preserves_one_minute_dependency_offsets(tmp_path: Path) -> None:
-    from tools.render_systemd_l2_units import render_units
+def test_renderer_rejects_every_quarantined_and_non_mvp_module(tmp_path: Path) -> None:
+    import pytest
 
-    output = tmp_path / "offsets"
-    render_units(
-        output_root=output,
-        release_commit="a" * 40,
-        modules=(
-            "realtime_alpha_forward_shadow",
-            "realtime_alpha_formal_shadow",
-            "realtime_alpha_execution_paper",
-        ),
+    from quantos.contracts.l2_schedule_policy import (
+        HARD_QUARANTINED_MODULES,
+        MVP_DISABLED_MODULES,
     )
-    assert "OnCalendar=*-*-* *:*:00 Asia/Shanghai" in _text(
-        output / "quantos-l2@realtime_alpha_forward_shadow.timer"
-    )
-    assert "OnCalendar=*-*-* *:*:15 Asia/Shanghai" in _text(
-        output / "quantos-l2@realtime_alpha_formal_shadow.timer"
-    )
-    assert "OnCalendar=*-*-* *:*:30 Asia/Shanghai" in _text(
-        output / "quantos-l2@realtime_alpha_execution_paper.timer"
-    )
+    from tools.render_systemd_l2_units import SystemdRenderError, render_units
+
+    for module in sorted(HARD_QUARANTINED_MODULES | MVP_DISABLED_MODULES):
+        with pytest.raises(SystemdRenderError, match="not a rendered oneshot"):
+            render_units(
+                output_root=tmp_path / module,
+                release_commit="a" * 40,
+                modules=(module,),
+            )
 
 
 def test_watchdog_has_dedicated_hardened_unit_and_timer() -> None:

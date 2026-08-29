@@ -179,6 +179,7 @@ _MANIFESTS = (
     "tools/cross_venue_liquidation_preregistration.py",
     "tools/borrow_pressure_preregistration.py",
     "tools/l2_backup.py",
+    "quantos/contracts/l2_schedule_policy.py",
     "tools/l2_schedule_entrypoint.py",
     "tools/render_systemd_l2_units.py",
     "tools/l2_scheduler_watchdog.py",

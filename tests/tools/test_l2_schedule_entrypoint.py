@@ -10,6 +10,16 @@ import sys
 
 import pytest
 
+from quantos.contracts.l2_schedule_policy import (
+    HARD_QUARANTINED_MODULES,
+    HARD_QUARANTINED_TASKS,
+    MVP_CONDITIONAL_MODULES,
+    MVP_DISABLED_MODULES,
+    MVP_DISABLED_TASKS,
+    MVP_EXPECTED_TASKS,
+    MVP_RESIDENT_MODULES,
+    MVP_SAFE_MODULES,
+)
 from tools.l2_schedule_entrypoint import (
     ALLOWED_L2_MODULES,
     QUARANTINED_LEGACY_AUTHORITY_MODULES,
@@ -26,7 +36,7 @@ COMMIT = "a" * 40
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _worker_attestation(module: str = "paper_order_preview") -> dict:
+def _worker_attestation(module: str = "binance_realtime_features") -> dict:
     return {
         "schema_version": 1,
         "module": module,
@@ -88,6 +98,12 @@ def _install_release_evidence_support(release: Path) -> None:
     scripts.mkdir(parents=True)
     shutil.copyfile(ROOT / "scripts/evidence_binding.py", scripts / "evidence_binding.py")
     (scripts / "validate.py").write_text("# validation fixture\n", encoding="utf-8")
+    contracts = release / "quantos" / "contracts"
+    contracts.mkdir(parents=True)
+    shutil.copyfile(
+        ROOT / "quantos" / "contracts" / "l2_schedule_policy.py",
+        contracts / "l2_schedule_policy.py",
+    )
 
 
 def _seal_release_evidence(release: Path, source_commit: str) -> str:
@@ -471,10 +487,7 @@ def test_entrypoint_reports_release_evidence_before_worker_runs(
 
 @pytest.mark.parametrize(
     "module_name",
-    sorted(
-        REQUIRED_INPUT_ATTESTATION_MODULES
-        | {"paper_multivenue_sor", "realtime_alpha_execution_paper"}
-    ),
+    sorted(REQUIRED_INPUT_ATTESTATION_MODULES & ALLOWED_L2_MODULES),
 )
 def test_required_worker_fails_closed_without_input_attestation(
     tmp_path: Path,
@@ -496,7 +509,7 @@ def test_required_worker_fails_closed_without_input_attestation(
 
 @pytest.mark.parametrize(
     "module_name",
-    sorted(REQUIRED_INPUT_ATTESTATION_MODULES),
+    sorted(REQUIRED_INPUT_ATTESTATION_MODULES & ALLOWED_L2_MODULES),
 )
 def test_required_worker_attestation_is_validated_and_hash_bound(
     tmp_path: Path,
@@ -526,13 +539,13 @@ def test_required_worker_attestation_is_validated_and_hash_bound(
 def test_required_worker_rejects_malformed_input_hash(tmp_path: Path) -> None:
     code_root = tmp_path / "release"
     module = _module(code_root, result=0)
-    malformed = _worker_attestation()
+    malformed = _worker_attestation("binance_realtime_features")
     malformed["input_hashes"]["historical_evaluations"] = "not-a-digest"
     module.release_run_attestation = lambda: malformed
 
     with pytest.raises(ScheduleEntrypointError, match="input/evidence attestation"):
         run_scheduled_module(
-            "paper_order_preview",
+            "binance_realtime_features",
             code_root=code_root,
             expected_release_commit=COMMIT,
             release_verifier=_accept_release,
@@ -559,26 +572,6 @@ def test_required_worker_fatal_exit_preserves_result_without_attestation(
         on_worker_attested=lambda document, digest: observed.append((document, digest)),
     ) == 1
 
-    assert observed == []
-
-
-def test_paper_sor_expected_quarantine_preserves_safe_block_without_attestation(
-    tmp_path: Path,
-) -> None:
-    code_root = tmp_path / "release"
-    module = _module(code_root, result=2)
-    module.release_run_attestation = lambda: None
-    observed = []
-
-    assert run_scheduled_module(
-        "paper_multivenue_sor",
-        code_root=code_root,
-        expected_release_commit=COMMIT,
-        release_verifier=_accept_release,
-        release_evidence_verifier=_accept_release_evidence,
-        importer=lambda _name: module,
-        on_worker_attested=lambda document, digest: observed.append((document, digest)),
-    ) == 2
     assert observed == []
 
 
@@ -726,48 +719,100 @@ def test_pythonw_mode_rejects_child_request_for_new_console(monkeypatch) -> None
         subprocess.Popen(["helper.exe"], creationflags=0x00000010)
 
 
-def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
-    assert ALLOWED_L2_MODULES == frozenset(
+def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
+    assert MVP_EXPECTED_TASKS == {
+        "QUANTOS_artifact_admission_seal": "artifact_admission_seal",
+        "QUANTOS_binance_book_depth_forward_refresh": (
+            "binance_book_depth_forward_refresh"
+        ),
+        "QUANTOS_binance_realtime_drift_alerts": "binance_realtime_drift_alerts",
+        "QUANTOS_binance_realtime_features": "binance_realtime_features",
+        "QUANTOS_binance_realtime_market": "binance_realtime_market",
+        "QUANTOS_binance_realtime_stream": "binance_realtime_stream",
+        "QUANTOS_binance_rpi_depth": "binance_rpi_depth",
+        "QUANTOS_binance_systemic_risk": "binance_systemic_risk",
+        "QUANTOS_bybit_realtime_stream": "bybit_realtime_stream",
+        "QUANTOS_cftc_tff_forward_refresh": "cftc_tff_forward_refresh",
+        "QUANTOS_cross_venue_liquidation_health": (
+            "cross_venue_liquidation_health"
+        ),
+        "QUANTOS_defillama_stablecoin_forward_refresh": (
+            "defillama_stablecoin_forward_refresh"
+        ),
+        "QUANTOS_defillama_tvl_forward_refresh": "defillama_tvl_forward_refresh",
+        "QUANTOS_domain_event_ops": "domain_event_ops",
+        "QUANTOS_domain_event_seal": "domain_event_seal",
+        "QUANTOS_external_heartbeat": "external_heartbeat",
+        "QUANTOS_hyperliquid_public_forward_refresh": (
+            "hyperliquid_public_forward_refresh"
+        ),
+        "QUANTOS_backup": "l2_backup",
+        "QUANTOS_okx_borrow_forward_refresh": "okx_borrow_forward_refresh",
+        "QUANTOS_raw_archive_audit": "raw_archive_audit",
+        "QUANTOS_scheduler_watchdog": "l2_scheduler_watchdog",
+        "QUANTOS_wikimedia_attention_forward_refresh": (
+            "wikimedia_attention_forward_refresh"
+        ),
+    }
+    assert HARD_QUARANTINED_TASKS == {
+        "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
+        "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
+        "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
+        "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
+        "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
+        "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
+        "QUANTOS_factory_loop": "crypto_factory_loop",
+        "QUANTOS_ic_panel_refresh": "ic_panel_research",
+        "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
+        "QUANTOS_paper_realtime": "paper_realtime",
+        "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
+        "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
+        "QUANTOS_register_alpha_catalog": "register_alpha_catalog",
+    }
+    assert MVP_DISABLED_TASKS == {
+        "QUANTOS_forward_track": "forward_track_advance",
+        "QUANTOS_gonogo_report": "gonogo_report",
+        "QUANTOS_hourly_alpha_advance": "hourly_alpha_advance",
+        "QUANTOS_mft_l2_runtime": "mft_l2_runtime",
+        "QUANTOS_paper_health": "paper_health",
+        "QUANTOS_paper_multivenue_sor": "paper_multivenue_sor",
+        "QUANTOS_paper_operational_evidence": "paper_operational_evidence",
+        "QUANTOS_paper_order_preview": "paper_order_preview",
+        "QUANTOS_paper_shadow_auto": "paper_shadow_auto",
+        "QUANTOS_paper_shadow_realtime": "paper_shadow_realtime",
+        "QUANTOS_realtime_alpha_discovery": "realtime_alpha_discovery",
+        "QUANTOS_realtime_alpha_execution_paper": (
+            "realtime_alpha_execution_paper"
+        ),
+        "QUANTOS_realtime_alpha_formal_shadow": "realtime_alpha_formal_shadow",
+        "QUANTOS_realtime_alpha_forward_shadow": "realtime_alpha_forward_shadow",
+        "QUANTOS_rpi_low_frequency_research": "rpi_low_frequency_research",
+    }
+
+    assert MVP_SAFE_MODULES == frozenset(MVP_EXPECTED_TASKS.values())
+    assert HARD_QUARANTINED_MODULES == frozenset(HARD_QUARANTINED_TASKS.values())
+    assert MVP_DISABLED_MODULES == frozenset(MVP_DISABLED_TASKS.values())
+    assert (len(MVP_SAFE_MODULES), len(HARD_QUARANTINED_MODULES), len(MVP_DISABLED_MODULES)) == (
+        22,
+        13,
+        15,
+    )
+    assert MVP_SAFE_MODULES.isdisjoint(HARD_QUARANTINED_MODULES)
+    assert MVP_SAFE_MODULES.isdisjoint(MVP_DISABLED_MODULES)
+    assert HARD_QUARANTINED_MODULES.isdisjoint(MVP_DISABLED_MODULES)
+    assert MVP_RESIDENT_MODULES == frozenset(
+        {"binance_realtime_stream", "bybit_realtime_stream"}
+    )
+    assert MVP_CONDITIONAL_MODULES == frozenset(
         {
             "artifact_admission_seal",
-            "binance_book_depth_forward_refresh",
-            "binance_realtime_market",
-            "binance_systemic_risk",
-            "binance_rpi_depth",
-            "binance_realtime_features",
-            "binance_realtime_drift_alerts",
-            "binance_realtime_stream",
-            "bybit_realtime_stream",
-            "cftc_tff_forward_refresh",
-            "cross_venue_liquidation_health",
-            "defillama_tvl_forward_refresh",
-            "defillama_stablecoin_forward_refresh",
-            "wikimedia_attention_forward_refresh",
-            "hyperliquid_public_forward_refresh",
-            "okx_borrow_forward_refresh",
-            "domain_event_ops",
             "domain_event_seal",
             "external_heartbeat",
-            "forward_track_advance",
-            "hourly_alpha_advance",
-            "gonogo_report",
             "l2_backup",
-            "l2_scheduler_watchdog",
-            "mft_l2_runtime",
-            "paper_health",
-            "paper_multivenue_sor",
-            "paper_operational_evidence",
-            "paper_order_preview",
-            "paper_shadow_auto",
-            "paper_shadow_realtime",
-            "raw_archive_audit",
-            "realtime_alpha_discovery",
-            "realtime_alpha_execution_paper",
-            "realtime_alpha_formal_shadow",
-            "realtime_alpha_forward_shadow",
-            "rpi_low_frequency_research",
         }
     )
+    assert ALLOWED_L2_MODULES == MVP_SAFE_MODULES
+    assert QUARANTINED_LEGACY_AUTHORITY_MODULES == HARD_QUARANTINED_MODULES
 
 
 def test_required_input_attestation_surface_is_explicit() -> None:
@@ -775,14 +820,6 @@ def test_required_input_attestation_surface_is_explicit() -> None:
         {
             "binance_realtime_market",
             "binance_realtime_features",
-            "paper_multivenue_sor",
-            "paper_operational_evidence",
-            "paper_order_preview",
-            "realtime_alpha_discovery",
-            "realtime_alpha_execution_paper",
-            "realtime_alpha_formal_shadow",
-            "realtime_alpha_forward_shadow",
-            "rpi_low_frequency_research",
         }
     )
 
@@ -835,14 +872,44 @@ def test_legacy_authority_workers_are_quarantined_before_release_or_import(
         assert touched == []
 
 
-def test_every_registered_schedule_module_is_allowlisted() -> None:
+def test_mvp_disabled_workers_are_rejected_before_release_or_import(
+    tmp_path: Path,
+) -> None:
+    for module_name in sorted(MVP_DISABLED_MODULES):
+        touched: list[str] = []
+
+        def forbidden(label):
+            def _forbidden(*_args, **_kwargs):
+                touched.append(label)
+                pytest.fail(f"{label} ran before MVP policy rejection")
+
+            return _forbidden
+
+        with pytest.raises(
+            ScheduleEntrypointError,
+            match="L2_MVP_POLICY_DISABLED",
+        ):
+            run_scheduled_module(
+                module_name,
+                code_root=tmp_path / "release",
+                expected_release_commit=COMMIT,
+                release_verifier=forbidden("release verifier"),
+                release_evidence_verifier=forbidden("release evidence"),
+                importer=forbidden("module importer"),
+            )
+
+        assert touched == []
+
+
+def test_every_registered_schedule_module_is_statically_classified() -> None:
     registration = (
         Path(__file__).resolve().parents[2] / "scripts" / "register_schedules.ps1"
     ).read_text(encoding="utf-8")
     registered = set(re.findall(r'-Module\s+"([a-z0-9_]+)"', registration))
 
     assert registered
-    assert registered <= ALLOWED_L2_MODULES
+    assert registered <= MVP_SAFE_MODULES | MVP_DISABLED_MODULES
+    assert registered.isdisjoint(HARD_QUARANTINED_MODULES)
 
 
 def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -> None:
@@ -857,6 +924,12 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
             f"def main():\n    print('{marker}')\n    return 0\n",
             encoding="utf-8",
         )
+    dirty_contracts = state / "quantos" / "contracts"
+    dirty_contracts.mkdir(parents=True)
+    (dirty_contracts / "l2_schedule_policy.py").write_text(
+        "raise RuntimeError('DIRTY POLICY LOADED')\n",
+        encoding="utf-8",
+    )
     launcher = release / "tools" / "l2_schedule_entrypoint.py"
     launcher.write_bytes(source_launcher.read_bytes())
     _install_release_evidence_support(release)
@@ -926,14 +999,14 @@ def test_script_receipt_embeds_required_worker_input_attestation(
     tools.mkdir(parents=True)
     state.mkdir()
     (tools / "__init__.py").write_text("", encoding="utf-8")
-    (tools / "paper_order_preview.py").write_text(
+    (tools / "binance_realtime_features.py").write_text(
         "import os\n"
         "def main():\n"
         "    return 0\n"
         "def release_run_attestation():\n"
         "    return {\n"
         "        'schema_version': 1,\n"
-        "        'module': 'paper_order_preview',\n"
+        "        'module': 'binance_realtime_features',\n"
         "        'release_commit': os.environ['QUANTOS_RELEASE_COMMIT'],\n"
         "        'complete': True,\n"
         "        'input_hashes': {'candidate_identity_set': 'b' * 64},\n"
@@ -977,7 +1050,7 @@ def test_script_receipt_embeds_required_worker_input_attestation(
         [
             sys.executable,
             str(launcher),
-            "paper_order_preview",
+            "binance_realtime_features",
             "--release-commit",
             commit,
         ],

@@ -22,69 +22,36 @@ import sys
 from types import ModuleType
 
 
-ALLOWED_L2_MODULES = frozenset(
-    {
-        "artifact_admission_seal",
-        "binance_book_depth_forward_refresh",
-        "binance_realtime_market",
-        "binance_systemic_risk",
-        "binance_rpi_depth",
-        "binance_realtime_features",
-        "binance_realtime_drift_alerts",
-        "binance_realtime_stream",
-        "bybit_realtime_stream",
-        "cftc_tff_forward_refresh",
-        "cross_venue_liquidation_health",
-        "defillama_tvl_forward_refresh",
-        "defillama_stablecoin_forward_refresh",
-        "wikimedia_attention_forward_refresh",
-        "hyperliquid_public_forward_refresh",
-        "okx_borrow_forward_refresh",
-        "domain_event_ops",
-        "domain_event_seal",
-        "external_heartbeat",
-        "forward_track_advance",
-        "hourly_alpha_advance",
-        "gonogo_report",
-        "l2_backup",
-        "l2_scheduler_watchdog",
-        "mft_l2_runtime",
-        "paper_health",
-        "paper_multivenue_sor",
-        "paper_operational_evidence",
-        "paper_order_preview",
-        "paper_shadow_auto",
-        "paper_shadow_realtime",
-        "raw_archive_audit",
-        "realtime_alpha_discovery",
-        "realtime_alpha_execution_paper",
-        "realtime_alpha_formal_shadow",
-        "realtime_alpha_forward_shadow",
-        "rpi_low_frequency_research",
-    }
-)
+def _load_static_schedule_policy() -> ModuleType:
+    """Load the policy from this release root, never from mutable ``sys.path``."""
+    policy_path = (
+        Path(__file__).resolve().parents[1]
+        / "quantos"
+        / "contracts"
+        / "l2_schedule_policy.py"
+    )
+    policy = ModuleType("_quantos_l2_schedule_policy")
+    policy.__file__ = str(policy_path)
+    try:
+        exec(compile(policy_path.read_bytes(), str(policy_path), "exec"), policy.__dict__)
+    except Exception as exc:
+        raise RuntimeError("static L2 schedule policy is unavailable or invalid") from exc
+    return policy
 
-# These workers can turn invalid V1 return/evaluation artifacts into durable
-# registry, risk-READY, or workflow authority.  Keep the names recognizable to
-# the launcher so an obsolete scheduled action fails with the machine-readable
-# invalidation code, but never classify them as allowlisted workers.
-QUARANTINED_LEGACY_AUTHORITY_MODULES = frozenset(
-    {
-        "alpha_paper_cycle",
-        "alpha_lifecycle_cockpit",
-        "alpha_maintenance_sweep",
-        "alpha_production_workflow",
-        "candidate_portfolio_evidence",
-        "dry_run_candidate_multi",
-        "crypto_factory_loop",
-        "ic_panel_research",
-        "paper_alpha_evaluation",
-        "paper_realtime",
-        "paper_realtime_10k",
-        "paper_research_risk_bundle",
-        "register_alpha_catalog",
-    }
-)
+
+_SCHEDULE_POLICY = _load_static_schedule_policy()
+HARD_QUARANTINED_MODULES = _SCHEDULE_POLICY.HARD_QUARANTINED_MODULES
+HARD_QUARANTINED_TASKS = _SCHEDULE_POLICY.HARD_QUARANTINED_TASKS
+MVP_CONDITIONAL_MODULES = _SCHEDULE_POLICY.MVP_CONDITIONAL_MODULES
+MVP_DISABLED_MODULES = _SCHEDULE_POLICY.MVP_DISABLED_MODULES
+MVP_DISABLED_TASKS = _SCHEDULE_POLICY.MVP_DISABLED_TASKS
+MVP_EXPECTED_TASKS = _SCHEDULE_POLICY.MVP_EXPECTED_TASKS
+MVP_RESIDENT_MODULES = _SCHEDULE_POLICY.MVP_RESIDENT_MODULES
+MVP_SAFE_MODULES = _SCHEDULE_POLICY.MVP_SAFE_MODULES
+
+# Backward-compatible launcher names now point at the central closed policy.
+ALLOWED_L2_MODULES = MVP_SAFE_MODULES
+QUARANTINED_LEGACY_AUTHORITY_MODULES = HARD_QUARANTINED_MODULES
 
 
 class ScheduleEntrypointError(RuntimeError):
@@ -98,22 +65,10 @@ _RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
 _STATE_ROOT_ENV = "QUANTOS_STATE_ROOT"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ATTESTABLE_EXIT_CODES = frozenset({0, 2})
-# The public SOR currently reaches an unconditional V1 persistence quarantine
-# after its read-only routing diagnostic.  Exit 2 carries no authoritative
-# output to attest; success (0) still requires the full input/output receipt.
-_UNATTESTED_EXPECTED_SAFE_BLOCK_MODULES = frozenset({"paper_multivenue_sor"})
 REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
     {
         "binance_realtime_features",
         "binance_realtime_market",
-        "paper_multivenue_sor",
-        "paper_operational_evidence",
-        "paper_order_preview",
-        "realtime_alpha_discovery",
-        "realtime_alpha_execution_paper",
-        "realtime_alpha_formal_shadow",
-        "realtime_alpha_forward_shadow",
-        "rpi_low_frequency_research",
     }
 )
 _ATTESTATION_SAFETY = {
@@ -425,6 +380,11 @@ def run_scheduled_module(
             "INVALIDATED_PERP_LEDGER_V1: scheduled legacy authority worker "
             f"tools.{module_name} is quarantined"
         )
+    if module_name in MVP_DISABLED_MODULES:
+        raise ScheduleEntrypointError(
+            "L2_MVP_POLICY_DISABLED: scheduled worker "
+            f"tools.{module_name} is disabled by the static L2 MVP policy"
+        )
     if module_name not in ALLOWED_L2_MODULES:
         raise ScheduleEntrypointError("scheduled module is not allowlisted")
     release_root = (
@@ -489,11 +449,6 @@ def run_scheduled_module(
             raise ScheduleEntrypointError(
                 "scheduled module produced an ambiguous exit code"
             )
-        if (
-            result == 2
-            and module_name in _UNATTESTED_EXPECTED_SAFE_BLOCK_MODULES
-        ):
-            return result
         attestation_fn = getattr(module, "release_run_attestation", None)
         if callable(attestation_fn) and result in _ATTESTABLE_EXIT_CODES:
             try:
@@ -539,7 +494,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an allowlisted QUANTOS L2 worker")
     parser.add_argument(
         "module",
-        choices=sorted(ALLOWED_L2_MODULES | QUARANTINED_LEGACY_AUTHORITY_MODULES),
+        choices=sorted(
+            ALLOWED_L2_MODULES
+            | MVP_DISABLED_MODULES
+            | QUARANTINED_LEGACY_AUTHORITY_MODULES
+        ),
     )
     parser.add_argument("--release-commit", required=True)
     args = parser.parse_args(argv)
@@ -666,6 +625,14 @@ if __name__ == "__main__":
 
 __all__ = [
     "ALLOWED_L2_MODULES",
+    "HARD_QUARANTINED_MODULES",
+    "HARD_QUARANTINED_TASKS",
+    "MVP_CONDITIONAL_MODULES",
+    "MVP_DISABLED_MODULES",
+    "MVP_DISABLED_TASKS",
+    "MVP_EXPECTED_TASKS",
+    "MVP_RESIDENT_MODULES",
+    "MVP_SAFE_MODULES",
     "QUARANTINED_LEGACY_AUTHORITY_MODULES",
     "REQUIRED_INPUT_ATTESTATION_MODULES",
     "ScheduleEntrypointError",

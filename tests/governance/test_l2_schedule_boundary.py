@@ -10,6 +10,18 @@ def _source() -> str:
     return SCHEDULE_SCRIPT.read_text(encoding="utf-8")
 
 
+def _registered_task_pairs() -> list[tuple[str, str]]:
+    return re.findall(
+        r'Register-L2Task\s+-Name\s+"([A-Za-z0-9_]+)"\s*'
+        r'(?:`\s*)?-Module\s+"([a-z0-9_]+)"',
+        _source(),
+    )
+
+
+def _registered_task_map() -> dict[str, str]:
+    return dict(_registered_task_pairs())
+
+
 def test_schedule_registration_has_no_live_execution_entrypoint():
     source = _source()
     lowered = source.lower()
@@ -24,81 +36,22 @@ def test_schedule_registration_has_no_live_execution_entrypoint():
 
 
 def test_schedule_registration_only_runs_explicit_l2_modules():
+    from quantos.contracts.l2_schedule_policy import MVP_EXPECTED_TASKS
+
     source = _source()
-    registered_modules = set(
-        re.findall(r'-Module\s+"([a-z0-9_]+)"', source)
-    )
-    assert registered_modules
-    assert registered_modules <= {
-        "domain_event_ops",
-        "domain_event_seal",
-        "artifact_admission_seal",
-        "binance_book_depth_forward_refresh",
-        "binance_realtime_market",
-        "binance_systemic_risk",
-        "binance_rpi_depth",
-        "binance_realtime_features",
-        "binance_realtime_drift_alerts",
-        "binance_realtime_stream",
-        "cftc_tff_forward_refresh",
-        "defillama_tvl_forward_refresh",
-        "defillama_stablecoin_forward_refresh",
-        "wikimedia_attention_forward_refresh",
-        "realtime_alpha_discovery",
-        "realtime_alpha_execution_paper",
-        "realtime_alpha_formal_shadow",
-        "realtime_alpha_forward_shadow",
-        "external_heartbeat",
-        "hyperliquid_public_forward_refresh",
-        "okx_borrow_forward_refresh",
-        "forward_track_advance",
-        "gonogo_report",
-        "paper_multivenue_sor",
-        "paper_operational_evidence",
-        "paper_order_preview",
-        "paper_shadow_auto",
-        "paper_shadow_realtime",
-        "paper_health",
-        "raw_archive_audit",
-        "l2_backup",
-        "l2_scheduler_watchdog",
-    }
-    assert "domain_event_ops" in registered_modules
-    assert "QUANTOS_domain_event_ops" in source
-    assert "QUANTOS_scheduler_watchdog" in source
-    assert "QUANTOS_binance_book_depth_forward_refresh" in source
-    assert "QUANTOS_defillama_tvl_forward_refresh" in source
-    assert "QUANTOS_defillama_stablecoin_forward_refresh" in source
-    assert "QUANTOS_wikimedia_attention_forward_refresh" in source
-    assert "QUANTOS_hyperliquid_public_forward_refresh" in source
-    assert "QUANTOS_okx_borrow_forward_refresh" in source
-    assert "QUANTOS_cftc_tff_forward_refresh" in source
-    assert "QUANTOS_paper_operational_evidence" in source
-    assert "QUANTOS_realtime_alpha_execution_paper" in source
-    assert "QUANTOS_backup" in source
-    assert "QUANTOS_external_heartbeat" in source
-    assert "QUANTOS_domain_event_seal" in source
-    assert "QUANTOS_artifact_admission_seal" in source
+    pairs = _registered_task_pairs()
+    assert len(pairs) == source.count("Register-L2Task -Name")
+    assert len(pairs) == len({task_name for task_name, _module in pairs})
+    assert len(pairs) == len({module for _task_name, module in pairs})
+    assert dict(pairs) == MVP_EXPECTED_TASKS
 
 
 def test_invalidated_v1_authority_tasks_are_quiesced_and_not_registered():
-    source = _source()
-    invalidated = {
-        "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
-        "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
-        "QUANTOS_factory_loop": "crypto_factory_loop",
-        "QUANTOS_ic_panel_refresh": "ic_panel_research",
-        "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
-        "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
-        "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
-        "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
-        "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
-        "QUANTOS_paper_realtime": "paper_realtime",
-        "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
-        "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
-    }
+    from quantos.contracts.l2_schedule_policy import HARD_QUARANTINED_TASKS
 
-    for task_name, module_name in invalidated.items():
+    source = _source()
+
+    for task_name, module_name in HARD_QUARANTINED_TASKS.items():
         assert not re.search(
             rf'Register-L2Task -Name "{task_name}" -Module "{module_name}"',
             source,
@@ -111,6 +64,22 @@ def test_invalidated_v1_authority_tasks_are_quiesced_and_not_registered():
     assert "INVALIDATED_PERP_LEDGER_V1" in (
         ROOT / "tools" / "l2_schedule_entrypoint.py"
     ).read_text(encoding="utf-8")
+    assert "Disable-TaskIfPresent -Name $task.Name -Module $task.Module" in source
+
+
+def test_non_mvp_tasks_are_quiesced_and_cannot_be_registered():
+    from quantos.contracts.l2_schedule_policy import MVP_DISABLED_TASKS
+
+    source = _source()
+    registered = _registered_task_map()
+    for task_name, module_name in MVP_DISABLED_TASKS.items():
+        assert registered.get(task_name) is None
+        assert (
+            f'[pscustomobject]@{{ Name = "{task_name}"; '
+            f'Module = "{module_name}" }}'
+        ) in source
+
+    assert "foreach ($task in $mvpDisabledTasks)" in source
     assert "Disable-TaskIfPresent -Name $task.Name -Module $task.Module" in source
 
 
@@ -205,17 +174,22 @@ def test_binance_book_depth_forward_refresh_is_daily_and_bounded():
     )
 
 
-def test_paper_operational_evidence_follows_shadow_cycle_every_five_minutes():
+def test_cross_venue_health_is_bounded_and_registered():
     source = _source()
     assert re.search(
-        r"\$paperOperationalEvidenceTrigger\s*=.*?\n\s*"
-        r"-RepetitionInterval \(New-TimeSpan -Minutes 5\)",
+        r"\$crossVenueLiquidationHealthTrigger\s*=.*?\n\s*"
+        r"-At \(Get-Date\)\.AddMinutes\(17\).*?\n\s*"
+        r"-RepetitionInterval \(New-TimeSpan -Minutes 30\)",
         source,
+        flags=re.DOTALL,
     )
     assert re.search(
-        r'Register-L2Task -Name "QUANTOS_paper_operational_evidence".*?\n\s*'
-        r'-Trigger \$paperOperationalEvidenceTrigger',
+        r'Register-L2Task -Name "QUANTOS_cross_venue_liquidation_health".*?'
+        r'-Module "cross_venue_liquidation_health".*?\n\s*'
+        r'-Trigger \$crossVenueLiquidationHealthTrigger -ExecutionTimeLimit '
+        r'\(New-TimeSpan -Minutes 10\)',
         source,
+        flags=re.DOTALL,
     )
 
 
@@ -240,14 +214,8 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         '-Trigger $binanceRealtimeFeaturesTrigger '
         '-ExecutionTimeLimit (New-TimeSpan -Minutes 45)' in source
     )
-    assert (
-        'Register-L2Task -Name "QUANTOS_forward_track" '
-        '-Module "forward_track_advance" `' in source
-    )
-    assert (
-        '-Trigger $forwardTrigger -ExecutionTimeLimit '
-        '(New-TimeSpan -Minutes 35)' in source
-    )
+    assert "QUANTOS_hourly_alpha_advance" in source
+    assert "QUANTOS_mft_l2_runtime" in source
     assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
     assert "New-ScheduledTaskPrincipal" in source
@@ -345,7 +313,7 @@ def test_schedule_registration_separates_release_code_from_mutable_state():
     assert '-m tools.$Module' not in source
 
 
-def test_resident_binance_stream_has_bounded_restart_poll():
+def test_resident_public_streams_have_bounded_restart_poll():
     source = _source()
     trigger = re.search(
         r"\$binanceRealtimeStreamTrigger\s*=\s*@\((.*?)\n\)",
@@ -360,9 +328,21 @@ def test_resident_binance_stream_has_bounded_restart_poll():
     assert "New-TimeSpan -Minutes 5" in contract
     assert "New-ScheduledTaskTrigger -Daily" not in contract
     assert "-MultipleInstances IgnoreNew" in source
+    registered = _registered_task_map()
+    assert registered["QUANTOS_binance_realtime_stream"] == (
+        "binance_realtime_stream"
+    )
+    assert registered["QUANTOS_bybit_realtime_stream"] == (
+        "bybit_realtime_stream"
+    )
 
 
 def test_backup_registration_never_embeds_a_secret_or_local_default_destination():
+    from quantos.contracts.l2_schedule_policy import (
+        MVP_CONDITIONAL_MODULES,
+        MVP_EXPECTED_TASKS,
+    )
+
     source = _source()
     assert "QUANTOS_BACKUP_PASSPHRASE" in source
     assert "QUANTOS_BACKUP_DEST" in source
@@ -371,3 +351,41 @@ def test_backup_registration_never_embeds_a_secret_or_local_default_destination(
     assert "-m tools.l2_backup" not in source
     assert "tools.live_backup" not in source
     assert "--allow-local-destination" not in source
+    conditional_tasks = {
+        task_name: module
+        for task_name, module in MVP_EXPECTED_TASKS.items()
+        if module in MVP_CONDITIONAL_MODULES
+    }
+    for task_name, module in conditional_tasks.items():
+        assert (
+            f'[pscustomobject]@{{ Name = "{task_name}"; Module = "{module}" }}'
+        ) in source
+    assert "foreach ($task in $conditionalMvpTasks)" in source
+
+
+def test_conditional_workers_are_first_quiesced_with_module_identity():
+    source = _source()
+    legacy = re.search(
+        r"\$legacyLiveTasks\s*=\s*@\((.*?)\n\)",
+        source,
+        flags=re.DOTALL,
+    )
+    conditional = re.search(
+        r"\$conditionalMvpTasks\s*=\s*@\((.*?)\n\)",
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert legacy is not None
+    assert conditional is not None
+    for task_name in (
+        "QUANTOS_backup",
+        "QUANTOS_external_heartbeat",
+        "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
+    ):
+        assert task_name not in legacy.group(1)
+        assert task_name in conditional.group(1)
+    assert source.index("$conditionalMvpTasks") < source.index(
+        "$backupReadiness = Get-L2BackupReadiness"
+    )

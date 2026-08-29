@@ -32,6 +32,13 @@ from services.governance.l2_restore_history import (
 )
 from services.governance.artifact_admission import load_json_without_duplicate_keys
 from services.governance import l2_backup_boundary as l2_backup
+from quantos.contracts.l2_schedule_policy import (
+    HARD_QUARANTINED_TASKS,
+    MVP_CONDITIONAL_MODULES,
+    MVP_DISABLED_TASKS,
+    MVP_EXPECTED_TASKS,
+    MVP_RESIDENT_MODULES,
+)
 from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
 
 
@@ -126,142 +133,67 @@ class TaskSnapshot:
     configured_environment: tuple[tuple[str, str], ...] = ()
 
 
-EXPECTED_TASKS: dict[str, ExpectedTask] = {
-    "QUANTOS_cross_venue_liquidation_health": ExpectedTask(
-        "cross_venue_liquidation_health", 2 * _HOUR_MS
-    ),
-    "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
-    "QUANTOS_binance_book_depth_forward_refresh": ExpectedTask(
-        "binance_book_depth_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_defillama_tvl_forward_refresh": ExpectedTask(
-        "defillama_tvl_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_defillama_stablecoin_forward_refresh": ExpectedTask(
-        "defillama_stablecoin_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_wikimedia_attention_forward_refresh": ExpectedTask(
-        "wikimedia_attention_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_hyperliquid_public_forward_refresh": ExpectedTask(
-        "hyperliquid_public_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_okx_borrow_forward_refresh": ExpectedTask(
-        "okx_borrow_forward_refresh", 2 * _DAY_MS
-    ),
-    "QUANTOS_cftc_tff_forward_refresh": ExpectedTask(
-        "cftc_tff_forward_refresh", 9 * _DAY_MS
-    ),
-    "QUANTOS_domain_event_ops": ExpectedTask(
-        "domain_event_ops", 3 * _HOUR_MS, frozenset({2})
-    ),
-    "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
-    "QUANTOS_paper_order_preview": ExpectedTask(
-        "paper_order_preview",
-        2 * _DAY_MS,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_binance_realtime_market": ExpectedTask(
-        "binance_realtime_market", 15 * 60_000
-    ),
-    "QUANTOS_binance_systemic_risk": ExpectedTask(
-        "binance_systemic_risk",
+_EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
+    "artifact_admission_seal": (2 * _DAY_MS, frozenset({2})),
+    "binance_book_depth_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "binance_realtime_drift_alerts": (15 * 60_000, frozenset()),
+    "binance_realtime_features": (15 * 60_000, frozenset()),
+    "binance_realtime_market": (15 * 60_000, frozenset()),
+    "binance_realtime_stream": (15 * 60_000, frozenset()),
+    "binance_rpi_depth": (3 * _HOUR_MS, frozenset()),
+    "binance_systemic_risk": (
         90 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
-    "QUANTOS_binance_rpi_depth": ExpectedTask(
-        "binance_rpi_depth", 3 * _HOUR_MS
-    ),
-    "QUANTOS_rpi_low_frequency_research": ExpectedTask(
-        "rpi_low_frequency_research", 2 * _DAY_MS, frozenset({2})
-    ),
-    "QUANTOS_binance_realtime_features": ExpectedTask(
-        "binance_realtime_features", 15 * 60_000
-    ),
-    "QUANTOS_binance_realtime_drift_alerts": ExpectedTask(
-        "binance_realtime_drift_alerts", 15 * 60_000
-    ),
-    "QUANTOS_realtime_alpha_discovery": ExpectedTask(
-        "realtime_alpha_discovery",
-        3 * _HOUR_MS,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
-        "realtime_alpha_forward_shadow",
-        5 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_realtime_alpha_formal_shadow": ExpectedTask(
-        "realtime_alpha_formal_shadow",
-        5 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_realtime_alpha_execution_paper": ExpectedTask(
-        "realtime_alpha_execution_paper",
-        5 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_binance_realtime_stream": ExpectedTask(
-        "binance_realtime_stream", 15 * 60_000
-    ),
-    "QUANTOS_bybit_realtime_stream": ExpectedTask(
-        "bybit_realtime_stream", 15 * 60_000
-    ),
-    "QUANTOS_paper_multivenue_sor": ExpectedTask(
-        "paper_multivenue_sor",
-        15 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_paper_operational_evidence": ExpectedTask(
-        "paper_operational_evidence",
-        15 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_paper_shadow_auto": ExpectedTask(
-        "paper_shadow_auto", 2 * _DAY_MS, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
-    ),
-    "QUANTOS_paper_shadow_realtime": ExpectedTask(
-        "paper_shadow_realtime", 15 * 60_000, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
-    ),
-    "QUANTOS_paper_health": ExpectedTask(
-        "paper_health",
-        15 * 60_000,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_raw_archive_audit": ExpectedTask(
-        "raw_archive_audit",
-        2 * _DAY_MS,
-    ),
-    "QUANTOS_scheduler_watchdog": ExpectedTask(
-        "l2_scheduler_watchdog", 2 * _HOUR_MS, frozenset({2})
-    ),
-    "QUANTOS_backup": ExpectedTask("l2_backup", 2 * _DAY_MS),
-    "QUANTOS_external_heartbeat": ExpectedTask("external_heartbeat", 20 * 60_000),
-    "QUANTOS_domain_event_seal": ExpectedTask(
-        "domain_event_seal", 2 * _DAY_MS, frozenset({2})
-    ),
-    "QUANTOS_artifact_admission_seal": ExpectedTask(
-        "artifact_admission_seal", 2 * _DAY_MS, frozenset({2})
-    ),
+    "bybit_realtime_stream": (15 * 60_000, frozenset()),
+    "cftc_tff_forward_refresh": (9 * _DAY_MS, frozenset()),
+    "cross_venue_liquidation_health": (2 * _HOUR_MS, frozenset()),
+    "defillama_stablecoin_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "defillama_tvl_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "domain_event_ops": (3 * _HOUR_MS, frozenset({2})),
+    "domain_event_seal": (2 * _DAY_MS, frozenset({2})),
+    "external_heartbeat": (20 * 60_000, frozenset()),
+    "hyperliquid_public_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "l2_backup": (2 * _DAY_MS, frozenset()),
+    "l2_scheduler_watchdog": (2 * _HOUR_MS, frozenset({2})),
+    "okx_borrow_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "raw_archive_audit": (2 * _DAY_MS, frozenset()),
+    "wikimedia_attention_forward_refresh": (2 * _DAY_MS, frozenset()),
+}
+if set(_EXPECTED_TASK_SPECS) != set(MVP_EXPECTED_TASKS.values()):
+    raise RuntimeError("MVP watchdog specifications do not match the static policy")
+
+EXPECTED_TASKS: dict[str, ExpectedTask] = {
+    task_name: ExpectedTask(module, *_EXPECTED_TASK_SPECS[module])
+    for task_name, module in MVP_EXPECTED_TASKS.items()
 }
 
-# These legacy V1 profitability/evaluation workers are deliberately absent or
-# disabled after their authority was invalidated.  Keep them in an explicit
-# denylist so a stale registration cannot become invisible to the watchdog.
-QUARANTINED_TASKS: dict[str, str] = {
-    "QUANTOS_candidate_dry_run": "dry_run_candidate_multi",
-    "QUANTOS_candidate_portfolio_evidence": "candidate_portfolio_evidence",
-    "QUANTOS_factory_loop": "crypto_factory_loop",
-    "QUANTOS_ic_panel_refresh": "ic_panel_research",
-    "QUANTOS_alpha_lifecycle_cockpit": "alpha_lifecycle_cockpit",
-    "QUANTOS_alpha_maintenance": "alpha_maintenance_sweep",
-    "QUANTOS_alpha_paper_cycle": "alpha_paper_cycle",
-    "QUANTOS_paper_alpha_evaluation": "paper_alpha_evaluation",
-    "QUANTOS_alpha_production_workflow": "alpha_production_workflow",
-    "QUANTOS_paper_realtime": "paper_realtime",
-    "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
-    "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
+# Stable aliases retained for callers.  Their authority comes from the single
+# immutable scheduling policy rather than a second local allow/deny list.
+QUARANTINED_TASKS: dict[str, str] = dict(HARD_QUARANTINED_TASKS)
+DISABLED_MVP_TASKS: dict[str, str] = dict(MVP_DISABLED_TASKS)
+_POLICY_TASK_BY_MODULE = {
+    module: task_name
+    for task_name, module in (
+        *MVP_EXPECTED_TASKS.items(),
+        *HARD_QUARANTINED_TASKS.items(),
+        *MVP_DISABLED_TASKS.items(),
+    )
 }
+if len(_POLICY_TASK_BY_MODULE) != (
+    len(MVP_EXPECTED_TASKS)
+    + len(HARD_QUARANTINED_TASKS)
+    + len(MVP_DISABLED_TASKS)
+):
+    raise RuntimeError("L2 policy task modules must be unique")
+_DENIED_POLICY_MODULES = frozenset(
+    {*HARD_QUARANTINED_TASKS.values(), *MVP_DISABLED_TASKS.values()}
+)
+_CONDITIONAL_TASK_NAMES = frozenset(
+    task_name
+    for task_name, module in MVP_EXPECTED_TASKS.items()
+    if module in MVP_CONDITIONAL_MODULES
+)
 
 
 class SchedulerInspectionError(RuntimeError):
@@ -497,6 +429,9 @@ _SYSTEMD_UNIT = re.compile(
     r"(?P<stream>quantos-(?:binance|bybit)-realtime-stream)\.service|"
     r"(?P<watchdog>quantos-l2-watchdog)\.(?P<watchdog_kind>service|timer))$"
 )
+_SYSTEMD_GENERIC_TEMPLATE_UNITS = frozenset(
+    {"quantos-l2@.service", "quantos-l2@.timer"}
+)
 _SYSTEMD_TIMESTAMP = re.compile(r"^@(?P<seconds>[0-9]+)$")
 _SYSTEMD_SHOW_PROPERTIES = (
     "Id",
@@ -532,9 +467,7 @@ _SYSTEMD_SAFE_ENVIRONMENT = frozenset(
         "QUANTOS_L2_DRY_RUN_ONLY=true",
     }
 )
-_RESIDENT_STREAM_MODULES = frozenset(
-    {"binance_realtime_stream", "bybit_realtime_stream"}
-)
+_RESIDENT_STREAM_MODULES = MVP_RESIDENT_MODULES
 _RESIDENT_HEALTH_PATHS = {
     "QUANTOS_binance_realtime_stream": "binance_realtime_stream_status.json",
     "QUANTOS_bybit_realtime_stream": "bybit_realtime_stream_status.json",
@@ -551,7 +484,11 @@ def _systemd_timestamp_ms(value: str | None) -> int | None:
 
 
 def _parse_systemd_properties(
-    raw: str, expected_unit: str, expected_names: tuple[str, ...] = _SYSTEMD_SHOW_PROPERTIES
+    raw: str,
+    expected_unit: str,
+    expected_names: tuple[str, ...] = _SYSTEMD_SHOW_PROPERTIES,
+    *,
+    allowed_load_states: frozenset[str] = frozenset({"loaded"}),
 ) -> dict[str, str]:
     properties: dict[str, str] = {}
     for line in raw.splitlines():
@@ -563,7 +500,10 @@ def _parse_systemd_properties(
         properties[name] = value
     if set(properties) != set(expected_names):
         raise SchedulerInspectionError("systemd returned incomplete unit metadata")
-    if properties["Id"] != expected_unit or properties["LoadState"] != "loaded":
+    if (
+        properties["Id"] != expected_unit
+        or properties["LoadState"] not in allowed_load_states
+    ):
         raise SchedulerInspectionError("systemd returned inconsistent unit metadata")
     return properties
 
@@ -964,6 +904,55 @@ def _systemd_timer_contract_ok(
     return False
 
 
+def _systemd_module(unit: str) -> str:
+    match = _SYSTEMD_UNIT.fullmatch(unit)
+    if match is None or match.group("kind") == "timer":
+        raise SchedulerInspectionError("systemd unit name is outside the L2 policy")
+    if match.group("stream"):
+        return (
+            "binance_realtime_stream"
+            if match.group("stream") == "quantos-binance-realtime-stream"
+            else "bybit_realtime_stream"
+        )
+    if match.group("watchdog"):
+        return "l2_scheduler_watchdog"
+    module = match.group("module")
+    if module is None:
+        raise SchedulerInspectionError("systemd unit has no L2 module")
+    return module
+
+
+def _denied_systemd_state(
+    properties: Mapping[str, str],
+    timer_properties: Mapping[str, str] | None,
+) -> str:
+    """Classify denied units without trusting their obsolete action contract."""
+
+    if properties["ActiveState"] in {"active", "activating", "reloading"}:
+        return "Running"
+    timer_active = bool(
+        timer_properties is not None
+        and timer_properties["ActiveState"] in {"active", "activating", "reloading"}
+    )
+    timer_quiesced = bool(
+        timer_properties is None
+        or (
+            timer_properties["ActiveState"] == "inactive"
+            and timer_properties["UnitFileState"] in {"disabled", "masked"}
+        )
+    )
+    # A merely static/disabled service remains manually startable.  Since stale
+    # denied units intentionally skip action-contract parsing, only masking the
+    # service proves there is no systemctl-start bypass outside the watchdog.
+    fully_quiesced = bool(
+        properties["ActiveState"] == "inactive"
+        and properties["UnitFileState"] == "masked"
+        and not timer_active
+        and timer_quiesced
+    )
+    return "Disabled" if fully_quiesced else "Ready"
+
+
 def _systemd_snapshot(
     unit: str,
     properties: dict[str, str],
@@ -972,21 +961,9 @@ def _systemd_snapshot(
     service_directives: dict[str, tuple[str, ...]],
     timer_directives: dict[str, tuple[str, ...]] | None,
 ) -> TaskSnapshot:
-    match = _SYSTEMD_UNIT.fullmatch(unit)
-    if match is None or match.group("kind") == "timer":
-        raise SchedulerInspectionError("systemd unit name is outside the L2 allowlist")
-    if match.group("stream"):
-        module = (
-            "binance_realtime_stream"
-            if match.group("stream") == "quantos-binance-realtime-stream"
-            else "bybit_realtime_stream"
-        )
-    elif match.group("watchdog"):
-        module = "l2_scheduler_watchdog"
-    else:
-        module = match.group("module")
-    task_names = [name for name, spec in EXPECTED_TASKS.items() if spec.module == module]
-    if len(task_names) != 1:
+    module = _systemd_module(unit)
+    task_name = _POLICY_TASK_BY_MODULE.get(module)
+    if task_name is None:
         raise SchedulerInspectionError("systemd module does not map to one watchdog task")
     # A systemd oneshot remains ``activating/start`` for its entire execution.
     # Treat that as a real running state; otherwise a watchdog sample taken on
@@ -1010,6 +987,21 @@ def _systemd_snapshot(
     if result and result not in {"success", "done"} and last_result == 0:
         last_result = 1
     last_run_ms = _systemd_timestamp_ms(properties["ExecMainStartTimestamp"])
+    if module in _DENIED_POLICY_MODULES:
+        return TaskSnapshot(
+            name=task_name,
+            state=_denied_systemd_state(properties, timer_properties),
+            last_run_ms=last_run_ms,
+            last_result=last_result,
+            next_run_ms=None,
+            execute=None,
+            arguments=None,
+            working_directory=None,
+            # Evaluation ignores action/cadence metadata for denied tasks.  The
+            # only authoritative requirement is that they remain quiesced.
+            scheduler_contract_ok=True,
+            configured_environment=(),
+        )
     environment_raw = " ".join(service_directives.get("Service.Environment", ()))
     release_commit = _systemd_environment_value(
         environment_raw, "QUANTOS_RELEASE_COMMIT"
@@ -1065,7 +1057,7 @@ def _systemd_snapshot(
             )
         )
     return TaskSnapshot(
-        name=task_names[0],
+        name=task_name,
         state=state,
         last_run_ms=last_run_ms,
         last_result=last_result,
@@ -1104,6 +1096,10 @@ def collect_systemd_units(
     support_units: set[str] = set()
     for line in list_result.stdout.splitlines():
         fields = line.split()
+        if fields and fields[0] in _SYSTEMD_GENERIC_TEMPLATE_UNITS:
+            raise SchedulerInspectionError(
+                "generic systemd L2 templates must not be installed"
+            )
         if len(fields) >= 2 and fields[0] in SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS:
             if fields[0] in support_units:
                 raise SchedulerInspectionError(
@@ -1112,9 +1108,7 @@ def collect_systemd_units(
             support_units.add(fields[0])
             continue
         if len(fields) < 2 or _SYSTEMD_UNIT.fullmatch(fields[0]) is None:
-            if len(fields) >= 2 and fields[1] not in {"disabled", "static", "masked"}:
-                raise SchedulerInspectionError("systemd has an unexpected enabled QUANTOS unit")
-            continue
+            raise SchedulerInspectionError("systemd has an unexpected QUANTOS unit")
         if fields[0] in listed:
             raise SchedulerInspectionError("systemd returned duplicate unit metadata")
         listed[fields[0]] = fields[1]
@@ -1133,20 +1127,48 @@ def collect_systemd_units(
         if len(fields) < 4:
             raise SchedulerInspectionError("systemd returned invalid runtime metadata")
         unit, _load, active, _sub = fields[:4]
+        if unit in _SYSTEMD_GENERIC_TEMPLATE_UNITS:
+            raise SchedulerInspectionError(
+                "generic systemd L2 templates must not be installed"
+            )
         if unit in SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS:
             continue
         if _SYSTEMD_UNIT.fullmatch(unit) is None:
-            if active != "inactive":
-                raise SchedulerInspectionError(
-                    "systemd has an unexpected active QUANTOS unit"
-                )
-            continue
+            raise SchedulerInspectionError("systemd has an unexpected QUANTOS unit")
         listed.setdefault(unit, "runtime")
     service_units = sorted(
         unit for unit in listed if unit.endswith(".service")
     )
+    for timer in sorted(unit for unit in listed if unit.endswith(".timer")):
+        match = _SYSTEMD_UNIT.fullmatch(timer)
+        if match is None or match.group("stream") or match.group("kind") == "service":
+            raise SchedulerInspectionError("systemd timer is outside the L2 policy")
+        module = (
+            "l2_scheduler_watchdog"
+            if match.group("watchdog")
+            else match.group("module")
+        )
+        if module is None or module not in _POLICY_TASK_BY_MODULE:
+            raise SchedulerInspectionError(
+                "systemd module does not map to one watchdog task"
+            )
+        expected_service = (
+            "quantos-l2-watchdog.service"
+            if module == "l2_scheduler_watchdog"
+            else f"quantos-l2@{module}.service"
+        )
+        if expected_service not in listed:
+            raise SchedulerInspectionError(
+                "systemd timer has no corresponding L2 service"
+            )
     snapshots: list[TaskSnapshot] = []
     for unit in service_units:
+        module = _systemd_module(unit)
+        if module not in _POLICY_TASK_BY_MODULE:
+            raise SchedulerInspectionError(
+                "systemd module does not map to one watchdog task"
+            )
+        denied_policy_module = module in _DENIED_POLICY_MODULES
         command = ["systemctl", "show", "--all", "--no-pager", "--timestamp=unix", unit]
         for name in _SYSTEMD_SHOW_PROPERTIES:
             command.extend(("--property", name))
@@ -1160,18 +1182,30 @@ def collect_systemd_units(
         )
         if result.returncode != 0:
             raise SchedulerInspectionError("systemd unit metadata query failed")
-        properties = _parse_systemd_properties(result.stdout, unit)
-        cat_result = runner(
-            ["systemctl", "cat", "--no-pager", unit],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            shell=False,
-            check=False,
+        allowed_load_states = (
+            frozenset({"loaded", "masked"})
+            if denied_policy_module
+            else frozenset({"loaded"})
         )
-        if cat_result.returncode != 0:
-            raise SchedulerInspectionError("systemd unit definition query failed")
-        service_directives = _parse_systemd_unit_text(cat_result.stdout)
+        properties = _parse_systemd_properties(
+            result.stdout,
+            unit,
+            allowed_load_states=allowed_load_states,
+        )
+        if denied_policy_module:
+            service_directives: dict[str, tuple[str, ...]] = {}
+        else:
+            cat_result = runner(
+                ["systemctl", "cat", "--no-pager", unit],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                shell=False,
+                check=False,
+            )
+            if cat_result.returncode != 0:
+                raise SchedulerInspectionError("systemd unit definition query failed")
+            service_directives = _parse_systemd_unit_text(cat_result.stdout)
         confirmed_result = runner(
             command,
             capture_output=True,
@@ -1182,7 +1216,11 @@ def collect_systemd_units(
         )
         if confirmed_result.returncode != 0:
             raise SchedulerInspectionError("systemd unit metadata confirmation failed")
-        if _parse_systemd_properties(confirmed_result.stdout, unit) != properties:
+        if _parse_systemd_properties(
+            confirmed_result.stdout,
+            unit,
+            allowed_load_states=allowed_load_states,
+        ) != properties:
             raise SchedulerInspectionError("systemd unit metadata changed during inspection")
         match = _SYSTEMD_UNIT.fullmatch(unit)
         if match is None or match.group("stream"):
@@ -1210,19 +1248,23 @@ def collect_systemd_units(
             if timer_result.returncode != 0:
                 raise SchedulerInspectionError("systemd timer metadata query failed")
             timer_properties = _parse_systemd_properties(
-                timer_result.stdout, timer, _SYSTEMD_TIMER_PROPERTIES
+                timer_result.stdout,
+                timer,
+                _SYSTEMD_TIMER_PROPERTIES,
+                allowed_load_states=allowed_load_states,
             )
-            timer_cat_result = runner(
-                ["systemctl", "cat", "--no-pager", timer],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                shell=False,
-                check=False,
-            )
-            if timer_cat_result.returncode != 0:
-                raise SchedulerInspectionError("systemd timer definition query failed")
-            timer_directives = _parse_systemd_unit_text(timer_cat_result.stdout)
+            if not denied_policy_module:
+                timer_cat_result = runner(
+                    ["systemctl", "cat", "--no-pager", timer],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    shell=False,
+                    check=False,
+                )
+                if timer_cat_result.returncode != 0:
+                    raise SchedulerInspectionError("systemd timer definition query failed")
+                timer_directives = _parse_systemd_unit_text(timer_cat_result.stdout)
             timer_confirmed_result = runner(
                 timer_command,
                 capture_output=True,
@@ -1240,6 +1282,7 @@ def collect_systemd_units(
                     timer_confirmed_result.stdout,
                     timer,
                     _SYSTEMD_TIMER_PROPERTIES,
+                    allowed_load_states=allowed_load_states,
                 )
                 != timer_properties
             ):
@@ -1724,6 +1767,8 @@ def evaluate_schedule(
             "external event-seal destination is not configured",
         ),
     }
+    if set(conditional_readiness) != _CONDITIONAL_TASK_NAMES:
+        raise RuntimeError("watchdog conditional tasks do not match the static policy")
     for name, spec in EXPECTED_TASKS.items():
         snapshot = by_name.get(name)
         readiness = conditional_readiness.get(name)
@@ -1743,7 +1788,10 @@ def evaluate_schedule(
                         "task_name": name,
                         "status": "BREACH",
                         "code": "ENABLED_WITHOUT_CONFIG",
-                        "detail": "backup task is enabled without a valid encrypted external destination",
+                        "detail": (
+                            "conditional task is enabled without its prerequisite: "
+                            f"{readiness[1]}"
+                        ),
                     }
                 )
             continue
@@ -1789,18 +1837,68 @@ def evaluate_schedule(
                 }
             )
         else:
+            code = (
+                "QUARANTINED_PRESENT_STARTABLE"
+                if snapshot.state == "Ready"
+                else "QUARANTINED_TASK_RUNNING"
+                if snapshot.state == "Running"
+                else "QUARANTINED_TASK_ENABLED"
+            )
             checks.append(
                 {
                     "task_name": name,
                     "status": "BREACH",
-                    "code": "QUARANTINED_TASK_ENABLED",
+                    "code": code,
                     "detail": (
-                        "invalidated legacy task must be absent or disabled; "
+                        "invalidated legacy task must be absent or masked and inactive; "
                         f"task state is {snapshot.state}"
                     ),
                 }
             )
 
+    # These authority-bearing or research/paper workers are not hard legacy
+    # quarantine, but they are outside the safe MVP runtime profile.  Treat a
+    # stale or manually enabled registration as a first-class breach rather
+    # than letting it hide under the generic unexpected-task diagnostic.
+    for name in DISABLED_MVP_TASKS:
+        snapshot = by_name.get(name)
+        if snapshot is None:
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "PASS",
+                    "code": "MVP_DISABLED_NOT_REGISTERED",
+                    "detail": "non-MVP task is not registered",
+                }
+            )
+        elif snapshot.state == "Disabled":
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "PASS",
+                    "code": "MVP_DISABLED_EXPECTED",
+                    "detail": "non-MVP task remains disabled",
+                }
+            )
+        else:
+            code = (
+                "MVP_DISABLED_PRESENT_STARTABLE"
+                if snapshot.state == "Ready"
+                else "MVP_DISABLED_TASK_RUNNING"
+                if snapshot.state == "Running"
+                else "MVP_DISABLED_TASK_ENABLED"
+            )
+            checks.append(
+                {
+                    "task_name": name,
+                    "status": "BREACH",
+                    "code": code,
+                    "detail": (
+                        "task is outside the static MVP profile and must be absent "
+                        f"or masked and inactive; task state is {snapshot.state}"
+                    ),
+                }
+            )
     for name in sorted(duplicates):
         checks.append(
             {
@@ -1814,6 +1912,7 @@ def evaluate_schedule(
         if (
             name in EXPECTED_TASKS
             or name in QUARANTINED_TASKS
+            or name in DISABLED_MVP_TASKS
             or snapshot.state == "Disabled"
         ):
             continue

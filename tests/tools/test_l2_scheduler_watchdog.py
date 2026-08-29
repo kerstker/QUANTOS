@@ -15,6 +15,7 @@ from services.governance.l2_restore_history import (
     RestoreProof,
 )
 from tools.l2_scheduler_watchdog import (
+    DISABLED_MVP_TASKS,
     EXPECTED_TASKS,
     QUARANTINED_TASKS,
     SchedulerInspectionError,
@@ -281,7 +282,11 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
 
     assert result["verdict"] == "PASS"
     assert result["summary"] == {
-        "PASS": len(EXPECTED_TASKS) + len(QUARANTINED_TASKS),
+        "PASS": (
+            len(EXPECTED_TASKS)
+            + len(QUARANTINED_TASKS)
+            + len(DISABLED_MVP_TASKS)
+        ),
         "PARTIAL": 0,
         "UNAVAILABLE": 0,
         "BREACH": 0,
@@ -302,6 +307,7 @@ def test_invalidated_v1_tasks_are_explicitly_quarantined_not_expected():
         "QUANTOS_paper_realtime": "paper_realtime",
         "QUANTOS_paper_realtime_10k": "paper_realtime_10k",
         "QUANTOS_paper_research_risk_bundle": "paper_research_risk_bundle",
+        "QUANTOS_register_alpha_catalog": "register_alpha_catalog",
     }
     assert not set(QUARANTINED_TASKS) & set(EXPECTED_TASKS)
 
@@ -391,9 +397,88 @@ def test_quarantined_task_that_remains_enabled_is_a_breach(tmp_path):
         if row["task_name"] in enabled_states
     }
     assert all(row["status"] == "BREACH" for row in checks.values())
-    assert all(
-        row["code"] == "QUARANTINED_TASK_ENABLED"
-        for row in checks.values()
+    assert {
+        name: row["code"] for name, row in checks.items()
+    } == {
+        name: (
+            "QUARANTINED_PRESENT_STARTABLE"
+            if state == "Ready"
+            else "QUARANTINED_TASK_RUNNING"
+        )
+        for name, state in enabled_states.items()
+    }
+
+
+def test_non_mvp_tasks_are_explicitly_disabled_not_expected():
+    assert DISABLED_MVP_TASKS == {
+        "QUANTOS_forward_track": "forward_track_advance",
+        "QUANTOS_gonogo_report": "gonogo_report",
+        "QUANTOS_hourly_alpha_advance": "hourly_alpha_advance",
+        "QUANTOS_mft_l2_runtime": "mft_l2_runtime",
+        "QUANTOS_paper_health": "paper_health",
+        "QUANTOS_paper_multivenue_sor": "paper_multivenue_sor",
+        "QUANTOS_paper_operational_evidence": "paper_operational_evidence",
+        "QUANTOS_paper_order_preview": "paper_order_preview",
+        "QUANTOS_paper_shadow_auto": "paper_shadow_auto",
+        "QUANTOS_paper_shadow_realtime": "paper_shadow_realtime",
+        "QUANTOS_realtime_alpha_discovery": "realtime_alpha_discovery",
+        "QUANTOS_realtime_alpha_execution_paper": "realtime_alpha_execution_paper",
+        "QUANTOS_realtime_alpha_formal_shadow": "realtime_alpha_formal_shadow",
+        "QUANTOS_realtime_alpha_forward_shadow": "realtime_alpha_forward_shadow",
+        "QUANTOS_rpi_low_frequency_research": "rpi_low_frequency_research",
+    }
+    assert not set(DISABLED_MVP_TASKS) & set(EXPECTED_TASKS)
+    assert not set(DISABLED_MVP_TASKS) & set(QUARANTINED_TASKS)
+
+
+def test_non_mvp_tasks_may_be_absent_or_disabled_but_never_enabled(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    snapshots.extend(
+        (
+            TaskSnapshot(
+                name="QUANTOS_hourly_alpha_advance",
+                state="Disabled",
+                last_run_ms=None,
+                last_result=None,
+                next_run_ms=None,
+                execute=None,
+                arguments=None,
+                working_directory=None,
+            ),
+            TaskSnapshot(
+                name="QUANTOS_mft_l2_runtime",
+                state="Ready",
+                last_run_ms=NOW_MS - 1_000,
+                last_result=0,
+                next_run_ms=NOW_MS + 1_000,
+                execute="C:/Python/python.exe",
+                arguments=_launcher_arguments(tmp_path, "mft_l2_runtime"),
+                working_directory=str(tmp_path),
+            ),
+        )
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    checks = {row["task_name"]: row for row in result["checks"]}
+    assert result["verdict"] == "BREACH"
+    assert checks["QUANTOS_hourly_alpha_advance"]["code"] == (
+        "MVP_DISABLED_EXPECTED"
+    )
+    assert checks["QUANTOS_mft_l2_runtime"]["code"] == (
+        "MVP_DISABLED_PRESENT_STARTABLE"
+    )
+    assert checks["QUANTOS_forward_track"]["code"] == (
+        "MVP_DISABLED_NOT_REGISTERED"
     )
 
 
@@ -584,28 +669,20 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
     assert rpi.max_age_ms == 3 * 3_600_000
 
 
-def test_paper_multivenue_sor_safe_block_is_an_accepted_partial_result(tmp_path):
-    spec = EXPECTED_TASKS["QUANTOS_paper_multivenue_sor"]
-    assert spec.partial_results == frozenset({2})
+def test_mvp_disabled_paper_worker_cannot_reenter_through_safe_block(tmp_path):
     snapshots = _healthy_tasks(
         tmp_path, include_backup=True, include_external=True
     )
-    index = next(
-        index
-        for index, row in enumerate(snapshots)
-        if row.name == "QUANTOS_paper_multivenue_sor"
-    )
-    current = snapshots[index]
-    snapshots[index] = TaskSnapshot(
-        name=current.name,
-        state=current.state,
-        last_run_ms=current.last_run_ms,
+    snapshots.append(TaskSnapshot(
+        name="QUANTOS_paper_multivenue_sor",
+        state="Ready",
+        last_run_ms=NOW_MS - 1_000,
         last_result=2,
-        next_run_ms=current.next_run_ms,
-        execute=current.execute,
-        arguments=current.arguments,
-        working_directory=current.working_directory,
-    )
+        next_run_ms=NOW_MS + 1_000,
+        execute="C:/Python/python.exe",
+        arguments=_launcher_arguments(tmp_path, "paper_multivenue_sor"),
+        working_directory=str(tmp_path),
+    ))
 
     result = evaluate_schedule(
         snapshots,
@@ -620,9 +697,9 @@ def test_paper_multivenue_sor_safe_block_is_an_accepted_partial_result(tmp_path)
         for row in result["checks"]
         if row["task_name"] == "QUANTOS_paper_multivenue_sor"
     )
-    assert check["status"] == "PARTIAL"
-    assert check["code"] == "RESULT_2"
-    assert result["verdict"] == "PARTIAL"
+    assert check["status"] == "BREACH"
+    assert check["code"] == "MVP_DISABLED_PRESENT_STARTABLE"
+    assert result["verdict"] == "BREACH"
 
 
 def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
@@ -690,15 +767,14 @@ def test_liquidation_health_worker_is_pinned_to_two_hour_freshness() -> None:
     assert health.partial_results == frozenset()
 
 
-def test_lifecycle_is_quarantined_and_formal_shadow_remains_pinned():
-    formal_shadow = EXPECTED_TASKS["QUANTOS_realtime_alpha_formal_shadow"]
-
+def test_lifecycle_is_quarantined_and_formal_shadow_is_mvp_disabled():
     assert QUARANTINED_TASKS["QUANTOS_alpha_lifecycle_cockpit"] == (
         "alpha_lifecycle_cockpit"
     )
-    assert formal_shadow.module == "realtime_alpha_formal_shadow"
-    assert formal_shadow.max_age_ms == 5 * 60_000
-    assert formal_shadow.partial_results == frozenset({2})
+    assert DISABLED_MVP_TASKS["QUANTOS_realtime_alpha_formal_shadow"] == (
+        "realtime_alpha_formal_shadow"
+    )
+    assert "QUANTOS_realtime_alpha_formal_shadow" not in EXPECTED_TASKS
 
 
 def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
@@ -877,7 +953,7 @@ def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp
         TaskSnapshot(**{**item.__dict__, "state": "Disabled"})
         if item.name == "QUANTOS_binance_rpi_depth"
         else TaskSnapshot(**{**item.__dict__, "last_run_ms": NOW_MS - 10 * 86_400_000})
-        if item.name == "QUANTOS_forward_track"
+        if item.name == "QUANTOS_defillama_tvl_forward_refresh"
         else TaskSnapshot(
             **{
                 **item.__dict__,
@@ -885,7 +961,7 @@ def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp
                 "arguments": "/c python -m tools.paper_health --submit",
             }
         )
-        if item.name == "QUANTOS_paper_health"
+        if item.name == "QUANTOS_binance_realtime_features"
         else item
         for item in snapshots
     ]
@@ -903,8 +979,8 @@ def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp
     statuses = {check["task_name"]: check["status"] for check in result["checks"]}
     assert statuses["QUANTOS_binance_realtime_market"] == "BREACH"
     assert statuses["QUANTOS_binance_rpi_depth"] == "BREACH"
-    assert statuses["QUANTOS_forward_track"] == "BREACH"
-    assert statuses["QUANTOS_paper_health"] == "BREACH"
+    assert statuses["QUANTOS_defillama_tvl_forward_refresh"] == "BREACH"
+    assert statuses["QUANTOS_binance_realtime_features"] == "BREACH"
 
 
 def test_unconfigured_backup_is_unavailable_but_enabled_legacy_action_is_breach(tmp_path):
@@ -974,6 +1050,9 @@ def test_unconfigured_external_tasks_are_unavailable_and_enabled_tasks_breach(tm
     statuses = {check["task_name"]: check["status"] for check in breached["checks"]}
     assert statuses["QUANTOS_external_heartbeat"] == "BREACH"
     assert statuses["QUANTOS_domain_event_seal"] == "BREACH"
+    details = {check["task_name"]: check["detail"] for check in breached["checks"]}
+    assert "HTTPS heartbeat endpoint" in details["QUANTOS_external_heartbeat"]
+    assert "event-seal destination" in details["QUANTOS_domain_event_seal"]
 
 
 def test_windows_collector_uses_fixed_powershell_command_without_shell(tmp_path):
@@ -1285,6 +1364,198 @@ def test_systemd_collector_treats_executing_oneshot_as_running() -> None:
 
     assert snapshot.state == "Running"
     assert snapshot.scheduler_contract_ok is True
+
+
+@pytest.mark.parametrize(
+    ("module", "task_name", "disabled_code", "ready_code", "running_code"),
+    (
+        (
+            "register_alpha_catalog",
+            "QUANTOS_register_alpha_catalog",
+            "DISABLED_EXPECTED",
+            "QUARANTINED_PRESENT_STARTABLE",
+            "QUARANTINED_TASK_RUNNING",
+        ),
+        (
+            "realtime_alpha_formal_shadow",
+            "QUANTOS_realtime_alpha_formal_shadow",
+            "MVP_DISABLED_EXPECTED",
+            "MVP_DISABLED_PRESENT_STARTABLE",
+            "MVP_DISABLED_TASK_RUNNING",
+        ),
+    ),
+)
+@pytest.mark.parametrize("expected_state", ("Disabled", "Ready", "Running"))
+def test_systemd_collector_classifies_known_denied_units_without_trusting_old_contract(
+    tmp_path: Path,
+    module: str,
+    task_name: str,
+    disabled_code: str,
+    ready_code: str,
+    running_code: str,
+    expected_state: str,
+) -> None:
+    service = f"quantos-l2@{module}.service"
+    service_metadata = _systemd_properties(
+        service,
+        active="active" if expected_state == "Running" else "inactive",
+        unit_file_state="masked" if expected_state == "Disabled" else "static",
+    )
+    if expected_state == "Disabled":
+        service_metadata = service_metadata.replace(
+            "LoadState=loaded",
+            "LoadState=masked",
+        )
+    timer_metadata = _systemd_timer_properties(module)
+    if expected_state == "Disabled":
+        timer_metadata = timer_metadata.replace(
+            "ActiveState=active\nSubState=waiting\nUnitFileState=enabled",
+            "ActiveState=inactive\nSubState=dead\nUnitFileState=disabled",
+        )
+    calls: list = []
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner(
+            module,
+            # Denied units may be remnants of an older schema.  The collector
+            # must not parse or validate either definition to classify state.
+            service_text="[ObsoleteSection]\nArbitrary=value\n",
+            timer_text="[ObsoleteTimer]\nArbitrary=value\n",
+            service_metadata=service_metadata,
+            timer_metadata=timer_metadata,
+            calls=calls,
+        )
+    )[0]
+
+    assert snapshot.name == task_name
+    assert snapshot.state == expected_state
+    assert snapshot.scheduler_contract_ok is True
+    assert not [command for command, _kwargs in calls if command[1] == "cat"]
+
+    result = evaluate_schedule(
+        [snapshot],
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=False,
+    )
+    check = next(row for row in result["checks"] if row["task_name"] == task_name)
+    assert check["code"] == {
+        "Disabled": disabled_code,
+        "Ready": ready_code,
+        "Running": running_code,
+    }[expected_state]
+
+
+@pytest.mark.parametrize(
+    ("service_unit_state", "service_active", "timer_active"),
+    (
+        ("static", "inactive", False),
+        ("masked", "inactive", True),
+        ("masked", "failed", False),
+    ),
+)
+def test_systemd_denied_unit_cannot_hide_as_manual_or_active_timer_bypass(
+    service_unit_state: str,
+    service_active: str,
+    timer_active: bool,
+) -> None:
+    module = "mft_l2_runtime"
+    timer_metadata = _systemd_timer_properties(module).replace(
+        "UnitFileState=enabled",
+        "UnitFileState=disabled",
+    )
+    if not timer_active:
+        timer_metadata = timer_metadata.replace(
+            "ActiveState=active\nSubState=waiting",
+            "ActiveState=inactive\nSubState=dead",
+        )
+    snapshot = collect_systemd_units(
+        runner=_systemd_runner(
+            module,
+            service_text="[ObsoleteSection]\nArbitrary=value\n",
+            timer_text="[ObsoleteTimer]\nArbitrary=value\n",
+            service_metadata=_systemd_properties(
+                f"quantos-l2@{module}.service",
+                active=service_active,
+                unit_file_state=service_unit_state,
+            ).replace(
+                "LoadState=loaded",
+                (
+                    "LoadState=masked"
+                    if service_unit_state == "masked"
+                    else "LoadState=loaded"
+                ),
+            ),
+            timer_metadata=timer_metadata,
+        )
+    )[0]
+
+    assert snapshot.name == "QUANTOS_mft_l2_runtime"
+    assert snapshot.state == "Ready"
+
+
+def test_systemd_collector_rejects_unknown_enabled_l2_module() -> None:
+    module = "unknown_manual_worker"
+    with pytest.raises(
+        SchedulerInspectionError,
+        match="does not map to one watchdog task",
+    ):
+        collect_systemd_units(
+            runner=_systemd_runner(
+                module,
+                service_text="[Service]\nExecStart=/bin/true\n",
+                timer_text="[Timer]\nOnBootSec=1s\n",
+            )
+        )
+
+
+@pytest.mark.parametrize("module", ("mft_l2_runtime", "unknown_manual_worker"))
+def test_systemd_collector_rejects_orphan_enabled_timer(module: str) -> None:
+    timer = f"quantos-l2@{module}.timer"
+
+    def runner(command, **_kwargs):
+        if command[1] == "list-unit-files":
+            return _SystemdCompleted(f"{timer} enabled\n")
+        if command[1] == "list-units":
+            return _SystemdCompleted("")
+        raise AssertionError(f"orphan timer should fail before inspection: {command!r}")
+
+    with pytest.raises(SchedulerInspectionError):
+        collect_systemd_units(runner=runner)
+
+
+@pytest.mark.parametrize(
+    ("unit", "unit_state"),
+    (("quantos-l2@.service", "static"), ("quantos-l2@.timer", "disabled")),
+)
+def test_systemd_collector_rejects_installed_generic_l2_template(
+    unit: str,
+    unit_state: str,
+) -> None:
+    def runner(command, **_kwargs):
+        if command[1] == "list-unit-files":
+            return _SystemdCompleted(f"{unit} {unit_state}\n")
+        raise AssertionError(f"generic template should fail immediately: {command!r}")
+
+    with pytest.raises(
+        SchedulerInspectionError,
+        match="generic systemd L2 templates",
+    ):
+        collect_systemd_units(runner=runner)
+
+
+@pytest.mark.parametrize("unit_state", ("static", "disabled", "masked"))
+def test_systemd_collector_rejects_unknown_quantos_unit_even_when_not_enabled(
+    unit_state: str,
+) -> None:
+    def runner(command, **_kwargs):
+        if command[1] == "list-unit-files":
+            return _SystemdCompleted(
+                f"quantos-unreviewed-worker.service {unit_state}\n"
+            )
+        raise AssertionError(f"unknown unit should fail immediately: {command!r}")
+
+    with pytest.raises(SchedulerInspectionError, match="unexpected QUANTOS unit"):
+        collect_systemd_units(runner=runner)
 
 
 def test_systemd_collector_accepts_exact_backup_boundary() -> None:
@@ -1618,7 +1889,7 @@ def test_systemd_collector_rejects_unknown_enabled_quantos_unit() -> None:
         stdout = "quantos-order-submit.service enabled\n"
         stderr = ""
 
-    with pytest.raises(SchedulerInspectionError, match="unexpected enabled"):
+    with pytest.raises(SchedulerInspectionError, match="unexpected QUANTOS unit"):
         collect_systemd_units(runner=lambda *_args, **_kwargs: Completed())
 
 

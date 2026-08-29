@@ -15,8 +15,12 @@ import re
 import secrets
 from typing import Iterable, Sequence
 
-from tools.l2_schedule_entrypoint import ALLOWED_L2_MODULES
-from tools.l2_scheduler_watchdog import EXPECTED_TASKS
+from quantos.contracts.l2_schedule_policy import (
+    MVP_CONDITIONAL_MODULES,
+    MVP_EXPECTED_TASKS,
+    MVP_RESIDENT_MODULES,
+    MVP_SAFE_MODULES,
+)
 
 
 class SystemdRenderError(RuntimeError):
@@ -29,10 +33,16 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 _MODULE = re.compile(r"[a-z0-9_]+")
 _SAFE_POSIX_MOUNT = re.compile(r"/[A-Za-z0-9._/-]+")
 _RELEASE_TOKEN = "__QUANTOS_RELEASE_SHA__"
-_RESIDENT_MODULES = frozenset(
-    {"binance_realtime_stream", "bybit_realtime_stream"}
-)
+_RESIDENT_MODULES = MVP_RESIDENT_MODULES
 _WATCHDOG_MODULE = "l2_scheduler_watchdog"
+_EVENT_SEAL_MODULES = frozenset(
+    {"domain_event_seal", "artifact_admission_seal"}
+)
+if MVP_CONDITIONAL_MODULES != _EVENT_SEAL_MODULES | {
+    "external_heartbeat",
+    "l2_backup",
+}:
+    raise RuntimeError("systemd conditional workers do not match the static MVP policy")
 _ATTENTION_RELEASE_TOKEN = "__QUANTOS_ATTENTION_RELEASE_SHA__"
 _PROTECTED_SYSTEM_ROOTS = tuple(
     PurePosixPath(path)
@@ -69,13 +79,6 @@ def _safe_external_mount(value: str) -> str | None:
 # dependency offsets. Fixed calendar ticks do not drift with worker duration;
 # systemd itself suppresses a new activation while the bound service is active.
 CALENDARS: dict[str, tuple[str, str]] = {
-    "crypto_factory_loop": ("Sun *-*-* 20:00:00 Asia/Shanghai", "6h"),
-    "ic_panel_research": ("Sun *-*-* 20:30:00 Asia/Shanghai", "6h"),
-    "paper_alpha_evaluation": ("Sun *-*-* 20:45:00 Asia/Shanghai", "6h"),
-    "dry_run_candidate_multi": ("*-*-* 21:10:00 Asia/Shanghai", "30m"),
-    "candidate_portfolio_evidence": ("*-*-* 21:45:00 Asia/Shanghai", "10m"),
-    "forward_track_advance": ("*-*-* 21:00:00 Asia/Shanghai", "35m"),
-    "alpha_maintenance_sweep": ("Mon *-*-* 09:05:00 Asia/Shanghai", "6h"),
     "defillama_tvl_forward_refresh": ("*-*-* 09:30:00 Asia/Shanghai", "10m"),
     "defillama_stablecoin_forward_refresh": ("*-*-* 09:40:00 Asia/Shanghai", "5m"),
     "wikimedia_attention_forward_refresh": ("*-*-* 09:45:00 Asia/Shanghai", "5m"),
@@ -87,39 +90,27 @@ CALENDARS: dict[str, tuple[str, str]] = {
     "artifact_admission_seal": ("*-*-* 02:40:00 Asia/Shanghai", "6h"),
     "l2_backup": ("*-*-* 03:00:00 Asia/Shanghai", "6h"),
     "raw_archive_audit": ("*-*-* 04:00:00 Asia/Shanghai", "2h"),
-    "gonogo_report": ("*-*-* 23:00:00 Asia/Shanghai", "6h"),
-    "alpha_paper_cycle": ("*-*-* 23:05:00 Asia/Shanghai", "6h"),
-    "paper_research_risk_bundle": ("*-*-* 23:08:00 Asia/Shanghai", "6h"),
-    "paper_order_preview": ("*-*-* 23:10:00 Asia/Shanghai", "6h"),
-    "paper_shadow_auto": ("*-*-* 21:20:00 Asia/Shanghai", "6h"),
-    "rpi_low_frequency_research": ("*-*-* 11:00:00 Asia/Shanghai", "15m"),
 }
 
 INTERVALS: dict[str, tuple[str, str]] = {
-    "alpha_lifecycle_cockpit": ("*-*-* *:01/5:00 Asia/Shanghai", "6h"),
-    "alpha_production_workflow": ("*-*-* *:03/5:00 Asia/Shanghai", "6h"),
     "cross_venue_liquidation_health": (
         "*-*-* *:17/30:00 Asia/Shanghai",
         "10m",
     ),
     "domain_event_ops": ("*-*-* *:01/15:00 Asia/Shanghai", "5m"),
     "external_heartbeat": ("*-*-* *:03/5:00 Asia/Shanghai", "6h"),
-    "paper_realtime": ("*-*-* *:04/5:00 Asia/Shanghai", "6h"),
     "binance_realtime_market": ("*-*-* *:02/5:00 Asia/Shanghai", "6h"),
     "binance_systemic_risk": ("*-*-* *:08/30:00 Asia/Shanghai", "6h"),
     "binance_rpi_depth": ("*-*-* *:10:00 Asia/Shanghai", "6h"),
     "binance_realtime_features": ("*-*-* *:01/5:00 Asia/Shanghai", "45m"),
     "binance_realtime_drift_alerts": ("*-*-* *:02/5:00 Asia/Shanghai", "6h"),
-    "realtime_alpha_discovery": ("*-*-* *:05:00 Asia/Shanghai", "30m"),
-    "realtime_alpha_forward_shadow": ("*-*-* *:*:00 Asia/Shanghai", "45s"),
-    "realtime_alpha_formal_shadow": ("*-*-* *:*:15 Asia/Shanghai", "45s"),
-    "realtime_alpha_execution_paper": ("*-*-* *:*:30 Asia/Shanghai", "5m"),
-    "paper_multivenue_sor": ("*-*-* *:03/5:00 Asia/Shanghai", "6h"),
-    "paper_operational_evidence": ("*-*-* *:07/5:00 Asia/Shanghai", "6h"),
-    "paper_realtime_10k": ("*-*-* *:07/5:00 Asia/Shanghai", "6h"),
-    "paper_shadow_realtime": ("*-*-* *:06/5:00 Asia/Shanghai", "6h"),
-    "paper_health": ("*-*-* *:05/5:00 Asia/Shanghai", "6h"),
 }
+
+_RENDERABLE_MODULES = MVP_SAFE_MODULES - _RESIDENT_MODULES - {_WATCHDOG_MODULE}
+if set(CALENDARS) | set(INTERVALS) != _RENDERABLE_MODULES:
+    raise RuntimeError("systemd cadence tables do not match the static MVP policy")
+if set(CALENDARS) & set(INTERVALS):
+    raise RuntimeError("systemd cadence tables overlap")
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -169,12 +160,11 @@ def render_units(
     requested = tuple(modules)
     if not requested or len(set(requested)) != len(requested):
         raise SystemdRenderError("requested modules must be non-empty and unique")
-    allowed_watchdog_modules = {spec.module for spec in EXPECTED_TASKS.values()}
     for module in requested:
         if (
             _MODULE.fullmatch(module) is None
-            or module not in ALLOWED_L2_MODULES
-            or module not in allowed_watchdog_modules
+            or module not in MVP_SAFE_MODULES
+            or module not in MVP_EXPECTED_TASKS.values()
             or module in _RESIDENT_MODULES
             or module == _WATCHDOG_MODULE
             or module not in CALENDARS | INTERVALS
@@ -190,8 +180,7 @@ def render_units(
         raise SystemdRenderError("backup mount was provided without the backup worker")
     else:
         normalized_backup_mount = None
-    event_modules = {"domain_event_seal", "artifact_admission_seal"}
-    if event_modules.intersection(requested):
+    if _EVENT_SEAL_MODULES.intersection(requested):
         if event_seal_mount is None:
             raise SystemdRenderError("event seal mount is required and must be a safe POSIX path")
         normalized_event_mount = _safe_external_mount(event_seal_mount)
@@ -250,7 +239,7 @@ def render_units(
                 ),
                 1,
             )
-        if module in event_modules:
+        if module in _EVENT_SEAL_MODULES:
             assert normalized_event_mount is not None
             service = service.replace(
                 "After=network-online.target",
