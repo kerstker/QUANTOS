@@ -140,12 +140,15 @@ def test_supply_chain_manifest_binds_linux_systemd_surface() -> None:
         "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
+        "docs/runbooks/l2-research-operations.md",
         "quantos/contracts/l2_schedule_policy.py",
+        "scripts/isolate_l2_mvp_systemd.py",
         "services/data/public_market_event_store.py",
         "services/research/liquidation_mechanism.py",
         "tools/cross_venue_liquidation_health.py",
         "tools/render_systemd_l2_units.py",
         "tests/governance/test_systemd_l2_boundary.py",
+        "tests/tools/test_isolate_l2_mvp_systemd.py",
     } <= set(_MANIFESTS)
 
 

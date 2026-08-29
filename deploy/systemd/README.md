@@ -12,6 +12,10 @@ deployable unit files and must never be copied directly into a system unit
 directory. A governed renderer must bind an exact clean commit, an allowlisted
 module, its explicit cadence and timeout, then run offline unit verification.
 Rendering does not install, enable, or start anything.
+Old denied schedules are isolated separately with
+`scripts/isolate_l2_mvp_systemd.py`. That helper is read-only unless its
+explicit privileged apply mode is confirmed with the frozen policy digest; it
+does not install or start the rendered safe profile.
 The renderer has separate modes for allowlisted one-shot workers and for the
 resident stream/watchdog trio. The normal case binds the same immutable commit
 token throughout. A forward collector whose source was frozen before outcomes

@@ -87,14 +87,48 @@ Formal Linux cutover requires privilege and is stricter:
 - each denied timer must be absent, or inactive and disabled/masked;
 - an active timer is a breach even when its UnitFileState says disabled;
 - a static or disabled service that remains manually startable is a breach;
-- generic quantos-l2@ service/timer templates must be absent or permanently
-  masked and inactive;
+- generic quantos-l2@ service/timer templates must be absent; a mask still
+  counts as an installed generic template and is rejected fail closed;
 - orphan timers and unknown quantos-* units fail closed.
 
-For every explicit denied unit, stop and disable its timer, then stop and mask
-its service. Verify LoadState, UnitFileState, ActiveState, SubState, and Result
-after daemon-reload. Never use a broad wildcard removal command. Resolve and
-review the exact unit list from the central policy first.
+For every explicit denied unit, stop and disable its timer, then stop its
+service. A local regular file in `/etc/systemd/system` cannot be masked in
+place. Capture its metadata and SHA-256 in a root-only quarantine receipt, move
+that exact file outside the systemd load path, and only then create the exact
+permanent mask. Verify LoadState, UnitFileState, ActiveState, SubState, PIDs,
+NeedDaemonReload, and Result after daemon-reload. Never use a broad wildcard
+removal command.
+
+Use the self-contained isolation helper for this transition. Its default mode
+is read-only and prints the frozen-policy digest plus the exact host plan:
+
+    python scripts/isolate_l2_mvp_systemd.py --format text
+
+Review that plan and the helper source before privilege is introduced. Never
+run a user-writable repository copy through sudo. Install the reviewed bytes as
+a root-owned, non-writable artifact, then pass the exact digest printed by the
+plan (replace `<POLICY_SHA256>` literally; do not use shell substitution):
+
+    sudo install --owner=root --group=root --mode=0555 \
+      scripts/isolate_l2_mvp_systemd.py \
+      /usr/local/sbin/quantos-isolate-l2-mvp-systemd
+    sha256sum scripts/isolate_l2_mvp_systemd.py
+    sha256sum /usr/local/sbin/quantos-isolate-l2-mvp-systemd
+    sudo /usr/local/sbin/quantos-isolate-l2-mvp-systemd --apply --confirm-policy-sha256 <POLICY_SHA256>
+
+The two helper SHA-256 values must be byte-identical before apply. Privileged
+mode also refuses a non-isolated Python invocation, a non-root-owned or writable
+artifact, an untrusted unit-directory chain, or a concurrent apply.
+
+The helper touches only the 56 concrete denied unit names and any exact generic
+template fragments. It stops and disables denied timers, stops denied services,
+records and quarantines reviewed fragments, permanently masks the concrete
+denied units, removes generic templates from the load path, reloads systemd,
+and verifies the post-state. Safe scheduler units and console/proxy support
+units are inventory-only. Any unknown `quantos-*` unit blocks apply before any
+unit mutation. Originals and their hashes remain under the root-only quarantine path
+printed in the receipt; restoration is a separate controlled operation and
+must never automatically re-enable a denied timer.
 
 The 13 hard-quarantined modules are:
 
