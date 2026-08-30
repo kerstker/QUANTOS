@@ -91,14 +91,16 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
         assert payload["open_gaps"], "PARTIAL must enumerate what is still open"
     for gap in payload["open_gaps"]:
         assert gap["id"] and gap["requirement"] and gap["state"] and gap["detail"]
-    # P5-1/P5-2 honest status: the five known selection-bearing entries ARE wired (code-level),
-    # while ledger coverage stays PARTIAL — both halves must be declared.
+    # P5-1/P5-2 honest status: four diagnostic entries retain code-level
+    # wiring while the shared registered-candidate boundary is quarantined.
+    # Ledger coverage stays PARTIAL — both halves must be declared.
     wiring = payload["provenance_wiring"]
     assert wiring["available"] is True
     assert wiring["registry_record_api"] is True
-    assert wiring["wired_entry_count"] == 5
+    assert wiring["wired_entry_count"] == 4
     assert wiring["entries"]["run_alpha_factory"]["wired"] is True
-    assert wiring["entries"]["run_registered_candidate_batch"]["wired"] is True
+    assert wiring["entries"]["run_registered_candidate_batch"]["wired"] is False
+    assert wiring["entries"]["run_registered_candidate_batch"]["quarantined"] is True
     assert wiring["entries"]["run_research_session"]["wired"] is True
     assert wiring["entries"]["alpha_family_discovery"]["wired"] is True
     assert wiring["entries"]["crypto_robust_optimization"]["wired"] is True
