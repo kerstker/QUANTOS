@@ -201,7 +201,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 585,
+          "line": 587,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -268,12 +268,12 @@
           "path": "services/console/api/alpha_lifecycle_views.py"
         },
         {
-          "line": 16,
+          "line": 17,
           "module": "services.execution.paper_tca_history",
           "path": "services/console/api/artifact_paper_views.py"
         },
         {
-          "line": 17,
+          "line": 18,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/artifact_paper_views.py"
         },
@@ -310,7 +310,7 @@
     {
       "references": [
         {
-          "line": 14,
+          "line": 16,
           "module": "services.governance.top_tier_assessment",
           "path": "services/console/api/architecture_views.py"
         },
@@ -394,47 +394,47 @@
           "path": "services/console/api/alpha_family_views.py"
         },
         {
-          "line": 22,
+          "line": 23,
           "module": "services.research.factor_engine.domain.model",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 246,
-          "module": "services.research.alpha_expression",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 247,
-          "module": "services.research.dsl_checker",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
           "line": 248,
-          "module": "services.research.complexity",
+          "module": "services.research.alpha_expression",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
           "line": 249,
-          "module": "services.research",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 296,
-          "module": "services.research.alpha_expression",
-          "path": "services/console/api/alpha_library_views.py"
-        },
-        {
-          "line": 297,
           "module": "services.research.dsl_checker",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 298,
+          "line": 250,
           "module": "services.research.complexity",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
+          "line": 251,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 298,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
           "line": 299,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 300,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 301,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -1503,7 +1503,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "16f22a3a327699fb0bc44466b305590a08e457fa49aa900d8d40ea71c9897e8e",
+  "graph_sha256": "4178b9af57bcfdda95f2edd16e4db6bbd14dca52af4a3152e2a8fd14f06ddf1c",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1541,7 +1541,7 @@
   "policy_sha256": "9b436b95e858f2dff1f7bd043bc94ccbafa7cbe8a27ff9a82baa5d01d9865000",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 498,
+  "source_file_count": 499,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

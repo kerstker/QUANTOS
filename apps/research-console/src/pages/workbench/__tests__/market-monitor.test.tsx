@@ -154,7 +154,9 @@ describe('MarketMonitor', () => {
       phase: 'UNAVAILABLE', snapshot: null, reason: 'STORE_MISSING',
       pages: 0, reloaded: false, transport: 'NONE',
     };
-    const catalog = sync.catalog.payload as Record<string, any>;
+    const catalog = sync.catalog.payload as {
+      binance_realtime: { safety: { order_submission: boolean } };
+    };
     catalog.binance_realtime.safety.order_submission = true;
 
     render(<MarketMonitor />);
