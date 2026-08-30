@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "domain": "reliability_operations",
-      "passed": 1,
+      "passed": 0,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -804,6 +804,36 @@
               "snapshot_policy": "STANDARD"
             },
             {
+              "relative_path": "data/stocks/research.db",
+              "required": true,
+              "role": "ashare_research_database",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/alpha_snapshot.json",
+              "required": true,
+              "role": "ashare_alpha_research_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/klines_snapshot.json",
+              "required": true,
+              "role": "ashare_klines_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/paper_track_snapshot.json",
+              "required": true,
+              "role": "ashare_paper_track_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/stocks.db",
+              "required": true,
+              "role": "ashare_market_data_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
               "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
               "required": false,
               "role": "borrow_pressure_preregistration",
@@ -816,7 +846,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 13
+          "version": 14
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -836,9 +866,9 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
+      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -854,7 +884,7 @@
         "evidence/l2_backup_latest.json"
       ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -864,7 +894,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "FAILED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -1045,6 +1075,36 @@
               "snapshot_policy": "STANDARD"
             },
             {
+              "relative_path": "data/stocks/research.db",
+              "required": true,
+              "role": "ashare_research_database",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/alpha_snapshot.json",
+              "required": true,
+              "role": "ashare_alpha_research_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/klines_snapshot.json",
+              "required": true,
+              "role": "ashare_klines_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/paper_track_snapshot.json",
+              "required": true,
+              "role": "ashare_paper_track_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/stocks.db",
+              "required": true,
+              "role": "ashare_market_data_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
               "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
               "required": false,
               "role": "borrow_pressure_preregistration",
@@ -1057,7 +1117,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 13
+          "version": 14
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1739,19 +1799,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 0,
+    "failed": 1,
     "manual_evidence_required": 0,
     "partial": 7,
-    "passed": 15,
+    "passed": 14,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
   },
   "validation": {
     "current": true,
-    "generated_at": 1788074091701,
-    "run_id": "64003a9c8124e9bf71237dc1545191f55a79a11a797235e211c9e32787ce4d65",
-    "source_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e"
+    "generated_at": 1788089889640,
+    "run_id": "ffb0523bbe470ec7b9bd61a3c897f3409f46d8fe3a93c14d74d7e29236b18ca3",
+    "source_commit": "48c6d9e39016d363c0ce165cb0adbe59b5373f08"
   },
   "verdict": "NOT_TOP_TIER"
 }
