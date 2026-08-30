@@ -19,6 +19,7 @@ from services.console.api.registry_snapshots import (
     _load_experiment_store,
     _load_paper_track_store,
 )
+from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.research.factor_engine.domain.model import compute_max_drawdown
 
 
@@ -27,6 +28,7 @@ _STATE_ROOT = runtime_state_root(cwd=_REPO_ROOT)
 _CRYPTO_SNAPSHOT_PATH = os.path.join(
     _STATE_ROOT, "data", "cache", "crypto_research_snapshot.json"
 )
+_ALPHA_ZOO_CACHE = SingleFlightTtlCache[Dict](30)
 
 
 @dataclass(frozen=True)
@@ -754,7 +756,7 @@ async def dsl_explorer_check(expr: str = Query(...)) -> Dict:
 
 @router.get("/api/v1/console/alpha-zoo")
 def alpha_zoo() -> Dict:
-    payload = _alpha_zoo_payload()
+    payload = _ALPHA_ZOO_CACHE.get(_alpha_zoo_payload)
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,

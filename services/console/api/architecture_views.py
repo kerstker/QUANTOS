@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import statistics
 import time
@@ -11,11 +12,15 @@ from typing import Callable, Dict, Sequence
 
 from fastapi import APIRouter
 
+from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.governance.top_tier_assessment import assess_repository
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TOP_TIER_REQUIREMENTS = _REPO_ROOT / "config" / "top_tier_requirements.json"
+_TOP_TIER_ASSESSMENT = _REPO_ROOT / "evidence" / "top_tier_assessment.json"
+_ARCHITECTURE_CACHE = SingleFlightTtlCache[Dict](300)
+_SYSTEM_COMPLETENESS_CACHE = SingleFlightTtlCache[Dict](300)
 
 
 @dataclass(frozen=True)
@@ -643,11 +648,20 @@ def _architecture_payload() -> Dict:
 
 
 def _system_completeness_payload() -> Dict:
-    assessment = assess_repository(
-        _REPO_ROOT,
-        _TOP_TIER_REQUIREMENTS,
-        as_of_ms=time.time_ns() // 1_000_000,
-    )
+    try:
+        assessment = json.loads(_TOP_TIER_ASSESSMENT.read_text(encoding="utf-8"))
+        if not isinstance(assessment, dict):
+            raise ValueError("persisted assessment is not an object")
+        if not isinstance(assessment.get("requirements"), list):
+            raise ValueError("persisted assessment requirements are absent")
+        if assessment.get("summary", {}).get("total") != len(assessment["requirements"]):
+            raise ValueError("persisted assessment summary is inconsistent")
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        assessment = assess_repository(
+            _REPO_ROOT,
+            _TOP_TIER_REQUIREMENTS,
+            as_of_ms=time.time_ns() // 1_000_000,
+        )
     red_lines = [item for item in assessment["requirements"] if item["red_line"] and item["status"] != "PASS"]
     return {
         "assessment": {"schema_version": assessment["schema_version"], "verdict": assessment["verdict"]},
@@ -670,7 +684,7 @@ router = APIRouter()
 
 @router.get("/api/v1/console/architecture")
 async def architecture() -> Dict:
-    payload = await asyncio.to_thread(_architecture_payload)
+    payload = await asyncio.to_thread(_ARCHITECTURE_CACHE.get, _architecture_payload)
     real_inventory = bool(payload.get("inventory", {}).get("domains"))
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -683,7 +697,10 @@ async def architecture() -> Dict:
 
 @router.get("/api/v1/console/system-completeness")
 async def system_completeness() -> Dict:
-    payload = await asyncio.to_thread(_system_completeness_payload)
+    payload = await asyncio.to_thread(
+        _SYSTEM_COMPLETENESS_CACHE.get,
+        _system_completeness_payload,
+    )
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,

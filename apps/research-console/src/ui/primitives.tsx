@@ -309,7 +309,7 @@ export function PageHeader({ title, titleZh, subtitle, actions }:
  */
 export function ProvenanceRibbon({
   usingBackend, apiState, source, error, realData = false, evidenceData = false,
-  variant = 'default', noDataYet = false, dataStatus, extraChips,
+  variant = 'default', noDataYet = false, dataStatus, diagnosticOnly = false, extraChips,
 }: {
   usingBackend: boolean; apiState: ConsoleApiState; source?: string; error?: string | null;
   realData?: boolean; evidenceData?: boolean;
@@ -319,6 +319,8 @@ export function ProvenanceRibbon({
   noDataYet?: boolean;
   /** Domain admission state. When set, it overrides the transport-only inference. */
   dataStatus?: SnapshotDisplayState;
+  /** Retained invalidated/forensic evidence: readable, amber, never actionable. */
+  diagnosticOnly?: boolean;
   /** Extra page-specific chips appended after the standard set (e.g. LIVE_DISALLOWED, NOT ADVICE). */
   extraChips?: React.ReactNode;
 }) {
@@ -326,7 +328,7 @@ export function ProvenanceRibbon({
   const apiLabel = apiState === 'connected' ? bi('已连接', 'CONNECTED') : apiState === 'error' ? bi('错误', 'ERROR')
     : apiState === 'loading' ? bi('加载中', 'LOADING') : bi('未连接', 'NOT_CONNECTED');
   const displayState = deriveSnapshotDisplayState({
-    apiState, usingBackend, realData, evidenceData, dataStatus, noDataYet,
+    apiState, usingBackend, realData, evidenceData, dataStatus, noDataYet, diagnosticOnly,
   });
   // realData=true: these are REAL observed research results (the run_registry), not synthetic fixtures —
   // honesty demands an accurate label (still read-only; historical backtest != future returns).
@@ -334,7 +336,7 @@ export function ProvenanceRibbon({
   const real = displayState === 'REAL';
   const tint: string = displayState === 'UNAVAILABLE' || displayState === 'BLOCKED'
     ? 'var(--neg)'
-    : displayState === 'STALE' || displayState === 'MOCK'
+    : displayState === 'STALE' || displayState === 'MOCK' || displayState === 'DIAGNOSTIC'
       ? 'var(--warn)'
       : 'var(--info)';
 
@@ -348,6 +350,12 @@ export function ProvenanceRibbon({
   } else if (displayState === 'BLOCKED') {
     icon = '⛔'; modeChip = 'DATA_BLOCKED';
     headline = bi('数据/门禁阻塞 · 禁止继续操作', 'Data/admission blocked · actions are forbidden');
+  } else if (displayState === 'DIAGNOSTIC') {
+    icon = '◇'; modeChip = 'DIAGNOSTIC_ONLY';
+    headline = bi(
+      '只读取证快照 · 可检查身份与原因，但不构成当前权威或操作许可',
+      'Read-only forensic snapshot · inspectable identity/reasons, not current authority or permission',
+    );
   } else if (displayState === 'STALE') {
     icon = '⚠'; modeChip = 'STALE_DATA';
     headline = bi('数据过期 · 禁止把当前快照当作可用证据',

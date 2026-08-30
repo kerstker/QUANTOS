@@ -17,6 +17,8 @@ from services.research.trial_ledger import TrialLedger, TrialLedgerError
 router = APIRouter(tags=["hourly-alpha"])
 _SCHEMA_VERSION = "quantos.hourly-alpha-console.v1"
 _FRESH_SECONDS = 7_200
+_INVALIDATION_CODE = "INVALIDATED_PERP_LEDGER_V1"
+_AUTHORITY_MODE = "QUARANTINED_LEGACY_AUTHORITY"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 def _hourly_alpha_cache_path() -> Path:
     return runtime_state_root(cwd=_REPO_ROOT) / "data" / "cache"
@@ -204,12 +206,38 @@ def build_hourly_alpha_snapshot(
 @router.get("/api/v1/console/hourly-alpha")
 def hourly_alpha_status() -> dict[str, Any]:
     cache = _hourly_alpha_cache_path()
-    return build_hourly_alpha_snapshot(
+    snapshot = build_hourly_alpha_snapshot(
         workflow_path=cache / "hourly_alpha_workflow.db",
         trial_path=cache / "hourly_alpha_trials.db",
         forward_path=cache / "hourly_alpha_forward.db",
         as_of=int(time.time()),
     )
+    # The scheduled writer for these V1 stores is hard-quarantined by the L2
+    # release policy.  Even if migrated files reappear, the console must never
+    # present them as a current authority.  Preserve store diagnostics while
+    # hiding retained candidates/metrics and make the planned state explicit.
+    return {
+        **snapshot,
+        "snapshot_status": "UNAVAILABLE",
+        "data_quality": {
+            **snapshot["data_quality"],
+            "status": "UNAVAILABLE",
+            "reason": _INVALIDATION_CODE,
+        },
+        "status": "BLOCKED",
+        "freshness": {"status": "UNAVAILABLE", "age_seconds": None},
+        "watermark": None,
+        "batch_funnel": None,
+        "candidate_states": [],
+        "stores": {
+            name: {"status": "UNAVAILABLE", "reason": _INVALIDATION_CODE}
+            for name in ("workflow", "trials", "forward")
+        },
+        "authority_mode": _AUTHORITY_MODE,
+        "authoritative": False,
+        "evidence_status": "DIAGNOSTIC_ONLY",
+        "invalidation_code": _INVALIDATION_CODE,
+    }
 
 
 __all__ = ["router", "build_hourly_alpha_snapshot", "hourly_alpha_status"]

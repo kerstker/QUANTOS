@@ -163,6 +163,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         "source", "read_only", "provenance", "generated_at", "data_freshness", "universe",
         "factors", "combo", "basket", "variants", "dry_run", "paper_track",
         "cost_grid", "turnover_caps", "holdings_latest", "honest_limitations")),
+    # Newly admitted TDX daily-bar search evidence. Diagnostic/read-only only:
+    # missing historical PIT fundamentals and survivor-free membership block promotion.
+    "/api/v1/console/ashare-alpha-search": ("", (
+        "candidate_usefulness", "source_summary", "surface_coverage",
+        "surface_results", "untouched_forward_observation")),
     # MEXC 零手续费 BTC 现货对接(read-only 三端点;artifact 未产出时诚实 SYNTHETIC/NO_SNAPSHOT)
     "/api/v1/console/mexc-market": ("", ("snapshot_present", "verdict", "venue", "symbol",
                                          "latest_price", "coverage", "freshness", "bars",
@@ -219,6 +224,7 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/fx-research": {"SYNTHETIC_DETERMINISTIC", "REAL_FX_ECB_OFFLINE_SNAPSHOT"},
     # carry readiness: REAL carry snapshots when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/carry-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_CARRY_OFFLINE_SNAPSHOT"},
+    "/api/v1/console/ashare-alpha-search": "REPOSITORY_EVIDENCE",
     # dry-run pipeline: REAL DryRunStore runs when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/hourly-alpha": "REAL_HOURLY_ALPHA_AUTHORITIES",

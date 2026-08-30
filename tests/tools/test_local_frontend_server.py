@@ -15,6 +15,7 @@ from tools.local_frontend_server import (
     _has_real_local_api_contract,
     _is_event_stream_response,
     _spa_target,
+    _upstream_timeout_for_path,
     _validated_listener,
 )
 
@@ -181,6 +182,13 @@ def test_proxy_targets_are_fixed_to_local_read_and_runner_surfaces():
 
     handler.path = "/research/dry-run"
     assert handler._proxy_target() is None
+
+
+def test_proxy_gives_only_known_heavy_read_only_snapshots_a_wider_timeout():
+    assert _upstream_timeout_for_path("/api/v1/console/alpha-zoo") == 60
+    assert _upstream_timeout_for_path("/api/v1/console/system-completeness?refresh=1") == 60
+    assert _upstream_timeout_for_path("/api/v1/console/runtime-contract") == 15
+    assert _upstream_timeout_for_path("/__runner__/runs") == 15
 
 
 def test_event_stream_proxy_relays_without_buffering_or_content_length():

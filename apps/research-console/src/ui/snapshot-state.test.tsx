@@ -23,6 +23,7 @@ describe('snapshot display state contract', () => {
     ['STALE_DATA', 'STALE'],
     ['NO_RUN', 'NO_SNAPSHOT'],
     ['UNAVAILABLE', 'UNAVAILABLE'],
+    ['DIAGNOSTIC_ONLY', 'DIAGNOSTIC'],
   ] as const)('normalizes backend status %s', (wire, expected) => {
     const normalized = normalizeSnapshotDisplayState(wire);
     if (expected === undefined) expect(normalized).toBeUndefined();
@@ -38,6 +39,7 @@ describe('snapshot display state contract', () => {
     [{ apiState: 'connected', usingBackend: true }, 'BACKEND_SYNTHETIC'],
     [{ apiState: 'connected', usingBackend: true, noDataYet: true }, 'NO_SNAPSHOT'],
     [{ apiState: 'connected', usingBackend: true, dataStatus: 'BLOCKED' }, 'BLOCKED'],
+    [{ apiState: 'connected', usingBackend: true, diagnosticOnly: true }, 'DIAGNOSTIC'],
     [{
       apiState: 'connected', usingBackend: true, realData: true,
       dataStatus: 'REAL', authorityDenied: true,
@@ -71,7 +73,7 @@ describe('snapshot display state contract', () => {
 
   it('only permits the positive snapshot states; blocked/stale/offline states fail closed', () => {
     const denied: SnapshotDisplayState[] = [
-      'MOCK', 'BLOCKED', 'STALE', 'UNAVAILABLE', 'NO_SNAPSHOT', 'LOADING',
+      'MOCK', 'DIAGNOSTIC', 'BLOCKED', 'STALE', 'UNAVAILABLE', 'NO_SNAPSHOT', 'LOADING',
     ];
     for (const state of denied) expect(isSnapshotActionAllowed(state), state).toBe(false);
     expect(isSnapshotActionAllowed('REAL')).toBe(true);
@@ -89,6 +91,7 @@ describe('ProvenanceRibbon workflow states', () => {
     ['UNAVAILABLE', 'UNAVAILABLE', '回退内容不可作为决策数据'],
     ['NO_SNAPSHOT', 'NO_SNAPSHOT', '不代表通过或可交易'],
     ['LOADING', 'LOADING', '尚未形成决策状态'],
+    ['DIAGNOSTIC', 'DIAGNOSTIC_ONLY', '只读取证快照'],
   ] as const)('surfaces %s distinctly', (dataStatus, chip, headline) => {
     render(<ProvenanceRibbon {...base} dataStatus={dataStatus} />);
     expect(screen.getByText(chip)).toBeInTheDocument();

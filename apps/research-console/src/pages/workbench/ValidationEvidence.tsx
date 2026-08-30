@@ -64,21 +64,26 @@ function Panel({ eyebrow, title, right, children }: {
 }
 
 function DiagnosticOnly({ phase, reason }: { phase: string; reason: string | null }) {
-  const label = phase === 'STALE' ? 'VALIDATION_AUTHORITY_STALE' : 'VALIDATION_AUTHORITY_UNAVAILABLE';
+  const quarantined = phase === 'QUARANTINED';
+  const label = phase === 'STALE'
+    ? 'VALIDATION_AUTHORITY_STALE'
+    : quarantined ? 'VALIDATION_V1_AUTHORITY_QUARANTINED' : 'VALIDATION_AUTHORITY_UNAVAILABLE';
   return (
     <PageShell>
       <header>
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Validation Evidence</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">验证证据</h1>
       </header>
-      <section className="rounded-xl border border-neg/35 bg-neg/10 p-5" role="status">
-        <p className="font-mono text-sm font-semibold text-neg">{label}</p>
+      <section className={`rounded-xl border p-5 ${quarantined ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10'}`} role="status">
+        <p className={`font-mono text-sm font-semibold ${quarantined ? 'text-warn' : 'text-neg'}`}>{label}</p>
         <p className="mt-2 font-mono text-xs text-muted">{reason ?? phase}</p>
-        <p className="mt-4 inline-flex rounded border border-neg/35 px-2 py-1 font-mono text-[10px] text-neg">
-          DIAGNOSTIC_ONLY
+        <p className={`mt-4 inline-flex rounded border px-2 py-1 font-mono text-[10px] ${quarantined ? 'border-warn/35 text-warn' : 'border-neg/35 text-neg'}`}>
+          {quarantined ? 'EXPECTED_SAFE_ISOLATION' : 'DIAGNOSTIC_ONLY'}
         </p>
         <p className="mt-3 text-xs leading-5 text-muted">
-          权威状态不可用或陈旧时，不显示保留的 PASS、指标、artifact 或前向结果，也不回退到旧页面模拟数据。
+          {quarantined
+            ? '旧 V1 验证权威已按策略隔离；保留结果不跨越当前权威边界。新的 PIT 技术验证会在独立证据面展示。'
+            : '权威状态不可用或陈旧时，不显示保留的 PASS、指标、artifact 或前向结果，也不回退到旧页面模拟数据。'}
         </p>
       </section>
     </PageShell>

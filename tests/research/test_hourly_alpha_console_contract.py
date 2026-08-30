@@ -6,6 +6,7 @@ import sqlite3
 from quantos.contracts.hashing import stable_hash
 from services.console.api.hourly_alpha_views import (
     build_hourly_alpha_snapshot,
+    hourly_alpha_status,
     router,
 )
 from services.research.alpha_workflow_store import WorkflowStore
@@ -110,3 +111,24 @@ def test_corrupt_workflow_projection_blocks_instead_of_showing_unverified_state(
 def test_console_surface_is_get_only():
     route = next(item for item in router.routes if item.path == "/api/v1/console/hourly-alpha")
     assert route.methods == {"GET"}
+
+
+def test_http_projection_quarantines_retained_v1_stores(tmp_path, monkeypatch):
+    workflow, trials, forward = _initialized_stores(tmp_path)
+    assert workflow.parent == trials.parent == forward.parent
+    monkeypatch.setattr(
+        "services.console.api.hourly_alpha_views._hourly_alpha_cache_path",
+        lambda: tmp_path,
+    )
+
+    snapshot = hourly_alpha_status()
+
+    assert snapshot["status"] == "BLOCKED"
+    assert snapshot["authority_mode"] == "QUARANTINED_LEGACY_AUTHORITY"
+    assert snapshot["invalidation_code"] == "INVALIDATED_PERP_LEDGER_V1"
+    assert snapshot["authoritative"] is False
+    assert snapshot["candidate_states"] == []
+    assert snapshot["batch_funnel"] is None
+    assert {
+        store["reason"] for store in snapshot["stores"].values()
+    } == {"INVALIDATED_PERP_LEDGER_V1"}

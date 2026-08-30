@@ -13,10 +13,10 @@ from fastapi import APIRouter
 
 from quantos.contracts.hashing import stable_hash
 from quantos.runtime_paths import runtime_state_root
+from services.console.api.artifact_diagnostic_views import router as diagnostic_router
 from services.execution.paper_tca_history import build_paper_tca_history
 from services.execution.dry_run_store import DryRunStore
 from services.console.api.backtest_evidence import scrub_backtest_payload
-from .artifact_diagnostic_views import router as diagnostic_router
 
 
 router = APIRouter()
@@ -2708,9 +2708,13 @@ async def gonogo() -> Dict:
     return _gonogo_payload()
 
 
-# The compact diagnostic routes live in their own bounded module.  Including
-# the child router keeps one public artifact surface while preserving the
-# read-only, GET-only boundary checked by governance.
-# IMPORTANT: This must be at the END so FastAPI first-match-wins doesn't
-# let the diagnostic (no-attestation) routes shadow the attested ones.
-router.routes.extend(diagnostic_router.routes)
+# Only the two diagnostic-only paths are composed here.  The other diagnostic
+# routes intentionally duplicate attested paper routes above; registering them
+# made OpenAPI operation IDs ambiguous and route authority order-dependent.
+_DIAGNOSTIC_ONLY_PATHS = {
+    "/api/v1/console/fx-research",
+    "/api/v1/console/carry-readiness",
+}
+router.routes.extend(
+    route for route in diagnostic_router.routes if route.path in _DIAGNOSTIC_ONLY_PATHS
+)

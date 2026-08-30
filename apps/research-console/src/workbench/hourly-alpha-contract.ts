@@ -1,6 +1,6 @@
 export const HOURLY_ALPHA_SCHEMA = 'quantos.hourly-alpha-console.v1' as const;
 
-export type HourlyAlphaPhase = 'LOADING' | 'AVAILABLE' | 'NO_SNAPSHOT' | 'STALE' | 'UNAVAILABLE';
+export type HourlyAlphaPhase = 'LOADING' | 'AVAILABLE' | 'NO_SNAPSHOT' | 'STALE' | 'QUARANTINED' | 'UNAVAILABLE';
 
 export interface HourlyAlphaSafety {
   read_only: true;
@@ -59,6 +59,10 @@ export interface HourlyAlphaSnapshot {
   schema_version: typeof HOURLY_ALPHA_SCHEMA;
   as_of: number;
   status: 'AVAILABLE' | 'BLOCKED';
+  authority_mode?: 'QUARANTINED_LEGACY_AUTHORITY';
+  authoritative?: false;
+  evidence_status?: 'DIAGNOSTIC_ONLY';
+  invalidation_code?: 'INVALIDATED_PERP_LEDGER_V1';
   freshness: HourlyAlphaFreshness;
   watermark: HourlyAlphaWatermark | null;
   batch_funnel: HourlyAlphaFunnel | null;
@@ -279,6 +283,9 @@ export function parseHourlyAlphaSnapshot(value: unknown): HourlyAlphaSnapshot {
 export function classifyHourlyAlphaSnapshot(
   snapshot: HourlyAlphaSnapshot,
 ): { phase: Exclude<HourlyAlphaPhase, 'LOADING'>; reason: string | null } {
+  if (snapshot.authority_mode === 'QUARANTINED_LEGACY_AUTHORITY') {
+    return { phase: 'QUARANTINED', reason: snapshot.invalidation_code ?? 'LEGACY_AUTHORITY_QUARANTINED' };
+  }
   if (snapshot.status === 'BLOCKED') {
     const failed = (['workflow', 'trials', 'forward'] as const)
       .find(name => snapshot.stores[name].status === 'UNAVAILABLE');

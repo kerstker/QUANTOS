@@ -247,6 +247,18 @@ def test_missing_corrupt_and_unknown_schema_stores_fail_closed_without_mock_data
         assert "SYNTHETIC" not in encoded and "MOCK" not in encoded
 
 
+def test_http_projection_marks_a_missing_mft_producer_as_not_provisioned(tmp_path, monkeypatch):
+    from services.console.api import mft_execution_views as views
+
+    monkeypatch.setattr(views, "_mft_read_model_path", lambda: tmp_path / "missing.db")
+    snapshot = views.mft_execution_snapshot()
+
+    assert snapshot["status"] == "BLOCKED"
+    assert snapshot["availability_mode"] == "NOT_PROVISIONED"
+    assert snapshot["producer_status"] == "ABSENT_IN_L2_MVP"
+    assert snapshot["recovery_action"] == "INTEGRATE_A_CURRENT_MFT_PRODUCER"
+
+
 def test_event_identity_is_idempotent_and_payloads_cannot_leak_sensitive_paths(tmp_path):
     path = tmp_path / "mft.db"
     with MftReadModelStore(str(path), create=True) as store:

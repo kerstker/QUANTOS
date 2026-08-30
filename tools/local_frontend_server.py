@@ -50,6 +50,23 @@ _HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 AllowedNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+_DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 15
+_HEAVY_SNAPSHOT_TIMEOUT_SECONDS = 60
+_HEAVY_SNAPSHOT_PATHS = frozenset(
+    {
+        "/api/v1/console/alpha-zoo",
+        "/api/v1/console/system-completeness",
+    }
+)
+
+
+def _upstream_timeout_for_path(path: str) -> int:
+    """Allow bounded cold scans without weakening ordinary failure detection."""
+    return (
+        _HEAVY_SNAPSHOT_TIMEOUT_SECONDS
+        if urlsplit(path).path in _HEAVY_SNAPSHOT_PATHS
+        else _DEFAULT_UPSTREAM_TIMEOUT_SECONDS
+    )
 
 
 def _validated_listener(
@@ -218,7 +235,11 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
             key: value for key, value in self.headers.items()
             if key.lower() not in _HOP_BY_HOP_HEADERS | {"host", "content-length"}
         }
-        connection = http.client.HTTPConnection(host, port, timeout=15)
+        connection = http.client.HTTPConnection(
+            host,
+            port,
+            timeout=_upstream_timeout_for_path(upstream_path),
+        )
         try:
             connection.request(self.command, upstream_path, body=body, headers=headers)
             response = connection.getresponse()

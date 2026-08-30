@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+  "source_kind": "TONGDAXIN_LOCAL_DAILY_AND_CURRENT_METADATA",
+  "source_root": "/home/kerstker/quantos-data-intake/ashare-pit/incoming/tdx-windows-20260830",
+  "sha256_verification": {
+    "status": "PASS",
+    "files": 9476,
+    "bytes": 342340122,
+    "manifest_sha256": "d4648c12aad01b80c5a784cb908efe387aa1afbc06c9b4805877e74ac0392bb0"
+  },
+  "daily_price_semantics": "RAW_UNADJUSTED_CLOSE_KNOWN_AFTER_CLOSE_T",
+  "fundamental_semantics": "CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_PIT",
+  "historical_universe_semantics": "CURRENT_MASTER_ONLY_SURVIVOR_BIAS_PRESENT",
+  "industry_semantics": "CURRENT_CONFIG_WITHOUT_EFFECTIVE_DATE_HISTORY",
+  "event_semantics": "CORPORATE_ACTION_FILE_PRESENT_BUT_KNOWLEDGE_TIME_NOT_ADMITTED",
+  "capital_flow_semantics": "DAILY_AMOUNT_ONLY_NO_ORDER_SIZE_OR_INVESTOR_CLASS",
+  "instruments": 5549,
+  "instruments_by_market": {
+    "sh": 2315,
+    "sz": 2896,
+    "bj": 338
+  },
+  "rows": 6267665,
+  "first_date": 20210802,
+  "last_date": 20260828,
+  "current_master_absent": 0,
+  "promotion_allowed": false,
+  "paper_persistence_allowed": false,
+  "sqlite_quick_check": "ok",
+  "normalized_output_bytes": 642551808,
+  "normalized_output_sha256": "9c27747190b3f4ae8ca3566557924a19fa66f8907c35afc6fcfef825c762b505",
+  "panel_cache_sha256": "197a852b04392326a2b46c1d876500560e0c62f3d674beb68f8b9aed9b445aeb"
+}

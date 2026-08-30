@@ -128,9 +128,9 @@ export function useConsoleSnapshot<T>(
   const invalidationCode = typeof payloadRecord?.invalidation_code === 'string'
     ? payloadRecord.invalidation_code.trim()
     : '';
-  const authorityDenied = payloadRecord?.authoritative === false
-    || evidenceStatus === 'DIAGNOSTIC_ONLY'
+  const diagnosticOnly = evidenceStatus === 'DIAGNOSTIC_ONLY'
     || invalidationCode.length > 0;
+  const authorityDenied = payloadRecord?.authoritative === false && !diagnosticOnly;
   const explicitStatus = normalizeSnapshotDisplayState(
     payloadRecord?.snapshot_status
       ?? qualityRecord?.status
@@ -141,6 +141,7 @@ export function useConsoleSnapshot<T>(
     usingBackend,
     dataStatus: explicitStatus,
     authorityDenied,
+    diagnosticOnly,
     noDataYet: usingBackend && payloadRecord?.snapshot_present === false,
     realData: usingBackend && (
       payloadRecord?.data_provenance === 'REAL'

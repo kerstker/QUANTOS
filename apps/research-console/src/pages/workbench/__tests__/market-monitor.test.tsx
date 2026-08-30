@@ -132,6 +132,23 @@ describe('MarketMonitor', () => {
     expect(screen.queryByText(/买入|卖出|BUY|SELL/i)).toBeNull();
   });
 
+  it('distinguishes the planned absence of an MFT producer from a frontend outage', () => {
+    sync.state = {
+      phase: 'UNAVAILABLE',
+      snapshot: {
+        ...availableSnapshot(), status: 'BLOCKED', snapshot_status: 'UNAVAILABLE',
+        availability_mode: 'NOT_PROVISIONED', producer_status: 'ABSENT_IN_L2_MVP',
+        reason: 'STORE_MISSING',
+      },
+      reason: 'STORE_MISSING', pages: 0, reloaded: false, transport: 'NONE',
+    };
+    render(<MarketMonitor />);
+    expect(screen.getByText('MFT_VIEW_NOT_PROVISIONED')).toBeTruthy();
+    expect(screen.getByText('EXPECTED_L2_CONFIGURATION')).toBeTruthy();
+    expect(screen.getByText('REAL_PUBLIC_MARKET_MONITORING')).toBeTruthy();
+    expect(screen.queryByText('MFT_UNAVAILABLE')).toBeNull();
+  });
+
   it('does not claim public monitoring when its safety contract is not exact', () => {
     sync.state = {
       phase: 'UNAVAILABLE', snapshot: null, reason: 'STORE_MISSING',

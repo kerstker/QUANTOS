@@ -110,6 +110,32 @@ describe('hourly alpha authority contract', () => {
     });
   });
 
+  it('classifies the release-policy V1 quarantine separately from an outage', () => {
+    const quarantined = parseHourlyAlphaSnapshot(makeSnapshot({
+      snapshot_status: 'UNAVAILABLE',
+      data_quality: {
+        status: 'UNAVAILABLE', provenance: 'REAL_HOURLY_ALPHA_AUTHORITIES', snapshot_ids: [HASH_A],
+      },
+      status: 'BLOCKED',
+      freshness: { status: 'UNAVAILABLE', age_seconds: null },
+      watermark: null,
+      batch_funnel: null,
+      candidate_states: [],
+      stores: {
+        workflow: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+        trials: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+        forward: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+      },
+      authority_mode: 'QUARANTINED_LEGACY_AUTHORITY',
+      authoritative: false,
+      evidence_status: 'DIAGNOSTIC_ONLY',
+      invalidation_code: 'INVALIDATED_PERP_LEDGER_V1',
+    }));
+    expect(classifyHourlyAlphaSnapshot(quarantined)).toEqual({
+      phase: 'QUARANTINED', reason: 'INVALIDATED_PERP_LEDGER_V1',
+    });
+  });
+
   it('keeps stale and no-snapshot authority states explicit', () => {
     const stale = parseHourlyAlphaSnapshot(makeSnapshot({
       snapshot_status: 'STALE',

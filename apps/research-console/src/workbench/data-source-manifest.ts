@@ -43,6 +43,7 @@ export const WORKBENCH_DATA_SOURCE_MANIFEST: readonly WorkbenchDataSourceEntry[]
     authoritativeEndpoints: [
       '/api/v1/console/hourly-alpha',
       '/api/v1/console/alpha-zoo',
+      '/api/v1/console/ashare-alpha-search',
     ],
     acceptedProvenance: [
       'REAL_HOURLY_ALPHA_AUTHORITIES',

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-import type { AlphaLifecycleEntry, AlphaZooRow } from '@/lib/types/research';
+import type {
+  AlphaLifecycleEntry,
+  AlphaZooRow,
+  AShareInstitutionalSearchPayload,
+} from '@/lib/types/research';
 import { PageShell } from '@/ui/primitives';
 import type {
   HourlyAlphaCandidate,
   HourlyAlphaSnapshot,
 } from '@/workbench/hourly-alpha-contract';
-import { useAlphaControlPlaneData } from '@/workbench/useAlphaControlPlaneData';
+import {
+  useAlphaControlPlaneData,
+  type AlphaEnrichment,
+} from '@/workbench/useAlphaControlPlaneData';
 
 const PAGE_SIZE = 25;
 
@@ -57,26 +64,106 @@ function Panel({ eyebrow, title, children }: {
   );
 }
 
-function DiagnosticOnly({ snapshot, phase, reason }: {
+function AShareInstitutionalSearch({ research }: {
+  research: AlphaEnrichment<AShareInstitutionalSearchPayload>;
+}) {
+  if (research.status !== 'AVAILABLE' || research.payload === null) {
+    return (
+      <section className="rounded-xl border border-warn/35 bg-warn/10 p-5" role="status">
+        <p className="font-mono text-sm font-semibold text-warn">A股机构因子搜索 · {research.status}</p>
+        <p className="mt-2 font-mono text-xs text-muted">{research.reason ?? 'SEARCH_EVIDENCE_UNAVAILABLE'}</p>
+      </section>
+    );
+  }
+  const payload = research.payload;
+  const coverage = Object.entries(payload.surface_coverage);
+  return (
+    <section className="rounded-xl border border-warn/35 bg-panel shadow-sm" aria-label="A股机构因子搜索">
+      <header className="border-b border-line px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-warn">A-share institutional surfaces</p>
+            <h2 className="mt-1 text-base font-semibold text-ink">A股机构因子搜索</h2>
+          </div>
+          <span className="rounded border border-warn/35 bg-warn/10 px-2 py-1 font-mono text-[10px] text-warn">
+            {payload.evidence_status} · READ ONLY
+          </span>
+        </div>
+      </header>
+      <div className="space-y-4 p-4 sm:p-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ['Stocks', payload.source_summary.instruments],
+            ['Bars', payload.source_summary.rows],
+            ['Candidates', payload.trial_accounting?.candidate_specs],
+            ['Usefulness', payload.candidate_usefulness],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-line bg-inset/50 p-3">
+              <p className="text-[10px] uppercase text-faint">{label}</p>
+              <p className="mt-1 font-mono text-sm font-semibold text-ink">{value ?? 'UNAVAILABLE'}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {payload.surface_results.map(row => (
+            <div key={row.surface} className="rounded-lg border border-line bg-surface/50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-mono text-xs font-semibold text-ink">{row.surface}</p>
+                <span className={`font-mono text-[10px] ${row.candidate_usefulness === 'CONTINUE_RESEARCH' ? 'text-pos' : 'text-warn'}`}>
+                  {row.candidate_usefulness}
+                </span>
+              </div>
+              <p className="mt-2 font-mono text-[10px] text-muted">{row.candidate?.name ?? 'NO_CANDIDATE'}</p>
+              <p className="mt-1 font-mono text-[10px] text-faint">
+                confirmation SR {decimal(row.confirmation_excess_sharpe)} · adj p {decimal(row.bonferroni_adjusted_p)}
+              </p>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-2 md:grid-cols-2">
+          {coverage.map(([name, item]) => (
+            <div key={name} className="rounded-lg border border-line bg-inset/40 px-3 py-2">
+              <p className="font-mono text-[10px] text-ink">{name} · {item.status}</p>
+              <p className="mt-1 text-[10px] leading-4 text-faint">{item.reason}</p>
+            </div>
+          ))}
+        </div>
+        <p className="rounded-lg border border-info/30 bg-info/10 px-3 py-2 font-mono text-[10px] text-info">
+          FORWARD: {payload.untouched_forward_observation.status ?? 'UNAVAILABLE'} · cutoff {payload.untouched_forward_observation.freeze_cutoff ?? 'UNKNOWN'} · minimum {payload.untouched_forward_observation.minimum_sessions ?? 'UNKNOWN'} sessions
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticOnly({ snapshot, phase, reason, ashare }: {
   snapshot: HourlyAlphaSnapshot | null;
   phase: string;
   reason: string | null;
+  ashare: AlphaEnrichment<AShareInstitutionalSearchPayload>;
 }) {
-  const status = phase === 'STALE' ? 'ALPHA_AUTHORITY_STALE' : 'ALPHA_AUTHORITY_UNAVAILABLE';
+  const quarantined = phase === 'QUARANTINED';
+  const status = phase === 'STALE'
+    ? 'ALPHA_AUTHORITY_STALE'
+    : quarantined ? 'ALPHA_V1_AUTHORITY_QUARANTINED' : 'ALPHA_AUTHORITY_UNAVAILABLE';
+  const tone = quarantined ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10';
+  const textTone = quarantined ? 'text-warn' : 'text-neg';
   return (
     <PageShell>
       <header>
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Alpha Control Plane</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">Alpha 控制平面</h1>
       </header>
-      <section className="rounded-xl border border-neg/35 bg-neg/10 p-5" role="status">
-        <p className="font-mono text-sm font-semibold text-neg">{status}</p>
+      <section className={`rounded-xl border p-5 ${tone}`} role="status">
+        <p className={`font-mono text-sm font-semibold ${textTone}`}>{status}</p>
         <p className="mt-2 font-mono text-xs text-muted">{reason ?? phase}</p>
-        <p className="mt-4 inline-flex rounded border border-neg/35 px-2 py-1 font-mono text-[10px] text-neg">
-          DIAGNOSTIC_ONLY
+        <p className={`mt-4 inline-flex rounded border px-2 py-1 font-mono text-[10px] ${quarantined ? 'border-warn/35 text-warn' : 'border-neg/35 text-neg'}`}>
+          {quarantined ? 'EXPECTED_SAFE_ISOLATION' : 'DIAGNOSTIC_ONLY'}
         </p>
         <p className="mt-3 max-w-3xl text-xs leading-5 text-muted">
-          候选状态、验证数量与前向结果均被隐藏。旧快照不会冒充当前权威状态，也不会回退到模拟数据。
+          {quarantined
+            ? '旧 V1 候选工作流按发布策略隔离；这是安全状态，不是前端故障。当前研究结果应从新的技术验证/PIT 搜索权威进入。'
+            : '候选状态、验证数量与前向结果均被隐藏。旧快照不会冒充当前权威状态，也不会回退到模拟数据。'}
         </p>
         {snapshot && (
           <dl className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -91,6 +178,7 @@ function DiagnosticOnly({ snapshot, phase, reason }: {
           </dl>
         )}
       </section>
+      <AShareInstitutionalSearch research={ashare} />
     </PageShell>
   );
 }
@@ -300,10 +388,14 @@ function CandidateBlotter({
 export default function AlphaControlPlane() {
   const data = useAlphaControlPlaneData();
   const { authority } = data;
+  const ashare = data.ashare ?? {
+    status: 'UNAVAILABLE' as const, payload: null, reason: 'A_SHARE_SEARCH_NOT_CONFIGURED',
+  };
   if ((authority.phase !== 'AVAILABLE' && authority.phase !== 'NO_SNAPSHOT')
     || authority.snapshot === null) {
     return (
-      <DiagnosticOnly snapshot={authority.snapshot} phase={authority.phase} reason={authority.reason} />
+      <DiagnosticOnly snapshot={authority.snapshot} phase={authority.phase} reason={authority.reason}
+        ashare={ashare} />
     );
   }
   const snapshot = authority.snapshot;
@@ -332,6 +424,8 @@ export default function AlphaControlPlane() {
       <div className="rounded-lg border border-warn/35 bg-warn/10 px-4 py-3 text-xs leading-5 text-warn">
         <strong>语义边界：</strong> VALIDATED 仅表示研究验证通过；它不是资金批准、实盘 mandate、下单许可或风险授权。
       </div>
+
+      <AShareInstitutionalSearch research={ashare} />
 
       <Funnel snapshot={snapshot} />
 

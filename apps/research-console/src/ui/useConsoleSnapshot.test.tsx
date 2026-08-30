@@ -120,7 +120,7 @@ describe('useConsoleSnapshot event stream transport', () => {
       } as MessageEvent<string>);
     });
 
-    expect(screen.getByTestId('snapshot-state')).toHaveTextContent('BLOCKED');
+    expect(screen.getByTestId('snapshot-state')).toHaveTextContent('DIAGNOSTIC');
     expect(screen.getByTestId('actions-allowed')).toHaveTextContent('false');
   });
 });

@@ -67,7 +67,15 @@ def build_mft_execution_delta(
 @router.get("/api/v1/console/mft-execution")
 def mft_execution_snapshot() -> dict[str, Any]:
     path = _mft_read_model_path()
-    return build_mft_execution_snapshot(path=path, as_of_ms=time.time_ns() // 1_000_000)
+    snapshot = build_mft_execution_snapshot(path=path, as_of_ms=time.time_ns() // 1_000_000)
+    if snapshot.get("reason") == "STORE_MISSING":
+        snapshot = {
+            **snapshot,
+            "availability_mode": "NOT_PROVISIONED",
+            "producer_status": "ABSENT_IN_L2_MVP",
+            "recovery_action": "INTEGRATE_A_CURRENT_MFT_PRODUCER",
+        }
+    return snapshot
 
 
 @router.get("/api/v1/console/mft-execution/delta")

@@ -2677,6 +2677,51 @@ export interface AShareAlphaPayload {
   honest_limitations: string[];
 }
 
+export interface AShareInstitutionalSurfaceResult {
+  surface: string;
+  candidate: { name: string; family: string; window: number; skip: number; hold_days: number } | null;
+  stable_positive_before_confirmation: boolean;
+  confirmation_excess_sharpe: number | null;
+  confirmation_excess_return: number | null;
+  confirmation_median_excess_sharpe: number | null;
+  bonferroni_adjusted_p: number | null;
+  candidate_usefulness: string;
+}
+
+export interface AShareInstitutionalSearchPayload {
+  source: 'BACKEND_COMPUTED_SNAPSHOT';
+  read_only: true;
+  api_version: string;
+  data_provenance: 'REPOSITORY_EVIDENCE' | string;
+  snapshot_present: boolean;
+  authoritative: false;
+  diagnostic_only: true;
+  evidence_status: string;
+  availability_mode: string;
+  generated_at?: string | null;
+  candidate_usefulness: string;
+  source_summary: {
+    rows?: number | null;
+    instruments?: number | null;
+    first_date?: number | null;
+    last_date?: number | null;
+    sqlite_quick_check?: string | null;
+    future_known_rows?: number | null;
+    bad_bar_count?: number | null;
+    historical_universe_semantics?: string | null;
+  };
+  trial_accounting?: { candidate_specs?: number; factor_definitions?: number };
+  surface_coverage: Record<string, { status: string; reason: string }>;
+  surface_results: AShareInstitutionalSurfaceResult[];
+  untouched_forward_observation: {
+    status?: string;
+    freeze_cutoff?: number;
+    minimum_sessions?: number;
+    selection_locked?: boolean;
+  };
+  limitations: string[];
+}
+
 /* ---------- Alpha 生命周期驾驶舱(alpha-lifecycle cockpit) -------------------
    Contract for GET /api/v1/console/alpha-lifecycle — read-only invalidated
    projection of the offline artifact evidence/alpha_lifecycle_cockpit.json

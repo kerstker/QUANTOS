@@ -92,6 +92,7 @@ function DiagnosticOnly({ state, reason, publicMarket }: {
   reason?: string | null;
   publicMarket?: BinanceRealtimePayload | null;
 }) {
+  const notProvisioned = state.snapshot?.availability_mode === 'NOT_PROVISIONED';
   const eventCount = publicMarket
     ? Object.values(publicMarket.stream.event_counts).reduce(
       (total: number, value: number) => total + value,
@@ -109,10 +110,14 @@ function DiagnosticOnly({ state, reason, publicMarket }: {
           MFT 执行权威不可验证；执行、仓位、收益与订单数字保持隐藏，公开市场监控独立展示。
         </p>
       </header>
-      <section className="rounded-xl border border-neg/35 bg-neg/10 p-5" role="alert">
+      <section className={`rounded-xl border p-5 ${notProvisioned ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10'}`} role="alert">
         <div className="flex flex-wrap items-center gap-2">
-          <strong className="font-mono text-sm text-neg">{diagnosticCode(state.phase)}</strong>
-          <span className="rounded border border-neg/30 px-2 py-0.5 text-[10px] font-semibold text-neg">DIAGNOSTIC_ONLY</span>
+          <strong className={`font-mono text-sm ${notProvisioned ? 'text-warn' : 'text-neg'}`}>
+            {notProvisioned ? 'MFT_VIEW_NOT_PROVISIONED' : diagnosticCode(state.phase)}
+          </strong>
+          <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${notProvisioned ? 'border-warn/30 text-warn' : 'border-neg/30 text-neg'}`}>
+            {notProvisioned ? 'EXPECTED_L2_CONFIGURATION' : 'DIAGNOSTIC_ONLY'}
+          </span>
         </div>
         <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
           <div><dt className="text-faint">phase</dt><dd className="mt-1 font-mono text-ink">{state.phase}</dd></div>
@@ -120,7 +125,11 @@ function DiagnosticOnly({ state, reason, publicMarket }: {
           <div><dt className="text-faint">transport</dt><dd className="mt-1 font-mono text-ink">{state.transport}</dd></div>
           <div><dt className="text-faint">retained snapshot</dt><dd className="mt-1 font-mono text-ink">{state.snapshot ? snapshotId(state.snapshot) : 'NONE'}</dd></div>
         </dl>
-        <p className="mt-4 text-xs leading-5 text-muted">不使用合成 MFT 回退，不展示保留快照中的执行、收益或风险值，也不生成交易建议。</p>
+        <p className="mt-4 text-xs leading-5 text-muted">
+          {notProvisioned
+            ? '本发布没有 MFT 读模型生产者；公开行情继续独立运行。执行、收益和仓位字段保持隐藏，直到新的生产者完成接入。'
+            : '不使用合成 MFT 回退，不展示保留快照中的执行、收益或风险值，也不生成交易建议。'}
+        </p>
       </section>
       {publicMarket ? (
         <section className="rounded-xl border border-pos/35 bg-pos/10 p-5" aria-label="公开市场实时监控">

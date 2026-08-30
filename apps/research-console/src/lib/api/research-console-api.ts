@@ -2,6 +2,7 @@ import type {
   AlphaLifecyclePayload,
   AgentsPayload,
   AShareAlphaPayload,
+  AShareInstitutionalSearchPayload,
   CryptoLivePayload,
   FxResearchPayload,
   CarryReadinessPayload,
@@ -295,6 +296,12 @@ export function fetchIcPanelSnapshot(signal?: AbortSignal) {
 
 export function fetchAShareAlphaSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<AShareAlphaPayload>('/api/v1/console/ashare-alpha', signal);
+}
+
+export function fetchAShareInstitutionalSearch(signal?: AbortSignal) {
+  return fetchConsoleJson<AShareInstitutionalSearchPayload>(
+    '/api/v1/console/ashare-alpha-search', signal,
+  );
 }
 
 export function fetchResearchFindings(signal?: AbortSignal) {

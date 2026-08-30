@@ -10,6 +10,7 @@ export type SnapshotDisplayState =
   | 'BACKEND_SYNTHETIC'
   | 'REAL'
   | 'EVIDENCE'
+  | 'DIAGNOSTIC'
   | 'BLOCKED'
   | 'STALE'
   | 'UNAVAILABLE'
@@ -26,6 +27,8 @@ export interface SnapshotStateInput {
   noDataYet?: boolean;
   /** Explicit authority denial always outranks a positive data/provenance label. */
   authorityDenied?: boolean;
+  /** Retained evidence is readable for forensics but grants no action/authority. */
+  diagnosticOnly?: boolean;
 }
 
 /**
@@ -41,6 +44,7 @@ export function normalizeSnapshotDisplayState(value: unknown): SnapshotDisplaySt
   if (normalized === 'SYNTHETIC' || normalized === 'SYNTHETIC_DETERMINISTIC') return 'BACKEND_SYNTHETIC';
   if (normalized === 'REAL' || normalized === 'REAL_DATA') return 'REAL';
   if (normalized === 'EVIDENCE' || normalized === 'VERIFIED_EVIDENCE') return 'EVIDENCE';
+  if (normalized === 'DIAGNOSTIC' || normalized === 'DIAGNOSTIC_ONLY') return 'DIAGNOSTIC';
   if (normalized === 'STALE' || normalized === 'STALE_DATA') return 'STALE';
   if (normalized === 'UNAVAILABLE') return 'UNAVAILABLE';
   if (normalized === 'NO_SNAPSHOT' || normalized === 'NO_DATA' || normalized === 'NO_RUN') return 'NO_SNAPSHOT';
@@ -59,6 +63,7 @@ export function deriveSnapshotDisplayState(input: SnapshotStateInput): SnapshotD
   // enabled until revalidation completes.
   if (input.apiState === 'loading') return 'LOADING';
   if (input.apiState === 'error') return 'UNAVAILABLE';
+  if (input.diagnosticOnly) return 'DIAGNOSTIC';
   if (input.authorityDenied) return 'BLOCKED';
   if (input.dataStatus) return input.dataStatus;
   if (!input.usingBackend) return 'MOCK';

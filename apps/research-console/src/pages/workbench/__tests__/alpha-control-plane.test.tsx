@@ -74,6 +74,36 @@ function availableModel(count = 2) {
         }],
       },
     },
+    ashare: {
+      status: 'AVAILABLE', reason: null,
+      payload: {
+        source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, api_version: '0.1.0',
+        data_provenance: 'REPOSITORY_EVIDENCE', snapshot_present: true,
+        authoritative: false, diagnostic_only: true,
+        evidence_status: 'TECHNICAL_VALIDATION_ONLY',
+        availability_mode: 'READ_ONLY_TECHNICAL_RESEARCH', generated_at: '2026-08-31T00:00:00Z',
+        candidate_usefulness: 'NOT_VALIDATED',
+        source_summary: { instruments: 5549, rows: 6267665, first_date: 20210802, last_date: 20260828 },
+        trial_accounting: { candidate_specs: 183, factor_definitions: 61 },
+        surface_coverage: {
+          value: { status: 'BLOCKED_MISSING_HISTORICAL_PIT', reason: 'no PIT valuation history' },
+          capital_flow: { status: 'PARTIAL_SIGNED_AMOUNT_PROXY_ONLY', reason: 'daily amount only' },
+        },
+        surface_results: [{
+          surface: 'capital_flow_proxy',
+          candidate: { name: 'flow_h5', family: 'signed_amount_flow', window: 5, skip: 0, hold_days: 5 },
+          stable_positive_before_confirmation: true,
+          confirmation_excess_sharpe: -0.2, confirmation_excess_return: -0.01,
+          confirmation_median_excess_sharpe: -0.3, bonferroni_adjusted_p: 1,
+          candidate_usefulness: 'NOT_VALIDATED',
+        }],
+        untouched_forward_observation: {
+          status: 'ARMED_AWAITING_NEW_SESSIONS', freeze_cutoff: 20260828,
+          minimum_sessions: 60, selection_locked: true,
+        },
+        limitations: ['survivor bias'],
+      },
+    },
   };
 }
 
@@ -136,6 +166,32 @@ describe('AlphaControlPlane', () => {
     expect(screen.getByText('ALPHA_AUTHORITY_STALE')).toBeTruthy();
     expect(screen.getByText('DIAGNOSTIC_ONLY')).toBeTruthy();
     expect(screen.queryByText('candidate-01')).toBeNull();
+  });
+
+  it('labels the hard V1 quarantine as expected safe isolation instead of a transport error', () => {
+    const blocked = {
+      ...snapshot(), status: 'BLOCKED', snapshot_status: 'UNAVAILABLE',
+      freshness: { status: 'UNAVAILABLE', age_seconds: null }, watermark: null,
+      batch_funnel: null, candidate_states: [],
+      stores: {
+        workflow: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+        trials: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+        forward: { status: 'UNAVAILABLE', reason: 'INVALIDATED_PERP_LEDGER_V1' },
+      },
+      authority_mode: 'QUARANTINED_LEGACY_AUTHORITY',
+      invalidation_code: 'INVALIDATED_PERP_LEDGER_V1',
+    };
+    model.value = {
+      ...availableModel(),
+      authority: { phase: 'QUARANTINED', snapshot: blocked, reason: 'INVALIDATED_PERP_LEDGER_V1' },
+    };
+    renderPage();
+    expect(screen.getByText('ALPHA_V1_AUTHORITY_QUARANTINED')).toBeTruthy();
+    expect(screen.getByText('EXPECTED_SAFE_ISOLATION')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'A股机构因子搜索' })).toBeTruthy();
+    expect(screen.getByText('5549')).toBeTruthy();
+    expect(screen.getByText(/ARMED_AWAITING_NEW_SESSIONS/)).toBeTruthy();
+    expect(screen.queryByText('ALPHA_AUTHORITY_UNAVAILABLE')).toBeNull();
   });
 
   it('supports filtering, bounded pagination, and arrow-key row targeting', () => {

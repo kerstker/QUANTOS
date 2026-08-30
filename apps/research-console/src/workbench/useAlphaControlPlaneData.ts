@@ -1,8 +1,13 @@
 import {
   fetchAlphaLifecycle,
   fetchAlphaZooSnapshot,
+  fetchAShareInstitutionalSearch,
 } from '@/lib/api/research-console-api';
-import type { AlphaLifecyclePayload, AlphaZooPayload } from '@/lib/types/research';
+import type {
+  AlphaLifecyclePayload,
+  AlphaZooPayload,
+  AShareInstitutionalSearchPayload,
+} from '@/lib/types/research';
 import { useConsoleSnapshot, type SnapshotResult } from '@/ui/useConsoleSnapshot';
 import { useHourlyAlphaReadModel, type HourlyAlphaReadModelState } from './useHourlyAlphaReadModel';
 
@@ -16,6 +21,7 @@ export interface AlphaControlPlaneData {
   authority: HourlyAlphaReadModelState;
   zoo: AlphaEnrichment<AlphaZooPayload>;
   lifecycle: AlphaEnrichment<AlphaLifecyclePayload>;
+  ashare: AlphaEnrichment<AShareInstitutionalSearchPayload>;
 }
 
 function unavailableReason<T>(result: SnapshotResult<T>): string {
@@ -85,13 +91,42 @@ export function lifecycleEnrichment(
   return { status: 'AVAILABLE', payload: result.payload, reason: null };
 }
 
+export function ashareEnrichment(
+  result: SnapshotResult<AShareInstitutionalSearchPayload>,
+): AlphaEnrichment<AShareInstitutionalSearchPayload> {
+  if (!result.usingBackend || result.payload === null) {
+    return {
+      status: result.apiState === 'loading' ? 'LOADING' : 'UNAVAILABLE',
+      payload: null,
+      reason: unavailableReason(result),
+    };
+  }
+  const payload = result.payload;
+  if (payload.snapshot_present !== true) {
+    return { status: 'UNAVAILABLE', payload: null, reason: payload.availability_mode };
+  }
+  if (payload.data_provenance !== 'REPOSITORY_EVIDENCE'
+    || payload.diagnostic_only !== true
+    || payload.evidence_status !== 'TECHNICAL_VALIDATION_ONLY') {
+    return {
+      status: 'UNAVAILABLE', payload: null,
+      reason: `CONTRACT:${payload.data_provenance}:${payload.evidence_status}`,
+    };
+  }
+  return { status: 'AVAILABLE', payload, reason: null };
+}
+
 export function useAlphaControlPlaneData(): AlphaControlPlaneData {
   const authority = useHourlyAlphaReadModel();
   const zooResult = useConsoleSnapshot<AlphaZooPayload>(fetchAlphaZooSnapshot);
   const lifecycleResult = useConsoleSnapshot<AlphaLifecyclePayload>(fetchAlphaLifecycle);
+  const ashareResult = useConsoleSnapshot<AShareInstitutionalSearchPayload>(
+    fetchAShareInstitutionalSearch,
+  );
   return {
     authority,
     zoo: zooEnrichment(zooResult),
     lifecycle: lifecycleEnrichment(lifecycleResult),
+    ashare: ashareEnrichment(ashareResult),
   };
 }

@@ -35,6 +35,7 @@ _SNAPSHOT_NAMES = (
 )
 
 REAL_PROVENANCE = "REAL_ASHARE_ALPHA_SNAPSHOT"
+_INSTITUTIONAL_SEARCH_PATH = _REPO_ROOT / "evidence" / "ashare_alpha_search_tdx_20260830.json"
 
 
 def _snapshot_paths(root: Path) -> tuple[Path, Path, Path]:
@@ -327,3 +328,84 @@ def _ashare_alpha_payload() -> Dict:
 @router.get("/api/v1/console/ashare-alpha")
 async def ashare_alpha() -> Dict:
     return _ashare_alpha_payload()
+
+
+def _surface_summary(name: str, value: dict) -> dict:
+    by_cost = value.get("confirmation_cost_sensitivity") or {}
+    primary = ((by_cost.get("30") or {}).get("primary_phase") or {}).get("excess") or {}
+    robustness = (by_cost.get("30") or {}).get("phase_robustness") or {}
+    return {
+        "surface": name,
+        "candidate": value.get("candidate_selected_without_confirmation"),
+        "stable_positive_before_confirmation": bool(
+            value.get("stable_positive_before_confirmation")
+        ),
+        "confirmation_excess_sharpe": primary.get("annualized_sharpe"),
+        "confirmation_excess_return": primary.get("annualized_return"),
+        "confirmation_median_excess_sharpe": robustness.get("median_excess_sharpe"),
+        "bonferroni_adjusted_p": value.get("bonferroni_adjusted_p"),
+        "candidate_usefulness": value.get("candidate_usefulness", "NOT_VALIDATED"),
+    }
+
+
+def _ashare_institutional_search_payload() -> Dict:
+    document = _load(str(_INSTITUTIONAL_SEARCH_PATH))
+    if document is None:
+        return {
+            "source": "BACKEND_COMPUTED_SNAPSHOT",
+            "read_only": True,
+            "api_version": "0.1.0",
+            "data_provenance": "REPOSITORY_EVIDENCE",
+            "snapshot_present": False,
+            "authoritative": False,
+            "diagnostic_only": True,
+            "evidence_status": "UNAVAILABLE",
+            "availability_mode": "SEARCH_EVIDENCE_NOT_PUBLISHED",
+            "candidate_usefulness": "UNAVAILABLE",
+            "source_summary": {},
+            "surface_coverage": {},
+            "surface_results": [],
+            "untouched_forward_observation": {},
+            "limitations": ["Run the admitted read-only A-share institutional surface search."],
+        }
+    source = document.get("source") or {}
+    surface_results = [
+        _surface_summary(str(name), value)
+        for name, value in sorted((document.get("surface_confirmations") or {}).items())
+        if isinstance(value, dict)
+    ]
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REPOSITORY_EVIDENCE",
+        "snapshot_present": True,
+        "authoritative": False,
+        "diagnostic_only": True,
+        "evidence_status": document.get("evidence_status", "TECHNICAL_VALIDATION_ONLY"),
+        "availability_mode": "READ_ONLY_TECHNICAL_RESEARCH",
+        "generated_at": document.get("generated_at"),
+        "candidate_usefulness": document.get("candidate_usefulness", "NOT_VALIDATED"),
+        "source_summary": {
+            "rows": source.get("rows"),
+            "instruments": source.get("instruments"),
+            "first_date": source.get("first_date"),
+            "last_date": source.get("last_date"),
+            "sqlite_quick_check": source.get("sqlite_quick_check"),
+            "future_known_rows": source.get("future_known_rows"),
+            "bad_bar_count": source.get("bad_bar_count"),
+            "historical_universe_semantics": (
+                (source.get("intake_contract") or {}).get("historical_universe_semantics")
+            ),
+        },
+        "trial_accounting": document.get("trial_accounting") or {},
+        "surface_coverage": document.get("requested_surface_coverage") or {},
+        "surface_results": surface_results,
+        "untouched_forward_observation": document.get("untouched_forward_observation") or {},
+        "limitations": document.get("limitations") or [],
+    }
+
+
+@router.get("/api/v1/console/ashare-alpha-search")
+async def ashare_alpha_search() -> Dict:
+    return _ashare_institutional_search_payload()
