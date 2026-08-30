@@ -49,7 +49,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 13
+SOURCE_CONTRACT_VERSION = 14
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
@@ -65,7 +65,11 @@ _SNAPSHOT_POLICIES = frozenset(
     {SNAPSHOT_POLICY_STANDARD, SNAPSHOT_POLICY_SQLITE_WAL_PINNED}
 )
 _SQLITE_HEADER = b"SQLite format 3\x00"
-_ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
+_ALLOWED_SOURCE_ROOTS = (
+    PurePosixPath("data/cache"),
+    PurePosixPath("data/stocks"),
+    PurePosixPath("evidence"),
+)
 _SNAPSHOT_METHODS = frozenset(
     {
         "SQLITE_ONLINE_BACKUP",
@@ -179,6 +183,31 @@ DEFAULT_SOURCES = (
         "data/cache/cross_venue_liquidation_health.json",
         "cross_venue_liquidation_health",
         False,
+    ),
+    BackupSource(
+        "data/stocks/research.db",
+        "ashare_research_database",
+        True,
+    ),
+    BackupSource(
+        "data/stocks/snapshots/alpha_snapshot.json",
+        "ashare_alpha_research_snapshot",
+        True,
+    ),
+    BackupSource(
+        "data/stocks/snapshots/klines_snapshot.json",
+        "ashare_klines_snapshot",
+        True,
+    ),
+    BackupSource(
+        "data/stocks/snapshots/paper_track_snapshot.json",
+        "ashare_paper_track_snapshot",
+        True,
+    ),
+    BackupSource(
+        "data/stocks/stocks.db",
+        "ashare_market_data_authority",
+        True,
     ),
     BackupSource(
         "evidence/cross_venue_liquidation_preregistration_764e5b5.json",

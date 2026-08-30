@@ -667,6 +667,39 @@ def test_default_backup_sources_require_restore_history_authority():
     assert source.required is True
 
 
+def test_current_backup_contract_requires_complete_ashare_research_state():
+    ashare = {
+        source.relative_path: (source.role, source.required)
+        for source in DEFAULT_SOURCES
+        if source.relative_path.startswith("data/stocks/")
+    }
+
+    assert SOURCE_CONTRACT_VERSION == 14
+    assert ashare == {
+        "data/stocks/research.db": ("ashare_research_database", True),
+        "data/stocks/snapshots/alpha_snapshot.json": (
+            "ashare_alpha_research_snapshot",
+            True,
+        ),
+        "data/stocks/snapshots/klines_snapshot.json": (
+            "ashare_klines_snapshot",
+            True,
+        ),
+        "data/stocks/snapshots/paper_track_snapshot.json": (
+            "ashare_paper_track_snapshot",
+            True,
+        ),
+        "data/stocks/stocks.db": ("ashare_market_data_authority", True),
+    }
+    contract = l2_backup_module._source_contract(DEFAULT_SOURCES)
+    assert contract["version"] == 14
+    assert all(
+        source["snapshot_policy"] == SNAPSHOT_POLICY_STANDARD
+        for source in contract["sources"]
+        if source["relative_path"].startswith("data/stocks/")
+    )
+
+
 def test_default_backup_sources_require_alpha_production_workflow():
     source = next(
         item

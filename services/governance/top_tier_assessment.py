@@ -2179,12 +2179,14 @@ def _l2_source_contract_error(contract: Any) -> str | None:
     # added the Task 39 soak authority; v6-v8 added retained public-data
     # vintages/book depth; and v9-v11 added liquidation, Bybit resilience, and
     # OKX borrow authorities. v12 made snapshot policy part of every source
-    # entry and v13 pinned both high-churn Bybit authorities. Keep both the
-    # accepted version set and each version's entry schema finite so a future
-    # contract revision still requires explicit review.
+    # entry and v13 pinned both high-churn Bybit authorities. v14 adds the
+    # migrated A-share market database, reproducibility copy, and read-only
+    # snapshot bundle. Keep both the accepted version set and each version's
+    # entry schema finite so a future contract revision still requires explicit
+    # review.
     version = contract.get("version")
-    if type(version) is not int or version not in range(2, 14):
-        return "source contract version must be an integer from 2 through 13"
+    if type(version) is not int or version not in range(2, 15):
+        return "source contract version must be an integer from 2 through 14"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"
@@ -2197,7 +2199,11 @@ def _l2_source_contract_error(contract: Any) -> str | None:
         if version >= 12
         else legacy_entry_fields
     )
-    allowed_roots = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
+    legacy_allowed_roots = (
+        PurePosixPath("data/cache"),
+        PurePosixPath("evidence"),
+    )
+    ashare_root = PurePosixPath("data/stocks")
     snapshot_policies = {"STANDARD", "SQLITE_WAL_PINNED"}
     for source in sources:
         if not isinstance(source, dict) or set(source) != entry_fields:
@@ -2217,11 +2223,16 @@ def _l2_source_contract_error(contract: Any) -> str | None:
             or relative_path != relative.as_posix()
             or relative.is_absolute()
             or ".." in relative.parts
-            or not any(root in relative.parents for root in allowed_roots)
+            or (
+                not any(root in relative.parents for root in legacy_allowed_roots)
+                and not (version >= 14 and ashare_root in relative.parents)
+            )
         ):
+            if relative is not None and ashare_root in relative.parents:
+                return "data/stocks source paths require source contract version 14"
             return (
-                "source paths must be normalized repository-local data/cache "
-                "or evidence paths"
+                "source paths must be normalized repository-local data/cache, "
+                "data/stocks (version 14), or evidence paths"
             )
         if (
             not isinstance(role, str)

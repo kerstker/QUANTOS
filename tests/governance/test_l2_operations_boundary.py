@@ -133,6 +133,20 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             "vendor_delivery_history_authority",
             False,
         ),
+        "data/stocks/research.db": ("ashare_research_database", True),
+        "data/stocks/snapshots/alpha_snapshot.json": (
+            "ashare_alpha_research_snapshot",
+            True,
+        ),
+        "data/stocks/snapshots/klines_snapshot.json": (
+            "ashare_klines_snapshot",
+            True,
+        ),
+        "data/stocks/snapshots/paper_track_snapshot.json": (
+            "ashare_paper_track_snapshot",
+            True,
+        ),
+        "data/stocks/stocks.db": ("ashare_market_data_authority", True),
         "evidence/cross_venue_liquidation_preregistration_764e5b5.json": (
             "cross_venue_liquidation_preregistration",
             False,
@@ -143,7 +157,9 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         ),
     }
     assert all(
-        path.startswith("data/cache/") or path.startswith("evidence/")
+        path.startswith("data/cache/")
+        or path.startswith("data/stocks/")
+        or path.startswith("evidence/")
         for path in actual
     )
     assert {

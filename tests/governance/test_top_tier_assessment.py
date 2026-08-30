@@ -428,10 +428,10 @@ def test_l2_backup_checker_requires_external_encrypted_restore_verified_evidence
     assert report["requirements"][0]["status"] == "PASS"
 
 
-def test_l2_backup_checker_accepts_v2_through_v13_and_rejects_v14(tmp_path):
+def test_l2_backup_checker_accepts_v2_through_v14_and_rejects_v15(tmp_path):
     """The checker must accept every released source-contract version.
 
-    v13 is current. A future unreviewed version must still fail closed instead
+    v14 is current. A future unreviewed version must still fail closed instead
     of being accepted by a broad integer check.
     """
     for relative in ("tools/l2_backup.py", "tools/l2_scheduler_watchdog.py"):
@@ -471,16 +471,77 @@ def test_l2_backup_checker_accepts_v2_through_v13_and_rejects_v14(tmp_path):
         evidence.write_text(json.dumps(payload), encoding="utf-8")
         return assess_repository(tmp_path, registry)["requirements"][0]
 
-    for version in range(2, 14):
+    for version in range(2, 15):
         assert assess_version(version)["status"] == "PASS", f"v{version}"
 
-    future = assess_version(14)
+    future = assess_version(15)
     assert future["status"] == "UNVERIFIED"
     assert "source contract version" in future["detail"]
 
-    non_integer = assess_version(13.0)
+    non_integer = assess_version(14.0)
     assert non_integer["status"] == "UNVERIFIED"
     assert "source contract version" in non_integer["detail"]
+
+
+def test_l2_backup_checker_allows_ashare_sources_only_from_v14(tmp_path):
+    contract = _l2_source_contract(version=13)
+    contract["sources"].append(
+        {
+            "relative_path": "data/stocks/stocks.db",
+            "required": True,
+            "role": "ashare_market_data_authority",
+            "snapshot_policy": "STANDARD",
+        }
+    )
+    contract["sources"].sort(key=lambda source: source["relative_path"])
+    checker_args = _l2_checker_args("evidence.json", pass_maturity="M3")
+    checker_args["expected_source_contract"] = contract
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=checker_args,
+            )
+        ],
+    )
+
+    rejected = assess_repository(tmp_path, registry)["requirements"][0]
+    assert rejected["status"] == "UNVERIFIED"
+    assert "version 14" in rejected["detail"]
+
+    contract["version"] = 14
+    checker_args["expected_source_contract"] = contract
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=checker_args,
+            )
+        ],
+    )
+    payload = _valid_l2_backup_evidence()
+    payload["source_contract"] = contract
+    payload["source_contract_sha256"] = _l2_source_contract_sha256(contract)
+    payload["backed_up_sources"] = [
+        {
+            key: source[key]
+            for key in ("relative_path", "required", "role")
+        }
+        for source in contract["sources"]
+    ]
+    payload["file_count"] = len(contract["sources"])
+    payload["required_source_count"] = sum(
+        source["required"] for source in contract["sources"]
+    )
+    payload["missing_optional_sources"] = []
+    (tmp_path / "evidence.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    accepted = assess_repository(tmp_path, registry)["requirements"][0]
+    assert accepted["status"] == "PASS"
 
 
 def test_l2_backup_checker_accepts_policy_bound_v13_evidence_sources(tmp_path):
@@ -560,7 +621,7 @@ def test_l2_backup_checker_accepts_policy_bound_v13_evidence_sources(tmp_path):
         ("invalid_policy", "source snapshot policies"),
         ("wal_policy_on_json", "WAL-pinned source snapshot policies"),
         ("legacy_policy_field", "source entries for version 11"),
-        ("outside_allowed_roots", "data/cache or evidence paths"),
+        ("outside_allowed_roots", "data/cache, data/stocks"),
     ],
 )
 def test_l2_backup_checker_rejects_invalid_versioned_source_contracts(

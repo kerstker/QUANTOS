@@ -29,6 +29,12 @@ contains the current attempt's committed STARTED event and all earlier terminal
 history. Restore performs both SQLite integrity and semantic history-chain
 verification.
 
+Source-contract v14 additionally makes the migrated A-share market database,
+its frozen research copy, and the three read-only console snapshots required
+backup sources under `data/stocks/`. This is a real protection-scope change,
+not a cadence reset: earlier contract epochs and their failures remain in the
+append-only authority, while v14 starts a separately measured current epoch.
+
 ## Recorded Backup Flow
 
 `tools/l2_backup.py::run_recorded_l2_backup` is the scheduled entry point.
