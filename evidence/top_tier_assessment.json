@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "domain": "reliability_operations",
-      "passed": 0,
+      "passed": 1,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -836,13 +836,25 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "invalid expected source contract: source contract version must be 2, 3, 4, or 5",
+      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
       "domain": "reliability_operations",
-      "evidence": [],
+      "evidence": [
+        "tools/l2_backup.py",
+        "tools/l2_scheduler_watchdog.py",
+        "tools/external_heartbeat.py",
+        "tools/domain_event_seal.py",
+        "tools/restore_drill.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_external_heartbeat.py",
+        "tests/tools/test_domain_event_seal.py",
+        "tests/governance/test_l2_operations_boundary.py",
+        "evidence/l2_backup_latest.json"
+      ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -852,7 +864,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "UNVERIFIED",
+      "status": "PASS",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -1071,11 +1083,20 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history checker arguments are incomplete",
+      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
       "domain": "reliability_operations",
-      "evidence": [],
+      "evidence": [
+        "tools/l2_backup.py",
+        "services/governance/l2_restore_history.py",
+        "services/governance/l2_restore_checkpoint.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/governance/test_l2_restore_history.py",
+        "tests/governance/test_l2_restore_checkpoint.py",
+        "tests/governance/test_l2_restore_top_tier.py",
+        "data/cache/l2_restore_history.db"
+      ],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -1087,7 +1108,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "UNVERIFIED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1216,6 +1237,7 @@
         "docs/engineering/specs/2026-07-31-oidc-key-rotation-registry.md",
         "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
         "docs/engineering/specs/2026-08-04-canonical-realtime-candidate-handoff.md",
+        "docs/runbooks/l2-research-operations.md",
         "evidence/event_schema_catalog.json",
         "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
         "evidence/external_sigstore/2026-07-30/github-artifact.json",
@@ -1242,6 +1264,7 @@
         "quantos/contracts/events.py",
         "quantos/contracts/external_model_provider.py",
         "quantos/contracts/identity.py",
+        "quantos/contracts/l2_schedule_policy.py",
         "quantos/contracts/paper.py",
         "requirements-dev.txt",
         "requirements.txt",
@@ -1255,6 +1278,7 @@
         "scripts/generate_service_import_graph.py",
         "scripts/generate_strong_identity_evidence.py",
         "scripts/generate_supply_chain_evidence.py",
+        "scripts/isolate_l2_mvp_systemd.py",
         "scripts/register_schedules.ps1",
         "scripts/validate.py",
         "services/alpha/evaluator.py",
@@ -1414,6 +1438,7 @@
         "tests/tools/test_domain_event_seal.py",
         "tests/tools/test_external_heartbeat.py",
         "tests/tools/test_external_model_provider.py",
+        "tests/tools/test_isolate_l2_mvp_systemd.py",
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
@@ -1716,17 +1741,17 @@
   "summary": {
     "failed": 0,
     "manual_evidence_required": 0,
-    "partial": 6,
-    "passed": 14,
+    "partial": 7,
+    "passed": 15,
     "red_lines_failed": 3,
     "total": 22,
-    "unverified": 2
+    "unverified": 0
   },
   "validation": {
     "current": true,
-    "generated_at": 1787926661356,
-    "run_id": "5b25c9cb05a9fa19a9a05c50aa4ef6e872102721e68a90b44cbe48c2f7248e57",
-    "source_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775"
+    "generated_at": 1788074091701,
+    "run_id": "64003a9c8124e9bf71237dc1545191f55a79a11a797235e211c9e32787ce4d65",
+    "source_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e"
   },
   "verdict": "NOT_TOP_TIER"
 }

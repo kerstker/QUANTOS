@@ -2,25 +2,33 @@
   "acceptance": {
     "external_approval": false,
     "live_authority": false,
-    "research_lifecycle": true
+    "research_lifecycle": false
   },
   "artifact": "QUANTOS_727_ALPHA_LIFECYCLE_STATUS",
-  "blockers": [],
+  "authoritative_backtest": {
+    "counted_as_completion_evidence": false,
+    "independently_admitted": false,
+    "record_present": false,
+    "required_field": "authoritative_backtest_record",
+    "source_path": "evidence/alpha_lifecycle_cockpit.json",
+    "status": "INVALIDATED_PERP_LEDGER_V1"
+  },
+  "blockers": [
+    "INVALIDATED_PERP_LEDGER_V1"
+  ],
   "cockpit": {
-    "alpha_count": 20,
-    "derived_stage_counts": {
-      "DRY_RUN": 2,
-      "LIVE_TRACK": 1,
-      "PAPER_TRACKED": 17
-    },
+    "counted_as_completion_evidence": false,
+    "exists": true,
     "path": "evidence/alpha_lifecycle_cockpit.json",
+    "retained_alpha_count": 20,
+    "retention_status": "INVALIDATED_PERP_LEDGER_V1",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+  "commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1787927710142,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
-  "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
+  "generated_at_ms": 1788075960903,
+  "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
+  "honesty_note": "The cockpit and paper-cycle files are retained and hash-audited diagnostic history. Their existence, non-empty rows, stages, or hashes do not satisfy lifecycle acceptance without an independently admitted authoritative_backtest_record.",
   "implementation": {
     "degradation_pause_retirement": true,
     "deployment_state_machine": true,
@@ -28,7 +36,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "1f7af4cc4010e47bc620e666466b6514aa0a020d868d0fa4688cd7e7c95a5313",
+  "input_hash": "e68103c1b3f1ac22010b74c315d2fb0042024aa46df6acf27cfc6dbe6e0071af",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -57,7 +65,7 @@
     "services/alpha": {
       "exists": true,
       "file_count": 40,
-      "files_sha256": "b8990f923225edfb1cdaad60cc6f89e1f6b210ff552d2ed669057dd395828cbe",
+      "files_sha256": "3c82238521b6d8b04e6a160765c34fd2e316011b4779ea2c87a8ed1472f87956",
       "kind": "python_directory"
     },
     "services/alpha_factory": {
@@ -69,13 +77,13 @@
     "tests/alpha": {
       "exists": true,
       "file_count": 42,
-      "files_sha256": "1a02b0f1443c4d25d7fa963cf5afed486544302465bbe02542eeb89cb55f8b12",
+      "files_sha256": "2bd4a9fb0aad09c56f660819beb729ef935db9dd970713674067a9365f3fae2f",
       "kind": "python_directory"
     },
     "tests/alpha_factory": {
       "exists": true,
       "file_count": 11,
-      "files_sha256": "563cbfd64c28f5e0f2ba98251c3655b4c616b15ad9d68ad070706318f44dd6a0",
+      "files_sha256": "1e6583e3e7a2a71a29e7c46cec269ae78ac6847ac77f76cda78e8f4c90184dc5",
       "kind": "python_directory"
     },
     "tests/lifecycle": {
@@ -83,6 +91,20 @@
       "file_count": 4,
       "files_sha256": "71553fd73bb6b92435341a948d8b5b9f5a06ce7f3db383193b24a248768cf555",
       "kind": "python_directory"
+    }
+  },
+  "legacy_profitability_artifacts": {
+    "evidence/alpha_lifecycle_cockpit.json": {
+      "counted_as_completion_evidence": false,
+      "exists": true,
+      "retention_status": "INVALIDATED_PERP_LEDGER_V1",
+      "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "counted_as_completion_evidence": false,
+      "exists": true,
+      "retention_status": "INVALIDATED_PERP_LEDGER_V1",
+      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c"
     }
   },
   "readiness": "L2_DRY_RUN_ONLY",
@@ -95,12 +117,12 @@
   },
   "safety_verdict": "PASS",
   "schema_version": 1,
-  "status": "READY_FOR_RESEARCH_AUTONOMY",
+  "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "head_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "overall_status": "PASS",
-    "reported_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "reported_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"

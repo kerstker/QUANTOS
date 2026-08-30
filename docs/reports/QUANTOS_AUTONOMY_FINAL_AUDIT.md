@@ -2,8 +2,8 @@
 
 > 本报告由 `scripts/generate_727_final_audit.py` 只读生成。它不授予任何订单、资金或部署权限。
 
-- 生成时间（Unix ms）：`1787927710142`
-- commit：`7e2fd29d3afc415383d3df3abd4e242419db6775`
+- 生成时间（Unix ms）：`1788075960903`
+- commit：`1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e`
 - 当前 readiness：`L2_DRY_RUN_ONLY`
 - 当前总状态：`NOT_READY`
 - 不生成任何开放真实实盘的状态或权限
@@ -15,8 +15,8 @@
 | Autonomy Kernel | `READY_FOR_RESEARCH_AUTONOMY` |
 | Trial Ledger | `NOT_READY` |
 | Factor Garden | `READY_FOR_RESEARCH_AUTONOMY` |
-| Alpha Lifecycle | `READY_FOR_RESEARCH_AUTONOMY` |
-| Paper / Shadow | `READY_FOR_SHADOW` |
+| Alpha Lifecycle | `NOT_READY` |
+| Paper / Shadow | `NOT_READY` |
 | MEXC Integration | `NOT_READY` |
 | Chaos / Recovery | `NOT_READY` |
 
@@ -30,11 +30,11 @@
 | 3 | 全局 Trial Ledger | `BLOCKED` | evidence/trial_ledger_integrity.json |
 | 4 | Factor Garden | `PASS` | evidence/factor_garden_status.json |
 | 5 | Alpha Factory 与 Challenge Council | `BLOCKED` | evidence/autonomy_readiness.json；Trial Ledger |
-| 6 | 三状态生命周期 | `PASS` | evidence/alpha_lifecycle_status.json |
-| 7 | Paper 与 Shadow | `PARTIAL` | evidence/paper_shadow_status.json |
+| 6 | 三状态生命周期 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
+| 7 | Paper 与 Shadow | `BLOCKED` | evidence/paper_shadow_status.json |
 | 8 | MEXC 行情/只读/Test Order | `BLOCKED` | evidence/mexc_integration_status.json |
 | 9 | Micro-Live Broker Adapter | `BLOCKED` | 默认禁用；缺外部 Deployment Grant、真实 broker 与人工审查 |
-| 10 | Alpha Health、衰减与退役 | `PASS` | evidence/alpha_lifecycle_status.json |
+| 10 | Alpha Health、衰减与退役 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
 | 11 | 前端重构 | `PASS` | validation_report frontend typecheck/eslint/tests/build |
 | 12 | Chaos、恢复与运维 | `BLOCKED` | evidence/chaos_recovery_status.json |
 | 13 | 最终审计 | `PASS` | 本报告与 7 个机器状态制品；总体状态仍 NOT_READY |

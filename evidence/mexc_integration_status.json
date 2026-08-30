@@ -9,7 +9,7 @@
     "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
     "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
   ],
-  "commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+  "commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "external_verification": {
     "account_smoke": false,
@@ -19,8 +19,8 @@
     "test_order_executed": false,
     "user_stream_verified": false
   },
-  "generated_at_ms": 1787927710142,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
+  "generated_at_ms": 1788075960903,
+  "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
   "implementation": {
     "account_read_only": true,
@@ -32,7 +32,7 @@
     "unknown_order_persistence": true,
     "user_stream": true
   },
-  "input_hash": "9a324ee374f14dfb6f0f90cf4ab16109403214a7259df43335f5efb63abd8674",
+  "input_hash": "cdb229f7efd615d8069d17afeae1613e8e81d8b7664556a74d3320f83a162f4f",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -73,14 +73,14 @@
     "live/pipeline.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "a06b0f9be9fa409ef23261b85d091dbe464136307e3bc3dbdeb38ffd338183c7",
-      "size_bytes": 43703
+      "sha256": "fb338b4677e398d22f3d6edf9c49a80b6a1318a6ef5844e98b19de02611d23d2",
+      "size_bytes": 46527
     },
     "tests/live/test_mexc_pipeline_integration.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "019b448f9d12c77f7a5e03bef4ee42a5038d8663f6fc7a75e7f0703b33ac8967",
-      "size_bytes": 16435
+      "sha256": "77074df54c5426f3b361e3ad275910ef72e759d22edf798cab9e21b31fa4af20",
+      "size_bytes": 16543
     },
     "tests/live/test_mexc_spot.py": {
       "exists": true,
@@ -138,9 +138,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "head_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "overall_status": "PASS",
-    "reported_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "reported_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"

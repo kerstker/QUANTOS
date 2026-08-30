@@ -1,15 +1,22 @@
 {
   "artifact": "QUANTOS_727_PAPER_SHADOW_STATUS",
   "blockers": [
-    "PAPER_EVIDENCE_MALFORMED"
+    "PAPER_EVIDENCE_MALFORMED",
+    "INVALIDATED_PERP_LEDGER_V1"
   ],
-  "commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+  "commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1787927710142,
-  "generator_sha256": "9586cf2f76741579c0c13bbad0e575623a53b3b828153ebdbe96e001b90ba8f5",
-  "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "344b16594eb70d9084823534abad956e3bcdaa0e8f4c42020ed7519990ae6b0a",
+  "generated_at_ms": 1788075960903,
+  "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
+  "honesty_note": "Shadow readiness is not fill or paper proof. Legacy paper-cycle, three-alpha, continuous-paper, and health artifacts remain hash-audited diagnostic history and cannot become paper evidence through retention.",
+  "input_hash": "3f1d883f395b9b0508cbea66e83c2b9aae6af5371a4aef698cce8914a28beab2",
   "inputs": {
+    "data/cache/binance_usdt_continuous_paper.json": {
+      "exists": false,
+      "kind": "file",
+      "sha256": null,
+      "size_bytes": null
+    },
     "data/cache/paper_health_10k.json": {
       "exists": false,
       "kind": "file",
@@ -40,27 +47,43 @@
       "sha256": "6bdbeb50c8bfa13846c8973c5543297306a4b740b3458b0f3086222a4ec18f5c",
       "size_bytes": 1216
     },
+    "evidence/three_alpha_paper_flow.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "f1d9b710a916418613837a73fa76b309b6ef1a68efe2f3f890163e8e54e183f1",
+      "size_bytes": 22822
+    },
     "tests/live": {
       "exists": true,
-      "file_count": 68,
-      "files_sha256": "7bd8eb617898c4bfaaebcbc8904b71d3434315f1b407a78eb80cfde49fc6e3df",
+      "file_count": 69,
+      "files_sha256": "693201271368a4153db590238eee806c0703dd7e65b8178d7d7d8429b5afc3f1",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
       "file_count": 182,
-      "files_sha256": "ec38cb0d8deec8584d104f9846bd8508c641a41c346f314dba2eab8e7255ce42",
+      "files_sha256": "891d923b469e9e854c31f4edf0f936902cb6a1cfcd18007ff95c3a8184d562b7",
       "kind": "python_directory"
     }
   },
   "paper": {
+    "authoritative_backtest": {
+      "counted_as_completion_evidence": false,
+      "independently_admitted": false,
+      "record_present": false,
+      "required_field": "authoritative_backtest_record",
+      "source_path": "data/cache/paper_health_10k.json",
+      "status": "INVALIDATED_PERP_LEDGER_V1"
+    },
     "blockers": [
-      "PAPER_EVIDENCE_MALFORMED"
+      "PAPER_EVIDENCE_MALFORMED",
+      "INVALIDATED_PERP_LEDGER_V1"
     ],
     "forward_evidence": {},
-    "paper_mark_ready": null,
-    "paper_preview_ready": null,
+    "paper_mark_ready": false,
+    "paper_preview_ready": false,
     "paper_ready": false,
+    "retained_forward_evidence_present": false,
     "status": "NOT_READY"
   },
   "readiness": "L2_DRY_RUN_ONLY",
@@ -85,12 +108,12 @@
     "shadow_ready": true,
     "status": "READY_FOR_SHADOW"
   },
-  "status": "READY_FOR_SHADOW",
+  "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "head_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "overall_status": "PASS",
-    "reported_commit": "7e2fd29d3afc415383d3df3abd4e242419db6775",
+    "reported_commit": "1c36c47ad5557253e3fe113ffaf7d2357f4c8c0e",
     "reported_validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e",
     "selection_scope": "ALL",
     "validate_script_sha256": "c67e6f089412e47276fd15fd0b135d65aa8de716ccd4056c48a208733ba3063e"
