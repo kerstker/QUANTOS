@@ -263,6 +263,11 @@
     {
       "references": [
         {
+          "line": 35,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/alpha_lifecycle_views.py"
+        },
+        {
           "line": 16,
           "module": "services.execution.paper_tca_history",
           "path": "services/console/api/artifact_paper_views.py"
@@ -281,6 +286,11 @@
           "line": 45,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/mexc_views.py"
+        },
+        {
+          "line": 15,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/research_run_views.py"
         }
       ],
       "source": "console",
@@ -484,12 +494,12 @@
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 42,
+          "line": 47,
           "module": "services.research.run_registry.store",
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 43,
+          "line": 48,
           "module": "services.research.run_registry.registry",
           "path": "services/console/api/research_run_views.py"
         }
@@ -1398,6 +1408,11 @@
     {
       "references": [
         {
+          "line": 28,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research_runner/main.py"
+        },
+        {
           "line": 19,
           "module": "services.execution.backtest_authority",
           "path": "services/research_runner/run_kinds.py"
@@ -1420,17 +1435,17 @@
     {
       "references": [
         {
-          "line": 28,
+          "line": 29,
           "module": "services.research.run_registry.contract",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 29,
+          "line": 30,
           "module": "services.research.run_registry.registry",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 30,
+          "line": 31,
           "module": "services.research.run_registry.store",
           "path": "services/research_runner/main.py"
         },
@@ -1488,7 +1503,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "ae22956bdefac08a4dc1ff0f1a6cfef842b91065e9aedfed3a7d2125d9a41c05",
+  "graph_sha256": "16f22a3a327699fb0bc44466b305590a08e457fa49aa900d8d40ea71c9897e8e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1523,19 +1538,19 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "282790419831da3b39c12746de84888d0e3be309e4025c8d65a495deff0dd396",
+  "policy_sha256": "9b436b95e858f2dff1f7bd043bc94ccbafa7cbe8a27ff9a82baa5d01d9865000",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
   "source_file_count": 498,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
-      "line": 84,
+      "line": 93,
       "path": "services/research_runner/run_kinds.py"
     },
     {
       "function": "importlib.import_module",
-      "line": 91,
+      "line": 100,
       "path": "services/research_runner/run_kinds.py"
     }
   ],

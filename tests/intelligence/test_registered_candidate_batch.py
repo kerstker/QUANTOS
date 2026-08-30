@@ -183,7 +183,7 @@ def test_registered_batch_rejects_invalid_target_aum_before_writes(
     registry = _registry()
 
     with pytest.raises(ValueError, match="target_aum must be finite and positive"):
-        batch_module.run_registered_candidate_batch(
+        run_registered_candidate_batch(
             _candidates(2),
             registry=registry,
             search_id="invalid-aum-batch",
