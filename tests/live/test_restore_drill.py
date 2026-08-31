@@ -48,7 +48,7 @@ def test_encrypted_restore_drill_roundtrip_writes_integrity_evidence(tmp_path):
     json.dumps(result)
 
 
-def test_encrypted_restore_hashes_each_restored_file_once(tmp_path, monkeypatch):
+def test_encrypted_restore_reuses_authenticated_stream_digest(tmp_path, monkeypatch):
     import tools.restore_drill as restore_drill
 
     source = tmp_path / "source.bin"
@@ -77,8 +77,8 @@ def test_encrypted_restore_hashes_each_restored_file_once(tmp_path, monkeypatch)
     )
 
     assert result["integrity_verified"] is True
-    assert len(calls) == 1
-    assert calls[0].endswith("source.bin")
+    assert calls == []
+    assert result["sha256"]["source.bin"] == real_hash(source)
 
 
 def test_restore_drill_wrong_passphrase_fails_closed(tmp_path):

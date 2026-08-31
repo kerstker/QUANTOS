@@ -6,6 +6,7 @@
 名字/长度、绝不记录值"的既有边界一致,复制密钥到第二个位置是需要用户自己决定的安全权衡,
 不该由工具自动做)。
 """
+import hashlib
 import json
 import os
 import sys
@@ -193,8 +194,9 @@ def test_encrypt_file_then_decrypt_file_roundtrip_is_byte_identical(tmp_path):
     assert b"123456" not in enc.read_bytes()
 
     restored = tmp_path / "restored_live_mandate.json"
-    decrypt_file(str(enc), str(restored), "passphrase-123")
+    restored_sha256 = decrypt_file(str(enc), str(restored), "passphrase-123")
     assert restored.read_bytes() == original_bytes
+    assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
 
 
 def test_encrypt_file_streams_multiple_authenticated_chunks(tmp_path):
@@ -207,8 +209,9 @@ def test_encrypt_file_streams_multiple_authenticated_chunks(tmp_path):
 
     assert enc.read_bytes().startswith(b"QBK2")
     restored = tmp_path / "restored-large-ledger.db"
-    decrypt_file(str(enc), str(restored), "chunked-passphrase")
+    restored_sha256 = decrypt_file(str(enc), str(restored), "chunked-passphrase")
     assert restored.read_bytes() == original_bytes
+    assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
 
 
 def test_decrypt_file_remains_backward_compatible_with_qbk1_blob(tmp_path):
@@ -217,9 +220,10 @@ def test_decrypt_file_remains_backward_compatible_with_qbk1_blob(tmp_path):
     enc.write_bytes(encrypt_bytes(original_bytes, "legacy-passphrase"))
 
     restored = tmp_path / "restored-legacy.db"
-    decrypt_file(str(enc), str(restored), "legacy-passphrase")
+    restored_sha256 = decrypt_file(str(enc), str(restored), "legacy-passphrase")
 
     assert restored.read_bytes() == original_bytes
+    assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
 
 
 @pytest.mark.parametrize("mutation", ["tamper", "truncate"])

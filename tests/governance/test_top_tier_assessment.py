@@ -471,10 +471,10 @@ def test_l2_backup_checker_accepts_v2_through_v14_and_rejects_v15(tmp_path):
         evidence.write_text(json.dumps(payload), encoding="utf-8")
         return assess_repository(tmp_path, registry)["requirements"][0]
 
-    for version in range(2, 15):
+    for version in range(2, 16):
         assert assess_version(version)["status"] == "PASS", f"v{version}"
 
-    future = assess_version(15)
+    future = assess_version(16)
     assert future["status"] == "UNVERIFIED"
     assert "source contract version" in future["detail"]
 

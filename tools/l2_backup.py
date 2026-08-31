@@ -37,7 +37,15 @@ from services.governance.external_evidence import (
     ContinuityObservation,
     evaluate_continuity,
 )
-from tools.live_backup import _check_passphrase_strength, encrypt_bytes, encrypt_file
+from tools.live_backup import (
+    BackupDecryptionError,
+    BackupEncryptionError,
+    BackupEncryptionUnavailable,
+    BackupPassphraseTooWeak,
+    _check_passphrase_strength,
+    encrypt_bytes,
+    encrypt_file,
+)
 from tools.restore_drill import RestoreDrillError, run_restore_drill
 
 
@@ -49,7 +57,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 14
+SOURCE_CONTRACT_VERSION = 15
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
@@ -190,6 +198,16 @@ DEFAULT_SOURCES = (
         True,
     ),
     BackupSource(
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+        "ashare_tdx_daily_price_authority",
+        True,
+    ),
+    BackupSource(
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+        "ashare_tdx_panel_cache",
+        False,
+    ),
+    BackupSource(
         "data/stocks/snapshots/alpha_snapshot.json",
         "ashare_alpha_research_snapshot",
         True,
@@ -261,6 +279,10 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     return relative
 
 
+def _is_sqlite_path(path: Path | PurePosixPath) -> bool:
+    return path.suffix.lower() in {".db", ".sqlite", ".sqlite3"}
+
+
 def _source_contract(sources: Iterable[BackupSource]) -> dict:
     entries: list[dict] = []
     seen_paths: set[PurePosixPath] = set()
@@ -286,7 +308,7 @@ def _source_contract(sources: Iterable[BackupSource]) -> dict:
             raise L2BackupError(f"invalid backup snapshot policy for {relative.as_posix()}")
         if (
             source.snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
-            and relative.suffix.lower() != ".db"
+            and not _is_sqlite_path(relative)
         ):
             raise L2BackupError(
                 f"WAL-pinned backup policy requires a SQLite source: {relative.as_posix()}"
@@ -547,12 +569,12 @@ def _snapshot_source_file(
         raise L2BackupError("unsupported backup snapshot policy")
     if (
         snapshot_policy == SNAPSHOT_POLICY_SQLITE_WAL_PINNED
-        and source.suffix.lower() != ".db"
+        and not _is_sqlite_path(source)
     ):
         raise L2BackupError("WAL-pinned backup policy requires a SQLite source")
     identity = hashlib.sha256(os.fspath(source.resolve()).encode("utf-8")).hexdigest()[:12]
     snapshot = scratch / f"{identity}-{source.name}"
-    if source.suffix.lower() != ".db":
+    if not _is_sqlite_path(source):
         mtime_ns = _stable_copy(source, snapshot)
         return snapshot, "STABLE_FILE_READ", mtime_ns
 
@@ -1149,6 +1171,84 @@ def _failure_evidence(
     }
 
 
+def _recorded_failure_classification(exc: Exception) -> tuple[str, str]:
+    """Return a stable redacted reason and stage for the authority ledger.
+
+    Arbitrary exception text can contain passphrases or destination paths, so
+    only reviewed exact/prefix matches become durable reason codes. Unknown
+    failures retain the generic code rather than leaking their text.
+    """
+
+    message = str(exc)
+    if isinstance(exc, L2BackupError):
+        exact = {
+            "BACKUP_CONFIGURATION_UNAVAILABLE": (
+                "BACKUP_CONFIGURATION_UNAVAILABLE",
+                "PREFLIGHT",
+            ),
+            "EXTERNAL_DESTINATION_REQUIRED": (
+                "EXTERNAL_DESTINATION_REQUIRED",
+                "PREFLIGHT",
+            ),
+        }
+        if message in exact:
+            return exact[message]
+        prefixes = (
+            (
+                "restore drill exceeded RTO:",
+                "RESTORE_RTO_EXCEEDED",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "backup batch exceeds RPO:",
+                "RESTORE_RPO_EXCEEDED",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "SQLite integrity check failed",
+                "SQLITE_INTEGRITY_FAILED",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "restore history semantic verification failed",
+                "RESTORE_HISTORY_INVALID",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "restored backup manifest",
+                "RESTORE_MANIFEST_INVALID",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "restored backup source",
+                "RESTORE_SOURCE_CONTRACT_INVALID",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "restored artifact",
+                "RESTORE_ARTIFACT_INVALID",
+                "RESTORE_VERIFICATION",
+            ),
+            ("source changed while", "SOURCE_CHANGED_DURING_SNAPSHOT", "SNAPSHOT"),
+            ("failed to snapshot SQLite source:", "SQLITE_SNAPSHOT_FAILED", "SNAPSHOT"),
+            (
+                "source is not a valid SQLite database:",
+                "SQLITE_SOURCE_INVALID",
+                "SNAPSHOT",
+            ),
+        )
+        for prefix, reason_code, stage in prefixes:
+            if message.startswith(prefix):
+                return reason_code, stage
+    if isinstance(exc, BackupEncryptionError):
+        return "BACKUP_ENCRYPTION_FAILED", "ENCRYPTION"
+    if isinstance(exc, BackupDecryptionError):
+        return "RESTORE_DECRYPTION_FAILED", "RESTORE_VERIFICATION"
+    if isinstance(exc, (BackupEncryptionUnavailable, BackupPassphraseTooWeak)):
+        return "BACKUP_ENCRYPTION_UNAVAILABLE", "PREFLIGHT"
+    return "BACKUP_ATTEMPT_FAILED", "SNAPSHOT"
+
+
 def _write_recorded_projections(
     *,
     evidence_path: Path,
@@ -1311,17 +1411,7 @@ def run_recorded_l2_backup(
         )
         return result
     except Exception as exc:
-        reason_code = (
-            str(exc)
-            if isinstance(exc, L2BackupError)
-            and str(exc)
-            in {
-                "BACKUP_CONFIGURATION_UNAVAILABLE",
-                "EXTERNAL_DESTINATION_REQUIRED",
-            }
-            else "BACKUP_ATTEMPT_FAILED"
-        )
-        stage = "PREFLIGHT" if reason_code != "BACKUP_ATTEMPT_FAILED" else "SNAPSHOT"
+        reason_code, stage = _recorded_failure_classification(exc)
         completed_at_ms = observed_at_ms if now_ms is not None else max(observed_at_ms, int(time.time() * 1000))
         outcome = RestoreOutcome(
             attempt_id=attempt.attempt_id,

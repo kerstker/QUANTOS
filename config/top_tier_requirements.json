@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  14,
+                                                                                   "version":  15,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -716,6 +716,18 @@
                                                                                                        "relative_path":  "data/cache/vendor_delivery_history.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "vendor_delivery_history_authority",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "ashare_tdx_panel_cache",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "ashare_tdx_daily_price_authority",
                                                                                                        "snapshot_policy":  "STANDARD"
                                                                                                    },
                                                                                                    {
@@ -798,7 +810,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  14,
+                                                                                   "version":  15,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -966,6 +978,18 @@
                                                                                                        "relative_path":  "data/cache/vendor_delivery_history.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "vendor_delivery_history_authority",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "ashare_tdx_panel_cache",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "ashare_tdx_daily_price_authority",
                                                                                                        "snapshot_policy":  "STANDARD"
                                                                                                    },
                                                                                                    {

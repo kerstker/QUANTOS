@@ -35,6 +35,15 @@ backup sources under `data/stocks/`. This is a real protection-scope change,
 not a cadence reset: earlier contract epochs and their failures remain in the
 append-only authority, while v14 starts a separately measured current epoch.
 
+Source-contract v15 adds the 2026-08-30 TDX daily-price SQLite authority as a
+required source and its derived NumPy panel as an optional, reproducible cache.
+The `.sqlite` authority receives the same online SQLite snapshot and restored
+integrity checks as `.db` sources. Encrypted restore now computes SHA-256 while
+authenticated plaintext is streamed and restores up to four independent files
+in parallel; the five-minute RTO is unchanged. Stable redacted failures retain
+their actual gate (`RESTORE_RTO_EXCEEDED`, RPO, decryption, manifest, or SQLite)
+instead of collapsing every internal failure to `BACKUP_ATTEMPT_FAILED`.
+
 ## Recorded Backup Flow
 
 `tools/l2_backup.py::run_recorded_l2_backup` is the scheduled entry point.

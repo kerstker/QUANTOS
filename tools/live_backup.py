@@ -265,7 +265,7 @@ def encrypt_file(
         raise
 
 
-def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> None:
+def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> str:
     aesgcm_cls = _require_aesgcm()
     partial_path = _partial_path(dest_path)
     try:
@@ -288,6 +288,7 @@ def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> Non
             from cryptography.exceptions import InvalidTag
 
             restored_size = 0
+            plaintext_digest = hashlib.sha256()
             with open(partial_path, "xb") as output:
                 for index in range(count):
                     recorded_length = _CHUNK_LENGTH.unpack(
@@ -314,11 +315,13 @@ def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> Non
                             "failed to decrypt QBK2 backup data — wrong passphrase, or the data is corrupted/tampered"
                         ) from exc
                     output.write(chunk)
+                    plaintext_digest.update(chunk)
                     restored_size += len(chunk)
                 if restored_size != plaintext_size or source.read(1):
                     raise BackupDecryptionError("QBK2 encrypted backup is truncated or has trailing data")
                 _fsync_output(output)
             os.replace(partial_path, dest_path)
+            return plaintext_digest.hexdigest()
     except Exception:
         try:
             os.remove(partial_path)
@@ -327,25 +330,31 @@ def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> Non
         raise
 
 
-def decrypt_file(src_path: str, dest_path: str, passphrase: str) -> None:
-    """Restore QBK2 streams while retaining backward compatibility with QBK1."""
+def decrypt_file(src_path: str, dest_path: str, passphrase: str) -> str:
+    """Restore a QBK stream and return the authenticated plaintext SHA-256.
+
+    Computing the digest while authenticated plaintext is already streaming to
+    disk avoids a second full read during isolated restore verification. QBK1
+    compatibility remains intact for the small legacy byte-blob format.
+    """
 
     with open(src_path, "rb") as source:
         magic = source.read(len(_MAGIC))
     if magic == _CHUNKED_MAGIC:
-        _decrypt_chunked_file(src_path, dest_path, passphrase)
-        return
+        return _decrypt_chunked_file(src_path, dest_path, passphrase)
     if magic != _MAGIC:
         raise BackupDecryptionError("not a recognized QUANTOS encrypted backup file")
 
     with open(src_path, "rb") as source:
         data = decrypt_bytes(source.read(), passphrase)
+    plaintext_sha256 = hashlib.sha256(data).hexdigest()
     partial_path = _partial_path(dest_path)
     try:
         with open(partial_path, "xb") as output:
             output.write(data)
             _fsync_output(output)
         os.replace(partial_path, dest_path)
+        return plaintext_sha256
     except Exception:
         try:
             os.remove(partial_path)

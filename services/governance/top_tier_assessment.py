@@ -2181,12 +2181,13 @@ def _l2_source_contract_error(contract: Any) -> str | None:
     # OKX borrow authorities. v12 made snapshot policy part of every source
     # entry and v13 pinned both high-churn Bybit authorities. v14 adds the
     # migrated A-share market database, reproducibility copy, and read-only
-    # snapshot bundle. Keep both the accepted version set and each version's
-    # entry schema finite so a future contract revision still requires explicit
-    # review.
+    # snapshot bundle. v15 adds the newly ingested TDX A-share daily-price
+    # authority and its derived panel cache. Keep both the accepted version set
+    # and each version's entry schema finite so a future contract revision still
+    # requires explicit review.
     version = contract.get("version")
-    if type(version) is not int or version not in range(2, 15):
-        return "source contract version must be an integer from 2 through 14"
+    if type(version) is not int or version not in range(2, 16):
+        return "source contract version must be an integer from 2 through 15"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"
@@ -2229,10 +2230,10 @@ def _l2_source_contract_error(contract: Any) -> str | None:
             )
         ):
             if relative is not None and ashare_root in relative.parents:
-                return "data/stocks source paths require source contract version 14"
+                return "data/stocks source paths require source contract version 14 or later"
             return (
                 "source paths must be normalized repository-local data/cache, "
-                "data/stocks (version 14), or evidence paths"
+                "data/stocks (version 14 or later), or evidence paths"
             )
         if (
             not isinstance(role, str)
@@ -2252,7 +2253,7 @@ def _l2_source_contract_error(contract: Any) -> str | None:
                 return "source snapshot policies must be STANDARD or SQLITE_WAL_PINNED"
             if (
                 snapshot_policy == "SQLITE_WAL_PINNED"
-                and relative.suffix.lower() != ".db"
+                and relative.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}
             ):
                 return "WAL-pinned source snapshot policies require SQLite paths"
         paths.append(relative_path)

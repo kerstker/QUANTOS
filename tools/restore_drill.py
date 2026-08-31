@@ -7,6 +7,7 @@ It never restores into active application state.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -16,6 +17,9 @@ import time
 from typing import Any
 
 from tools.live_backup import _check_passphrase_strength, decrypt_file
+
+
+MAX_PARALLEL_RESTORE_WORKERS = 4
 
 
 class RestoreDrillError(RuntimeError):
@@ -108,20 +112,36 @@ def run_restore_drill(
     target, stage = _prepare_target(restore_dir)
     started = time.perf_counter()
     try:
-        for source_path, restored_name in zip(files, restored_names):
-            output_path = os.path.join(stage, restored_name)
-            if mode == "ENCRYPTED":
-                decrypt_file(source_path, output_path, passphrase or "")
-            else:
+        if mode == "ENCRYPTED":
+            def restore_encrypted(item: tuple[str, str]) -> tuple[str, str]:
+                source_path, restored_name = item
+                output_path = os.path.join(stage, restored_name)
+                return restored_name, decrypt_file(
+                    source_path,
+                    output_path,
+                    passphrase or "",
+                )
+
+            workers = min(MAX_PARALLEL_RESTORE_WORKERS, len(files))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for restored_name, restored_sha256 in executor.map(
+                    restore_encrypted,
+                    zip(files, restored_names),
+                ):
+                    expected_hashes[restored_name] = restored_sha256
+        else:
+            for source_path, restored_name in zip(files, restored_names):
+                output_path = os.path.join(stage, restored_name)
                 shutil.copyfile(source_path, output_path)
-            restored_sha256 = _sha256_file(output_path)
-            # Authenticated decryption already rejects any encrypted-byte or
-            # plaintext tampering. Plaintext opt-in has no AEAD, so compare
-            # source and destination once. Never hash the restored multi-GB
-            # file twice merely to compare a value with itself.
-            if mode == "PLAINTEXT" and _sha256_file(source_path) != restored_sha256:
-                raise RestoreDrillError(f"integrity mismatch after restore: {restored_name}")
-            expected_hashes[restored_name] = restored_sha256
+                restored_sha256 = _sha256_file(output_path)
+                # Plaintext opt-in has no AEAD, so compare source and
+                # destination. Encrypted restores use the digest produced in
+                # the authenticated decrypt stream above.
+                if _sha256_file(source_path) != restored_sha256:
+                    raise RestoreDrillError(
+                        f"integrity mismatch after restore: {restored_name}"
+                    )
+                expected_hashes[restored_name] = restored_sha256
 
         elapsed_ms = int(round((time.perf_counter() - started) * 1000))
         if elapsed_ms > rto_ms:

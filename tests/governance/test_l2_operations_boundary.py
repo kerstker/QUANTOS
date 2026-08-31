@@ -134,6 +134,14 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             False,
         ),
         "data/stocks/research.db": ("ashare_research_database", True),
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite": (
+            "ashare_tdx_daily_price_authority",
+            True,
+        ),
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz": (
+            "ashare_tdx_panel_cache",
+            False,
+        ),
         "data/stocks/snapshots/alpha_snapshot.json": (
             "ashare_alpha_research_snapshot",
             True,

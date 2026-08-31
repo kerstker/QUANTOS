@@ -1005,6 +1005,15 @@
 > `BREACH`，不删除、不降级；v14 只有在完成一次真实外置加密备份和隔离恢复后才建立
 > 新 epoch，随后按 30 天/16 次成功继续以 `RESTORE_HISTORY_MATURING` 诚实积累。
 >
+> **2026-08-31 新上传 TDX A 股与恢复性能纳入 v15：**
+> 新上传的 5,549 只股票、6,267,665 根日线 SQLite 已作为 required source 纳入
+> 外置加密备份，派生 panel 作为可重建 optional cache 同步纳入；`.sqlite` 不再被
+> 当普通文件复制，而走在线 SQLite snapshot + 恢复完整性校验。恢复过程把明文摘要
+> 融入认证解密流并最多并行四文件，保留 5 分钟 RTO 不放宽。备份权威同时开始记录
+> `RESTORE_RTO_EXCEEDED` 等稳定脱敏原因，避免长跑失败被统一掩成
+> `BACKUP_ATTEMPT_FAILED`。Bybit resilience 链新增独立持久检查点，首次全链核验后
+> 的每次服务重启只验证后缀，消除链随历史增长而不断拉长的启动等待。
+>
 > **2026-07-31 恢复历史合同 epoch 与运行健康分层修复：**
 > 恢复权威本来允许 source contract 升级后开启新的 cadence epoch，但 clean-lookback
 > 失败统计误扫了所有历史合同，导致旧合同首次配置失败持续污染当前合同。现只统计当前

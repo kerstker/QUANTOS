@@ -674,8 +674,16 @@ def test_current_backup_contract_requires_complete_ashare_research_state():
         if source.relative_path.startswith("data/stocks/")
     }
 
-    assert SOURCE_CONTRACT_VERSION == 14
+    assert SOURCE_CONTRACT_VERSION == 15
     assert ashare == {
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz": (
+            "ashare_tdx_panel_cache",
+            False,
+        ),
+        "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite": (
+            "ashare_tdx_daily_price_authority",
+            True,
+        ),
         "data/stocks/research.db": ("ashare_research_database", True),
         "data/stocks/snapshots/alpha_snapshot.json": (
             "ashare_alpha_research_snapshot",
@@ -692,7 +700,7 @@ def test_current_backup_contract_requires_complete_ashare_research_state():
         "data/stocks/stocks.db": ("ashare_market_data_authority", True),
     }
     contract = l2_backup_module._source_contract(DEFAULT_SOURCES)
-    assert contract["version"] == 14
+    assert contract["version"] == 15
     assert all(
         source["snapshot_policy"] == SNAPSHOT_POLICY_STANDARD
         for source in contract["sources"]
@@ -934,6 +942,28 @@ def test_wal_pinned_snapshot_fails_closed_for_non_wal_database(tmp_path):
             source,
             scratch,
             snapshot_policy=SNAPSHOT_POLICY_SQLITE_WAL_PINNED,
+        )
+
+
+def test_sqlite_extension_uses_online_sqlite_snapshot(tmp_path):
+    source = tmp_path / "ashare_tdx_pit.sqlite"
+    connection = sqlite3.connect(source)
+    connection.execute("CREATE TABLE prices (trade_date INTEGER PRIMARY KEY)")
+    connection.execute("INSERT INTO prices VALUES (20260828)")
+    connection.commit()
+    connection.close()
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    snapshot, method, _mtime_ns = l2_backup_module._snapshot_source_file(
+        source,
+        scratch,
+    )
+
+    assert method == "SQLITE_ONLINE_BACKUP"
+    with sqlite3.connect(snapshot) as restored:
+        assert restored.execute("SELECT trade_date FROM prices").fetchone() == (
+            20260828,
         )
 
 
@@ -1355,6 +1385,52 @@ def test_recorded_backup_appends_redacted_failure_and_overwrites_old_pass_projec
     serialized = history_path.read_bytes() + status_path.read_bytes() + evidence_path.read_bytes()
     assert str(secret_path).encode() not in serialized
     assert secret_passphrase.encode() not in serialized
+
+
+@pytest.mark.parametrize(
+    ("detail", "reason_code"),
+    [
+        (
+            "restore drill exceeded RTO: 900001ms > 300000ms",
+            "RESTORE_RTO_EXCEEDED",
+        ),
+        (
+            "backup batch exceeds RPO: 900001ms > 300000ms",
+            "RESTORE_RPO_EXCEEDED",
+        ),
+    ],
+)
+def test_recorded_backup_retains_redacted_restore_gate_reason(
+    tmp_path,
+    monkeypatch,
+    detail,
+    reason_code,
+):
+    repo = tmp_path / "repo"
+    _seed_recorded_state(repo)
+
+    def fail_core(**_kwargs):
+        raise L2BackupError(detail)
+
+    monkeypatch.setattr(l2_backup_module, "run_l2_backup", fail_core)
+    with pytest.raises(L2BackupError, match=reason_code):
+        run_recorded_l2_backup(
+            repo_root=repo,
+            destination_root=tmp_path / "external-backup",
+            passphrase=PASSPHRASE,
+            sources=_recorded_sources(),
+            now_ms=1_784_044_800_000,
+        )
+
+    store = L2RestoreHistoryStore(
+        str(repo / "data" / "cache" / "l2_restore_history.db"),
+        create=False,
+    )
+    snapshot = store.read_snapshot()
+    store.close()
+    outcome = snapshot.outcomes[0].outcome
+    assert outcome.stage == "RESTORE_VERIFICATION"
+    assert outcome.reason_code == reason_code
 
 
 def test_recorded_backup_fails_closed_when_history_authority_is_unavailable(tmp_path):

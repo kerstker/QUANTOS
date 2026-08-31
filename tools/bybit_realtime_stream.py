@@ -43,6 +43,9 @@ DEFAULT_STATUS = os.path.join("data", "cache", "bybit_realtime_stream_status.jso
 DEFAULT_CHAIN_CHECKPOINT = os.path.join(
     "data", "cache", "bybit_linear_events_chain.json"
 )
+DEFAULT_RESILIENCE_CHAIN_CHECKPOINT = os.path.join(
+    "data", "cache", "bybit_market_resilience_chain.json"
+)
 MIN_FREE_STORAGE_BYTES = 200 * 1024**3
 MAX_FUTURE_SKEW_MS = 30_000
 _VENUE = "bybit_linear"
@@ -191,7 +194,7 @@ def _initial_chain_checkpoint(
         checkpoint_row_hash=checkpoint_hash,
     )
     if not verification.get("valid"):
-        raise BybitRealtimeStreamError("public event chain verification failed")
+        raise BybitRealtimeStreamError("authority chain verification failed")
     value = {
         "schema_version": 1,
         "store_path": resolved_store,
@@ -782,6 +785,7 @@ async def _flush(
     *,
     store_path: str,
     checkpoint_path: str,
+    resilience_checkpoint_path: str,
     chain_checkpoint: dict[str, Any],
     resilience_checkpoint: dict[str, Any],
     status_path: str,
@@ -830,10 +834,18 @@ async def _flush(
         )
     resilience_checkpoint.update(
         {
+            "verified_at_ms": processed_at_ms,
             "verified_seq": resilience_verification["verified_seq"],
             "verified_row_hash": resilience_verification["verified_row_hash"],
+            "verification_mode": "INCREMENTAL_FROM_TRUSTED_LOCAL_CHECKPOINT",
+            "verified_suffix_events": resilience_verification["verified_events"],
         }
     )
+    resilience_written = _write_chain_checkpoint(
+        resilience_checkpoint_path,
+        resilience_checkpoint,
+    )
+    resilience_checkpoint["checkpoint_hash"] = resilience_written["checkpoint_hash"]
     resilience_head.update(
         {
             "chain_valid": True,
@@ -874,6 +886,7 @@ async def run_stream(
     status_path: str,
     checkpoint_path: str = DEFAULT_CHAIN_CHECKPOINT,
     resilience_store_path: str = DEFAULT_RESILIENCE_STORE,
+    resilience_checkpoint_path: str = DEFAULT_RESILIENCE_CHAIN_CHECKPOINT,
     run_seconds: int = 0,
 ) -> dict[str, Any]:
     if isinstance(run_seconds, bool) or not isinstance(run_seconds, int) or run_seconds < 0:
@@ -883,23 +896,26 @@ async def run_stream(
     os.makedirs(os.path.dirname(status_path) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(resilience_store_path) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(resilience_checkpoint_path) or ".", exist_ok=True)
     store = PublicMarketEventStore(store_path, create=True)
     resilience_store = MarketResilienceStore(resilience_store_path, create=True)
-    chain_checkpoint = _initial_chain_checkpoint(
-        store,
-        store_path=store_path,
-        checkpoint_path=checkpoint_path,
-        now_ms=int(time.time() * 1000),
-    )
-    resilience_verification = resilience_store.verify_chain()
-    if not resilience_verification.get("valid"):
+    try:
+        chain_checkpoint = _initial_chain_checkpoint(
+            store,
+            store_path=store_path,
+            checkpoint_path=checkpoint_path,
+            now_ms=int(time.time() * 1000),
+        )
+        resilience_checkpoint = _initial_chain_checkpoint(
+            resilience_store,
+            store_path=resilience_store_path,
+            checkpoint_path=resilience_checkpoint_path,
+            now_ms=int(time.time() * 1000),
+        )
+    except Exception:
         store.close()
         resilience_store.close()
-        raise BybitRealtimeStreamError("market resilience chain verification failed")
-    resilience_checkpoint = {
-        "verified_seq": resilience_verification["verified_seq"],
-        "verified_row_hash": resilience_verification["verified_row_hash"],
-    }
+        raise
     reconnects = 0
     started = time.monotonic()
     deadline = None if run_seconds == 0 else started + run_seconds
@@ -950,6 +966,7 @@ async def run_stream(
                                 resilience_store,
                                 store_path=store_path,
                                 checkpoint_path=checkpoint_path,
+                                resilience_checkpoint_path=resilience_checkpoint_path,
                                 chain_checkpoint=chain_checkpoint,
                                 resilience_checkpoint=resilience_checkpoint,
                                 status_path=status_path,
@@ -967,6 +984,7 @@ async def run_stream(
                     resilience_store,
                     store_path=store_path,
                     checkpoint_path=checkpoint_path,
+                    resilience_checkpoint_path=resilience_checkpoint_path,
                     chain_checkpoint=chain_checkpoint,
                     resilience_checkpoint=resilience_checkpoint,
                     status_path=status_path,
@@ -982,6 +1000,7 @@ async def run_stream(
             resilience_store,
             store_path=store_path,
             checkpoint_path=checkpoint_path,
+            resilience_checkpoint_path=resilience_checkpoint_path,
             chain_checkpoint=chain_checkpoint,
             resilience_checkpoint=resilience_checkpoint,
             status_path=status_path,
@@ -1004,6 +1023,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--resilience-store", default=DEFAULT_RESILIENCE_STORE)
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--checkpoint", default=DEFAULT_CHAIN_CHECKPOINT)
+    parser.add_argument(
+        "--resilience-checkpoint",
+        default=DEFAULT_RESILIENCE_CHAIN_CHECKPOINT,
+    )
     parser.add_argument("--run-seconds", type=int, default=0)
     args = parser.parse_args(argv)
     symbols = tuple(part.strip().upper() for part in args.symbols.split(",") if part.strip())
@@ -1015,6 +1038,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             status_path=args.status,
             checkpoint_path=args.checkpoint,
             resilience_store_path=args.resilience_store,
+            resilience_checkpoint_path=args.resilience_checkpoint,
             run_seconds=args.run_seconds,
         )
     )

@@ -367,6 +367,7 @@ def test_flush_commits_raw_before_outcome_free_resilience_snapshot(tmp_path, mon
     raw_path = tmp_path / "events.db"
     resilience_path = tmp_path / "resilience.db"
     checkpoint_path = tmp_path / "chain.json"
+    resilience_checkpoint_path = tmp_path / "resilience-chain.json"
     status_path = tmp_path / "status.json"
     raw_store = PublicMarketEventStore(str(raw_path), create=True)
     resilience_store = MarketResilienceStore(str(resilience_path), create=True)
@@ -379,7 +380,12 @@ def test_flush_commits_raw_before_outcome_free_resilience_snapshot(tmp_path, mon
         checkpoint_path=str(checkpoint_path),
         now_ms=_NOW + 2,
     )
-    resilience_checkpoint = resilience_store.verify_chain()
+    resilience_checkpoint = stream._initial_chain_checkpoint(
+        resilience_store,
+        store_path=str(resilience_path),
+        checkpoint_path=str(resilience_checkpoint_path),
+        now_ms=_NOW + 2,
+    )
     monkeypatch.setattr(stream.time, "time", lambda: (_NOW + 20) / 1000)
     monkeypatch.setattr(
         stream.shutil,
@@ -394,6 +400,7 @@ def test_flush_commits_raw_before_outcome_free_resilience_snapshot(tmp_path, mon
             resilience_store,
             store_path=str(raw_path),
             checkpoint_path=str(checkpoint_path),
+            resilience_checkpoint_path=str(resilience_checkpoint_path),
             chain_checkpoint=raw_checkpoint,
             resilience_checkpoint=resilience_checkpoint,
             status_path=str(status_path),
@@ -416,5 +423,16 @@ def test_flush_commits_raw_before_outcome_free_resilience_snapshot(tmp_path, mon
     assert status["resilience"]["head_seq"] == 1
     assert status["resilience"]["chain_valid"] is True
     assert status["safety"]["order_submission"] is False
+    resumed = stream._initial_chain_checkpoint(
+        resilience_store,
+        store_path=str(resilience_path),
+        checkpoint_path=str(resilience_checkpoint_path),
+        now_ms=_NOW + 21,
+    )
+    assert resumed["verification_mode"] == (
+        "INCREMENTAL_FROM_TRUSTED_LOCAL_CHECKPOINT"
+    )
+    assert resumed["verified_suffix_events"] == 0
+    assert resumed["verified_seq"] == 1
     raw_store.close()
     resilience_store.close()
