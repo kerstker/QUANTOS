@@ -70,7 +70,7 @@ _SAFETY_ENV = (
 )
 _SCANNER_ROLE_POLICY = {
     "version": ("none", "32m"),
-    "download_database": ("bridge", "256m"),
+    "download_database": ("host", "256m"),
     "database": ("none", "32m"),
     "base_scan": ("none", "32m"),
     "runtime_scan": ("none", "32m"),
@@ -211,6 +211,8 @@ def _build_argv(
         "--provenance=false",
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
     ]
+    for name in PROXY_ENV_NAMES:
+        argv.extend(["--build-arg", name])
     argv.extend([
         "--tag", ARM64_RUNTIME_IMAGE_REF,
         "--output", (
@@ -244,10 +246,13 @@ def _scanner_argv(
         "--env", "HOME=/tmp",
         "--mount", f"type=bind,src={cache},dst=/cache",
     ]
-    # The one networked scanner role may consume Docker's client-side proxy
-    # configuration.  Values are never read by this process or serialized in
-    # argv/evidence.  All offline roles explicitly clear proxy variables.
-    if role != "download_database":
+    # The one networked scanner role may inherit host proxy variables by name.
+    # Values are never read by this process or serialized in argv/evidence.
+    # All offline roles explicitly clear proxy variables.
+    if role == "download_database":
+        for name in PROXY_ENV_NAMES:
+            argv.extend(["--env", name])
+    else:
         for name in PROXY_ENV_NAMES:
             argv.extend(["--env", f"{name}="])
     if user is not None:
@@ -690,6 +695,7 @@ def capture(
                     "docker", "buildx", "create", "--name", builder,
                     "--driver", "docker-container", "--platform", TARGET_PLATFORM,
                     "--driver-opt", f"image={BUILDKIT_IMAGE_REF}",
+                    "--driver-opt", "network=host",
                 ],
                 root,
             )

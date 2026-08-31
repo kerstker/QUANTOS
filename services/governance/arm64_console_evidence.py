@@ -133,7 +133,7 @@ _REPRODUCIBILITY_LIMITATIONS = (
     "LOCAL_OBSERVATION_NOT_IDENTITY_SIGNED",
     "NOT_A_CROSS_HOST_ARTIFACT_ATTESTATION",
     "LOCAL_UNSIGNED_RUNNER_RECEIPT_NOT_CRYPTOGRAPHIC_ATTESTATION",
-    "DOCKER_CLIENT_PROXY_NETWORK_PATH_NOT_ATTESTED_VALUES_NOT_RETAINED",
+    "HOST_PROXY_NAMES_INHERITED_VALUES_NOT_RETAINED_NETWORK_PATH_NOT_ATTESTED",
 )
 _AUDIT_FIELDS = {
     "schema_version",
@@ -269,7 +269,7 @@ def _valid_build_capture_argv(
     if not output.startswith(output_prefix) or not output.endswith(output_suffix):
         return False
     destination = Path(output[len(output_prefix) : -len(output_suffix)])
-    build_args = [f"SOURCE_DATE_EPOCH={epoch}"]
+    build_args = [f"SOURCE_DATE_EPOCH={epoch}", *PROXY_ENV_NAMES]
     expected = [
         "docker",
         "buildx",
@@ -307,7 +307,7 @@ def _valid_scanner_role_argv(argv: list[str], *, role: str) -> bool:
     expected = {
         "version": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
         "download_database": (
-            "bridge",
+            "host",
             "/tmp:rw,noexec,nosuid,size=256m",
         ),
         "database": ("none", "/tmp:rw,noexec,nosuid,size=32m"),
@@ -318,7 +318,7 @@ def _valid_scanner_role_argv(argv: list[str], *, role: str) -> bool:
         return False
     expected_network, expected_tmpfs = expected
     expected_environment = (
-        ["HOME=/tmp"]
+        ["HOME=/tmp", *PROXY_ENV_NAMES]
         if role == "download_database"
         else ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
     )
@@ -538,10 +538,13 @@ def _recipe(root: Path) -> dict[str, Any]:
 
 
 def _build_command(epoch: int) -> str:
+    proxies = "".join(f"--build-arg {name} " for name in PROXY_ENV_NAMES)
     return (
         "docker buildx build --platform linux/arm64 --no-cache "
         "--provenance=false "
         f"--build-arg SOURCE_DATE_EPOCH={epoch} "
+        + proxies
+        +
         "--output type=oci,dest=OUTPUT.oci.tar,rewrite-timestamp=true "
         "-f deploy/console.Dockerfile ."
     )
@@ -1395,7 +1398,7 @@ def build_arm64_container_audit_evidence(
             "base_block_severities": ["CRITICAL"],
             "base_high_requires_fixed_and_runtime_absent": True,
             "database_download_network_path": (
-                "DOCKER_CLIENT_PROXY_CONFIGURATION_ALLOWED_VALUES_NOT_RETAINED"
+                "HOST_NETWORK_PROXY_NAMES_INHERITED_VALUES_NOT_RETAINED"
             ),
             "runtime_requires_zero_known": True,
         },

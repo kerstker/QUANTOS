@@ -116,10 +116,10 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
     assert "type=oci,name=quantos-console:l2-arm64,dest=" in first[first.index("--output") + 1]
     assert "name=quantos-console:l2-arm64" in first[first.index("--output") + 1]
     assert "rewrite-timestamp=true" in first[first.index("--output") + 1]
-    expected_build_args = ["SOURCE_DATE_EPOCH=123"]
+    expected_build_args = ["SOURCE_DATE_EPOCH=123", *PROXY_ENV_NAMES]
     assert _option_values(first, "--build-arg") == expected_build_args
     assert _option_values(second, "--build-arg") == expected_build_args
-    assert not any(name in first for name in PROXY_ENV_NAMES)
+    assert all("=" not in value for value in expected_build_args[1:])
     assert "--env" not in first and "-e" not in first
     assert first != second
 
@@ -127,6 +127,7 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
 def test_builder_create_uses_reviewed_digest_pinned_buildkit() -> None:
     source = inspect.getsource(capture)
     assert "--driver-opt" in source
+    assert '"network=host"' in source
     from scripts.capture_arm64_console_evidence import BUILDKIT_IMAGE_REF
 
     assert BUILDKIT_IMAGE_REF.startswith("moby/buildkit@sha256:")
@@ -216,7 +217,7 @@ def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> No
     ]
 
 
-def test_networked_database_download_allows_unserialized_client_proxy_and_uses_bridge(
+def test_networked_database_download_inherits_proxy_names_over_host_network(
     tmp_path: Path,
 ) -> None:
     argv = _scanner_argv(
@@ -228,12 +229,12 @@ def test_networked_database_download_allows_unserialized_client_proxy_and_uses_b
         role="download_database",
     )
 
-    assert argv[argv.index("--network") + 1] == "bridge"
+    assert argv[argv.index("--network") + 1] == "host"
     assert argv[argv.index("--tmpfs") + 1] == (
         "/tmp:rw,noexec,nosuid,size=256m"
     )
-    assert _option_values(argv, "--env") == ["HOME=/tmp"]
-    assert not any(name in argv for name in PROXY_ENV_NAMES)
+    assert _option_values(argv, "--env") == ["HOME=/tmp", *PROXY_ENV_NAMES]
+    assert not any(f"{name}=" in argv for name in PROXY_ENV_NAMES)
 
 
 @pytest.mark.parametrize(
@@ -645,11 +646,13 @@ def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
         "docker", "buildx", "create", "--name", BUILDER_A,
         "--driver", "docker-container", "--platform", "linux/arm64",
         "--driver-opt", "image=moby/buildkit@sha256:59795d5a98a9e12ddf49567fcd1976a30f2d2a60ef469c2f9cedb9e5e3251b25",
+        "--driver-opt", "network=host",
     ]
     create_second = [
         "docker", "buildx", "create", "--name", BUILDER_B,
         "--driver", "docker-container", "--platform", "linux/arm64",
         "--driver-opt", "image=moby/buildkit@sha256:59795d5a98a9e12ddf49567fcd1976a30f2d2a60ef469c2f9cedb9e5e3251b25",
+        "--driver-opt", "network=host",
     ]
     cleanup_first = ["docker", "buildx", "rm", "--force", BUILDER_A]
     fake = FakeRunner(

@@ -73,6 +73,11 @@ def _build_capture(
             "--provenance=false",
             "--build-arg",
             f"SOURCE_DATE_EPOCH={EPOCH}",
+            *[
+                item
+                for name in PROXY_ENV_NAMES
+                for item in ("--build-arg", name)
+            ],
             "--tag",
             ARM64_RUNTIME_IMAGE_REF,
             "--output",
@@ -125,7 +130,7 @@ def _scanner_capture() -> dict[str, object]:
         separators=(",", ":"),
     )
     def hardened(role: str) -> list[str]:
-        network = "bridge" if role == "download_database" else "none"
+        network = "host" if role == "download_database" else "none"
         tmpfs = (
             "/tmp:rw,noexec,nosuid,size=256m"
             if role == "download_database"
@@ -137,12 +142,14 @@ def _scanner_capture() -> dict[str, object]:
             "--security-opt", "no-new-privileges:true", "--tmpfs", tmpfs,
             "--env", "HOME=/tmp",
         ]
-        if role != "download_database":
-            argv.extend(
-                item
-                for name in PROXY_ENV_NAMES
-                for item in ("--env", f"{name}=")
+        argv.extend(
+            item
+            for name in PROXY_ENV_NAMES
+            for item in (
+                "--env",
+                name if role == "download_database" else f"{name}=",
             )
+        )
         argv.extend(["--user", "1000:1000"])
         return argv
     scan_flags = [
@@ -749,7 +756,7 @@ def test_arm64_recipe_rejects_proxy_arg_or_env_declaration(
 ) -> None:
     evidence = _reproducibility(tmp_path)
     assert (
-        "DOCKER_CLIENT_PROXY_NETWORK_PATH_NOT_ATTESTED_VALUES_NOT_RETAINED"
+        "HOST_PROXY_NAMES_INHERITED_VALUES_NOT_RETAINED_NETWORK_PATH_NOT_ATTESTED"
         in evidence["limitations"]
     )
     path = tmp_path / "deploy/console.Dockerfile"
