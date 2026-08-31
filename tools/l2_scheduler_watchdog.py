@@ -219,6 +219,9 @@ _RESTORE_HISTORY_MATURITY_REASONS = frozenset(
         "SUCCESS_COUNT_INSUFFICIENT",
     }
 )
+_RESTORE_HISTORY_RECOVERED_REASONS = frozenset(
+    {*_RESTORE_HISTORY_MATURITY_REASONS, "FAILURE_IN_CLEAN_LOOKBACK"}
+)
 
 
 def _restore_policy_and_path(
@@ -1655,10 +1658,24 @@ def _check_task(
 
 
 def _merge_backup_history(check: dict, health: dict | None) -> dict:
-    if check["status"] != "PASS" or health is None:
+    if health is None:
         return check
     verdict = health.get("verdict")
     reasons = health.get("reason_codes")
+    if (
+        check["status"] == "BREACH"
+        and check["code"] == "RESULT_15"
+        and health.get("overdue_open_count") == 0
+    ):
+        return {
+            "task_name": "QUANTOS_backup",
+            "status": "PARTIAL",
+            "code": "RESTORE_HISTORY_BACKUP_INTERRUPTED",
+            "detail": (
+                "the backup was terminated before completion; the external "
+                "destination remains configured and the scheduled retry is retained"
+            ),
+        }
     if verdict == "PASS" and (reasons == () or reasons == []):
         return check
     valid_reasons = (
@@ -1673,12 +1690,25 @@ def _merge_backup_history(check: dict, health: dict | None) -> dict:
         )
     )
     reason = reasons[0] if valid_reasons else "INVALID_RESULT"
+    if check["status"] != "PASS":
+        return check
     if check["code"] == "RUNNING" and reason == "NO_ATTEMPTS":
         return {
             "task_name": "QUANTOS_backup",
             "status": "PARTIAL",
             "code": "RESTORE_HISTORY_BACKUP_IN_PROGRESS",
             "detail": "the first recorded backup attempt is still in progress",
+        }
+    if (
+        check["code"] == "RUNNING"
+        and valid_reasons
+        and health.get("overdue_open_count") == 0
+    ):
+        return {
+            "task_name": "QUANTOS_backup",
+            "status": "PARTIAL",
+            "code": "RESTORE_HISTORY_RECOVERY_IN_PROGRESS",
+            "detail": "a bounded full backup and isolated restore drill is in progress",
         }
     if (
         valid_reasons
@@ -1694,6 +1724,24 @@ def _merge_backup_history(check: dict, health: dict | None) -> dict:
             "detail": (
                 "current restore evidence is healthy; longitudinal maturity "
                 f"is incomplete ({','.join(reasons)})"
+            ),
+        }
+    if (
+        valid_reasons
+        and set(reasons).issubset(_RESTORE_HISTORY_RECOVERED_REASONS)
+        and "FAILURE_IN_CLEAN_LOOKBACK" in reasons
+        and health.get("latest_terminal_verdict") == "PASS"
+        and isinstance(health.get("success_count"), int)
+        and health["success_count"] > 0
+        and health.get("overdue_open_count") == 0
+    ):
+        return {
+            "task_name": "QUANTOS_backup",
+            "status": "PARTIAL",
+            "code": "RESTORE_HISTORY_RECOVERED_AFTER_FAILURE",
+            "detail": (
+                "the latest external restore drill passed, but a recent failed "
+                "attempt remains visible during the clean-lookback window"
             ),
         }
     code = (

@@ -25,6 +25,7 @@ from tools.l2_backup import (
     restore_l2_batch,
     run_recorded_l2_backup,
     run_l2_backup,
+    run_l2_backup_preflight,
 )
 from tools.live_backup import decrypt_bytes, decrypt_file, encrypt_bytes, encrypt_file
 
@@ -1302,6 +1303,103 @@ def _seed_recorded_state(repo: Path) -> None:
     state = repo / "data" / "cache" / "state.json"
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text('{"state":"committed"}', encoding="utf-8")
+
+
+def test_backup_preflight_is_bounded_and_read_only(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _seed_recorded_state(repo)
+    history_path = repo / "data" / "cache" / "l2_restore_history.db"
+    store = L2RestoreHistoryStore(str(history_path), create=True)
+    store.close()
+    destination = tmp_path / "external-backup"
+    destination.mkdir()
+    monkeypatch.setattr(
+        l2_backup_module,
+        "classify_destination",
+        lambda *_args: "SEPARATE_VOLUME",
+    )
+    state_path = repo / "data" / "cache" / "state.json"
+    before = {
+        "state": hashlib.sha256(state_path.read_bytes()).hexdigest(),
+        "history": hashlib.sha256(history_path.read_bytes()).hexdigest(),
+    }
+
+    result = run_l2_backup_preflight(
+        repo_root=repo,
+        destination_root=destination,
+        passphrase=PASSPHRASE,
+        sources=_recorded_sources(),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "verdict": "PASS",
+        "mode": "L2_BACKUP_READINESS_PREFLIGHT",
+        "destination_class": "SEPARATE_VOLUME",
+        "external_destination_verified": True,
+        "credential_validated": True,
+        "source_contract_sha256": l2_backup_module._source_contract_sha256(
+            l2_backup_module._source_contract(_recorded_sources())
+        ),
+        "source_count": 2,
+        "required_source_count": 2,
+        "missing_optional_sources": [],
+        "restore_history_chain_verified": True,
+        "restore_history_attempt_count": 0,
+        "restore_history_open_attempt_count": 0,
+    }
+    assert list(destination.iterdir()) == []
+    assert hashlib.sha256(state_path.read_bytes()).hexdigest() == before["state"]
+    assert hashlib.sha256(history_path.read_bytes()).hexdigest() == before["history"]
+
+
+def test_backup_preflight_fails_closed_for_missing_required_source(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    history_path = repo / "data" / "cache" / "l2_restore_history.db"
+    store = L2RestoreHistoryStore(str(history_path), create=True)
+    store.close()
+    destination = tmp_path / "external-backup"
+    destination.mkdir()
+    monkeypatch.setattr(
+        l2_backup_module,
+        "classify_destination",
+        lambda *_args: "SEPARATE_VOLUME",
+    )
+
+    with pytest.raises(L2BackupError, match="required backup source is missing"):
+        run_l2_backup_preflight(
+            repo_root=repo,
+            destination_root=destination,
+            passphrase=PASSPHRASE,
+            sources=_recorded_sources(),
+        )
+
+
+def test_backup_preflight_fails_closed_for_invalid_restore_history(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    _seed_recorded_state(repo)
+    history_path = repo / "data" / "cache" / "l2_restore_history.db"
+    with sqlite3.connect(history_path) as connection:
+        connection.execute("CREATE TABLE unrelated(value TEXT)")
+    destination = tmp_path / "external-backup"
+    destination.mkdir()
+    monkeypatch.setattr(
+        l2_backup_module,
+        "classify_destination",
+        lambda *_args: "SEPARATE_VOLUME",
+    )
+
+    with pytest.raises(L2BackupError, match="RESTORE_HISTORY_UNAVAILABLE"):
+        run_l2_backup_preflight(
+            repo_root=repo,
+            destination_root=destination,
+            passphrase=PASSPHRASE,
+            sources=_recorded_sources(),
+        )
 
 
 def test_recorded_backup_commits_pass_before_sanitized_compatibility_projection(tmp_path, monkeypatch):

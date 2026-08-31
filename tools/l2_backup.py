@@ -1067,6 +1067,68 @@ def run_l2_backup(
         shutil.rmtree(stage, ignore_errors=True)
 
 
+def run_l2_backup_preflight(
+    *,
+    repo_root: str | Path,
+    destination_root: str | Path,
+    passphrase: str,
+    sources: Iterable[BackupSource] = DEFAULT_SOURCES,
+    history_path: str | Path | None = None,
+    allow_local_destination: bool = False,
+) -> dict:
+    """Validate backup readiness without copying, encrypting, or restoring data.
+
+    Release deployment uses this bounded check to prove the credential,
+    destination boundary, source contract, required source presence, and
+    append-only restore-history chain.  The scheduled ``l2_backup`` worker
+    remains the authority for the expensive backup and isolated restore drill.
+    """
+
+    _check_passphrase_strength(passphrase)
+    root = Path(repo_root).resolve()
+    destination, destination_class = _validate_destination(
+        root,
+        Path(destination_root),
+        allow_local_destination=allow_local_destination,
+    )
+    source_specs = tuple(sources)
+    source_contract = _source_contract(source_specs)
+    discovered, missing_optional = _discover_sources(root, source_specs)
+    resolved_history = (
+        Path(history_path)
+        if history_path is not None
+        else root / "data" / "cache" / "l2_restore_history.db"
+    )
+    store = None
+    try:
+        store = L2RestoreHistoryStore(os.fspath(resolved_history), create=False)
+        snapshot = store.read_snapshot()
+    except (L2RestoreHistoryStoreError, ValueError, TypeError) as exc:
+        raise L2BackupError("RESTORE_HISTORY_UNAVAILABLE") from exc
+    finally:
+        if store is not None:
+            store.close()
+    return {
+        "schema_version": 1,
+        "verdict": "PASS",
+        "mode": "L2_BACKUP_READINESS_PREFLIGHT",
+        "destination_class": destination_class,
+        "external_destination_verified": (
+            destination_class in _EXTERNAL_DESTINATION_CLASSES
+        ),
+        "credential_validated": True,
+        "source_contract_sha256": _source_contract_sha256(source_contract),
+        "source_count": len(discovered),
+        "required_source_count": sum(
+            1 for source, _relative, _path in discovered if source.required
+        ),
+        "missing_optional_sources": sorted(missing_optional),
+        "restore_history_chain_verified": True,
+        "restore_history_attempt_count": len(snapshot.attempts),
+        "restore_history_open_attempt_count": len(snapshot.open_attempts),
+    }
+
+
 def _batch_sha256(batch_dir: Path) -> str:
     members = []
     for path in sorted(batch_dir.iterdir(), key=lambda item: item.name):
@@ -1484,6 +1546,14 @@ def main() -> int:
     parser.add_argument("--max-rpo-ms", type=int, default=DEFAULT_MAX_RPO_MS)
     parser.add_argument("--allow-local-destination", action="store_true")
     parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help=(
+            "Validate credential, external destination, source presence, and "
+            "restore-history integrity without creating a backup"
+        ),
+    )
+    parser.add_argument(
         "--passphrase-file",
         default=_default_passphrase_file(),
         help=(
@@ -1497,14 +1567,22 @@ def main() -> int:
             environment_passphrase=os.environ.get(PASSPHRASE_ENV),
             passphrase_file=args.passphrase_file,
         )
-        result = run_recorded_l2_backup(
-            repo_root=args.repo_root,
-            destination_root=args.dest,
-            passphrase=passphrase,
-            allow_local_destination=args.allow_local_destination,
-            rto_ms=args.rto_ms,
-            max_rpo_ms=args.max_rpo_ms,
-        )
+        if args.preflight_only:
+            result = run_l2_backup_preflight(
+                repo_root=args.repo_root,
+                destination_root=args.dest,
+                passphrase=passphrase,
+                allow_local_destination=args.allow_local_destination,
+            )
+        else:
+            result = run_recorded_l2_backup(
+                repo_root=args.repo_root,
+                destination_root=args.dest,
+                passphrase=passphrase,
+                allow_local_destination=args.allow_local_destination,
+                rto_ms=args.rto_ms,
+                max_rpo_ms=args.max_rpo_ms,
+            )
     except L2BackupError as exc:
         print(str(exc), file=sys.stderr)
         return 1

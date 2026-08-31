@@ -2399,6 +2399,97 @@ def test_longitudinal_restore_maturity_is_partial_not_operational_breach():
     }
 
 
+def test_interrupted_backup_is_partial_while_scheduled_retry_is_retained():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "BREACH",
+        "code": "RESULT_15",
+        "detail": "task completed with failure result 15",
+    }
+    health = {
+        "verdict": "PASS",
+        "reason_codes": (),
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "RESTORE_HISTORY_BACKUP_INTERRUPTED",
+        "detail": (
+            "the backup was terminated before completion; the external "
+            "destination remains configured and the scheduled retry is retained"
+        ),
+    }
+
+
+def test_active_backup_recovery_is_partial_not_operational_breach():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "PASS",
+        "code": "RUNNING",
+        "detail": "task is currently running",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": ("LATEST_TERMINAL_NOT_PASS", "NO_VALID_SUCCESS"),
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "RESTORE_HISTORY_RECOVERY_IN_PROGRESS",
+        "detail": "a bounded full backup and isolated restore drill is in progress",
+    }
+
+
+def test_latest_restore_pass_after_recent_failure_remains_visible_as_partial():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "PASS",
+        "code": "HEALTHY",
+        "detail": "enabled, action-pinned, fresh, and successful",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": (
+            "FAILURE_IN_CLEAN_LOOKBACK",
+            "HISTORY_SPAN_INSUFFICIENT",
+        ),
+        "latest_terminal_verdict": "PASS",
+        "success_count": 1,
+        "failure_count_in_clean_window": 1,
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "RESTORE_HISTORY_RECOVERED_AFTER_FAILURE",
+        "detail": (
+            "the latest external restore drill passed, but a recent failed "
+            "attempt remains visible during the clean-lookback window"
+        ),
+    }
+
+
+def test_backup_application_failure_remains_a_breach():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "BREACH",
+        "code": "RESULT_1",
+        "detail": "task completed with failure result 1",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": ("LATEST_TERMINAL_NOT_PASS",),
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == check
+
+
 def test_healthy_scheduler_and_history_pass_and_history_alert_is_deduplicated(
     tmp_path,
 ):
