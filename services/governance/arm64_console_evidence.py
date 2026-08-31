@@ -317,13 +317,20 @@ def _valid_scanner_role_argv(argv: list[str], *, role: str) -> bool:
     if expected is None:
         return False
     expected_network, expected_tmpfs = expected
-    expected_environment = (
-        ["HOME=/tmp", *PROXY_ENV_NAMES]
+    cleared_environment = [
+        "HOME=/tmp",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
+    expected_environments = (
+        (
+            ["HOME=/tmp", *PROXY_ENV_NAMES],
+            cleared_environment,
+        )
         if role == "download_database"
-        else ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
+        else (cleared_environment,)
     )
     return (
-        _option_values(argv, "--env") == expected_environment
+        _option_values(argv, "--env") in expected_environments
         and _option_values(argv, "--network") == [expected_network]
         and _option_values(argv, "--tmpfs") == [expected_tmpfs]
         and "-e" not in argv

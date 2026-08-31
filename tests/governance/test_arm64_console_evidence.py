@@ -1005,6 +1005,29 @@ def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
         verify_arm64_container_audit_evidence(evidence, tmp_path)
 
 
+def test_arm64_audit_accepts_exact_direct_database_download_environment(
+    tmp_path: Path,
+) -> None:
+    evidence = _audit(tmp_path)
+    argv = evidence["scanner_capture"]["download_database"]["argv"]
+    for index, value in enumerate(argv):
+        if value in PROXY_ENV_NAMES:
+            argv[index] = f"{value}="
+
+    verify_arm64_container_audit_evidence(evidence, tmp_path)
+
+
+def test_arm64_audit_rejects_mixed_database_download_environment(
+    tmp_path: Path,
+) -> None:
+    evidence = _audit(tmp_path)
+    argv = evidence["scanner_capture"]["download_database"]["argv"]
+    argv[argv.index("HTTP_PROXY")] = "HTTP_PROXY="
+
+    with pytest.raises(Arm64ConsoleEvidenceError, match="scanner capture"):
+        verify_arm64_container_audit_evidence(evidence, tmp_path)
+
+
 @pytest.mark.parametrize(
     ("capture_name", "mutation"),
     [
