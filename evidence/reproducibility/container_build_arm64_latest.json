@@ -38,13 +38,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-9b3ff5c1-optional-wikimedia/.arm64-console-capture-nkfuxy0e/console-a.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-38bbdc40-backup-preflight/.arm64-console-capture-y2hc4pgo/console-a.oci.tar,rewrite-timestamp=true",
         "-f",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "exit_code": 0,
-      "stderr_sha256": "e58321df875e855b115783a2379a54149275aa613a4a22a12caca11a5ca2bd1e",
+      "stderr_sha256": "378cc6bf4c9b040c27e9aaca5b3edc773c5f1784fe8ffe265c385d4da4ccefa3",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -83,13 +83,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-9b3ff5c1-optional-wikimedia/.arm64-console-capture-nkfuxy0e/console-b.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-38bbdc40-backup-preflight/.arm64-console-capture-y2hc4pgo/console-b.oci.tar,rewrite-timestamp=true",
         "-f",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "exit_code": 0,
-      "stderr_sha256": "fa433f80a16a02454945d81ea4e4a53dc2557a06ebd4382f2d4018720ee27d3e",
+      "stderr_sha256": "d140fd67d8f6ca5865f3cbe7e70f77b442884669bdb32bb5724d40011c8a48bf",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
@@ -108,19 +108,19 @@
   "builds": [
     {
       "archive_name": "console-a.oci.tar",
-      "archive_sha256": "bfa2649fe0c95b60227c6a0db5fc1b520cd657559c17f76a18889be5e88c287d",
+      "archive_sha256": "c361ba213ba211c3f362e4a5c95e1e8dfdc4cad5a13653a5eb125a592216edcc",
       "archive_size": 134381568,
-      "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+      "config_digest": "sha256:1b26244bc39848ed510e670c2eca90185e849e8efebe725e1a7df09db8cb5f95",
       "label": "A",
-      "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968"
+      "manifest_digest": "sha256:ef1295acf1d43ceda70786238c4b7b1ed6a7050547e8ae1e998b1aa2d1e82f2a"
     },
     {
       "archive_name": "console-b.oci.tar",
-      "archive_sha256": "bfa2649fe0c95b60227c6a0db5fc1b520cd657559c17f76a18889be5e88c287d",
+      "archive_sha256": "c361ba213ba211c3f362e4a5c95e1e8dfdc4cad5a13653a5eb125a592216edcc",
       "archive_size": 134381568,
-      "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+      "config_digest": "sha256:1b26244bc39848ed510e670c2eca90185e849e8efebe725e1a7df09db8cb5f95",
       "label": "B",
-      "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968"
+      "manifest_digest": "sha256:ef1295acf1d43ceda70786238c4b7b1ed6a7050547e8ae1e998b1aa2d1e82f2a"
     }
   ],
   "dockerfile": {
@@ -136,7 +136,7 @@
   "exporter": "oci",
   "image": {
     "architecture": "arm64",
-    "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+    "config_digest": "sha256:1b26244bc39848ed510e670c2eca90185e849e8efebe725e1a7df09db8cb5f95",
     "config_size": 8573,
     "created": "2026-06-16T00:20:04Z",
     "diff_ids": [
@@ -149,7 +149,7 @@
       "sha256:5e457c1f5d7b5e0e055099807e1f70a00d483fcffcf3a1ad0d8503ef2fdb63e0",
       "sha256:4ac2809b678dcaf7ab866c908b7d86bdccf50a2b93613eed3cae8bc3a15d5faa",
       "sha256:2336e4125b788964f456d75295e48d9cda4372a0ae7cda0b59108b76f5f86727",
-      "sha256:676a75906cdd01884315af59c266bfb23a36202dae7f26cf9fcb2da57bda227e",
+      "sha256:6a067a03d3b71c5b2362aa2e01cb60154f73fce264fd61d3d66e21e2470bdbbb",
       "sha256:63d3f53433357cbd27a848940545435b1836fefece0738f527581a19e404aec1",
       "sha256:1a401c723369480809a8e7f342e930d7e71f259a0f3c77932c97ea130d65356b"
     ],
@@ -200,9 +200,9 @@
         "size": 1725116
       },
       {
-        "digest": "sha256:1aaaa50bb2b9f455c994a49622409e4effef7964d99f4ec17a1482802f3dafa8",
+        "digest": "sha256:770826b4351aad44720b986b900d0123d59cf3595c679ffff56f2c6e2a69130f",
         "rewritten_timestamp": true,
-        "size": 1580133
+        "size": 1580177
       },
       {
         "digest": "sha256:4ae28e81e51720998475e13bd1274b646768707f56f922db92b2f5dd9cdd025c",
@@ -215,7 +215,7 @@
         "size": 908
       }
     ],
-    "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+    "manifest_digest": "sha256:ef1295acf1d43ceda70786238c4b7b1ed6a7050547e8ae1e998b1aa2d1e82f2a",
     "manifest_size": 3255,
     "os": "linux",
     "rewritten_timestamp_layer_count": 8
@@ -229,7 +229,7 @@
   ],
   "mode": "LOCAL_NATIVE_ARM64_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1788171624,
+  "observed_at": 1788193217,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
@@ -249,7 +249,7 @@
         ],
         "exit_code": 0,
         "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "stdout_sha256": "ce3644fb8edf2ab7c87148220abace2e807be23740eef752da25ea521c347a6c"
+        "stdout_sha256": "fb8de1b75df1881eecf5f6fbbf4296f29ea4cecb7b566b05742a2b36c2ae3f37"
       },
       {
         "argv": [
@@ -272,7 +272,7 @@
         "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
       }
     ],
-    "commit": "9b3ff5c1804b03c4c45fab5154b8e5bcbe81d01c",
+    "commit": "38bbdc4006f9cb62bb41b3ea0d35af36c4efc0b9",
     "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
   },
   "source_date_epoch": 1781569204,
