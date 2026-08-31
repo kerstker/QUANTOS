@@ -236,6 +236,7 @@ def _scanner_argv(
     input_archive: Path | None = None,
     input_name: str = "image.tar",
     user: str | None = None,
+    inherit_proxy: bool = True,
 ) -> list[str]:
     try:
         network, tmpfs_size = _SCANNER_ROLE_POLICY[role]
@@ -253,7 +254,7 @@ def _scanner_argv(
     # The one networked scanner role may inherit host proxy variables by name.
     # Values are never read by this process or serialized in argv/evidence.
     # All offline roles explicitly clear proxy variables.
-    if role == "download_database":
+    if role == "download_database" and inherit_proxy:
         for name in PROXY_ENV_NAMES:
             argv.extend(["--env", name])
     else:
@@ -298,7 +299,11 @@ def _database_digest(raw_manifest: bytes) -> str:
 
 
 def _prepare_scanner_database(
-    runner: Runner, root: Path, cache: Path
+    runner: Runner,
+    root: Path,
+    cache: Path,
+    *,
+    inherit_proxy: bool = True,
 ) -> ScannerDatabasePreflight:
     """Resolve and download every network-dependent scanner input up front."""
     cache.mkdir()
@@ -366,6 +371,7 @@ def _prepare_scanner_database(
             "--db-repository", database_ref,
             role="download_database",
             user=scanner_user,
+            inherit_proxy=inherit_proxy,
         ),
         root,
     )
@@ -649,6 +655,7 @@ def capture(
     clock: Callable[[], float] = time.time,
     sleeper: Callable[[float], None] = time.sleep,
     reporter: Callable[[str], None] | None = None,
+    scanner_inherit_proxy: bool = True,
 ) -> dict[str, Path]:
     """Run one fail-closed capture and atomically retain all three documents."""
     root = Path(repo_root).resolve()
@@ -688,7 +695,12 @@ def capture(
 
         cache = session / "trivy-cache"
         report("SCANNER_PREFLIGHT_START")
-        scanner_preflight = _prepare_scanner_database(executor, root, cache)
+        scanner_preflight = _prepare_scanner_database(
+            executor,
+            root,
+            cache,
+            inherit_proxy=scanner_inherit_proxy,
+        )
         report("SCANNER_PREFLIGHT_PASS")
 
         report("NATIVE_BUILDERS_START platform=linux/arm64")
@@ -980,11 +992,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--output-root", required=True)
+    parser.add_argument(
+        "--scanner-direct",
+        action="store_true",
+        help=(
+            "Clear proxy variables only for the pinned Trivy database download; "
+            "BuildKit cold builds retain the caller's reviewed proxy environment"
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         paths = capture(
             args.repo_root,
             args.output_root,
+            scanner_inherit_proxy=not args.scanner_direct,
             reporter=lambda message: print(
                 f"ARM64_CAPTURE_STAGE {message}", flush=True
             ),

@@ -237,6 +237,26 @@ def test_networked_database_download_inherits_proxy_names_over_host_network(
     assert not any(f"{name}=" in argv for name in PROXY_ENV_NAMES)
 
 
+def test_networked_database_download_can_explicitly_clear_proxy_names(
+    tmp_path: Path,
+) -> None:
+    argv = _scanner_argv(
+        tmp_path / "cache",
+        "--cache-dir",
+        "/cache",
+        "image",
+        "--download-db-only",
+        role="download_database",
+        inherit_proxy=False,
+    )
+
+    assert argv[argv.index("--network") + 1] == "host"
+    assert _option_values(argv, "--env") == [
+        "HOME=/tmp",
+        *(f"{name}=" for name in PROXY_ENV_NAMES),
+    ]
+
+
 @pytest.mark.parametrize(
     "role",
     ["version", "database", "base_scan", "runtime_scan"],
