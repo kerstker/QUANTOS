@@ -317,9 +317,13 @@ def _valid_scanner_role_argv(argv: list[str], *, role: str) -> bool:
     if expected is None:
         return False
     expected_network, expected_tmpfs = expected
+    expected_environment = (
+        ["HOME=/tmp"]
+        if role == "download_database"
+        else ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
+    )
     return (
-        _option_values(argv, "--env")
-        == ["HOME=/tmp", *(f"{name}=" for name in PROXY_ENV_NAMES)]
+        _option_values(argv, "--env") == expected_environment
         and _option_values(argv, "--network") == [expected_network]
         and _option_values(argv, "--tmpfs") == [expected_tmpfs]
         and "-e" not in argv
@@ -1390,6 +1394,9 @@ def build_arm64_container_audit_evidence(
         "scan_policy": {
             "base_block_severities": ["CRITICAL"],
             "base_high_requires_fixed_and_runtime_absent": True,
+            "database_download_network_path": (
+                "DOCKER_CLIENT_PROXY_CONFIGURATION_ALLOWED_VALUES_NOT_RETAINED"
+            ),
             "runtime_requires_zero_known": True,
         },
         "base_report_sha256": _sha256_bytes(_canonical_bytes(canonical_base)),

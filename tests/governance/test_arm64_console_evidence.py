@@ -131,18 +131,20 @@ def _scanner_capture() -> dict[str, object]:
             if role == "download_database"
             else "/tmp:rw,noexec,nosuid,size=32m"
         )
-        return [
+        argv = [
             "docker", "run", "--rm", "--platform", "linux/arm64",
             "--network", network, "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges:true", "--tmpfs", tmpfs,
             "--env", "HOME=/tmp",
-            *[
+        ]
+        if role != "download_database":
+            argv.extend(
                 item
                 for name in PROXY_ENV_NAMES
                 for item in ("--env", f"{name}=")
-            ],
-            "--user", "1000:1000",
-        ]
+            )
+        argv.extend(["--user", "1000:1000"])
+        return argv
     scan_flags = [
         "--skip-db-update", "--skip-java-db-update", "--skip-check-update",
         "--skip-vex-repo-update", "--disable-telemetry", "--offline-scan",
@@ -979,7 +981,7 @@ def test_arm64_audit_rejects_noncanonical_proxy_environment_receipts(
     elif mutation == "duplicate_proxy":
         argv.extend(["--env", "HTTP_PROXY="])
     elif mutation == "proxy_value":
-        argv[argv.index("HTTP_PROXY=")] = "HTTP_PROXY=http://secret.invalid"
+        argv.extend(["--env", "HTTP_PROXY=http://secret.invalid"])
     elif mutation == "unexpected":
         argv.extend(["--env", "UNEXPECTED=value"])
     elif mutation == "joined":

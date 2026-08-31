@@ -244,8 +244,12 @@ def _scanner_argv(
         "--env", "HOME=/tmp",
         "--mount", f"type=bind,src={cache},dst=/cache",
     ]
-    for name in PROXY_ENV_NAMES:
-        argv.extend(["--env", f"{name}="])
+    # The one networked scanner role may consume Docker's client-side proxy
+    # configuration.  Values are never read by this process or serialized in
+    # argv/evidence.  All offline roles explicitly clear proxy variables.
+    if role != "download_database":
+        for name in PROXY_ENV_NAMES:
+            argv.extend(["--env", f"{name}="])
     if user is not None:
         argv.extend(["--user", user])
     if input_archive is not None:

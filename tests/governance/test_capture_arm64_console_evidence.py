@@ -216,7 +216,7 @@ def test_scanner_is_hardened_offline_without_docker_socket(tmp_path: Path) -> No
     ]
 
 
-def test_networked_database_download_clears_proxy_and_uses_bridge(
+def test_networked_database_download_allows_unserialized_client_proxy_and_uses_bridge(
     tmp_path: Path,
 ) -> None:
     argv = _scanner_argv(
@@ -232,10 +232,8 @@ def test_networked_database_download_clears_proxy_and_uses_bridge(
     assert argv[argv.index("--tmpfs") + 1] == (
         "/tmp:rw,noexec,nosuid,size=256m"
     )
-    assert _option_values(argv, "--env") == [
-        "HOME=/tmp",
-        *(f"{name}=" for name in PROXY_ENV_NAMES),
-    ]
+    assert _option_values(argv, "--env") == ["HOME=/tmp"]
+    assert not any(name in argv for name in PROXY_ENV_NAMES)
 
 
 @pytest.mark.parametrize(
