@@ -1,0 +1,281 @@
+{
+  "archive_byte_identical": true,
+  "base_image_ref": "public.ecr.aws/docker/library/python@sha256:900229622a576409d52f7a66b24cf441415a828d7e503b0107bf56452a4e44ac",
+  "build_captures": [
+    {
+      "argv": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "quantos-arm64-evidence-builder-a",
+        "--platform",
+        "linux/arm64",
+        "--no-cache",
+        "--provenance=false",
+        "--build-arg",
+        "SOURCE_DATE_EPOCH=1781569204",
+        "--build-arg",
+        "HTTP_PROXY",
+        "--build-arg",
+        "HTTPS_PROXY",
+        "--build-arg",
+        "FTP_PROXY",
+        "--build-arg",
+        "NO_PROXY",
+        "--build-arg",
+        "ALL_PROXY",
+        "--build-arg",
+        "http_proxy",
+        "--build-arg",
+        "https_proxy",
+        "--build-arg",
+        "ftp_proxy",
+        "--build-arg",
+        "no_proxy",
+        "--build-arg",
+        "all_proxy",
+        "--tag",
+        "quantos-console:l2-arm64",
+        "--output",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-16cf68df-watchdog/.arm64-console-capture-k4fimf08/console-a.oci.tar,rewrite-timestamp=true",
+        "-f",
+        "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
+        "/home/kerstker/QUANTOS-backtest-runtime-integration"
+      ],
+      "exit_code": 0,
+      "stderr_sha256": "c0370cb84dc5cde31f5584a1cc81ab8d93f3ee1d1dd1913448be7cc962905d85",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "quantos-arm64-evidence-builder-b",
+        "--platform",
+        "linux/arm64",
+        "--no-cache",
+        "--provenance=false",
+        "--build-arg",
+        "SOURCE_DATE_EPOCH=1781569204",
+        "--build-arg",
+        "HTTP_PROXY",
+        "--build-arg",
+        "HTTPS_PROXY",
+        "--build-arg",
+        "FTP_PROXY",
+        "--build-arg",
+        "NO_PROXY",
+        "--build-arg",
+        "ALL_PROXY",
+        "--build-arg",
+        "http_proxy",
+        "--build-arg",
+        "https_proxy",
+        "--build-arg",
+        "ftp_proxy",
+        "--build-arg",
+        "no_proxy",
+        "--build-arg",
+        "all_proxy",
+        "--tag",
+        "quantos-console:l2-arm64",
+        "--output",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/manifests/arm64-console-16cf68df-watchdog/.arm64-console-capture-k4fimf08/console-b.oci.tar,rewrite-timestamp=true",
+        "-f",
+        "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
+        "/home/kerstker/QUANTOS-backtest-runtime-integration"
+      ],
+      "exit_code": 0,
+      "stderr_sha256": "39e15f5a95bac8e9f39ab285bc2d09820ab5e872cefae7307e9ebbb988a628bc",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "build_command_template": "docker buildx build --platform linux/arm64 --no-cache --provenance=false --build-arg SOURCE_DATE_EPOCH=1781569204 --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg FTP_PROXY --build-arg NO_PROXY --build-arg ALL_PROXY --build-arg http_proxy --build-arg https_proxy --build-arg ftp_proxy --build-arg no_proxy --build-arg all_proxy --output type=oci,dest=OUTPUT.oci.tar,rewrite-timestamp=true -f deploy/console.Dockerfile .",
+  "build_count": 2,
+  "build_tool": {
+    "builder_driver": "docker-container",
+    "builder_name": "quantos-arm64-evidence-builder-a,quantos-arm64-evidence-builder-b",
+    "buildkit_version": "v0.26.2",
+    "buildx_version": "github.com/docker/buildx v0.31.1 a2675950d46b2cb171b23c2015ca44fb88607531",
+    "docker_client_version": "29.2.1",
+    "docker_server_version": "29.2.1",
+    "host_architecture": "aarch64",
+    "host_os": "linux"
+  },
+  "builds": [
+    {
+      "archive_name": "console-a.oci.tar",
+      "archive_sha256": "bfa2649fe0c95b60227c6a0db5fc1b520cd657559c17f76a18889be5e88c287d",
+      "archive_size": 134381568,
+      "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+      "label": "A",
+      "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968"
+    },
+    {
+      "archive_name": "console-b.oci.tar",
+      "archive_sha256": "bfa2649fe0c95b60227c6a0db5fc1b520cd657559c17f76a18889be5e88c287d",
+      "archive_size": 134381568,
+      "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+      "label": "B",
+      "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968"
+    }
+  ],
+  "dockerfile": {
+    "path": "deploy/console.Dockerfile",
+    "sha256": "69cb0a87533cf4ebd1598b2d8f422c044e9d7cd20a6a0abb46101d940352070b",
+    "size": 2416
+  },
+  "dockerignore": {
+    "path": ".dockerignore",
+    "sha256": "a5e9aae1861d6b694169ff616b41a42ee6deee93e74de181ed5cec919449b801",
+    "size": 473
+  },
+  "exporter": "oci",
+  "image": {
+    "architecture": "arm64",
+    "config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+    "config_size": 8573,
+    "created": "2026-06-16T00:20:04Z",
+    "diff_ids": [
+      "sha256:b2848c02ac6ff53d265469b5b30f649f335e546a83330cd8916d54e65e640409",
+      "sha256:5d723529034d08c33bec2f762c8730716fed14174811d143b7f3089ca721e542",
+      "sha256:2e72e5b4c789876e0f5545e4ce390a258517950cbee95066933aba9d17f4725b",
+      "sha256:a6f851c9665c7d4e7fcc9f47ae32f66141b5efb0745550684fe13b60c906ae0a",
+      "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+      "sha256:87b6fda826019af7ab903470268ca579ea2dfccaa3bc5b71a964b0f185e0f94c",
+      "sha256:5e457c1f5d7b5e0e055099807e1f70a00d483fcffcf3a1ad0d8503ef2fdb63e0",
+      "sha256:4ac2809b678dcaf7ab866c908b7d86bdccf50a2b93613eed3cae8bc3a15d5faa",
+      "sha256:2336e4125b788964f456d75295e48d9cda4372a0ae7cda0b59108b76f5f86727",
+      "sha256:676a75906cdd01884315af59c266bfb23a36202dae7f26cf9fcb2da57bda227e",
+      "sha256:63d3f53433357cbd27a848940545435b1836fefece0738f527581a19e404aec1",
+      "sha256:1a401c723369480809a8e7f342e930d7e71f259a0f3c77932c97ea130d65356b"
+    ],
+    "layers": [
+      {
+        "digest": "sha256:5de55e5ef9c033997441461efe7ba23a986db059c0bb78b38f84ee0d72b99167",
+        "rewritten_timestamp": false,
+        "size": 4183037
+      },
+      {
+        "digest": "sha256:7165d099db60bb7a4c66df537c812ce70549fa0a07bedda096b324d7e7152553",
+        "rewritten_timestamp": false,
+        "size": 412443
+      },
+      {
+        "digest": "sha256:58091a72e5ff2d5b9cbf4afb3d27c1c1755d34bd99afe3abaa71be0340f5a723",
+        "rewritten_timestamp": false,
+        "size": 13904969
+      },
+      {
+        "digest": "sha256:bbd8ab56026e64775ebc7cf8064725d8502580484868f45364f94668f7006ed7",
+        "rewritten_timestamp": false,
+        "size": 248
+      },
+      {
+        "digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+        "rewritten_timestamp": true,
+        "size": 32
+      },
+      {
+        "digest": "sha256:39605db162a8c8aa8268e5ad70d31a69c8d3bace1d4793eb2635d18ae660f452",
+        "rewritten_timestamp": true,
+        "size": 93
+      },
+      {
+        "digest": "sha256:a271488b31a655ad1ce32213ecb1e637264d6f540759faa05f101046fe17b963",
+        "rewritten_timestamp": true,
+        "size": 9753432
+      },
+      {
+        "digest": "sha256:202903fe1c52ac2bb5fb60ef1eb28d246a0e59037c48376099a2cae7eba75b43",
+        "rewritten_timestamp": true,
+        "size": 102704956
+      },
+      {
+        "digest": "sha256:bb152f6ed31c55a62fac1f92a3e92bca10903d5240634f9271dfc2e6bb374e18",
+        "rewritten_timestamp": true,
+        "size": 1725116
+      },
+      {
+        "digest": "sha256:1aaaa50bb2b9f455c994a49622409e4effef7964d99f4ec17a1482802f3dafa8",
+        "rewritten_timestamp": true,
+        "size": 1580133
+      },
+      {
+        "digest": "sha256:4ae28e81e51720998475e13bd1274b646768707f56f922db92b2f5dd9cdd025c",
+        "rewritten_timestamp": true,
+        "size": 89596
+      },
+      {
+        "digest": "sha256:47b7fb0bd30052255bd883889022d6764c547b0e443076111df2e65d6bafd0e2",
+        "rewritten_timestamp": true,
+        "size": 908
+      }
+    ],
+    "manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+    "manifest_size": 3255,
+    "os": "linux",
+    "rewritten_timestamp_layer_count": 8
+  },
+  "limitations": [
+    "SAME_NATIVE_ARM64_HOST_AND_BUILDER_ONLY",
+    "LOCAL_OBSERVATION_NOT_IDENTITY_SIGNED",
+    "NOT_A_CROSS_HOST_ARTIFACT_ATTESTATION",
+    "LOCAL_UNSIGNED_RUNNER_RECEIPT_NOT_CRYPTOGRAPHIC_ATTESTATION",
+    "HOST_PROXY_NAMES_INHERITED_VALUES_NOT_RETAINED_NETWORK_PATH_NOT_ATTESTED"
+  ],
+  "mode": "LOCAL_NATIVE_ARM64_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
+  "no_cache": true,
+  "observed_at": 1788165228,
+  "provenance_disabled": true,
+  "requirements": {
+    "path": "requirements.txt",
+    "sha256": "1d4368ea74bc60832fb523de4e29d0b75b7815d02342a0f467511c53b123593f",
+    "size": 1542
+  },
+  "rewrite_timestamp": true,
+  "schema_version": 1,
+  "source": {
+    "clean": true,
+    "commands": [
+      {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "1abec59a270871e590790402a3b0de889572c3e687ad2e83a27c7945a8b65303"
+      },
+      {
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "argv": [
+          "uname",
+          "-a"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
+      }
+    ],
+    "commit": "16cf68df6fb555e20f3b245b16fcc4704f2c370d",
+    "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+  },
+  "source_date_epoch": 1781569204,
+  "target_platform": "linux/arm64",
+  "verdict": "PASS"
+}

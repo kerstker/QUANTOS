@@ -43,10 +43,10 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "domain": "platform_engineering",
-      "passed": 1,
-      "red_lines_failed": 1,
+      "passed": 0,
+      "red_lines_failed": 2,
       "requirements": 2
     },
     {
@@ -804,6 +804,18 @@
               "snapshot_policy": "STANDARD"
             },
             {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+              "required": false,
+              "role": "ashare_tdx_panel_cache",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+              "required": true,
+              "role": "ashare_tdx_daily_price_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
               "relative_path": "data/stocks/research.db",
               "required": true,
               "role": "ashare_research_database",
@@ -846,7 +858,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 14
+          "version": 15
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -1075,6 +1087,18 @@
               "snapshot_policy": "STANDARD"
             },
             {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+              "required": false,
+              "role": "ashare_tdx_panel_cache",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+              "required": true,
+              "role": "ashare_tdx_daily_price_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
               "relative_path": "data/stocks/research.db",
               "required": true,
               "role": "ashare_research_database",
@@ -1117,7 +1141,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 14
+          "version": 15
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1194,15 +1218,15 @@
         "path": "scripts/validate.py"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M4",
+      "current_maturity": "M1",
       "description": "One gate covers backend frontend governance and evidence",
-      "detail": "all required markers are present",
+      "detail": "missing required markers: container-trivy-evidence:current",
       "domain": "platform_engineering",
       "evidence": [
         "scripts/validate.py"
       ],
       "id": "PLATFORM.CI.UNIFIED_GATE",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Keep backend frontend governance and evidence checks synchronized",
       "red_line": true,
       "required_evidence": [
@@ -1211,7 +1235,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -1261,8 +1285,9 @@
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "evidence/vulnerability/actions_osv_latest.json",
-        "evidence/vulnerability/container_trivy_latest.json",
-        "evidence/reproducibility/container_build_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
         "evidence/sbom.cdx.json",
         ".gitattributes",
         ".github/workflows/sigstore-evidence.yml",
@@ -1283,7 +1308,6 @@
         "config/templates/live_mandate_binance_mainnet.json.template",
         "config/top_tier_requirements.json",
         "deploy/console.Dockerfile",
-        "deploy/console.arm64.Dockerfile",
         "deploy/systemd/README.md",
         "deploy/systemd/quantos-binance-realtime-stream.service",
         "deploy/systemd/quantos-bybit-realtime-stream.service",
@@ -1309,10 +1333,11 @@
         "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
         "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
         "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
-        "evidence/reproducibility/container_build_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
         "evidence/service_import_graph.json",
         "evidence/vulnerability/actions_osv_latest.json",
-        "evidence/vulnerability/container_trivy_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "live/execution/risk_monitor.py",
@@ -1328,7 +1353,11 @@
         "quantos/contracts/paper.py",
         "requirements-dev.txt",
         "requirements.txt",
+        "scripts/capture_arm64_console_evidence.py",
         "scripts/generate_actions_audit_evidence.py",
+        "scripts/generate_arm64_console_smoke_evidence.py",
+        "scripts/generate_arm64_container_audit_evidence.py",
+        "scripts/generate_arm64_container_reproducibility_evidence.py",
         "scripts/generate_container_audit_evidence.py",
         "scripts/generate_container_reproducibility_evidence.py",
         "scripts/generate_cross_host_container_evidence.py",
@@ -1369,6 +1398,7 @@
         "services/execution/lot_book.py",
         "services/execution/paper_reconciliation.py",
         "services/execution/realtime_engineering_paper_store.py",
+        "services/governance/arm64_console_evidence.py",
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_external_seal.py",
         "services/governance/artifact_admission_store.py",
@@ -1425,6 +1455,7 @@
         "tests/execution/test_impact_ownership.py",
         "tests/execution/test_lot_book.py",
         "tests/execution/test_realtime_engineering_paper_store.py",
+        "tests/governance/test_arm64_console_evidence.py",
         "tests/governance/test_arm64_container_boundary.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
@@ -1432,6 +1463,7 @@
         "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_capture_arm64_console_evidence.py",
         "tests/governance/test_console_composition_boundary.py",
         "tests/governance/test_cross_host_container_reproducibility.py",
         "tests/governance/test_event_bus_wiring.py",
@@ -1799,19 +1831,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 1,
+    "failed": 2,
     "manual_evidence_required": 0,
     "partial": 7,
-    "passed": 14,
-    "red_lines_failed": 3,
+    "passed": 13,
+    "red_lines_failed": 4,
     "total": 22,
     "unverified": 0
   },
   "validation": {
     "current": true,
-    "generated_at": 1788109036859,
-    "run_id": "a617cf664b8c409d00231acf6426b8e0fa3b2e46aee8b55e845eb60cbb5c6c55",
-    "source_commit": "dc86bb4bf5a7c1663be288d9441e1d54f1310ccf"
+    "generated_at": 1788165385613,
+    "run_id": "2aff6709b633ea3d171879eea383d930655f87c32c6a60351bb9f5a81f0ea813",
+    "source_commit": "16cf68df6fb555e20f3b245b16fcc4704f2c370d"
   },
   "verdict": "NOT_TOP_TIER"
 }

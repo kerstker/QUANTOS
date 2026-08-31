@@ -1,0 +1,491 @@
+{
+  "dockerfile": {
+    "path": "deploy/console.Dockerfile",
+    "sha256": "69cb0a87533cf4ebd1598b2d8f422c044e9d7cd20a6a0abb46101d940352070b",
+    "size": 2416
+  },
+  "limitations": [
+    "TARGET_HOST_LOCAL_OBSERVATION_ONLY",
+    "RETAINED_DOCKER_INSPECT_AND_CONTAINER_LOOPBACK_HTTP_RESULT",
+    "CONFIGURATION_AND_HEALTH_ONLY",
+    "DOES_NOT_PROVE_CREDENTIAL_NON_ACCESS",
+    "DOES_NOT_PROVE_ORDER_NON_SUBMISSION",
+    "DOES_NOT_PROVE_ABSENCE_OF_OUTBOUND_NETWORK_ACTIVITY",
+    "NOT_IDENTITY_SIGNED",
+    "LOCAL_UNSIGNED_RUNNER_RECEIPT_NOT_CRYPTOGRAPHIC_ATTESTATION"
+  ],
+  "mode": "LOCAL_NATIVE_ARM64_CONFIGURATION_AND_HEALTH_EVIDENCE",
+  "observation": {
+    "capture": {
+      "commands": [
+        {
+          "argv": [
+            "docker",
+            "run",
+            "--rm",
+            "--detach",
+            "--name",
+            "quantos-arm64-console-smoke",
+            "--network",
+            "none",
+            "--read-only",
+            "--user",
+            "65532:65532",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=33554432",
+            "--env",
+            "LIVE_TRADING_ENABLED=false",
+            "--env",
+            "REAL_BROKER_ENABLED=false",
+            "--env",
+            "ALLOW_ORDER_SUBMISSION=false",
+            "--env",
+            "ALLOW_AI_DIRECT_TRADING=false",
+            "--env",
+            "REQUIRE_HUMAN_APPROVAL=true",
+            "--env",
+            "HTTP_PROXY=",
+            "--env",
+            "HTTPS_PROXY=",
+            "--env",
+            "FTP_PROXY=",
+            "--env",
+            "NO_PROXY=",
+            "--env",
+            "ALL_PROXY=",
+            "--env",
+            "http_proxy=",
+            "--env",
+            "https_proxy=",
+            "--env",
+            "ftp_proxy=",
+            "--env",
+            "no_proxy=",
+            "--env",
+            "all_proxy=",
+            "quantos-console:l2-arm64"
+          ],
+          "exit_code": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_sha256": "4e396e207897e6a15205a8a69f639a76233ae13e7f27c9438b0e8814f1ae82de"
+        },
+        {
+          "argv": [
+            "docker",
+            "inspect",
+            "quantos-arm64-console-smoke"
+          ],
+          "exit_code": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_sha256": "69137de9f93ceecd294f1c9c919ae7c8f506504fa23875e25fed2a87b191d94e"
+        },
+        {
+          "argv": [
+            "docker",
+            "image",
+            "inspect",
+            "quantos-console:l2-arm64"
+          ],
+          "exit_code": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_sha256": "555e4d0da7b4c81c2a2e694450fd620de4af8e255148d529c6efecf36ba07445"
+        },
+        {
+          "argv": [
+            "docker",
+            "exec",
+            "quantos-arm64-console-smoke",
+            "python",
+            "-c",
+            "import json,urllib.request;r=urllib.request.urlopen('http://127.0.0.1:8400/health',timeout=5);print(json.dumps({'body':json.loads(r.read().decode('utf-8')),'status_code':r.status},sort_keys=True,separators=(',',':')))"
+          ],
+          "exit_code": 0,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_sha256": "288b7c0d05bff5448195054f52c0089f0958af006129c52420c6028566d8a315"
+        }
+      ],
+      "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+      "source_clean": true,
+      "source_commit": "16cf68df6fb555e20f3b245b16fcc4704f2c370d"
+    },
+    "container_inspect": {
+      "AppArmorProfile": "docker-default",
+      "Args": [
+        "-m",
+        "uvicorn",
+        "services.console.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8400"
+      ],
+      "Config": {
+        "AttachStderr": false,
+        "AttachStdin": false,
+        "AttachStdout": false,
+        "Cmd": [
+          "python",
+          "-m",
+          "uvicorn",
+          "services.console.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8400"
+        ],
+        "Domainname": "",
+        "Entrypoint": null,
+        "Env": [
+          "HTTP_PROXY=",
+          "ALL_PROXY=",
+          "no_proxy=",
+          "https_proxy=",
+          "ftp_proxy=",
+          "ALLOW_AI_DIRECT_TRADING=false",
+          "FTP_PROXY=",
+          "NO_PROXY=",
+          "LIVE_TRADING_ENABLED=false",
+          "ALLOW_ORDER_SUBMISSION=false",
+          "HTTPS_PROXY=",
+          "http_proxy=",
+          "all_proxy=",
+          "REAL_BROKER_ENABLED=false",
+          "REQUIRE_HUMAN_APPROVAL=true",
+          "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "LANG=C.UTF-8",
+          "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+          "PYTHON_VERSION=3.12.13",
+          "PYTHON_SHA256=c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONUNBUFFERED=1"
+        ],
+        "ExposedPorts": {
+          "8400/tcp": {}
+        },
+        "Hostname": "70d9b44d9239",
+        "Image": "quantos-console:l2-arm64",
+        "Labels": {},
+        "OpenStdin": false,
+        "StdinOnce": false,
+        "Tty": false,
+        "User": "65532:65532",
+        "Volumes": null,
+        "WorkingDir": "/app"
+      },
+      "Created": "2026-08-31T08:34:27.483662473Z",
+      "Driver": "overlayfs",
+      "ExecIDs": null,
+      "HostConfig": {
+        "AutoRemove": true,
+        "Binds": null,
+        "BlkioDeviceReadBps": [],
+        "BlkioDeviceReadIOps": [],
+        "BlkioDeviceWriteBps": [],
+        "BlkioDeviceWriteIOps": [],
+        "BlkioWeight": 0,
+        "BlkioWeightDevice": [],
+        "CapAdd": null,
+        "CapDrop": [
+          "ALL"
+        ],
+        "Cgroup": "",
+        "CgroupParent": "",
+        "CgroupnsMode": "private",
+        "ConsoleSize": [
+          0,
+          0
+        ],
+        "ContainerIDFile": "",
+        "CpuCount": 0,
+        "CpuPercent": 0,
+        "CpuPeriod": 0,
+        "CpuQuota": 0,
+        "CpuRealtimePeriod": 0,
+        "CpuRealtimeRuntime": 0,
+        "CpuShares": 0,
+        "CpusetCpus": "",
+        "CpusetMems": "",
+        "DeviceCgroupRules": null,
+        "DeviceRequests": null,
+        "Devices": [],
+        "Dns": null,
+        "DnsOptions": [],
+        "DnsSearch": [],
+        "ExtraHosts": null,
+        "GroupAdd": null,
+        "IOMaximumBandwidth": 0,
+        "IOMaximumIOps": 0,
+        "IpcMode": "private",
+        "Isolation": "",
+        "Links": null,
+        "LogConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "MaskedPaths": [
+          "/proc/acpi",
+          "/proc/asound",
+          "/proc/interrupts",
+          "/proc/kcore",
+          "/proc/keys",
+          "/proc/latency_stats",
+          "/proc/sched_debug",
+          "/proc/scsi",
+          "/proc/timer_list",
+          "/proc/timer_stats",
+          "/sys/devices/virtual/powercap",
+          "/sys/firmware"
+        ],
+        "Memory": 0,
+        "MemoryReservation": 0,
+        "MemorySwap": 0,
+        "MemorySwappiness": null,
+        "NanoCpus": 0,
+        "NetworkMode": "none",
+        "OomKillDisable": null,
+        "OomScoreAdj": 0,
+        "PidMode": "",
+        "PidsLimit": null,
+        "PortBindings": {},
+        "Privileged": false,
+        "PublishAllPorts": false,
+        "ReadonlyPaths": [
+          "/proc/bus",
+          "/proc/fs",
+          "/proc/irq",
+          "/proc/sys",
+          "/proc/sysrq-trigger"
+        ],
+        "ReadonlyRootfs": true,
+        "RestartPolicy": {
+          "MaximumRetryCount": 0,
+          "Name": "no"
+        },
+        "Runtime": "runc",
+        "SecurityOpt": [
+          "no-new-privileges:true"
+        ],
+        "ShmSize": 67108864,
+        "Tmpfs": {
+          "/tmp": "rw,noexec,nosuid,size=33554432"
+        },
+        "UTSMode": "",
+        "Ulimits": [],
+        "UsernsMode": "",
+        "VolumeDriver": "",
+        "VolumesFrom": null
+      },
+      "HostnamePath": "/var/lib/docker/containers/70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b/hostname",
+      "HostsPath": "/var/lib/docker/containers/70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b/hosts",
+      "Id": "70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b",
+      "Image": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+      "ImageManifestDescriptor": {
+        "annotations": {
+          "io.containerd.image.name": "docker.io/library/quantos-console:l2-arm64",
+          "org.opencontainers.image.created": "2026-06-16T00:20:04Z",
+          "org.opencontainers.image.ref.name": "l2-arm64"
+        },
+        "digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        "size": 3255
+      },
+      "LogPath": "/var/lib/docker/containers/70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b/70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b-json.log",
+      "MountLabel": "",
+      "Mounts": [],
+      "Name": "/quantos-arm64-console-smoke",
+      "NetworkSettings": {
+        "Networks": {
+          "none": {
+            "Aliases": null,
+            "DNSNames": null,
+            "DriverOpts": null,
+            "EndpointID": "0430b43091bbbe5e4fd25588215034bfca62451ceb8adb6e8273ef5967e2bc43",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "GwPriority": 0,
+            "IPAMConfig": null,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "Links": null,
+            "MacAddress": "",
+            "NetworkID": "14de2fa62b511f5f167e029ccfb7c27c14572aabeff715de16f0d6bbfdae734f"
+          }
+        },
+        "Ports": {},
+        "SandboxID": "29e4a009c5d3489f1cb24a6cb30eef2f5c5a70b5240b849ffb5d0d3c83156e5e",
+        "SandboxKey": "/var/run/docker/netns/29e4a009c5d3"
+      },
+      "Path": "python",
+      "Platform": "linux",
+      "ProcessLabel": "",
+      "ResolvConfPath": "/var/lib/docker/containers/70d9b44d9239ca46c2eab5e8e3fcc790784575cc2f904917b1d1f2b2d17a381b/resolv.conf",
+      "RestartCount": 0,
+      "State": {
+        "Dead": false,
+        "Error": "",
+        "ExitCode": 0,
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "OOMKilled": false,
+        "Paused": false,
+        "Pid": 3437807,
+        "Restarting": false,
+        "Running": true,
+        "StartedAt": "2026-08-31T08:34:27.583775198Z",
+        "Status": "running"
+      },
+      "Storage": {
+        "RootFS": {
+          "Snapshot": {
+            "Name": "overlayfs"
+          }
+        }
+      }
+    },
+    "health_request": {
+      "method": "GET",
+      "probe_scope": "CONTAINER_LOOPBACK",
+      "status_code": 200,
+      "url": "http://127.0.0.1:8400/health"
+    },
+    "health_response": {
+      "mode": "READ_ONLY",
+      "service": "research-console-api",
+      "status": "healthy"
+    },
+    "image_inspect": {
+      "Architecture": "arm64",
+      "Comment": "buildkit.dockerfile.v0",
+      "Config": {
+        "ArgsEscaped": true,
+        "Cmd": [
+          "python",
+          "-m",
+          "uvicorn",
+          "services.console.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8400"
+        ],
+        "Env": [
+          "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "LANG=C.UTF-8",
+          "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+          "PYTHON_VERSION=3.12.13",
+          "PYTHON_SHA256=c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684",
+          "LIVE_TRADING_ENABLED=false",
+          "REAL_BROKER_ENABLED=false",
+          "ALLOW_ORDER_SUBMISSION=false",
+          "ALLOW_AI_DIRECT_TRADING=false",
+          "REQUIRE_HUMAN_APPROVAL=true",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONUNBUFFERED=1"
+        ],
+        "ExposedPorts": {
+          "8400/tcp": {}
+        },
+        "User": "65532:65532",
+        "WorkingDir": "/app"
+      },
+      "Created": "2026-06-16T00:20:04Z",
+      "Descriptor": {
+        "annotations": {
+          "io.containerd.image.name": "docker.io/library/quantos-console:l2-arm64",
+          "org.opencontainers.image.created": "2026-06-16T00:20:04Z",
+          "org.opencontainers.image.ref.name": "l2-arm64"
+        },
+        "digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "size": 3255
+      },
+      "Id": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+      "Metadata": {
+        "LastTagTime": "2026-08-31T08:33:52.627351431Z"
+      },
+      "Os": "linux",
+      "RepoDigests": [
+        "quantos-console@sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968"
+      ],
+      "RepoTags": [
+        "quantos-console:l2-arm64"
+      ],
+      "RootFS": {
+        "Layers": [
+          "sha256:b2848c02ac6ff53d265469b5b30f649f335e546a83330cd8916d54e65e640409",
+          "sha256:5d723529034d08c33bec2f762c8730716fed14174811d143b7f3089ca721e542",
+          "sha256:2e72e5b4c789876e0f5545e4ce390a258517950cbee95066933aba9d17f4725b",
+          "sha256:a6f851c9665c7d4e7fcc9f47ae32f66141b5efb0745550684fe13b60c906ae0a",
+          "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+          "sha256:87b6fda826019af7ab903470268ca579ea2dfccaa3bc5b71a964b0f185e0f94c",
+          "sha256:5e457c1f5d7b5e0e055099807e1f70a00d483fcffcf3a1ad0d8503ef2fdb63e0",
+          "sha256:4ac2809b678dcaf7ab866c908b7d86bdccf50a2b93613eed3cae8bc3a15d5faa",
+          "sha256:2336e4125b788964f456d75295e48d9cda4372a0ae7cda0b59108b76f5f86727",
+          "sha256:676a75906cdd01884315af59c266bfb23a36202dae7f26cf9fcb2da57bda227e",
+          "sha256:63d3f53433357cbd27a848940545435b1836fefece0738f527581a19e404aec1",
+          "sha256:1a401c723369480809a8e7f342e930d7e71f259a0f3c77932c97ea130d65356b"
+        ],
+        "Type": "layers"
+      },
+      "Size": 134366791
+    },
+    "observed_at": 1788165273,
+    "runtime_image_config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+    "runtime_image_manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+    "schema_version": 3
+  },
+  "observation_sha256": "0d76c1d2d4cd1e9fac39385bc88ba4b4431208c2712791805251f1dbad4455df",
+  "observed_at": 1788165273,
+  "platform": "linux/arm64",
+  "runtime_image_config_digest": "sha256:b29c9d5cf00ecb54130509493d4ed0e2495fada4385b895f824077e7a30dcd68",
+  "runtime_image_manifest_digest": "sha256:9e41daf28e3b400967d791d13efa4cf7a183be88059aa69d83ecb81251410968",
+  "runtime_image_ref": "quantos-console:l2-arm64",
+  "schema_version": 3,
+  "source": {
+    "clean": true,
+    "commands": [
+      {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "1abec59a270871e590790402a3b0de889572c3e687ad2e83a27c7945a8b65303"
+      },
+      {
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "argv": [
+          "uname",
+          "-a"
+        ],
+        "exit_code": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
+      }
+    ],
+    "commit": "16cf68df6fb555e20f3b245b16fcc4704f2c370d",
+    "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+  },
+  "verdict": "PASS"
+}
