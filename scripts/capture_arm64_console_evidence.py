@@ -81,7 +81,11 @@ class CaptureError(RuntimeError):
     """The ARM64 capture could not be completed safely."""
 
 
-COMMAND_TIMEOUT_SECONDS = 30 * 60
+# Native ARM64 cold builds compile the pinned scientific stack from source on
+# musl and can legitimately exceed 30 minutes on a busy DGX.  This timeout is
+# confined to offline release-evidence capture; production deployment uses a
+# separate bounded readiness preflight and never invokes this builder.
+COMMAND_TIMEOUT_SECONDS = 60 * 60
 
 
 @dataclass(frozen=True)
