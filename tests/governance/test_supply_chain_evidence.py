@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 _ACTION = re.compile(r"uses:\s*([^\s#]+)")
@@ -571,8 +573,11 @@ def test_supply_chain_canonical_refresh_check_and_standalone_reuse(tmp_path, mon
     assert module.main([*args, "--check"]) == 1
 
 
-def test_supply_chain_builder_binds_temp_repo_head_when_binding_absent(tmp_path):
+def test_supply_chain_builder_rejects_copied_evidence_rebound_to_new_head(tmp_path):
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
+    from services.governance.arm64_console_evidence import (
+        Arm64ConsoleEvidenceError,
+    )
 
     temp_repo = tmp_path / "repo"
     shutil.copytree(ROOT, temp_repo, ignore=shutil.ignore_patterns(".git"))
@@ -582,6 +587,11 @@ def test_supply_chain_builder_binds_temp_repo_head_when_binding_absent(tmp_path)
     subprocess.run(["git", "add", "."], cwd=temp_repo, check=True)
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=temp_repo, check=True)
 
-    _, evidence = build_supply_chain_artifacts(temp_repo, binding=None)
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_repo, text=True).strip()
-    assert evidence["validation"]["source_commit"] == head
+    retained_source = json.loads(
+        (temp_repo / "evidence/vulnerability/container_trivy_arm64_latest.json")
+        .read_text(encoding="utf-8")
+    )["source"]["commit"]
+    assert head != retained_source
+    with pytest.raises(Arm64ConsoleEvidenceError, match="current anchor"):
+        build_supply_chain_artifacts(temp_repo, binding=None)
