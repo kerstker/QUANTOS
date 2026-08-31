@@ -54,6 +54,7 @@ def _option_values(argv: list[str], option: str) -> list[str]:
 def test_subprocess_runner_is_permanently_shell_free() -> None:
     source = inspect.getsource(SubprocessRunner.run)
     assert "shell=False" in source
+    assert "timeout=COMMAND_TIMEOUT_SECONDS" in source
     assert "shell=True" not in source
     assert "os.system" not in source
     assert "Popen" not in source
@@ -115,13 +116,10 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
     assert "type=oci,name=quantos-console:l2-arm64,dest=" in first[first.index("--output") + 1]
     assert "name=quantos-console:l2-arm64" in first[first.index("--output") + 1]
     assert "rewrite-timestamp=true" in first[first.index("--output") + 1]
-    expected_build_args = [
-        "SOURCE_DATE_EPOCH=123",
-        *(f"{name}=" for name in PROXY_ENV_NAMES),
-    ]
+    expected_build_args = ["SOURCE_DATE_EPOCH=123"]
     assert _option_values(first, "--build-arg") == expected_build_args
     assert _option_values(second, "--build-arg") == expected_build_args
-    assert all(value.endswith("=") for value in expected_build_args[1:])
+    assert not any(name in first for name in PROXY_ENV_NAMES)
     assert "--env" not in first and "-e" not in first
     assert first != second
 

@@ -20,6 +20,9 @@ QUANTOS does not have one monolithic “deploy everything” command. Deployment
 build context excludes `key/`, `data/`, `live/`, tools, tests, and local
 environment files. The runtime is non-root, keeps all live flags disabled, and
 fails the build when BuildKit reports any architecture other than ARM64.
+When the Docker client has a proxy configured, Docker's predefined proxy build
+arguments may accelerate package downloads; the Dockerfile never declares or
+copies them, and retained smoke evidence rejects proxy variables in the image.
 
 Build:
 

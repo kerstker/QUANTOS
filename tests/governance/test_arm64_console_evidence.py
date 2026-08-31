@@ -73,11 +73,6 @@ def _build_capture(
             "--provenance=false",
             "--build-arg",
             f"SOURCE_DATE_EPOCH={EPOCH}",
-            *[
-                item
-                for name in PROXY_ENV_NAMES
-                for item in ("--build-arg", f"{name}=")
-            ],
             "--tag",
             ARM64_RUNTIME_IMAGE_REF,
             "--output",
@@ -702,12 +697,14 @@ def test_arm64_reproducibility_rejects_recipe_tamper(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda argv: argv.__delitem__(slice(8, 10)),
+        lambda argv: argv.__delitem__(slice(9, 11)),
         lambda argv: argv.extend(["--build-arg", "HTTP_PROXY="]),
-        lambda argv: argv.__setitem__(5, "SOURCE_DATE_EPOCH=999999"),
-        lambda argv: argv.__setitem__(7, "HTTP_PROXY=http://secret.invalid"),
+        lambda argv: argv.__setitem__(10, "SOURCE_DATE_EPOCH=999999"),
+        lambda argv: argv.extend(
+            ["--build-arg", "HTTP_PROXY=http://secret.invalid"]
+        ),
         lambda argv: argv.extend(["--build-arg", "UNEXPECTED_PROXY"]),
-        lambda argv: argv.__setitem__(6, "--build-arg=HTTP_PROXY="),
+        lambda argv: argv.__setitem__(9, "--build-arg=HTTP_PROXY="),
     ],
 )
 def test_arm64_reproducibility_rejects_noncanonical_proxy_build_args(
@@ -750,7 +747,7 @@ def test_arm64_recipe_rejects_proxy_arg_or_env_declaration(
 ) -> None:
     evidence = _reproducibility(tmp_path)
     assert (
-        "PROXY_ENV_EXPLICITLY_CLEARED_NETWORK_PATH_NOT_ATTESTED"
+        "DOCKER_CLIENT_PROXY_NETWORK_PATH_NOT_ATTESTED_VALUES_NOT_RETAINED"
         in evidence["limitations"]
     )
     path = tmp_path / "deploy/console.Dockerfile"

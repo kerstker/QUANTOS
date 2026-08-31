@@ -81,6 +81,9 @@ class CaptureError(RuntimeError):
     """The ARM64 capture could not be completed safely."""
 
 
+COMMAND_TIMEOUT_SECONDS = 30 * 60
+
+
 @dataclass(frozen=True)
 class CommandResult:
     argv: tuple[str, ...]
@@ -124,13 +127,19 @@ class SubprocessRunner:
     def run(self, argv: Sequence[str], *, cwd: Path) -> CommandResult:
         if not argv or any(not isinstance(item, str) or not item for item in argv):
             raise CaptureError("command argv must contain non-empty strings")
-        completed = subprocess.run(
-            list(argv),
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            shell=False,
-        )
+        try:
+            completed = subprocess.run(
+                list(argv),
+                cwd=cwd,
+                check=False,
+                capture_output=True,
+                shell=False,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise CaptureError(
+                f"command exceeded {COMMAND_TIMEOUT_SECONDS}s timeout: {argv[0]}"
+            ) from exc
         return CommandResult(
             tuple(argv), completed.returncode, completed.stdout, completed.stderr
         )
@@ -202,8 +211,6 @@ def _build_argv(
         "--provenance=false",
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
     ]
-    for name in PROXY_ENV_NAMES:
-        argv.extend(["--build-arg", f"{name}="])
     argv.extend([
         "--tag", ARM64_RUNTIME_IMAGE_REF,
         "--output", (
@@ -628,6 +635,7 @@ def capture(
     source_resolver: Callable[[Path], str] | None = None,
     clock: Callable[[], float] = time.time,
     sleeper: Callable[[float], None] = time.sleep,
+    reporter: Callable[[str], None] | None = None,
 ) -> dict[str, Path]:
     """Run one fail-closed capture and atomically retain all three documents."""
     root = Path(repo_root).resolve()
@@ -642,8 +650,10 @@ def capture(
     owned_runtime_image = False
     session: Path | None = None
     primary_error: BaseException | None = None
+    report = reporter or (lambda _message: None)
     try:
         commit, source_capture = _source_capture(executor, root, resolver)
+        report(f"SOURCE_PASS commit={commit}")
         output.mkdir(parents=True, exist_ok=True)
         session = Path(
             tempfile.mkdtemp(prefix=".arm64-console-capture-", dir=output)
@@ -664,8 +674,11 @@ def capture(
             )
 
         cache = session / "trivy-cache"
+        report("SCANNER_PREFLIGHT_START")
         scanner_preflight = _prepare_scanner_database(executor, root, cache)
+        report("SCANNER_PREFLIGHT_PASS")
 
+        report("NATIVE_BUILDERS_START platform=linux/arm64")
         for builder in (BUILDER_A, BUILDER_B):
             _run(
                 executor,
@@ -679,10 +692,15 @@ def capture(
             owned_builders.append(builder)
 
         build_tool = _build_tool(executor, root, BUILDER_A, BUILDER_B)
+        report("NATIVE_BUILDERS_PASS platform=linux/arm64")
         archive_a = session / "console-a.oci.tar"
         archive_b = session / "console-b.oci.tar"
+        report("COLD_BUILD_A_START platform=linux/arm64")
         build_a = _run(executor, _build_argv(root, BUILDER_A, archive_a, epoch), root)
+        report("COLD_BUILD_A_PASS platform=linux/arm64")
+        report("COLD_BUILD_B_START platform=linux/arm64")
         build_b = _run(executor, _build_argv(root, BUILDER_B, archive_b, epoch), root)
+        report("COLD_BUILD_B_PASS platform=linux/arm64")
         reproducibility = build_arm64_container_reproducibility_evidence(
             root,
             archive_a=archive_a,
@@ -745,6 +763,7 @@ def capture(
             "--skip-vex-repo-update", "--disable-telemetry", "--offline-scan",
             "--scanners", "vuln", "--format", "json", "--no-progress",
         )
+        report("TRIVY_OFFLINE_SCAN_START platform=linux/arm64")
         base_scan = _run(
             executor,
             _scanner_argv(
@@ -821,7 +840,9 @@ def capture(
         )
         if audit.get("verdict") != "PASS":
             raise CaptureError("ARM64 vulnerability policy did not pass")
+        report("TRIVY_OFFLINE_SCAN_PASS platform=linux/arm64")
 
+        report("READ_ONLY_SMOKE_START network=none")
         smoke_run_capture = _run(executor, _smoke_run_argv(), root)
         owned_container = True
 
@@ -887,6 +908,7 @@ def capture(
             source_capture=source_capture,
         )
         _assert_evidence_identity(reproducibility, audit, smoke)
+        report("READ_ONLY_SMOKE_PASS network=none")
 
         final_commit, _final_source_capture = _source_capture(executor, root, resolver)
         if final_commit != commit:
@@ -900,6 +922,7 @@ def capture(
                 "smoke": smoke,
             },
         )
+        report("EVIDENCE_PUBLISH_PASS")
         return paths
     except BaseException as exc:
         primary_error = exc
@@ -945,7 +968,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-root", required=True)
     args = parser.parse_args(argv)
     try:
-        paths = capture(args.repo_root, args.output_root)
+        paths = capture(
+            args.repo_root,
+            args.output_root,
+            reporter=lambda message: print(
+                f"ARM64_CAPTURE_STAGE {message}", flush=True
+            ),
+        )
         print(
             "ARM64 console capture: PASS; "
             + "; ".join(f"{name}={path}" for name, path in paths.items())

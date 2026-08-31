@@ -1,8 +1,7 @@
-"""Strict retained evidence contracts for the additive ARM64 console image.
+"""Strict retained evidence contracts for the canonical ARM64 console image.
 
-These contracts intentionally do not parameterize or replace the retained
-amd64 evidence contracts.  An ARM64 observation has its own recipe, image
-identity, evidence files, and fail-closed verifier.
+Historical AMD64 receipts remain separately verifiable, but current builds,
+scans, smoke tests, and release gates all bind to this native ARM64 contract.
 """
 from __future__ import annotations
 
@@ -134,7 +133,7 @@ _REPRODUCIBILITY_LIMITATIONS = (
     "LOCAL_OBSERVATION_NOT_IDENTITY_SIGNED",
     "NOT_A_CROSS_HOST_ARTIFACT_ATTESTATION",
     "LOCAL_UNSIGNED_RUNNER_RECEIPT_NOT_CRYPTOGRAPHIC_ATTESTATION",
-    "PROXY_ENV_EXPLICITLY_CLEARED_NETWORK_PATH_NOT_ATTESTED",
+    "DOCKER_CLIENT_PROXY_NETWORK_PATH_NOT_ATTESTED_VALUES_NOT_RETAINED",
 )
 _AUDIT_FIELDS = {
     "schema_version",
@@ -270,10 +269,7 @@ def _valid_build_capture_argv(
     if not output.startswith(output_prefix) or not output.endswith(output_suffix):
         return False
     destination = Path(output[len(output_prefix) : -len(output_suffix)])
-    build_args = [
-        f"SOURCE_DATE_EPOCH={epoch}",
-        *(f"{name}=" for name in PROXY_ENV_NAMES),
-    ]
+    build_args = [f"SOURCE_DATE_EPOCH={epoch}"]
     expected = [
         "docker",
         "buildx",
@@ -538,13 +534,10 @@ def _recipe(root: Path) -> dict[str, Any]:
 
 
 def _build_command(epoch: int) -> str:
-    proxies = "".join(f"--build-arg {name}= " for name in PROXY_ENV_NAMES)
     return (
         "docker buildx build --platform linux/arm64 --no-cache "
         "--provenance=false "
         f"--build-arg SOURCE_DATE_EPOCH={epoch} "
-        + proxies
-        +
         "--output type=oci,dest=OUTPUT.oci.tar,rewrite-timestamp=true "
         "-f deploy/console.Dockerfile ."
     )
