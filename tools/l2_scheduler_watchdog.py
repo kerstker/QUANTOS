@@ -158,7 +158,10 @@ _EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
     "l2_scheduler_watchdog": (2 * _HOUR_MS, frozenset({2})),
     "okx_borrow_forward_refresh": (2 * _DAY_MS, frozenset()),
     "raw_archive_audit": (2 * _DAY_MS, frozenset()),
-    "wikimedia_attention_forward_refresh": (2 * _DAY_MS, frozenset()),
+    "wikimedia_attention_forward_refresh": (
+        2 * _DAY_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
 }
 if set(_EXPECTED_TASK_SPECS) != set(MVP_EXPECTED_TASKS.values()):
     raise RuntimeError("MVP watchdog specifications do not match the static policy")

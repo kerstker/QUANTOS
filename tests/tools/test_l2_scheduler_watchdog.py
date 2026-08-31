@@ -738,6 +738,36 @@ def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
         name: (EXPECTED_TASKS[name].module, EXPECTED_TASKS[name].max_age_ms)
         for name in expected
     } == expected
+    assert EXPECTED_TASKS[
+        "QUANTOS_wikimedia_attention_forward_refresh"
+    ].partial_results == frozenset({2})
+
+
+def test_wikimedia_optional_transport_block_is_partial_not_breach(tmp_path):
+    attention_name = "QUANTOS_wikimedia_attention_forward_refresh"
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    snapshots = [
+        TaskSnapshot(**{**item.__dict__, "last_result": 2})
+        if item.name == attention_name
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(row for row in result["checks"] if row["task_name"] == attention_name)
+    assert result["verdict"] == "PARTIAL"
+    assert check["status"] == "PARTIAL"
+    assert check["code"] == "RESULT_2"
 
 
 def test_resident_stream_exits_are_stale_within_three_paper_cadences():
