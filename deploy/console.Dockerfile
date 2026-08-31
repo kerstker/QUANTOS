@@ -51,7 +51,9 @@ RUN test "${TARGETARCH}" = "arm64"
 WORKDIR /app
 
 RUN apk add --no-cache \
+        libcrypto3=3.5.8-r0 \
         libgomp=15.2.0-r5 \
+        libssl3=3.5.8-r0 \
         libstdc++=15.2.0-r5 \
         openblas=0.3.30-r2 \
     && rm -f /var/log/apk.log

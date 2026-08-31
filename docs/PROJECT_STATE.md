@@ -5,6 +5,8 @@
 > `TARGETARCH=arm64` fail-closed；正式验证、供应链 baseline 和发布证据清单改为绑定
 > ARM64 双冷 OCI 构建、ARM64 Trivy 扫描及无网络只读健康冒烟三件套。AMD64/QEMU
 > 构建不再属于本机发布路径，迁移时临时注册的 `qemu-x86_64` 已注销。
+> ARM64 runtime 层显式固定 `libcrypto3/libssl3=3.5.8-r0`，消除固定基础镜像
+> 中 OpenSSL 3.5.7 的已修复漏洞；发布门禁仍要求最终镜像零已知漏洞。
 
 > **2026-08-31 容器上游补丁滞后策略：** 外部固定基础镜像可能短暂落后于其包仓库；
 > 容器审计仍对基础镜像任意 CRITICAL fail-closed，并且仅在 Trivy 给出明确
