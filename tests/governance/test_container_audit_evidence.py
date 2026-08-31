@@ -31,13 +31,16 @@ def _write_dockerfile(root: Path, image: str = BASE_REF) -> None:
 
 
 def _vulnerability(
-    vulnerability_id: str, *, severity: str = "MEDIUM"
+    vulnerability_id: str,
+    *,
+    severity: str = "MEDIUM",
+    fixed_version: str = "1.1",
 ) -> dict[str, str]:
     return {
         "VulnerabilityID": vulnerability_id,
         "PkgName": "demo-package",
         "InstalledVersion": "1.0",
-        "FixedVersion": "1.1",
+        "FixedVersion": fixed_version,
         "Status": "fixed",
         "Severity": severity,
     }
@@ -179,14 +182,31 @@ def test_trivy_release_archive_verifier_checks_actual_bytes(
         verify_trivy_release_archive(archive)
 
 
-def test_container_audit_fails_on_base_high_or_any_runtime_finding(
+def test_container_audit_accepts_remediated_base_high_but_rejects_unfixed_or_critical(
     tmp_path: Path,
 ) -> None:
-    base_failed = _build(
+    base_remediated = _build(
         tmp_path,
         base_vulnerabilities=[_vulnerability("CVE-HIGH", severity="HIGH")],
     )
-    assert base_failed["verdict"] == "FAIL"
+    assert base_remediated["verdict"] == "PASS"
+
+    base_unfixed = _build(
+        tmp_path,
+        base_vulnerabilities=[
+            _vulnerability("CVE-HIGH", severity="HIGH", fixed_version="")
+        ],
+    )
+    assert base_unfixed["verdict"] == "FAIL"
+
+    base_critical = _build(
+        tmp_path,
+        base_vulnerabilities=[_vulnerability("CVE-CRITICAL", severity="CRITICAL")],
+    )
+    assert base_critical["verdict"] == "FAIL"
+
+
+def test_container_audit_fails_on_any_runtime_finding(tmp_path: Path) -> None:
 
     runtime_failed = _build(
         tmp_path,
