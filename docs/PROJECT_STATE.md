@@ -1,5 +1,11 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-31 DGX 容器发布链改为 ARM64 原生：** `deploy/console.Dockerfile`
+> 现在以 ARM64 单平台基础镜像为默认，并在 builder/runtime 两阶段都以
+> `TARGETARCH=arm64` fail-closed；正式验证、供应链 baseline 和发布证据清单改为绑定
+> ARM64 双冷 OCI 构建、ARM64 Trivy 扫描及无网络只读健康冒烟三件套。AMD64/QEMU
+> 构建不再属于本机发布路径，迁移时临时注册的 `qemu-x86_64` 已注销。
+
 > **2026-08-31 容器上游补丁滞后策略：** 外部固定基础镜像可能短暂落后于其包仓库；
 > 容器审计仍对基础镜像任意 CRITICAL fail-closed，并且仅在 Trivy 给出明确
 > `FixedVersion`、最终运行镜像独立扫描为零已知漏洞时，才接受已在构建中消除的基础

@@ -17,7 +17,7 @@ GIT_COMMAND_TIMEOUT_SECONDS = 10
 
 # This is deliberately a finite, versioned list.  Widening it changes the
 # identity domain and must be reviewed as a new boundary policy.
-CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v3"
+CANONICAL_GENERATED_ARTIFACT_ALLOWLIST_VERSION = "v4"
 RELEASE_EVIDENCE_MANIFEST_PATH = "evidence/l2_release_evidence_manifest.json"
 CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md",
@@ -31,25 +31,24 @@ CANONICAL_GENERATED_ARTIFACT_ALLOWLIST = frozenset({
     "evidence/mexc_integration_status.json",
     "evidence/paper_shadow_status.json",
     "evidence/reproducibility/container_build_arm64_latest.json",
-    "evidence/reproducibility/container_build_latest.json",
     "evidence/runtime/console_arm64_smoke_latest.json",
     "evidence/sbom.cdx.json",
     "evidence/supply_chain_baseline.json",
     "evidence/top_tier_assessment.json",
     "evidence/trial_ledger_integrity.json",
     "evidence/validation_report.json",
-    "evidence/vulnerability/container_trivy_latest.json",
     "evidence/vulnerability/container_trivy_arm64_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
 })
 RELEASE_EVIDENCE_REQUIRED_ARTIFACTS = frozenset(
     {
-        "evidence/reproducibility/container_build_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
         "evidence/sbom.cdx.json",
         "evidence/supply_chain_baseline.json",
         "evidence/top_tier_assessment.json",
         "evidence/validation_report.json",
-        "evidence/vulnerability/container_trivy_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
     }
 )
 _VALIDATION_RUN_ID_DOMAIN = "quantos-validation-run:v2"
@@ -339,21 +338,27 @@ def build_release_evidence_manifest(
     ):
         raise ValueError("SBOM digest drift from supply-chain baseline")
     if supply.get("container_vulnerability_evidence_sha256") != _sha256_file(
-        repo / "evidence/vulnerability/container_trivy_latest.json"
+        repo / "evidence/vulnerability/container_trivy_arm64_latest.json"
     ):
         raise ValueError("container audit digest drift from supply-chain baseline")
     if supply.get("container_reproducibility_evidence_sha256") != _sha256_file(
-        repo / "evidence/reproducibility/container_build_latest.json"
+        repo / "evidence/reproducibility/container_build_arm64_latest.json"
     ):
         raise ValueError(
             "container reproducibility digest drift from supply-chain baseline"
         )
+    if supply.get("container_smoke_evidence_sha256") != _sha256_file(
+        repo / "evidence/runtime/console_arm64_smoke_latest.json"
+    ):
+        raise ValueError("ARM64 console smoke digest drift from supply-chain baseline")
     if (
         supply.get("verdict") not in {"PASS", "PARTIAL"}
         or supply.get("container_vulnerability_evidence_status")
         != "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
         or supply.get("container_reproducibility_evidence_status")
         != "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
+        or supply.get("container_smoke_evidence_status")
+        != "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
         or not isinstance(supply.get("container_runtime_image_digest"), str)
         or not isinstance(supply.get("container_reproducible_manifest_digest"), str)
         or supply.get("container_runtime_image_digest")

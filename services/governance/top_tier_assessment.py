@@ -93,6 +93,12 @@ from services.governance.reproducibility_evidence import (
     ContainerReproducibilityEvidenceError,
     verify_container_reproducibility_evidence,
 )
+from services.governance.arm64_console_evidence import (
+    Arm64ConsoleEvidenceError,
+    verify_arm64_console_smoke_evidence,
+    verify_arm64_container_audit_evidence,
+    verify_arm64_container_reproducibility_evidence,
+)
 from services.governance.vulnerability_evidence import (
     ActionsAuditEvidenceError,
     ContainerAuditEvidenceError,
@@ -3756,12 +3762,37 @@ def _supply_chain_baseline_evidence(
         try:
             container_audit_bytes = (repo_root / container_audit_relative).read_bytes()
             container_audit_document = json.loads(container_audit_bytes.decode("utf-8"))
-            container_audit_summary = verify_container_audit_evidence(container_audit_document, repo_root)
+            if container_audit_ref == (
+                "evidence/vulnerability/container_trivy_arm64_latest.json"
+            ):
+                validation = document.get("validation")
+                expected_source = (
+                    validation.get("source_commit")
+                    if isinstance(validation, dict)
+                    else None
+                )
+                container_audit_summary = verify_arm64_container_audit_evidence(
+                    container_audit_document,
+                    repo_root,
+                    expected_source_commit=expected_source,
+                )
+                runtime_image_digest = container_audit_summary[
+                    "runtime_image_manifest_digest"
+                ]
+            else:
+                container_audit_summary = verify_container_audit_evidence(
+                    container_audit_document,
+                    repo_root,
+                )
+                runtime_image_digest = container_audit_summary[
+                    "runtime_image_digest"
+                ]
         except (
             OSError,
             UnicodeDecodeError,
             json.JSONDecodeError,
             ContainerAuditEvidenceError,
+            Arm64ConsoleEvidenceError,
             TypeError,
             ValueError,
         ):
@@ -3774,7 +3805,7 @@ def _supply_chain_baseline_evidence(
                 or container_audit_summary["base_vulnerability_count"]
                 != document.get("container_base_vulnerability_count")
                 or container_audit_summary["runtime_vulnerability_count"] != 0
-                or container_audit_summary["runtime_image_digest"] != document.get("container_runtime_image_digest")
+                or runtime_image_digest != document.get("container_runtime_image_digest")
                 or container_audit_summary["verdict"] != "PASS"
             ):
                 failures.append("container_vulnerability_evidence")
@@ -3791,12 +3822,33 @@ def _supply_chain_baseline_evidence(
         try:
             reproducibility_bytes = (repo_root / reproducibility_relative).read_bytes()
             reproducibility_document = json.loads(reproducibility_bytes.decode("utf-8"))
-            reproducibility_summary = verify_container_reproducibility_evidence(reproducibility_document, repo_root)
+            if reproducibility_ref == (
+                "evidence/reproducibility/container_build_arm64_latest.json"
+            ):
+                validation = document.get("validation")
+                expected_source = (
+                    validation.get("source_commit")
+                    if isinstance(validation, dict)
+                    else None
+                )
+                reproducibility_summary = (
+                    verify_arm64_container_reproducibility_evidence(
+                        reproducibility_document,
+                        repo_root,
+                        expected_source_commit=expected_source,
+                    )
+                )
+            else:
+                reproducibility_summary = verify_container_reproducibility_evidence(
+                    reproducibility_document,
+                    repo_root,
+                )
         except (
             OSError,
             UnicodeDecodeError,
             json.JSONDecodeError,
             ContainerReproducibilityEvidenceError,
+            Arm64ConsoleEvidenceError,
             TypeError,
             ValueError,
         ):
@@ -3813,6 +3865,54 @@ def _supply_chain_baseline_evidence(
                 or reproducibility_summary["verdict"] != "PASS"
             ):
                 failures.append("container_reproducibility_evidence")
+    if container_audit_ref == (
+        "evidence/vulnerability/container_trivy_arm64_latest.json"
+    ):
+        smoke_ref = document.get("container_smoke_evidence_ref")
+        smoke_relative = Path(smoke_ref) if isinstance(smoke_ref, str) else None
+        if (
+            smoke_relative is None
+            or smoke_relative.is_absolute()
+            or ".." in smoke_relative.parts
+            or smoke_ref != "evidence/runtime/console_arm64_smoke_latest.json"
+        ):
+            failures.append("container_smoke_evidence_ref")
+        else:
+            evidence.append(smoke_ref)
+            try:
+                smoke_bytes = (repo_root / smoke_relative).read_bytes()
+                smoke_document = json.loads(smoke_bytes.decode("utf-8"))
+                validation = document.get("validation")
+                expected_source = (
+                    validation.get("source_commit")
+                    if isinstance(validation, dict)
+                    else None
+                )
+                smoke_summary = verify_arm64_console_smoke_evidence(
+                    smoke_document,
+                    repo_root,
+                    expected_source_commit=expected_source,
+                )
+            except (
+                OSError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                Arm64ConsoleEvidenceError,
+                TypeError,
+                ValueError,
+            ):
+                failures.append("container_smoke_evidence")
+            else:
+                if (
+                    hashlib.sha256(smoke_bytes).hexdigest()
+                    != document.get("container_smoke_evidence_sha256")
+                    or smoke_summary["observed_at"]
+                    != document.get("container_smoke_observed_at")
+                    or document.get("container_smoke_evidence_status")
+                    != "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
+                    or smoke_summary["verdict"] != "PASS"
+                ):
+                    failures.append("container_smoke_evidence")
     sbom_path = document.get("sbom_path")
     sbom_relative = Path(sbom_path) if isinstance(sbom_path, str) else None
     sbom_document: Any = None

@@ -71,9 +71,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  container-ubuntu-22:
-    name: reproduce deployable container (ubuntu-22.04)
-    runs-on: ubuntu-22.04
+  container-arm64-a:
+    name: reproduce deployable container (native ARM64 runner A)
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -96,7 +96,7 @@ jobs:
             --builder quantos-cross-host \
             --no-cache \
             --provenance=false \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             --build-arg SOURCE_DATE_EPOCH=1781569204 \
             --output "type=oci,dest=${RUNNER_TEMP}/quantos-console.oci.tar,rewrite-timestamp=true" \
             -f deploy/console.Dockerfile .
@@ -113,22 +113,22 @@ jobs:
             --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \
             --output build/claim.json \
             --source-commit "${GITHUB_SHA}" \
-            --runner-label ubuntu-22.04 \
-            --workflow-job container-ubuntu-22 \
+            --runner-label github-arm64-a \
+            --workflow-job container-arm64-a \
             --setup-buildx-action-sha "${SETUP_BUILDX_ACTION_SHA}" \
             --buildx-version "${BUILDX_VERSION}" \
             --buildkit-version "${BUILDKIT_VERSION}" \
             --buildkit-image-ref "${BUILDKIT_IMAGE_REF}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: quantos-console-ubuntu-22
+          name: quantos-console-arm64-a
           path: build/claim.json
           if-no-files-found: error
           retention-days: 1
 
-  container-ubuntu-24:
-    name: reproduce deployable container (ubuntu-24.04)
-    runs-on: ubuntu-24.04
+  container-arm64-b:
+    name: reproduce deployable container (native ARM64 runner B)
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -151,7 +151,7 @@ jobs:
             --builder quantos-cross-host \
             --no-cache \
             --provenance=false \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             --build-arg SOURCE_DATE_EPOCH=1781569204 \
             --output "type=oci,dest=${RUNNER_TEMP}/quantos-console.oci.tar,rewrite-timestamp=true" \
             -f deploy/console.Dockerfile .
@@ -168,15 +168,15 @@ jobs:
             --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \
             --output build/claim.json \
             --source-commit "${GITHUB_SHA}" \
-            --runner-label ubuntu-24.04 \
-            --workflow-job container-ubuntu-24 \
+            --runner-label github-arm64-b \
+            --workflow-job container-arm64-b \
             --setup-buildx-action-sha "${SETUP_BUILDX_ACTION_SHA}" \
             --buildx-version "${BUILDX_VERSION}" \
             --buildkit-version "${BUILDKIT_VERSION}" \
             --buildkit-image-ref "${BUILDKIT_IMAGE_REF}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: quantos-console-ubuntu-24
+          name: quantos-console-arm64-b
           path: build/claim.json
           if-no-files-found: error
           retention-days: 1
@@ -186,8 +186,8 @@ jobs:
     needs:
       - build-ubuntu-22
       - build-ubuntu-24
-      - container-ubuntu-22
-      - container-ubuntu-24
+      - container-arm64-a
+      - container-arm64-b
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -209,12 +209,12 @@ jobs:
           path: reproductions/ubuntu-24
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: quantos-console-ubuntu-22
-          path: container-reproductions/ubuntu-22
+          name: quantos-console-arm64-a
+          path: container-reproductions/arm64-a
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: quantos-console-ubuntu-24
-          path: container-reproductions/ubuntu-24
+          name: quantos-console-arm64-b
+          path: container-reproductions/arm64-b
       - name: Require byte-identical independent builds
         run: |
           cmp --silent \
@@ -236,8 +236,8 @@ jobs:
         run: |
           mkdir -p external-sigstore
           python scripts/generate_cross_host_container_evidence.py aggregate \
-            --claim container-reproductions/ubuntu-22/claim.json \
-            --claim container-reproductions/ubuntu-24/claim.json \
+            --claim container-reproductions/arm64-a/claim.json \
+            --claim container-reproductions/arm64-b/claim.json \
             --output external-sigstore/quantos-console-cross-host.json \
             --workflow-ref "${QUANTOS_WORKFLOW_REF}" \
             --workflow-run \

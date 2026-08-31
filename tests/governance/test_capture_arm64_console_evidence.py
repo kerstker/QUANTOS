@@ -616,7 +616,7 @@ def test_reserved_resource_names_are_fixed_and_unambiguous() -> None:
 def _capture_repo(root: Path) -> str:
     commit = "a" * 40
     (root / ".git").mkdir()
-    dockerfile = root / "deploy/console.arm64.Dockerfile"
+    dockerfile = root / "deploy/console.Dockerfile"
     dockerfile.parent.mkdir()
     dockerfile.write_text(
         "ARG PYTHON_IMAGE=example.invalid/python@sha256:" + "b" * 64 + "\n"

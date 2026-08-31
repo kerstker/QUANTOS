@@ -1,8 +1,9 @@
 """治理:机器钉死 QUANTOS 容器镜像的 L2 安全不变量(Phase 6 item 3,dim15 的 clean-additive 半区)。
 
 诚实边界:本测试只负责静态结构不变量;真实双冷构建、只读/非 root 冒烟和 Trivy 结果由
-`evidence/reproducibility/container_build_latest.json` 与
-`evidence/vulnerability/container_trivy_latest.json` 独立保留。现有复现证据仅覆盖同主机/同 BuildKit,
+`evidence/reproducibility/container_build_arm64_latest.json`、
+`evidence/vulnerability/container_trivy_arm64_latest.json` 与
+`evidence/runtime/console_arm64_smoke_latest.json` 独立保留。现有复现证据仅覆盖原生 ARM64 主机/同 BuildKit,
 不等于跨主机复现、身份签名或 staging/prod 部署证明。
 
 镜像不变量:①不 COPY key//data//live/、无凭证字面量;②pip 层无券商/交易所 SDK;③五旗帜 env 默认关死实盘;
@@ -100,7 +101,7 @@ def test_dockerignore_excludes_secrets_and_data():
         assert needed.rstrip("/") in ignored, f".dockerignore must exclude {needed}"
 
 
-def test_base_image_is_immutable_amd64_manifest_and_build_is_multistage():
+def test_base_image_is_immutable_arm64_manifest_and_build_is_multistage():
     text = _dockerfile_text()
     match = re.search(
         r"^ARG PYTHON_IMAGE=(public\.ecr\.aws/docker/library/python@sha256:[0-9a-f]{64})$",
@@ -108,8 +109,12 @@ def test_base_image_is_immutable_amd64_manifest_and_build_is_multistage():
         re.MULTILINE,
     )
     assert match, "Python base image must be an immutable official-image digest"
+    assert match.group(1).endswith(
+        "900229622a576409d52f7a66b24cf441415a828d7e503b0107bf56452a4e44ac"
+    )
     assert len(re.findall(r"^FROM \$\{PYTHON_IMAGE\}", text, re.MULTILINE)) == 2
     assert re.search(r"^FROM \$\{PYTHON_IMAGE\} AS builder$", text, re.MULTILINE)
+    assert text.count('test "${TARGETARCH}" = "arm64"') == 2
 
 
 def test_runtime_is_non_root_and_does_not_retain_pip_or_build_toolchain():

@@ -12,16 +12,19 @@ from typing import Any, Mapping, Sequence
 from services.governance.json_integrity import (
     load_json_without_duplicate_keys,
 )
-from services.governance.reproducibility_evidence import (
-    ContainerReproducibilityEvidenceError,
-    DOCKERIGNORE_REF,
-    DOCKERFILE_REF,
-    REQUIREMENTS_REF,
-    TARGET_PLATFORM,
-    _parse_oci_archive,
-    _recipe_bindings,
+from services.governance.arm64_console_evidence import (
+    ARM64_DOCKERFILE_REF as DOCKERFILE_REF,
+    ARM64_TARGET_PLATFORM as TARGET_PLATFORM,
+    Arm64ConsoleEvidenceError,
+    _parse_arm64_oci as _parse_oci_archive,
+    _recipe as _recipe_bindings,
     _verify_file_binding,
     _verify_image_summary,
+)
+from services.governance.reproducibility_evidence import (
+    ContainerReproducibilityEvidenceError,
+    TARGET_PLATFORM as LEGACY_TARGET_PLATFORM,
+    _verify_image_summary as _verify_legacy_image_summary,
 )
 
 
@@ -35,7 +38,10 @@ class CrossHostContainerInputMismatchError(CrossHostContainerEvidenceError):
 
 CLAIM_MODE = "SINGLE_COLD_OCI_BUILD_RECIPE_BOUND"
 EVIDENCE_MODE = "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL"
-EXPECTED_BUILDERS = ("ubuntu-22.04", "ubuntu-24.04")
+DOCKERIGNORE_REF = ".dockerignore"
+REQUIREMENTS_REF = "requirements.txt"
+EXPECTED_BUILDERS = ("github-arm64-a", "github-arm64-b")
+LEGACY_BUILDERS = ("ubuntu-22.04", "ubuntu-24.04")
 LIMITATIONS = (
     "GITHUB_HOSTED_RUNNERS_NOT_INDEPENDENT_ORGANIZATIONS",
     "AUTHENTICATED_EXTERNAL_RECEIPT_NOT_YET_BOUND",
@@ -296,7 +302,11 @@ def _json_object(content: bytes, label: str) -> dict[str, Any]:
 def _recipe_document(root: Path) -> dict[str, Any]:
     try:
         recipe = _recipe_bindings(root)
-    except (ContainerReproducibilityEvidenceError, OSError) as exc:
+    except (
+        ContainerReproducibilityEvidenceError,
+        Arm64ConsoleEvidenceError,
+        OSError,
+    ) as exc:
         raise CrossHostContainerEvidenceError(str(exc)) from exc
     return {
         "source_date_epoch": recipe["source_date_epoch"],
@@ -352,7 +362,8 @@ def _verify_recipe(
         raise CrossHostContainerEvidenceError(
             "recipe source date epoch is invalid"
         )
-    if recipe.get("target_platform") != TARGET_PLATFORM or (
+    target_platform = recipe.get("target_platform")
+    if target_platform not in {TARGET_PLATFORM, LEGACY_TARGET_PLATFORM} or (
         not isinstance(recipe.get("base_image_ref"), str)
         or re.fullmatch(
             r"[^@\s]+@sha256:[0-9a-f]{64}", recipe["base_image_ref"]
@@ -372,6 +383,11 @@ def _verify_recipe(
     if not require_current_input:
         return recipe
 
+    if target_platform != TARGET_PLATFORM:
+        raise CrossHostContainerInputMismatchError(
+            "retained container recipe is not the current native ARM64 recipe"
+        )
+
     expected = _recipe_document(root)
     if (
         recipe.get("source_date_epoch") != expected["source_date_epoch"]
@@ -390,9 +406,30 @@ def _verify_recipe(
         _verify_file_binding(
             recipe.get("dockerignore"), expected["dockerignore"], DOCKERIGNORE_REF
         )
-    except ContainerReproducibilityEvidenceError as exc:
+    except (ContainerReproducibilityEvidenceError, Arm64ConsoleEvidenceError) as exc:
         raise CrossHostContainerInputMismatchError(str(exc)) from exc
     return recipe
+
+
+def _builders_for_platform(target_platform: object) -> tuple[str, str]:
+    if target_platform == TARGET_PLATFORM:
+        return EXPECTED_BUILDERS
+    if target_platform == LEGACY_TARGET_PLATFORM:
+        return LEGACY_BUILDERS
+    raise CrossHostContainerEvidenceError("recipe target platform is invalid")
+
+
+def _verify_retained_image(
+    value: object, epoch: int, target_platform: object
+) -> dict[str, Any]:
+    try:
+        if target_platform == TARGET_PLATFORM:
+            return _verify_image_summary(value, epoch)
+        if target_platform == LEGACY_TARGET_PLATFORM:
+            return _verify_legacy_image_summary(value, epoch)
+    except (ContainerReproducibilityEvidenceError, Arm64ConsoleEvidenceError) as exc:
+        raise CrossHostContainerEvidenceError(str(exc)) from exc
+    raise CrossHostContainerEvidenceError("recipe target platform is invalid")
 
 
 def build_container_build_claim(
@@ -422,7 +459,11 @@ def build_container_build_claim(
         image = _parse_oci_archive(
             archive_path, recipe["source_date_epoch"]
         )
-    except (ContainerReproducibilityEvidenceError, OSError) as exc:
+    except (
+        ContainerReproducibilityEvidenceError,
+        Arm64ConsoleEvidenceError,
+        OSError,
+    ) as exc:
         raise CrossHostContainerEvidenceError(str(exc)) from exc
     claim = {
         "schema_version": 2,
@@ -508,12 +549,9 @@ def verify_container_build_claim(
         or archive["size"] <= 0
     ):
         raise CrossHostContainerEvidenceError("archive identity is invalid")
-    try:
-        image = _verify_image_summary(
-            claim.get("image"), recipe["source_date_epoch"]
-        )
-    except ContainerReproducibilityEvidenceError as exc:
-        raise CrossHostContainerEvidenceError(str(exc)) from exc
+    image = _verify_retained_image(
+        claim.get("image"), recipe["source_date_epoch"], recipe["target_platform"]
+    )
     return {
         "archive_sha256": archive["sha256"],
         "archive_size": archive["size"],
@@ -610,6 +648,8 @@ def verify_cross_host_container_evidence(
 ) -> dict[str, Any]:
     """Verify a cross-host aggregate without treating it as signed external proof."""
     evidence = _object(document, "cross-host container evidence")
+    raw_recipe = _object(evidence.get("recipe"), "recipe")
+    expected_builders = _builders_for_platform(raw_recipe.get("target_platform"))
     if (
         set(evidence) != _EVIDENCE_FIELDS
         or evidence.get("schema_version") != 2
@@ -624,7 +664,7 @@ def verify_cross_host_container_evidence(
         not in evidence["workflow_ref"]
         or not isinstance(evidence.get("workflow_run"), str)
         or _WORKFLOW_RUN.fullmatch(evidence["workflow_run"]) is None
-        or evidence.get("builders") != list(EXPECTED_BUILDERS)
+        or evidence.get("builders") != list(expected_builders)
         or evidence.get("archive_byte_identical") is not True
         or not isinstance(evidence.get("container_input_sha256"), str)
         or _HEX.fullmatch(evidence["container_input_sha256"]) is None
@@ -651,19 +691,18 @@ def verify_cross_host_container_evidence(
         require_current_input=require_current_input,
     )
     _validated_build_tool(evidence.get("build_tool"))
-    try:
-        image = _verify_image_summary(
-            evidence.get("image"), recipe["source_date_epoch"]
-        )
-    except ContainerReproducibilityEvidenceError as exc:
-        raise CrossHostContainerEvidenceError(str(exc)) from exc
+    image = _verify_retained_image(
+        evidence.get("image"),
+        recipe["source_date_epoch"],
+        recipe["target_platform"],
+    )
     claims = _object(evidence.get("claim_sha256"), "claim hashes")
     if (
-        list(claims) != list(EXPECTED_BUILDERS)
+        list(claims) != list(expected_builders)
         or any(
             not isinstance(claims[builder], str)
             or _HEX.fullmatch(claims[builder]) is None
-            for builder in EXPECTED_BUILDERS
+            for builder in expected_builders
         )
         or evidence.get("manifest_digest") != image["manifest_digest"]
         or evidence.get("config_digest") != image["config_digest"]
@@ -673,7 +712,7 @@ def verify_cross_host_container_evidence(
         )
     return {
         "archive_sha256": evidence["archive_sha256"],
-        "builders": list(EXPECTED_BUILDERS),
+        "builders": list(expected_builders),
         "container_input_sha256": evidence["container_input_sha256"],
         "manifest_digest": image["manifest_digest"],
         "observed_at": evidence["observed_at"],
@@ -776,7 +815,7 @@ def verify_signed_cross_host_container_evidence(
         or receipt.get("sigstore_version") != "4.4.0"
         or receipt.get("rekor_version") != 1
         or receipt.get("mode") != EVIDENCE_MODE
-        or receipt.get("builders") != list(EXPECTED_BUILDERS)
+        or receipt.get("builders") != summary["builders"]
         or receipt.get("archive_sha256") != summary["archive_sha256"]
         or receipt.get("container_input_sha256")
         != summary["container_input_sha256"]
@@ -844,7 +883,7 @@ def verify_signed_cross_host_container_evidence(
         "archive_sha256": summary["archive_sha256"],
         "container_input_sha256": summary["container_input_sha256"],
         "manifest_digest": summary["manifest_digest"],
-        "builders": list(EXPECTED_BUILDERS),
+        "builders": summary["builders"],
         "workflow_run": receipt["workflow_run"],
         "evidence_sha256": evidence_sha256,
         "bundle_sha256": bundle_sha256,

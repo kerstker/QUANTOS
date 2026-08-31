@@ -1,4 +1,9 @@
-"""Verification for retained container build reproducibility evidence."""
+"""Legacy AMD64 retained-evidence verifier.
+
+Current builds and release gates use ``arm64_console_evidence``.  This module
+remains read-only so historical signed receipts can still be authenticated; it
+must not be used to launch a new container build.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone

@@ -22,7 +22,7 @@ class Arm64ConsoleEvidenceError(ValueError):
     """ARM64 console evidence is malformed, inconsistent, or unsafe."""
 
 
-ARM64_DOCKERFILE_REF = "deploy/console.arm64.Dockerfile"
+ARM64_DOCKERFILE_REF = "deploy/console.Dockerfile"
 ARM64_RUNTIME_IMAGE_REF = "quantos-console:l2-arm64"
 ARM64_TARGET_PLATFORM = "linux/arm64"
 ARM64_REPRODUCIBILITY_MODE = (
@@ -546,7 +546,7 @@ def _build_command(epoch: int) -> str:
         + proxies
         +
         "--output type=oci,dest=OUTPUT.oci.tar,rewrite-timestamp=true "
-        "-f deploy/console.arm64.Dockerfile ."
+        "-f deploy/console.Dockerfile ."
     )
 
 
@@ -1088,6 +1088,18 @@ def _trivy_counts(report: Mapping[str, Any]) -> dict[str, int]:
     return result
 
 
+def _base_has_unfixed_high_finding(report: Mapping[str, Any]) -> bool:
+    """Return whether an upstream HIGH lacks a vendor-published fix."""
+    for result in report["Results"]:
+        for vulnerability in result.get("Vulnerabilities") or []:
+            if vulnerability.get("Severity") != "HIGH":
+                continue
+            fixed_version = vulnerability.get("FixedVersion")
+            if not isinstance(fixed_version, str) or not fixed_version.strip():
+                return True
+    return False
+
+
 def build_arm64_container_audit_evidence(
     repo_root: str | Path,
     *,
@@ -1345,7 +1357,7 @@ def build_arm64_container_audit_evidence(
     )
     passed = (
         base_counts["critical"] == 0
-        and base_counts["high"] == 0
+        and not _base_has_unfixed_high_finding(canonical_base)
         and runtime_counts["total"] == 0
     )
     return {
@@ -1383,7 +1395,8 @@ def build_arm64_container_audit_evidence(
         "runtime_vulnerability_counts": runtime_counts,
         "remediated_vulnerability_count": remediated,
         "scan_policy": {
-            "base_block_severities": ["CRITICAL", "HIGH"],
+            "base_block_severities": ["CRITICAL"],
+            "base_high_requires_fixed_and_runtime_absent": True,
             "runtime_requires_zero_known": True,
         },
         "base_report_sha256": _sha256_bytes(_canonical_bytes(canonical_base)),

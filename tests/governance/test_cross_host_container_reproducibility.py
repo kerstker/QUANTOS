@@ -77,8 +77,13 @@ def _write_recipe(root: Path) -> None:
     dockerfile.write_text(
         f"ARG PYTHON_IMAGE={BASE_REF}\n"
         f"ARG SOURCE_DATE_EPOCH={EPOCH}\n"
+        "ARG TARGETARCH\n"
         "FROM ${PYTHON_IMAGE} AS builder\n"
-        "FROM ${PYTHON_IMAGE}\n",
+        "ARG TARGETARCH\n"
+        'RUN test "${TARGETARCH}" = "arm64"\n'
+        "FROM ${PYTHON_IMAGE}\n"
+        "ARG TARGETARCH\n"
+        'RUN test "${TARGETARCH}" = "arm64"\n',
         encoding="utf-8",
     )
     (root / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
@@ -106,7 +111,7 @@ def _write_oci(path: Path, layer_content: bytes = b"cross-host-layer\n") -> None
     layer_digest = _digest(compressed_layer)
     config = _json_bytes(
         {
-            "architecture": "amd64",
+            "architecture": "arm64",
             "created": _iso(EPOCH),
             "os": "linux",
             "rootfs": {"type": "layers", "diff_ids": [_digest(layer_content)]},
@@ -147,7 +152,7 @@ def _write_oci(path: Path, layer_content: bytes = b"cross-host-layer\n") -> None
                     "annotations": {
                         "org.opencontainers.image.created": _iso(EPOCH)
                     },
-                    "platform": {"architecture": "amd64", "os": "linux"},
+                    "platform": {"architecture": "arm64", "os": "linux"},
                 }
             ],
         }
@@ -188,11 +193,11 @@ def test_distinct_runner_claims_produce_recipe_bound_cross_host_evidence(
     _write_oci(first)
     _write_oci(second)
 
-    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_a = _claim(tmp_path, first, "github-arm64-a")
+    claim_b = _claim(tmp_path, second, "github-arm64-b")
     evidence = build_cross_host_container_evidence(
         tmp_path,
-        claims=[claim_24, claim_22],
+        claims=[claim_b, claim_a],
         observed_at=EPOCH,
         workflow_ref=(
             "kerstker/QUANTOS/.github/workflows/"
@@ -201,17 +206,17 @@ def test_distinct_runner_claims_produce_recipe_bound_cross_host_evidence(
         workflow_run="https://github.com/kerstker/QUANTOS/actions/runs/123",
     )
 
-    assert verify_container_build_claim(claim_22, tmp_path)["verdict"] == "PASS"
-    assert evidence["builders"] == ["ubuntu-22.04", "ubuntu-24.04"]
+    assert verify_container_build_claim(claim_a, tmp_path)["verdict"] == "PASS"
+    assert evidence["builders"] == ["github-arm64-a", "github-arm64-b"]
     assert evidence["archive_byte_identical"] is True
-    assert evidence["container_input_sha256"] == claim_22[
+    assert evidence["container_input_sha256"] == claim_a[
         "container_input_sha256"
     ]
     assert verify_cross_host_container_evidence(evidence, tmp_path) == {
-        "archive_sha256": claim_22["archive"]["sha256"],
-        "builders": ["ubuntu-22.04", "ubuntu-24.04"],
-        "container_input_sha256": claim_22["container_input_sha256"],
-        "manifest_digest": claim_22["image"]["manifest_digest"],
+        "archive_sha256": claim_a["archive"]["sha256"],
+        "builders": ["github-arm64-a", "github-arm64-b"],
+        "container_input_sha256": claim_a["container_input_sha256"],
+        "manifest_digest": claim_a["image"]["manifest_digest"],
         "observed_at": EPOCH,
         "source_commit": COMMIT,
         "verdict": "PASS",
@@ -224,7 +229,7 @@ def test_aggregate_rejects_same_runner_or_nonidentical_image(tmp_path: Path) -> 
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    claim = _claim(tmp_path, first, "ubuntu-22.04")
+    claim = _claim(tmp_path, first, "github-arm64-a")
 
     with pytest.raises(CrossHostContainerEvidenceError, match="distinct"):
         build_cross_host_container_evidence(
@@ -236,7 +241,7 @@ def test_aggregate_rejects_same_runner_or_nonidentical_image(tmp_path: Path) -> 
         )
 
     _write_oci(second, b"different\n")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_24 = _claim(tmp_path, second, "github-arm64-b")
     with pytest.raises(CrossHostContainerEvidenceError, match="byte-identical"):
         build_cross_host_container_evidence(
             tmp_path,
@@ -253,8 +258,8 @@ def test_verifiers_reject_claim_and_aggregate_tampering(tmp_path: Path) -> None:
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_22 = _claim(tmp_path, first, "github-arm64-a")
+    claim_24 = _claim(tmp_path, second, "github-arm64-b")
     evidence = build_cross_host_container_evidence(
         tmp_path,
         claims=[claim_22, claim_24],
@@ -280,8 +285,8 @@ def test_claim_and_aggregate_reject_changed_container_source(tmp_path: Path) -> 
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_22 = _claim(tmp_path, first, "github-arm64-a")
+    claim_24 = _claim(tmp_path, second, "github-arm64-b")
     evidence = build_cross_host_container_evidence(
         tmp_path,
         claims=[claim_22, claim_24],
@@ -312,8 +317,8 @@ def test_aggregate_marks_changed_recipe_inputs_as_stale_not_corrupt(
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_22 = _claim(tmp_path, first, "github-arm64-a")
+    claim_24 = _claim(tmp_path, second, "github-arm64-b")
     evidence = build_cross_host_container_evidence(
         tmp_path,
         claims=[claim_22, claim_24],
@@ -343,8 +348,8 @@ def test_verifier_ignores_files_excluded_from_docker_context(
     second = tmp_path / "second.oci.tar"
     _write_oci(first)
     _write_oci(second)
-    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
-    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    claim_22 = _claim(tmp_path, first, "github-arm64-a")
+    claim_24 = _claim(tmp_path, second, "github-arm64-b")
     evidence = build_cross_host_container_evidence(
         tmp_path,
         claims=[claim_22, claim_24],

@@ -77,22 +77,39 @@ CHECKS = [
         REPO,
     ),
     (
-        "container-trivy-evidence:current",
-        [
-            sys.executable,
-            os.path.join(REPO, "scripts", "generate_container_audit_evidence.py"),
-            "--check",
-        ],
-        REPO,
-    ),
-    (
-        "container-reproducibility-evidence:current",
+        "container-trivy-arm64-evidence:current",
         [
             sys.executable,
             os.path.join(
                 REPO,
                 "scripts",
-                "generate_container_reproducibility_evidence.py",
+                "generate_arm64_container_audit_evidence.py",
+            ),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "container-reproducibility-arm64-evidence:current",
+        [
+            sys.executable,
+            os.path.join(
+                REPO,
+                "scripts",
+                "generate_arm64_container_reproducibility_evidence.py",
+            ),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "console-smoke-arm64-evidence:current",
+        [
+            sys.executable,
+            os.path.join(
+                REPO,
+                "scripts",
+                "generate_arm64_console_smoke_evidence.py",
             ),
             "--check",
         ],

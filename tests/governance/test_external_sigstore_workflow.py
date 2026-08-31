@@ -60,8 +60,13 @@ def test_external_sigstore_workflow_proves_cross_host_container_reproduction() -
     ) in source
     assert source.count("generate_cross_host_container_evidence.py claim") == 2
     assert "generate_cross_host_container_evidence.py aggregate" in source
-    assert "quantos-console-ubuntu-22" in source
-    assert "quantos-console-ubuntu-24" in source
+    assert source.count("runs-on: ubuntu-24.04-arm") == 2
+    assert source.count("--platform linux/arm64") == 2
+    assert "--platform linux/amd64" not in source
+    assert "quantos-console-arm64-a" in source
+    assert "quantos-console-arm64-b" in source
+    assert "--runner-label github-arm64-a" in source
+    assert "--runner-label github-arm64-b" in source
     assert "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL" in source
     assert "quantos-console-cross-host.sigstore.json" in source
     assert "cross-host-container-evidence-" in source

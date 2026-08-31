@@ -16,25 +16,16 @@ QUANTOS does not have one monolithic “deploy everything” command. Deployment
 
 ## Read-only console image
 
-`console.Dockerfile` builds only the read-only API. Its build context excludes `key/`, `data/`, `live/`, tools, tests, and local environment files. The runtime is non-root and keeps all live flags disabled.
-
-`console.arm64.Dockerfile` is the equivalent additive recipe for native Linux
-ARM64 hosts. It pins the corresponding ARM64 base manifest and fails the build
-when BuildKit reports any other target architecture. Evidence retained for the
-amd64 recipe does not certify the ARM64 recipe; ARM64 build, scan, smoke, and
-reproducibility evidence must be generated independently on the target host.
+`console.Dockerfile` builds only the read-only API for native Linux ARM64. Its
+build context excludes `key/`, `data/`, `live/`, tools, tests, and local
+environment files. The runtime is non-root, keeps all live flags disabled, and
+fails the build when BuildKit reports any architecture other than ARM64.
 
 Build:
 
 ```bash
-docker build --file deploy/console.Dockerfile --tag quantos-console:l2 .
-```
-
-Native ARM64 build:
-
-```bash
 docker build --platform linux/arm64 \
-  --file deploy/console.arm64.Dockerfile \
+  --file deploy/console.Dockerfile \
   --tag quantos-console:l2-arm64 .
 ```
 
@@ -43,7 +34,7 @@ Run with a read-only filesystem:
 ```bash
 docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   --publish 127.0.0.1:8400:8400 \
-  quantos-console:l2
+  quantos-console:l2-arm64
 ```
 
 Check:

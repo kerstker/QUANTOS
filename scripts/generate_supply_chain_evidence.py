@@ -27,9 +27,13 @@ from scripts.evidence_binding import (  # noqa: E402
 )
 from services.governance.vulnerability_evidence import (  # noqa: E402
     verify_actions_audit_evidence,
-    verify_container_audit_evidence,
     verify_npm_audit_evidence,
     verify_python_audit_evidence,
+)
+from services.governance.arm64_console_evidence import (  # noqa: E402
+    verify_arm64_console_smoke_evidence,
+    verify_arm64_container_audit_evidence,
+    verify_arm64_container_reproducibility_evidence,
 )
 from services.governance.artifact_admission import (  # noqa: E402
     load_json_without_duplicate_keys,
@@ -39,9 +43,6 @@ from services.governance.artifact_admission_store import (  # noqa: E402
     RECEIPT_AUTHORITY_REGISTRY_KIND,
     ArtifactAdmissionStore,
     ArtifactAdmissionStoreError,
-)
-from services.governance.reproducibility_evidence import (  # noqa: E402
-    verify_container_reproducibility_evidence,
 )
 from services.governance.cross_host_container_reproducibility import (  # noqa: E402
     CrossHostContainerEvidenceError,
@@ -80,7 +81,6 @@ _MANIFESTS = (
     "config/service_import_policy.json",
     "config/templates/live_mandate_binance_mainnet.json.template",
     "config/top_tier_requirements.json",
-    "deploy/console.arm64.Dockerfile",
     "deploy/console.Dockerfile",
     "deploy/systemd/README.md",
     "deploy/systemd/quantos-binance-realtime-stream.service",
@@ -256,8 +256,9 @@ _MANIFESTS = (
     "evidence/vulnerability/npm_audit_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
     "evidence/vulnerability/actions_osv_latest.json",
-    "evidence/vulnerability/container_trivy_latest.json",
-    "evidence/reproducibility/container_build_latest.json",
+    "evidence/vulnerability/container_trivy_arm64_latest.json",
+    "evidence/reproducibility/container_build_arm64_latest.json",
+    "evidence/runtime/console_arm64_smoke_latest.json",
     "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
     "evidence/external_sigstore/2026-07-30/github-artifact.json",
     "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
@@ -276,11 +277,16 @@ _MANIFESTS = (
     "services/governance/reproducibility_evidence.py",
     "services/governance/cross_host_container_reproducibility.py",
     "services/governance/vulnerability_evidence.py",
+    "services/governance/arm64_console_evidence.py",
     "scripts/generate_npm_audit_evidence.py",
     "scripts/generate_python_audit_evidence.py",
     "scripts/generate_actions_audit_evidence.py",
     "scripts/generate_container_audit_evidence.py",
     "scripts/generate_container_reproducibility_evidence.py",
+    "scripts/capture_arm64_console_evidence.py",
+    "scripts/generate_arm64_console_smoke_evidence.py",
+    "scripts/generate_arm64_container_audit_evidence.py",
+    "scripts/generate_arm64_container_reproducibility_evidence.py",
     "scripts/generate_cross_host_container_evidence.py",
     "scripts/generate_service_import_graph.py",
     "scripts/generate_strong_identity_evidence.py",
@@ -293,6 +299,8 @@ _MANIFESTS = (
     "tests/governance/test_event_schema_catalog.py",
     "tests/governance/test_l2_schedule_boundary.py",
     "tests/governance/test_arm64_container_boundary.py",
+    "tests/governance/test_arm64_console_evidence.py",
+    "tests/governance/test_capture_arm64_console_evidence.py",
     "tests/governance/test_systemd_l2_boundary.py",
     "tests/governance/test_l2_operations_boundary.py",
     "tests/governance/test_top_tier_assessment.py",
@@ -673,18 +681,40 @@ def build_supply_chain_artifacts(
     actions_zero_known = (
         actions_audit_summary["verdict"] == "PASS" and actions_audit_summary["vulnerability_count"] == 0
     )
-    container_audit_path = root / "evidence/vulnerability/container_trivy_latest.json"
+    source_commit = resolve_canonical_source_anchor(root)
+    container_audit_path = (
+        root / "evidence/vulnerability/container_trivy_arm64_latest.json"
+    )
     container_audit_bytes = container_audit_path.read_bytes()
     container_audit_document = json.loads(container_audit_bytes.decode("utf-8"))
-    container_audit_summary = verify_container_audit_evidence(container_audit_document, root)
+    container_audit_summary = verify_arm64_container_audit_evidence(
+        container_audit_document,
+        root,
+        expected_source_commit=source_commit,
+    )
     container_policy_passed = (
         container_audit_summary["verdict"] == "PASS" and container_audit_summary["runtime_vulnerability_count"] == 0
     )
-    reproducibility_path = root / "evidence/reproducibility/container_build_latest.json"
+    reproducibility_path = (
+        root / "evidence/reproducibility/container_build_arm64_latest.json"
+    )
     reproducibility_bytes = reproducibility_path.read_bytes()
     reproducibility_document = json.loads(reproducibility_bytes.decode("utf-8"))
-    reproducibility_summary = verify_container_reproducibility_evidence(reproducibility_document, root)
+    reproducibility_summary = verify_arm64_container_reproducibility_evidence(
+        reproducibility_document,
+        root,
+        expected_source_commit=source_commit,
+    )
     reproducibility_passed = reproducibility_summary["verdict"] == "PASS"
+    smoke_path = root / "evidence/runtime/console_arm64_smoke_latest.json"
+    smoke_bytes = smoke_path.read_bytes()
+    smoke_document = json.loads(smoke_bytes.decode("utf-8"))
+    smoke_summary = verify_arm64_console_smoke_evidence(
+        smoke_document,
+        root,
+        expected_source_commit=source_commit,
+    )
+    smoke_passed = smoke_summary["verdict"] == "PASS"
     components = sorted((*python, *npm), key=lambda item: item["bom-ref"])
     sigstore_version = next(
         (component["version"] for component in python if component["name"] == "sigstore"),
@@ -887,23 +917,39 @@ def build_supply_chain_artifacts(
             if container_policy_passed
             else "VERIFIED_EXTERNAL_FINDINGS_PRESENT"
         ),
-        "container_vulnerability_evidence_ref": ("evidence/vulnerability/container_trivy_latest.json"),
+        "container_vulnerability_evidence_ref": (
+            "evidence/vulnerability/container_trivy_arm64_latest.json"
+        ),
         "container_vulnerability_evidence_sha256": _sha256_bytes(container_audit_bytes),
         "container_vulnerability_observed_at": container_audit_summary["observed_at"],
         "container_base_vulnerability_count": container_audit_summary["base_vulnerability_count"],
         "container_runtime_vulnerability_count": container_audit_summary["runtime_vulnerability_count"],
-        "container_runtime_image_digest": container_audit_summary["runtime_image_digest"],
+        "container_runtime_image_digest": container_audit_summary[
+            "runtime_image_manifest_digest"
+        ],
         "container_reproducibility_evidence_status": (
             "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
             if reproducibility_passed
             else "LOCAL_REPRODUCIBILITY_EVIDENCE_FAILED"
         ),
-        "container_reproducibility_evidence_ref": ("evidence/reproducibility/container_build_latest.json"),
+        "container_reproducibility_evidence_ref": (
+            "evidence/reproducibility/container_build_arm64_latest.json"
+        ),
         "container_reproducibility_evidence_sha256": _sha256_bytes(reproducibility_bytes),
         "container_reproducibility_observed_at": reproducibility_summary["observed_at"],
         "container_reproducible_archive_sha256": reproducibility_summary["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility_summary["manifest_digest"],
         "container_reproducibility_buildkit_version": reproducibility_summary["buildkit_version"],
+        "container_smoke_evidence_status": (
+            "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
+            if smoke_passed
+            else "ARM64_SMOKE_EVIDENCE_FAILED"
+        ),
+        "container_smoke_evidence_ref": (
+            "evidence/runtime/console_arm64_smoke_latest.json"
+        ),
+        "container_smoke_evidence_sha256": _sha256_bytes(smoke_bytes),
+        "container_smoke_observed_at": smoke_summary["observed_at"],
         "cross_host_container_reproducibility_status": (
             "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
             if cross_host_container_verified
@@ -1073,6 +1119,12 @@ def build_supply_chain_artifacts(
                 ]
             ),
             *(["CONTAINER_VULNERABILITY_POLICY_FAILED"] if not container_policy_passed else []),
+            *(
+                ["CONTAINER_BUILD_REPRODUCIBILITY_NOT_PROVEN"]
+                if not reproducibility_passed
+                else []
+            ),
+            *(["ARM64_CONSOLE_SMOKE_FAILED"] if not smoke_passed else []),
             *(["PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED"] if unresolved_optional else []),
         ],
     }

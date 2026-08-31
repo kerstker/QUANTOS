@@ -83,7 +83,7 @@ def _build_capture(
             "--output",
             f"type=oci,name={ARM64_RUNTIME_IMAGE_REF},dest={archive},rewrite-timestamp=true",
             "-f",
-            str(root / "deploy/console.arm64.Dockerfile"),
+            str(root / "deploy/console.Dockerfile"),
             str(root),
         ],
         byte,
@@ -244,7 +244,7 @@ def _digest(content: bytes) -> str:
 
 
 def _write_recipe(root: Path) -> None:
-    dockerfile = root / "deploy/console.arm64.Dockerfile"
+    dockerfile = root / "deploy/console.Dockerfile"
     dockerfile.parent.mkdir(parents=True, exist_ok=True)
     dockerfile.write_text(
         f"ARG PYTHON_IMAGE={BASE_REF}\n"
@@ -365,12 +365,17 @@ def _reproducibility(root: Path) -> dict[str, object]:
     )
 
 
-def _vulnerability(identifier: str, severity: str = "MEDIUM") -> dict[str, str]:
+def _vulnerability(
+    identifier: str,
+    severity: str = "MEDIUM",
+    *,
+    fixed_version: str = "1.1",
+) -> dict[str, str]:
     return {
         "VulnerabilityID": identifier,
         "PkgName": "demo-package",
         "InstalledVersion": "1.0",
-        "FixedVersion": "1.1",
+        "FixedVersion": fixed_version,
         "Status": "fixed",
         "Severity": severity,
     }
@@ -421,11 +426,17 @@ def _trivy_report(
 def _audit(
     root: Path,
     *,
+    base_vulnerabilities: list[dict[str, str]] | None = None,
     runtime_vulnerabilities: list[dict[str, str]] | None = None,
     omit_optional_archive_metadata: bool = False,
 ) -> dict[str, object]:
     _write_recipe(root)
-    base_report = _trivy_report(BASE_REF, BASE_ID, archive_name="/input/base.tar")
+    base_report = _trivy_report(
+        BASE_REF,
+        BASE_ID,
+        base_vulnerabilities,
+        archive_name="/input/base.tar",
+    )
     runtime_report = _trivy_report(
         ARM64_RUNTIME_IMAGE_REF,
         RUNTIME_DIGEST,
@@ -628,7 +639,7 @@ def test_arm64_reproducibility_is_separate_recipe_bound_and_byte_identical(
 ) -> None:
     evidence = _reproducibility(tmp_path)
     assert evidence["target_platform"] == "linux/arm64"
-    assert evidence["dockerfile"]["path"] == "deploy/console.arm64.Dockerfile"
+    assert evidence["dockerfile"]["path"] == "deploy/console.Dockerfile"
     assert evidence["image"]["architecture"] == "arm64"
     assert evidence["builds"][0]["archive_sha256"] == evidence["builds"][1][
         "archive_sha256"
@@ -682,7 +693,7 @@ def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
 
 def test_arm64_reproducibility_rejects_recipe_tamper(tmp_path: Path) -> None:
     evidence = _reproducibility(tmp_path)
-    path = tmp_path / "deploy/console.arm64.Dockerfile"
+    path = tmp_path / "deploy/console.Dockerfile"
     path.write_text(path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
     with pytest.raises(Arm64ConsoleEvidenceError, match="Dockerfile"):
         verify_arm64_container_reproducibility_evidence(evidence, tmp_path)
@@ -742,7 +753,7 @@ def test_arm64_recipe_rejects_proxy_arg_or_env_declaration(
         "PROXY_ENV_EXPLICITLY_CLEARED_NETWORK_PATH_NOT_ATTESTED"
         in evidence["limitations"]
     )
-    path = tmp_path / "deploy/console.arm64.Dockerfile"
+    path = tmp_path / "deploy/console.Dockerfile"
     path.write_text(path.read_text(encoding="utf-8") + declaration, encoding="utf-8")
 
     with pytest.raises(Arm64ConsoleEvidenceError, match="proxy"):
@@ -754,7 +765,7 @@ def test_arm64_audit_binds_native_reports_scanner_and_zero_runtime_findings(
 ) -> None:
     evidence = _audit(tmp_path)
     assert evidence["platform"] == "linux/arm64"
-    assert evidence["dockerfile_ref"] == "deploy/console.arm64.Dockerfile"
+    assert evidence["dockerfile_ref"] == "deploy/console.Dockerfile"
     assert evidence["runtime_vulnerability_counts"]["total"] == 0
     assert evidence["scanner_image_ref"].startswith(
         "public.ecr.aws/aquasecurity/trivy@sha256:"
@@ -763,6 +774,30 @@ def test_arm64_audit_binds_native_reports_scanner_and_zero_runtime_findings(
     assert summary["runtime_image_config_digest"] == RUNTIME_CONFIG_DIGEST
     assert summary["runtime_image_manifest_digest"] == RUNTIME_MANIFEST_DIGEST
     assert summary["verdict"] == "PASS"
+
+
+def test_arm64_audit_accepts_fixed_base_high_and_blocks_unfixed_or_critical(
+    tmp_path: Path,
+) -> None:
+    remediated = _audit(
+        tmp_path,
+        base_vulnerabilities=[_vulnerability("CVE-HIGH", "HIGH")],
+    )
+    assert remediated["verdict"] == "PASS"
+
+    unfixed = _audit(
+        tmp_path,
+        base_vulnerabilities=[
+            _vulnerability("CVE-HIGH", "HIGH", fixed_version="")
+        ],
+    )
+    assert unfixed["verdict"] == "FAIL"
+
+    critical = _audit(
+        tmp_path,
+        base_vulnerabilities=[_vulnerability("CVE-CRITICAL", "CRITICAL")],
+    )
+    assert critical["verdict"] == "FAIL"
 
 
 def test_arm64_audit_accepts_missing_optional_archive_repository_metadata(

@@ -120,11 +120,15 @@ def _seal_release_evidence(release: Path, source_commit: str) -> str:
 
     sbom_sha = write("evidence/sbom.cdx.json", {"bomFormat": "CycloneDX"})
     container_sha = write(
-        "evidence/vulnerability/container_trivy_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
         {"schema_version": 1, "verdict": "PASS"},
     )
     reproducibility_sha = write(
-        "evidence/reproducibility/container_build_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        {"schema_version": 1, "verdict": "PASS"},
+    )
+    smoke_sha = write(
+        "evidence/runtime/console_arm64_smoke_latest.json",
         {"schema_version": 1, "verdict": "PASS"},
     )
     checks, derived, phase13 = "1" * 64, "2" * 64, "3" * 64
@@ -195,6 +199,10 @@ def _seal_release_evidence(release: Path, source_commit: str) -> str:
             "container_reproducibility_evidence_sha256": reproducibility_sha,
             "container_reproducible_archive_sha256": "5" * 64,
             "container_reproducible_manifest_digest": "sha256:" + "4" * 64,
+            "container_smoke_evidence_status": (
+                "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
+            ),
+            "container_smoke_evidence_sha256": smoke_sha,
             "cross_host_container_reproducibility_status": "NOT_PROVIDED",
             "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
         },

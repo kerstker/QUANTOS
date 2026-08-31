@@ -1,4 +1,4 @@
-"""Governance invariants for the additive ARM64 read-only console image."""
+"""Governance invariants for the canonical ARM64 read-only console image."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCKERFILE = ROOT / "deploy" / "console.arm64.Dockerfile"
+DOCKERFILE = ROOT / "deploy" / "console.Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
 ARM64_BASE_DIGEST = (
     "public.ecr.aws/docker/library/python@sha256:"
@@ -145,6 +145,6 @@ def test_supply_chain_manifest_binds_arm64_container_surface() -> None:
     from scripts.generate_supply_chain_evidence import _MANIFESTS
 
     assert {
-        "deploy/console.arm64.Dockerfile",
+        "deploy/console.Dockerfile",
         "tests/governance/test_arm64_container_boundary.py",
     } <= set(_MANIFESTS)

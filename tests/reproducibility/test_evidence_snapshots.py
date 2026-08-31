@@ -122,14 +122,17 @@ def _write_release_evidence_inputs(repo: Path, source_commit: str) -> None:
     evidence = repo / "evidence"
     (evidence / "vulnerability").mkdir(parents=True)
     (evidence / "reproducibility").mkdir(parents=True)
+    (evidence / "runtime").mkdir(parents=True)
 
     sbom = {"bomFormat": "CycloneDX", "components": []}
     container = {"schema_version": 1, "verdict": "PASS"}
     reproducibility = {"schema_version": 1, "verdict": "PASS"}
+    smoke = {"schema_version": 1, "verdict": "PASS"}
     documents = {
         "evidence/sbom.cdx.json": sbom,
-        "evidence/vulnerability/container_trivy_latest.json": container,
-        "evidence/reproducibility/container_build_latest.json": reproducibility,
+        "evidence/vulnerability/container_trivy_arm64_latest.json": container,
+        "evidence/reproducibility/container_build_arm64_latest.json": reproducibility,
+        "evidence/runtime/console_arm64_smoke_latest.json": smoke,
     }
     for relative, document in documents.items():
         (repo / relative).write_bytes(
@@ -199,17 +202,23 @@ def _write_release_evidence_inputs(repo: Path, source_commit: str) -> None:
             "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
         ),
         "container_vulnerability_evidence_sha256": artifact_hashes[
-            "evidence/vulnerability/container_trivy_latest.json"
+            "evidence/vulnerability/container_trivy_arm64_latest.json"
         ],
         "container_runtime_image_digest": "sha256:" + "4" * 64,
         "container_reproducibility_evidence_status": (
             "VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"
         ),
         "container_reproducibility_evidence_sha256": artifact_hashes[
-            "evidence/reproducibility/container_build_latest.json"
+            "evidence/reproducibility/container_build_arm64_latest.json"
         ],
         "container_reproducible_archive_sha256": "5" * 64,
         "container_reproducible_manifest_digest": "sha256:" + "4" * 64,
+        "container_smoke_evidence_status": (
+            "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
+        ),
+        "container_smoke_evidence_sha256": artifact_hashes[
+            "evidence/runtime/console_arm64_smoke_latest.json"
+        ],
         "cross_host_container_reproducibility_status": "NOT_PROVIDED",
         "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
     }
@@ -241,12 +250,13 @@ def test_release_evidence_manifest_binds_full_allowlisted_artifact_set(tmp_path)
     manifest = write_release_evidence_manifest(repo)
     assert manifest["validation"]["source_commit"] == source
     assert set(manifest["artifact_sha256"]) == {
-        "evidence/reproducibility/container_build_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
         "evidence/sbom.cdx.json",
         "evidence/supply_chain_baseline.json",
         "evidence/top_tier_assessment.json",
         "evidence/validation_report.json",
-        "evidence/vulnerability/container_trivy_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
     }
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "release evidence")

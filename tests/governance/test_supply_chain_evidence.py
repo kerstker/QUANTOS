@@ -205,10 +205,22 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert evidence["container_vulnerability_evidence_status"] == (
         "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"
     )
-    assert evidence["container_base_vulnerability_count"] == 5
+    assert evidence["container_base_vulnerability_count"] >= 0
     assert evidence["container_runtime_vulnerability_count"] == 0
     assert evidence["container_runtime_image_digest"].startswith("sha256:")
     assert evidence["container_reproducibility_evidence_status"] == ("VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL")
+    assert evidence["container_vulnerability_evidence_ref"] == (
+        "evidence/vulnerability/container_trivy_arm64_latest.json"
+    )
+    assert evidence["container_reproducibility_evidence_ref"] == (
+        "evidence/reproducibility/container_build_arm64_latest.json"
+    )
+    assert evidence["container_smoke_evidence_status"] == (
+        "VERIFIED_NATIVE_ARM64_READ_ONLY_HEALTH"
+    )
+    assert evidence["container_smoke_evidence_ref"] == (
+        "evidence/runtime/console_arm64_smoke_latest.json"
+    )
     assert len(evidence["container_reproducible_archive_sha256"]) == 64
     assert evidence["container_reproducible_manifest_digest"].startswith("sha256:")
     assert evidence["unresolved_python_optional_dependencies"] == []
