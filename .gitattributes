@@ -13,6 +13,7 @@
 *.template text eol=lf
 deploy/console.Dockerfile text eol=lf
 deploy/console.arm64.Dockerfile text eol=lf
+deploy/arm64/*.sh.in text eol=lf
 deploy/systemd/*.service text eol=lf
 deploy/systemd/*.timer text eol=lf
 .dockerignore text eol=lf
