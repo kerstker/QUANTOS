@@ -48,6 +48,7 @@ def test_inventory_allowlist_tracks_safe_oneshots_and_exact_support_units() -> N
         "quantos-console-frontend.service",
         "quantos-l2-watchdog.service",
         "quantos-l2-watchdog.timer",
+        "quantos-research-runner.service",
         "quantos-proxy-environment.service",
         "quantos-public-proxy-runtime.service",
     }

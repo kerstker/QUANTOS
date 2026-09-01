@@ -773,7 +773,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/data-catalog")
-async def data_catalog() -> Dict:
+def data_catalog() -> Dict:
     payload = _data_catalog_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

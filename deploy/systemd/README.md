@@ -16,8 +16,9 @@ Old denied schedules are isolated separately with
 `scripts/isolate_l2_mvp_systemd.py`. That helper is read-only unless its
 explicit privileged apply mode is confirmed with the frozen policy digest; it
 does not install or start the rendered safe profile.
-The renderer has separate modes for allowlisted one-shot workers and for the
-resident stream/watchdog trio. The normal case binds the same immutable commit
+The renderer has separate modes for allowlisted one-shot workers, the guarded
+localhost research runner, and the resident stream/watchdog trio. The normal
+case binds the same immutable commit
 token throughout. A forward collector whose source was frozen before outcomes
 may be supplied to the special-unit renderer as an explicit second commit pin;
 the watchdog then requires that collector's executable, launcher, arguments,
@@ -54,3 +55,10 @@ isolated in their own services so restart and process-tree shutdown semantics
 do not weaken the short-lived worker template. No checked-in unit has broker
 credential access, Mainnet authority, order submission authority, or
 permission to write inside the immutable release.
+
+The guarded research runner listens only on `127.0.0.1:8420`. Its closed
+research-kind registry admits the new A-share technical search and immutable
+forward observation. It writes only under the state root, receives no trading
+credential, broker, account, or order interface, and cannot enable any of the
+invalidated legacy run kinds. The retained crypto discovery/shadow workers are
+not admitted because they still consume or persist V1 paper-derived state.

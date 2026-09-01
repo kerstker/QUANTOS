@@ -14,6 +14,7 @@ STREAM = SYSTEMD / "quantos-binance-realtime-stream.service"
 BYBIT_STREAM = SYSTEMD / "quantos-bybit-realtime-stream.service"
 WATCHDOG_SERVICE = SYSTEMD / "quantos-l2-watchdog.service"
 WATCHDOG_TIMER = SYSTEMD / "quantos-l2-watchdog.timer"
+RESEARCH_RUNNER = SYSTEMD / "quantos-research-runner.service"
 PROXY_PASS_ENVIRONMENT = (
     "PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY "
     "http_proxy https_proxy ftp_proxy no_proxy all_proxy"
@@ -32,6 +33,7 @@ def test_input_templates_are_not_installable_or_enabled_by_repository_action() -
         BYBIT_STREAM,
         WATCHDOG_SERVICE,
         WATCHDOG_TIMER,
+        RESEARCH_RUNNER,
         SYSTEMD / "README.md",
     )
     assert all(path.is_file() for path in files)
@@ -43,6 +45,7 @@ def test_input_templates_are_not_installable_or_enabled_by_repository_action() -
     assert "[Install]" not in _text(STREAM)
     assert "[Install]" not in _text(BYBIT_STREAM)
     assert "[Install]" not in _text(WATCHDOG_TIMER)
+    assert "[Install]" not in _text(RESEARCH_RUNNER)
 
 
 def test_worker_service_binds_immutable_release_and_mutable_state() -> None:
@@ -62,7 +65,7 @@ def test_worker_service_binds_immutable_release_and_mutable_state() -> None:
 
 
 def test_units_pin_l2_safety_and_systemd_hardening() -> None:
-    for path in (SERVICE, STREAM, BYBIT_STREAM, WATCHDOG_SERVICE):
+    for path in (SERVICE, STREAM, BYBIT_STREAM, WATCHDOG_SERVICE, RESEARCH_RUNNER):
         text = _text(path)
         for directive in (
             "User=quantos",
@@ -88,7 +91,7 @@ def test_units_pin_l2_safety_and_systemd_hardening() -> None:
 
 
 def test_public_proxy_transport_is_name_only_and_exact() -> None:
-    for path in (SERVICE, STREAM, BYBIT_STREAM):
+    for path in (SERVICE, STREAM, BYBIT_STREAM, RESEARCH_RUNNER):
         text = _text(path)
         assert text.count(PROXY_PASS_ENVIRONMENT) == 1
         for name in (
@@ -140,6 +143,7 @@ def test_supply_chain_manifest_binds_linux_systemd_surface() -> None:
         "deploy/systemd/quantos-bybit-realtime-stream.service",
         "deploy/systemd/quantos-l2-watchdog.service",
         "deploy/systemd/quantos-l2-watchdog.timer",
+        "deploy/systemd/quantos-research-runner.service",
         "docs/runbooks/l2-research-operations.md",
         "quantos/contracts/l2_schedule_policy.py",
         "scripts/isolate_l2_mvp_systemd.py",
@@ -190,6 +194,24 @@ def test_renderer_emits_only_requested_allowlisted_worker(tmp_path: Path) -> Non
     assert "WantedBy=timers.target" in timer
 
 
+def test_renderer_marks_wikimedia_transport_failure_as_systemd_success(
+    tmp_path: Path,
+) -> None:
+    from tools.render_systemd_l2_units import render_units
+
+    output = tmp_path / "wikimedia"
+    render_units(
+        output_root=output,
+        release_commit="a" * 40,
+        modules=("wikimedia_attention_forward_refresh",),
+    )
+    service = _text(
+        output / "quantos-l2@wikimedia_attention_forward_refresh.service"
+    )
+    assert service.count("SuccessExitStatus=1 2") == 1
+    assert "SuccessExitStatus=2\n" not in service
+
+
 def test_renderer_rejects_unknown_resident_and_watchdog_modules(tmp_path: Path) -> None:
     import pytest
 
@@ -202,6 +224,65 @@ def test_renderer_rejects_unknown_resident_and_watchdog_modules(tmp_path: Path) 
                 release_commit="a" * 40,
                 modules=(module,),
             )
+
+
+def test_renderer_pins_ashare_search_and_forward_cadence(tmp_path: Path) -> None:
+    from tools.render_systemd_l2_units import render_units
+
+    output = tmp_path / "ashare"
+    render_units(
+        output_root=output,
+        release_commit="a" * 40,
+        modules=("ashare_alpha_search_worker", "ashare_forward_observation"),
+    )
+
+    search_timer = _text(output / "quantos-l2@ashare_alpha_search_worker.timer")
+    forward_timer = _text(output / "quantos-l2@ashare_forward_observation.timer")
+    assert "OnCalendar=Fri *-*-* 18:30:00 Asia/Shanghai" in search_timer
+    assert "OnCalendar=Mon..Fri *-*-* 18:15:00 Asia/Shanghai" in forward_timer
+    assert "TimeoutStartSec=2h" in _text(
+        output / "quantos-l2@ashare_alpha_search_worker.service"
+    )
+    assert "TimeoutStartSec=30m" in _text(
+        output / "quantos-l2@ashare_forward_observation.service"
+    )
+
+
+def test_research_runner_is_local_hardened_and_uses_read_only_token(
+    tmp_path: Path,
+) -> None:
+    from tools.render_systemd_l2_units import render_research_runner_unit
+
+    release = "d" * 40
+    output = tmp_path / "runner"
+    paths = render_research_runner_unit(
+        output_root=output,
+        release_commit=release,
+    )
+
+    assert [path.name for path in paths] == ["quantos-research-runner.service"]
+    text = _text(paths[0])
+    assert "__QUANTOS_RELEASE_SHA__" not in text
+    assert "User=quantos" in text
+    assert "--host 127.0.0.1 --port 8420" in text
+    assert "NoNewPrivileges=true" in text
+    assert "ProtectSystem=strict" in text
+    assert (
+        "ConditionPathExists=/srv/quantos/state/key/research_runner_token.txt"
+        in text
+    )
+    assert (
+        "ConditionFileNotEmpty=/srv/quantos/state/key/research_runner_token.txt"
+        in text
+    )
+    assert "Environment=QUANTOS_REQUIRE_EXISTING_RUNNER_TOKEN=true" in text
+    assert (
+        "ReadOnlyPaths=/srv/quantos/state/key/research_runner_token.txt" in text
+    )
+    assert "ReadWritePaths=/srv/quantos/state/data /srv/quantos/state/.runtime" in text
+    assert "LoadCredential=" not in text
+    assert "EnvironmentFile=" not in text
+    assert "WantedBy=multi-user.target" in text
 
 
 def test_renderer_requires_and_binds_external_backup_mount(tmp_path: Path) -> None:

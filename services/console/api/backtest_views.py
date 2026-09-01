@@ -534,7 +534,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/backtest-explainability")
-async def backtest_explainability(alpha_id: str = Query("alpha-1")) -> Dict:
+def backtest_explainability(alpha_id: str = Query("alpha-1")) -> Dict:
     payload = _backtest_explainability_payload(alpha_id)
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -546,7 +546,7 @@ async def backtest_explainability(alpha_id: str = Query("alpha-1")) -> Dict:
 
 
 @router.get("/api/v1/console/scenario-stress")
-async def scenario_stress(alpha_id: str = Query("alpha-1")) -> Dict:
+def scenario_stress(alpha_id: str = Query("alpha-1")) -> Dict:
     payload = _scenario_stress_payload(alpha_id)
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",

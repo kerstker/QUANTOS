@@ -48,6 +48,10 @@ const WORKSPACE_PAGES: readonly PageDef[] = WORKBENCH_DATA_SOURCE_MANIFEST.map(i
 }));
 
 const DETAIL_PAGES: readonly PageDef[] = [
+  { path: '/research/modules', zh: '全部后端模块', en: 'Backend Modules', icon: 'BM', group: null,
+    load: () => import('@/pages/ModuleExplorer') },
+  { path: '/research/runs', zh: '研究运行', en: 'Research Runs', icon: 'RR', group: null,
+    load: () => import('@/pages/ResearchRuns') },
   { path: '/research/data-catalog', zh: '数据目录详情', en: 'Data Catalog Detail', icon: 'DC', group: null,
     load: () => import('@/pages/DataCatalog') },
   { path: '/research/runs/:id', zh: '运行详情', en: 'Run Detail', icon: 'RD', group: null,
@@ -70,6 +74,8 @@ const DETAIL_PAGES: readonly PageDef[] = [
     load: () => import('@/pages/MonitoringDrift') },
   { path: '/research/dry-run', zh: '干跑证据详情', en: 'Dry-Run Detail', icon: 'DR', group: null,
     load: () => import('@/pages/DryRunPipeline') },
+  { path: '/research/system-completeness', zh: '系统完整度详情', en: 'System Completeness', icon: 'SC', group: null,
+    load: () => import('@/pages/SystemCompleteness') },
 ] as const;
 
 export const PAGES: readonly PageDef[] = [...WORKSPACE_PAGES, ...DETAIL_PAGES];
@@ -85,7 +91,6 @@ export const REDIRECTS: readonly RedirectDef[] = [
   { from: '/research/getting-started', to: '/workbench/market' },
   { from: '/research/mexc-market', to: '/workbench/market' },
 
-  { from: '/research/runs', to: '/workbench/alpha' },
   { from: '/research/ic-panel', to: '/workbench/alpha' },
   { from: '/research/alpha-zoo', to: '/workbench/alpha' },
   { from: '/research/findings', to: '/workbench/alpha' },
@@ -106,5 +111,4 @@ export const REDIRECTS: readonly RedirectDef[] = [
   { from: '/research/command', to: '/workbench/market?drawer=tasks' },
   { from: '/research/events', to: '/workbench/market?drawer=audit' },
   { from: '/research/system-health', to: '/workbench/market?drawer=health' },
-  { from: '/research/system-completeness', to: '/workbench/market?drawer=governance' },
 ] as const;

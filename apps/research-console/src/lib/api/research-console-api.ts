@@ -97,11 +97,18 @@ export function clearConsoleSnapshotCache() {
  * snapshot, so we throw and let the page fall back to mock with a visible error
  * instead of silently showing broken data.
  */
-export function assertConsoleSnapshot<TPayload>(body: unknown, path: string): TPayload {
+const DEFAULT_CONSOLE_SNAPSHOT_SOURCES = ['BACKEND_COMPUTED_SNAPSHOT'] as const;
+
+export function assertConsoleSnapshot<TPayload>(
+  body: unknown,
+  path: string,
+  acceptedSources: readonly string[] = DEFAULT_CONSOLE_SNAPSHOT_SOURCES,
+): TPayload {
   const ok =
     typeof body === 'object' &&
     body !== null &&
-    (body as Record<string, unknown>).source === 'BACKEND_COMPUTED_SNAPSHOT' &&
+    typeof (body as Record<string, unknown>).source === 'string' &&
+    acceptedSources.includes((body as Record<string, unknown>).source as string) &&
     (body as Record<string, unknown>).read_only === true;
   if (!ok) {
     throw new Error(`Console API ${path} returned a non-snapshot body (contract markers missing)`);
@@ -109,7 +116,11 @@ export function assertConsoleSnapshot<TPayload>(body: unknown, path: string): TP
   return body as TPayload;
 }
 
-async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): Promise<TPayload> {
+async function fetchConsoleJson<TPayload>(
+  path: string,
+  signal?: AbortSignal,
+  acceptedSources: readonly string[] = DEFAULT_CONSOLE_SNAPSHOT_SOURCES,
+): Promise<TPayload> {
   if (!RESEARCH_CONSOLE_API_BASE) {
     throw new Error('VITE_API_URL is not configured');
   }
@@ -119,7 +130,7 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
   }
   const cached = snapshotCache.get(path);
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.value as TPayload;
+    return assertConsoleSnapshot<TPayload>(cached.value, path, acceptedSources);
   }
 
   const response = await fetch(new URL(path, RESEARCH_CONSOLE_API_BASE), { method: 'GET', signal });
@@ -127,9 +138,37 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
     throw new Error(`Console API returned ${response.status}`);
   }
 
-  const value = assertConsoleSnapshot<TPayload>(await response.json(), path);
+  const value = assertConsoleSnapshot<TPayload>(await response.json(), path, acceptedSources);
   snapshotCache.set(path, { value, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
   return value;
+}
+
+/**
+ * Read one of the registered read-only console modules for the operator-facing
+ * module explorer.  The explorer owns the endpoint allow-list; this additional
+ * boundary keeps an accidentally user-controlled path from turning the browser
+ * into a generic same-origin fetch proxy.
+ */
+export function fetchConsoleModuleSnapshot<TPayload extends Record<string, unknown>>(
+  path: string,
+  registeredModules: ReadonlyArray<{
+    endpoint: string;
+    acceptedSources?: readonly string[];
+  }>,
+  signal?: AbortSignal,
+): Promise<TPayload> {
+  const moduleDefinition = registeredModules.find(module => module.endpoint === path);
+  if (!moduleDefinition) {
+    return Promise.reject(new Error(`Console module path is not registered: ${path}`));
+  }
+  if (!path.startsWith('/api/v1/console/') || path.includes('?') || path.includes('#')) {
+    return Promise.reject(new Error(`Console module path is not a bounded GET snapshot: ${path}`));
+  }
+  return fetchConsoleJson<TPayload>(
+    path,
+    signal,
+    moduleDefinition.acceptedSources ?? DEFAULT_CONSOLE_SNAPSHOT_SOURCES,
+  );
 }
 
 export function assertMftExecutionSnapshot(body: unknown): MftSnapshot {

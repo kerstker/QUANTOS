@@ -15,6 +15,7 @@ destructures. Backend drift away from the frontend contract turns the gate RED.
 If you change a payload's top-level shape, change BOTH this contract and the TS
 type in the same commit — that is the point.
 """
+import hashlib
 import json
 
 from fastapi.testclient import TestClient
@@ -24,6 +25,7 @@ from services.console.main import app
 from services.console.api import artifact_snapshots
 from services.console.api import artifact_paper_views
 from services.console.api import alpha_lifecycle_views
+from services.console.api import ashare_views
 
 client = TestClient(app)
 
@@ -44,6 +46,7 @@ SNAPSHOT_STATUSES = {
     "NO_SNAPSHOT",
     "STALE",
     "DATA_BLOCKED",
+    "CORRUPT_OR_UNREADABLE",
     "UNAVAILABLE",
 }
 
@@ -168,6 +171,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ashare-alpha-search": ("", (
         "candidate_usefulness", "source_summary", "surface_coverage",
         "surface_results", "untouched_forward_observation")),
+    "/api/v1/console/ashare-forward-observation": ("", (
+        "status", "sessions_observed", "minimum_sessions", "minimum_sessions_met",
+        "selection_locked", "chain_valid", "cycle", "candidates", "observation", "safety")),
     # MEXC 零手续费 BTC 现货对接(read-only 三端点;artifact 未产出时诚实 SYNTHETIC/NO_SNAPSHOT)
     "/api/v1/console/mexc-market": ("", ("snapshot_present", "verdict", "venue", "symbol",
                                          "latest_price", "coverage", "freshness", "bars",
@@ -225,7 +231,12 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/fx-research": {"SYNTHETIC_DETERMINISTIC", "REAL_FX_ECB_OFFLINE_SNAPSHOT"},
     # carry readiness: REAL carry snapshots when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/carry-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_CARRY_OFFLINE_SNAPSHOT"},
-    "/api/v1/console/ashare-alpha-search": "REPOSITORY_EVIDENCE",
+    "/api/v1/console/ashare-alpha-search": {
+        "REPOSITORY_EVIDENCE", "REAL_ASHARE_TECHNICAL_RUNTIME", "UNAVAILABLE"
+    },
+    "/api/v1/console/ashare-forward-observation": {
+        "UNAVAILABLE", "REAL_ASHARE_FORWARD_OBSERVATION"
+    },
     # dry-run pipeline: REAL DryRunStore runs when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/hourly-alpha": "REAL_HOURLY_ALPHA_AUTHORITIES",
@@ -316,6 +327,159 @@ def test_architecture_inventory_counts_included_router_endpoints():
 def test_health_endpoint_is_read_only():
     body = client.get("/health").json()
     assert body["status"] == "healthy" and body["mode"] == "READ_ONLY"
+
+
+def test_ashare_search_prefers_current_runtime_artifact(monkeypatch, tmp_path):
+    canonical = tmp_path / "ashare_tdx_pit.sqlite"
+    canonical.write_bytes(b"canonical tdx sqlite test bytes")
+    canonical_sha256 = hashlib.sha256(canonical.read_bytes()).hexdigest()
+    runtime = tmp_path / "runtime-search.json"
+    release = tmp_path / "release-search.json"
+    runtime.write_text(json.dumps({
+        "artifact_kind": "ASHARE_ALPHA_SEARCH_INSTITUTIONAL_SURFACES_V2",
+        "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+        "promotion_allowed": False,
+        "paper_persistence_allowed": False,
+        "candidate_usefulness": "RUNTIME_RESULT",
+        "source": {
+            "rows": 2, "instruments": 1, "last_date": 20260828,
+            "sha256": canonical_sha256,
+        },
+        "surface_confirmations": {},
+        "requested_surface_coverage": {},
+        "untouched_forward_observation": {},
+    }), encoding="utf-8")
+    release.write_text(json.dumps({
+        "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+        "candidate_usefulness": "STALE_RELEASE_RESULT",
+        "source": {},
+    }), encoding="utf-8")
+    monkeypatch.setattr(ashare_views, "_RUNTIME_SEARCH_PATH", runtime)
+    monkeypatch.setattr(ashare_views, "_INSTITUTIONAL_SEARCH_PATH", release)
+    monkeypatch.setattr(ashare_views, "_CANONICAL_TDX_SQLITE", canonical)
+
+    payload = ashare_views._ashare_institutional_search_payload()
+
+    assert payload["candidate_usefulness"] == "RUNTIME_RESULT"
+    assert payload["data_provenance"] == "REAL_ASHARE_TECHNICAL_RUNTIME"
+    assert payload["artifact_scope"] == "RUNTIME_STATE"
+
+    stale_document = json.loads(runtime.read_text(encoding="utf-8"))
+    stale_document["source"]["sha256"] = "a" * 64
+    runtime.write_text(json.dumps(stale_document), encoding="utf-8")
+    stale = ashare_views._ashare_institutional_search_payload()
+    assert stale["snapshot_present"] is False
+    assert stale["data_provenance"] == "UNAVAILABLE"
+    assert stale["artifact_scope"] == "RUNTIME_SOURCE_BINDING_INVALID"
+
+    runtime.write_text("[]", encoding="utf-8")
+    invalid = ashare_views._ashare_institutional_search_payload()
+    assert invalid["snapshot_present"] is False
+    assert invalid["data_provenance"] == "UNAVAILABLE"
+    assert invalid["artifact_scope"] == "RUNTIME_ARTIFACT_INVALID"
+    assert invalid["candidate_usefulness"] == "UNAVAILABLE"
+
+
+def test_ashare_forward_endpoint_exposes_only_valid_observation(monkeypatch, tmp_path):
+    canonical = tmp_path / "ashare_tdx_pit.sqlite"
+    canonical.write_bytes(b"canonical forward source")
+    canonical_sha256 = hashlib.sha256(canonical.read_bytes()).hexdigest()
+    artifact = tmp_path / "forward.json"
+    artifact.write_text(json.dumps({
+        "artifact_kind": "ASHARE_UNTOUCHED_FORWARD_OBSERVATION_V1",
+        "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+        "status": "ARMED_AWAITING_NEW_SESSIONS",
+        "sessions_observed": 0,
+        "minimum_sessions": 60,
+        "minimum_sessions_met": False,
+        "selection_locked": True,
+        "promotion_allowed": False,
+        "paper_persistence_allowed": False,
+        "execution_allowed": False,
+        "chain_valid": True,
+        "source": {"sha256": canonical_sha256},
+        "cycle": {"pending_count": 0},
+        "candidates": {"candidate": {}},
+        "safety": {
+            "live_allowed": False,
+            "order_submission_allowed": False,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(ashare_views, "_FORWARD_OBSERVATION_PATH", artifact)
+    monkeypatch.setattr(ashare_views, "_CANONICAL_TDX_SQLITE", canonical)
+    monkeypatch.setattr(ashare_views, "_forward_authority_is_valid", lambda _document: True)
+
+    payload = ashare_views._ashare_forward_observation_payload()
+
+    assert payload["data_provenance"] == "REAL_ASHARE_FORWARD_OBSERVATION"
+    assert payload["status"] == "ARMED_AWAITING_NEW_SESSIONS"
+    assert payload["selection_locked"] is True
+    assert payload["chain_valid"] is True
+    assert payload["observation"]["execution_allowed"] is False
+
+    stale_document = json.loads(artifact.read_text(encoding="utf-8"))
+    stale_document["source"]["sha256"] = "f" * 64
+    artifact.write_text(json.dumps(stale_document), encoding="utf-8")
+    stale = ashare_views._ashare_forward_observation_payload()
+    assert stale["snapshot_present"] is False
+    assert stale["data_provenance"] == "UNAVAILABLE"
+    assert stale["status"] == "INVALID_SOURCE_BINDING"
+    assert stale["chain_valid"] is False
+
+
+def test_ashare_canonical_digest_cache_rehashes_only_on_stat_identity_change(
+    monkeypatch,
+    tmp_path,
+):
+    canonical = tmp_path / "ashare_tdx_pit.sqlite"
+    canonical.write_bytes(b"first canonical database")
+    calls = 0
+    full_hash = ashare_views._full_file_sha256
+
+    def counted_hash(path, identity):
+        nonlocal calls
+        calls += 1
+        return full_hash(path, identity)
+
+    monkeypatch.setattr(ashare_views, "_full_file_sha256", counted_hash)
+    first = ashare_views._canonical_tdx_sha256(canonical)
+    assert first == hashlib.sha256(canonical.read_bytes()).hexdigest()
+    assert ashare_views._canonical_tdx_sha256(canonical) == first
+    assert calls == 1
+
+    canonical.write_bytes(b"replacement canonical database with another size")
+    second = ashare_views._canonical_tdx_sha256(canonical)
+    assert second == hashlib.sha256(canonical.read_bytes()).hexdigest()
+    assert second != first
+    assert calls == 2
+
+
+def test_runtime_ashare_evidence_fails_closed_without_canonical_source(
+    monkeypatch,
+    tmp_path,
+):
+    runtime = tmp_path / "runtime-search.json"
+    runtime.write_text(json.dumps({
+        "artifact_kind": "ASHARE_ALPHA_SEARCH_INSTITUTIONAL_SURFACES_V2",
+        "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+        "promotion_allowed": False,
+        "paper_persistence_allowed": False,
+        "source": {"sha256": "a" * 64},
+    }), encoding="utf-8")
+    monkeypatch.setattr(ashare_views, "_RUNTIME_SEARCH_PATH", runtime)
+    monkeypatch.setattr(
+        ashare_views,
+        "_CANONICAL_TDX_SQLITE",
+        tmp_path / "missing-canonical.sqlite",
+    )
+
+    payload = ashare_views._ashare_institutional_search_payload()
+
+    assert payload["snapshot_present"] is False
+    assert payload["data_provenance"] == "UNAVAILABLE"
+    assert payload["artifact_scope"] == "RUNTIME_CANONICAL_SOURCE_UNAVAILABLE"
 
 
 def test_runtime_contract_binds_version_schema_instance_and_l2_boundary():
@@ -1419,6 +1583,18 @@ def test_snapshot_metadata_never_upgrades_synthetic_or_missing_data():
     )
     assert nested_blocked["snapshot_status"] == "DATA_BLOCKED"
 
+    corrupt = snapshot_metadata(
+        {
+            "data_provenance": "REAL_ALPHA_FAMILY_LEDGER",
+            "snapshot_status": "CORRUPT_OR_UNREADABLE",
+            "snapshot_id": "must-not-survive",
+        }
+    )
+    assert corrupt["snapshot_status"] == "CORRUPT_OR_UNREADABLE"
+    assert corrupt["snapshot_id"] is None and corrupt["snapshot_ids"] == []
+    assert corrupt["data_quality"]["is_corrupt"] is True
+    assert corrupt["data_quality"]["is_available"] is False
+
     real = snapshot_metadata(
         {
             "data_provenance": "REAL_PIT_DATASETS",
@@ -1428,6 +1604,23 @@ def test_snapshot_metadata_never_upgrades_synthetic_or_missing_data():
     )
     assert real["snapshot_status"] == "REAL"
     assert real["snapshot_id"] == "pit-001"
+
+
+def test_alpha_family_corrupt_store_is_not_upgraded_to_real(monkeypatch, tmp_path):
+    from services.console.api import alpha_family_views
+
+    corrupt = tmp_path / "alpha_family_registry.db"
+    corrupt.write_bytes(b"not-a-sqlite-database")
+    monkeypatch.setattr(alpha_family_views, "_DB", str(corrupt))
+
+    payload = alpha_family_views.alpha_families()
+
+    assert payload["snapshot_status"] == "CORRUPT_OR_UNREADABLE"
+    assert payload["data_quality"]["status"] == "CORRUPT_OR_UNREADABLE"
+    assert payload["data_quality"]["is_corrupt"] is True
+    assert payload["data_quality"]["is_available"] is False
+    assert payload["snapshot_id"] is None and payload["snapshot_ids"] == []
+    assert payload["families"] == []
 
 
 def test_data_catalog_port_failure_is_explicitly_unavailable(monkeypatch):

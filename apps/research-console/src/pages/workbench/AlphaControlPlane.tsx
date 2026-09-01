@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 
 import type {
   AlphaLifecycleEntry,
+  AlphaLifecyclePayload,
   AlphaZooRow,
+  AlphaZooPayload,
   AShareInstitutionalSearchPayload,
 } from '@/lib/types/research';
 import { PageShell } from '@/ui/primitives';
@@ -136,11 +138,83 @@ function AShareInstitutionalSearch({ research }: {
   );
 }
 
-function DiagnosticOnly({ snapshot, phase, reason, ashare }: {
+function RetainedResearchEvidence({ zoo, lifecycle }: {
+  zoo: AlphaEnrichment<AlphaZooPayload>;
+  lifecycle: AlphaEnrichment<AlphaLifecyclePayload>;
+}) {
+  const zooRows = zoo.status === 'AVAILABLE' && zoo.payload ? zoo.payload.rows : [];
+  const lifecycleRows = lifecycle.status === 'AVAILABLE' && lifecycle.payload
+    ? lifecycle.payload.alphas : [];
+  const lifecycleById = new Map(lifecycleRows.map(row => [row.alpha_id, row]));
+  if (zooRows.length === 0 && lifecycleRows.length === 0) {
+    return (
+      <section className="rounded-xl border border-warn/35 bg-warn/10 p-5" role="status">
+        <p className="font-mono text-sm font-semibold text-warn">研究登记与生命周期数据不可用</p>
+        <p className="mt-2 font-mono text-[10px] text-muted">
+          zoo={zoo.reason ?? zoo.status} · lifecycle={lifecycle.reason ?? lifecycle.status}
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="rounded-xl border border-warn/35 bg-panel shadow-sm" aria-label="可读诊断研究证据">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-warn">Visible diagnostic evidence</p>
+          <h2 className="mt-1 text-base font-semibold text-ink">研究登记与生命周期（可读、不可晋级）</h2>
+        </div>
+        <span className="rounded border border-warn/35 bg-warn/10 px-2 py-1 font-mono text-[10px] text-warn">
+          DIAGNOSTIC_ONLY · {zooRows.length} zoo · {lifecycleRows.length} lifecycle
+        </span>
+      </header>
+      <div className="space-y-3 p-4 sm:p-5">
+        <p className="text-xs leading-5 text-muted">
+          这些行来自真实后端登记与留存 artifact。旧 V1 盈亏/Sharpe 不具备选择权威，但候选身份、家族、
+          状态和失效原因仍应可见；前端不再把它们误报为传输故障。
+        </p>
+        <div className="max-h-[440px] overflow-auto rounded-lg border border-line">
+          <table className="w-full min-w-[900px] text-left text-xs">
+            <thead className="sticky top-0 bg-inset text-[10px] uppercase tracking-[0.1em] text-faint">
+              <tr>
+                <th className="px-3 py-2">Alpha</th><th className="px-3 py-2">Family</th>
+                <th className="px-3 py-2">Registry status</th><th className="px-3 py-2">Lifecycle</th>
+                <th className="px-3 py-2">Evidence boundary</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zooRows.map(row => {
+                const life = lifecycleById.get(row.alpha_id);
+                return (
+                  <tr key={row.alpha_id} className="border-t border-line/70 align-top">
+                    <td className="px-3 py-2.5 font-mono font-semibold text-ink">{row.alpha_id}</td>
+                    <td className="px-3 py-2.5 font-mono text-muted">{row.cluster_id || row.generator}</td>
+                    <td className="px-3 py-2.5 font-mono text-muted">{row.status} · {row.verdict}</td>
+                    <td className="px-3 py-2.5 font-mono text-muted">{life?.derived_stage ?? 'NO_LIFECYCLE_MATCH'}</td>
+                    <td className="px-3 py-2.5 font-mono text-[10px] text-warn">
+                      {lifecycle.payload?.evidence_status ?? zoo.payload?.evidence_status ?? 'DIAGNOSTIC_ONLY'}
+                      {lifecycle.payload?.invalidation_code ? ` · ${lifecycle.payload.invalidation_code}` : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="font-mono text-[10px] text-faint">
+          zoo {zoo.payload?.data_provenance ?? zoo.reason} · lifecycle {lifecycle.payload?.data_provenance ?? lifecycle.reason}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticOnly({ snapshot, phase, reason, ashare, zoo, lifecycle }: {
   snapshot: HourlyAlphaSnapshot | null;
   phase: string;
   reason: string | null;
   ashare: AlphaEnrichment<AShareInstitutionalSearchPayload>;
+  zoo: AlphaEnrichment<AlphaZooPayload>;
+  lifecycle: AlphaEnrichment<AlphaLifecyclePayload>;
 }) {
   const quarantined = phase === 'QUARANTINED';
   const technicalSearchAvailable = quarantined
@@ -195,6 +269,7 @@ function DiagnosticOnly({ snapshot, phase, reason, ashare }: {
         )}
       </section>
       <AShareInstitutionalSearch research={ashare} />
+      <RetainedResearchEvidence zoo={zoo} lifecycle={lifecycle} />
     </PageShell>
   );
 }
@@ -411,7 +486,7 @@ export default function AlphaControlPlane() {
     || authority.snapshot === null) {
     return (
       <DiagnosticOnly snapshot={authority.snapshot} phase={authority.phase} reason={authority.reason}
-        ashare={ashare} />
+        ashare={ashare} zoo={data.zoo} lifecycle={data.lifecycle} />
     );
   }
   const snapshot = authority.snapshot;

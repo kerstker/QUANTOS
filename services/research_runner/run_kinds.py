@@ -335,6 +335,90 @@ def _adapt_wide_gauntlet(j: dict) -> dict:
             "provenance": "tools/wide_factor_gauntlet.py"}
 
 
+def _fixed_cycle(module: str) -> Callable:
+    """Resolve and run one fixed-path research cycle with no caller path surface."""
+
+    def run(_params):
+        result = importlib.import_module(module).run_cycle()
+        if (
+            isinstance(result, dict)
+            and result.get("status") == "SAFE_BLOCKED_RUNTIME_BUSY"
+        ):
+            raise RuntimeError(
+                "SAFE_BLOCKED_RUNTIME_BUSY: another A-share research cycle owns the lock"
+            )
+        return result
+
+    return run
+
+
+def _adapt_ashare_technical_search(j: dict) -> dict:
+    champion = j.get("champion_selected_without_confirmation") or {}
+    confirmation = (j.get("champion_confirmation_cost_sensitivity") or {}).get("30") or {}
+    primary = confirmation.get("primary_phase") or {}
+    excess = primary.get("excess") or {}
+    trial = j.get("trial_accounting") or {}
+    source = j.get("source") or {}
+    return {
+        "title": "A股 PIT 技术 Alpha 搜索",
+        "params": {},
+        "metrics": {
+            "candidate": champion.get("name"),
+            "candidate_specs": trial.get("candidate_specs"),
+            "source_instruments": source.get("instruments"),
+            "source_dates": source.get("dates"),
+            "confirmation_excess_sharpe": excess.get("annualized_sharpe"),
+            "bonferroni_adjusted_p": (
+                j.get("confirmation_multiple_testing") or {}
+            ).get("bonferroni_adjusted_p"),
+        },
+        "series": {},
+        "verdict": str(j.get("candidate_usefulness") or "NOT_VALIDATED"),
+        "caveats": [
+            "TECHNICAL_VALIDATION_ONLY; no promotion or paper persistence authority",
+            "close-t signal, open-(t+1) execution, non-overlapping holding periods",
+            *[str(value) for value in (j.get("limitations") or [])],
+        ],
+        "provenance": "tools/ashare_alpha_search_worker.py",
+    }
+
+
+def _adapt_ashare_forward_observation(j: dict) -> dict:
+    cycle = j.get("cycle") or {}
+    return {
+        "title": "A股冻结候选前向观察",
+        "params": {},
+        "metrics": {
+            "sessions_observed": j.get("sessions_observed"),
+            "minimum_sessions": j.get("minimum_sessions"),
+            "decision_count": cycle.get("decision_count"),
+            "outcome_count": cycle.get("outcome_count"),
+            "pending_count": cycle.get("pending_count"),
+            "new_decisions": cycle.get("new_decisions"),
+            "new_outcomes": cycle.get("new_outcomes"),
+        },
+        "series": {
+            "realized_periods": [
+                {
+                    "label": str(row.get("exit_date")),
+                    "value": row.get("net_return"),
+                }
+                for candidate in (j.get("candidates") or {}).values()
+                if isinstance(candidate, dict)
+                for row in candidate.get("periods", [])
+                if isinstance(row, dict)
+            ]
+        },
+        "verdict": str(j.get("status") or "SAFE_BLOCKED"),
+        "caveats": [
+            "Frozen candidate set; historical forward backfill is prohibited",
+            "Observation only; no account, order, broker, credential, or promotion path",
+            "Minimum 60 genuinely new sessions remains a separate evidence requirement",
+        ],
+        "provenance": "tools/ashare_forward_observation.py",
+    }
+
+
 RUN_KINDS: dict = {
     "carry_strategy": RunSpec("tools.crypto_carry_strategy:main", {}, adapt_carry, "资金费 Carry 策略", DIAGNOSTIC_ONLY,
                               runner=_tool_then_json("tools.crypto_carry_strategy", "crypto_carry_strategy.json")),
@@ -376,6 +460,22 @@ RUN_KINDS: dict = {
                                       "tools.ashare_paper_track",
                                       os.path.join("data", "stocks", "snapshots",
                                                    "paper_track_snapshot.json"))),
+    "ashare_technical_search": RunSpec(
+        "tools.ashare_alpha_search_worker:run_cycle",
+        {},
+        _adapt_ashare_technical_search,
+        "A股 PIT 技术 Alpha 搜索",
+        DIAGNOSTIC_ONLY,
+        runner=_fixed_cycle("tools.ashare_alpha_search_worker"),
+    ),
+    "ashare_forward_observation": RunSpec(
+        "tools.ashare_forward_observation:run_cycle",
+        {},
+        _adapt_ashare_forward_observation,
+        "A股冻结候选前向观察",
+        DIAGNOSTIC_ONLY,
+        runner=_fixed_cycle("tools.ashare_forward_observation"),
+    ),
 }
 
 

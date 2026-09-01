@@ -714,7 +714,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/population-optimizer")
-async def population_optimizer() -> Dict:
+def population_optimizer() -> Dict:
     payload = _population_optimizer_payload()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -727,7 +727,7 @@ async def population_optimizer() -> Dict:
 
 
 @router.get("/api/v1/console/dsl-explorer")
-async def dsl_explorer() -> Dict:
+def dsl_explorer() -> Dict:
     payload = _dsl_explorer_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -740,7 +740,7 @@ async def dsl_explorer() -> Dict:
 
 
 @router.get("/api/v1/console/dsl-explorer/check")
-async def dsl_explorer_check(expr: str = Query(...)) -> Dict:
+def dsl_explorer_check(expr: str = Query(...)) -> Dict:
     """On-demand static analysis of a user-typed S-expression, via the same real dsl_checker +
     complexity + leakage engines as the curated library above. Read-only / no execution against
     real data — pure static analysis (see `_analyze_custom_expr`)."""
@@ -768,7 +768,7 @@ def alpha_zoo() -> Dict:
 
 
 @router.get("/api/v1/console/alpha-graph")
-async def alpha_graph() -> Dict:
+def alpha_graph() -> Dict:
     payload = _alpha_graph_payload()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -781,5 +781,5 @@ async def alpha_graph() -> Dict:
 
 
 @router.get("/api/v1/console/crypto-live")
-async def crypto_live() -> Dict:
+def crypto_live() -> Dict:
     return scrub_backtest_payload(_crypto_live_payload())

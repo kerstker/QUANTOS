@@ -191,7 +191,7 @@ def _live_degradation_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/live-degradation")
-async def live_degradation() -> Dict[str, Any]:
+def live_degradation() -> Dict[str, Any]:
     return with_snapshot_metadata(_live_degradation_payload())
 
 

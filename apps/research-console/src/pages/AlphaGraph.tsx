@@ -2,6 +2,8 @@ import React from 'react';
 import { fetchAlphaGraphSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { AlphaGraphPayload } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, Chip, LoadingVeil } from '@/ui/primitives';
 
@@ -39,12 +41,15 @@ const fallback: AlphaGraphPayload = {
 };
 
 export default function AlphaGraph() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<AlphaGraphPayload>(
-    s => fetchAlphaGraphSnapshot(s));
-  const data = usingBackend ? payload! : fallback;
+  const snapshot = useConsoleSnapshot<AlphaGraphPayload>(s => fetchAlphaGraphSnapshot(s));
+  const { apiState, error, usingBackend } = snapshot;
+  const data = selectConsoleDisplayPayload(snapshot, fallback);
+  const [selected, setSelected] = React.useState<string | null>(null);
+  if (data === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/alpha-graph" apiState={apiState} error={error} />;
+  }
   const { nodes, edges, clusters, rho_cut: rho, n_near_dup } = data;
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
-  const [selected, setSelected] = React.useState<string | null>(null);
   const selectedNode = selected ? byId[selected] : null;
   const clusterMembers = selectedNode ? nodes.filter(n => n.cluster === selectedNode.cluster) : [];
   const clusterEdges = selectedNode

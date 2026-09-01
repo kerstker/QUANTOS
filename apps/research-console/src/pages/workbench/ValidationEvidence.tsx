@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { ResearchExperiment, ValidationReport } from '@/lib/types/research';
+import type {
+  ExperimentsPayload,
+  ResearchExperiment,
+  ValidationDashboardPayload,
+  ValidationReport,
+} from '@/lib/types/research';
 import { PageShell } from '@/ui/primitives';
 import type { HourlyAlphaCandidate, HourlyAlphaSnapshot } from '@/workbench/hourly-alpha-contract';
-import { useValidationEvidenceData } from '@/workbench/useValidationEvidenceData';
+import {
+  useValidationEvidenceData,
+  type EvidenceAuxiliary,
+} from '@/workbench/useValidationEvidenceData';
 
 type Outcome = 'PASS' | 'BLOCK' | 'UNKNOWN' | 'UNAVAILABLE';
 
@@ -63,8 +71,15 @@ function Panel({ eyebrow, title, right, children }: {
   );
 }
 
-function DiagnosticOnly({ phase, reason }: { phase: string; reason: string | null }) {
+function DiagnosticOnly({ phase, reason, validation, experiments }: {
+  phase: string;
+  reason: string | null;
+  validation: EvidenceAuxiliary<ValidationDashboardPayload>;
+  experiments: EvidenceAuxiliary<ExperimentsPayload>;
+}) {
   const quarantined = phase === 'QUARANTINED';
+  const validationPayload = validation.status === 'AVAILABLE' ? validation.payload : null;
+  const experimentsPayload = experiments.status === 'AVAILABLE' ? experiments.payload : null;
   const label = phase === 'STALE'
     ? 'VALIDATION_AUTHORITY_STALE'
     : quarantined ? 'VALIDATION_V1_AUTHORITY_QUARANTINED' : 'VALIDATION_AUTHORITY_UNAVAILABLE';
@@ -85,6 +100,86 @@ function DiagnosticOnly({ phase, reason }: { phase: string; reason: string | nul
             ? '旧 V1 验证权威已按策略隔离；保留结果不跨越当前权威边界。新的 PIT 技术验证会在独立证据面展示。'
             : '权威状态不可用或陈旧时，不显示保留的 PASS、指标、artifact 或前向结果，也不回退到旧页面模拟数据。'}
         </p>
+      </section>
+      <section className="rounded-xl border border-warn/35 bg-panel shadow-sm" aria-label="可读验证诊断数据">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-warn">Visible diagnostic evidence</p>
+            <h2 className="mt-1 text-base font-semibold text-ink">验证报告与实验登记（只读留存）</h2>
+          </div>
+          <span className="rounded border border-warn/35 bg-warn/10 px-2 py-1 font-mono text-[10px] text-warn">
+            DIAGNOSTIC_ONLY · INVALIDATED RESULTS STAY VISIBLE
+          </span>
+        </header>
+        <div className="space-y-5 p-4 sm:p-5">
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-ink">验证报告</h3>
+              <span className="font-mono text-[10px] text-faint">
+                {validationPayload?.reports.length ?? 0} rows · {validation.reason ?? validationPayload?.data_provenance ?? validation.status}
+              </span>
+            </div>
+            {!validationPayload ? (
+              <p className="rounded border border-warn/30 bg-warn/5 p-3 font-mono text-xs text-warn">
+                VALIDATION_DATA_UNAVAILABLE · {validation.reason ?? validation.status}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-line">
+                <table className="w-full min-w-[900px] text-left text-xs">
+                  <thead className="bg-inset text-[10px] uppercase tracking-[0.1em] text-faint">
+                    <tr><th className="px-3 py-2">Alpha</th><th className="px-3 py-2">Stored decision</th>
+                      <th className="px-3 py-2">Gates</th><th className="px-3 py-2">OOS / net</th><th className="px-3 py-2">Current authority</th></tr>
+                  </thead>
+                  <tbody>
+                    {validationPayload.reports.map(report => (
+                      <tr key={report.run_id} className="border-t border-line/70">
+                        <td className="px-3 py-2.5 font-mono font-semibold text-ink">{report.alpha_id}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">{report.decision}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">{report.gates_passed}/{report.gates_total}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">IC {fixed(report.oos_ic)} · SR {fixed(report.oos_sharpe)} · net {fixed(report.net_sharpe)}</td>
+                        <td className="px-3 py-2.5 font-mono text-[10px] text-warn">NOT_SELECTION_AUTHORITY · {validationPayload.invalidation_code ?? 'DIAGNOSTIC_ONLY'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-ink">实验登记</h3>
+              <span className="font-mono text-[10px] text-faint">
+                {experimentsPayload?.experiments.length ?? 0} rows · {experiments.reason ?? experimentsPayload?.data_provenance ?? experiments.status}
+              </span>
+            </div>
+            {!experimentsPayload ? (
+              <p className="rounded border border-warn/30 bg-warn/5 p-3 font-mono text-xs text-warn">
+                EXPERIMENT_DATA_UNAVAILABLE · {experiments.reason ?? experiments.status}
+              </p>
+            ) : (
+              <div className="max-h-[360px] overflow-auto rounded-lg border border-line">
+                <table className="w-full min-w-[820px] text-left text-xs">
+                  <thead className="sticky top-0 bg-inset text-[10px] uppercase tracking-[0.1em] text-faint">
+                    <tr><th className="px-3 py-2">Experiment</th><th className="px-3 py-2">Alpha</th>
+                      <th className="px-3 py-2">Stage</th><th className="px-3 py-2">Stored decision</th><th className="px-3 py-2">Evidence</th></tr>
+                  </thead>
+                  <tbody>
+                    {experimentsPayload.experiments.map(experiment => (
+                      <tr key={experiment.experiment_id} className="border-t border-line/70">
+                        <td className="px-3 py-2.5 font-mono text-ink">{experiment.experiment_id}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">{experiment.alpha_id}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">{experiment.stage}</td>
+                        <td className="px-3 py-2.5 font-mono text-muted">{experiment.decision}</td>
+                        <td className="px-3 py-2.5 font-mono text-[10px] text-warn">DIAGNOSTIC_ONLY · {experimentsPayload.invalidation_code ?? 'READ_ONLY'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
     </PageShell>
   );
@@ -233,7 +328,10 @@ export default function ValidationEvidence() {
 
   if ((authority.phase !== 'AVAILABLE' && authority.phase !== 'NO_SNAPSHOT')
     || authority.snapshot === null) {
-    return <DiagnosticOnly phase={authority.phase} reason={authority.reason} />;
+    return (
+      <DiagnosticOnly phase={authority.phase} reason={authority.reason}
+        validation={data.validation} experiments={data.experiments} />
+    );
   }
   const snapshot = authority.snapshot;
   const candidate = candidates.find(item => item.candidate_id === selectedId) ?? candidates[0] ?? null;

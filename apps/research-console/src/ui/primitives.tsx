@@ -345,8 +345,8 @@ export function ProvenanceRibbon({
   let modeChip: string;
   if (displayState === 'UNAVAILABLE') {
     icon = '✕'; modeChip = 'UNAVAILABLE';
-    headline = bi('后端不可用 · 下方回退内容不可作为决策数据',
-      'Backend unavailable · fallback content is not decision data');
+    headline = bi('后端不可用 · 没有通过验证的快照可供展示或决策',
+      'Backend unavailable · no verified snapshot is available for display or decisions');
   } else if (displayState === 'BLOCKED') {
     icon = '⛔'; modeChip = 'DATA_BLOCKED';
     headline = bi('数据/门禁阻塞 · 禁止继续操作', 'Data/admission blocked · actions are forbidden');

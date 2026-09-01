@@ -20,6 +20,8 @@ export interface SnapshotResult<T> {
   error: string | null;
   /** True when a backend snapshot is in hand, including during revalidation. */
   usingBackend: boolean;
+  /** True only for an explicitly requested VITE_MOCK_MODE=true session. */
+  mockFixturesAllowed: boolean;
   /** Normalized admission state derived from the transport and payload. */
   snapshotState?: SnapshotDisplayState;
   /** True only for REAL/EVIDENCE snapshots; synthetic or missing data is never actionable. */
@@ -33,10 +35,10 @@ export interface ConsoleSnapshotOptions {
 
 /**
  * Unified read-only data hook for every console page. Preserves the existing
- * contract behaviour: when the API is disabled (mock mode) it stays `disabled`
- * and the page renders mock fixtures; when enabled it fetches the snapshot,
- * and ANY error (including a non-snapshot body rejected by assertConsoleSnapshot)
- * surfaces visibly and the page honestly falls back to mock. Never throws.
+ * contract behaviour: an explicitly requested mock session stays `disabled`
+ * and may render fixtures; every real-API mode fetches the snapshot, and ANY
+ * error (including a non-snapshot body rejected by assertConsoleSnapshot)
+ * surfaces visibly without granting permission to render fixtures. Never throws.
  *
  * `fetcher` must be stable across renders OR depend only on `deps`.
  */
@@ -49,6 +51,7 @@ export function useConsoleSnapshot<T>(
   const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
   const [error, setError] = useState<string | null>(null);
   const apiEnabled = isResearchConsoleApiEnabled();
+  const mockFixturesAllowed = import.meta.env.VITE_MOCK_MODE === 'true';
   const streamPath = options.streamPath;
 
   useEffect(() => {
@@ -158,6 +161,7 @@ export function useConsoleSnapshot<T>(
     apiState,
     error,
     usingBackend,
+    mockFixturesAllowed,
     snapshotState,
     actionsAllowed: isSnapshotActionAllowed(snapshotState),
   };

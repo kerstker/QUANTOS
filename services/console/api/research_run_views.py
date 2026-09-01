@@ -103,7 +103,7 @@ def _invalidated_envelope(payload: Dict, **identity_fields: object) -> Dict:
 
 
 @router.get("/api/v1/console/research-runs")
-async def research_runs(kind: str = Query(None)) -> Dict:
+def research_runs(kind: str = Query(None)) -> Dict:
     reg = _runs_registry()
     rows = [_run_summary(r) for r in reg.list(kind=kind)]
     return _invalidated_envelope({
@@ -116,7 +116,7 @@ async def research_runs(kind: str = Query(None)) -> Dict:
 
 
 @router.get("/api/v1/console/research-run")
-async def research_run_detail(run_id: str = Query(...)) -> Dict:
+def research_run_detail(run_id: str = Query(...)) -> Dict:
     reg = _runs_registry()
     r = reg.get(run_id)
     return _invalidated_envelope({
@@ -164,7 +164,7 @@ def _backtest_results_payload() -> Dict:
 
 
 @router.get("/api/v1/console/backtest-results")
-async def backtest_results() -> Dict:
+def backtest_results() -> Dict:
     payload = _backtest_results_payload()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",

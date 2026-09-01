@@ -5,7 +5,7 @@ job that writes results to the run_registry. It connects to NO broker, places NO
 credentials, flips NO flags, and drives NO lifecycle promotion — the whitelist contains only research
 entrypoints (machine-enforced by tests/governance/test_research_runner_boundary.py). The read-only
 console_api serves progress/results from the same registry; this service never serves a GET that runs
-anything. Wall-clock is taken only here, at the HTTP trigger boundary.
+anything. Wall-clock is taken only here, at the service/HTTP adapter boundary.
 
 **本机共享密钥认证(2026-07-06,安全审查 punch-list):** 此前两个 mutating 端点(/run、/cancel)
 零认证——同机任意进程都能触发研究作业或撤销别人的任务。研究作业本身不碰订单/credential(见上),
@@ -15,6 +15,8 @@ anything. Wall-clock is taken only here, at the HTTP trigger boundary.
 "同机其它进程"。`/health` 是静态元数据,不需要认证。"""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+import logging
 import os
 import secrets
 import time
@@ -26,7 +28,10 @@ from pydantic import BaseModel
 
 from services.monitoring.audit_store import DurableAuditLog
 from services.execution.backtest_authority import BacktestIntegrityBlocked
-from services.research.run_registry.contract import InvocationConflictError
+from services.research.run_registry.contract import (
+    RUNNER_RESTART_INTERRUPTED,
+    InvocationConflictError,
+)
 from services.research.run_registry.registry import RunRegistry
 from services.research.run_registry.store import ResearchRunStore
 from .run_kinds import RUN_KINDS
@@ -36,13 +41,26 @@ from .runner import JobQueue
 _RUNS_DB = os.path.join("data", "cache", "research_runs.db")
 _AUDIT_DB = os.path.join("data", "cache", "governance_audit.db")
 _TOKEN_FILE = os.path.join("key", "research_runner_token.txt")
+_LOG = logging.getLogger(__name__)
 
 
 def _load_or_create_token(path: str = _TOKEN_FILE) -> str:
+    require_existing = os.getenv(
+        "QUANTOS_REQUIRE_EXISTING_RUNNER_TOKEN", "false"
+    ).strip().lower() == "true"
     if os.path.exists(path):
-        tok = open(path, encoding="utf-8").read().strip()
+        if require_existing and os.path.islink(path):
+            raise RuntimeError("research runner token must not be a symlink")
+        if require_existing and not os.path.isfile(path):
+            raise RuntimeError("research runner token must be a regular file")
+        if require_existing and os.name == "posix" and os.stat(path).st_mode & 0o077:
+            raise RuntimeError("research runner token permissions must be 0600")
+        with open(path, encoding="utf-8") as handle:
+            tok = handle.read().strip()
         if tok:
             return tok
+    if require_existing:
+        raise RuntimeError("pre-provisioned research runner token is required")
     tok = secrets.token_urlsafe(32)
     parent = os.path.dirname(path)
     if parent:
@@ -66,7 +84,46 @@ def require_runner_token(x_runner_token: Optional[str] = Header(default=None)) -
         raise HTTPException(401, "missing or invalid X-Runner-Token")
 
 
-app = FastAPI(title="QUANTOS Research Runner", version="0.1.0")
+def _reconcile_interrupted_runs_on_startup() -> tuple[tuple[str, str], ...]:
+    """Close jobs whose only executor disappeared with the prior process.
+
+    Registry mutation is atomic.  Governance audit is deliberately best-effort, matching the trigger
+    path: an audit-store outage must not leave the UI polling a known-abandoned invocation forever.
+    The run's durable log and exact error code are committed in the authoritative registry transaction.
+    """
+    now = int(time.time())
+    reconciled = _registry.reconcile_interrupted_runner_runs(finished_ts=now)
+    for run_id, previous_status in reconciled:
+        try:
+            _audit.append(
+                event_id=f"runner-restart-interrupted.{run_id}",
+                actor="research-runner",
+                action="research.run.restart_interrupted",
+                timestamp=now,
+                target=run_id,
+                metadata={
+                    "previous_status": previous_status,
+                    "status": "error",
+                    "error": RUNNER_RESTART_INTERRUPTED,
+                },
+            )
+        except Exception:
+            _LOG.exception("failed to audit interrupted research run %s", run_id)
+    if reconciled:
+        _LOG.warning(
+            "reconciled %d interrupted research runner invocation(s)",
+            len(reconciled),
+        )
+    return reconciled
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _reconcile_interrupted_runs_on_startup()
+    yield
+
+
+app = FastAPI(title="QUANTOS Research Runner", version="0.1.0", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3100", "http://localhost:3100", *_extra_cors_origins],
@@ -75,7 +132,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_queue = JobQueue(RunRegistry(ResearchRunStore(_RUNS_DB)), max_workers=2)
+# A run temporarily redirects process-global stdout into its durable registry
+# log.  Keep the resident queue serial so two threads can never cross-wire that
+# process-global stream; independent systemd workers still run concurrently.
+_registry = RunRegistry(ResearchRunStore(_RUNS_DB))
+_queue = JobQueue(_registry, max_workers=1)
 _audit = DurableAuditLog(_AUDIT_DB)
 
 

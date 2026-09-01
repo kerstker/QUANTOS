@@ -39,7 +39,10 @@ from quantos.contracts.l2_schedule_policy import (
     MVP_EXPECTED_TASKS,
     MVP_RESIDENT_MODULES,
 )
-from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
+from quantos.contracts.scheduled_worker import (
+    SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
+)
 
 
 _HOUR_MS = 3_600_000
@@ -66,6 +69,7 @@ SYSTEMD_NON_SCHEDULED_SUPPORT_UNITS = frozenset(
     {
         "quantos-console-api.service",
         "quantos-console-frontend.service",
+        "quantos-research-runner.service",
         "quantos-proxy-environment.service",
         "quantos-public-proxy-runtime.service",
     }
@@ -135,6 +139,14 @@ class TaskSnapshot:
 
 _EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
     "artifact_admission_seal": (2 * _DAY_MS, frozenset({2})),
+    "ashare_alpha_search_worker": (
+        9 * _DAY_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "ashare_forward_observation": (
+        2 * _DAY_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "binance_book_depth_forward_refresh": (2 * _DAY_MS, frozenset()),
     "binance_realtime_drift_alerts": (15 * 60_000, frozenset()),
     "binance_realtime_features": (15 * 60_000, frozenset()),
@@ -160,7 +172,10 @@ _EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
     "raw_archive_audit": (2 * _DAY_MS, frozenset()),
     "wikimedia_attention_forward_refresh": (
         2 * _DAY_MS,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+        # Wikimedia attention is an optional enrichment.  Upstream/public
+        # transport failure (1) and explicit no-data/safe-blocked (2) are both
+        # visible PARTIAL states, never a deployment/runtime BREACH.
+        frozenset({SCHEDULE_EXIT_FAILURE, SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
 }
 if set(_EXPECTED_TASK_SPECS) != set(MVP_EXPECTED_TASKS.values()):
@@ -657,6 +672,9 @@ def _unit_directives_exact(
     }
     if accepts_safe_partial_exit:
         required_keys.add("Service.SuccessExitStatus")
+    expected_success_exit_status = (
+        "1 2" if module == "wikimedia_attention_forward_refresh" else "2"
+    )
     optional_descriptive_keys = {"Unit.Description", "Unit.Documentation"}
     if expected_mounts:
         required_keys.add("Unit.RequiresMountsFor")
@@ -689,7 +707,8 @@ def _unit_directives_exact(
         == ("simple" if module in _RESIDENT_STREAM_MODULES else "oneshot")
         and (
             not accepts_safe_partial_exit
-            or _one_directive(directives, "Service.SuccessExitStatus") == "2"
+            or _one_directive(directives, "Service.SuccessExitStatus")
+            == expected_success_exit_status
         )
         and _one_directive(directives, "Service.ExecStart") == expected_exec
         and all(_one_directive(directives, name) == value for name, value in expected_hardening.items())

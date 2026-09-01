@@ -284,6 +284,12 @@ class RunStorePort(Protocol):
         error: Optional[str] = None,
     ) -> bool: ...
 
+    def reconcile_interrupted_runner_runs(
+        self,
+        *,
+        finished_ts: int,
+    ) -> tuple[tuple[str, str], ...]: ...
+
     def append_log(self, run_id: str, line: str) -> None: ...
 
 

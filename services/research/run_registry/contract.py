@@ -14,11 +14,13 @@ from typing import Optional
 VALID_STATUS = {"queued", "running", "done", "error", "cancelled"}
 RUN_OWNER_LEGACY_MIRROR = "LEGACY_MIRROR"
 RUN_OWNER_RUNNER_INVOCATION = "RUNNER_INVOCATION"
+RUNNER_RESTART_INTERRUPTED = "RUNNER_RESTART_INTERRUPTED"
 VALID_RUN_OWNERS = {RUN_OWNER_LEGACY_MIRROR, RUN_OWNER_RUNNER_INVOCATION}
 ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
                  "factory_orthogonal", "factory_loop", "data_refresh",
                  "ic_panel", "wide_gauntlet", "paper_cycle",
-                 "ashare_alpha", "ashare_paper_track"}
+                 "ashare_alpha", "ashare_paper_track",
+                 "ashare_technical_search", "ashare_forward_observation"}
 
 _INVOCATION_ID_MAX_LENGTH = 128
 _REQUEST_IDENTITY_SCHEMA = "quantos.research_runner.request.v1"

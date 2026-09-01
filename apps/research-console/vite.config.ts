@@ -1,8 +1,35 @@
 /// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import path from 'path';
 import coveragePolicy from '../../config/ci_coverage_policy.json';
+
+const repoRoot = path.resolve(__dirname, '../..');
+
+function frontendSourceIdentity(): { releaseCommit: string; sourceSha256: string } {
+  const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).trim();
+  if (!/^[0-9a-f]{40}$/.test(releaseCommit)) {
+    throw new Error('frontend build requires a full lowercase Git commit');
+  }
+  const tracked = execFileSync(
+    'git',
+    ['ls-files', '-z', '--', 'apps/research-console'],
+    { cwd: repoRoot },
+  ).toString('utf8').split('\0').filter(Boolean).sort();
+  if (tracked.length === 0) throw new Error('frontend tracked source set is empty');
+  const rows = tracked.map(relative => [
+    relative,
+    createHash('sha256').update(readFileSync(path.join(repoRoot, relative))).digest('hex'),
+  ]);
+  const sourceSha256 = createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+  return { releaseCommit, sourceSha256 };
+}
 
 export default defineConfig(({ mode }) => {
   const fileEnv = loadEnv(mode, __dirname, 'VITE_');
@@ -11,8 +38,32 @@ export default defineConfig(({ mode }) => {
     return value == null || value.trim() === '' ? fallback : value;
   };
   const localGatewayDefault = mode === 'production' ? '__QUANTOS_SAME_ORIGIN__' : '';
+  const apiUrl = env('VITE_API_URL', localGatewayDefault);
+  const runnerUrl = env('VITE_RUNNER_URL', localGatewayDefault);
+  const mockMode = env('VITE_MOCK_MODE', 'false');
+  const sourceIdentity = frontendSourceIdentity();
   return {
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'quantos-frontend-build-contract',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'quantos-build-contract.json',
+          source: `${JSON.stringify({
+            schema: 'quantos.frontend_build.v1',
+            release_commit: sourceIdentity.releaseCommit,
+            frontend_source_sha256: sourceIdentity.sourceSha256,
+            api_url: apiUrl,
+            runner_url: runnerUrl,
+            mock_mode: mockMode,
+          }, null, 2)}\n`,
+        });
+      },
+    },
+  ],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: { port: 3100, open: mode === 'e2e' ? false : '/research' },
   build: {
@@ -20,11 +71,11 @@ export default defineConfig(({ mode }) => {
     rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'] } } },
   },
   define: {
-    'import.meta.env.VITE_API_URL': JSON.stringify(env('VITE_API_URL', localGatewayDefault)),
+    'import.meta.env.VITE_API_URL': JSON.stringify(apiUrl),
     // Real API is the safe product default.  Mock mode must be explicitly
     // requested for isolated demos/tests so a stale fixture cannot look live.
-    'import.meta.env.VITE_MOCK_MODE': JSON.stringify(env('VITE_MOCK_MODE', 'false')),
-    'import.meta.env.VITE_RUNNER_URL': JSON.stringify(env('VITE_RUNNER_URL', localGatewayDefault)),
+    'import.meta.env.VITE_MOCK_MODE': JSON.stringify(mockMode),
+    'import.meta.env.VITE_RUNNER_URL': JSON.stringify(runnerUrl),
     'import.meta.env.VITE_CONSOLE_API_VERSION': JSON.stringify(env('VITE_CONSOLE_API_VERSION', '0.1.0')),
   },
   // Phase 8: real UI test config — the audit flagged its absence (jsdom + @testing-library were

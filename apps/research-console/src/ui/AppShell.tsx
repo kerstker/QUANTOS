@@ -7,6 +7,7 @@ import {
 } from '@/lib/api/research-console-api';
 import type { RuntimeContractPayload } from '@/lib/types/research';
 import { WORKBENCH_DATA_SOURCE_MANIFEST } from '@/workbench/data-source-manifest';
+import { CONSOLE_MODULES } from '@/workbench/module-registry';
 import { GLOBAL_DRAWER_DEFINITIONS, GlobalDrawerHost } from '@/workbench/GlobalDrawerHost';
 import { GlobalStatusBar } from '@/workbench/GlobalStatusBar';
 import { ConfirmDialogHost } from './dialog';
@@ -279,6 +280,16 @@ export function AppShell({ nav, children }: {
                   </NavLink>
                 ))}
               </nav>
+              <NavLink
+                to="/research/modules"
+                className={({ isActive }) => (
+                  `shrink-0 rounded-md border px-3 py-2 text-[10px] font-semibold ${isActive
+                    ? 'border-accent/45 bg-accent/10 text-accent'
+                    : 'border-line bg-inset/60 text-muted hover:text-ink'}`
+                )}
+              >
+                全部模块 · {CONSOLE_MODULES.length}
+              </NavLink>
               <GlobalDrawerHost />
             </div>
 

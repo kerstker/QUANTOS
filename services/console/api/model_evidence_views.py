@@ -548,10 +548,10 @@ def _snapshot(payload: Dict) -> Dict:
 
 
 @router.get("/api/v1/console/model-risk-review")
-async def model_risk_review() -> Dict:
+def model_risk_review() -> Dict:
     return _snapshot(_model_risk_review_payload())
 
 
 @router.get("/api/v1/console/evidence-ledger")
-async def evidence_ledger() -> Dict:
+def evidence_ledger() -> Dict:
     return _snapshot(_evidence_ledger_payload())

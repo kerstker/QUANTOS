@@ -52,10 +52,6 @@ export function zooEnrichment(result: SnapshotResult<AlphaZooPayload>): AlphaEnr
       reason: unavailableReason(result),
     };
   }
-  const denied = authorityDenial(result.payload);
-  if (denied !== null) {
-    return { status: 'UNAVAILABLE', payload: null, reason: `AUTHORITY_DENIED:${denied}` };
-  }
   const provenance = result.payload.data_provenance;
   const accepted = provenance === 'EXPERIMENT_REGISTRY'
     || provenance === 'REAL'
@@ -64,7 +60,12 @@ export function zooEnrichment(result: SnapshotResult<AlphaZooPayload>): AlphaEnr
   if (!accepted) {
     return { status: 'UNAVAILABLE', payload: null, reason: `PROVENANCE:${provenance}` };
   }
-  return { status: 'AVAILABLE', payload: result.payload, reason: null };
+  const denied = authorityDenial(result.payload);
+  return {
+    status: 'AVAILABLE',
+    payload: result.payload,
+    reason: denied === null ? null : `VISIBLE_DIAGNOSTIC:${denied}`,
+  };
 }
 
 export function lifecycleEnrichment(
@@ -77,10 +78,6 @@ export function lifecycleEnrichment(
       reason: unavailableReason(result),
     };
   }
-  const denied = authorityDenial(result.payload);
-  if (denied !== null) {
-    return { status: 'UNAVAILABLE', payload: null, reason: `AUTHORITY_DENIED:${denied}` };
-  }
   if (result.payload.data_provenance !== 'REAL_ALPHA_LIFECYCLE'
     || result.payload.snapshot_present !== true) {
     return {
@@ -88,7 +85,12 @@ export function lifecycleEnrichment(
       reason: `PROVENANCE:${result.payload.data_provenance}`,
     };
   }
-  return { status: 'AVAILABLE', payload: result.payload, reason: null };
+  const denied = authorityDenial(result.payload);
+  return {
+    status: 'AVAILABLE',
+    payload: result.payload,
+    reason: denied === null ? null : `VISIBLE_DIAGNOSTIC:${denied}`,
+  };
 }
 
 export function ashareEnrichment(
@@ -105,7 +107,9 @@ export function ashareEnrichment(
   if (payload.snapshot_present !== true) {
     return { status: 'UNAVAILABLE', payload: null, reason: payload.availability_mode };
   }
-  if (payload.data_provenance !== 'REPOSITORY_EVIDENCE'
+  if (!['REPOSITORY_EVIDENCE', 'REAL_ASHARE_TECHNICAL_RUNTIME'].includes(
+    payload.data_provenance,
+  )
     || payload.diagnostic_only !== true
     || payload.evidence_status !== 'TECHNICAL_VALIDATION_ONLY') {
     return {

@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { fetchMonitoringDriftSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { MonitoringDriftPayload, MonitoringDriftRecord } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
@@ -119,10 +121,12 @@ function PriorityRow({ m, tone }: { m: MonitoringDriftRecord; tone: Tone }) {
 }
 
 export default function MonitoringDrift() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<MonitoringDriftPayload>(
-    s => fetchMonitoringDriftSnapshot(s));
-
-  const monitoring = usingBackend ? payload! : fallbackMonitoring;
+  const snapshot = useConsoleSnapshot<MonitoringDriftPayload>(s => fetchMonitoringDriftSnapshot(s));
+  const { apiState, error, usingBackend } = snapshot;
+  const selectedMonitoring = selectConsoleDisplayPayload(snapshot, fallbackMonitoring);
+  // Hooks below stay unconditional across loading/connected transitions; the
+  // internal fixture shape is never mounted when production selection is null.
+  const monitoring = selectedMonitoring ?? fallbackMonitoring;
   const summary = monitoring.summary;
   const policy = monitoring.monitoring_policy;
 
@@ -160,6 +164,10 @@ export default function MonitoringDrift() {
     [bi('告警不可变', 'IMMUTABLE_ALERTS'), !policy.mutable_alerts],
     [bi('禁止实盘授权', 'NO_LIVE_AUTH'), !policy.authorizes_live_trading],
   ];
+
+  if (selectedMonitoring === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/monitoring-drift" apiState={apiState} error={error} />;
+  }
 
   return (
     <PageShell>

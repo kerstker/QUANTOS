@@ -621,7 +621,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/experiments")
-async def experiments() -> Dict:
+def experiments() -> Dict:
     payload = _experiments_payload()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",

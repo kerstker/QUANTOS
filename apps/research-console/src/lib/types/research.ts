@@ -2421,8 +2421,8 @@ export interface AlphaZooRow {
   paper_ic?: number | null; paper_sharpe?: number | null; perf_gap?: number | null; n_paper_periods?: number | null;
   [key: string]: number | string | string[] | null | undefined;
 }
-export interface AlphaZooPayload {
-  source: string; read_only: boolean; api_version: string; data_provenance: string;
+export interface AlphaZooPayload extends ConsolePayloadBase {
+  data_provenance: string;
   rows: AlphaZooRow[];
   dimensions: ZooDimension[];
 }

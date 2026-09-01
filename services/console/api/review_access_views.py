@@ -498,10 +498,10 @@ def _snapshot(payload: Dict) -> Dict:
 
 
 @router.get("/api/v1/console/reviewer-workflow")
-async def reviewer_workflow() -> Dict:
+def reviewer_workflow() -> Dict:
     return _snapshot(_reviewer_workflow_payload())
 
 
 @router.get("/api/v1/console/access-control")
-async def access_control() -> Dict:
+def access_control() -> Dict:
     return _snapshot(_access_control_payload())

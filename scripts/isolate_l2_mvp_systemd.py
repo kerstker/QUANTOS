@@ -68,6 +68,8 @@ POLICY_SHA256 = hashlib.sha256(
 SAFE_ONESHOT_MODULES = frozenset(
     {
         "artifact_admission_seal",
+        "ashare_alpha_search_worker",
+        "ashare_forward_observation",
         "binance_book_depth_forward_refresh",
         "binance_realtime_drift_alerts",
         "binance_realtime_features",
@@ -96,6 +98,7 @@ SUPPORT_UNITS = frozenset(
         "quantos-console-frontend.service",
         "quantos-l2-watchdog.service",
         "quantos-l2-watchdog.timer",
+        "quantos-research-runner.service",
         "quantos-proxy-environment.service",
         "quantos-public-proxy-runtime.service",
     }

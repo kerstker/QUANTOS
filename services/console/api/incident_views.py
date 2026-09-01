@@ -264,7 +264,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/incident-response")
-async def incident_response() -> Dict:
+def incident_response() -> Dict:
     payload = _incident_response_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

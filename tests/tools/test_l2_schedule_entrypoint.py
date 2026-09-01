@@ -730,6 +730,8 @@ def test_pythonw_mode_rejects_child_request_for_new_console(monkeypatch) -> None
 def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
     assert MVP_EXPECTED_TASKS == {
         "QUANTOS_artifact_admission_seal": "artifact_admission_seal",
+        "QUANTOS_ashare_alpha_search": "ashare_alpha_search_worker",
+        "QUANTOS_ashare_forward_observation": "ashare_forward_observation",
         "QUANTOS_binance_book_depth_forward_refresh": (
             "binance_book_depth_forward_refresh"
         ),
@@ -801,7 +803,7 @@ def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
     assert HARD_QUARANTINED_MODULES == frozenset(HARD_QUARANTINED_TASKS.values())
     assert MVP_DISABLED_MODULES == frozenset(MVP_DISABLED_TASKS.values())
     assert (len(MVP_SAFE_MODULES), len(HARD_QUARANTINED_MODULES), len(MVP_DISABLED_MODULES)) == (
-        22,
+        24,
         13,
         15,
     )
@@ -826,6 +828,8 @@ def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
 def test_required_input_attestation_surface_is_explicit() -> None:
     assert REQUIRED_INPUT_ATTESTATION_MODULES == frozenset(
         {
+            "ashare_alpha_search_worker",
+            "ashare_forward_observation",
             "binance_realtime_market",
             "binance_realtime_features",
         }

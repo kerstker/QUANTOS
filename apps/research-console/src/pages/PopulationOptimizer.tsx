@@ -1,6 +1,8 @@
 import { fetchPopulationOptimizerSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { PopulationOptimizerPayload, PopOptSelected } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, LoadingVeil,
@@ -41,9 +43,12 @@ const reasonZh: Record<string, string> = {
 };
 
 export default function PopulationOptimizer() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<PopulationOptimizerPayload>(
-    s => fetchPopulationOptimizerSnapshot(s));
-  const data = usingBackend ? payload! : fallback;
+  const snapshot = useConsoleSnapshot<PopulationOptimizerPayload>(s => fetchPopulationOptimizerSnapshot(s));
+  const { apiState, error, usingBackend } = snapshot;
+  const data = selectConsoleDisplayPayload(snapshot, fallback);
+  if (data === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/population-optimizer" apiState={apiState} error={error} />;
+  }
   const selected = data.selected;
   const excluded = data.excluded;
   const gross = data.gross;

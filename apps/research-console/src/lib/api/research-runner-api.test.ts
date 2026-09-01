@@ -85,3 +85,89 @@ describe('research-runner-api runner token', () => {
     expect(headers['X-Runner-Token']).toBe('secret-abc');
   });
 });
+
+describe('research-runner-api health contract', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_RUNNER_URL', 'http://127.0.0.1:8420');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const validHealth = () => ({
+    mode: 'RESEARCH_RUNNER',
+    live_disallowed: true,
+    kinds: ['ashare_technical_search', 'ashare_forward_observation'],
+    quarantined_kinds: { ashare_alpha: 'INVALIDATED_PERP_LEDGER_V1' },
+    kind_policies: {
+      ashare_technical_search: {
+        purpose: 'DIAGNOSTIC_ONLY',
+        evidence_authority: null,
+      },
+      ashare_forward_observation: {
+        purpose: 'DIAGNOSTIC_ONLY',
+        evidence_authority: null,
+      },
+      ashare_alpha: {
+        purpose: 'DIAGNOSTIC_ONLY',
+        evidence_authority: null,
+      },
+    },
+  });
+
+  it('accepts and returns a structurally valid fail-closed runner health body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => validHealth(),
+    }));
+    const { fetchRunnerHealth } = await import('./research-runner-api');
+
+    await expect(fetchRunnerHealth()).resolves.toEqual(validHealth());
+  });
+
+  it.each([
+    ['non-object body', null],
+    ['wrong mode', { ...validHealth(), mode: 'READ_ONLY' }],
+    ['live boundary disabled', { ...validHealth(), live_disallowed: false }],
+    ['non-array kinds', { ...validHealth(), kinds: 'ashare_technical_search' }],
+    ['duplicate kinds', {
+      ...validHealth(), kinds: ['ashare_technical_search', 'ashare_technical_search'],
+    }],
+    ['missing policies', { ...validHealth(), kind_policies: undefined }],
+    ['missing advertised policy', {
+      ...validHealth(),
+      kind_policies: { ashare_forward_observation: validHealth().kind_policies.ashare_forward_observation },
+    }],
+    ['invalid policy purpose', {
+      ...validHealth(),
+      kind_policies: {
+        ...validHealth().kind_policies,
+        ashare_technical_search: { purpose: 'LIVE', evidence_authority: null },
+      },
+    }],
+    ['diagnostic authority conflict', {
+      ...validHealth(),
+      kind_policies: {
+        ...validHealth().kind_policies,
+        ashare_technical_search: {
+          purpose: 'DIAGNOSTIC_ONLY', evidence_authority: 'SHOULD_NOT_EXIST',
+        },
+      },
+    }],
+    ['advertised/quarantined conflict', {
+      ...validHealth(),
+      quarantined_kinds: { ashare_technical_search: 'QUARANTINED' },
+    }],
+  ])('rejects %s instead of exposing trigger buttons', async (_label, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => body,
+    }));
+    const { fetchRunnerHealth } = await import('./research-runner-api');
+
+    await expect(fetchRunnerHealth()).rejects.toThrow('RUNNER_HEALTH_INVALID:');
+  });
+});

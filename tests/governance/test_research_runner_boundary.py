@@ -143,7 +143,11 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "survivorship",
         "wide_gauntlet",
     }
-    assert set(RUN_KINDS) - LEGACY_QUARANTINED_RUN_KINDS == {"data_refresh"}
+    assert set(RUN_KINDS) - LEGACY_QUARANTINED_RUN_KINDS == {
+        "ashare_forward_observation",
+        "ashare_technical_search",
+        "data_refresh",
+    }
     actual_selection_bearing = {
         kind
         for kind, spec in RUN_KINDS.items()
@@ -193,6 +197,34 @@ def test_whitelist_is_subset_of_registry_allowed_kinds():
     from services.research_runner.run_kinds import RUN_KINDS
     from services.research.run_registry.contract import ALLOWED_KINDS
     assert set(RUN_KINDS) <= ALLOWED_KINDS, f"runner kinds not in registry whitelist: {set(RUN_KINDS) - ALLOWED_KINDS}"
+
+
+def test_v1_crypto_candidate_and_paper_shadow_chain_is_not_runner_admitted():
+    from quantos.contracts.l2_schedule_policy import MVP_DISABLED_MODULES
+    from services.research_runner.run_kinds import RUN_KINDS
+
+    retained = {
+        "realtime_alpha_discovery",
+        "realtime_alpha_forward_shadow",
+        "realtime_alpha_formal_shadow",
+    }
+    assert retained <= MVP_DISABLED_MODULES
+    assert retained.isdisjoint(RUN_KINDS)
+
+    discovery = Path(_ROOT, "tools", "realtime_alpha_discovery.py").read_text(
+        encoding="utf-8"
+    )
+    forward = Path(_ROOT, "tools", "realtime_alpha_forward_shadow.py").read_text(
+        encoding="utf-8"
+    )
+    formal = Path(_ROOT, "tools", "realtime_alpha_formal_shadow.py").read_text(
+        encoding="utf-8"
+    )
+    assert "frozen_paper_runs" in discovery
+    assert "build_feedback_plan(" in discovery
+    assert "realize_forward_paper_decision(" in forward
+    assert "record_paper_run(" in forward
+    assert "run_cycle as _run_cycle" in formal
 
 
 # --- 2026-07-05 安全审查 MEDIUM 修复:/cancel 与 /run 同等问责要求 ---

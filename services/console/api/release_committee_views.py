@@ -267,7 +267,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/release-committee")
-async def release_committee() -> Dict:
+def release_committee() -> Dict:
     payload = _release_committee_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

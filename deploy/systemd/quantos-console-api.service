@@ -1,0 +1,57 @@
+[Unit]
+Description=QUANTOS read-only monitoring API (L2 dry-run only)
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/docs/runbooks/local-research-stack.md
+After=network.target
+
+[Service]
+Type=simple
+User=quantos
+Group=quantos
+UMask=0077
+# These literal flags cannot be replaced by an EnvironmentFile or credential.
+Environment=LIVE_TRADING_ENABLED=false
+Environment=REAL_BROKER_ENABLED=false
+Environment=ALLOW_ORDER_SUBMISSION=false
+Environment=ALLOW_AI_DIRECT_TRADING=false
+Environment=REQUIRE_HUMAN_APPROVAL=true
+Environment=QUANTOS_L2_DRY_RUN_ONLY=true
+Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_BUILD_SHA=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_STATE_ROOT=/srv/quantos/state
+Environment=PYTHONPATH=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HOME=/tmp
+WorkingDirectory=/srv/quantos/state
+ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python -P -m uvicorn --app-dir /opt/quantos/releases/__QUANTOS_RELEASE_SHA__ services.console.main:app --host 127.0.0.1 --port 8400
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+ReadOnlyPaths=/srv/quantos/state
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# Input template only.  The package builder adds [Install] after binding an
+# exact release commit; this checked-in file must never be installed directly.

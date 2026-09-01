@@ -9,6 +9,8 @@ import {
 } from '@/ui/primitives';
 import { EquityCurveChart, type EquitySeries } from '@/ui/workbench';
 import { stamp, type Tone } from '@/ui/format';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchDryRunSnapshot } from '@/lib/api/research-console-api';
 import { statusLabel } from '@/lib/i18n/bilingual';
@@ -1133,13 +1135,17 @@ function FormalRiskRow({
 }
 
 export default function DryRunPipeline() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DryRunPipelinePayload>(
+  const snapshot = useConsoleSnapshot<DryRunPipelinePayload>(
     signal => fetchDryRunSnapshot(signal),
     [],
     { streamPath: '/api/v1/console/stream/dry-run' },
   );
+  const { apiState, error, usingBackend } = snapshot;
   const initialLoading = apiState === 'loading' && !usingBackend;
-  const data = usingBackend ? payload! : mockPayload;
+  const selectedData = selectConsoleDisplayPayload(snapshot, mockPayload);
+  // Derived hooks remain unconditional; the fixture-backed dashboard is not
+  // mounted unless VITE_MOCK_MODE=true was explicit.
+  const data = selectedData ?? mockPayload;
   const shadow = data.paper_shadow;
   const officialPaper = data.paper_realtime;
   const operational = data.paper_operational;
@@ -1254,6 +1260,10 @@ export default function DryRunPipeline() {
       ? '自动调度中'
       : '安全阻断';
   const automationTone: Tone = initialLoading ? 'info' : shadowRunning ? 'pos' : 'neg';
+
+  if (selectedData === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/dry-run" apiState={apiState} error={error} />;
+  }
 
   return (
     <PageShell>

@@ -72,7 +72,8 @@ describe('Wave 3 app shell integration', () => {
 
   it('keeps bounded evidence detail routes without promoting them to top-level workspaces', async () => {
     render(<MemoryRouter initialEntries={['/research/experiments']}><App /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { level: 1, name: /实验注册表/ })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: /后端快照不可用/ })).toBeTruthy();
+    expect(screen.getByText('PRODUCTION_FIXTURES_DISABLED')).toBeTruthy();
     const primary = screen.getByRole('navigation', { name: 'object workspaces' });
     expect(within(primary).getAllByRole('link')).toHaveLength(5);
   });

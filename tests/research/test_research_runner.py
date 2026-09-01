@@ -817,8 +817,63 @@ def test_ashare_kind_fails_closed_on_nonzero_exit(tmp_path, monkeypatch):
 
 def test_ashare_kinds_in_registry_whitelist_and_stay_diagnostic():
     from services.research.run_registry.contract import ALLOWED_KINDS
-    assert {"ashare_alpha", "ashare_paper_track"} <= ALLOWED_KINDS
-    assert {"ashare_alpha", "ashare_paper_track"} <= set(RUN_KINDS)
-    for kind in ("ashare_alpha", "ashare_paper_track"):
+    ashare_kinds = {
+        "ashare_alpha",
+        "ashare_paper_track",
+        "ashare_technical_search",
+        "ashare_forward_observation",
+    }
+    assert ashare_kinds <= ALLOWED_KINDS
+    assert ashare_kinds <= set(RUN_KINDS)
+    for kind in ashare_kinds:
         assert RUN_KINDS[kind].provenance_policy.purpose is RunPurpose.DIAGNOSTIC_ONLY
         assert RUN_KINDS[kind].param_schema == {}
+
+
+@pytest.mark.parametrize(
+    ("kind", "module"),
+    (
+        ("ashare_technical_search", "tools.ashare_alpha_search_worker"),
+        ("ashare_forward_observation", "tools.ashare_forward_observation"),
+    ),
+)
+def test_new_ashare_runner_kinds_use_fixed_path_run_cycle(
+    monkeypatch, kind, module
+):
+    from services.research_runner import run_kinds
+
+    calls = []
+
+    class _Tool:
+        @staticmethod
+        def run_cycle():
+            calls.append(module)
+            return {"status": "OBSERVING"}
+
+    monkeypatch.setattr(
+        run_kinds.importlib,
+        "import_module",
+        lambda requested: _Tool if requested == module else pytest.fail(requested),
+    )
+
+    assert RUN_KINDS[kind].runner({}) == {"status": "OBSERVING"}
+    assert calls == [module]
+    with pytest.raises(ValueError, match="unknown param"):
+        validate_params(kind, {"path": "/tmp/override"})
+
+
+def test_ashare_runtime_busy_is_not_persisted_as_a_done_run(monkeypatch):
+    from services.research_runner import run_kinds
+
+    class _BusyTool:
+        @staticmethod
+        def run_cycle():
+            return {"status": "SAFE_BLOCKED_RUNTIME_BUSY", "state_mutated": False}
+
+    monkeypatch.setattr(
+        run_kinds.importlib,
+        "import_module",
+        lambda _requested: _BusyTool,
+    )
+    with pytest.raises(RuntimeError, match="SAFE_BLOCKED_RUNTIME_BUSY"):
+        RUN_KINDS["ashare_technical_search"].runner({})

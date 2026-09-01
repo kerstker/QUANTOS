@@ -443,7 +443,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/promotion-control")
-async def promotion_control() -> Dict:
+def promotion_control() -> Dict:
     payload = _promotion_control_payload()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",

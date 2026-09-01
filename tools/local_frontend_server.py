@@ -12,6 +12,7 @@ import argparse
 import http.client
 import http.server
 import ipaddress
+import json
 import os
 from pathlib import Path
 import re
@@ -20,6 +21,8 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST_ENV = "QUANTOS_FRONTEND_DIST"
+RELEASE_COMMIT_ENV = "QUANTOS_RELEASE_COMMIT"
+FRONTEND_RUNTIME_CONTRACT = "quantos-runtime-contract.json"
 
 
 def _frontend_dist_root(*, root: Path = ROOT) -> Path:
@@ -52,12 +55,22 @@ _HOP_BY_HOP_HEADERS = {
 AllowedNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 _DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 15
 _HEAVY_SNAPSHOT_TIMEOUT_SECONDS = 60
+_MAX_PROXY_BODY_BYTES = 64 * 1024
+_PROXY_BODY_READ_TIMEOUT_SECONDS = 5
 _HEAVY_SNAPSHOT_PATHS = frozenset(
     {
         "/api/v1/console/alpha-zoo",
         "/api/v1/console/system-completeness",
     }
 )
+
+
+class _ProxyRequestError(ValueError):
+    """A proxy request that must be rejected before reading its body."""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _upstream_timeout_for_path(path: str) -> int:
@@ -112,18 +125,85 @@ def _client_is_allowed(client_host: str, network: AllowedNetwork | None) -> bool
     return network is not None and address.version == network.version and address in network
 
 
+def _request_surface_is_allowed(method: str, path: str) -> bool:
+    request_path = urlsplit(path).path
+    if request_path.startswith("/api/v1/console/"):
+        return method in {"GET", "HEAD"}
+    if request_path == "/__runner__/health":
+        return method in {"GET", "HEAD"}
+    if request_path in {"/__runner__/run", "/__runner__/cancel"}:
+        return method == "POST"
+    if request_path == "/__runner__" or request_path.startswith("/__runner__/"):
+        return False
+    return method in {"GET", "HEAD"}
+
+
 def _client_request_is_allowed(method: str, path: str, client_host: str) -> bool:
-    """Keep every non-loopback client on the read-only monitoring surface."""
+    """Keep LAN writes confined to the token-guarded research runner.
+
+    The listener already admits only the explicitly configured private network.
+    Console API routes remain GET/HEAD-only, while the research runner exposes
+    its narrow health/run/cancel surface through the same-origin proxy.  The
+    runner independently requires ``X-Runner-Token`` and an operator tag for
+    every mutation and has no broker, credential, promotion, or order path.
+    """
     try:
-        address = ipaddress.ip_address(client_host)
+        ipaddress.ip_address(client_host)
     except ValueError:
         return False
-    if address.is_loopback:
-        return True
-    request_path = urlsplit(path).path
-    if method not in {"GET", "HEAD"}:
-        return False
-    return request_path != "/__runner__" and not request_path.startswith("/__runner__/")
+    return _request_surface_is_allowed(method, path)
+
+
+def _single_header(headers: http.client.HTTPMessage, name: str) -> str | None:
+    values = headers.get_all(name, [])
+    if len(values) > 1:
+        raise _ProxyRequestError(400, f"duplicate {name} is not allowed")
+    return values[0].strip() if values else None
+
+
+def _validated_proxy_body_length(
+    method: str,
+    path: str,
+    headers: http.client.HTTPMessage,
+) -> int:
+    """Validate the complete proxy request envelope before touching ``rfile``."""
+
+    if not _request_surface_is_allowed(method, path):
+        raise _ProxyRequestError(405, "method or proxy path is not allowed")
+    target_path = urlsplit(path).path
+    is_json_mutation = method == "POST" and target_path in {
+        "/__runner__/run",
+        "/__runner__/cancel",
+    }
+    if headers.get_all("Transfer-Encoding", []):
+        raise _ProxyRequestError(400, "Transfer-Encoding request bodies are not allowed")
+
+    length_value = _single_header(headers, "Content-Length")
+    if is_json_mutation and length_value is None:
+        raise _ProxyRequestError(411, "Content-Length is required")
+    if length_value is None:
+        content_length = 0
+    elif not re.fullmatch(r"0|[1-9][0-9]*", length_value):
+        raise _ProxyRequestError(400, "Content-Length must be a non-negative decimal")
+    else:
+        if len(length_value) > len(str(_MAX_PROXY_BODY_BYTES)):
+            raise _ProxyRequestError(413, "request body exceeds the proxy limit")
+        content_length = int(length_value)
+    if content_length > _MAX_PROXY_BODY_BYTES:
+        raise _ProxyRequestError(413, "request body exceeds the proxy limit")
+
+    content_type = _single_header(headers, "Content-Type")
+    if is_json_mutation:
+        media_type = (content_type or "").partition(";")[0].strip().lower()
+        if media_type != "application/json":
+            raise _ProxyRequestError(415, "runner mutations require application/json")
+        if not _single_header(headers, "X-Runner-Token"):
+            raise _ProxyRequestError(401, "X-Runner-Token is required")
+        if not _single_header(headers, "X-Operator"):
+            raise _ProxyRequestError(400, "X-Operator is required")
+    elif content_length != 0 or content_type is not None:
+        raise _ProxyRequestError(400, "read-only proxy requests must not carry a body")
+    return content_length
 
 
 def _is_event_stream_response(response: http.client.HTTPResponse) -> bool:
@@ -229,8 +309,36 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         host, port, upstream_path = target
-        content_length = int(self.headers.get("Content-Length", "0"))
-        body = self.rfile.read(content_length) if content_length else None
+        try:
+            content_length = _validated_proxy_body_length(
+                self.command,
+                self.path,
+                self.headers,
+            )
+        except _ProxyRequestError as exc:
+            self.send_error(exc.status_code, str(exc))
+            return
+        body: bytes | None = b"" if self.command == "POST" else None
+        if content_length:
+            connection_socket = getattr(self, "connection", None)
+            original_timeout = (
+                connection_socket.gettimeout()
+                if connection_socket is not None
+                else None
+            )
+            try:
+                if connection_socket is not None:
+                    connection_socket.settimeout(_PROXY_BODY_READ_TIMEOUT_SECONDS)
+                body = self.rfile.read(content_length)
+            except (OSError, TimeoutError):
+                self.send_error(408, "request body read timed out")
+                return
+            finally:
+                if connection_socket is not None:
+                    connection_socket.settimeout(original_timeout)
+            if len(body) != content_length:
+                self.send_error(400, "request body ended before Content-Length")
+                return
         headers = {
             key: value for key, value in self.headers.items()
             if key.lower() not in _HOP_BY_HOP_HEADERS | {"host", "content-length"}
@@ -305,11 +413,49 @@ class LocalThreadingServer(http.server.ThreadingHTTPServer):
         super().__init__(server_address, request_handler)
 
 
-def _has_real_local_api_contract(*, dist: Path = DIST) -> bool:
+def _has_real_local_api_contract(
+    *,
+    dist: Path = DIST,
+    release_commit: str | None = None,
+) -> bool:
     """Reject bundles that would silently fall back to frontend mock data."""
     assets = dist / "assets"
     index_path = dist / "index.html"
     if not index_path.is_file() or not assets.is_dir():
+        return False
+    expected_release = (
+        release_commit
+        if release_commit is not None
+        else os.getenv(RELEASE_COMMIT_ENV, "").strip().lower()
+    )
+    if re.fullmatch(r"[0-9a-f]{40}", expected_release) is None:
+        return False
+    contract_path = dist / FRONTEND_RUNTIME_CONTRACT
+    try:
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate runtime contract key")
+                value[key] = item
+            return value
+
+        contract = json.loads(
+            contract_path.read_text(encoding="utf-8"),
+            object_pairs_hook=unique,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"invalid JSON constant: {value}")
+            ),
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False
+    if contract != {
+        "schema": "quantos.frontend_runtime.v1",
+        "release_commit": expected_release,
+        "api_url": "__QUANTOS_SAME_ORIGIN__",
+        "runner_url": "__QUANTOS_SAME_ORIGIN__",
+        "mock_mode": False,
+    }:
         return False
     try:
         index = index_path.read_bytes()

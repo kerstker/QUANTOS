@@ -2,9 +2,10 @@
 #
 # Running this script authorizes only the static MVP closed set: public raw/PIT
 # collection, resident public streams, observation health, and control-plane
-# workers. It never registers research/candidate/paper authority, venue
-# submission, emergency trading action, or a credential-bearing API. Tasks
-# outside the MVP are disabled (not deleted) before safe jobs are registered.
+# workers plus explicitly diagnostic search and append-only forward observation.
+# It never registers promotion/paper-execution authority, venue submission,
+# emergency trading action, or a credential-bearing API. Tasks outside the MVP
+# are disabled (not deleted) before safe jobs are registered.
 #
 # The script location is the immutable release code root. -StateRoot must point
 # at a separate mutable operational checkout containing data/cache; scheduled
@@ -426,6 +427,10 @@ $eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
 $artifactAdmissionSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:40"
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $rawArchiveAuditTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "04:00"
+$ashareAlphaSearchTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Friday -At "18:30"
+$ashareForwardObservationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "18:15"
 # Collect the complete public Binance USD-M surface before paper valuation.
 # This task is market-data only and has no credential or broker capability.
 $binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
@@ -485,6 +490,10 @@ Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realt
   -Trigger $binanceRealtimeFeaturesTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 45)
 Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
   -Trigger $binanceRealtimeDriftAlertsTrigger
+Register-L2Task -Name "QUANTOS_ashare_forward_observation" -Module "ashare_forward_observation" `
+  -Trigger $ashareForwardObservationTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-L2Task -Name "QUANTOS_ashare_alpha_search" -Module "ashare_alpha_search_worker" `
+  -Trigger $ashareAlphaSearchTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_bybit_realtime_stream" -Module "bybit_realtime_stream" `

@@ -416,7 +416,7 @@ def _mexc_market_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/mexc-market")
-async def mexc_market() -> Dict[str, Any]:
+def mexc_market() -> Dict[str, Any]:
     return with_snapshot_metadata(_mexc_market_payload())
 
 
@@ -588,7 +588,7 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/mexc-strategy")
-async def mexc_strategy() -> Dict[str, Any]:
+def mexc_strategy() -> Dict[str, Any]:
     return with_snapshot_metadata(_mexc_strategy_payload())
 
 
@@ -916,7 +916,7 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/mexc-readiness")
-async def mexc_readiness() -> Dict[str, Any]:
+def mexc_readiness() -> Dict[str, Any]:
     return with_snapshot_metadata(_mexc_readiness_payload())
 
 

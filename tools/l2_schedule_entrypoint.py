@@ -67,6 +67,8 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ATTESTABLE_EXIT_CODES = frozenset({0, 2})
 REQUIRED_INPUT_ATTESTATION_MODULES = frozenset(
     {
+        "ashare_alpha_search_worker",
+        "ashare_forward_observation",
         "binance_realtime_features",
         "binance_realtime_market",
     }

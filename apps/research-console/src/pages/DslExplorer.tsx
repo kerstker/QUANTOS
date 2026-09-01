@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { fetchDslExplorerSnapshot, checkDslExpression } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { DslExplorerPayload, DslExprRow } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, GateDot, Chip, LoadingVeil,
@@ -30,9 +32,13 @@ const fallback: DslExplorerPayload = {
 };
 
 export default function DslExplorer() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DslExplorerPayload>(
-    s => fetchDslExplorerSnapshot(s));
-  const data = usingBackend ? payload! : fallback;
+  const snapshot = useConsoleSnapshot<DslExplorerPayload>(s => fetchDslExplorerSnapshot(s));
+  const { apiState, error, usingBackend } = snapshot;
+  const selectedData = selectConsoleDisplayPayload(snapshot, fallback);
+  // Keep hooks unconditional across loading -> connected transitions. The
+  // fixture supplies internal shapes only and is never mounted unless mock
+  // mode was explicitly requested.
+  const data = selectedData ?? fallback;
   const exprs = data.exprs;
   const [sel, setSel] = useState(0);
   const [customExpr, setCustomExpr] = useState('');
@@ -60,6 +66,10 @@ export default function DslExplorer() {
     } finally {
       setCustomBusy(false);
     }
+  }
+
+  if (selectedData === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/dsl-explorer" apiState={apiState} error={error} />;
   }
 
   return (

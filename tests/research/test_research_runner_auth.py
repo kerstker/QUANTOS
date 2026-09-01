@@ -4,6 +4,9 @@ lifecycle(governance boundary test 钉死),但仍是真实计算资源(CPU/时�
 撤销别人的合法任务。镜像 live_ops_api 的本机共享密钥模式(`key/<service>_token.txt`,首次
 启动生成,gitignored,只检查不外泄)。/health 是静态元数据,不需要认证。"""
 import os
+from pathlib import Path
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -33,6 +36,24 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_queue", stub)
     monkeypatch.setattr(m, "_audit", DurableAuditLog(os.path.join(str(tmp_path), "gov.db")))
     return TestClient(m.app), stub
+
+
+def test_managed_runner_requires_preprovisioned_private_token(
+    tmp_path: Path, monkeypatch
+):
+    token = tmp_path / "runner-token"
+    monkeypatch.setenv("QUANTOS_REQUIRE_EXISTING_RUNNER_TOKEN", "true")
+
+    with pytest.raises(RuntimeError, match="pre-provisioned"):
+        m._load_or_create_token(str(token))
+
+    token.write_text("managed-secret", encoding="utf-8")
+    token.chmod(0o644)
+    with pytest.raises(RuntimeError, match="0600"):
+        m._load_or_create_token(str(token))
+
+    token.chmod(0o600)
+    assert m._load_or_create_token(str(token)) == "managed-secret"
 
 
 def test_post_run_without_token_is_401(tmp_path, monkeypatch):
@@ -96,7 +117,11 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
     r = client.get("/health")
     assert r.status_code == 200
     policies = r.json()["kind_policies"]
-    assert r.json()["kinds"] == ["data_refresh"]
+    assert r.json()["kinds"] == [
+        "ashare_forward_observation",
+        "ashare_technical_search",
+        "data_refresh",
+    ]
     assert r.json()["quarantined_kinds"] == {
         "ashare_alpha": "INVALIDATED_PERP_LEDGER_V1",
         "ashare_paper_track": "INVALIDATED_PERP_LEDGER_V1",

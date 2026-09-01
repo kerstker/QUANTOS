@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from '@/lib/router';
 import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
 import { WORKBENCH_DATA_SOURCE_MANIFEST } from '@/workbench/data-source-manifest';
 import { ConfirmDialogHost } from '@/ui/dialog';
 import { ToastProvider } from '@/ui/toast';
+
+beforeAll(() => vi.stubEnv('VITE_MOCK_MODE', 'true'));
+afterAll(() => vi.unstubAllEnvs());
 
 // 注册表驱动的全量冒烟:遍历 src/app/routes.tsx 的 PAGES(路由/导航的唯一真源),
 // 每一页异步加载并渲染——新增页面自动被覆盖,永远不会再出现「只冒烟 14/42」的地板缺口。

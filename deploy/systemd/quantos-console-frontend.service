@@ -1,0 +1,59 @@
+[Unit]
+Description=QUANTOS read-only monitoring frontend (L2 dry-run only)
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/docs/runbooks/local-research-stack.md
+BindsTo=quantos-console-api.service
+After=quantos-console-api.service
+
+[Service]
+Type=simple
+User=quantos
+Group=quantos
+UMask=0077
+# These literal flags cannot be replaced by an EnvironmentFile or credential.
+Environment=LIVE_TRADING_ENABLED=false
+Environment=REAL_BROKER_ENABLED=false
+Environment=ALLOW_ORDER_SUBMISSION=false
+Environment=ALLOW_AI_DIRECT_TRADING=false
+Environment=REQUIRE_HUMAN_APPROVAL=true
+Environment=QUANTOS_L2_DRY_RUN_ONLY=true
+Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_BUILD_SHA=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_FRONTEND_DIST=/opt/quantos/frontend/__QUANTOS_RELEASE_SHA__
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HOME=/tmp
+WorkingDirectory=/opt/quantos/frontend/__QUANTOS_RELEASE_SHA__
+ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python -P /opt/quantos/releases/__QUANTOS_RELEASE_SHA__/tools/local_frontend_server.py --host 192.168.5.68 --port 3100 --allow-network 192.168.5.0/24
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+ReadOnlyPaths=/opt/quantos/frontend/__QUANTOS_RELEASE_SHA__
+InaccessiblePaths=/srv/quantos/state
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=192.168.5.0/24
+
+# Input template only.  The package builder adds [Install] after binding an
+# exact release commit; this checked-in file must never be installed directly.

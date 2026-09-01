@@ -4,6 +4,8 @@ import type { AlphaLifecyclePayload } from '@/lib/types/research';
 import {
   Chip, LoadingVeil, PageHeader, PageShell, Panel, ProvenanceRibbon,
 } from '@/ui/primitives';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { AsOfStamp, EndpointFootnote, StateView, StatusBanner } from '@/ui/workbench';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 
@@ -28,10 +30,14 @@ const closedFallbackPayload: AlphaLifecyclePayload = {
 };
 
 export default function AlphaLifecycle() {
+  const snapshot = useConsoleSnapshot<AlphaLifecyclePayload>(signal => fetchAlphaLifecycle(signal));
   const {
-    payload, apiState, error, usingBackend, snapshotState,
-  } = useConsoleSnapshot<AlphaLifecyclePayload>(signal => fetchAlphaLifecycle(signal));
-  const data = usingBackend ? payload ?? closedFallbackPayload : closedFallbackPayload;
+    apiState, error, usingBackend, snapshotState,
+  } = snapshot;
+  const data = selectConsoleDisplayPayload(snapshot, closedFallbackPayload);
+  if (data === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/alpha-lifecycle" apiState={apiState} error={error} />;
+  }
   const marker = data.invalidation_code ?? INVALIDATION;
   const absent = data.snapshot_present === false || data.snapshot_status === 'NO_SNAPSHOT';
   const pageState = apiState === 'loading' ? 'loading' : absent ? 'empty' : 'ready';

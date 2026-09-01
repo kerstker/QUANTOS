@@ -282,7 +282,7 @@ class _LogWriter(io.TextIOBase):
 
 
 class JobQueue:
-    def __init__(self, registry, max_workers: int = 2):
+    def __init__(self, registry, max_workers: int = 1):
         self._reg = registry
         self._ex = ThreadPoolExecutor(max_workers=max_workers)
         self._futures: list = []

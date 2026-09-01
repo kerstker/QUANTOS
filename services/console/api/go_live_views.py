@@ -196,7 +196,7 @@ def _go_live_readiness_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/go-live-readiness")
-async def go_live_readiness() -> Dict[str, Any]:
+def go_live_readiness() -> Dict[str, Any]:
     return with_snapshot_metadata(_go_live_readiness_payload())
 
 

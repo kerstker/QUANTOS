@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from http.client import HTTPMessage
 from io import BytesIO
+import json
 
 import pytest
 
@@ -8,6 +10,8 @@ from tools.local_frontend_server import (
     FRONTEND_DIST_ENV,
     REQUIRED_LOCAL_API_MARKERS,
     SpaRequestHandler,
+    _MAX_PROXY_BODY_BYTES,
+    _ProxyRequestError,
     _cache_control_for_path,
     _client_is_allowed,
     _client_request_is_allowed,
@@ -16,8 +20,27 @@ from tools.local_frontend_server import (
     _is_event_stream_response,
     _spa_target,
     _upstream_timeout_for_path,
+    _validated_proxy_body_length,
     _validated_listener,
 )
+
+
+_RELEASE_COMMIT = "a" * 40
+
+
+def _write_runtime_contract(root, *, mock_mode=False, release_commit=_RELEASE_COMMIT):
+    (root / "quantos-runtime-contract.json").write_text(
+        json.dumps(
+            {
+                "schema": "quantos.frontend_runtime.v1",
+                "release_commit": release_commit,
+                "api_url": "__QUANTOS_SAME_ORIGIN__",
+                "runner_url": "__QUANTOS_SAME_ORIGIN__",
+                "mock_mode": mock_mode,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_frontend_dist_root_defaults_and_requires_absolute_override(monkeypatch, tmp_path):
@@ -68,17 +91,167 @@ def test_client_allowlist_keeps_loopback_and_rejects_other_subnets():
     assert _client_is_allowed("not-an-ip", network) is False
 
 
-def test_lan_clients_are_monitoring_only_and_cannot_reach_runner_or_post():
+def test_lan_clients_can_reach_only_the_token_guarded_runner_surface():
     assert _client_request_is_allowed("GET", "/workbench/market", "192.168.5.5") is True
     assert _client_request_is_allowed("GET", "/api/v1/console/dry-run", "192.168.5.5") is True
     assert _client_request_is_allowed("HEAD", "/assets/app.js", "192.168.5.5") is True
-    assert _client_request_is_allowed("GET", "/__runner__/health", "192.168.5.5") is False
+    assert _client_request_is_allowed("GET", "/__runner__/health", "192.168.5.5") is True
+    assert _client_request_is_allowed("POST", "/__runner__/run", "192.168.5.5") is True
+    assert _client_request_is_allowed("POST", "/__runner__/cancel", "192.168.5.5") is True
+    assert _client_request_is_allowed("GET", "/__runner__/run", "192.168.5.5") is False
+    assert _client_request_is_allowed("POST", "/__runner__/health", "192.168.5.5") is False
+    assert _client_request_is_allowed("GET", "/__runner__/unknown", "192.168.5.5") is False
     assert _client_request_is_allowed("POST", "/api/v1/console/research", "192.168.5.5") is False
 
 
-def test_loopback_keeps_existing_runner_and_post_access():
+def test_loopback_keeps_only_the_existing_runner_contract():
     assert _client_request_is_allowed("GET", "/__runner__/health", "127.0.0.1") is True
-    assert _client_request_is_allowed("POST", "/__runner__/runs", "127.0.0.1") is True
+    assert _client_request_is_allowed("POST", "/__runner__/run", "127.0.0.1") is True
+    assert _client_request_is_allowed("POST", "/__runner__/runs", "127.0.0.1") is False
+    assert _client_request_is_allowed("POST", "/api/v1/console/system-health", "127.0.0.1") is False
+
+
+def _headers(*rows: tuple[str, str]) -> HTTPMessage:
+    headers = HTTPMessage()
+    for name, value in rows:
+        headers[name] = value
+    return headers
+
+
+def test_proxy_body_contract_accepts_only_small_authenticated_json_mutations():
+    body = b'{"kind":"ashare_technical_search","params":{}}'
+    headers = _headers(
+        ("Content-Length", str(len(body))),
+        ("Content-Type", "application/json; charset=utf-8"),
+        ("X-Runner-Token", "test-token"),
+        ("X-Operator", "test-operator"),
+    )
+    assert _validated_proxy_body_length(
+        "POST", "/__runner__/run", headers
+    ) == len(body)
+    assert _validated_proxy_body_length(
+        "GET", "/api/v1/console/system-health", _headers()
+    ) == 0
+
+
+@pytest.mark.parametrize(
+    ("headers", "status_code"),
+    [
+        (
+            _headers(
+                ("Content-Type", "application/json"),
+                ("X-Runner-Token", "token"),
+                ("X-Operator", "operator"),
+            ),
+            411,
+        ),
+        (
+            _headers(
+                ("Content-Length", "-1"),
+                ("Content-Type", "application/json"),
+                ("X-Runner-Token", "token"),
+                ("X-Operator", "operator"),
+            ),
+            400,
+        ),
+        (
+            _headers(
+                ("Content-Length", str(_MAX_PROXY_BODY_BYTES + 1)),
+                ("Content-Type", "application/json"),
+                ("X-Runner-Token", "token"),
+                ("X-Operator", "operator"),
+            ),
+            413,
+        ),
+        (
+            _headers(
+                ("Content-Length", "2"),
+                ("Content-Type", "text/plain"),
+                ("X-Runner-Token", "token"),
+                ("X-Operator", "operator"),
+            ),
+            415,
+        ),
+        (
+            _headers(
+                ("Content-Length", "2"),
+                ("Content-Type", "application/json"),
+                ("X-Operator", "operator"),
+            ),
+            401,
+        ),
+        (
+            _headers(
+                ("Content-Length", "2"),
+                ("Content-Type", "application/json"),
+                ("X-Runner-Token", "token"),
+            ),
+            400,
+        ),
+        (
+            _headers(
+                ("Content-Length", "2"),
+                ("Content-Type", "application/json"),
+                ("Transfer-Encoding", "chunked"),
+                ("X-Runner-Token", "token"),
+                ("X-Operator", "operator"),
+            ),
+            400,
+        ),
+    ],
+)
+def test_proxy_body_contract_rejects_invalid_envelopes_before_read(
+    headers,
+    status_code,
+):
+    with pytest.raises(_ProxyRequestError) as raised:
+        _validated_proxy_body_length("POST", "/__runner__/run", headers)
+    assert raised.value.status_code == status_code
+
+
+def test_proxy_body_contract_rejects_duplicate_lengths_and_unknown_surfaces():
+    duplicate = _headers(
+        ("Content-Length", "2"),
+        ("Content-Length", "2"),
+        ("Content-Type", "application/json"),
+        ("X-Runner-Token", "token"),
+        ("X-Operator", "operator"),
+    )
+    with pytest.raises(_ProxyRequestError) as duplicate_error:
+        _validated_proxy_body_length("POST", "/__runner__/run", duplicate)
+    assert duplicate_error.value.status_code == 400
+
+    with pytest.raises(_ProxyRequestError) as method_error:
+        _validated_proxy_body_length(
+            "POST", "/api/v1/console/system-health", _headers()
+        )
+    assert method_error.value.status_code == 405
+
+    with pytest.raises(_ProxyRequestError) as path_error:
+        _validated_proxy_body_length("POST", "/__runner__/unknown", _headers())
+    assert path_error.value.status_code == 405
+
+
+def test_proxy_rejects_missing_length_without_reading_request_body():
+    class _NeverRead:
+        def read(self, _size):
+            raise AssertionError("request body was read before validation")
+
+    handler = object.__new__(SpaRequestHandler)
+    handler.command = "POST"
+    handler.path = "/__runner__/run"
+    handler.headers = _headers(
+        ("Content-Type", "application/json"),
+        ("X-Runner-Token", "token"),
+        ("X-Operator", "operator"),
+    )
+    handler.rfile = _NeverRead()
+    errors: list[tuple[int, str]] = []
+    handler.send_error = lambda code, message="": errors.append((code, message))
+
+    handler._proxy()
+
+    assert errors and errors[0][0] == 411
 
 
 class _FiniteEventStream:
@@ -133,11 +306,16 @@ def test_real_local_api_contract_rejects_mock_bundle(tmp_path):
         encoding="utf-8",
     )
     entry = assets / "app.js"
+    _write_runtime_contract(tmp_path)
     entry.write_bytes(b"frontend mock")
-    assert _has_real_local_api_contract(dist=tmp_path) is False
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is False
 
     entry.write_bytes(REQUIRED_LOCAL_API_MARKERS[0])
-    assert _has_real_local_api_contract(dist=tmp_path) is True
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is True
 
 
 def test_real_local_api_contract_accepts_standard_production_marker(tmp_path):
@@ -150,8 +328,11 @@ def test_real_local_api_contract_accepts_standard_production_marker(tmp_path):
     (assets / "index-built.js").write_bytes(
         b"runtime=" + REQUIRED_LOCAL_API_MARKERS[0]
     )
+    _write_runtime_contract(tmp_path)
 
-    assert _has_real_local_api_contract(dist=tmp_path) is True
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is True
 
 
 def test_real_local_api_contract_rejects_unrelated_url_literal(tmp_path):
@@ -163,8 +344,29 @@ def test_real_local_api_contract_rejects_unrelated_url_literal(tmp_path):
     )
     (assets / "app.js").write_bytes(b"frontend mock")
     (assets / "help-page.js").write_bytes(REQUIRED_LOCAL_API_MARKERS[0])
+    _write_runtime_contract(tmp_path)
 
-    assert _has_real_local_api_contract(dist=tmp_path) is False
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is False
+
+
+def test_real_local_api_contract_rejects_mock_or_wrong_release_manifest(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (tmp_path / "index.html").write_text(
+        '<script type="module" src="/assets/app.js"></script>',
+        encoding="utf-8",
+    )
+    (assets / "app.js").write_bytes(REQUIRED_LOCAL_API_MARKERS[0])
+    _write_runtime_contract(tmp_path, mock_mode=True)
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is False
+    _write_runtime_contract(tmp_path, release_commit="b" * 40)
+    assert _has_real_local_api_contract(
+        dist=tmp_path, release_commit=_RELEASE_COMMIT
+    ) is False
 
 
 def test_proxy_targets_are_fixed_to_local_read_and_runner_surfaces():

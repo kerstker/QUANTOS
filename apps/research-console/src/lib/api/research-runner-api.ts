@@ -20,11 +20,97 @@ export function runnerEnabled(): boolean {
 
 export interface TriggerResult { run_id: string; status: string; kind: string; operator?: string; }
 
+export type RunnerKindPurpose = 'SELECTION_BEARING' | 'DIAGNOSTIC_ONLY';
+
+export interface RunnerKindPolicy {
+  purpose: RunnerKindPurpose;
+  evidence_authority: string | null;
+}
+
 export interface RunnerHealth {
-  mode: string;
-  live_disallowed: boolean;
+  mode: 'RESEARCH_RUNNER';
+  live_disallowed: true;
   kinds: string[];
   quarantined_kinds?: Record<string, string>;
+  kind_policies: Record<string, RunnerKindPolicy>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidRunnerHealth(reason: string): never {
+  throw new Error(`RUNNER_HEALTH_INVALID:${reason}`);
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** Validate the unauthenticated /health body before exposing any trigger kind. */
+function assertRunnerHealth(value: unknown): RunnerHealth {
+  if (!isRecord(value)) invalidRunnerHealth('OBJECT_REQUIRED');
+  if (value.mode !== 'RESEARCH_RUNNER') invalidRunnerHealth('MODE');
+  if (value.live_disallowed !== true) invalidRunnerHealth('LIVE_BOUNDARY');
+  if (!Array.isArray(value.kinds)) invalidRunnerHealth('KINDS_ARRAY');
+
+  const kinds: string[] = [];
+  const seenKinds = new Set<string>();
+  for (const rawKind of value.kinds) {
+    if (!nonEmptyString(rawKind) || rawKind !== rawKind.trim()) {
+      invalidRunnerHealth('KIND_NAME');
+    }
+    if (seenKinds.has(rawKind)) invalidRunnerHealth('KIND_DUPLICATE');
+    seenKinds.add(rawKind);
+    kinds.push(rawKind);
+  }
+
+  if (!isRecord(value.kind_policies)) invalidRunnerHealth('KIND_POLICIES_OBJECT');
+  const kindPolicies: Record<string, RunnerKindPolicy> = {};
+  for (const [kind, rawPolicy] of Object.entries(value.kind_policies)) {
+    if (!nonEmptyString(kind) || kind !== kind.trim() || !isRecord(rawPolicy)) {
+      invalidRunnerHealth('KIND_POLICY_ENTRY');
+    }
+    const purpose = rawPolicy.purpose;
+    if (purpose !== 'DIAGNOSTIC_ONLY' && purpose !== 'SELECTION_BEARING') {
+      invalidRunnerHealth('KIND_POLICY_PURPOSE');
+    }
+    const authority = rawPolicy.evidence_authority;
+    if (authority !== null && !nonEmptyString(authority)) {
+      invalidRunnerHealth('KIND_POLICY_AUTHORITY');
+    }
+    if (purpose === 'DIAGNOSTIC_ONLY' && authority !== null) {
+      invalidRunnerHealth('DIAGNOSTIC_AUTHORITY_CONFLICT');
+    }
+    if (purpose === 'SELECTION_BEARING' && authority === null) {
+      invalidRunnerHealth('SELECTION_AUTHORITY_MISSING');
+    }
+    kindPolicies[kind] = { purpose, evidence_authority: authority };
+  }
+  for (const kind of kinds) {
+    if (!(kind in kindPolicies)) invalidRunnerHealth('ADVERTISED_POLICY_MISSING');
+  }
+
+  let quarantinedKinds: Record<string, string> | undefined;
+  if (value.quarantined_kinds !== undefined) {
+    if (!isRecord(value.quarantined_kinds)) invalidRunnerHealth('QUARANTINE_OBJECT');
+    quarantinedKinds = {};
+    for (const [kind, reason] of Object.entries(value.quarantined_kinds)) {
+      if (!nonEmptyString(kind) || kind !== kind.trim() || !nonEmptyString(reason)) {
+        invalidRunnerHealth('QUARANTINE_ENTRY');
+      }
+      if (seenKinds.has(kind)) invalidRunnerHealth('KIND_QUARANTINE_CONFLICT');
+      quarantinedKinds[kind] = reason;
+    }
+  }
+
+  return {
+    mode: 'RESEARCH_RUNNER',
+    live_disallowed: true,
+    kinds,
+    ...(quarantinedKinds ? { quarantined_kinds: quarantinedKinds } : {}),
+    kind_policies: kindPolicies,
+  };
 }
 
 // Rank #18: the runner requires an X-Operator tag on every trigger — a SELF-ASSERTED, UNAUTHENTICATED
@@ -53,7 +139,7 @@ export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHea
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   const res = await fetch(runnerUrl('/health'), { method: 'GET', signal });
   if (!res.ok) throw new Error(`runner returned ${res.status}`);
-  return res.json();
+  return assertRunnerHealth(await res.json());
 }
 
 export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {

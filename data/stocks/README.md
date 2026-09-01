@@ -1,49 +1,77 @@
-# QUANTOS 股票数据库(data/stocks/)
+# QUANTOS A股数据层
 
-A 股微盘量化研究的统一数据底座。2026-07-24 由 `data/cache/ashare_*` 散落文件整合迁移而来(迁移脚本 `tools/ashare_db_migrate.py`)。
+当前 A 股数据分为两层，禁止再把旧的 249 只微盘样本称为全市场唯一权威。
 
-## 目录结构
+## 当前主数据：通达信全市场技术研究库
 
-```
-data/stocks/
-├── stocks.db                  # ★ 统一股票数据库(唯一权威)
-├── research.db                # stocks.db 的研究副本(驱动器只读它;刷新: cp stocks.db research.db)
-├── universe.json / .csv       # 249 只微盘宇宙(Wind 筛选,2026-07-23)
-├── snapshots/
-│   ├── klines_snapshot.json   # K线落库快照(逐股行数/起止/来源)
-│   ├── alpha_snapshot.json    # ALPHA 研究结果(tools/ashare_alpha_research.py 输出)
-│   └── paper_track_snapshot.json
-├── raw/wind/                  # Wind 原始 K线 CSV(逐股)
-├── raw/ifind/                 # iFinD 原始 K线 CSV(3票/组)
-├── wind_fetch_progress.json   # Wind 抓取断点
-└── ifind_fetch_progress.json  # iFinD 抓取断点
+稳定路径：
+
+```text
+data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite
+data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz
 ```
 
-## stocks.db 表结构
+2026-08-30 捕获的已验证状态：
+
+- 5,549 只沪深北股票；
+- 6,267,665 条日线，1,231 个交易日；
+- 2021-08-02 至 2026-08-28；
+- 原始未复权 OHLC、成交量、成交额；
+- 5,549 条当前证券名称/ST、当前基本面、当前行业和主营快照；
+- SQLite `quick_check=ok`，schema v2；
+- 原始源保存在隔离 intake，SHA-256 清单完整验证。
+
+核心表：
+
+| 表 | 语义 |
+|---|---|
+| `daily_prices` | 原始未复权日线；每条 bar 的日期级 `knowledge_time=trade_date` |
+| `instruments` | 跨捕获累计的证券价格覆盖汇总 |
+| `source_captures` | 不可变捕获日、源清单哈希和报告 |
+| `universe_snapshots` | 从首次捕获日起的当前股票池快照，不能回填更早历史 |
+| `security_master_snapshots` | 捕获日证券名称和当前 ST 状态 |
+| `fundamental_snapshots` | `base.dbf` 捕获日原始快照，非历史 PIT 财报 |
+| `industry_snapshots` | 捕获日通达信行业代码和名称，非历史行业有效期 |
+| `current_business_snapshots` | 捕获日 `specgpext.txt` 原始主营字段 |
+| `opaque_source_snapshots` | 无法可靠解码的数据源审计；当前 `gbbq` 公司行为容器在此登记 |
+
+该库是当前 A 股价格/技术 Alpha 搜索的主源，但仍是
+`TECHNICAL_VALIDATION_ONLY`。它没有补齐历史复权因子、退市股票池、历史 ST、停复牌、
+涨跌停、带公告可知时间的历史财报、历史行业、融资融券、北向或逐单资金流。
+
+## 旧数据：249只微盘诊断样本
+
+```text
+data/stocks/stocks.db
+data/stocks/research.db
+data/stocks/universe.json
+data/stocks/snapshots/
+```
+
+旧库是 2026-07-23 的 Wind/iFinD 截面，249 只、317,641 条前复权日线，覆盖
+2021-01-04 至 2026-07-23。它包含当前截面筛选造成的幸存者偏差，仅用于复现旧诊断，
+不得作为全市场回测、历史股票池或新候选晋级依据。
+
+旧库主要表：
 
 | 表 | 说明 |
 |---|---|
-| `bars(key, event_time, knowledge_time, payload_json)` | PIT 日线(与平台 PIT 契约同构,`SqlitePITStore` 直读;payload = OHLCV 前复权) |
-| `universe(code, name, mcap_yi, adv_yi, source, n_bars, first_date, last_date)` | 宇宙成员 + 数据来源(wind/ifind)+ 覆盖区间 |
-| `daily_prices(code, trade_date, open, high, low, close, volume)` | 扁平价格表,免 JSON 解析的直接 SQL 分析 |
-| `valuation_snapshot(code, asof, name, close, mcap, pe_ttm, pe_lyr, pb, pb_lf, dividend_yield, raw_json)` | **估值/基本面层(2026-07-24 新增)**:当前截面 PE(TTM/LYR)、PB(/LF)、总市值(含限售)、股息率,Wind `get_stock_price_indicators` 结构化字段。**当前截面,非 PIT 历史**——只能按 asof 最新日期做截面筛选,不得当历史序列用。深度基本面(ROE/营收/利润增速)= 下一层(NL `get_stock_fundamentals`) |
-| `meta(k, v)` | 迁移/来源 provenance |
+| `bars` | 旧样本 PIT 形状的 JSON 日线 |
+| `daily_prices` | 旧样本扁平前复权价格 |
+| `universe` | 2026-07-23 当前截面成员 |
+| `valuation_snapshot` | 当前估值截面，非历史 PIT |
+| `meta` | 迁移与来源信息 |
 
-## 数据口径(诚实注记)
+## 更新流程
 
-- 宇宙 = 2026-07-23 截面:沪深 A 股总市值 20–26.5 亿、近 1 月日均成交额 >5000 万、非 ST,共 249 只;**幸存者截面,含幸存者偏差**
-- 价格为前复权(Wind/iFinD 各自口径,跨来源价格水平不可比,个股内部自洽)
-- payload 无 amt 字段;下游成交额 = volume × 典型价代理
-- 覆盖 2021-01-04 → 2026-07-23,共 317,641 根日 K;晚 IPO 股票行数更少(≥375)
+通达信接入、Windows 快照、发现、完整哈希、增量冲突规则及原子替换命令见
+[`docs/runbooks/ashare-tdx-local-intake.md`](../../docs/runbooks/ashare-tdx-local-intake.md)。
 
-## 数据流水线(全部幂等、断点续跑)
+关键规则：
 
-| 步骤 | 工具 |
-|---|---|
-| 宇宙采集(Wind 分页) | `tools/ashare_universe_collect.py` |
-| K线抓取(Wind) | `tools/ashare_kline_fetch.py --limit N` |
-| K线抓取(iFinD 兜底) | `tools/ashare_ifind_fetch.py` |
-| 派生表重建(daily_prices/universe/meta) | `tools/ashare_db_migrate.py`(SRC=DST 时原地重建) |
-| 估值/基本面快照(Wind,断点续跑) | `tools/ashare_fundamentals_fetch.py`(`--refresh` 全量重抓) |
-| ALPHA 研究 | `python -m tools.ashare_alpha_research`(读 research.db) |
-| Paper-track | `python -m tools.ashare_paper_track` |
+1. incoming 原始文件永不修改；
+2. 同一捕获重复运行幂等；
+3. 既有历史 bar 发生变化时拒绝，不静默覆盖；
+4. 新捕获的名称/ST/行业/基本面只从捕获日起可知；
+5. 数据库在同目录临时副本完成全量校验后原子切换；
+6. 新数据先进入研究/前向观察，不能自动触发实盘下单。

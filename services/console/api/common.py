@@ -13,12 +13,21 @@ from typing import Any, Dict, List, Mapping
 
 
 SNAPSHOT_STATUSES = frozenset(
-    {"REAL", "SYNTHETIC", "NO_SNAPSHOT", "STALE", "DATA_BLOCKED", "UNAVAILABLE"}
+    {
+        "REAL",
+        "SYNTHETIC",
+        "NO_SNAPSHOT",
+        "STALE",
+        "DATA_BLOCKED",
+        "CORRUPT_OR_UNREADABLE",
+        "UNAVAILABLE",
+    }
 )
 
 _SNAPSHOT_KEYS = frozenset({"snapshot_id", "data_snapshot_id", "dataset_version"})
 _UNAVAILABLE_TOKENS = frozenset({"UNAVAILABLE", "ERROR", "BACKEND_UNAVAILABLE"})
 _BLOCKED_TOKENS = frozenset({"BLOCK", "BLOCKED", "DATA_BLOCKED", "QUALITY_BLOCKED"})
+_CORRUPT_TOKENS = frozenset({"CORRUPT", "CORRUPT_OR_UNREADABLE", "UNREADABLE"})
 
 
 def _text(value: Any) -> str:
@@ -51,7 +60,7 @@ def collect_snapshot_ids(payload: Mapping[str, Any]) -> List[str]:
 
 
 def infer_snapshot_status(payload: Mapping[str, Any], provenance: str | None = None) -> str:
-    """Return the conservative six-state snapshot status for a console body.
+    """Return the conservative snapshot status for a console body.
 
     Explicit endpoint status wins.  Otherwise, status is inferred from the
     endpoint's existing verdict/snapshot markers and provenance.  A synthetic
@@ -68,6 +77,13 @@ def infer_snapshot_status(payload: Mapping[str, Any], provenance: str | None = N
     status = _text(payload.get("status"))
     quality = payload.get("data_quality")
     quality_status = _text(quality.get("status")) if isinstance(quality, Mapping) else ""
+    if (
+        marker in _CORRUPT_TOKENS
+        or verdict in _CORRUPT_TOKENS
+        or status in _CORRUPT_TOKENS
+        or quality_status in _CORRUPT_TOKENS
+    ):
+        return "CORRUPT_OR_UNREADABLE"
     if (
         marker in _UNAVAILABLE_TOKENS
         or verdict in _UNAVAILABLE_TOKENS
@@ -104,7 +120,12 @@ def snapshot_metadata(payload: Mapping[str, Any]) -> Dict[str, Any]:
     if not isinstance(provenance, str) or not provenance.strip():
         provenance = "SYNTHETIC_DETERMINISTIC"
     status = infer_snapshot_status(payload, provenance)
-    ids = collect_snapshot_ids(payload) if status not in {"SYNTHETIC", "NO_SNAPSHOT", "UNAVAILABLE"} else []
+    ids = (
+        collect_snapshot_ids(payload)
+        if status
+        not in {"SYNTHETIC", "NO_SNAPSHOT", "CORRUPT_OR_UNREADABLE", "UNAVAILABLE"}
+        else []
+    )
     snapshot_present = payload.get("snapshot_present")
     if not isinstance(snapshot_present, bool):
         snapshot_present = bool(ids) or status == "REAL"
@@ -119,7 +140,9 @@ def snapshot_metadata(payload: Mapping[str, Any]) -> Dict[str, Any]:
             "is_synthetic": status == "SYNTHETIC",
             "is_stale": status == "STALE",
             "is_blocked": status == "DATA_BLOCKED",
-            "is_available": status not in {"UNAVAILABLE", "NO_SNAPSHOT"},
+            "is_corrupt": status == "CORRUPT_OR_UNREADABLE",
+            "is_available": status
+            not in {"UNAVAILABLE", "NO_SNAPSHOT", "CORRUPT_OR_UNREADABLE"},
         }
     )
     if "datasets_real" in payload:

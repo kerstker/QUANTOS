@@ -88,7 +88,7 @@ describe('ProvenanceRibbon workflow states', () => {
   it.each([
     ['BLOCKED', 'DATA_BLOCKED', '禁止继续操作'],
     ['STALE', 'STALE_DATA', '禁止把当前快照当作可用证据'],
-    ['UNAVAILABLE', 'UNAVAILABLE', '回退内容不可作为决策数据'],
+    ['UNAVAILABLE', 'UNAVAILABLE', '没有通过验证的快照可供展示或决策'],
     ['NO_SNAPSHOT', 'NO_SNAPSHOT', '不代表通过或可交易'],
     ['LOADING', 'LOADING', '尚未形成决策状态'],
     ['DIAGNOSTIC', 'DIAGNOSTIC_ONLY', '只读取证快照'],

@@ -30,7 +30,7 @@ from live.execution.service import (
 from live.governance.mandate import Mandate
 from live.governance.mandate_store import RiskSupervisorPolicy
 from live.governance.validation_attestation import VALIDATION_PASS, ValidationAttestation
-from live.pipeline import UNIT_SCALE
+from live.pipeline import UNIT_SCALE, _submit_live_batch_technical_diagnostic
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.mft_execution import create_testnet_execution_intent
 from quantos.contracts.portfolio import RebalancePlan, TargetPosition
@@ -78,6 +78,14 @@ VALIDATION = "2" * 64
 FORWARD = "3" * 64
 PANEL = "4" * 64
 POLICY_HASH = "5" * 64
+
+
+def _diagnostic_pipeline(**kwargs):
+    """Exercise mechanics without reopening the ordinary submission boundary."""
+    return _submit_live_batch_technical_diagnostic(
+        **kwargs,
+        diagnostic_only=True,
+    )
 
 
 class DeterministicTestnetVenue:
@@ -457,6 +465,7 @@ def test_fake_venue_full_flow_replays_exactly_and_is_economically_idempotent(tmp
             "max_confirm_polls": 1,
             "poll_sleep": lambda: None,
         },
+        pipeline_submitter=_diagnostic_pipeline,
         max_market_age_ms=1_000,
         lease_ms=5_000,
     )
@@ -822,6 +831,7 @@ def test_ack_loss_and_post_place_ledger_failure_never_duplicate_economic_effects
         venue=venue,
         authority_provider=lambda command, now_ms: authority,
         pipeline_inputs_provider=lambda command, now_ms: _pipeline_inputs(ledger),
+        pipeline_submitter=_diagnostic_pipeline,
         max_market_age_ms=1_000,
         lease_ms=5_000,
     )

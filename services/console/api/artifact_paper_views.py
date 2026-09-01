@@ -2451,7 +2451,7 @@ def _dry_run_payload() -> Dict:
 
 
 @router.get("/api/v1/console/dry-run")
-async def dry_run() -> Dict:
+def dry_run() -> Dict:
     payload = _dry_run_payload()
     scrubbed = scrub_backtest_payload(payload)
     # These children are real read-only operational observations, not
@@ -2491,7 +2491,7 @@ def _ic_panel_payload() -> Dict:
 
 
 @router.get("/api/v1/console/ic-panel")
-async def ic_panel() -> Dict:
+def ic_panel() -> Dict:
     return _ic_panel_payload()
 
 
@@ -2520,7 +2520,7 @@ def _research_findings_payload() -> Dict:
 
 
 @router.get("/api/v1/console/research-findings")
-async def research_findings() -> Dict:
+def research_findings() -> Dict:
     return scrub_backtest_payload(_research_findings_payload())
 
 
@@ -2553,7 +2553,7 @@ def _lance_1m_validation_payload() -> Dict:
 
 
 @router.get("/api/v1/console/lance-1m-validation")
-async def lance_1m_validation() -> Dict:
+def lance_1m_validation() -> Dict:
     return _lance_1m_validation_payload()
 
 
@@ -2675,7 +2675,7 @@ def _live_trading_payload(
 
 
 @router.get("/api/v1/console/live-trading")
-async def live_trading() -> Dict:
+def live_trading() -> Dict:
     return _live_trading_payload()
 
 
@@ -2704,7 +2704,7 @@ def _gonogo_payload() -> Dict:
 
 
 @router.get("/api/v1/console/gonogo")
-async def gonogo() -> Dict:
+def gonogo() -> Dict:
     return _gonogo_payload()
 
 

@@ -142,7 +142,7 @@ def _fx_research_payload() -> Dict:
 
 
 @router.get("/api/v1/console/fx-research")
-async def fx_research() -> Dict:
+def fx_research() -> Dict:
     return _fx_research_payload()
 
 
@@ -189,7 +189,7 @@ def _carry_readiness_payload() -> Dict:
 
 
 @router.get("/api/v1/console/carry-readiness")
-async def carry_readiness() -> Dict:
+def carry_readiness() -> Dict:
     return _carry_readiness_payload()
 
 
@@ -214,7 +214,7 @@ def _ic_panel_payload() -> Dict:
 
 
 @router.get("/api/v1/console/ic-panel")
-async def ic_panel() -> Dict:
+def ic_panel() -> Dict:
     return _ic_panel_payload()
 
 
@@ -242,7 +242,7 @@ def _research_findings_payload() -> Dict:
 
 
 @router.get("/api/v1/console/research-findings")
-async def research_findings() -> Dict:
+def research_findings() -> Dict:
     return _research_findings_payload()
 
 
@@ -272,7 +272,7 @@ def _lance_1m_validation_payload() -> Dict:
 
 
 @router.get("/api/v1/console/lance-1m-validation")
-async def lance_1m_validation() -> Dict:
+def lance_1m_validation() -> Dict:
     return _lance_1m_validation_payload()
 
 
@@ -325,7 +325,7 @@ def _live_trading_payload() -> Dict:
 
 
 @router.get("/api/v1/console/live-trading")
-async def live_trading() -> Dict:
+def live_trading() -> Dict:
     return _live_trading_payload()
 
 
@@ -353,5 +353,5 @@ def _gonogo_payload() -> Dict:
 
 
 @router.get("/api/v1/console/gonogo")
-async def gonogo() -> Dict:
+def gonogo() -> Dict:
     return _gonogo_payload()

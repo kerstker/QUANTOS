@@ -227,7 +227,7 @@ def _investor_snapshot_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/investor-snapshot")
-async def investor_snapshot() -> Dict[str, Any]:
+def investor_snapshot() -> Dict[str, Any]:
     return with_snapshot_metadata(_investor_snapshot_payload())
 
 

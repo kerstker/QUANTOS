@@ -228,7 +228,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/overview")
-async def overview() -> Dict:
+def overview() -> Dict:
     return scrub_backtest_payload(_overview_payload())
 
 
@@ -239,7 +239,7 @@ async def overview() -> Dict:
 
 
 @router.get("/api/v1/console/alpha-factory")
-async def alpha_factory() -> Dict:
+def alpha_factory() -> Dict:
     candidates = _alpha_candidates()
     screening = _alpha_screening_payload(candidates)
     return scrub_backtest_payload({
@@ -261,7 +261,7 @@ async def alpha_factory() -> Dict:
 
 
 @router.get("/api/v1/console/risk-dashboard")
-async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
+def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
     idx = _alpha_index(alpha_id)
     alpha = _computed_alpha(idx)
     factors = _factor_values(idx)
@@ -296,7 +296,7 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
 
 
 @router.get("/api/v1/console/validation")
-async def validation_dashboard() -> Dict:
+def validation_dashboard() -> Dict:
     reports = _validation_reports()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -311,7 +311,7 @@ async def validation_dashboard() -> Dict:
 
 
 @router.get("/api/v1/console/paper-trading")
-async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
+def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
     run = _paper_run(alpha_id)
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -325,7 +325,7 @@ async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
 
 
 @router.get("/api/v1/console/portfolio")
-async def portfolio_dashboard() -> Dict:
+def portfolio_dashboard() -> Dict:
     payload = _portfolio_simulation()
     return scrub_backtest_payload({
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -338,7 +338,7 @@ async def portfolio_dashboard() -> Dict:
 
 
 @router.get("/api/v1/console/safety-primitives")
-async def safety_primitives() -> Dict:
+def safety_primitives() -> Dict:
     payload = _safety_primitives_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
@@ -350,7 +350,7 @@ async def safety_primitives() -> Dict:
 
 
 @router.get("/api/v1/console/computation-lab")
-async def computation_lab(
+def computation_lab(
     alpha_id: str = Query("alpha-1"),
     cost_bps: float = Query(18.0, ge=0.0, le=100.0),
     stress: float = Query(1.2, ge=1.0, le=3.0),

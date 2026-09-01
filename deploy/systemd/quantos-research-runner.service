@@ -1,0 +1,63 @@
+[Unit]
+Description=QUANTOS guarded research runner (L2 dry-run only)
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/docs/runbooks/local-research-stack.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/srv/quantos/state/key/research_runner_token.txt
+ConditionFileNotEmpty=/srv/quantos/state/key/research_runner_token.txt
+
+[Service]
+Type=simple
+User=quantos
+Group=quantos
+UMask=0077
+# These flags are literal properties.  The runner has no EnvironmentFile or
+# credential mapping that could replace them at runtime.
+Environment=LIVE_TRADING_ENABLED=false
+Environment=REAL_BROKER_ENABLED=false
+Environment=ALLOW_ORDER_SUBMISSION=false
+Environment=ALLOW_AI_DIRECT_TRADING=false
+Environment=REQUIRE_HUMAN_APPROVAL=true
+Environment=QUANTOS_L2_DRY_RUN_ONLY=true
+Environment=QUANTOS_RELEASE_ROOT=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_RELEASE_COMMIT=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_BUILD_SHA=__QUANTOS_RELEASE_SHA__
+Environment=QUANTOS_STATE_ROOT=/srv/quantos/state
+Environment=QUANTOS_REQUIRE_EXISTING_RUNNER_TOKEN=true
+Environment=PYTHONPATH=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HOME=/tmp
+# Only the reviewed public-data transport names may flow from the manager.
+PassEnvironment=HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy no_proxy all_proxy
+WorkingDirectory=/srv/quantos/state
+ExecStart=/opt/quantos/venvs/__QUANTOS_RELEASE_SHA__/bin/python -P -m uvicorn --app-dir /opt/quantos/releases/__QUANTOS_RELEASE_SHA__ services.research_runner.main:app --host 127.0.0.1 --port 8420
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths=/opt/quantos/releases/__QUANTOS_RELEASE_SHA__
+ReadOnlyPaths=/srv/quantos/state/key/research_runner_token.txt
+ReadWritePaths=/srv/quantos/state/data /srv/quantos/state/.runtime
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Input template only.  The renderer adds the enablement section after binding
+# an exact release commit; this checked-in file must never be installed directly.

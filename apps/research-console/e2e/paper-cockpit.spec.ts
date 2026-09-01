@@ -317,18 +317,16 @@ test('paper cockpit visual contract', async ({ page }) => {
   await expect(page).toHaveScreenshot('paper-cockpit.png');
 });
 
-test('legacy completeness route converges to the accessible governance drawer', async ({ page }) => {
+test('system completeness route renders the governed backend evidence page', async ({ page }) => {
   await page.goto('/research/system-completeness');
-  await expect(page).toHaveURL(/\/workbench\/market\?drawer=governance$/);
-  await expect(page.getByRole('dialog', { name: '治理抽屉' })).toBeVisible();
-  await expect(page.getByText('GOVERNANCE_CONTRACT_VERIFIED')).toBeVisible();
+  await expect(page).toHaveURL(/\/research\/system-completeness$/);
+  await expect(page.getByRole('heading', { name: '系统完整性审查' })).toBeVisible();
   await expect(page.getByText('TOP_TIER_EVIDENCE_ASSESSMENT')).toBeVisible();
   await expect(page.getByText('NOT_TOP_TIER')).toBeVisible();
   await expect(page.getByText('15/22')).toBeVisible();
   await page.getByText(/受控阻断队列/).click();
   await expect(page.getByText('AI.MODEL.REGISTRY.REDTEAM', { exact: true })).toBeVisible();
-  await expect(page.getByText('EXTERNAL IDENTITY PENDING')).toBeVisible();
-  await expect(page.getByText('COMMANDS DISABLED')).toBeVisible();
+  await expect(page.getByText('GOV.IDENTITY.STRONG_AUTH', { exact: true })).toBeVisible();
 
   const geometry = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

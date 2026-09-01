@@ -127,7 +127,7 @@ describe('AlphaControlPlane', () => {
     expect(screen.queryByRole('button', { name: /approve|submit|buy|sell|批准|下单/i })).toBeNull();
   });
 
-  it('fails closed when Trial Ledger or forward authority is unavailable', () => {
+  it('keeps selection authority closed while showing separately labelled diagnostic identities', () => {
     const current = snapshot();
     const blocked = {
       ...current,
@@ -148,11 +148,11 @@ describe('AlphaControlPlane', () => {
     renderPage();
     expect(screen.getByText('ALPHA_AUTHORITY_UNAVAILABLE')).toBeTruthy();
     expect(screen.getByText(/TRIALS:FileNotFoundError/)).toBeTruthy();
-    expect(screen.getByText('DIAGNOSTIC_ONLY')).toBeTruthy();
-    expect(screen.queryByText('candidate-01')).toBeNull();
+    expect(screen.getAllByText(/DIAGNOSTIC_ONLY/).length).toBeGreaterThan(0);
+    expect(screen.getByText('candidate-01')).toBeTruthy();
   });
 
-  it('does not render retained candidates when the authority snapshot is stale', () => {
+  it('does not treat stale authority as current but keeps diagnostic identities visible', () => {
     const stale = {
       ...snapshot(),
       snapshot_status: 'STALE',
@@ -164,8 +164,8 @@ describe('AlphaControlPlane', () => {
     };
     renderPage();
     expect(screen.getByText('ALPHA_AUTHORITY_STALE')).toBeTruthy();
-    expect(screen.getByText('DIAGNOSTIC_ONLY')).toBeTruthy();
-    expect(screen.queryByText('candidate-01')).toBeNull();
+    expect(screen.getAllByText(/DIAGNOSTIC_ONLY/).length).toBeGreaterThan(0);
+    expect(screen.getByText('candidate-01')).toBeTruthy();
   });
 
   it('labels the hard V1 quarantine as expected safe isolation instead of a transport error', () => {

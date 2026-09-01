@@ -679,6 +679,7 @@ vi.mock('@/ui/useConsoleSnapshot', () => ({
     apiState: state.apiState,
     error: null,
     usingBackend: state.usingBackend,
+    mockFixturesAllowed: false,
     snapshotState: 'real',
   }),
 }));
@@ -772,7 +773,8 @@ describe('automated shadow-paper cockpit', () => {
     state.usingBackend = false;
     try {
       render(<DryRunPipeline />);
-      expect(screen.getByText('正在建立只读纸面快照')).toBeInTheDocument();
+      expect(screen.getByText('BACKEND_SNAPSHOT_LOADING')).toBeInTheDocument();
+      expect(screen.getByText('PRODUCTION_FIXTURES_DISABLED')).toBeInTheDocument();
       expect(screen.queryByText('哈希链无效')).not.toBeInTheDocument();
       expect(screen.queryByText('无真实数据提供方')).not.toBeInTheDocument();
       expect(screen.queryByText('待检查')).not.toBeInTheDocument();

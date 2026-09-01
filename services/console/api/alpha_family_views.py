@@ -114,7 +114,7 @@ def _payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/alpha-families")
-async def alpha_families() -> Dict[str, Any]:
+def alpha_families() -> Dict[str, Any]:
     return with_snapshot_metadata(_payload())
 
 

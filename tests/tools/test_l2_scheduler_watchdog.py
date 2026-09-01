@@ -740,16 +740,19 @@ def test_public_forward_data_workers_are_pinned_in_watchdog_contract():
     } == expected
     assert EXPECTED_TASKS[
         "QUANTOS_wikimedia_attention_forward_refresh"
-    ].partial_results == frozenset({2})
+    ].partial_results == frozenset({1, 2})
 
 
-def test_wikimedia_optional_transport_block_is_partial_not_breach(tmp_path):
+@pytest.mark.parametrize("result_code", [1, 2])
+def test_wikimedia_optional_transport_block_is_partial_not_breach(
+    tmp_path, result_code
+):
     attention_name = "QUANTOS_wikimedia_attention_forward_refresh"
     snapshots = _healthy_tasks(
         tmp_path, include_backup=True, include_external=True
     )
     snapshots = [
-        TaskSnapshot(**{**item.__dict__, "last_result": 2})
+        TaskSnapshot(**{**item.__dict__, "last_result": result_code})
         if item.name == attention_name
         else item
         for item in snapshots
@@ -767,7 +770,7 @@ def test_wikimedia_optional_transport_block_is_partial_not_breach(tmp_path):
     check = next(row for row in result["checks"] if row["task_name"] == attention_name)
     assert result["verdict"] == "PARTIAL"
     assert check["status"] == "PARTIAL"
-    assert check["code"] == "RESULT_2"
+    assert check["code"] == f"RESULT_{result_code}"
 
 
 def test_resident_stream_exits_are_stale_within_three_paper_cadences():
@@ -795,6 +798,18 @@ def test_liquidation_health_worker_is_pinned_to_two_hour_freshness() -> None:
     assert health.module == "cross_venue_liquidation_health"
     assert health.max_age_ms == 2 * 3_600_000
     assert health.partial_results == frozenset()
+
+
+def test_ashare_search_and_forward_watchdog_contracts_are_explicit() -> None:
+    search = EXPECTED_TASKS["QUANTOS_ashare_alpha_search"]
+    forward = EXPECTED_TASKS["QUANTOS_ashare_forward_observation"]
+
+    assert search.module == "ashare_alpha_search_worker"
+    assert search.max_age_ms == 9 * 24 * 3_600_000
+    assert search.partial_results == frozenset({2})
+    assert forward.module == "ashare_forward_observation"
+    assert forward.max_age_ms == 2 * 24 * 3_600_000
+    assert forward.partial_results == frozenset({2})
 
 
 def test_lifecycle_is_quarantined_and_formal_shadow_is_mvp_disabled():
@@ -1211,7 +1226,11 @@ def _systemd_service_unit(module: str) -> str:
         ),
     ]
     if module not in {"binance_realtime_stream", "bybit_realtime_stream"}:
-        service_lines.append("SuccessExitStatus=2")
+        service_lines.append(
+            "SuccessExitStatus=1 2"
+            if module == "wikimedia_attention_forward_refresh"
+            else "SuccessExitStatus=2"
+        )
     if module == "l2_backup":
         service_lines.extend(
             (

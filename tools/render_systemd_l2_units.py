@@ -79,6 +79,14 @@ def _safe_external_mount(value: str) -> str | None:
 # dependency offsets. Fixed calendar ticks do not drift with worker duration;
 # systemd itself suppresses a new activation while the bound service is active.
 CALENDARS: dict[str, tuple[str, str]] = {
+    "ashare_alpha_search_worker": (
+        "Fri *-*-* 18:30:00 Asia/Shanghai",
+        "2h",
+    ),
+    "ashare_forward_observation": (
+        "Mon..Fri *-*-* 18:15:00 Asia/Shanghai",
+        "30m",
+    ),
     "defillama_tvl_forward_refresh": ("*-*-* 09:30:00 Asia/Shanghai", "10m"),
     "defillama_stablecoin_forward_refresh": ("*-*-* 09:40:00 Asia/Shanghai", "5m"),
     "wikimedia_attention_forward_refresh": ("*-*-* 09:45:00 Asia/Shanghai", "5m"),
@@ -213,6 +221,8 @@ def render_units(
         )
         timeout = _timeout_for(module)
         service = service.replace("Type=oneshot", f"Type=oneshot\nTimeoutStartSec={timeout}")
+        if module == "wikimedia_attention_forward_refresh":
+            service = service.replace("SuccessExitStatus=2", "SuccessExitStatus=1 2")
         if module == "l2_backup":
             assert normalized_backup_mount is not None
             service = service.replace(
@@ -335,6 +345,32 @@ def render_special_units(
     return tuple(written)
 
 
+def render_research_runner_unit(
+    *,
+    output_root: str | Path,
+    release_commit: str,
+) -> tuple[Path, ...]:
+    """Bind the localhost-only guarded research runner without installing it."""
+
+    if _COMMIT.fullmatch(release_commit) is None:
+        raise SystemdRenderError("release commit must be 40 lowercase hex characters")
+    output = Path(output_root)
+    if output.exists():
+        raise SystemdRenderError("output directory must not already exist")
+    output.mkdir(parents=True, mode=0o700)
+    name = "quantos-research-runner.service"
+    content = (TEMPLATE_ROOT / name).read_text(encoding="utf-8")
+    if _RELEASE_TOKEN not in content:
+        raise SystemdRenderError("research runner unit is missing the release token")
+    rendered = content.replace(_RELEASE_TOKEN, release_commit)
+    if _RELEASE_TOKEN in rendered:
+        raise SystemdRenderError("research runner unit release binding is incomplete")
+    rendered = rendered.rstrip() + "\n\n[Install]\nWantedBy=multi-user.target\n"
+    path = output / name
+    _atomic_write(path, rendered)
+    return (path,)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render disabled QUANTOS L2 systemd units")
     parser.add_argument("--output", required=True)
@@ -345,8 +381,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--heartbeat-url")
     parser.add_argument("--attention-release-commit")
     parser.add_argument("--special-units", action="store_true")
+    parser.add_argument("--research-runner-unit", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.special_units and args.research_runner_unit:
+            raise SystemdRenderError("unit rendering modes are mutually exclusive")
         if args.special_units:
             if args.module or args.backup_mount or args.event_seal_mount or args.heartbeat_url:
                 raise SystemdRenderError(
@@ -356,6 +395,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_root=args.output,
                 release_commit=args.release_commit,
                 attention_release_commit=args.attention_release_commit,
+            )
+        elif args.research_runner_unit:
+            if (
+                args.module
+                or args.backup_mount
+                or args.event_seal_mount
+                or args.heartbeat_url
+                or args.attention_release_commit
+            ):
+                raise SystemdRenderError(
+                    "research-runner rendering cannot include worker options"
+                )
+            paths = render_research_runner_unit(
+                output_root=args.output,
+                release_commit=args.release_commit,
             )
         else:
             if args.attention_release_commit:

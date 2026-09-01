@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { fetchExperimentsSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ExperimentsPayload, ResearchExperiment } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
@@ -112,10 +114,12 @@ function artifactKinds(experiments: ResearchExperiment[]): Record<string, number
 }
 
 export default function Experiments() {
-  const { payload, apiState, error, usingBackend } =
-    useConsoleSnapshot<ExperimentsPayload>(s => fetchExperimentsSnapshot(s));
-
-  const registry = usingBackend ? payload! : fallbackExperiments;
+  const snapshot = useConsoleSnapshot<ExperimentsPayload>(s => fetchExperimentsSnapshot(s));
+  const { payload, apiState, error, usingBackend } = snapshot;
+  const selectedRegistry = selectConsoleDisplayPayload(snapshot, fallbackExperiments);
+  // Keep memo hooks stable while ensuring the fixture-backed tree is never
+  // mounted in a production real-API session.
+  const registry = selectedRegistry ?? fallbackExperiments;
   const experiments = registry.experiments;
   const { summary, lineage_policy } = registry;
 
@@ -192,6 +196,10 @@ export default function Experiments() {
     { key: 'repro', header: bi('复现哈希', 'Repro Hash'), mono: true, render: e => <span className="text-info">{shortHash(e.reproducibility_hash, 12)}</span> },
     { key: 'created', header: bi('创建时间', 'Created'), mono: true, sortable: true, sortAccessor: e => e.created_at, render: e => <span className="text-faint">{stamp(e.created_at)}</span> },
   ];
+
+  if (selectedRegistry === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/experiments" apiState={apiState} error={error} />;
+  }
 
   return (
     <PageShell>

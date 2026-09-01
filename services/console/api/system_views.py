@@ -7,7 +7,6 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Dict, List
 
 from fastapi import APIRouter
@@ -27,6 +26,7 @@ from quantos.contracts.events import (
 )
 from services.monitoring.domain_event_runtime import read_domain_event_bus_health
 from services.monitoring.event_projection import DomainEventProjection
+from services.console.api import ashare_views as _ashare_views
 from services.console.api.runtime_health import receipt_service as _receipt_service
 from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.console.api.realtime_inputs import (
@@ -348,14 +348,29 @@ PHASE3A_BLOCKERS = [
 ]
 
 
+def _ashare_search_runtime_service() -> Dict:
+    """Mark healthy only for runtime evidence bound to the canonical TDX SHA."""
+    service = {"service": "ashare-pit-alpha-search", "latency_ms": None, "error_rate": None}
+    try:
+        document, provenance, scope = _ashare_views._load_institutional_search()
+    except Exception as exc:  # health remains readable and fails closed
+        status, probe = "degraded", f"RUNTIME_SEARCH_AVAILABILITY_ERROR:{type(exc).__name__}"
+    else:
+        present = document is not None
+        runtime = present and (provenance, scope) == ("REAL_ASHARE_TECHNICAL_RUNTIME", "RUNTIME_STATE")
+        if runtime:
+            status, probe = "healthy", "RUNTIME_TECHNICAL_SEARCH_CANONICAL_TDX_BOUND"
+        elif provenance == "REPOSITORY_EVIDENCE":
+            status = "unknown"
+            probe = "REPOSITORY_EVIDENCE_DIAGNOSTIC_ONLY" if present else "RUNTIME_TECHNICAL_SEARCH_NOT_PUBLISHED"
+        else:
+            status, probe = "degraded", f"RUNTIME_TECHNICAL_SEARCH_UNAVAILABLE:{scope}"
+    return {**service, "status": status, "probe": probe}
+
+
 def _system_health_payload() -> Dict:
     now_ms = int(time.time() * 1_000)
-    ashare_search_evidence = (
-        Path(__file__).resolve().parents[3]
-        / "evidence"
-        / "ashare_alpha_search_tdx_20260830.json"
-    )
-    ashare_search_present = ashare_search_evidence.is_file()
+    ashare_search = _ashare_search_runtime_service()
     probe_started = time.perf_counter()
     try:
         monitoring = _real_monitoring_snapshot()
@@ -421,17 +436,7 @@ def _system_health_payload() -> Dict:
             binance_stream,
             bybit_stream,
             event_authority,
-            {
-                "service": "ashare-pit-alpha-search",
-                "status": "healthy" if ashare_search_present else "unknown",
-                "latency_ms": None,
-                "error_rate": None,
-                "probe": (
-                    "READ_ONLY_TECHNICAL_SEARCH_AVAILABLE"
-                    if ashare_search_present
-                    else "TECHNICAL_SEARCH_EVIDENCE_MISSING"
-                ),
-            },
+            ashare_search,
             {
                 "service": "legacy-alpha-v1-promotion",
                 "status": "degraded",
@@ -761,7 +766,7 @@ def _snapshot(payload: Dict) -> Dict:
 
 
 @router.get("/api/v1/console/agents")
-async def agents_dashboard() -> Dict:
+def agents_dashboard() -> Dict:
     return _snapshot(_agents_payload())
 
 
@@ -774,7 +779,7 @@ def events_dashboard() -> Dict:
 
 
 @router.get("/api/v1/console/phase-3a-readiness")
-async def phase3a_readiness() -> Dict:
+def phase3a_readiness() -> Dict:
     return _snapshot(_phase3a_readiness_payload())
 
 
@@ -784,7 +789,7 @@ def system_health() -> Dict:
 
 
 @router.get("/api/v1/console/runtime-contract")
-async def runtime_contract() -> Dict:
+def runtime_contract() -> Dict:
     """Read-only frontend/backend version and safety handshake."""
     return _snapshot(
         {

@@ -1,10 +1,11 @@
 # QUANTOS L2 MVP Operations
 
 The current MVP profile is a public-data and control-plane runtime. It authorizes
-only the 22 modules in quantos/contracts/l2_schedule_policy.py. It does not
-authorize alpha discovery, selection, lifecycle advancement, forward/paper
-evaluation, paper execution, venue access, order submission, emergency trading
-action, or a credential-bearing operations API.
+only the 24 modules in quantos/contracts/l2_schedule_policy.py, including the
+new independent A-share technical diagnostic and its read-only forward
+observer. It does not authorize the retained crypto V1 discovery/shadow chain,
+lifecycle advancement, paper execution, venue access, order submission,
+emergency trading action, or a credential-bearing operations API.
 
 All live, broker, order-submission, and direct-AI trading flags remain explicitly
 false. Human approval remains required. Retained perpetual-ledger v1 artifacts
@@ -41,13 +42,15 @@ Canonical/full validation remains a separately controlled release operation.
 
 ## Exact MVP schedule
 
-The policy is a closed set: 22 safe, 13 hard-quarantined, and 15 MVP-disabled
-modules. The sets are mutually exclusive and cover the prior 50-module
-scheduler vocabulary.
+The policy is a closed set: 24 safe, 13 hard-quarantined, and 15 MVP-disabled
+modules. The sets are mutually exclusive and cover the 52-module scheduler
+vocabulary.
 
 | Task | Cadence | Module |
 |---|---|---|
 | QUANTOS_artifact_admission_seal | Daily 02:40, only when external seal configuration passes | artifact_admission_seal |
+| QUANTOS_ashare_alpha_search | Friday 18:30 | ashare_alpha_search_worker |
+| QUANTOS_ashare_forward_observation | Weekdays 18:15 | ashare_forward_observation |
 | QUANTOS_binance_book_depth_forward_refresh | Daily 10:00 | binance_book_depth_forward_refresh |
 | QUANTOS_binance_realtime_drift_alerts | Every 5 minutes | binance_realtime_drift_alerts |
 | QUANTOS_binance_realtime_features | Every 5 minutes | binance_realtime_features |
@@ -73,6 +76,20 @@ scheduler vocabulary.
 The two realtime streams are resident public collectors. The watchdog has a
 dedicated unit. Linux rendering generates reviewed concrete units for the
 remaining safe workers; it does not install, enable, or start anything.
+
+The research runner is a separate localhost-only support unit, not a scheduler
+authority. Render it from an immutable release with
+`python -m tools.render_systemd_l2_units --research-runner-unit`. It refuses to start
+unless `/srv/quantos/state/key/research_runner_token.txt` already exists. The
+token is read-only inside the service; only `data/` and `.runtime/` are writable.
+Its admitted kinds are `data_refresh`, `ashare_technical_search`, and
+`ashare_forward_observation`. The old crypto discovery/shadow kinds remain
+unavailable because discovery consumes historical engineering-paper outcomes
+for adaptive selection and both shadow workers persist paper realizations.
+The two A-share workers share the fixed
+`data/cache/ashare_alpha_runtime.lock`; timer/runner overlap is non-blocking and
+the later invocation returns `SAFE_BLOCKED_RUNTIME_BUSY` without touching the
+search artifact, immutable freeze, panel cache, or forward ledger.
 
 ## Required isolation of old schedules
 

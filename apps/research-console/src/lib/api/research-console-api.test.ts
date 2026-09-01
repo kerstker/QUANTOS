@@ -24,6 +24,28 @@ describe('assertConsoleSnapshot', () => {
     expect(() => assertConsoleSnapshot({ source: 'SOMETHING_ELSE', read_only: true }, '/x')).toThrow();
   });
 
+  it('admits a specialised source only when the caller supplies that endpoint-specific marker', () => {
+    const hourly = { source: 'HOURLY_ALPHA_SQLITE_AUTHORITIES', read_only: true };
+    expect(() => assertConsoleSnapshot(hourly, '/api/v1/console/hourly-alpha')).toThrow();
+    expect(assertConsoleSnapshot(
+      hourly,
+      '/api/v1/console/hourly-alpha',
+      ['HOURLY_ALPHA_SQLITE_AUTHORITIES'],
+    )).toBe(hourly);
+    expect(() => assertConsoleSnapshot(
+      hourly,
+      '/api/v1/console/mft-execution',
+      ['MFT_READ_MODEL_SQLITE_AUTHORITY'],
+    )).toThrow();
+
+    const mft = { source: 'MFT_READ_MODEL_SQLITE_AUTHORITY', read_only: true };
+    expect(assertConsoleSnapshot(
+      mft,
+      '/api/v1/console/mft-execution',
+      ['MFT_READ_MODEL_SQLITE_AUTHORITY'],
+    )).toBe(mft);
+  });
+
   it('throws when read_only is not strictly true', () => {
     expect(() => assertConsoleSnapshot({ source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: 'true' }, '/x')).toThrow();
     expect(() => assertConsoleSnapshot({ source: 'BACKEND_COMPUTED_SNAPSHOT' }, '/x')).toThrow();

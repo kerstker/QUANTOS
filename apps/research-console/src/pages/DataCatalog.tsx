@@ -4,6 +4,8 @@ import { bi } from '@/lib/i18n/bilingual';
 import type {
   DataCatalogDataset, DataCatalogFeature, DataCatalogPayload, DataChannel,
 } from '@/lib/types/research';
+import { ConsoleSnapshotUnavailablePage } from '@/ui/ConsoleSnapshotUnavailablePage';
+import { selectConsoleDisplayPayload } from '@/ui/console-display-payload';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
@@ -231,12 +233,15 @@ export default function DataCatalog() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DataCatalogPayload>(
+  const snapshot = useConsoleSnapshot<DataCatalogPayload>(
     s => fetchDataCatalogSnapshot(s),
     [refreshTick],
   );
-
-  const catalog = usingBackend ? payload! : fallbackCatalog;
+  const { apiState, error, usingBackend } = snapshot;
+  const selectedCatalog = selectConsoleDisplayPayload(snapshot, fallbackCatalog);
+  // Preserve hook order during network transitions without mounting the
+  // fixture-backed tree in production.
+  const catalog = selectedCatalog ?? fallbackCatalog;
 
   const familySegments = useMemo(() => {
     const counts = catalog.features.reduce<Record<string, number>>((acc, f) => {
@@ -384,7 +389,7 @@ export default function DataCatalog() {
 
   const qPassRate = catalog.summary.quality_checks > 0
     ? catalog.summary.quality_passed / catalog.summary.quality_checks : 0;
-  const realtime = catalog.binance_realtime ?? fallbackCatalog.binance_realtime;
+  const realtime = catalog.binance_realtime;
   const streamCoverage = realtime.stream.coverage;
   const restCoverage = realtime.rest_snapshot.coverage;
   const systemicCoverage = realtime.systemic_risk.coverage;
@@ -397,6 +402,10 @@ export default function DataCatalog() {
   const rpiCoverage = realtime.rpi_depth.coverage;
   const streamEvents = Object.values(realtime.stream.event_counts)
     .reduce((total, value) => total + value, 0);
+
+  if (selectedCatalog === null) {
+    return <ConsoleSnapshotUnavailablePage endpoint="/api/v1/console/data-catalog" apiState={apiState} error={error} />;
+  }
 
   return (
     <PageShell>

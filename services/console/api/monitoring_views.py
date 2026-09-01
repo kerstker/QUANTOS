@@ -468,7 +468,7 @@ router = APIRouter()
 
 
 @router.get("/api/v1/console/monitoring-drift")
-async def monitoring_drift() -> Dict:
+def monitoring_drift() -> Dict:
     payload = _monitoring_drift_payload()
     provenance = "PARTIAL_ALPHA_DECAY_REAL" if _has_real_factors() else "SYNTHETIC_DETERMINISTIC"
     return {

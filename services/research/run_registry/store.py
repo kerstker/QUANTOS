@@ -17,6 +17,7 @@ from typing import Optional
 from .contract import (
     RUN_OWNER_LEGACY_MIRROR,
     RUN_OWNER_RUNNER_INVOCATION,
+    RUNNER_RESTART_INTERRUPTED,
     InvocationConflictError,
     ResearchRun,
     RunIdentityError,
@@ -496,3 +497,76 @@ class ResearchRunStore:
             )
             self._c.commit()
             return cursor.rowcount == 1
+
+    def reconcile_interrupted_runner_runs(
+        self,
+        *,
+        finished_ts: int,
+    ) -> tuple[tuple[str, str], ...]:
+        """Atomically terminalize invocations abandoned by a prior runner process.
+
+        The executor is process-local, so a persisted ``queued`` or ``running`` invocation cannot
+        still have a future after this service has restarted.  Replaying it implicitly would violate
+        invocation provenance; leaving it non-terminal makes the console poll forever.  Fence the
+        whole reconciliation to runner-owned identities and commit status, timestamp, error, and log
+        together in one write transaction.  Legacy mirrors belong to their indexers and are excluded.
+
+        Returns ``(run_id, previous_status)`` pairs in deterministic order for the adapter to audit.
+        """
+        if isinstance(finished_ts, bool) or not isinstance(finished_ts, int) or finished_ts < 0:
+            raise ValueError("finished_ts must be a non-negative integer")
+
+        with self._lock:
+            self._c.execute("BEGIN IMMEDIATE")
+            try:
+                rows = self._c.execute(
+                    f"SELECT {','.join(_COLS)} FROM runs WHERE owner=? "
+                    "AND status IN ('queued','running') ORDER BY created_ts,run_id",
+                    (RUN_OWNER_RUNNER_INVOCATION,),
+                ).fetchall()
+                prepared: list[tuple[ResearchRun, str, str]] = []
+                for row in rows:
+                    run = self._row(row)
+                    payload = json.loads(row[9])
+                    log = payload.get("log", [])
+                    if not isinstance(log, list) or any(
+                        not isinstance(line, str) for line in log
+                    ):
+                        raise RunIdentityError(
+                            f"runner-owned run {run.run_id} has an invalid durable log"
+                        )
+                    payload["log"] = [
+                        *log,
+                        f"[error] {RUNNER_RESTART_INTERRUPTED}",
+                    ]
+                    prepared.append((run, run.status, json.dumps(payload)))
+
+                for run, previous_status, payload_json in prepared:
+                    cursor = self._c.execute(
+                        "UPDATE runs SET status='error',finished_ts=?,error=?,payload_json=? "
+                        "WHERE run_id=? AND owner=? AND status=? AND invocation_id=? "
+                        "AND request_hash=? AND identity_hash=?",
+                        (
+                            finished_ts,
+                            RUNNER_RESTART_INTERRUPTED,
+                            payload_json,
+                            run.run_id,
+                            RUN_OWNER_RUNNER_INVOCATION,
+                            previous_status,
+                            run.invocation_id,
+                            run.request_hash,
+                            run.identity_hash,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RunIdentityError(
+                            f"runner restart reconciliation lost identity fence for {run.run_id}"
+                        )
+                self._c.commit()
+                return tuple(
+                    (run.run_id, previous_status)
+                    for run, previous_status, _payload_json in prepared
+                )
+            except Exception:
+                self._c.rollback()
+                raise

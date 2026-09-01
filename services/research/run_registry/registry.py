@@ -99,3 +99,13 @@ class RunRegistry:
 
     def append_log(self, run_id: str, line: str) -> None:
         self._s.append_log(run_id, line)
+
+    def reconcile_interrupted_runner_runs(
+        self,
+        *,
+        finished_ts: int,
+    ) -> tuple[tuple[str, str], ...]:
+        """Terminalize process-local work abandoned across a runner restart."""
+        if isinstance(finished_ts, bool) or not isinstance(finished_ts, int) or finished_ts < 0:
+            raise ValueError("finished_ts must be a non-negative integer")
+        return self._s.reconcile_interrupted_runner_runs(finished_ts=finished_ts)
