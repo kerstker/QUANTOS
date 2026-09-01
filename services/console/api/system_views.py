@@ -27,6 +27,7 @@ from quantos.contracts.events import (
 )
 from services.monitoring.domain_event_runtime import read_domain_event_bus_health
 from services.monitoring.event_projection import DomainEventProjection
+from services.console.api.runtime_health import receipt_service as _receipt_service
 from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.console.api.realtime_inputs import (
     realtime_agent_input_payload as _realtime_agent_input_payload,
@@ -112,57 +113,6 @@ def _cached_event_health(now_ms: int) -> Dict:
             path=_DOMAIN_EVENT_DB,
         )
     )
-
-
-def _runtime_json(filename: str) -> Dict | None:
-    """Read one redacted runtime receipt without creating or mutating state."""
-
-    path = Path(_STATE_ROOT) / "data" / "cache" / filename
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _receipt_service(
-    *,
-    service: str,
-    filename: str,
-    now_ms: int,
-    max_age_ms: int,
-    healthy_verdicts: frozenset[str],
-) -> Dict:
-    receipt = _runtime_json(filename)
-    if receipt is None:
-        return {
-            "service": service,
-            "status": "unknown",
-            "latency_ms": None,
-            "error_rate": None,
-            "probe": f"RUNTIME_RECEIPT_MISSING:{filename}",
-        }
-    generated_at_ms = receipt.get("generated_at_ms", receipt.get("observed_at_ms"))
-    age_ms = (
-        max(0, now_ms - generated_at_ms)
-        if isinstance(generated_at_ms, int) and not isinstance(generated_at_ms, bool)
-        else None
-    )
-    verdict = str(receipt.get("verdict", receipt.get("status", "UNKNOWN"))).upper()
-    fresh = age_ms is not None and age_ms <= max_age_ms
-    if fresh and verdict in healthy_verdicts:
-        status = "healthy"
-    elif verdict == "BREACH":
-        status = "down"
-    else:
-        status = "degraded"
-    return {
-        "service": service,
-        "status": status,
-        "latency_ms": None,
-        "error_rate": None,
-        "probe": f"RUNTIME_RECEIPT:{verdict}:age_ms={age_ms if age_ms is not None else 'UNKNOWN'}",
-    }
 
 
 @dataclass(frozen=True)
