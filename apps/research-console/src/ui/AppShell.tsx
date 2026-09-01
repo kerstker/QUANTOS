@@ -282,7 +282,7 @@ export function AppShell({ nav, children }: {
               <GlobalDrawerHost />
             </div>
 
-            <GlobalStatusBar />
+            <GlobalStatusBar runtime={runtimeHandshake} />
             <RuntimeHandshakeNotice state={runtimeHandshake} />
           </header>
 

@@ -272,7 +272,7 @@ def _alpha_lifecycle_payload() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/console/alpha-lifecycle")
-async def alpha_lifecycle() -> Dict[str, Any]:
+def alpha_lifecycle() -> Dict[str, Any]:
     return with_snapshot_metadata(_alpha_lifecycle_payload())
 
 

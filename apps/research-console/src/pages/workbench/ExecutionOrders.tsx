@@ -77,11 +77,12 @@ function trustedSnapshot(state: MftReadModelState): MftSnapshot | null {
   return snapshot;
 }
 
-function diagnosticCode(phase: MftReadModelState['phase']): string {
-  if (phase === 'STALE') return 'MFT_STALE';
-  if (phase === 'RESNAPSHOT_REQUIRED') return 'MFT_RESNAPSHOT_REQUIRED';
-  if (phase === 'RECONNECTING') return 'MFT_RECONNECTING';
-  if (phase === 'LOADING') return 'MFT_LOADING';
+function diagnosticCode(state: MftReadModelState): string {
+  if (state.reason === 'STORE_MISSING') return 'TESTNET_EXECUTION_NOT_PROVISIONED';
+  if (state.phase === 'STALE') return 'MFT_STALE';
+  if (state.phase === 'RESNAPSHOT_REQUIRED') return 'MFT_RESNAPSHOT_REQUIRED';
+  if (state.phase === 'RECONNECTING') return 'MFT_RECONNECTING';
+  if (state.phase === 'LOADING') return 'MFT_LOADING';
   return 'MFT_UNAVAILABLE';
 }
 
@@ -92,24 +93,30 @@ function recoveryGuidance(state: MftReadModelState): string {
   if (state.phase === 'RECONNECTING') return `${state.reason ?? state.phase} · WAIT_FOR_DELTA_CATCHUP`;
   if (state.reason === 'HTTP_429') return 'HTTP_429 · BACKOFF_THEN_RETRY_READ_ONLY';
   if (state.reason === 'TIMEOUT') return 'TIMEOUT · RETRY_READ_ONLY_WITH_BACKOFF';
+  if (state.reason === 'STORE_MISSING') {
+    return 'STORE_MISSING · PROVISION_CURRENT_TESTNET_PRODUCER · PUBLIC_RESEARCH_REMAINS_AVAILABLE';
+  }
   return `${state.reason ?? state.phase} · VERIFY_READ_MODEL_AND_RETRY`;
 }
 
 function DiagnosticOnly({ state }: { state: MftReadModelState }) {
+  const notProvisioned = state.reason === 'STORE_MISSING';
   return (
     <PageShell>
       <header>
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Execution &amp; Orders</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">执行与订单</h1>
       </header>
-      <section className="rounded-xl border border-neg/35 bg-neg/10 p-5" role="status">
-        <p className="font-mono text-sm font-semibold text-neg">{diagnosticCode(state.phase)}</p>
+      <section className={`rounded-xl border p-5 ${notProvisioned ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10'}`} role="status">
+        <p className={`font-mono text-sm font-semibold ${notProvisioned ? 'text-warn' : 'text-neg'}`}>{diagnosticCode(state)}</p>
         <p className="mt-2 break-all font-mono text-xs text-muted">{recoveryGuidance(state)}</p>
-        <span className="mt-4 inline-flex rounded border border-neg/35 px-2 py-1 font-mono text-[10px] text-neg">
-          DIAGNOSTIC_ONLY
+        <span className={`mt-4 inline-flex rounded border px-2 py-1 font-mono text-[10px] ${notProvisioned ? 'border-warn/35 text-warn' : 'border-neg/35 text-neg'}`}>
+          {notProvisioned ? 'EXPECTED_GATED_CONFIGURATION' : 'DIAGNOSTIC_ONLY'}
         </span>
         <p className="mt-3 text-xs leading-5 text-muted">
-          陈旧、断流或游标缺口时隐藏保留的订单、成交、仓位和 TCA；恢复必须从权威 full snapshot 开始。
+          {notProvisioned
+            ? '当前没有部署 MFT Testnet 生产者，因此不生成订单、成交、仓位和 TCA。控制面与公开市场研究仍可独立运行。'
+            : '陈旧、断流或游标缺口时隐藏保留的订单、成交、仓位和 TCA；恢复必须从权威 full snapshot 开始。'}
         </p>
       </section>
     </PageShell>

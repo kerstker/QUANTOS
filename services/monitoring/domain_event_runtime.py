@@ -43,11 +43,30 @@ _EVENT_AUTHORITY_TABLES = frozenset(
 )
 
 
-def _require_existing_event_authority(path: str) -> None:
+def _event_authority_read_token(
+    path: str,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None, tuple[int, int] | None]:
+    token: list[tuple[int, int] | None] = []
+    for candidate in (path, f"{path}-wal", f"{path}-shm"):
+        try:
+            stat = os.stat(candidate)
+        except OSError:
+            token.append(None)
+        else:
+            token.append((stat.st_mtime_ns, stat.st_size))
+    return token[0], token[1], token[2]
+
+
+def _require_existing_event_authority(
+    path: str,
+    *,
+    immutable_read_only: bool = False,
+) -> None:
     if path == ":memory:":
         raise EventBusIntegrityError("in-memory event authority cannot be reopened")
     try:
-        uri = f"{Path(path).resolve().as_uri()}?mode=ro"
+        query = "mode=ro&immutable=1" if immutable_read_only else "mode=ro"
+        uri = f"{Path(path).resolve().as_uri()}?{query}"
         connection = sqlite3.connect(uri, uri=True)
         try:
             rows = connection.execute(
@@ -69,15 +88,26 @@ def open_domain_event_bus(
     path: str = DOMAIN_EVENT_DB,
     *,
     create: bool = True,
+    read_only: bool = False,
+    immutable_read_only: bool = False,
 ) -> DurableEventBus:
+    if read_only and create:
+        raise ValueError("read_only event authority cannot be created")
+    if immutable_read_only and not read_only:
+        raise ValueError("immutable_read_only requires read_only")
     if not create:
-        _require_existing_event_authority(path)
+        _require_existing_event_authority(
+            path,
+            immutable_read_only=immutable_read_only,
+        )
     for attempt in range(_OPEN_CONCURRENT_APPEND_RETRY_LIMIT):
         try:
             return DurableEventBus(
                 path,
                 create=create,
                 schema_registry=CANONICAL_EVENT_SCHEMAS,
+                read_only=read_only,
+                immutable_read_only=immutable_read_only,
             )
         except EventBusIntegrityError as exc:
             if (
@@ -155,9 +185,29 @@ def read_domain_event_bus_health(
         )
     event_bus = None
     try:
-        event_bus = open_domain_event_bus(path, create=False)
-        snapshot = event_bus.operational_snapshot(group_id, now_ms=now_ms)
-        return evaluate_event_bus_health(snapshot, resolved_policy)
+        # A closed WAL database may have no ``-wal``/``-shm`` sidecars.  A
+        # normal SQLite read then tries to create shared-memory files and is
+        # rejected by the console's read-only systemd mount.  ``immutable`` is
+        # safe only while the main file and sidecar token remain unchanged.
+        # When a writer is active, retain normal read-only WAL semantics.
+        for attempt in range(_OPEN_CONCURRENT_APPEND_RETRY_LIMIT):
+            before = _event_authority_read_token(path)
+            immutable = before[1] is None
+            event_bus = open_domain_event_bus(
+                path,
+                create=False,
+                read_only=True,
+                immutable_read_only=immutable,
+            )
+            snapshot = event_bus.operational_snapshot(group_id, now_ms=now_ms)
+            event_bus.close()
+            event_bus = None
+            if before == _event_authority_read_token(path):
+                return evaluate_event_bus_health(snapshot, resolved_policy)
+            time.sleep(_OPEN_CONCURRENT_APPEND_RETRY_BASE_SECONDS * (2 ** attempt))
+        raise EventBusIntegrityError(
+            "event authority changed during read-only health snapshot"
+        )
     except EventConsumerGroupConfigurationError:
         return _unavailable_event_bus_health(
             now_ms=now_ms,

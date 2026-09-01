@@ -92,7 +92,8 @@ function DiagnosticOnly({ state, reason, publicMarket }: {
   reason?: string | null;
   publicMarket?: BinanceRealtimePayload | null;
 }) {
-  const notProvisioned = state.snapshot?.availability_mode === 'NOT_PROVISIONED';
+  const notProvisioned = state.snapshot?.availability_mode === 'NOT_PROVISIONED'
+    || state.reason === 'STORE_MISSING';
   const eventCount = publicMarket
     ? Object.values(publicMarket.stream.event_counts).reduce(
       (total: number, value: number) => total + value,
@@ -136,7 +137,7 @@ function DiagnosticOnly({ state, reason, publicMarket }: {
           <div className="flex flex-wrap items-center gap-2">
             <strong className="font-mono text-sm text-pos">REAL_PUBLIC_MARKET_MONITORING</strong>
             <span className="rounded border border-warn/35 px-2 py-0.5 text-[10px] font-semibold text-warn">
-              EXECUTION AUTHORITY UNAVAILABLE
+              {notProvisioned ? 'TESTNET EXECUTION NOT PROVISIONED' : 'EXECUTION AUTHORITY UNAVAILABLE'}
             </span>
           </div>
           <p className="mt-2 text-xs leading-5 text-muted">

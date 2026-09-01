@@ -326,7 +326,7 @@ def _ashare_alpha_payload() -> Dict:
 
 
 @router.get("/api/v1/console/ashare-alpha")
-async def ashare_alpha() -> Dict:
+def ashare_alpha() -> Dict:
     return _ashare_alpha_payload()
 
 
@@ -407,5 +407,5 @@ def _ashare_institutional_search_payload() -> Dict:
 
 
 @router.get("/api/v1/console/ashare-alpha-search")
-async def ashare_alpha_search() -> Dict:
+def ashare_alpha_search() -> Dict:
     return _ashare_institutional_search_payload()

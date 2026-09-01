@@ -7,6 +7,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List
 
 from fastapi import APIRouter
@@ -26,6 +27,7 @@ from quantos.contracts.events import (
 )
 from services.monitoring.domain_event_runtime import read_domain_event_bus_health
 from services.monitoring.event_projection import DomainEventProjection
+from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.console.api.realtime_inputs import (
     realtime_agent_input_payload as _realtime_agent_input_payload,
 )
@@ -98,6 +100,69 @@ _CONSOLE_DOMAIN_EVENT_PAYLOAD_FIELDS = {
     "version_ids",
     "verdict",
 }
+_EVENTS_CACHE = SingleFlightTtlCache[Dict](30)
+_SYSTEM_HEALTH_CACHE = SingleFlightTtlCache[Dict](5)
+_EVENT_HEALTH_CACHE = SingleFlightTtlCache[Dict](30)
+
+
+def _cached_event_health(now_ms: int) -> Dict:
+    return _EVENT_HEALTH_CACHE.get(
+        lambda: read_domain_event_bus_health(
+            now_ms=now_ms,
+            path=_DOMAIN_EVENT_DB,
+        )
+    )
+
+
+def _runtime_json(filename: str) -> Dict | None:
+    """Read one redacted runtime receipt without creating or mutating state."""
+
+    path = Path(_STATE_ROOT) / "data" / "cache" / filename
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _receipt_service(
+    *,
+    service: str,
+    filename: str,
+    now_ms: int,
+    max_age_ms: int,
+    healthy_verdicts: frozenset[str],
+) -> Dict:
+    receipt = _runtime_json(filename)
+    if receipt is None:
+        return {
+            "service": service,
+            "status": "unknown",
+            "latency_ms": None,
+            "error_rate": None,
+            "probe": f"RUNTIME_RECEIPT_MISSING:{filename}",
+        }
+    generated_at_ms = receipt.get("generated_at_ms", receipt.get("observed_at_ms"))
+    age_ms = (
+        max(0, now_ms - generated_at_ms)
+        if isinstance(generated_at_ms, int) and not isinstance(generated_at_ms, bool)
+        else None
+    )
+    verdict = str(receipt.get("verdict", receipt.get("status", "UNKNOWN"))).upper()
+    fresh = age_ms is not None and age_ms <= max_age_ms
+    if fresh and verdict in healthy_verdicts:
+        status = "healthy"
+    elif verdict == "BREACH":
+        status = "down"
+    else:
+        status = "degraded"
+    return {
+        "service": service,
+        "status": status,
+        "latency_ms": None,
+        "error_rate": None,
+        "probe": f"RUNTIME_RECEIPT:{verdict}:age_ms={age_ms if age_ms is not None else 'UNKNOWN'}",
+    }
 
 
 @dataclass(frozen=True)
@@ -334,6 +399,13 @@ PHASE3A_BLOCKERS = [
 
 
 def _system_health_payload() -> Dict:
+    now_ms = int(time.time() * 1_000)
+    ashare_search_evidence = (
+        Path(__file__).resolve().parents[3]
+        / "evidence"
+        / "ashare_alpha_search_tdx_20260830.json"
+    )
+    ashare_search_present = ashare_search_evidence.is_file()
     probe_started = time.perf_counter()
     try:
         monitoring = _real_monitoring_snapshot()
@@ -353,7 +425,36 @@ def _system_health_payload() -> Dict:
         local_status = "degraded"
     else:
         local_status = "unknown"
+    event_authority = _receipt_service(
+        service="domain-event-authority",
+        filename="domain_event_ops_status.json",
+        now_ms=now_ms,
+        max_age_ms=30 * 60_000,
+        healthy_verdicts=frozenset({"PASS"}),
+    )
+    scheduler = _receipt_service(
+        service="l2-scheduler-watchdog",
+        filename="scheduler_watchdog_status.json",
+        now_ms=now_ms,
+        max_age_ms=30 * 60_000,
+        healthy_verdicts=frozenset({"PASS"}),
+    )
+    binance_stream = _receipt_service(
+        service="binance-public-market-stream",
+        filename="binance_realtime_stream_status.json",
+        now_ms=now_ms,
+        max_age_ms=30_000,
+        healthy_verdicts=frozenset({"PASS"}),
+    )
+    bybit_stream = _receipt_service(
+        service="bybit-public-market-stream",
+        filename="bybit_realtime_stream_status.json",
+        now_ms=now_ms,
+        max_age_ms=30_000,
+        healthy_verdicts=frozenset({"PASS"}),
+    )
     return {
+        "data_provenance": "REAL_RUNTIME_HEALTH",
         "monitoring": monitoring,
         "latency_provenance": "MEASURED_LOCAL_MONITORING_CALL",
         "latency_scope": "PROCESS_LOCAL_ONLY",
@@ -366,25 +467,37 @@ def _system_health_payload() -> Dict:
                 "error_rate": None,
                 "probe": "LOCAL_MONITORING_CALL",
             },
-            *[
-                {
-                    "service": service,
-                    "status": "unknown",
-                    "latency_ms": None,
-                    "error_rate": None,
-                    "probe": "NOT_CONFIGURED",
-                }
-                for service in (
-                    "market-data-ingestor",
-                    "alpha-discovery-engine",
-                    "alpha-validation",
-                    "paper-trading",
-                    "portfolio-research",
-                    "research-risk",
-                )
-            ],
+            scheduler,
+            binance_stream,
+            bybit_stream,
+            event_authority,
+            {
+                "service": "ashare-pit-alpha-search",
+                "status": "healthy" if ashare_search_present else "unknown",
+                "latency_ms": None,
+                "error_rate": None,
+                "probe": (
+                    "READ_ONLY_TECHNICAL_SEARCH_AVAILABLE"
+                    if ashare_search_present
+                    else "TECHNICAL_SEARCH_EVIDENCE_MISSING"
+                ),
+            },
+            {
+                "service": "legacy-alpha-v1-promotion",
+                "status": "degraded",
+                "latency_ms": None,
+                "error_rate": None,
+                "probe": "EXPECTED_SAFE_ISOLATION:INVALIDATED_PERP_LEDGER_V1",
+            },
+            {
+                "service": "mft-testnet-execution",
+                "status": "unknown",
+                "latency_ms": None,
+                "error_rate": None,
+                "probe": "NOT_PROVISIONED:CREDENTIAL_AND_MANDATE_GATED",
+            },
         ],
-        "gates_provenance": "STATIC_READINESS_DECLARATION_NOT_LIVENESS",
+        "gates_provenance": "RUNTIME_RECEIPTS_PLUS_STATIC_SAFETY_BOUNDARY",
         "gates": [
             {"g": "Phase 1G.1 Research Pipeline", "s": "PASSED"},
             {"g": "Phase 1H.1 Paper Trading", "s": "PASSED"},
@@ -587,10 +700,7 @@ def _domain_event_projection_payload() -> Dict | None:
 
 def _events_payload() -> Dict:
     """Read-only event stream with projection, run-registry, then labeled fallback."""
-    event_bus_health = read_domain_event_bus_health(
-        now_ms=int(time.time() * 1_000),
-        path=_DOMAIN_EVENT_DB,
-    )
+    event_bus_health = _cached_event_health(int(time.time() * 1_000))
     projected = _domain_event_projection_payload()
     if projected is not None:
         return {**projected, "event_bus_health": event_bus_health}
@@ -706,8 +816,11 @@ async def agents_dashboard() -> Dict:
 
 
 @router.get("/api/v1/console/events")
-async def events_dashboard() -> Dict:
-    return _snapshot(_events_payload())
+def events_dashboard() -> Dict:
+    # Full append-only chain verification can be expensive on a long-running
+    # authority.  FastAPI runs this synchronous handler in its worker pool so
+    # one audit read cannot stall /health or every other console route.
+    return _snapshot(_EVENTS_CACHE.get(_events_payload))
 
 
 @router.get("/api/v1/console/phase-3a-readiness")
@@ -716,8 +829,8 @@ async def phase3a_readiness() -> Dict:
 
 
 @router.get("/api/v1/console/system-health")
-async def system_health() -> Dict:
-    return _snapshot(_system_health_payload())
+def system_health() -> Dict:
+    return _snapshot(_SYSTEM_HEALTH_CACHE.get(_system_health_payload))
 
 
 @router.get("/api/v1/console/runtime-contract")

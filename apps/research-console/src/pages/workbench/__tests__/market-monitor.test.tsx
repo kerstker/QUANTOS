@@ -121,12 +121,12 @@ describe('MarketMonitor', () => {
       pages: 0, reloaded: false, transport: 'NONE',
     };
     render(<MarketMonitor />);
-    expect(screen.getByText('MFT_UNAVAILABLE')).toBeTruthy();
+    expect(screen.getByText('MFT_VIEW_NOT_PROVISIONED')).toBeTruthy();
     expect(screen.getByText(/STORE_MISSING/)).toBeTruthy();
-    expect(screen.getByText('DIAGNOSTIC_ONLY')).toBeTruthy();
+    expect(screen.getByText('EXPECTED_L2_CONFIGURATION')).toBeTruthy();
     expect(screen.getByText('REAL_PUBLIC_MARKET_MONITORING')).toBeTruthy();
     expect(screen.getByText('12,510,574')).toBeTruthy();
-    expect(screen.getByText('EXECUTION AUTHORITY UNAVAILABLE')).toBeTruthy();
+    expect(screen.getByText('TESTNET EXECUTION NOT PROVISIONED')).toBeTruthy();
     expect(screen.queryByText('CONTIGUOUS')).toBeNull();
     expect(screen.queryByText('$125.50')).toBeNull();
     expect(screen.queryByText(/买入|卖出|BUY|SELL/i)).toBeNull();

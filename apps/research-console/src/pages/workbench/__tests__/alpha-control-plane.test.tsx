@@ -186,6 +186,8 @@ describe('AlphaControlPlane', () => {
       authority: { phase: 'QUARANTINED', snapshot: blocked, reason: 'INVALIDATED_PERP_LEDGER_V1' },
     };
     renderPage();
+    expect(screen.getByText('ALPHA_TECHNICAL_SEARCH_AVAILABLE')).toBeTruthy();
+    expect(screen.getByText('READ_ONLY_PIT_SEARCH')).toBeTruthy();
     expect(screen.getByText('ALPHA_V1_AUTHORITY_QUARANTINED')).toBeTruthy();
     expect(screen.getByText('EXPECTED_SAFE_ISOLATION')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'A股机构因子搜索' })).toBeTruthy();

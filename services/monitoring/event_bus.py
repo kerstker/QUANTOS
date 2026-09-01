@@ -15,6 +15,7 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from quantos.contracts.event_schemas import EventSchemaError, EventSchemaRegistry
@@ -376,12 +377,35 @@ class DurableEventBus:
         create: bool = True,
         *,
         schema_registry: Optional[EventSchemaRegistry] = None,
+        read_only: bool = False,
+        immutable_read_only: bool = False,
     ):
+        if not isinstance(read_only, bool):
+            raise TypeError("read_only must be a bool")
+        if read_only and create:
+            raise ValueError("read_only event authority cannot be created")
+        if not isinstance(immutable_read_only, bool):
+            raise TypeError("immutable_read_only must be a bool")
+        if immutable_read_only and not read_only:
+            raise ValueError("immutable_read_only requires read_only")
         if create and db_path != ":memory:":
             parent = os.path.dirname(db_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self._c = sqlite3.connect(db_path, check_same_thread=False, timeout=5.0)
+        connection_target = db_path
+        connection_uri = False
+        if read_only:
+            if db_path == ":memory:":
+                raise ValueError("in-memory event authority cannot be read-only")
+            query = "mode=ro&immutable=1" if immutable_read_only else "mode=ro"
+            connection_target = f"{Path(db_path).resolve().as_uri()}?{query}"
+            connection_uri = True
+        self._c = sqlite3.connect(
+            connection_target,
+            check_same_thread=False,
+            timeout=5.0,
+            uri=connection_uri,
+        )
         self._consumer_groups = ConsumerGroupCoordinator(self._c)
         self._lock = threading.Lock()
         self._subscribers: List[Callable[[Event], None]] = []
@@ -395,17 +419,20 @@ class DurableEventBus:
         self._schema_registry = schema_registry
         with self._lock:
             self._c.execute("PRAGMA busy_timeout=5000")
-            try:
-                self._c.execute("PRAGMA journal_mode=WAL")
-            except sqlite3.OperationalError as exc:
-                if "locked" not in str(exc).lower():
-                    raise
-                # A concurrent first opener can hold the lock while switching the
-                # file to WAL. Wait on a write reservation, then re-check once.
-                self._c.execute("BEGIN IMMEDIATE")
-                self._c.rollback()
-                self._c.execute("PRAGMA journal_mode=WAL")
-            self._c.execute("PRAGMA synchronous=FULL")
+            if read_only:
+                self._c.execute("PRAGMA query_only=ON")
+            else:
+                try:
+                    self._c.execute("PRAGMA journal_mode=WAL")
+                except sqlite3.OperationalError as exc:
+                    if "locked" not in str(exc).lower():
+                        raise
+                    # A concurrent first opener can hold the lock while switching the
+                    # file to WAL. Wait on a write reservation, then re-check once.
+                    self._c.execute("BEGIN IMMEDIATE")
+                    self._c.rollback()
+                    self._c.execute("PRAGMA journal_mode=WAL")
+                self._c.execute("PRAGMA synchronous=FULL")
             if create:
                 self._create_or_migrate_locked()
             self._full_verify_all_locked()

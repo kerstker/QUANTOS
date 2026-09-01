@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeMftSnapshot } from '@/workbench/__tests__/mft-fixtures';
+import type { RuntimeContractPayload } from '@/lib/types/research';
 import { MemoryRouter } from '@/lib/router';
 import { GlobalDrawerHost } from '@/workbench/GlobalDrawerHost';
 import { GlobalStatusBar } from '@/workbench/GlobalStatusBar';
@@ -52,6 +53,32 @@ describe('GlobalStatusBar', () => {
     expect(bar).toHaveTextContent('UNAVAILABLE');
     expect(bar).toHaveTextContent('UNKNOWN');
     expect(bar).not.toHaveTextContent('BINANCE');
+  });
+
+  it('separates a verified control plane from an unprovisioned Testnet execution authority', () => {
+    sync.state = {
+      phase: 'UNAVAILABLE', snapshot: null, reason: 'STORE_MISSING', pages: 0,
+      reloaded: false, transport: 'NONE',
+    };
+    const runtime = {
+      payload: {
+        safety_boundary: {
+          read_only_console: true,
+          authorized_level: 'L2_DRY_RUN_ONLY',
+          live_trading_authorized: false,
+          order_submission_allowed: false,
+          broker_connectivity: false,
+        },
+      } as RuntimeContractPayload,
+      apiState: 'connected',
+      error: null,
+    };
+    render(<GlobalStatusBar runtime={runtime} />);
+    const bar = screen.getByRole('status', { name: '全局运行状态' });
+    expect(bar).toHaveTextContent('控制面 ONLINE');
+    expect(bar).toHaveTextContent('研究与数据面独立运行');
+    expect(bar).toHaveTextContent('Testnet执行 NOT_PROVISIONED');
+    expect(bar).not.toHaveTextContent('watermark UNKNOWN');
   });
 });
 

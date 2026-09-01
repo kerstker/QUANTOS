@@ -143,11 +143,19 @@ function DiagnosticOnly({ snapshot, phase, reason, ashare }: {
   ashare: AlphaEnrichment<AShareInstitutionalSearchPayload>;
 }) {
   const quarantined = phase === 'QUARANTINED';
+  const technicalSearchAvailable = quarantined
+    && ashare.status === 'AVAILABLE'
+    && ashare.payload?.snapshot_present === true
+    && ashare.payload.evidence_status === 'TECHNICAL_VALIDATION_ONLY';
   const status = phase === 'STALE'
     ? 'ALPHA_AUTHORITY_STALE'
-    : quarantined ? 'ALPHA_V1_AUTHORITY_QUARANTINED' : 'ALPHA_AUTHORITY_UNAVAILABLE';
-  const tone = quarantined ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10';
-  const textTone = quarantined ? 'text-warn' : 'text-neg';
+    : technicalSearchAvailable
+      ? 'ALPHA_TECHNICAL_SEARCH_AVAILABLE'
+      : quarantined ? 'ALPHA_V1_AUTHORITY_QUARANTINED' : 'ALPHA_AUTHORITY_UNAVAILABLE';
+  const tone = technicalSearchAvailable
+    ? 'border-pos/35 bg-pos/10'
+    : quarantined ? 'border-warn/35 bg-warn/10' : 'border-neg/35 bg-neg/10';
+  const textTone = technicalSearchAvailable ? 'text-pos' : quarantined ? 'text-warn' : 'text-neg';
   return (
     <PageShell>
       <header>
@@ -157,11 +165,19 @@ function DiagnosticOnly({ snapshot, phase, reason, ashare }: {
       <section className={`rounded-xl border p-5 ${tone}`} role="status">
         <p className={`font-mono text-sm font-semibold ${textTone}`}>{status}</p>
         <p className="mt-2 font-mono text-xs text-muted">{reason ?? phase}</p>
-        <p className={`mt-4 inline-flex rounded border px-2 py-1 font-mono text-[10px] ${quarantined ? 'border-warn/35 text-warn' : 'border-neg/35 text-neg'}`}>
-          {quarantined ? 'EXPECTED_SAFE_ISOLATION' : 'DIAGNOSTIC_ONLY'}
+        <p className={`mt-4 inline-flex rounded border px-2 py-1 font-mono text-[10px] ${technicalSearchAvailable ? 'border-pos/35 text-pos' : quarantined ? 'border-warn/35 text-warn' : 'border-neg/35 text-neg'}`}>
+          {technicalSearchAvailable ? 'READ_ONLY_PIT_SEARCH' : quarantined ? 'EXPECTED_SAFE_ISOLATION' : 'DIAGNOSTIC_ONLY'}
         </p>
+        {technicalSearchAvailable && (
+          <p className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] text-warn">
+            <span>ALPHA_V1_AUTHORITY_QUARANTINED</span>
+            <span>EXPECTED_SAFE_ISOLATION</span>
+          </p>
+        )}
         <p className="mt-3 max-w-3xl text-xs leading-5 text-muted">
-          {quarantined
+          {technicalSearchAvailable
+            ? 'A股 PIT 技术搜索链可用；候选仍处于技术验证与未触碰前向观察阶段。旧 V1 晋级账本继续安全隔离，不影响新的只读 Alpha 搜索。'
+            : quarantined
             ? '旧 V1 候选工作流按发布策略隔离；这是安全状态，不是前端故障。当前研究结果应从新的技术验证/PIT 搜索权威进入。'
             : '候选状态、验证数量与前向结果均被隐藏。旧快照不会冒充当前权威状态，也不会回退到模拟数据。'}
         </p>

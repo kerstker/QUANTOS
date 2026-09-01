@@ -218,3 +218,32 @@ def test_read_health_returns_verified_registered_group_snapshot(tmp_path):
             "worker_id": "worker-a",
         }
     ]
+
+
+def test_read_health_uses_a_strictly_read_only_event_authority(tmp_path):
+    path = tmp_path / "events.db"
+    bus = DurableEventBus(str(path), schema_registry=CANONICAL_EVENT_SCHEMAS)
+    bus.publish(_event(1, 1_000))
+    assignment = bus.heartbeat_consumer_group(
+        "domain-event-projection-v1",
+        worker_id="worker-a",
+        now_ms=1_000,
+        partition_count=1,
+        session_timeout_ms=10_000,
+    )
+    delivery = bus.claim_partition(assignment, 0, now_ms=1_001, lease_ms=100)
+    assert delivery is not None
+    bus.ack_delivery(delivery, at_ms=1_002)
+    bus.close()
+
+    path.chmod(0o444)
+    tmp_path.chmod(0o555)
+    try:
+        health = read_domain_event_bus_health(now_ms=1_100, path=str(path))
+    finally:
+        tmp_path.chmod(0o755)
+        path.chmod(0o644)
+
+    assert health["verdict"] == "PASS"
+    assert health["event_records"] == 1
+    assert health["integrity"]["event_chain_valid"] is True

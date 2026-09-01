@@ -137,6 +137,18 @@ describe('ExecutionOrders', () => {
     expect(screen.queryByText('cid-1')).toBeNull();
   });
 
+  it('labels an absent Testnet producer as gated configuration rather than a platform outage', () => {
+    sync.state = {
+      ...liveState(), phase: 'UNAVAILABLE', snapshot: null, reason: 'STORE_MISSING',
+      pages: 0, transport: 'NONE', events: [],
+    };
+    render(<ExecutionOrders />);
+    expect(screen.getByText('TESTNET_EXECUTION_NOT_PROVISIONED')).toBeTruthy();
+    expect(screen.getByText('EXPECTED_GATED_CONFIGURATION')).toBeTruthy();
+    expect(screen.getByText(/PUBLIC_RESEARCH_REMAINS_AVAILABLE/)).toBeTruthy();
+    expect(screen.queryByText('MFT_UNAVAILABLE')).toBeNull();
+  });
+
   it('does not manufacture event history from a full snapshot', () => {
     sync.state = { ...liveState(), events: [], eventHistory: 'RESET_BY_RESNAPSHOT' };
     render(<ExecutionOrders />);
