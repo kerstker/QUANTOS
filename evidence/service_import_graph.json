@@ -347,12 +347,12 @@
           "path": "services/console/api/mft_execution_views.py"
         },
         {
-          "line": 28,
+          "line": 27,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 29,
+          "line": 28,
           "module": "services.monitoring.event_projection",
           "path": "services/console/api/system_views.py"
         },
@@ -1408,7 +1408,7 @@
     {
       "references": [
         {
-          "line": 28,
+          "line": 30,
           "module": "services.execution.backtest_authority",
           "path": "services/research_runner/main.py"
         },
@@ -1424,7 +1424,7 @@
     {
       "references": [
         {
-          "line": 27,
+          "line": 29,
           "module": "services.monitoring.audit_store",
           "path": "services/research_runner/main.py"
         }
@@ -1435,17 +1435,17 @@
     {
       "references": [
         {
-          "line": 29,
+          "line": 31,
           "module": "services.research.run_registry.contract",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 30,
+          "line": 35,
           "module": "services.research.run_registry.registry",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 31,
+          "line": 36,
           "module": "services.research.run_registry.store",
           "path": "services/research_runner/main.py"
         },
@@ -1503,7 +1503,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "496712137d001741d68e153bd61f4e5ac1112633e6f09b6a89283400e68eb0eb",
+  "graph_sha256": "f2a077300fbb00cd86e905dd70f2e3f01728723353102321f2f743a758ee31c7",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1530,7 +1530,7 @@
   ],
   "policy": {
     "known_cycle_edge_count": 0,
-    "known_unresolved_dynamic_import_count": 2,
+    "known_unresolved_dynamic_import_count": 3,
     "stale_cycle_permissions": [],
     "stale_dynamic_import_permissions": [],
     "status": "EXACT_BASELINE",
@@ -1538,7 +1538,7 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "9b436b95e858f2dff1f7bd043bc94ccbafa7cbe8a27ff9a82baa5d01d9865000",
+  "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
   "source_file_count": 500,
@@ -1551,6 +1551,11 @@
     {
       "function": "importlib.import_module",
       "line": 100,
+      "path": "services/research_runner/run_kinds.py"
+    },
+    {
+      "function": "importlib.import_module",
+      "line": 342,
       "path": "services/research_runner/run_kinds.py"
     }
   ],
