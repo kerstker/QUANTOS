@@ -15,6 +15,12 @@
       "line": 100,
       "function": "importlib.import_module",
       "boundary": "The module argument is closed over from static _tool_then_json calls in RUN_KINDS."
+    },
+    {
+      "path": "services/research_runner/run_kinds.py",
+      "line": 342,
+      "function": "importlib.import_module",
+      "boundary": "The module argument is closed over from the two static _fixed_cycle A-share worker entries in RUN_KINDS; no request parameter can select an import path."
     }
   ],
   "assurance_boundary": "Every current cyclic direct edge is explicit. The gate rejects graph drift, unexpected cycle edges, and stale permissions. Policy edits require code review and must only remove debt unless a separately approved architecture decision proves otherwise.",
