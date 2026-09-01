@@ -549,6 +549,169 @@ def test_source_chain_uses_fresh_resident_full_audit_for_local_suffix(
     ).hexdigest()
 
 
+def test_source_chain_adopts_newer_resident_full_audit_before_batch_expiry(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+        batch_anchor = source.verify_chain_from()
+        source.append_snapshot(_snapshot("BBBUSDT", 2))
+        resident_anchor = source.verify_chain_from()
+    finally:
+        source.close()
+
+    now_ms = 50_000
+    status_path = tmp_path / "stream-status.json"
+    _write_stream_status(status_path, source_path, now_ms=now_ms)
+    source = BinanceRealtimeStore(str(source_path), create=False)
+    try:
+        _rows, verification = realtime._source_chain_verification(
+            source,
+            limit=2,
+            checkpoint={
+                "checkpoint_seq": batch_anchor["verified_seq"],
+                "checkpoint_row_hash": batch_anchor["verified_row_hash"],
+                "full_verified_at_ms": now_ms - 1_000,
+                "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+            },
+            stream_status_path=str(status_path),
+            now_ms=now_ms,
+        )
+    finally:
+        source.close()
+
+    assert verification["anchor_seq"] == resident_anchor["verified_seq"]
+    assert verification["verified_suffix_rows"] == 0
+    assert verification["full_verified_at_ms"] == now_ms
+    assert verification["basis"] == (
+        "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
+
+
+def test_cursor_chain_adopts_newer_resident_full_audit_before_batch_expiry(
+    tmp_path,
+) -> None:
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+    finally:
+        source.close()
+    cursor = StreamCursorStore(str(source_path), create=True)
+    try:
+        cursor.observe(
+            channel="depth20",
+            instrument_id="AAAUSDT",
+            first_update_id=1,
+            final_update_id=2,
+            previous_final_update_id=0,
+            event_time_ms=99,
+            observed_at_ms=100,
+        )
+        batch_anchor = cursor.verify_chain_from()
+        cursor.observe(
+            channel="depth20",
+            instrument_id="AAAUSDT",
+            first_update_id=3,
+            final_update_id=4,
+            previous_final_update_id=2,
+            event_time_ms=199,
+            observed_at_ms=200,
+        )
+        resident_anchor = cursor.verify_chain_from()
+    finally:
+        cursor.close()
+
+    now_ms = 50_000
+    status_path = tmp_path / "stream-status.json"
+    _write_stream_status(
+        status_path,
+        source_path,
+        now_ms=now_ms,
+        cursor_verification=resident_anchor,
+    )
+    verification = realtime._cursor_chain_verification(
+        str(source_path),
+        checkpoint={
+            "checkpoint_seq": batch_anchor["verified_seq"],
+            "checkpoint_row_hash": batch_anchor["verified_row_hash"],
+            "full_verified_at_ms": now_ms - 1_000,
+            "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+        },
+        stream_status_path=str(status_path),
+        now_ms=now_ms,
+    )
+
+    assert verification is not None
+    assert verification["anchor_seq"] == resident_anchor["verified_seq"]
+    assert verification["verified_suffix_events"] == 0
+    assert verification["full_verified_at_ms"] == now_ms
+    assert verification["basis"] == (
+        "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
+
+
+def test_valid_batch_checkpoint_does_not_require_resident_status(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA",))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        source.append_snapshot(_snapshot("AAAUSDT", 1))
+        source_anchor = source.verify_chain_from()
+        cursor = StreamCursorStore(str(source_path), create=True)
+        try:
+            cursor.observe(
+                channel="depth20",
+                instrument_id="AAAUSDT",
+                first_update_id=1,
+                final_update_id=2,
+                previous_final_update_id=0,
+                event_time_ms=99,
+                observed_at_ms=100,
+            )
+            cursor_anchor = cursor.verify_chain_from()
+        finally:
+            cursor.close()
+
+        checkpoint_time_ms = 49_000
+        _rows, source_verification = realtime._source_chain_verification(
+            source,
+            limit=1,
+            checkpoint={
+                "checkpoint_seq": source_anchor["verified_seq"],
+                "checkpoint_row_hash": source_anchor["verified_row_hash"],
+                "full_verified_at_ms": checkpoint_time_ms,
+                "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+            },
+            stream_status_path=str(tmp_path / "missing-status.json"),
+            now_ms=50_000,
+        )
+    finally:
+        source.close()
+    cursor_verification = realtime._cursor_chain_verification(
+        str(source_path),
+        checkpoint={
+            "checkpoint_seq": cursor_anchor["verified_seq"],
+            "checkpoint_row_hash": cursor_anchor["verified_row_hash"],
+            "full_verified_at_ms": checkpoint_time_ms,
+            "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+        },
+        stream_status_path=str(tmp_path / "missing-status.json"),
+        now_ms=50_000,
+    )
+
+    assert source_verification["basis"] == "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
+    assert source_verification["full_verified_at_ms"] == checkpoint_time_ms
+    assert cursor_verification is not None
+    assert cursor_verification["basis"] == "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
+    assert cursor_verification["full_verified_at_ms"] == checkpoint_time_ms
+
+
 def test_source_chain_never_falls_back_to_genesis_without_resident_proof(
     tmp_path, monkeypatch
 ) -> None:
@@ -628,6 +791,49 @@ def test_periodic_full_audit_has_a_distinct_content_addressed_batch_id(
     assert periodic["source"]["chain_verification"]["mode"] == (
         "FULL_PERIODIC_AUDIT"
     )
+
+
+def test_execute_persists_newer_resident_audit_before_batch_proof_expires(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        for index in range(300):
+            for ticker in ("AAA", "BBB"):
+                source.append_snapshot(_snapshot(f"{ticker}USDT", index))
+    finally:
+        source.close()
+
+    stream_status_path = tmp_path / "stream-status.json"
+    batch_store_path = tmp_path / "batches.db"
+    paths = {
+        "source_store_path": str(source_path),
+        "stream_status_path": str(stream_status_path),
+        "feature_store_path": str(tmp_path / "features.db"),
+        "batch_store_path": str(batch_store_path),
+        "status_path": str(tmp_path / "status.json"),
+        "source_row_limit": 600,
+    }
+    _write_stream_status(stream_status_path, source_path, now_ms=20_000)
+    first = realtime.execute(now_ms=20_000, **paths)
+    _write_stream_status(stream_status_path, source_path, now_ms=21_000)
+    renewed = realtime.execute(now_ms=21_000, **paths)
+    persisted = realtime._trusted_source_checkpoint(
+        str(batch_store_path),
+        now_ms=21_001,
+    )
+
+    assert first["batch"]["new_batch"] is True
+    assert renewed["batch"]["new_batch"] is True
+    assert renewed["batch"]["batch_id"] != first["batch"]["batch_id"]
+    assert renewed["source"]["chain_verification"]["basis"] == (
+        "STREAM_FULL_AUDIT_ATTESTATION_PLUS_LOCAL_SUFFIX"
+    )
+    assert persisted["verification_mode"] == "INCREMENTAL_FROM_TRUSTED_BATCH"
+    assert persisted["full_verified_at_ms"] == 21_000
 
 
 def test_execute_clears_stale_attestation_before_failed_run(

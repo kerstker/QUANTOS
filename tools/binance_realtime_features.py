@@ -300,78 +300,98 @@ def _source_chain_verification(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Verify source rows from a batch anchor or resident full-audit proof.
 
-    Once the 24-hour batch proof expires, the feature worker must not perform a
-    genesis scan.  The resident stream renews that proof in an isolated process
-    before expiry; this worker validates the fresh status bytes and independently
-    verifies only the suffix from the attested frontier.
+    The resident stream renews the 24-hour proof in an isolated process before
+    expiry.  This worker adopts a newer resident proof immediately so the next
+    feature batch persists it across resident restarts.  Once the batch proof
+    expires, the worker must not perform a genesis scan; it requires a fresh
+    resident attestation and independently verifies only its local suffix.
     """
     validation_now_ms = (
         int(time.time() * 1_000) if now_ms is None else int(now_ms)
     )
     checkpoint_seq = int(checkpoint["checkpoint_seq"])
     checkpoint_row_hash = str(checkpoint["checkpoint_row_hash"])
-    full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    checkpoint_full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    full_verified_at_ms = checkpoint_full_verified_at_ms
     basis = "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
     attested_frontier_seq: int | None = None
     attested_frontier_hash: str | None = None
     stream_status_sha256: str | None = None
-    if checkpoint_seq == 0:
-        try:
-            status_bytes = Path(stream_status_path).read_bytes()
-            status = json.loads(status_bytes.decode("utf-8"))
-            if not isinstance(status, dict):
-                raise ValueError("stream status must be an object")
-            store_status = status.get("store")
-            store_status = store_status if isinstance(store_status, dict) else {}
-            chain = store_status.get("chain_verification")
-            chain = chain if isinstance(chain, dict) else {}
-            safety = status.get("safety")
-            safety = safety if isinstance(safety, dict) else {}
-            generated_at_ms = status.get("generated_at_ms")
-            bootstrap_mode = chain.get("bootstrap_verification_mode")
-            full_verified_at_ms = chain.get("full_verified_at_ms")
-            attested_frontier_seq = chain.get("verified_seq")
-            attested_frontier_hash = chain.get("verified_row_hash")
-            valid_status = bool(
-                status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
-                and _attestation_time_is_fresh(
-                    generated_at_ms,
-                    now_ms=validation_now_ms,
-                    max_age_ms=MAX_STREAM_STATUS_AGE_MS,
-                )
-                and store_status.get("chain_valid") is True
-                and chain.get("valid") is True
-                and bootstrap_mode
-                in {
-                    "FULL_SUBPROCESS_BOOTSTRAP",
-                    "FULL_PERIODIC_SUBPROCESS_AUDIT",
-                }
-                and _attestation_time_is_fresh(
-                    full_verified_at_ms,
-                    now_ms=validation_now_ms,
-                    max_age_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
-                )
-                and type(attested_frontier_seq) is int
-                and attested_frontier_seq >= 0
-                and (
-                    attested_frontier_hash == ""
-                    if attested_frontier_seq == 0
-                    else _is_sha256(attested_frontier_hash)
-                )
-                and _is_sha256(chain.get("batch_authority"))
-                and safety.get("public_market_data_only") is True
-                and safety.get("credentials") is False
-                and safety.get("private_stream") is False
-                and safety.get("broker_connectivity") is False
-                and safety.get("order_submission") is False
-                and safety.get("live_trading") is False
+    try:
+        status_bytes = Path(stream_status_path).read_bytes()
+        status = json.loads(status_bytes.decode("utf-8"))
+        if not isinstance(status, dict):
+            raise ValueError("stream status must be an object")
+        store_status = status.get("store")
+        store_status = store_status if isinstance(store_status, dict) else {}
+        chain = store_status.get("chain_verification")
+        chain = chain if isinstance(chain, dict) else {}
+        safety = status.get("safety")
+        safety = safety if isinstance(safety, dict) else {}
+        generated_at_ms = status.get("generated_at_ms")
+        bootstrap_mode = chain.get("bootstrap_verification_mode")
+        resident_full_verified_at_ms = chain.get("full_verified_at_ms")
+        resident_frontier_seq = chain.get("verified_seq")
+        resident_frontier_hash = chain.get("verified_row_hash")
+        valid_status = bool(
+            status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+            and _attestation_time_is_fresh(
+                generated_at_ms,
+                now_ms=validation_now_ms,
+                max_age_ms=MAX_STREAM_STATUS_AGE_MS,
             )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            valid_status = False
-        if not valid_status:
-            raise BinanceRealtimeFeatureError(
-                "source full-audit attestation is unavailable or invalid"
+            and store_status.get("chain_valid") is True
+            and chain.get("valid") is True
+            and bootstrap_mode
+            in {
+                "FULL_SUBPROCESS_BOOTSTRAP",
+                "FULL_PERIODIC_SUBPROCESS_AUDIT",
+            }
+            and _attestation_time_is_fresh(
+                resident_full_verified_at_ms,
+                now_ms=validation_now_ms,
+                max_age_ms=FULL_CHAIN_AUDIT_INTERVAL_MS,
             )
+            and type(resident_frontier_seq) is int
+            and resident_frontier_seq >= 0
+            and (
+                resident_frontier_hash == ""
+                if resident_frontier_seq == 0
+                else _is_sha256(resident_frontier_hash)
+            )
+            and _is_sha256(chain.get("batch_authority"))
+            and safety.get("public_market_data_only") is True
+            and safety.get("credentials") is False
+            and safety.get("private_stream") is False
+            and safety.get("broker_connectivity") is False
+            and safety.get("order_submission") is False
+            and safety.get("live_trading") is False
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        valid_status = False
+        resident_full_verified_at_ms = None
+        resident_frontier_seq = None
+        resident_frontier_hash = None
+    if checkpoint_seq == 0 and not valid_status:
+        raise BinanceRealtimeFeatureError(
+            "source full-audit attestation is unavailable or invalid"
+        )
+    adopt_resident_attestation = bool(
+        valid_status
+        and (
+            checkpoint_seq == 0
+            or (
+                type(checkpoint_full_verified_at_ms) is int
+                and type(resident_full_verified_at_ms) is int
+                and resident_full_verified_at_ms
+                > checkpoint_full_verified_at_ms
+            )
+        )
+    )
+    if adopt_resident_attestation:
+        full_verified_at_ms = resident_full_verified_at_ms
+        attested_frontier_seq = resident_frontier_seq
+        attested_frontier_hash = resident_frontier_hash
         checkpoint_seq = int(attested_frontier_seq)
         checkpoint_row_hash = str(attested_frontier_hash)
         stream_status_sha256 = hashlib.sha256(status_bytes).hexdigest()
@@ -419,61 +439,77 @@ def _cursor_chain_verification(
     checkpoint_seq = int(checkpoint["checkpoint_seq"])
     checkpoint_row_hash = str(checkpoint["checkpoint_row_hash"])
     basis = "TRUSTED_BATCH_CHECKPOINT_SUFFIX"
-    full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    checkpoint_full_verified_at_ms = checkpoint["full_verified_at_ms"]
+    full_verified_at_ms = checkpoint_full_verified_at_ms
     attested_frontier_seq: int | None = None
     attested_frontier_hash: str | None = None
     stream_status_sha256: str | None = None
-    if checkpoint_seq == 0:
-        try:
-            status_bytes = Path(stream_status_path).read_bytes()
-            status = json.loads(status_bytes.decode("utf-8"))
-            if not isinstance(status, dict):
-                raise ValueError("stream status must be an object")
-            cursor = status.get("cursor") if isinstance(status, dict) else None
-            chain = cursor.get("chain") if isinstance(cursor, dict) else None
-            bootstrap_mode = (
-                chain.get("bootstrap_verification_mode")
-                if isinstance(chain, dict)
-                else None
+    try:
+        status_bytes = Path(stream_status_path).read_bytes()
+        status = json.loads(status_bytes.decode("utf-8"))
+        if not isinstance(status, dict):
+            raise ValueError("stream status must be an object")
+        cursor = status.get("cursor") if isinstance(status, dict) else None
+        chain = cursor.get("chain") if isinstance(cursor, dict) else None
+        chain = chain if isinstance(chain, dict) else {}
+        bootstrap_mode = chain.get("bootstrap_verification_mode")
+        generated_at_ms = status.get("generated_at_ms")
+        resident_full_verified_at_ms = chain.get("full_verified_at_ms")
+        resident_frontier_seq = chain.get("verified_seq")
+        resident_frontier_hash = chain.get("verified_row_hash")
+        valid_status = bool(
+            status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+            and _attestation_time_is_fresh(
+                generated_at_ms,
+                now_ms=validation_now_ms,
+                max_age_ms=MAX_STREAM_STATUS_AGE_MS,
             )
-            generated_at_ms = status.get("generated_at_ms")
-            full_verified_at_ms = chain.get("full_verified_at_ms")
-            attested_frontier_seq = chain.get("verified_seq")
-            attested_frontier_hash = chain.get("verified_row_hash")
-            valid_status = bool(
-                status.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
-                and _attestation_time_is_fresh(
-                    generated_at_ms,
-                    now_ms=validation_now_ms,
-                    max_age_ms=MAX_STREAM_STATUS_AGE_MS,
-                )
-                and isinstance(chain, dict)
-                and chain.get("valid") is True
-                and bootstrap_mode
-                in {
-                    "FULL_SUBPROCESS_BOOTSTRAP",
-                    "FULL_PERIODIC_SUBPROCESS_AUDIT",
-                }
-                and _attestation_time_is_fresh(
-                    full_verified_at_ms,
-                    now_ms=validation_now_ms,
-                    max_age_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
-                )
-                and type(attested_frontier_seq) is int
-                and attested_frontier_seq >= 0
-                and (
-                    attested_frontier_hash == ""
-                    if attested_frontier_seq == 0
-                    else _is_sha256(attested_frontier_hash)
-                )
+            and isinstance(chain, dict)
+            and chain.get("valid") is True
+            and bootstrap_mode
+            in {
+                "FULL_SUBPROCESS_BOOTSTRAP",
+                "FULL_PERIODIC_SUBPROCESS_AUDIT",
+            }
+            and _attestation_time_is_fresh(
+                resident_full_verified_at_ms,
+                now_ms=validation_now_ms,
+                max_age_ms=CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS,
             )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            valid_status = False
-        if not valid_status:
-            store.close()
-            raise BinanceRealtimeFeatureError(
-                "cursor full-audit attestation is unavailable or invalid"
+            and type(resident_frontier_seq) is int
+            and resident_frontier_seq >= 0
+            and (
+                resident_frontier_hash == ""
+                if resident_frontier_seq == 0
+                else _is_sha256(resident_frontier_hash)
             )
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        valid_status = False
+        resident_full_verified_at_ms = None
+        resident_frontier_seq = None
+        resident_frontier_hash = None
+    if checkpoint_seq == 0 and not valid_status:
+        store.close()
+        raise BinanceRealtimeFeatureError(
+            "cursor full-audit attestation is unavailable or invalid"
+        )
+    adopt_resident_attestation = bool(
+        valid_status
+        and (
+            checkpoint_seq == 0
+            or (
+                type(checkpoint_full_verified_at_ms) is int
+                and type(resident_full_verified_at_ms) is int
+                and resident_full_verified_at_ms
+                > checkpoint_full_verified_at_ms
+            )
+        )
+    )
+    if adopt_resident_attestation:
+        full_verified_at_ms = resident_full_verified_at_ms
+        attested_frontier_seq = resident_frontier_seq
+        attested_frontier_hash = resident_frontier_hash
         checkpoint_seq = int(attested_frontier_seq)
         checkpoint_row_hash = str(attested_frontier_hash)
         stream_status_sha256 = hashlib.sha256(status_bytes).hexdigest()
