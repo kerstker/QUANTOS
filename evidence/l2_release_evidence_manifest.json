@@ -2,22 +2,22 @@
   "artifact_count": 18,
   "artifact_sha256": {
     "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "2a4ddf3b8e732ee775c4ab2eeb4b9a957a8a64e7107055ba6b61f24d3a1b84bc",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "c46932a50e34d761dd6ff90120e2d1ffdbea6753b5a8a704b634a956bccf997f",
-    "evidence/alpha_lifecycle_status.json": "ea16817d1c1bfdfa8ddd7fb1898d10895fdd77fc47dc576555a57bf9059adf36",
-    "evidence/autonomy_readiness.json": "b27cdded96bba3d8fdf78d50bb85971003377f0797ec9056f55edc25304ada24",
-    "evidence/chaos_recovery_status.json": "448022d0c672185468c1c20cce53a470844c604ecc08f5dd453f429497e91277",
-    "evidence/factor_garden_status.json": "90b5c0e08b8224b194dc7dffdfc860a94aeaa3a0488958a40d080a50f8be6b32",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "96ff71bb21dce0cc0649f177aa6b4e0791a09c256089fd89d2953be98056cee4",
+    "evidence/alpha_lifecycle_status.json": "0f213b6247fdefed51924d8b95e42e02985fd64be276342c9d7e9cbe525f1029",
+    "evidence/autonomy_readiness.json": "abca60de8ba42985ce7482a3bbf85dbb497d3c2591ceccc1af5fb92730684de8",
+    "evidence/chaos_recovery_status.json": "5aa7fe9e2b2f647080749f42f64714d91d9cf663a03c1aa15a1c9e8e0199ca8a",
+    "evidence/factor_garden_status.json": "4c2f1861fa614b09cb8b19f0aa3434cad96746841b6314560ac5cc87e180857a",
     "evidence/l2_backup_latest.json": "f5ab7a44d01274a497fc63ee28f9ff037cf1de69feb217d8a32b5ffdb59dc8db",
-    "evidence/mexc_integration_status.json": "142ac083b846bd2a54c59df9e7ea7733a017f9b408a5c0adb949b189cd281419",
-    "evidence/paper_shadow_status.json": "5351c75538b4824b08aee2829c58c9d99e1acb02b88997d91a44d9cf88837c54",
-    "evidence/reproducibility/container_build_arm64_latest.json": "dfd207ec530bf44f62825f5d8bc2abeb50d56604ff1897667dce2d03fd756d3f",
-    "evidence/runtime/console_arm64_smoke_latest.json": "5b76531d2cad032a990619273975c3432e3df599567cad3caf445dc84ccaf81b",
+    "evidence/mexc_integration_status.json": "33fe7e79cf38abceffb44c03d5364beb7b37eadbce788fc4080932d53ddc0597",
+    "evidence/paper_shadow_status.json": "0bf58385639d605d2d6cb219bc806c2eed8db5a74e15848f47461e84719b9b47",
+    "evidence/reproducibility/container_build_arm64_latest.json": "2df9f41841f848309eab5194f37aaff8d2d3c821535df288cbe5fa81abf49471",
+    "evidence/runtime/console_arm64_smoke_latest.json": "4212faa88c9e205f2fdf57f34e387f7ac2e95eaf66944a734fd634b11e518de0",
     "evidence/sbom.cdx.json": "f7ab52ac494221a93a10cd22b6b990cde64940a3ac5934ea6d75cc2f4b16bfbf",
-    "evidence/supply_chain_baseline.json": "7f202a7c6d0e3165360c8a15ed9dbe1d507358fe4aa0f399a6ef5db0cc23fadc",
-    "evidence/top_tier_assessment.json": "dcbcd2dad0218ee03a20ff000dc7c4ca16284903932f7db1d99041ba43461508",
-    "evidence/trial_ledger_integrity.json": "071861719dcab577a0c5378eab186efe0ead223f919196c83e030c2d49c3259a",
-    "evidence/validation_report.json": "d3401e830e19afb635ea1a48e5991cfa5513b87247c59aa74007de6f950a9933",
-    "evidence/vulnerability/container_trivy_arm64_latest.json": "e0b433866d5d2ec5d7ce4a44cf1eb1e87050a0f2c0b2fd9cff332a8d8bb01ce2",
+    "evidence/supply_chain_baseline.json": "ca715bad28c77c48b03efa3e3c858245b61b5346f3cfb659916f4cf20ce68413",
+    "evidence/top_tier_assessment.json": "4297537d54f2695faecae1cb73e23b1783fcfb0dd6be908b182865d367a2ec4e",
+    "evidence/trial_ledger_integrity.json": "710d9bef3fcf04cfbec369740cf04c72add097e4b7e224e93661317d639cac0a",
+    "evidence/validation_report.json": "53459fa411b11f7b2038ce2dd31a923768cf30f71a0d19d18640b0eab42255d5",
+    "evidence/vulnerability/container_trivy_arm64_latest.json": "ba727593f5fcbfb4607363676d9583f815865e3920536ed3265f1d7e0e7952f8",
     "evidence/vulnerability/python_audit_latest.json": "1f4f6fcb60b1aa3ffdecb6f01424da6c213dd41c1031e27cfc27eb2908f31f49"
   },
   "canonical_artifact_allowlist_version": "v4",
@@ -36,9 +36,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1788373569724,
-    "run_id": "794e760b306cf78c662a826e301b60017f65c1221cb3b91f8f757fef8950868d",
-    "source_commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d"
+    "generated_at": 1788380318759,
+    "run_id": "688b9cf1cf3a02286fbf033351d9fdc7280afb1826445fa86960a936590d541d",
+    "source_commit": "e06a93f8472949ad33f1b5cb71c26ffaedd0e7bd"
   },
-  "validation_report_sha256": "d3401e830e19afb635ea1a48e5991cfa5513b87247c59aa74007de6f950a9933"
+  "validation_report_sha256": "53459fa411b11f7b2038ce2dd31a923768cf30f71a0d19d18640b0eab42255d5"
 }
