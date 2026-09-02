@@ -142,7 +142,7 @@ def test_main_writes_snapshot_with_span_and_source(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(mexc, "fetch_rows", lambda *a, **k: rows)
     out = tmp_path / "snap.json"
-    snap = mexc.main(["--ticker", "BTC", "--no-ingest", "--out", str(out)])
+    snap = mexc.run(["--ticker", "BTC", "--no-ingest", "--out", str(out)])
     on_disk = json.loads(out.read_text(encoding="utf-8"))
     assert on_disk == snap
     assert snap["rows"] == 2 and snap["source"].startswith("MEXC public spot klines")
@@ -161,7 +161,7 @@ def test_main_defaults_to_canonical_snapshot_path(tmp_path, monkeypatch):
     monkeypatch.setattr(mexc, "fetch_rows", lambda *a, **k: rows)
     monkeypatch.setattr(mexc, "DEFAULT_SNAPSHOT", str(expected))
 
-    snap = mexc.main(["--ticker", "BTC", "--no-ingest"])
+    snap = mexc.run(["--ticker", "BTC", "--no-ingest"])
 
     assert json.loads(expected.read_text(encoding="utf-8")) == snap
 
@@ -177,6 +177,12 @@ def test_main_ingests_into_pit_and_snapshot_reports_count(tmp_path, monkeypatch)
     monkeypatch.setattr(mexc.time, "time", lambda: (_T0 + 2 * _DAY) / 1000)
     db = tmp_path / "crypto_mexc.db"
     out = tmp_path / "snap.json"
-    snap = mexc.main(["--ticker", "BTC", "--db", str(db), "--out", str(out)])
+    snap = mexc.run(["--ticker", "BTC", "--db", str(db), "--out", str(out)])
     assert snap["bars_ingested"] == 2 and snap["dataset_id"] == "mexc-BTC"
     assert db.exists()
+
+
+def test_main_returns_success_exit_code(tmp_path, monkeypatch):
+    monkeypatch.setattr(mexc, "fetch_rows", lambda *a, **k: [])
+
+    assert mexc.main(["--no-ingest", "--out", str(tmp_path / "snap.json")]) == 0

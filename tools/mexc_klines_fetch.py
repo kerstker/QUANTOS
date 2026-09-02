@@ -188,7 +188,7 @@ def build_snapshot(rows, *, ticker: str, interval: str, fetched_at_ms: int,
     }
 
 
-def main(argv=None) -> dict:
+def run(argv=None) -> dict:
     ap = argparse.ArgumentParser(description="MEXC 公开 klines 抓取(无 key,只读)→ PIT 库 + 快照")
     ap.add_argument("--ticker", default="BTC")
     ap.add_argument("--interval", default="1d", choices=sorted(INTERVALS_MS))
@@ -235,5 +235,11 @@ def main(argv=None) -> dict:
     return snap
 
 
+def main(argv=None) -> int:
+    """Run the MEXC refresh CLI and return an unambiguous process exit code."""
+    run(argv)
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
