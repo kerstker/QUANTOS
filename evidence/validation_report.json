@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "9eb0618424d2e20e32fd98c6c8ea8b92e1942837b74d4abf3c707aec8ec54185",
-  "commit": "9b075a9a2dab2d5be6c7ac7bd0f266c7a8e7228a",
-  "derived_refresh_manifest_sha256": "a262b2225c656d507c9b0d9706a1a2727085ec0a658870e30015e4e82358add1",
-  "duration_ms": 2029552,
-  "generated_at_ms": 1788346210576,
+  "checks_manifest_sha256": "7484825809e5e6e9e4a56319b18e5ee157c212de442d319013648bb6c6e558a1",
+  "commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d",
+  "derived_refresh_manifest_sha256": "395c81d284026bc6ebd3d95412e16750793a411c5e39e07a2278b230ddf1c844",
+  "duration_ms": 1944210,
+  "generated_at_ms": 1788373569724,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "b4d38fb907c4e61f95d5fb9d039515232a58ca5be47a1a64246d71bda033cde5",
+  "phase13_manifest_sha256": "0df2edd9c46233f912d553062ee8bbb8c01e64f782c0b489bcddaf9091a69e98",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -14,12 +14,12 @@
   "results": [
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_python_audit_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 519,
+      "duration_ms": 115,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -27,12 +27,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_npm_audit_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 115,
+      "duration_ms": 114,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -40,12 +40,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_actions_audit_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 467,
+      "duration_ms": 468,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -53,12 +53,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_arm64_container_audit_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 467,
+      "duration_ms": 318,
       "returncode": 0,
       "stage": "container-trivy-arm64-evidence:current",
       "status": "PASS",
@@ -66,12 +66,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_arm64_container_reproducibility_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 467,
+      "duration_ms": 216,
       "returncode": 0,
       "stage": "container-reproducibility-arm64-evidence:current",
       "status": "PASS",
@@ -79,12 +79,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_arm64_console_smoke_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 517,
+      "duration_ms": 265,
       "returncode": 0,
       "stage": "console-smoke-arm64-evidence:current",
       "status": "PASS",
@@ -92,12 +92,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_event_schema_catalog.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1120,
+      "duration_ms": 569,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -105,12 +105,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_service_import_graph.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3587,
+      "duration_ms": 3439,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -118,11 +118,11 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/tools/provision_artifact_admission_authority.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 267,
+      "duration_ms": 265,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -130,12 +130,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/update_model_risk_history.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1171,
+      "duration_ms": 618,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -143,13 +143,13 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "-m",
         "tools.crowding_metric_research",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1470,
+      "duration_ms": 1373,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -157,13 +157,13 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "-m",
         "tools.feature_distribution_drift_research",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 13723,
+      "duration_ms": 13143,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -171,12 +171,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/check_backup_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 65,
+      "duration_ms": 64,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -184,11 +184,11 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/run_risk_recovery_gate.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 618,
+      "duration_ms": 566,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -196,11 +196,11 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 8359,
+      "duration_ms": 8559,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -208,11 +208,11 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_supply_chain_evidence.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 2677,
+      "duration_ms": 1371,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -220,12 +220,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_supply_chain_evidence.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1471,
+      "duration_ms": 1924,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -233,11 +233,11 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/assess_top_tier.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 29205,
+      "duration_ms": 34902,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -245,12 +245,12 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/assess_top_tier.py",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 28446,
+      "duration_ms": 28211,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -258,7 +258,7 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "-m",
         "pytest",
         "-q",
@@ -286,7 +286,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1579724,
+      "duration_ms": 1502972,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -294,7 +294,7 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "-m",
         "pytest",
         "-q",
@@ -303,7 +303,7 @@
         "tests/tools"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 229572,
+      "duration_ms": 209137,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -311,12 +311,12 @@
     },
     {
       "command": [
-        "/home/kerstker/.nvm/versions/node/v24.16.0/bin/npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "typecheck"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 7555,
+      "duration_ms": 9974,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -324,12 +324,12 @@
     },
     {
       "command": [
-        "/home/kerstker/.nvm/versions/node/v24.16.0/bin/npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "eslint"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 10657,
+      "duration_ms": 7400,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -337,14 +337,14 @@
     },
     {
       "command": [
-        "/home/kerstker/.nvm/versions/node/v24.16.0/bin/npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "test",
         "--",
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 65604,
+      "duration_ms": 79661,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -352,12 +352,12 @@
     },
     {
       "command": [
-        "/home/kerstker/.nvm/versions/node/v24.16.0/bin/npm",
+        "/home/kerstker/.quantos-arm64-preflight/node20/node-v20.20.2-linux-arm64/bin/npm",
         "run",
         "build"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 14938,
+      "duration_ms": 12900,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -365,13 +365,13 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_727_final_audit.py",
         "--repo-root",
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3690,
+      "duration_ms": 3181,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -379,14 +379,14 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_727_final_audit.py",
         "--repo-root",
         "/home/kerstker/QUANTOS-backtest-runtime-integration",
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3784,
+      "duration_ms": 3037,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -394,14 +394,14 @@
     },
     {
       "command": [
-        "/opt/quantos/venvs/aa5bac409d6bd7b536ff6df089a22daedfbfc1da/bin/python",
+        "/opt/quantos/venvs/4ec7641752a8f59b464c6771d936c74e8e214d0c/bin/python",
         "-m",
         "pytest",
         "-q",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/tests/governance/test_727_final_audit.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 19165,
+      "duration_ms": 19374,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -440,7 +440,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1788344181024,
+  "started_at_ms": 1788371625514,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -452,8 +452,8 @@
   "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
   "validation": {
     "current": true,
-    "generated_at": 1788346210576,
-    "run_id": "8a32c555afef7c41f870b88a671d5b580e2c4414a6b67a87fc4b36ac8c6e4f57",
-    "source_commit": "9b075a9a2dab2d5be6c7ac7bd0f266c7a8e7228a"
+    "generated_at": 1788373569724,
+    "run_id": "794e760b306cf78c662a826e301b60017f65c1221cb3b91f8f757fef8950868d",
+    "source_commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d"
   }
 }

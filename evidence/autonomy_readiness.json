@@ -5,9 +5,9 @@
   },
   "artifact": "QUANTOS_727_AUTONOMY_READINESS",
   "blockers": [],
-  "commit": "9b075a9a2dab2d5be6c7ac7bd0f266c7a8e7228a",
+  "commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788346185011,
+  "generated_at_ms": 1788373544994,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders.",
   "implementation": {
@@ -56,9 +56,9 @@
   "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
     "current": true,
-    "head_commit": "9b075a9a2dab2d5be6c7ac7bd0f266c7a8e7228a",
+    "head_commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d",
     "overall_status": "PASS",
-    "reported_commit": "9b075a9a2dab2d5be6c7ac7bd0f266c7a8e7228a",
+    "reported_commit": "8030a46fcae1aa8efac545dd13a4943c37eb200d",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
