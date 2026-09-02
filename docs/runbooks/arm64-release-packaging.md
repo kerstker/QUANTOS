@@ -94,20 +94,24 @@ failures; they are not profitability or promotion gates.
    200 from ports 8400, 3100 and runner `/health` on 8420.  Runner health must
    list the A-share technical search/forward kinds and must not list a legacy
    V1 kind as runnable.
-9. Re-enable the 19 worker timers and watchdog timer.  A newly admitted timer
-   has no prior `NextRun`/execution history, so do **not** probe watchdog yet.
-   Start `ashare_alpha_search_worker` with `--no-block`, confirm its service is
+9. Start `ashare_alpha_search_worker` with `--no-block`, confirm its service is
    active/activating, and then prove that it actually owns
    `data/cache/ashare_alpha_runtime.lock` (a non-blocking `flock` must fail).
    `ActiveState=activating` alone is racy: forward could otherwise acquire the
    lock first and fail before a freeze exists.  Only after lock ownership is
    proven, start `ashare_forward_observation`; its expected busy result is
    status 2 with systemd `Result=success`, which safely creates the first timer
-   history without reading a partial search result.
-10. Probe watchdog once.  Exit status 2 is accepted only when systemd records `Result=success`
-   (because the reviewed unit declares `SuccessExitStatus=2`); an `exit-code`,
-   timeout or signal result is a deployment failure even if the numeric status
-   happens to be 2.
+   history without reading a partial search result.  Re-enable the ordinary
+   worker timers while the search runs, but defer the A-share observation timer
+   and watchdog timer until after the final search/forward probe.
+10. Start the A-share observation timer, then run the exact watchdog probe with
+   the watchdog timer.  The installer first stops any timer-started watchdog
+   invocation and starts the service and timer together, preventing a
+   Persistent-timer race from turning the explicit service start into a no-op.
+   Exit status 2 is accepted only when systemd records `Result=success` (because
+   the reviewed unit declares `SuccessExitStatus=2`); an `exit-code`, timeout or
+   signal result is a deployment failure even if the numeric status happens to
+   be 2.
 11. Require every timer active, both streams active, all three official console
     services active, no failed `quantos-*` unit, and exact release bindings.
 12. Leave the scheduled backup and Wikimedia refresh enabled, but do not run
