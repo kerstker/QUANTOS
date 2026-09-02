@@ -20,11 +20,12 @@ from tools.live_backup import _check_passphrase_strength, decrypt_file
 
 
 # A few multi-gigabyte authorities dominate restore time, so file-only
-# parallelism leaves most DGX cores idle behind one large file. Bound both
-# dimensions to four: at most sixteen AES-GCM chunk workers run concurrently,
-# while writes and hashing remain ordered within every restored artifact.
+# parallelism leaves most DGX cores idle behind one large file. Keep four files
+# in flight and allow eight authenticated chunks per file: at most thirty-two
+# AES-GCM workers run concurrently, while writes and hashing remain ordered
+# within every restored artifact.
 MAX_PARALLEL_RESTORE_FILES = 4
-MAX_PARALLEL_DECRYPT_CHUNKS = 4
+MAX_PARALLEL_DECRYPT_CHUNKS = 8
 
 
 class RestoreDrillError(RuntimeError):

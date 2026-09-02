@@ -58,7 +58,11 @@ DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
 SOURCE_CONTRACT_VERSION = 15
-L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
+# Larger authenticated chunks reduce Python scheduling and framing overhead for
+# the multi-gigabyte public-data authorities retained by the DGX backup.  The
+# QBK2 format records this value per file, so older 8 MiB batches remain fully
+# restorable.
+L2_ENCRYPTION_CHUNK_SIZE = 32 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
 # then retains a read lock long enough for scheduled writers to exhaust their

@@ -1631,3 +1631,8 @@ def test_restore_rejects_semantically_tampered_restore_history_database(tmp_path
             now_ms=result["observed_at_ms"],
             sources=sources,
         )
+
+
+def test_l2_backup_uses_reviewed_large_authenticated_chunks():
+    assert l2_backup_module.L2_ENCRYPTION_CHUNK_SIZE == 32 * 1024 * 1024
+    assert l2_backup_module.L2_ENCRYPTION_CHUNK_SIZE <= 64 * 1024 * 1024
