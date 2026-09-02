@@ -38,13 +38,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/staging/arm64-console-evidence-e06a93f8/.arm64-console-capture-l0gpf7ov/console-a.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/staging/arm64-evidence-62863691/.arm64-console-capture-u4j13m0b/console-a.oci.tar,rewrite-timestamp=true",
         "-f",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "exit_code": 0,
-      "stderr_sha256": "45529f3cf053dfe2c09110f6ce2f92eb50284d1476cd8a126c5ef17b94c06e34",
+      "stderr_sha256": "4d157984738f992517550a32006ba4c0f97cc6d656197adc91cbccd27654dba2",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -83,13 +83,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/staging/arm64-console-evidence-e06a93f8/.arm64-console-capture-l0gpf7ov/console-b.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-migration-20260813/staging/arm64-evidence-62863691/.arm64-console-capture-u4j13m0b/console-b.oci.tar,rewrite-timestamp=true",
         "-f",
         "/home/kerstker/QUANTOS-backtest-runtime-integration/deploy/console.Dockerfile",
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "exit_code": 0,
-      "stderr_sha256": "58df8499c70949a3c5a490865e1de886f822e599261f7350d2217cb907f3eead",
+      "stderr_sha256": "c499d7cacdaf7587325de96f0610879fe9be62f4ca01c37fe69846bd3759f239",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
@@ -229,7 +229,7 @@
   ],
   "mode": "LOCAL_NATIVE_ARM64_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1788378138,
+  "observed_at": 1788386991,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
@@ -249,7 +249,7 @@
         ],
         "exit_code": 0,
         "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "stdout_sha256": "26c87f440158b8824aa5c84d82a65afd7264a71336ae62e0a3eb12d72fa640aa"
+        "stdout_sha256": "02aa3f6525b569bbe6075e6780891600198ed9b67c695b4e3b19037af92c302d"
       },
       {
         "argv": [
@@ -272,7 +272,7 @@
         "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
       }
     ],
-    "commit": "e06a93f8472949ad33f1b5cb71c26ffaedd0e7bd",
+    "commit": "62863691a5961cea71f17f2be70d0bf5f4b7987a",
     "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
   },
   "source_date_epoch": 1781569204,
