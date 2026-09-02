@@ -19,10 +19,12 @@ from typing import Any
 from tools.live_backup import _check_passphrase_strength, decrypt_file
 
 
-# AES-GCM decryption is CPU-bound and releases the GIL. Four workers made the
-# production isolated restore exceed the five-minute RTO while leaving most
-# DGX CPU cores idle. Eight stays bounded without changing verification.
-MAX_PARALLEL_RESTORE_WORKERS = 8
+# A few multi-gigabyte authorities dominate restore time, so file-only
+# parallelism leaves most DGX cores idle behind one large file. Bound both
+# dimensions to four: at most sixteen AES-GCM chunk workers run concurrently,
+# while writes and hashing remain ordered within every restored artifact.
+MAX_PARALLEL_RESTORE_FILES = 4
+MAX_PARALLEL_DECRYPT_CHUNKS = 4
 
 
 class RestoreDrillError(RuntimeError):
@@ -123,9 +125,10 @@ def run_restore_drill(
                     source_path,
                     output_path,
                     passphrase or "",
+                    parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
                 )
 
-            workers = min(MAX_PARALLEL_RESTORE_WORKERS, len(files))
+            workers = min(MAX_PARALLEL_RESTORE_FILES, len(files))
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 for restored_name, restored_sha256 in executor.map(
                     restore_encrypted,

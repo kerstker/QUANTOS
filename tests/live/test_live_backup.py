@@ -209,7 +209,12 @@ def test_encrypt_file_streams_multiple_authenticated_chunks(tmp_path):
 
     assert enc.read_bytes().startswith(b"QBK2")
     restored = tmp_path / "restored-large-ledger.db"
-    restored_sha256 = decrypt_file(str(enc), str(restored), "chunked-passphrase")
+    restored_sha256 = decrypt_file(
+        str(enc),
+        str(restored),
+        "chunked-passphrase",
+        parallelism=4,
+    )
     assert restored.read_bytes() == original_bytes
     assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
 
@@ -224,6 +229,20 @@ def test_decrypt_file_remains_backward_compatible_with_qbk1_blob(tmp_path):
 
     assert restored.read_bytes() == original_bytes
     assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
+
+
+@pytest.mark.parametrize("parallelism", [True, 0, 9])
+def test_decrypt_file_rejects_unbounded_parallelism(tmp_path, parallelism):
+    enc = tmp_path / "authority.db.enc"
+    enc.write_bytes(encrypt_bytes(b"authority", "bounded-parallel-passphrase"))
+
+    with pytest.raises(ValueError, match="parallelism"):
+        decrypt_file(
+            str(enc),
+            str(tmp_path / "must-not-exist.db"),
+            "bounded-parallel-passphrase",
+            parallelism=parallelism,
+        )
 
 
 @pytest.mark.parametrize("mutation", ["tamper", "truncate"])
@@ -246,7 +265,7 @@ def test_chunked_decrypt_rejects_corruption_without_publishing_partial_output(tm
     assert not restored.exists()
 
 
-def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
+def test_chunked_decrypt_rejects_reordered_authenticated_chunks_sequentially(tmp_path):
     import tools.live_backup as live_backup
 
     chunk_size = 23
@@ -268,7 +287,7 @@ def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
         decrypt_file(str(enc), str(tmp_path / "must-not-exist.db"), "reorder-test-passphrase")
 
 
-def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
+def test_chunked_decrypt_rejects_reordered_authenticated_chunks_in_parallel(tmp_path):
     import tools.live_backup as live_backup
 
     chunk_size = 23
@@ -287,7 +306,12 @@ def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
     enc.write_bytes(blob)
 
     with pytest.raises(BackupDecryptionError):
-        decrypt_file(str(enc), str(tmp_path / "must-not-exist.db"), "reorder-test-passphrase")
+        decrypt_file(
+            str(enc),
+            str(tmp_path / "must-not-exist.db"),
+            "reorder-test-passphrase",
+            parallelism=4,
+        )
 
 
 def test_policy_refuses_to_run_when_no_passphrase_and_no_explicit_optout():

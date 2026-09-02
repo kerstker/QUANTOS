@@ -36,6 +36,8 @@ PBKDF2-HMAC-SHA256(200,000 轮,标准库 `hashlib`)派生密钥,逐文件独立 
 """
 from __future__ import annotations
 
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 import glob
 import hashlib
 import json
@@ -71,6 +73,7 @@ _KEY_LEN = 32  # AES-256
 _CHUNK_NONCE_PREFIX_LEN = 8
 _DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
 _MAX_CHUNK_SIZE = 64 * 1024 * 1024
+_MAX_PARALLEL_DECRYPT_CHUNKS = 8
 _GCM_TAG_LEN = 16
 _CHUNKED_HEADER = struct.Struct(">4s16s8sIQI")
 _CHUNK_LENGTH = struct.Struct(">I")
@@ -179,6 +182,16 @@ def _validated_chunk_size(chunk_size: int) -> int:
     return chunk_size
 
 
+def _validated_decrypt_parallelism(parallelism: int) -> int:
+    if isinstance(parallelism, bool) or not isinstance(parallelism, int):
+        raise ValueError("decrypt parallelism must be an integer")
+    if parallelism < 1 or parallelism > _MAX_PARALLEL_DECRYPT_CHUNKS:
+        raise ValueError(
+            f"decrypt parallelism must be between 1 and {_MAX_PARALLEL_DECRYPT_CHUNKS}"
+        )
+    return parallelism
+
+
 def _chunk_count(plaintext_size: int, chunk_size: int) -> int:
     count = max(1, (plaintext_size + chunk_size - 1) // chunk_size)
     if count > 0xFFFFFFFF:
@@ -265,8 +278,143 @@ def encrypt_file(
         raise
 
 
-def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> str:
+def _decrypt_chunked_file_parallel(
+    src_path: str,
+    dest_path: str,
+    passphrase: str,
+    *,
+    workers: int,
+) -> str:
     aesgcm_cls = _require_aesgcm()
+    partial_path = _partial_path(dest_path)
+    try:
+        with open(src_path, "rb") as source:
+            header = _read_exact(source, _CHUNKED_HEADER.size, label="header")
+            magic, salt, nonce_prefix, chunk_size, plaintext_size, count = (
+                _CHUNKED_HEADER.unpack(header)
+            )
+            if magic != _CHUNKED_MAGIC:
+                raise BackupDecryptionError("not a recognized QBK2 encrypted backup")
+            try:
+                _validated_chunk_size(chunk_size)
+                expected_count = _chunk_count(plaintext_size, chunk_size)
+            except (BackupEncryptionError, ValueError) as exc:
+                raise BackupDecryptionError(
+                    "QBK2 encrypted backup has invalid size metadata"
+                ) from exc
+            if count != expected_count:
+                raise BackupDecryptionError(
+                    "QBK2 encrypted backup has inconsistent size metadata"
+                )
+            key = _derive_key(passphrase, salt)
+            from cryptography.exceptions import InvalidTag
+
+            def decrypt_chunk(
+                index: int,
+                recorded_length: int,
+                ciphertext: bytes,
+            ) -> bytes:
+                nonce = nonce_prefix + index.to_bytes(4, "big")
+                aad = header + _CHUNK_AAD.pack(index, recorded_length)
+                try:
+                    return aesgcm_cls(key).decrypt(nonce, ciphertext, aad)
+                except InvalidTag as exc:
+                    raise BackupDecryptionError(
+                        "failed to decrypt QBK2 backup data — wrong passphrase, "
+                        "or the data is corrupted/tampered"
+                    ) from exc
+
+            restored_size = 0
+            plaintext_digest = hashlib.sha256()
+            with open(partial_path, "xb") as output:
+                pending = deque()
+
+                def write_next_chunk() -> None:
+                    nonlocal restored_size
+                    recorded_length, future = pending.popleft()
+                    chunk = future.result()
+                    if len(chunk) != recorded_length:
+                        raise BackupDecryptionError(
+                            "QBK2 decrypted chunk has an inconsistent length"
+                        )
+                    output.write(chunk)
+                    plaintext_digest.update(chunk)
+                    restored_size += len(chunk)
+
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    for index in range(count):
+                        recorded_length = _CHUNK_LENGTH.unpack(
+                            _read_exact(
+                                source,
+                                _CHUNK_LENGTH.size,
+                                label=f"chunk {index} length",
+                            )
+                        )[0]
+                        offset = index * chunk_size
+                        expected = (
+                            0
+                            if plaintext_size == 0
+                            else min(chunk_size, plaintext_size - offset)
+                        )
+                        if recorded_length != expected:
+                            raise BackupDecryptionError(
+                                "QBK2 encrypted backup has inconsistent chunk lengths"
+                            )
+                        ciphertext = _read_exact(
+                            source,
+                            recorded_length + _GCM_TAG_LEN,
+                            label=f"chunk {index} ciphertext",
+                        )
+                        pending.append(
+                            (
+                                recorded_length,
+                                executor.submit(
+                                    decrypt_chunk,
+                                    index,
+                                    recorded_length,
+                                    ciphertext,
+                                ),
+                            )
+                        )
+                        if len(pending) >= workers:
+                            write_next_chunk()
+                    if source.read(1):
+                        raise BackupDecryptionError(
+                            "QBK2 encrypted backup is truncated or has trailing data"
+                        )
+                    while pending:
+                        write_next_chunk()
+                if restored_size != plaintext_size:
+                    raise BackupDecryptionError(
+                        "QBK2 encrypted backup is truncated or has trailing data"
+                    )
+                _fsync_output(output)
+            os.replace(partial_path, dest_path)
+            return plaintext_digest.hexdigest()
+    except Exception:
+        try:
+            os.remove(partial_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _decrypt_chunked_file(
+    src_path: str,
+    dest_path: str,
+    passphrase: str,
+    *,
+    parallelism: int,
+) -> str:
+    aesgcm_cls = _require_aesgcm()
+    workers = _validated_decrypt_parallelism(parallelism)
+    if workers > 1:
+        return _decrypt_chunked_file_parallel(
+            src_path,
+            dest_path,
+            passphrase,
+            workers=workers,
+        )
     partial_path = _partial_path(dest_path)
     try:
         with open(src_path, "rb") as source:
@@ -330,7 +478,13 @@ def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> str
         raise
 
 
-def decrypt_file(src_path: str, dest_path: str, passphrase: str) -> str:
+def decrypt_file(
+    src_path: str,
+    dest_path: str,
+    passphrase: str,
+    *,
+    parallelism: int = 1,
+) -> str:
     """Restore a QBK stream and return the authenticated plaintext SHA-256.
 
     Computing the digest while authenticated plaintext is already streaming to
@@ -338,10 +492,16 @@ def decrypt_file(src_path: str, dest_path: str, passphrase: str) -> str:
     compatibility remains intact for the small legacy byte-blob format.
     """
 
+    workers = _validated_decrypt_parallelism(parallelism)
     with open(src_path, "rb") as source:
         magic = source.read(len(_MAGIC))
     if magic == _CHUNKED_MAGIC:
-        return _decrypt_chunked_file(src_path, dest_path, passphrase)
+        return _decrypt_chunked_file(
+            src_path,
+            dest_path,
+            passphrase,
+            parallelism=workers,
+        )
     if magic != _MAGIC:
         raise BackupDecryptionError("not a recognized QUANTOS encrypted backup file")
 
