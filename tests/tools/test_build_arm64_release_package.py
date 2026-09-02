@@ -986,6 +986,11 @@ def test_deploy_search_forward_watchdog_order_and_lock_race_are_pinned(
     ]
     start_body = content[
         content.index("start_unit_and_wait() {") : content.index(
+            "start_watchdog_and_wait() {"
+        )
+    ]
+    watchdog_body = content[
+        content.index("start_watchdog_and_wait() {") : content.index(
             "start_search_and_wait_for_lock() {"
         )
     ]
@@ -1013,6 +1018,14 @@ def test_deploy_search_forward_watchdog_order_and_lock_race_are_pinned(
     assert start_body.index("wait_for_new_unit_invocation") < start_body.index(
         "wait_for_unit_completion"
     )
+    assert 'systemctl stop "$timer" "$unit"' in watchdog_body
+    assert watchdog_body.index('systemctl stop "$timer" "$unit"') < watchdog_body.index(
+        'systemctl start --no-block "$unit" "$timer"'
+    )
+    assert watchdog_body.index('systemctl start --no-block "$unit" "$timer"') < watchdog_body.index(
+        'wait_for_new_unit_invocation "$unit" "$previous_invocation" 120'
+    )
+    assert 'systemctl is-active --quiet "$timer"' in watchdog_body
     assert search_body.index("previous_invocation=$(systemctl show") < search_body.index(
         'systemctl start --no-block "$unit"'
     )
@@ -1044,11 +1057,11 @@ def test_deploy_search_forward_watchdog_order_and_lock_race_are_pinned(
         search_wait,
     )
     deferred_timers = content.index(
-        "\nstage_start deferred_observation_timers_activate",
+        "\nstage_start deferred_observation_timer_activate",
         final_forward,
     )
     final_watchdog = content.index(
-        "\nstart_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe",
+        "\nstart_watchdog_and_wait",
         deferred_timers,
     )
     final_pass = content.index("printf 'DGX_ARM64_RELEASE_DEPLOY_PASS", final_watchdog)

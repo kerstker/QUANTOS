@@ -434,6 +434,26 @@ start_unit_and_wait() {
     "$allowed_statuses" "$expected_invocation" 1
 }
 
+start_watchdog_and_wait() {
+  local unit=quantos-l2-watchdog.service
+  local timer=quantos-l2-watchdog.timer
+  local previous_invocation expected_invocation
+  stage_start watchdog_post_search_probe
+  # A Persistent watchdog timer may start the service as soon as it is
+  # activated.  Own the service slot for this exact deployment probe so an
+  # already-running timer invocation cannot turn the explicit start into a
+  # no-op and leave us waiting forever for a new InvocationID.
+  systemctl stop "$timer" "$unit" >/dev/null 2>&1 || true
+  previous_invocation=$(systemctl show "$unit" -p InvocationID --value 2>/dev/null || true)
+  systemctl reset-failed "$unit" >/dev/null 2>&1 || true
+  systemctl start --no-block "$unit" "$timer"
+  wait_for_new_unit_invocation "$unit" "$previous_invocation" 120
+  expected_invocation=$NEW_INVOCATION_ID
+  systemctl is-active --quiet "$timer" || die "watchdog timer is not active"
+  wait_for_unit_completion "$unit" watchdog_post_search_probe 300 \
+    '0 2' "$expected_invocation" 1
+}
+
 start_search_and_wait_for_lock() {
   local unit=quantos-l2@ashare_alpha_search_worker.service
   local deadline active result main_pid previous_invocation invocation
@@ -1392,20 +1412,16 @@ print(f"ASHARE_FORWARD_ARTIFACT_PASS status={report['status']} source={database_
 PY
 stage_pass forward_freeze_ledger_report_and_canonical_source_bound
 
-stage_start deferred_observation_timers_activate
-systemctl start quantos-l2@ashare_forward_observation.timer \
-  quantos-l2-watchdog.timer >/dev/null
+stage_start deferred_observation_timer_activate
+systemctl start quantos-l2@ashare_forward_observation.timer >/dev/null
 systemctl is-active --quiet quantos-l2@ashare_forward_observation.timer \
   || die 'A-share forward-observation timer is not active'
-systemctl is-active --quiet quantos-l2-watchdog.timer \
-  || die 'watchdog timer is not active'
-stage_pass forward_and_watchdog_timers_active_after_exact_probes
+stage_pass forward_timer_active_after_exact_probe
 
 # The watchdog evaluates enabled state as part of its fail-closed contract.
-# Run the exact post-search probe only after both deferred timers are active;
-# probing first deterministically reports ashare_forward_observation as
-# NOT_ENABLED on every otherwise healthy deployment.
-start_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe 300 '0 2'
+# Its helper starts the watchdog timer and exact service probe in one owned
+# transaction, after the A-share observation timer is known active.
+start_watchdog_and_wait
 
 stage_start old_user_transient_stop
 old_uid=$(id -u kerstker)
