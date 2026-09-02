@@ -1459,6 +1459,50 @@ def test_systemd_collector_treats_executing_oneshot_as_running() -> None:
     assert snapshot.scheduler_contract_ok is True
 
 
+def test_systemd_collector_accepts_null_next_for_executing_oneshot() -> None:
+    module = "domain_event_ops"
+    base_runner = _systemd_runner(
+        module,
+        service_metadata=_systemd_properties(
+            f"quantos-l2@{module}.service",
+            active="inactive",
+            unit_file_state="static",
+        ).replace(
+            "ActiveState=inactive\nSubState=dead",
+            "ActiveState=activating\nSubState=start",
+        ),
+    )
+
+    def runner(command, **kwargs):
+        result = base_runner(command, **kwargs)
+        if command[1] == "list-timers":
+            rows = json.loads(result.stdout)
+            rows[0]["next"] = None
+            return _SystemdCompleted(json.dumps(rows))
+        return result
+
+    snapshot = collect_systemd_units(runner=runner)[0]
+
+    assert snapshot.state == "Running"
+    assert snapshot.next_run_ms is None
+    assert snapshot.scheduler_contract_ok is True
+
+
+def test_systemd_collector_rejects_missing_next_schedule_field() -> None:
+    base_runner = _systemd_runner("domain_event_ops")
+
+    def runner(command, **kwargs):
+        result = base_runner(command, **kwargs)
+        if command[1] == "list-timers":
+            rows = json.loads(result.stdout)
+            del rows[0]["next"]
+            return _SystemdCompleted(json.dumps(rows))
+        return result
+
+    with pytest.raises(SchedulerInspectionError, match="next-run metadata is invalid"):
+        collect_systemd_units(runner=runner)
+
+
 @pytest.mark.parametrize(
     ("module", "task_name", "disabled_code", "ready_code", "running_code"),
     (

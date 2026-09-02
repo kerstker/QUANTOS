@@ -1374,7 +1374,17 @@ def collect_systemd_units(
         )
         if task_name is None or activates != expected_service or task_name in next_run_by_task:
             raise SchedulerInspectionError("systemd timer schedule metadata is inconsistent")
-        next_value = row.get("next")
+        if "next" not in row:
+            raise SchedulerInspectionError("systemd timer next-run metadata is invalid")
+        next_value = row["next"]
+        # systemd reports JSON null while a timer's oneshot service is still
+        # activating and no later trigger has been scheduled yet.  That is a
+        # legitimate unknown next-run value, not malformed metadata.  Keep a
+        # missing field fail-closed so truncated or incompatible output cannot
+        # be mistaken for the same state.
+        if next_value is None:
+            next_run_by_task[task_name] = None
+            continue
         if isinstance(next_value, bool) or not isinstance(next_value, int) or next_value < 0:
             raise SchedulerInspectionError("systemd timer next-run metadata is invalid")
         next_run_by_task[task_name] = None if next_value == 0 else next_value // 1_000
