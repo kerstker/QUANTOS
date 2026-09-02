@@ -137,7 +137,26 @@ stage_pass() {
 }
 
 unit_loaded() {
-  [[ $(systemctl show "$1" -p LoadState --value 2>/dev/null || true) != not-found ]]
+  local load_state
+  load_state=$(systemctl show "$1" -p LoadState --value 2>/dev/null || true)
+  [[ -n "$load_state" && "$load_state" != not-found ]]
+}
+
+stop_loaded_units_no_block() {
+  local unit rc=0
+  for unit in "$@"; do
+    if unit_loaded "$unit"; then
+      if ! systemctl stop --no-block "$unit"; then
+        # A unit may disappear only if a concurrent daemon-reload races this
+        # deployment.  Treat that final not-found state as already stopped,
+        # while preserving every real stop failure.
+        if unit_loaded "$unit"; then
+          rc=1
+        fi
+      fi
+    fi
+  done
+  return "$rc"
 }
 
 assert_no_unit_dropins() {
@@ -187,7 +206,7 @@ stop_residents_and_verify() {
   local phase=$1
   local timeout_seconds=$2
   stage_start "$phase"
-  systemctl stop --no-block "${RESIDENT_UNITS[@]}"
+  stop_loaded_units_no_block "${RESIDENT_UNITS[@]}"
   wait_for_units_inactive "$timeout_seconds" "${RESIDENT_UNITS[@]}"
   RESIDENTS_QUIESCED=1
   stage_pass all_resident_readers_and_writers_inactive
@@ -643,7 +662,7 @@ rollback() {
     "$((SECONDS - DEPLOY_STARTED_SECONDS))" >&2
   if (( SWITCH_STARTED == 1 )); then
     stop_known_timers >/dev/null 2>&1 || rollback_rc=1
-    systemctl stop --no-block "${RESIDENT_UNITS[@]}" >/dev/null 2>&1 \
+    stop_loaded_units_no_block "${RESIDENT_UNITS[@]}" >/dev/null 2>&1 \
       || rollback_rc=1
     if ! wait_for_units_inactive 180 "${RESIDENT_UNITS[@]}"; then
       rollback_rc=1

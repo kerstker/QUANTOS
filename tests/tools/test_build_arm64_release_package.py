@@ -1178,6 +1178,97 @@ def test_cleanup_does_not_disable_errexit_needed_by_post_commit_recovery(
     assert result.returncode == 0, result.stderr
 
 
+def test_first_install_missing_runner_is_skipped_by_quiesce_and_rollback(
+    tmp_path: Path,
+) -> None:
+    template = (Path(__file__).parents[2] / "deploy/arm64/deploy.sh.in").read_text(
+        encoding="utf-8"
+    )
+    resident_functions = template[
+        template.index("unit_loaded() {") : template.index(
+            "\nacquire_alpha_deploy_lock() {"
+        )
+    ]
+    rollback = template[
+        template.index("\nrollback() {") : template.index(
+            "\non_exit() {", template.index("\nrollback() {")
+        )
+    ]
+    assert (
+        'stop_loaded_units_no_block "${RESIDENT_UNITS[@]}"' in rollback
+    )
+    assert 'systemctl stop --no-block "${RESIDENT_UNITS[@]}"' not in rollback
+
+    log = tmp_path / "systemctl.log"
+    script = tmp_path / "exercise-first-install-resident-stop.sh"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        + "RESIDENT_UNITS=(quantos-console-api.service "
+        + "quantos-research-runner.service quantos-console-frontend.service)\n"
+        + "WORKER_TIMERS=()\n"
+        + "CURRENT_STAGE=bootstrap\n"
+        + "STAGE_STARTED_SECONDS=0\n"
+        + "DEPLOY_STARTED_SECONDS=0\n"
+        + "SWITCH_STARTED=1\n"
+        + "PAIR_REPLACED=0\n"
+        + "ROLLBACK_ROOT=/rollback-test\n"
+        + "current_sqlite_hash=''\n"
+        + "current_panel_hash=''\n"
+        + "TDX_SQLITE=/missing/tdx.sqlite\n"
+        + "TDX_PANEL=/missing/tdx.panel.npz\n"
+        + f"SYSTEMCTL_LOG={str(log)!r}\n"
+        + "stage_start() { CURRENT_STAGE=$1; }\n"
+        + "stage_pass() { :; }\n"
+        + "die() { return 1; }\n"
+        + "systemctl() {\n"
+        + "  printf '%s\\n' \"$*\" >>\"$SYSTEMCTL_LOG\"\n"
+        + "  if [[ \"$1\" == show ]]; then\n"
+        + "    if [[ \"$4\" == LoadState ]]; then\n"
+        + "      if [[ \"$2\" == quantos-research-runner.service ]]; then\n"
+        + "        printf 'not-found\\n'\n"
+        + "      else\n"
+        + "        printf 'loaded\\n'\n"
+        + "      fi\n"
+        + "    elif [[ \"$4\" == ActiveState ]]; then\n"
+        + "      printf 'inactive\\n'\n"
+        + "    fi\n"
+        + "    return 0\n"
+        + "  fi\n"
+        + "  if [[ \"$1\" == stop "
+        + "&& \"${3:-}\" == quantos-research-runner.service ]]; then\n"
+        + "    return 5\n"
+        + "  fi\n"
+        + "  return 0\n"
+        + "}\n"
+        + resident_functions
+        + rollback
+        + "\nstop_known_timers() { :; }\n"
+        + "wait_for_units_inactive() { :; }\n"
+        + "wait_for_workers_to_drain() { :; }\n"
+        + "restore_alpha_runtime() { :; }\n"
+        + "restore_units() { :; }\n"
+        + "release_alpha_deploy_lock() { :; }\n"
+        + "cleanup_tmp() { :; }\n"
+        + "\nstop_residents_and_verify resident_reader_writer_quiesce 1\n"
+        + "rollback 23\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 23, result.stderr
+    assert "DEPLOY_ROLLBACK_PASS rollback=/rollback-test data_pair_restored=0" in result.stderr
+    assert "DEPLOY_ROLLBACK_FAILURE" not in result.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "stop --no-block quantos-research-runner.service" not in calls
+    assert calls.count("stop --no-block quantos-console-api.service") == 2
+    assert calls.count("stop --no-block quantos-console-frontend.service") == 2
+
+
 def test_deploy_rollback_restores_only_the_four_alpha_runtime_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -1221,9 +1312,9 @@ def test_deploy_rollback_restores_only_the_four_alpha_runtime_artifacts(
     ]
     rollback_start = content.index("\nrollback() {")
     rollback = content[rollback_start : content.index("\non_exit() {", rollback_start)]
-    assert rollback.index('systemctl stop --no-block "${RESIDENT_UNITS[@]}"') < rollback.index(
-        "wait_for_workers_to_drain rollback_worker_drain"
-    )
+    assert rollback.index(
+        'stop_loaded_units_no_block "${RESIDENT_UNITS[@]}"'
+    ) < rollback.index("wait_for_workers_to_drain rollback_worker_drain")
     assert rollback.index("wait_for_workers_to_drain rollback_worker_drain") < rollback.index(
         "restore_alpha_runtime"
     )
