@@ -115,6 +115,7 @@ DEFAULT_WORKER_MODULES = (
     "domain_event_ops",
     "hyperliquid_public_forward_refresh",
     "l2_backup",
+    "mexc_klines_fetch",
     "okx_borrow_forward_refresh",
     "raw_archive_audit",
     "wikimedia_attention_forward_refresh",

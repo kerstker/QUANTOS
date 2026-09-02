@@ -71,7 +71,7 @@ failures; they are not profitability or promotion gates.
    release evidence, state ownership and unchanged Python dependency lock.
 2. Install the Git checkout, venv link and frontend under commit-addressed
    `/opt/quantos` paths.  Never run an x86 container or emulation layer.
-3. Render the package's 18 worker pairs, four resident/watchdog units and the
+3. Render the package's 19 worker pairs, four resident/watchdog units and the
    runner.  Bind every executable and `PYTHONPATH` to the same release commit,
    then run `systemd-analyze verify` before touching installed units.
 4. Stop only worker and watchdog timers.  Let active oneshot workers finish;
@@ -94,7 +94,7 @@ failures; they are not profitability or promotion gates.
    200 from ports 8400, 3100 and runner `/health` on 8420.  Runner health must
    list the A-share technical search/forward kinds and must not list a legacy
    V1 kind as runnable.
-9. Re-enable the 18 worker timers and watchdog timer.  A newly admitted timer
+9. Re-enable the 19 worker timers and watchdog timer.  A newly admitted timer
    has no prior `NextRun`/execution history, so do **not** probe watchdog yet.
    Start `ashare_alpha_search_worker` with `--no-block`, confirm its service is
    active/activating, and then prove that it actually owns

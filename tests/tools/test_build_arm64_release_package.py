@@ -259,6 +259,7 @@ def _write_complete_verifier_package(
 def test_release_profile_adds_only_admitted_ashare_workers() -> None:
     requested = set(DEFAULT_WORKER_MODULES)
     assert {"ashare_alpha_search_worker", "ashare_forward_observation"} <= requested
+    assert "mexc_klines_fetch" in requested
     assert requested <= MVP_SAFE_MODULES
     assert not requested & HARD_QUARANTINED_MODULES
     assert not requested & MVP_DISABLED_MODULES
