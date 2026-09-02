@@ -194,7 +194,11 @@ def main(argv=None) -> dict:
     ap.add_argument("--interval", default="1d", choices=sorted(INTERVALS_MS))
     ap.add_argument("--days", type=int, default=2000, help="日线回看根数(1h 时视为小时数)")
     ap.add_argument("--db", default=DEFAULT_DB)
-    ap.add_argument("--out", default=None, help=f"快照 JSON 路径(如 {DEFAULT_SNAPSHOT})")
+    ap.add_argument(
+        "--out",
+        default=DEFAULT_SNAPSHOT,
+        help=f"快照 JSON 路径(默认 {DEFAULT_SNAPSHOT})",
+    )
     ap.add_argument("--no-ingest", action="store_true", help="只抓+快照,不落 PIT 库")
     args = ap.parse_args(argv)
 

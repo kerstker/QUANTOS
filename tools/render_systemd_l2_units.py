@@ -88,6 +88,7 @@ CALENDARS: dict[str, tuple[str, str]] = {
         "30m",
     ),
     "defillama_tvl_forward_refresh": ("*-*-* 09:30:00 Asia/Shanghai", "10m"),
+    "mexc_klines_fetch": ("*-*-* 09:35:00 Asia/Shanghai", "10m"),
     "defillama_stablecoin_forward_refresh": ("*-*-* 09:40:00 Asia/Shanghai", "5m"),
     "wikimedia_attention_forward_refresh": ("*-*-* 09:45:00 Asia/Shanghai", "5m"),
     "hyperliquid_public_forward_refresh": ("*-*-* 09:50:00 Asia/Shanghai", "5m"),

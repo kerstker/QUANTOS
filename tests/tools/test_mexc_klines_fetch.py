@@ -152,6 +152,20 @@ def test_main_writes_snapshot_with_span_and_source(tmp_path, monkeypatch):
     assert snap["bars_ingested"] is None                     # --no-ingest 诚实为空
 
 
+def test_main_defaults_to_canonical_snapshot_path(tmp_path, monkeypatch):
+    rows = [
+        {"instrument_id": "BTC", "event_time": _T0, "knowledge_time": _T0,
+         "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10.0},
+    ]
+    expected = tmp_path / "mexc_btc_klines.json"
+    monkeypatch.setattr(mexc, "fetch_rows", lambda *a, **k: rows)
+    monkeypatch.setattr(mexc, "DEFAULT_SNAPSHOT", str(expected))
+
+    snap = mexc.main(["--ticker", "BTC", "--no-ingest"])
+
+    assert json.loads(expected.read_text(encoding="utf-8")) == snap
+
+
 def test_main_ingests_into_pit_and_snapshot_reports_count(tmp_path, monkeypatch):
     rows = [
         {"instrument_id": "BTC", "event_time": _T0, "knowledge_time": _T0,

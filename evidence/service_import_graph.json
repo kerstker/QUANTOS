@@ -283,7 +283,7 @@
           "path": "services/console/api/backtest_evidence.py"
         },
         {
-          "line": 45,
+          "line": 46,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/mexc_views.py"
         },
@@ -315,7 +315,7 @@
           "path": "services/console/api/architecture_views.py"
         },
         {
-          "line": 46,
+          "line": 47,
           "module": "services.governance.json_integrity",
           "path": "services/console/api/mexc_views.py"
         },
@@ -515,7 +515,7 @@
           "path": "services/console/api/main.py"
         },
         {
-          "line": 643,
+          "line": 646,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/mexc_views.py"
         },
@@ -1503,7 +1503,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "f2a077300fbb00cd86e905dd70f2e3f01728723353102321f2f743a758ee31c7",
+  "graph_sha256": "4099451e687f3646b98464562d525306fc1ef6b4d9f3bdc31abb6a18b2268786",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

@@ -1042,20 +1042,20 @@ def test_deploy_search_forward_watchdog_order_and_lock_race_are_pinned(
         "\nstart_unit_and_wait quantos-l2@ashare_forward_observation.service",
         search_wait,
     )
-    final_watchdog = content.index(
-        "\nstart_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe",
-        final_forward,
-    )
     deferred_timers = content.index(
         "\nstage_start deferred_observation_timers_activate",
-        final_watchdog,
+        final_forward,
     )
-    final_pass = content.index("printf 'DGX_ARM64_RELEASE_DEPLOY_PASS", deferred_timers)
-    final_trap_clear = content.rindex("\ntrap - EXIT\n", deferred_timers, final_pass)
+    final_watchdog = content.index(
+        "\nstart_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe",
+        deferred_timers,
+    )
+    final_pass = content.index("printf 'DGX_ARM64_RELEASE_DEPLOY_PASS", final_watchdog)
+    final_trap_clear = content.rindex("\ntrap - EXIT\n", final_watchdog, final_pass)
     assert transaction_commit < post_commit_trap < initial_search
     assert initial_search < initial_forward < timers_activate
-    assert timers_activate < search_wait < final_forward < final_watchdog
-    assert final_watchdog < deferred_timers < final_trap_clear < final_pass
+    assert timers_activate < search_wait < final_forward < deferred_timers
+    assert deferred_timers < final_watchdog < final_trap_clear < final_pass
     assert "ashare_search_completion 7200 '0'" in content
     assert (
         "ashare_search_completion 7200 '0' \"$ASHARE_SEARCH_INVOCATION_ID\""

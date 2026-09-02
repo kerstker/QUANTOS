@@ -40,6 +40,7 @@ MVP_EXPECTED_TASKS: dict[str, str] = {
         "hyperliquid_public_forward_refresh"
     ),
     "QUANTOS_backup": "l2_backup",
+    "QUANTOS_mexc_market_refresh": "mexc_klines_fetch",
     "QUANTOS_okx_borrow_forward_refresh": "okx_borrow_forward_refresh",
     "QUANTOS_raw_archive_audit": "raw_archive_audit",
     "QUANTOS_scheduler_watchdog": "l2_scheduler_watchdog",
@@ -112,9 +113,9 @@ def _validate_static_policy() -> None:
         HARD_QUARANTINED_MODULES,
         MVP_DISABLED_MODULES,
     )
-    if tuple(map(len, task_groups)) != (24, 13, 15):
+    if tuple(map(len, task_groups)) != (25, 13, 15):
         raise RuntimeError("L2 schedule policy task cardinality is invalid")
-    if tuple(map(len, groups)) != (24, 13, 15):
+    if tuple(map(len, groups)) != (25, 13, 15):
         raise RuntimeError("L2 schedule policy closed-set cardinality is invalid")
     if frozenset(MVP_EXPECTED_TASKS.values()) != MVP_SAFE_MODULES:
         raise RuntimeError("L2 MVP expected tasks do not equal the safe module set")

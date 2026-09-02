@@ -7,7 +7,7 @@ of the host scheduler itself.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import ipaddress
@@ -167,6 +167,7 @@ _EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
     "external_heartbeat": (20 * 60_000, frozenset()),
     "hyperliquid_public_forward_refresh": (2 * _DAY_MS, frozenset()),
     "l2_backup": (2 * _DAY_MS, frozenset()),
+    "mexc_klines_fetch": (2 * _DAY_MS, frozenset()),
     "l2_scheduler_watchdog": (2 * _HOUR_MS, frozenset({2})),
     "okx_borrow_forward_refresh": (2 * _DAY_MS, frozenset()),
     "raw_archive_audit": (2 * _DAY_MS, frozenset()),
@@ -1323,7 +1324,64 @@ def collect_systemd_units(
                 timer_directives=timer_directives,
             )
         )
-    return snapshots
+    # ``systemctl show`` renders calendar timestamps using the host locale even
+    # with ``--timestamp=unix``. ``list-timers --output=json`` is the supported
+    # machine interface and returns epoch microseconds, so it can distinguish a
+    # newly installed timer that has not reached its first trigger from a task
+    # that missed an already-due trigger. This avoids deterministic NEVER_RAN
+    # breaches immediately after an otherwise healthy release cutover.
+    timer_result = runner(
+        [
+            "systemctl",
+            "list-timers",
+            "--all",
+            "--no-pager",
+            "--output=json",
+            "quantos-*",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        shell=False,
+        check=False,
+    )
+    if timer_result.returncode != 0:
+        raise SchedulerInspectionError("systemd timer schedule query failed")
+    try:
+        timer_rows = json.loads(timer_result.stdout)
+    except (TypeError, ValueError) as exc:
+        raise SchedulerInspectionError("systemd returned invalid timer schedule metadata") from exc
+    if not isinstance(timer_rows, list):
+        raise SchedulerInspectionError("systemd returned invalid timer schedule metadata")
+    next_run_by_task: dict[str, int | None] = {}
+    for row in timer_rows:
+        if not isinstance(row, dict):
+            raise SchedulerInspectionError("systemd returned invalid timer schedule metadata")
+        unit = row.get("unit")
+        activates = row.get("activates")
+        if not isinstance(unit, str) or _SYSTEMD_UNIT.fullmatch(unit) is None:
+            raise SchedulerInspectionError("systemd returned an unexpected timer schedule")
+        match = _SYSTEMD_UNIT.fullmatch(unit)
+        assert match is not None
+        if match.group("kind") == "service" or match.group("stream"):
+            raise SchedulerInspectionError("systemd returned an unexpected timer schedule")
+        module = "l2_scheduler_watchdog" if match.group("watchdog") else match.group("module")
+        task_name = None if module is None else _POLICY_TASK_BY_MODULE.get(module)
+        expected_service = (
+            "quantos-l2-watchdog.service"
+            if module == "l2_scheduler_watchdog"
+            else f"quantos-l2@{module}.service"
+        )
+        if task_name is None or activates != expected_service or task_name in next_run_by_task:
+            raise SchedulerInspectionError("systemd timer schedule metadata is inconsistent")
+        next_value = row.get("next")
+        if isinstance(next_value, bool) or not isinstance(next_value, int) or next_value < 0:
+            raise SchedulerInspectionError("systemd timer next-run metadata is invalid")
+        next_run_by_task[task_name] = None if next_value == 0 else next_value // 1_000
+    return [
+        replace(snapshot, next_run_ms=next_run_by_task.get(snapshot.name))
+        for snapshot in snapshots
+    ]
 
 
 def backup_configuration_ready(
@@ -1709,7 +1767,10 @@ def _merge_backup_history(check: dict, health: dict | None) -> dict:
         )
     )
     reason = reasons[0] if valid_reasons else "INVALID_RESULT"
-    if check["status"] != "PASS":
+    # A scheduler breach already carries the stronger operational signal.  A
+    # pre-first-trigger PARTIAL, however, must not mask unhealthy durable
+    # restore evidence from an earlier deployment/release.
+    if check["status"] == "BREACH":
         return check
     if check["code"] == "RUNNING" and reason == "NO_ATTEMPTS":
         return {

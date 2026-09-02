@@ -1392,8 +1392,6 @@ print(f"ASHARE_FORWARD_ARTIFACT_PASS status={report['status']} source={database_
 PY
 stage_pass forward_freeze_ledger_report_and_canonical_source_bound
 
-start_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe 300 '0 2'
-
 stage_start deferred_observation_timers_activate
 systemctl start quantos-l2@ashare_forward_observation.timer \
   quantos-l2-watchdog.timer >/dev/null
@@ -1402,6 +1400,12 @@ systemctl is-active --quiet quantos-l2@ashare_forward_observation.timer \
 systemctl is-active --quiet quantos-l2-watchdog.timer \
   || die 'watchdog timer is not active'
 stage_pass forward_and_watchdog_timers_active_after_exact_probes
+
+# The watchdog evaluates enabled state as part of its fail-closed contract.
+# Run the exact post-search probe only after both deferred timers are active;
+# probing first deterministically reports ashare_forward_observation as
+# NOT_ENABLED on every otherwise healthy deployment.
+start_unit_and_wait quantos-l2-watchdog.service watchdog_post_search_probe 300 '0 2'
 
 stage_start old_user_transient_stop
 old_uid=$(id -u kerstker)

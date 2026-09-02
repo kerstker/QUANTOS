@@ -395,6 +395,9 @@ foreach ($task in $mvpDisabledTasks) {
 # completed-day TVL cross-section every morning so a real PIT history begins
 # accumulating without credentials or any venue/order capability.
 $defillamaTvlForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:30"
+# MEXC public spot klines are keyless market data. Refresh the canonical BTC
+# snapshot daily so the console readiness surface cannot decay indefinitely.
+$mexcMarketRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:35"
 # Stablecoin history is likewise revisable.  Persist one new global supply
 # vintage each morning after the chain-TVL snapshot; public/keyless and L2-only.
 $defillamaStablecoinForwardRefreshTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:40"
@@ -460,6 +463,8 @@ $binanceRealtimeStreamTrigger = @(
 )
 Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama_tvl_forward_refresh" `
   -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+Register-L2Task -Name "QUANTOS_mexc_market_refresh" -Module "mexc_klines_fetch" `
+  -Trigger $mexcMarketRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_defillama_stablecoin_forward_refresh" -Module "defillama_stablecoin_forward_refresh" `
   -Trigger $defillamaStablecoinForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_wikimedia_attention_forward_refresh" -Module "wikimedia_attention_forward_refresh" `

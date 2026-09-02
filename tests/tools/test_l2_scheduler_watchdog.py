@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -290,6 +291,37 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
         "PARTIAL": 0,
         "UNAVAILABLE": 0,
         "BREACH": 0,
+    }
+
+
+def test_enabled_task_before_first_future_trigger_is_partial_not_never_ran(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    task_name = "QUANTOS_cftc_tff_forward_refresh"
+    snapshots = [
+        replace(snapshot, last_run_ms=None, next_run_ms=NOW_MS + 3_600_000)
+        if snapshot.name == task_name
+        else snapshot
+        for snapshot in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(row for row in result["checks"] if row["task_name"] == task_name)
+    assert result["verdict"] == "PARTIAL"
+    assert check == {
+        "task_name": task_name,
+        "status": "PARTIAL",
+        "code": "NOT_YET_RUN",
+        "detail": "registered task has not reached its first trigger",
     }
 
 
@@ -1349,6 +1381,18 @@ def _systemd_runner(
             return _SystemdCompleted(listing)
         if command[1] == "list-units":
             return _SystemdCompleted("")
+        if command[1] == "list-timers":
+            rows = [] if timer is None else [
+                {
+                    "next": (NOW_MS + 3_600_000) * 1_000,
+                    "left": 0,
+                    "last": (NOW_MS - 3_600_000) * 1_000,
+                    "passed": 0,
+                    "unit": timer,
+                    "activates": service,
+                }
+            ]
+            return _SystemdCompleted(json.dumps(rows))
         if command[1] == "show":
             target = command[5]
             return _SystemdCompleted(
@@ -1371,7 +1415,7 @@ def test_systemd_collector_accepts_exact_ordinary_unit_and_uses_fixed_commands()
     assert snapshot.state == "Ready"
     assert snapshot.last_result == 0
     assert snapshot.last_run_ms == (NOW_MS // 1_000 - 60) * 1_000
-    assert snapshot.next_run_ms is None
+    assert snapshot.next_run_ms == NOW_MS + 3_600_000
     assert snapshot.scheduler_contract_ok is True
     assert not {
         "HTTP_PROXY",
@@ -2507,6 +2551,31 @@ def test_backup_application_failure_remains_a_breach():
     }
 
     assert watchdog._merge_backup_history(check, health) == check
+
+
+def test_backup_not_yet_run_does_not_mask_unhealthy_restore_history():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "NOT_YET_RUN",
+        "detail": "registered task has not reached its first trigger",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": ("RESTORE_RTO_EXCEEDED",),
+        "latest_terminal_verdict": "FAIL",
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "BREACH",
+        "code": "RESTORE_HISTORY_RESTORE_RTO_EXCEEDED",
+        "detail": (
+            "restore history authority is not healthy "
+            "(RESTORE_RTO_EXCEEDED)"
+        ),
+    }
 
 
 def test_healthy_scheduler_and_history_pass_and_history_alert_is_deduplicated(

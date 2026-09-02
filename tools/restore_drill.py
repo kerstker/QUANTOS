@@ -19,7 +19,10 @@ from typing import Any
 from tools.live_backup import _check_passphrase_strength, decrypt_file
 
 
-MAX_PARALLEL_RESTORE_WORKERS = 4
+# AES-GCM decryption is CPU-bound and releases the GIL. Four workers made the
+# production isolated restore exceed the five-minute RTO while leaving most
+# DGX CPU cores idle. Eight stays bounded without changing verification.
+MAX_PARALLEL_RESTORE_WORKERS = 8
 
 
 class RestoreDrillError(RuntimeError):

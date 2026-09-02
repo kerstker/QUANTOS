@@ -37,6 +37,7 @@ from services.console.api.backtest_evidence import (
     scrub_backtest_payload,
 )
 from services.console.api.common import with_snapshot_metadata
+from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.console.api.sqlite_snapshot import (
     SqliteSnapshotError,
     stable_sqlite_snapshot,
@@ -59,6 +60,8 @@ _LIVE_KILL_SWITCH_STATE = os.path.join(_STATE_ROOT, "data", "cache", "live_kill_
 _GOVERNANCE_TEST_DIR = os.path.join(_REPO_ROOT, "tests", "governance")
 _MEXC_STRATEGY_ID = "btc_spot_trend"
 _FRESHNESS_LIMIT_HOURS = 72.0
+_MEXC_STRATEGY_CACHE = SingleFlightTtlCache[Dict[str, Any]](30)
+_MEXC_READINESS_CACHE = SingleFlightTtlCache[Dict[str, Any]](30)
 
 
 # ---------------------------------------------------------------------------
@@ -589,7 +592,7 @@ def _mexc_strategy_payload() -> Dict[str, Any]:
 
 @router.get("/api/v1/console/mexc-strategy")
 def mexc_strategy() -> Dict[str, Any]:
-    return with_snapshot_metadata(_mexc_strategy_payload())
+    return with_snapshot_metadata(_MEXC_STRATEGY_CACHE.get(_mexc_strategy_payload))
 
 
 # ---------------------------------------------------------------------------
@@ -751,9 +754,13 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
 
     json_side = _bars_from_klines_json(_MEXC_KLINES_JSON)
     db_side = _bars_from_pit_db(_MEXC_DB)
-    fetched_at = json_side["fetched_at"]
-    if fetched_at is None and db_side["bars"]:
-        fetched_at = db_side["bars"][-1]["t"]
+    freshness_candidates = [json_side["fetched_at"]]
+    if db_side["bars"]:
+        freshness_candidates.append(db_side["bars"][-1]["t"])
+    fetched_at = max(
+        (value for value in freshness_candidates if value is not None),
+        default=None,
+    )
     age_hours = (
         round((time.time() - fetched_at) / 3600.0, 2) if fetched_at is not None else None
     )
@@ -917,7 +924,7 @@ def _mexc_readiness_payload() -> Dict[str, Any]:
 
 @router.get("/api/v1/console/mexc-readiness")
 def mexc_readiness() -> Dict[str, Any]:
-    return with_snapshot_metadata(_mexc_readiness_payload())
+    return with_snapshot_metadata(_MEXC_READINESS_CACHE.get(_mexc_readiness_payload))
 
 
 __all__ = ["router"]

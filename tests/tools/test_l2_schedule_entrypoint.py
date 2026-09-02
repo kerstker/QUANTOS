@@ -757,6 +757,7 @@ def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
             "hyperliquid_public_forward_refresh"
         ),
         "QUANTOS_backup": "l2_backup",
+        "QUANTOS_mexc_market_refresh": "mexc_klines_fetch",
         "QUANTOS_okx_borrow_forward_refresh": "okx_borrow_forward_refresh",
         "QUANTOS_raw_archive_audit": "raw_archive_audit",
         "QUANTOS_scheduler_watchdog": "l2_scheduler_watchdog",
@@ -803,7 +804,7 @@ def test_static_mvp_schedule_policy_is_complete_and_disjoint() -> None:
     assert HARD_QUARANTINED_MODULES == frozenset(HARD_QUARANTINED_TASKS.values())
     assert MVP_DISABLED_MODULES == frozenset(MVP_DISABLED_TASKS.values())
     assert (len(MVP_SAFE_MODULES), len(HARD_QUARANTINED_MODULES), len(MVP_DISABLED_MODULES)) == (
-        24,
+        25,
         13,
         15,
     )

@@ -503,6 +503,58 @@ def test_strict_state_json_and_credential_boundary_are_not_inspected(
     assert payload["kill_switch"]["tripped"] is True
 
 
+def test_readiness_uses_freshest_valid_market_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    (state / "data/cache").mkdir(parents=True)
+    _configure(monkeypatch, state)
+    now = (_T0 + 20 * _DAY) / 1000
+    monkeypatch.setattr(mexc_views.time, "time", lambda: now)
+    monkeypatch.setattr(
+        mexc_views,
+        "_bars_from_klines_json",
+        lambda _path: {"fetched_at": now - 10 * 86_400, "bars": []},
+    )
+    monkeypatch.setattr(
+        mexc_views,
+        "_bars_from_pit_db",
+        lambda _path: {"fetched_at": None, "bars": [{"t": now - 86_400}]},
+    )
+
+    payload = mexc_views._mexc_readiness_payload()
+    market_check = next(
+        item for item in payload["checks"] if item["id"] == "market_data_fresh"
+    )
+
+    assert market_check["status"] == "READY"
+    assert market_check["reason"] == "数据年龄 24.0h"
+
+
+def test_expensive_mexc_routes_reuse_short_lived_read_only_snapshot(monkeypatch):
+    calls = {"strategy": 0, "readiness": 0}
+
+    def strategy_payload():
+        calls["strategy"] += 1
+        return {"snapshot_status": "NO_SNAPSHOT", "verdict": "BLOCKED"}
+
+    def readiness_payload():
+        calls["readiness"] += 1
+        return {"snapshot_status": "NO_SNAPSHOT", "verdict": "BLOCKED"}
+
+    mexc_views._MEXC_STRATEGY_CACHE.clear()
+    mexc_views._MEXC_READINESS_CACHE.clear()
+    monkeypatch.setattr(mexc_views, "_mexc_strategy_payload", strategy_payload)
+    monkeypatch.setattr(mexc_views, "_mexc_readiness_payload", readiness_payload)
+    try:
+        assert mexc_views.mexc_strategy() == mexc_views.mexc_strategy()
+        assert mexc_views.mexc_readiness() == mexc_views.mexc_readiness()
+        assert calls == {"strategy": 1, "readiness": 1}
+    finally:
+        mexc_views._MEXC_STRATEGY_CACHE.clear()
+        mexc_views._MEXC_READINESS_CACHE.clear()
+
+
 def test_no_credential_modules_or_names_are_referenced() -> None:
     source = Path(mexc_views.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
