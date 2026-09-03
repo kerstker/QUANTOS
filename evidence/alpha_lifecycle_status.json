@@ -24,9 +24,9 @@
     "retention_status": "INVALIDATED_PERP_LEDGER_V1",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "7b9074c5d61a38de05cd8dd2334ed21a9f4199a8",
+  "commit": "5733331aa0e320f6c9375b3f1e7512f509d635de",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788397358321,
+  "generated_at_ms": 1788414915303,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "The cockpit and paper-cycle files are retained and hash-audited diagnostic history. Their existence, non-empty rows, stages, or hashes do not satisfy lifecycle acceptance without an independently admitted authoritative_backtest_record.",
   "implementation": {
@@ -120,9 +120,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "7b9074c5d61a38de05cd8dd2334ed21a9f4199a8",
+    "head_commit": "5733331aa0e320f6c9375b3f1e7512f509d635de",
     "overall_status": "PASS",
-    "reported_commit": "7b9074c5d61a38de05cd8dd2334ed21a9f4199a8",
+    "reported_commit": "5733331aa0e320f6c9375b3f1e7512f509d635de",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
