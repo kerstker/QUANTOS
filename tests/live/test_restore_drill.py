@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -79,6 +80,42 @@ def test_encrypted_restore_reuses_authenticated_stream_digest(tmp_path, monkeypa
     assert result["integrity_verified"] is True
     assert calls == []
     assert result["sha256"]["source.bin"] == real_hash(source)
+
+
+def test_encrypted_restore_schedules_largest_files_first_without_reordering_evidence(
+    tmp_path,
+    monkeypatch,
+):
+    import tools.restore_drill as restore_drill
+
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    sizes = {
+        "a-small.db.enc": 1,
+        "b-large.db.enc": 30,
+        "c-medium.db.enc": 10,
+    }
+    for name, size in sizes.items():
+        (batch / name).write_bytes(b"x" * size)
+
+    scheduled = []
+
+    def fake_decrypt(source_path, output_path, passphrase, *, parallelism):
+        scheduled.append(os.path.basename(source_path))
+        return f"sha256-{os.path.basename(source_path)}"
+
+    monkeypatch.setattr(restore_drill, "MAX_PARALLEL_RESTORE_FILES", 1)
+    monkeypatch.setattr(restore_drill, "decrypt_file", fake_decrypt)
+    result = restore_drill.run_restore_drill(
+        batch_dir=str(batch),
+        restore_dir=str(tmp_path / "restore"),
+        passphrase="restore-drill-passphrase",
+        rto_ms=30_000,
+        max_rpo_ms=86_400_000,
+    )
+
+    assert scheduled == ["b-large.db.enc", "c-medium.db.enc", "a-small.db.enc"]
+    assert result["restored_files"] == ["a-small.db", "b-large.db", "c-medium.db"]
 
 
 def test_restore_drill_wrong_passphrase_fails_closed(tmp_path):

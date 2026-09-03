@@ -19,12 +19,11 @@ from typing import Any
 from tools.live_backup import _check_passphrase_strength, decrypt_file
 
 
-# A few multi-gigabyte authorities dominate restore time, so file-only
-# parallelism leaves most DGX cores idle behind one large file. Keep four files
-# in flight and allow eight authenticated chunks per file: at most thirty-two
-# AES-GCM workers run concurrently, while writes and hashing remain ordered
-# within every restored artifact.
-MAX_PARALLEL_RESTORE_FILES = 4
+# A few multi-gigabyte authorities dominate restore time. Schedule them first
+# and keep three files in flight with eight authenticated chunks each: that
+# matches the 20-core ARM64 deployment more closely than four files / 32 crypto
+# workers, while writes and hashing remain ordered within every artifact.
+MAX_PARALLEL_RESTORE_FILES = 3
 MAX_PARALLEL_DECRYPT_CHUNKS = 8
 
 
@@ -63,6 +62,17 @@ def _restore_mode(files: list[str]) -> str:
     if any(encrypted) and not all(encrypted):
         raise RestoreDrillError("mixed encrypted and plaintext backup batches are not allowed")
     return "ENCRYPTED" if all(encrypted) else "PLAINTEXT"
+
+
+def _largest_first_restore_items(
+    files: list[str],
+    restored_names: list[str],
+) -> list[tuple[str, str]]:
+    """Schedule dominant artifacts first without changing evidence ordering."""
+    return sorted(
+        zip(files, restored_names),
+        key=lambda item: (-os.path.getsize(item[0]), item[0]),
+    )
 
 
 def _prepare_target(restore_dir: str) -> tuple[str, str]:
@@ -133,7 +143,7 @@ def run_restore_drill(
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 for restored_name, restored_sha256 in executor.map(
                     restore_encrypted,
-                    zip(files, restored_names),
+                    _largest_first_restore_items(files, restored_names),
                 ):
                     expected_hashes[restored_name] = restored_sha256
         else:
