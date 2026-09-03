@@ -12,12 +12,12 @@
     "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
     "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
   ],
-  "commit": "aa3da70ff3a829ff8933f14a7a3449ecd3e44878",
+  "commit": "ec062c013238449e151400886b07e83618b59ff8",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788433496508,
+  "generated_at_ms": 1788442440854,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
-  "input_hash": "d830cd81f95d094bf2e1149d0565da58bad0d903815a5b904645e0f3376499d6",
+  "input_hash": "abb2e1b30fc2b7f4200029888c43d2f2e69e061bed7e2051eefe48d57a913afc",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -40,8 +40,8 @@
     "tests/live/test_restore_drill.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "5a2033f00b232ff09640a8496a6cf73408f4bcad71170f26e201e0b88314bda1",
-      "size_bytes": 9190
+      "sha256": "8e9502aff9feceebcc660da6b479ad27d95ef0a8ff2f3e4ec7efb7e852d77b15",
+      "size_bytes": 10541
     },
     "tests/live/test_risk_recovery_drill.py": {
       "exists": true,
@@ -99,9 +99,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "aa3da70ff3a829ff8933f14a7a3449ecd3e44878",
+    "head_commit": "ec062c013238449e151400886b07e83618b59ff8",
     "overall_status": "PASS",
-    "reported_commit": "aa3da70ff3a829ff8933f14a7a3449ecd3e44878",
+    "reported_commit": "ec062c013238449e151400886b07e83618b59ff8",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
