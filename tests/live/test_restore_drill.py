@@ -123,18 +123,24 @@ def test_zstd_restore_hashes_the_decompressed_stream_without_rereading_output(
 ):
     import tools.restore_drill as restore_drill
 
-    codec = tmp_path / "zstd"
-    codec.write_bytes(b"test codec")
-    codec.chmod(0o755)
+    codecs = {
+        "zstd": tmp_path / "zstd",
+        "tee": tmp_path / "tee",
+        "sha256sum": tmp_path / "sha256sum",
+    }
+    for codec in codecs.values():
+        codec.write_bytes(b"test codec")
+        codec.chmod(0o755)
     source = tmp_path / "authority.db.zst"
     source.write_bytes(b"authenticated compressed bytes")
     output = tmp_path / "authority.db"
     plaintext = (b"restored-authority-page" * 1024) + b"tail"
 
     class FakeProcess:
-        def __init__(self):
-            self.stdout = io.BytesIO(plaintext)
-            self.args = [str(codec)]
+        def __init__(self, args, *, stdout=b"", communicate_output=b""):
+            self.stdout = io.BytesIO(stdout)
+            self.args = args
+            self._communicate_output = communicate_output
             self.returncode = None
 
         def wait(self, timeout=None):
@@ -144,12 +150,34 @@ def test_zstd_restore_hashes_the_decompressed_stream_without_rereading_output(
         def poll(self):
             return self.returncode
 
-    process = FakeProcess()
-    monkeypatch.setattr(restore_drill, "ZSTD_BINARY", str(codec))
+        def communicate(self):
+            self.returncode = 0
+            return self._communicate_output, b""
+
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append(command)
+        if command[0] == str(codecs["zstd"]):
+            return FakeProcess(command, stdout=plaintext)
+        if command[0] == str(codecs["tee"]):
+            output.write_bytes(plaintext)
+            return FakeProcess(command, stdout=plaintext)
+        assert command[0] == str(codecs["sha256sum"])
+        digest = hashlib.sha256(plaintext).hexdigest().encode("ascii")
+        return FakeProcess(command, communicate_output=digest + b"  -\n")
+
+    monkeypatch.setattr(restore_drill, "ZSTD_BINARY", str(codecs["zstd"]))
+    monkeypatch.setattr(restore_drill, "TEE_BINARY", str(codecs["tee"]))
+    monkeypatch.setattr(
+        restore_drill,
+        "SHA256SUM_BINARY",
+        str(codecs["sha256sum"]),
+    )
     monkeypatch.setattr(
         restore_drill.subprocess,
         "Popen",
-        lambda *args, **kwargs: process,
+        fake_popen,
     )
     monkeypatch.setattr(
         restore_drill,
@@ -161,6 +189,7 @@ def test_zstd_restore_hashes_the_decompressed_stream_without_rereading_output(
 
     assert output.read_bytes() == plaintext
     assert digest == hashlib.sha256(plaintext).hexdigest()
+    assert [command[0] for command in calls] == [str(path) for path in codecs.values()]
 
 
 def test_restore_rejects_identity_and_zstd_filename_collision(tmp_path):

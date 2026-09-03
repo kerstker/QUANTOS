@@ -28,6 +28,8 @@ MAX_PARALLEL_RESTORE_FILES = 3
 MAX_PARALLEL_DECRYPT_CHUNKS = 8
 ZSTD_BINARY = "/usr/bin/zstd"
 ZSTD_SUFFIX = ".zst"
+TEE_BINARY = "/usr/bin/tee"
+SHA256SUM_BINARY = "/usr/bin/sha256sum"
 
 
 class RestoreDrillError(RuntimeError):
@@ -43,33 +45,69 @@ def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
 
 
 def _decompress_zstd(source_path: str, output_path: str) -> str:
-    """Restore and hash one authenticated zstd payload in a single pass."""
+    """Restore and hash one authenticated zstd payload in a native pipeline."""
 
-    if not os.path.isfile(ZSTD_BINARY) or not os.access(ZSTD_BINARY, os.X_OK):
+    required_binaries = (ZSTD_BINARY, TEE_BINARY, SHA256SUM_BINARY)
+    if any(
+        not os.path.isfile(binary) or not os.access(binary, os.X_OK)
+        for binary in required_binaries
+    ):
         raise RestoreDrillError("zstd restore codec is unavailable")
-    process: subprocess.Popen[bytes] | None = None
+    processes: list[subprocess.Popen[bytes]] = []
     try:
-        process = subprocess.Popen(
+        decompressor = subprocess.Popen(
             [ZSTD_BINARY, "-d", "-f", "--quiet", "--stdout", source_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            bufsize=0,
         )
-        if process.stdout is None:
+        processes.append(decompressor)
+        if decompressor.stdout is None:
             raise OSError("zstd stdout pipe is unavailable")
-        digest = hashlib.sha256()
-        with process.stdout, open(output_path, "wb") as output:
-            while block := process.stdout.read(8 * 1024 * 1024):
-                output.write(block)
-                digest.update(block)
-            output.flush()
+
+        copier = subprocess.Popen(
+            [TEE_BINARY, output_path],
+            stdin=decompressor.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(copier)
+        decompressor.stdout.close()
+        if copier.stdout is None:
+            raise OSError("tee stdout pipe is unavailable")
+
+        hasher = subprocess.Popen(
+            [SHA256SUM_BINARY],
+            stdin=copier.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(hasher)
+        copier.stdout.close()
+        digest_output, _ = hasher.communicate()
+
+        for process in reversed(processes):
+            return_code = process.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, process.args)
+        digest_fields = digest_output.split()
+        if len(digest_fields) != 2 or digest_fields[1] != b"-":
+            raise OSError("sha256sum returned an invalid digest record")
+        try:
+            digest = digest_fields[0].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise OSError("sha256sum returned a non-ASCII digest") from exc
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise OSError("sha256sum returned an invalid digest")
+
+        with open(output_path, "r+b") as output:
             os.fsync(output.fileno())
-        return_code = process.wait()
-        if return_code != 0:
-            raise subprocess.CalledProcessError(return_code, process.args)
-        return digest.hexdigest()
+        return digest
     except (OSError, subprocess.CalledProcessError) as exc:
-        if process is not None and process.poll() is None:
+        for process in reversed(processes):
+            if process.poll() is not None:
+                continue
             process.terminate()
             try:
                 process.wait(timeout=5)

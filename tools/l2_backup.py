@@ -47,7 +47,12 @@ from tools.live_backup import (
     encrypt_bytes,
     encrypt_file,
 )
-from tools.restore_drill import RestoreDrillError, run_restore_drill
+from tools.restore_drill import (
+    SHA256SUM_BINARY as RESTORE_SHA256SUM_BINARY,
+    TEE_BINARY as RESTORE_TEE_BINARY,
+    RestoreDrillError,
+    run_restore_drill,
+)
 
 
 PASSPHRASE_ENV = _backup_boundary.PASSPHRASE_ENV
@@ -666,7 +671,15 @@ def _artifact_name(index: int, relative: PurePosixPath) -> str:
 
 
 def _require_zstd() -> None:
-    if not os.path.isfile(ZSTD_BINARY) or not os.access(ZSTD_BINARY, os.X_OK):
+    required_binaries = (
+        ZSTD_BINARY,
+        RESTORE_TEE_BINARY,
+        RESTORE_SHA256SUM_BINARY,
+    )
+    if any(
+        not os.path.isfile(binary) or not os.access(binary, os.X_OK)
+        for binary in required_binaries
+    ):
         raise L2BackupError("ZSTD_CODEC_UNAVAILABLE")
     try:
         subprocess.run(
