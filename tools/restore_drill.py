@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import time
 from typing import Any
@@ -25,6 +26,8 @@ from tools.live_backup import _check_passphrase_strength, decrypt_file
 # workers, while writes and hashing remain ordered within every artifact.
 MAX_PARALLEL_RESTORE_FILES = 3
 MAX_PARALLEL_DECRYPT_CHUNKS = 8
+ZSTD_BINARY = "/usr/bin/zstd"
+ZSTD_SUFFIX = ".zst"
 
 
 class RestoreDrillError(RuntimeError):
@@ -37,6 +40,29 @@ def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
         while block := source.read(block_size):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _decompress_zstd(source_path: str, output_path: str) -> str:
+    """Restore one authenticated zstd payload and hash the durable plaintext."""
+
+    if not os.path.isfile(ZSTD_BINARY) or not os.access(ZSTD_BINARY, os.X_OK):
+        raise RestoreDrillError("zstd restore codec is unavailable")
+    try:
+        subprocess.run(
+            [ZSTD_BINARY, "-d", "-f", "--quiet", source_path, "-o", output_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        with open(output_path, "r+b") as output:
+            os.fsync(output.fileno())
+        return _sha256_file(output_path)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        try:
+            os.unlink(output_path)
+        except FileNotFoundError:
+            pass
+        raise RestoreDrillError("zstd restore codec failed") from exc
 
 
 def _evidence_path(path: str) -> str:
@@ -62,6 +88,13 @@ def _restore_mode(files: list[str]) -> str:
     if any(encrypted) and not all(encrypted):
         raise RestoreDrillError("mixed encrypted and plaintext backup batches are not allowed")
     return "ENCRYPTED" if all(encrypted) else "PLAINTEXT"
+
+
+def _restored_name(source_name: str, mode: str) -> str:
+    restored_name = source_name[:-4] if mode == "ENCRYPTED" else source_name
+    if mode == "ENCRYPTED" and restored_name.endswith(ZSTD_SUFFIX):
+        restored_name = restored_name[: -len(ZSTD_SUFFIX)]
+    return restored_name
 
 
 def _largest_first_restore_items(
@@ -117,13 +150,15 @@ def run_restore_drill(
         raise RestoreDrillError("plaintext restore requires allow_plaintext=True")
 
     restored_names: list[str] = []
+    seen_restored_names: set[str] = set()
     expected_hashes: dict[str, str] = {}
     for source_path in files:
         source_name = os.path.basename(source_path)
-        restored_name = source_name[:-4] if mode == "ENCRYPTED" else source_name
-        if not restored_name or restored_name in expected_hashes:
+        restored_name = _restored_name(source_name, mode)
+        if not restored_name or restored_name in seen_restored_names:
             raise RestoreDrillError(f"duplicate or invalid restored filename: {restored_name!r}")
         restored_names.append(restored_name)
+        seen_restored_names.add(restored_name)
 
     target, stage = _prepare_target(restore_dir)
     started = time.perf_counter()
@@ -132,6 +167,25 @@ def run_restore_drill(
             def restore_encrypted(item: tuple[str, str]) -> tuple[str, str]:
                 source_path, restored_name = item
                 output_path = os.path.join(stage, restored_name)
+                if source_path.endswith(f"{ZSTD_SUFFIX}.enc"):
+                    compressed_path = f"{output_path}{ZSTD_SUFFIX}"
+                    try:
+                        decrypt_file(
+                            source_path,
+                            compressed_path,
+                            passphrase or "",
+                            parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
+                        )
+                        restored_sha256 = _decompress_zstd(
+                            compressed_path,
+                            output_path,
+                        )
+                    finally:
+                        try:
+                            os.unlink(compressed_path)
+                        except FileNotFoundError:
+                            pass
+                    return restored_name, restored_sha256
                 return restored_name, decrypt_file(
                     source_path,
                     output_path,

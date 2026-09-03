@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import shutil
 import sqlite3
 import threading
 import time
@@ -1105,6 +1106,56 @@ def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path
     assert json.loads((restored / "data" / "cache" / "state.json").read_text()) == {"marker": "sensitive-state-marker"}
 
 
+def test_l2_backup_compresses_large_artifact_and_restores_original(tmp_path, monkeypatch):
+    import tools.restore_drill as restore_drill_module
+
+    repo = tmp_path / "repo"
+    state = repo / "data" / "cache" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_bytes(b"large-authority-state")
+    destination = tmp_path / "backup"
+    destination.mkdir()
+    sources = (BackupSource("data/cache/state.json", "authority", required=True),)
+
+    def fake_compress(source, output):
+        shutil.copyfile(source, output)
+
+    def fake_decompress(source_path, output_path):
+        shutil.copyfile(source_path, output_path)
+        return restore_drill_module._sha256_file(output_path)
+
+    monkeypatch.setattr(l2_backup_module, "L2_ZSTD_MIN_SIZE", 1)
+    monkeypatch.setattr(l2_backup_module, "_require_zstd", lambda: None)
+    monkeypatch.setattr(l2_backup_module, "_compress_zstd", fake_compress)
+    monkeypatch.setattr(restore_drill_module, "_decompress_zstd", fake_decompress)
+
+    result = run_l2_backup(
+        repo_root=repo,
+        destination_root=destination,
+        passphrase=PASSPHRASE,
+        sources=sources,
+        allow_local_destination=True,
+        now_ms=1_784_044_800_000,
+    )
+
+    batch = Path(result["batch_dir"])
+    manifest = _read_manifest(batch)
+    entry = manifest["entries"][0]
+    assert entry["storage_encoding"] == l2_backup_module.STORAGE_ENCODING_ZSTD_LEVEL_1
+    assert (batch / f"{entry['artifact']}.zst.enc").is_file()
+    restored = tmp_path / "restored"
+    restore_l2_batch(
+        batch_dir=batch,
+        restore_dir=restored,
+        passphrase=PASSPHRASE,
+        rto_ms=30_000,
+        max_rpo_ms=86_400_000,
+        now_ms=result["observed_at_ms"],
+        sources=sources,
+    )
+    assert (restored / "data" / "cache" / "state.json").read_bytes() == state.read_bytes()
+
+
 def test_l2_backup_missing_required_source_fails_without_publishing(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1238,6 +1289,18 @@ def test_restore_rejects_tampered_source_contract_digest(tmp_path):
     _write_manifest(batch, manifest)
 
     with pytest.raises(L2BackupError, match="source contract digest"):
+        _restore_contract_batch(tmp_path, batch, sources, now_ms)
+
+
+def test_restore_rejects_storage_encoding_that_disagrees_with_batch(tmp_path):
+    batch, sources, now_ms = _contract_batch(tmp_path)
+    manifest = _read_manifest(batch)
+    manifest["entries"][0]["storage_encoding"] = (
+        l2_backup_module.STORAGE_ENCODING_ZSTD_LEVEL_1
+    )
+    _write_manifest(batch, manifest)
+
+    with pytest.raises(L2BackupError, match="storage encoding"):
         _restore_contract_batch(tmp_path, batch, sources, now_ms)
 
 
@@ -1495,6 +1558,14 @@ def test_recorded_backup_appends_redacted_failure_and_overwrites_old_pass_projec
         (
             "backup batch exceeds RPO: 900001ms > 300000ms",
             "RESTORE_RPO_EXCEEDED",
+        ),
+        (
+            "zstd restore codec is unavailable",
+            "RESTORE_CODEC_UNAVAILABLE",
+        ),
+        (
+            "zstd restore codec failed",
+            "RESTORE_CODEC_FAILED",
         ),
     ],
 )

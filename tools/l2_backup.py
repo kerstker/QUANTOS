@@ -19,6 +19,7 @@ import secrets
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -63,6 +64,16 @@ SOURCE_CONTRACT_VERSION = 15
 # QBK2 format records this value per file, so older 8 MiB batches remain fully
 # restorable.
 L2_ENCRYPTION_CHUNK_SIZE = 64 * 1024 * 1024
+# Compress only the authorities large enough to dominate the restore RTO.  The
+# encrypted filename and manifest record the codec, while small artifacts and
+# all existing v2 batches retain their identity encoding.
+L2_ZSTD_MIN_SIZE = 256 * 1024 * 1024
+STORAGE_ENCODING_IDENTITY = "IDENTITY"
+STORAGE_ENCODING_ZSTD_LEVEL_1 = "ZSTD_LEVEL_1"
+_STORAGE_ENCODINGS = frozenset(
+    {STORAGE_ENCODING_IDENTITY, STORAGE_ENCODING_ZSTD_LEVEL_1}
+)
+ZSTD_BINARY = "/usr/bin/zstd"
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
 # then retains a read lock long enough for scheduled writers to exhaust their
@@ -654,6 +665,44 @@ def _artifact_name(index: int, relative: PurePosixPath) -> str:
     return f"{index:03d}-{digest}-{safe_name}"
 
 
+def _require_zstd() -> None:
+    if not os.path.isfile(ZSTD_BINARY) or not os.access(ZSTD_BINARY, os.X_OK):
+        raise L2BackupError("ZSTD_CODEC_UNAVAILABLE")
+    try:
+        subprocess.run(
+            [ZSTD_BINARY, "--version"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise L2BackupError("ZSTD_CODEC_UNAVAILABLE") from exc
+
+
+def _compress_zstd(source: Path, output: Path) -> None:
+    _require_zstd()
+    try:
+        subprocess.run(
+            [
+                ZSTD_BINARY,
+                "-1",
+                "-T0",
+                "-f",
+                "--quiet",
+                os.fspath(source),
+                "-o",
+                os.fspath(output),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        output.unlink(missing_ok=True)
+        raise L2BackupError("ZSTD_COMPRESSION_FAILED") from exc
+
+
 def _load_manifest(path: Path) -> dict:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -735,6 +784,7 @@ def restore_l2_batch(
             raise L2BackupError("restored backup manifest marks a non-optional source as missing")
         actual_flat = {path.name for path in flat.iterdir() if path.is_file()}
         expected_flat = {"manifest.json"}
+        expected_batch = {"manifest.json.enc"}
         sqlite_verified = True
         restore_history_verified = False
         present_paths: set[str] = set()
@@ -771,6 +821,20 @@ def restore_l2_batch(
                 raise L2BackupError(
                     "restored backup source entry violates its snapshot policy"
                 )
+            storage_encoding = entry.get(
+                "storage_encoding",
+                STORAGE_ENCODING_IDENTITY,
+            )
+            if storage_encoding not in _STORAGE_ENCODINGS:
+                raise L2BackupError(
+                    "restored backup source entry has an unsupported storage encoding"
+                )
+            encrypted_suffix = (
+                ".zst.enc"
+                if storage_encoding == STORAGE_ENCODING_ZSTD_LEVEL_1
+                else ".enc"
+            )
+            expected_batch.add(f"{artifact}{encrypted_suffix}")
             present_paths.add(relative_path)
             source = flat / artifact
             if not source.is_file():
@@ -811,6 +875,13 @@ def restore_l2_batch(
             raise L2BackupError("restored backup source entries do not match the expected source contract")
         if actual_flat != expected_flat:
             raise L2BackupError("backup batch has missing or undeclared encrypted artifacts")
+        actual_batch = {
+            path.name
+            for path in Path(batch_dir).iterdir()
+            if path.is_file() and not path.is_symlink()
+        }
+        if actual_batch != expected_batch:
+            raise L2BackupError("backup batch storage encoding does not match its manifest")
         shutil.copy2(manifest_path, tree / ".quantos_backup_manifest.json")
         if target.exists():
             target.rmdir()
@@ -921,6 +992,12 @@ def run_l2_backup(
     source_contract = _source_contract(source_specs)
     source_contract_digest = _source_contract_sha256(source_contract)
     discovered, missing_optional = _discover_sources(root, source_specs)
+    compression_required = any(
+        path.stat(follow_symlinks=False).st_size >= L2_ZSTD_MIN_SIZE
+        for _, _, path in discovered
+    )
+    if compression_required:
+        _require_zstd()
     missing_optional = sorted(missing_optional)
     observed_at_ms = int(time.time() * 1000) if now_ms is None else now_ms
     if observed_at_ms < 0:
@@ -949,12 +1026,24 @@ def run_l2_backup(
                     snapshot_policy=source_spec.snapshot_policy,
                 )
                 artifact = _artifact_name(index, relative)
-                encrypt_file(
-                    os.fspath(snapshot),
-                    os.fspath(stage / f"{artifact}.enc"),
-                    passphrase,
-                    chunk_size=L2_ENCRYPTION_CHUNK_SIZE,
-                )
+                storage_encoding = STORAGE_ENCODING_IDENTITY
+                encryption_source = snapshot
+                encrypted_name = f"{artifact}.enc"
+                compressed = scratch / f"{artifact}.zst"
+                if snapshot.stat(follow_symlinks=False).st_size >= L2_ZSTD_MIN_SIZE:
+                    _compress_zstd(snapshot, compressed)
+                    storage_encoding = STORAGE_ENCODING_ZSTD_LEVEL_1
+                    encryption_source = compressed
+                    encrypted_name = f"{artifact}.zst.enc"
+                try:
+                    encrypt_file(
+                        os.fspath(encryption_source),
+                        os.fspath(stage / encrypted_name),
+                        passphrase,
+                        chunk_size=L2_ENCRYPTION_CHUNK_SIZE,
+                    )
+                finally:
+                    compressed.unlink(missing_ok=True)
                 entries.append(
                     {
                         "artifact": artifact,
@@ -965,6 +1054,7 @@ def run_l2_backup(
                         "size": snapshot.stat(follow_symlinks=False).st_size,
                         "snapshot_method": snapshot_method,
                         "source_mtime_ns": source_mtime_ns,
+                        "storage_encoding": storage_encoding,
                     }
                 )
 
@@ -1098,6 +1188,12 @@ def run_l2_backup_preflight(
     source_specs = tuple(sources)
     source_contract = _source_contract(source_specs)
     discovered, missing_optional = _discover_sources(root, source_specs)
+    compression_required = any(
+        path.stat(follow_symlinks=False).st_size >= L2_ZSTD_MIN_SIZE
+        for _, _, path in discovered
+    )
+    if compression_required:
+        _require_zstd()
     resolved_history = (
         Path(history_path)
         if history_path is not None
@@ -1256,6 +1352,14 @@ def _recorded_failure_classification(exc: Exception) -> tuple[str, str]:
                 "EXTERNAL_DESTINATION_REQUIRED",
                 "PREFLIGHT",
             ),
+            "ZSTD_CODEC_UNAVAILABLE": (
+                "ZSTD_CODEC_UNAVAILABLE",
+                "PREFLIGHT",
+            ),
+            "ZSTD_COMPRESSION_FAILED": (
+                "ZSTD_COMPRESSION_FAILED",
+                "ENCRYPTION",
+            ),
         }
         if message in exact:
             return exact[message]
@@ -1293,6 +1397,16 @@ def _recorded_failure_classification(exc: Exception) -> tuple[str, str]:
             (
                 "restored artifact",
                 "RESTORE_ARTIFACT_INVALID",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "zstd restore codec is unavailable",
+                "RESTORE_CODEC_UNAVAILABLE",
+                "RESTORE_VERIFICATION",
+            ),
+            (
+                "zstd restore codec failed",
+                "RESTORE_CODEC_FAILED",
                 "RESTORE_VERIFICATION",
             ),
             ("source changed while", "SOURCE_CHANGED_DURING_SNAPSHOT", "SNAPSHOT"),

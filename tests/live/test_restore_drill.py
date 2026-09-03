@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 
 import pytest
 
@@ -80,6 +81,81 @@ def test_encrypted_restore_reuses_authenticated_stream_digest(tmp_path, monkeypa
     assert result["integrity_verified"] is True
     assert calls == []
     assert result["sha256"]["source.bin"] == real_hash(source)
+
+
+def test_encrypted_zstd_restore_decompresses_and_hashes_plaintext(tmp_path, monkeypatch):
+    import tools.restore_drill as restore_drill
+
+    source = tmp_path / "authority.db.zst"
+    source.write_bytes(b"compressed-authority-placeholder")
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    encrypt_file(
+        str(source),
+        str(batch / "authority.db.zst.enc"),
+        "restore-drill-passphrase",
+    )
+
+    def fake_decompress(source_path, output_path):
+        shutil.copyfile(source_path, output_path)
+        return restore_drill._sha256_file(output_path)
+
+    monkeypatch.setattr(restore_drill, "_decompress_zstd", fake_decompress)
+    result = restore_drill.run_restore_drill(
+        batch_dir=str(batch),
+        restore_dir=str(tmp_path / "restore"),
+        passphrase="restore-drill-passphrase",
+        rto_ms=30_000,
+        max_rpo_ms=86_400_000,
+    )
+
+    assert result["restored_files"] == ["authority.db"]
+    assert result["sha256"]["authority.db"] == restore_drill._sha256_file(source)
+    assert (tmp_path / "restore" / "authority.db").read_bytes() == source.read_bytes()
+    assert not (tmp_path / "restore" / "authority.db.zst").exists()
+
+
+def test_restore_rejects_identity_and_zstd_filename_collision(tmp_path):
+    from tools.restore_drill import RestoreDrillError, run_restore_drill
+
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    (batch / "authority.db.enc").write_bytes(b"one")
+    (batch / "authority.db.zst.enc").write_bytes(b"two")
+
+    with pytest.raises(RestoreDrillError, match="duplicate"):
+        run_restore_drill(
+            batch_dir=str(batch),
+            restore_dir=str(tmp_path / "restore"),
+            passphrase="restore-drill-passphrase",
+            rto_ms=30_000,
+            max_rpo_ms=86_400_000,
+        )
+
+
+def test_encrypted_zstd_restore_fails_closed_without_codec(tmp_path, monkeypatch):
+    import tools.restore_drill as restore_drill
+
+    source = tmp_path / "authority.db.zst"
+    source.write_bytes(b"compressed-authority-placeholder")
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    encrypt_file(
+        str(source),
+        str(batch / "authority.db.zst.enc"),
+        "restore-drill-passphrase",
+    )
+    monkeypatch.setattr(restore_drill, "ZSTD_BINARY", str(tmp_path / "missing-zstd"))
+
+    with pytest.raises(restore_drill.RestoreDrillError, match="unavailable"):
+        restore_drill.run_restore_drill(
+            batch_dir=str(batch),
+            restore_dir=str(tmp_path / "restore"),
+            passphrase="restore-drill-passphrase",
+            rto_ms=30_000,
+            max_rpo_ms=86_400_000,
+        )
+    assert not (tmp_path / "restore").exists()
 
 
 def test_encrypted_restore_schedules_largest_files_first_without_reordering_evidence(
