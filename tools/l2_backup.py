@@ -62,7 +62,7 @@ SOURCE_CONTRACT_VERSION = 15
 # the multi-gigabyte public-data authorities retained by the DGX backup.  The
 # QBK2 format records this value per file, so older 8 MiB batches remain fully
 # restorable.
-L2_ENCRYPTION_CHUNK_SIZE = 32 * 1024 * 1024
+L2_ENCRYPTION_CHUNK_SIZE = 64 * 1024 * 1024
 # SQLite's Python backup API copies every remaining page in one step when
 # ``pages`` is left at its default.  A multi-gigabyte DELETE-journal authority
 # then retains a read lock long enough for scheduled writers to exhaust their

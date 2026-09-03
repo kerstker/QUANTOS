@@ -328,8 +328,9 @@ def _decrypt_chunked_file_parallel(
             plaintext_digest = hashlib.sha256()
             with open(partial_path, "xb") as output:
                 pending = deque()
+                pending_hashes = deque()
 
-                def write_next_chunk() -> None:
+                def write_next_chunk(hash_executor: ThreadPoolExecutor) -> None:
                     nonlocal restored_size
                     recorded_length, future = pending.popleft()
                     chunk = future.result()
@@ -338,52 +339,63 @@ def _decrypt_chunked_file_parallel(
                             "QBK2 decrypted chunk has an inconsistent length"
                         )
                     output.write(chunk)
-                    plaintext_digest.update(chunk)
+                    # Preserve canonical SHA-256 order while overlapping the
+                    # digest of the previous plaintext chunk with the next
+                    # authenticated decrypt/read/write cycle.  Only this
+                    # single worker mutates the digest object.
+                    pending_hashes.append(
+                        hash_executor.submit(plaintext_digest.update, chunk)
+                    )
+                    if len(pending_hashes) >= 2:
+                        pending_hashes.popleft().result()
                     restored_size += len(chunk)
 
-                with ThreadPoolExecutor(max_workers=workers) as executor:
-                    for index in range(count):
-                        recorded_length = _CHUNK_LENGTH.unpack(
-                            _read_exact(
+                with ThreadPoolExecutor(max_workers=1) as hash_executor:
+                    with ThreadPoolExecutor(max_workers=workers) as executor:
+                        for index in range(count):
+                            recorded_length = _CHUNK_LENGTH.unpack(
+                                _read_exact(
+                                    source,
+                                    _CHUNK_LENGTH.size,
+                                    label=f"chunk {index} length",
+                                )
+                            )[0]
+                            offset = index * chunk_size
+                            expected = (
+                                0
+                                if plaintext_size == 0
+                                else min(chunk_size, plaintext_size - offset)
+                            )
+                            if recorded_length != expected:
+                                raise BackupDecryptionError(
+                                    "QBK2 encrypted backup has inconsistent chunk lengths"
+                                )
+                            ciphertext = _read_exact(
                                 source,
-                                _CHUNK_LENGTH.size,
-                                label=f"chunk {index} length",
+                                recorded_length + _GCM_TAG_LEN,
+                                label=f"chunk {index} ciphertext",
                             )
-                        )[0]
-                        offset = index * chunk_size
-                        expected = (
-                            0
-                            if plaintext_size == 0
-                            else min(chunk_size, plaintext_size - offset)
-                        )
-                        if recorded_length != expected:
-                            raise BackupDecryptionError(
-                                "QBK2 encrypted backup has inconsistent chunk lengths"
-                            )
-                        ciphertext = _read_exact(
-                            source,
-                            recorded_length + _GCM_TAG_LEN,
-                            label=f"chunk {index} ciphertext",
-                        )
-                        pending.append(
-                            (
-                                recorded_length,
-                                executor.submit(
-                                    decrypt_chunk,
-                                    index,
+                            pending.append(
+                                (
                                     recorded_length,
-                                    ciphertext,
-                                ),
+                                    executor.submit(
+                                        decrypt_chunk,
+                                        index,
+                                        recorded_length,
+                                        ciphertext,
+                                    ),
+                                )
                             )
-                        )
-                        if len(pending) >= workers:
-                            write_next_chunk()
-                    if source.read(1):
-                        raise BackupDecryptionError(
-                            "QBK2 encrypted backup is truncated or has trailing data"
-                        )
-                    while pending:
-                        write_next_chunk()
+                            if len(pending) >= workers:
+                                write_next_chunk(hash_executor)
+                        if source.read(1):
+                            raise BackupDecryptionError(
+                                "QBK2 encrypted backup is truncated or has trailing data"
+                            )
+                        while pending:
+                            write_next_chunk(hash_executor)
+                    while pending_hashes:
+                        pending_hashes.popleft().result()
                 if restored_size != plaintext_size:
                     raise BackupDecryptionError(
                         "QBK2 encrypted backup is truncated or has trailing data"
