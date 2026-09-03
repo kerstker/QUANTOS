@@ -1,23 +1,23 @@
 {
   "artifact_count": 18,
   "artifact_sha256": {
-    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "2a4ddf3b8e732ee775c4ab2eeb4b9a957a8a64e7107055ba6b61f24d3a1b84bc",
-    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "6b1367ef13f49531176aa8dc315e1994ef4dc4bcb26351ce2569f3827d200ecb",
-    "evidence/alpha_lifecycle_status.json": "68f24157cba880aac6dc1a95c3fee9fd86bd00a077d8f3df33e4a2755cbbc761",
-    "evidence/autonomy_readiness.json": "7ceb9f594701b3c43a1283528e2e755c94a62e221566781148bc03d67d16f8a1",
-    "evidence/chaos_recovery_status.json": "d2ca42028cffa9ae8550d40a656a923eac60afd3525c94cd46c34538fa183f24",
-    "evidence/factor_garden_status.json": "46327bac60a13fe33c46fff38f68ead4213e7f3b76142130b96a47ce7059fc57",
+    "docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md": "674907d1c3e66040b0c886f79f7a32abf73b8bbc7f9f82e5380d8ca41d8d79cf",
+    "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md": "dc1b1a113a5fa1a594a671027e10bbf534c19813e51fe5a88735825af2671bf1",
+    "evidence/alpha_lifecycle_status.json": "d32ea63b13b79cd9e5627b5681a437be2226deb0a622ee4dd9dc7754f6f02fe4",
+    "evidence/autonomy_readiness.json": "d7567aeead7e1abf7c858de690a158c8df2bd0400dbf0317be61c1c9cce594d6",
+    "evidence/chaos_recovery_status.json": "28da611e923798d9eff00b91a5c379ab56930fd8eb50744a955ab0697ac1c979",
+    "evidence/factor_garden_status.json": "9ce5d541c2a4a785a44c5e89ce82bbea7cb7a2bf50879aff4eb3ba773676e337",
     "evidence/l2_backup_latest.json": "f5ab7a44d01274a497fc63ee28f9ff037cf1de69feb217d8a32b5ffdb59dc8db",
-    "evidence/mexc_integration_status.json": "414b5988fcb564a7a22bfac3574edd386252255fc455be01c4cfbc67f83abf39",
-    "evidence/paper_shadow_status.json": "5ec184343fc2cf3fde074cb0edbcf91393a4f5041f6b0683cf19f8938a9de39b",
-    "evidence/reproducibility/container_build_arm64_latest.json": "2ee8fcf73d69df2d57bfdb959f2f50e4bda79691cb5a037993ea4803754e555d",
-    "evidence/runtime/console_arm64_smoke_latest.json": "849201b21aa4f5437dabe289c121132463607f8f509b22fee838b1097658281e",
+    "evidence/mexc_integration_status.json": "79ff8df539599adb95fc8c9924b72291fa82e68254d36ceb8718c54d5715c3e6",
+    "evidence/paper_shadow_status.json": "0abf77cde140693b8d6f6840d20754b9a93b8c3f9065c5ee9313697639254f8a",
+    "evidence/reproducibility/container_build_arm64_latest.json": "6afb9dfaf78d9686c2ea6c67e22fc38138e5e2ecc13c6e94f1f5d9705339f52a",
+    "evidence/runtime/console_arm64_smoke_latest.json": "b317e1fc3fb61893a8a58ece0745152e19276d131aa254fc74835d482cc3d716",
     "evidence/sbom.cdx.json": "f7ab52ac494221a93a10cd22b6b990cde64940a3ac5934ea6d75cc2f4b16bfbf",
-    "evidence/supply_chain_baseline.json": "6fbad724a7259d8f3770a8dd55a1e8dd9bebfaedd2c32df084ddb71c806f7e87",
-    "evidence/top_tier_assessment.json": "1d872b898698f7d8cdb0a64db8f7eba871202674fa41a79c0e3f272be5f004e2",
-    "evidence/trial_ledger_integrity.json": "2c9ecff2ee9f62eea2b7d5896a58ed4351af7bee22d47fe41b0c8ffd79945621",
-    "evidence/validation_report.json": "5c54189be98766a1f2045db959fb3df09e2701371592dbfe5e3aae6ac170f219",
-    "evidence/vulnerability/container_trivy_arm64_latest.json": "e76beeaa3b0bb9ed0bdbd055548d48b67d1ad335a8ba7fbd3696cf5a09f4c85e",
+    "evidence/supply_chain_baseline.json": "3daea31ff6dc6751873c010e12366e88097025276c2c245468fb56faf649b621",
+    "evidence/top_tier_assessment.json": "ccf9c7172a129ddd909eed833657dde01ba650db8b672d478a846148a3470ff5",
+    "evidence/trial_ledger_integrity.json": "94f150f35d2d35b35dbbc6bd0637bd51a6c916b0e74c2b012581cce6e986af34",
+    "evidence/validation_report.json": "f94b0ea7862257ed6647013f1adde35145313e7762ab4ce02c7d2da39f5f57a2",
+    "evidence/vulnerability/container_trivy_arm64_latest.json": "a0b67de75e75caa49e84f26cfef31129f230ae77efa8ce35f832805ad6338f49",
     "evidence/vulnerability/python_audit_latest.json": "1f4f6fcb60b1aa3ffdecb6f01424da6c213dd41c1031e27cfc27eb2908f31f49"
   },
   "canonical_artifact_allowlist_version": "v4",
@@ -36,9 +36,9 @@
   "schema_version": 1,
   "validation": {
     "current": true,
-    "generated_at": 1788414940595,
-    "run_id": "8574661ad550d2ff20a69a06c626a5aa4a958be8a20c94b7141d85d17e803e43",
-    "source_commit": "5733331aa0e320f6c9375b3f1e7512f509d635de"
+    "generated_at": 1788433522139,
+    "run_id": "e6bcad542ec26d32ad152daea5a1f77d61b79eb05caed9524b98bb16f4830c23",
+    "source_commit": "aa3da70ff3a829ff8933f14a7a3449ecd3e44878"
   },
-  "validation_report_sha256": "5c54189be98766a1f2045db959fb3df09e2701371592dbfe5e3aae6ac170f219"
+  "validation_report_sha256": "f94b0ea7862257ed6647013f1adde35145313e7762ab4ce02c7d2da39f5f57a2"
 }

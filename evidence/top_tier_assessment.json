@@ -1169,7 +1169,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
+      "detail": "restore-history health failed: LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -1192,7 +1192,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1852,9 +1852,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 2,
+    "failed": 3,
     "manual_evidence_required": 0,
-    "partial": 7,
+    "partial": 6,
     "passed": 13,
     "red_lines_failed": 4,
     "total": 22,
@@ -1862,9 +1862,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1788413023272,
-    "run_id": "8574661ad550d2ff20a69a06c626a5aa4a958be8a20c94b7141d85d17e803e43",
-    "source_commit": "5733331aa0e320f6c9375b3f1e7512f509d635de"
+    "generated_at": 1788428680721,
+    "run_id": "e6bcad542ec26d32ad152daea5a1f77d61b79eb05caed9524b98bb16f4830c23",
+    "source_commit": "aa3da70ff3a829ff8933f14a7a3449ecd3e44878"
   },
   "verdict": "NOT_TOP_TIER"
 }
