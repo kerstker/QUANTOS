@@ -43,21 +43,39 @@ def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
 
 
 def _decompress_zstd(source_path: str, output_path: str) -> str:
-    """Restore one authenticated zstd payload and hash the durable plaintext."""
+    """Restore and hash one authenticated zstd payload in a single pass."""
 
     if not os.path.isfile(ZSTD_BINARY) or not os.access(ZSTD_BINARY, os.X_OK):
         raise RestoreDrillError("zstd restore codec is unavailable")
+    process: subprocess.Popen[bytes] | None = None
     try:
-        subprocess.run(
-            [ZSTD_BINARY, "-d", "-f", "--quiet", source_path, "-o", output_path],
-            check=True,
-            stdout=subprocess.DEVNULL,
+        process = subprocess.Popen(
+            [ZSTD_BINARY, "-d", "-f", "--quiet", "--stdout", source_path],
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            bufsize=0,
         )
-        with open(output_path, "r+b") as output:
+        if process.stdout is None:
+            raise OSError("zstd stdout pipe is unavailable")
+        digest = hashlib.sha256()
+        with process.stdout, open(output_path, "wb") as output:
+            while block := process.stdout.read(8 * 1024 * 1024):
+                output.write(block)
+                digest.update(block)
+            output.flush()
             os.fsync(output.fileno())
-        return _sha256_file(output_path)
+        return_code = process.wait()
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, process.args)
+        return digest.hexdigest()
     except (OSError, subprocess.CalledProcessError) as exc:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
         try:
             os.unlink(output_path)
         except FileNotFoundError:

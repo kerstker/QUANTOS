@@ -1,3 +1,5 @@
+import hashlib
+import io
 import json
 import os
 import shutil
@@ -113,6 +115,52 @@ def test_encrypted_zstd_restore_decompresses_and_hashes_plaintext(tmp_path, monk
     assert result["sha256"]["authority.db"] == restore_drill._sha256_file(source)
     assert (tmp_path / "restore" / "authority.db").read_bytes() == source.read_bytes()
     assert not (tmp_path / "restore" / "authority.db.zst").exists()
+
+
+def test_zstd_restore_hashes_the_decompressed_stream_without_rereading_output(
+    tmp_path,
+    monkeypatch,
+):
+    import tools.restore_drill as restore_drill
+
+    codec = tmp_path / "zstd"
+    codec.write_bytes(b"test codec")
+    codec.chmod(0o755)
+    source = tmp_path / "authority.db.zst"
+    source.write_bytes(b"authenticated compressed bytes")
+    output = tmp_path / "authority.db"
+    plaintext = (b"restored-authority-page" * 1024) + b"tail"
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = io.BytesIO(plaintext)
+            self.args = [str(codec)]
+            self.returncode = None
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def poll(self):
+            return self.returncode
+
+    process = FakeProcess()
+    monkeypatch.setattr(restore_drill, "ZSTD_BINARY", str(codec))
+    monkeypatch.setattr(
+        restore_drill.subprocess,
+        "Popen",
+        lambda *args, **kwargs: process,
+    )
+    monkeypatch.setattr(
+        restore_drill,
+        "_sha256_file",
+        lambda *args, **kwargs: pytest.fail("restored output was reread"),
+    )
+
+    digest = restore_drill._decompress_zstd(str(source), str(output))
+
+    assert output.read_bytes() == plaintext
+    assert digest == hashlib.sha256(plaintext).hexdigest()
 
 
 def test_restore_rejects_identity_and_zstd_filename_collision(tmp_path):
