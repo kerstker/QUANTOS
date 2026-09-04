@@ -278,6 +278,8 @@ def _valid_build_capture_argv(
         builder,
         "--platform",
         ARM64_TARGET_PLATFORM,
+        "--network",
+        "host",
         "--no-cache",
         "--provenance=false",
     ]
@@ -547,7 +549,7 @@ def _recipe(root: Path) -> dict[str, Any]:
 def _build_command(epoch: int) -> str:
     proxies = "".join(f"--build-arg {name} " for name in PROXY_ENV_NAMES)
     return (
-        "docker buildx build --platform linux/arm64 --no-cache "
+        "docker buildx build --platform linux/arm64 --network host --no-cache "
         "--provenance=false "
         f"--build-arg SOURCE_DATE_EPOCH={epoch} "
         + proxies

@@ -113,6 +113,8 @@ def test_two_builds_are_exact_no_cache_native_oci_and_independent(tmp_path: Path
         BUILDER_B,
     ]
     assert "--platform" in first and first[first.index("--platform") + 1] == "linux/arm64"
+    assert "--network" in first and first[first.index("--network") + 1] == "host"
+    assert "--network" in second and second[second.index("--network") + 1] == "host"
     assert "type=oci,name=quantos-console:l2-arm64,dest=" in first[first.index("--output") + 1]
     assert "name=quantos-console:l2-arm64" in first[first.index("--output") + 1]
     assert "rewrite-timestamp=true" in first[first.index("--output") + 1]

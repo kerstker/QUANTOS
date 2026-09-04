@@ -211,6 +211,9 @@ def _build_argv(
         "docker", "buildx", "build",
         "--builder", builder,
         "--platform", TARGET_PLATFORM,
+        # The DGX review proxy is host-loopback scoped; only the build phase
+        # uses host networking so dependency fetches reach that proxy.
+        "--network", "host",
         "--no-cache",
         "--provenance=false",
         "--build-arg", f"SOURCE_DATE_EPOCH={epoch}",
