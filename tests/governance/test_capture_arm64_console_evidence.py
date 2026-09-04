@@ -232,6 +232,7 @@ def test_networked_database_download_inherits_proxy_names_over_host_network(
     )
 
     assert argv[argv.index("--network") + 1] == "host"
+    assert argv[argv.index("--timeout") + 1] == "45m"
     assert argv[argv.index("--tmpfs") + 1] == (
         "/tmp:rw,noexec,nosuid,size=256m"
     )
@@ -253,6 +254,7 @@ def test_networked_database_download_can_explicitly_clear_proxy_names(
     )
 
     assert argv[argv.index("--network") + 1] == "host"
+    assert argv[argv.index("--timeout") + 1] == "45m"
     assert _option_values(argv, "--env") == [
         "HOME=/tmp",
         *(f"{name}=" for name in PROXY_ENV_NAMES),

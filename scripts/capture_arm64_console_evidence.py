@@ -265,6 +265,10 @@ def _scanner_argv(
             argv.extend(["--env", f"{name}="])
     if user is not None:
         argv.extend(["--user", user])
+    if role == "download_database":
+        # The DGX proxy is bandwidth-limited; keep the scanner inside the
+        # capture command budget instead of Trivy's five-minute default.
+        argv.extend(["--timeout", "45m"])
     if input_archive is not None:
         argv.extend(
             [
