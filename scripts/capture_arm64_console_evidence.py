@@ -268,7 +268,7 @@ def _scanner_argv(
     if role == "download_database":
         # The DGX proxy is bandwidth-limited; keep the scanner inside the
         # capture command budget instead of Trivy's five-minute default.
-        argv.extend(["--timeout", "45m"])
+        arguments = ("--timeout", "45m", *arguments)
     if input_archive is not None:
         argv.extend(
             [
