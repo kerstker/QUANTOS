@@ -4,12 +4,12 @@
     "PAPER_EVIDENCE_MALFORMED",
     "INVALIDATED_PERP_LEDGER_V1"
   ],
-  "commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
+  "commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788533618755,
+  "generated_at_ms": 1788540212976,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Shadow readiness is not fill or paper proof. Legacy paper-cycle, three-alpha, continuous-paper, and health artifacts remain hash-audited diagnostic history and cannot become paper evidence through retention.",
-  "input_hash": "c3f08a4b5dc063ce5456bed76bb88f7abf9ff0f5f41bd5d54f6c3b9497239aa0",
+  "input_hash": "d1068a0b906ad6efedc01e03625feebd5d9e41fe6cbe337b56d180e16e9a2d03",
   "inputs": {
     "data/cache/binance_usdt_continuous_paper.json": {
       "exists": false,
@@ -56,7 +56,7 @@
     "tests/live": {
       "exists": true,
       "file_count": 69,
-      "files_sha256": "3d6d71df5ef4751f53f13cc0c67aa180584cd3a35008fea40fd0447f894e5fbf",
+      "files_sha256": "ba7ac6dac02b1b56b9dd8b9465ad938fc003b74803ff23a5987fe5a5e281e460",
       "kind": "python_directory"
     },
     "tests/research": {
@@ -110,10 +110,10 @@
   },
   "status": "NOT_READY",
   "validation": {
-    "current": true,
-    "head_commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
-    "overall_status": "PASS",
-    "reported_commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
+    "current": false,
+    "head_commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
+    "overall_status": "FAIL",
+    "reported_commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"

@@ -12,12 +12,12 @@
     "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
     "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
   ],
-  "commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
+  "commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788533618755,
+  "generated_at_ms": 1788540212976,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
-  "input_hash": "038f156f4641b7ff082993e792ec40ce45b8f95bdd2c970e91856243e1387a85",
+  "input_hash": "e5f92237e6e8ac507c86e46ac67a34ddc8b0b4b244e94b6530cb14b6c2a5e8d8",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -28,8 +28,8 @@
     "tests/live/test_live_backup.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "aa02eadcf97a5e7b385a7be2791afd7505ce5bab6f8c0b9234de01a81802773e",
-      "size_bytes": 21061
+      "sha256": "462b4447dae50f58855de944d78c1908a0340420b362083c37e0bb0c2ff42e74",
+      "size_bytes": 21672
     },
     "tests/live/test_order_recovery.py": {
       "exists": true,
@@ -40,8 +40,8 @@
     "tests/live/test_restore_drill.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "ea5f371d437647711171888a5ad333bd0582d760143636b0a3a1a60dc580aa0b",
-      "size_bytes": 11663
+      "sha256": "f131750440f3abeba944f3c8ac82758520b0bb4fed62cf0f5ed1ef4d80dd1cf8",
+      "size_bytes": 11827
     },
     "tests/live/test_risk_recovery_drill.py": {
       "exists": true,
@@ -98,10 +98,10 @@
   "schema_version": 1,
   "status": "NOT_READY",
   "validation": {
-    "current": true,
-    "head_commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
-    "overall_status": "PASS",
-    "reported_commit": "28f6a52d5420d4e8db09937956688d80e51c5887",
+    "current": false,
+    "head_commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
+    "overall_status": "FAIL",
+    "reported_commit": "68320785e3887aa91177c050b3ef9053609d7ab3",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
