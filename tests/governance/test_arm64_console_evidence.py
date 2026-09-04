@@ -69,6 +69,8 @@ def _build_capture(
             builder,
             "--platform",
             "linux/arm64",
+            "--network",
+            "host",
             "--no-cache",
             "--provenance=false",
             "--build-arg",
@@ -706,14 +708,14 @@ def test_arm64_reproducibility_rejects_recipe_tamper(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda argv: argv.__delitem__(slice(9, 11)),
+        lambda argv: argv.__delitem__(slice(11, 13)),
         lambda argv: argv.extend(["--build-arg", "HTTP_PROXY="]),
-        lambda argv: argv.__setitem__(10, "SOURCE_DATE_EPOCH=999999"),
+        lambda argv: argv.__setitem__(12, "SOURCE_DATE_EPOCH=999999"),
         lambda argv: argv.extend(
             ["--build-arg", "HTTP_PROXY=http://secret.invalid"]
         ),
         lambda argv: argv.extend(["--build-arg", "UNEXPECTED_PROXY"]),
-        lambda argv: argv.__setitem__(9, "--build-arg=HTTP_PROXY="),
+        lambda argv: argv.__setitem__(11, "--build-arg=HTTP_PROXY="),
     ],
 )
 def test_arm64_reproducibility_rejects_noncanonical_proxy_build_args(
