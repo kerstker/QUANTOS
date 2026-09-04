@@ -95,6 +95,7 @@ from tools.live_backup import (  # noqa: E402
     BackupPassphraseTooWeak,
     decrypt_bytes,
     decrypt_file,
+    decrypt_file_to_sink,
     encrypt_bytes,
     encrypt_file,
 )
@@ -216,6 +217,25 @@ def test_encrypt_file_streams_multiple_authenticated_chunks(tmp_path):
         parallelism=4,
     )
     assert restored.read_bytes() == original_bytes
+    assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
+
+
+def test_decrypt_file_to_sink_streams_authenticated_chunks_in_order(tmp_path):
+    original_bytes = bytes(range(256)) * 5
+    src = tmp_path / "authority.db"
+    src.write_bytes(original_bytes)
+    enc = tmp_path / "authority.db.enc"
+    encrypt_file(str(src), str(enc), "sink-passphrase", chunk_size=31)
+
+    chunks = []
+    restored_sha256 = decrypt_file_to_sink(
+        str(enc),
+        "sink-passphrase",
+        chunks.append,
+        parallelism=4,
+    )
+
+    assert b"".join(chunks) == original_bytes
     assert restored_sha256 == hashlib.sha256(original_bytes).hexdigest()
 
 

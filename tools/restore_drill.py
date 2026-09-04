@@ -17,7 +17,7 @@ import tempfile
 import time
 from typing import Any
 
-from tools.live_backup import _check_passphrase_strength, decrypt_file
+from tools.live_backup import _check_passphrase_strength, decrypt_file, decrypt_file_to_sink
 
 
 # A few multi-gigabyte authorities dominate restore time. Schedule them first
@@ -119,6 +119,105 @@ def _decompress_zstd(source_path: str, output_path: str) -> str:
         except FileNotFoundError:
             pass
         raise RestoreDrillError("zstd restore codec failed") from exc
+
+
+def _decompress_zstd_encrypted(
+    source_path: str,
+    output_path: str,
+    passphrase: str,
+) -> str:
+    """Decrypt QBK2 and decompress it in one streaming pipeline."""
+    required_binaries = (ZSTD_BINARY, TEE_BINARY, SHA256SUM_BINARY)
+    if any(
+        not os.path.isfile(binary) or not os.access(binary, os.X_OK)
+        for binary in required_binaries
+    ):
+        raise RestoreDrillError("zstd restore codec is unavailable")
+    processes: list[subprocess.Popen[bytes]] = []
+    decompressor_stdin = None
+    try:
+        decompressor = subprocess.Popen(
+            [ZSTD_BINARY, "-d", "-f", "--quiet", "--stdout"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(decompressor)
+        decompressor_stdin = decompressor.stdin
+        if decompressor.stdin is None or decompressor.stdout is None:
+            raise OSError("zstd pipe is unavailable")
+
+        copier = subprocess.Popen(
+            [TEE_BINARY, output_path],
+            stdin=decompressor.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(copier)
+        decompressor.stdout.close()
+        if copier.stdout is None:
+            raise OSError("tee stdout pipe is unavailable")
+
+        hasher = subprocess.Popen(
+            [SHA256SUM_BINARY],
+            stdin=copier.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(hasher)
+        copier.stdout.close()
+
+        decrypt_file_to_sink(
+            source_path,
+            passphrase,
+            decompressor.stdin.write,
+            parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
+        )
+        decompressor.stdin.close()
+        decompressor_stdin = None
+        digest_output, _ = hasher.communicate()
+
+        for process in reversed(processes):
+            return_code = process.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, process.args)
+        digest_fields = digest_output.split()
+        if len(digest_fields) != 2 or digest_fields[1] != b"-":
+            raise OSError("sha256sum returned an invalid digest record")
+        try:
+            digest = digest_fields[0].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise OSError("sha256sum returned a non-ASCII digest") from exc
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise OSError("sha256sum returned an invalid digest")
+        with open(output_path, "r+b") as output:
+            os.fsync(output.fileno())
+        return digest
+    except Exception as exc:
+        if decompressor_stdin is not None:
+            try:
+                decompressor_stdin.close()
+            except OSError:
+                pass
+        for process in reversed(processes):
+            if process.poll() is not None:
+                continue
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        try:
+            os.unlink(output_path)
+        except FileNotFoundError:
+            pass
+        if isinstance(exc, RestoreDrillError):
+            raise
+        raise RestoreDrillError("zstd encrypted restore codec failed") from exc
+
 
 
 def _evidence_path(path: str) -> str:
@@ -224,23 +323,11 @@ def run_restore_drill(
                 source_path, restored_name = item
                 output_path = os.path.join(stage, restored_name)
                 if source_path.endswith(f"{ZSTD_SUFFIX}.enc"):
-                    compressed_path = f"{output_path}{ZSTD_SUFFIX}"
-                    try:
-                        decrypt_file(
-                            source_path,
-                            compressed_path,
-                            passphrase or "",
-                            parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
-                        )
-                        restored_sha256 = _decompress_zstd(
-                            compressed_path,
-                            output_path,
-                        )
-                    finally:
-                        try:
-                            os.unlink(compressed_path)
-                        except FileNotFoundError:
-                            pass
+                    restored_sha256 = _decompress_zstd_encrypted(
+                        source_path,
+                        output_path,
+                        passphrase or "",
+                    )
                     return restored_name, restored_sha256
                 return restored_name, decrypt_file(
                     source_path,

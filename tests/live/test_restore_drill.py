@@ -98,11 +98,17 @@ def test_encrypted_zstd_restore_decompresses_and_hashes_plaintext(tmp_path, monk
         "restore-drill-passphrase",
     )
 
-    def fake_decompress(source_path, output_path):
-        shutil.copyfile(source_path, output_path)
+    def fake_decompress(source_path, output_path, passphrase):
+        assert source_path.endswith("authority.db.zst.enc")
+        assert passphrase == "restore-drill-passphrase"
+        shutil.copyfile(source, output_path)
         return restore_drill._sha256_file(output_path)
 
-    monkeypatch.setattr(restore_drill, "_decompress_zstd", fake_decompress)
+    monkeypatch.setattr(
+        restore_drill,
+        "_decompress_zstd_encrypted",
+        fake_decompress,
+    )
     result = restore_drill.run_restore_drill(
         batch_dir=str(batch),
         restore_dir=str(tmp_path / "restore"),

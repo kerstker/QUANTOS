@@ -37,6 +37,7 @@ PBKDF2-HMAC-SHA256(200,000 轮,标准库 `hashlib`)派生密钥,逐文件独立 
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 import glob
 import hashlib
@@ -411,6 +412,124 @@ def _decrypt_chunked_file_parallel(
         raise
 
 
+def _decrypt_chunked_file_to_sink(
+    src_path: str,
+    passphrase: str,
+    sink: Callable[[bytes], object],
+    *,
+    workers: int,
+) -> str:
+    """Authenticate/decrypt a QBK2 stream directly into a caller-owned sink.
+
+    The chunk parser and ordering checks intentionally mirror the existing
+    parallel decryptor, but no decrypted temporary file is created. The
+    caller can connect authenticated plaintext to a streaming codec and avoid
+    a second full-disk pass.
+    """
+    aesgcm_cls = _require_aesgcm()
+    with open(src_path, "rb") as source:
+        header = _read_exact(source, _CHUNKED_HEADER.size, label="header")
+        magic, salt, nonce_prefix, chunk_size, plaintext_size, count = (
+            _CHUNKED_HEADER.unpack(header)
+        )
+        if magic != _CHUNKED_MAGIC:
+            raise BackupDecryptionError("not a recognized QBK2 encrypted backup")
+        try:
+            _validated_chunk_size(chunk_size)
+            expected_count = _chunk_count(plaintext_size, chunk_size)
+        except (BackupEncryptionError, ValueError) as exc:
+            raise BackupDecryptionError(
+                "QBK2 encrypted backup has invalid size metadata"
+            ) from exc
+        if count != expected_count:
+            raise BackupDecryptionError(
+                "QBK2 encrypted backup has inconsistent size metadata"
+            )
+        key = _derive_key(passphrase, salt)
+        from cryptography.exceptions import InvalidTag
+
+        def decrypt_chunk(
+            index: int,
+            recorded_length: int,
+            ciphertext: bytes,
+        ) -> bytes:
+            nonce = nonce_prefix + index.to_bytes(4, "big")
+            aad = header + _CHUNK_AAD.pack(index, recorded_length)
+            try:
+                return aesgcm_cls(key).decrypt(nonce, ciphertext, aad)
+            except InvalidTag as exc:
+                raise BackupDecryptionError(
+                    "failed to decrypt QBK2 backup data - wrong passphrase, "
+                    "or the data is corrupted/tampered"
+                ) from exc
+
+        restored_size = 0
+        plaintext_digest = hashlib.sha256()
+        pending = deque()
+
+        def write_next_chunk() -> None:
+            nonlocal restored_size
+            recorded_length, future = pending.popleft()
+            chunk = future.result()
+            if len(chunk) != recorded_length:
+                raise BackupDecryptionError(
+                    "QBK2 decrypted chunk has an inconsistent length"
+                )
+            sink(chunk)
+            plaintext_digest.update(chunk)
+            restored_size += len(chunk)
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for index in range(count):
+                recorded_length = _CHUNK_LENGTH.unpack(
+                    _read_exact(
+                        source,
+                        _CHUNK_LENGTH.size,
+                        label=f"chunk {index} length",
+                    )
+                )[0]
+                offset = index * chunk_size
+                expected = (
+                    0
+                    if plaintext_size == 0
+                    else min(chunk_size, plaintext_size - offset)
+                )
+                if recorded_length != expected:
+                    raise BackupDecryptionError(
+                        "QBK2 encrypted backup has inconsistent chunk lengths"
+                    )
+                ciphertext = _read_exact(
+                    source,
+                    recorded_length + _GCM_TAG_LEN,
+                    label=f"chunk {index} ciphertext",
+                )
+                pending.append(
+                    (
+                        recorded_length,
+                        executor.submit(
+                            decrypt_chunk,
+                            index,
+                            recorded_length,
+                            ciphertext,
+                        ),
+                    )
+                )
+                if len(pending) >= workers:
+                    write_next_chunk()
+            if source.read(1):
+                raise BackupDecryptionError(
+                    "QBK2 encrypted backup is truncated or has trailing data"
+                )
+            while pending:
+                write_next_chunk()
+
+        if restored_size != plaintext_size:
+            raise BackupDecryptionError(
+                "QBK2 encrypted backup is truncated or has trailing data"
+            )
+        return plaintext_digest.hexdigest()
+
+
 def _decrypt_chunked_file(
     src_path: str,
     dest_path: str,
@@ -533,6 +652,32 @@ def decrypt_file(
         except FileNotFoundError:
             pass
         raise
+
+
+def decrypt_file_to_sink(
+    src_path: str,
+    passphrase: str,
+    sink: Callable[[bytes], object],
+    *,
+    parallelism: int = 1,
+) -> str:
+    """Authenticate/decrypt a backup stream into sink and return its SHA."""
+    workers = _validated_decrypt_parallelism(parallelism)
+    with open(src_path, "rb") as source:
+        magic = source.read(len(_MAGIC))
+    if magic == _CHUNKED_MAGIC:
+        return _decrypt_chunked_file_to_sink(
+            src_path,
+            passphrase,
+            sink,
+            workers=workers,
+        )
+    if magic != _MAGIC:
+        raise BackupDecryptionError("not a recognized QUANTOS encrypted backup file")
+    with open(src_path, "rb") as source:
+        data = decrypt_bytes(source.read(), passphrase)
+    sink(data)
+    return hashlib.sha256(data).hexdigest()
 
 
 def _check_encryption_policy(passphrase, allow_plaintext: bool) -> None:
