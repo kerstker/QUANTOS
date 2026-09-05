@@ -1169,7 +1169,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history health failed: LATEST_ATTEMPT_STALE, LATEST_TERMINAL_NOT_PASS, FAILURE_IN_CLEAN_LOOKBACK, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -1862,9 +1862,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1788531764379,
-    "run_id": "34d0370699ea4eaa0193b0069162d0a06954414080406b5555c128d725a4486f",
-    "source_commit": "28f6a52d5420d4e8db09937956688d80e51c5887"
+    "generated_at": 1788614063441,
+    "run_id": "65ce42cb4dd1ec27487aaa28e99cd78167eb4a12ec210565f3dd674a1508a14d",
+    "source_commit": "06ebb5eec831d8f2a74908249f87f374f2e1bd7f"
   },
   "verdict": "NOT_TOP_TIER"
 }
