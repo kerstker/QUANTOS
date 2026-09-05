@@ -13,6 +13,7 @@ import json
 from collections.abc import Callable, Iterable, Sequence
 
 from services.data.binance_book_depth_archive import (
+    BinanceBookDepthArchiveError,
     parse_book_depth_archive,
     parse_mark_price_1m_archive,
 )
@@ -45,19 +46,29 @@ def diagnose_archive(
     actual = hashlib.sha256(raw).hexdigest()
     if actual != expected:
         raise RuntimeError("book-depth diagnostic checksum mismatch")
-    observations = parse_book_depth_archive(
-        raw,
-        instrument_id=instrument_id,
-        expected_day_ms=day_ms,
-        observed_at_ms=observed_at_ms,
-        archive_sha256=actual,
-        minimum_snapshot_count=1,
-        minimum_hourly_snapshot_count=1,
-        require_all_hours=False,
-        max_inverted_snapshot_ratio=MAX_INVERTED_SNAPSHOT_RATIO,
-    )
+    try:
+        observations = parse_book_depth_archive(
+            raw,
+            instrument_id=instrument_id,
+            expected_day_ms=day_ms,
+            observed_at_ms=observed_at_ms,
+            archive_sha256=actual,
+            minimum_snapshot_count=1,
+            minimum_hourly_snapshot_count=1,
+            require_all_hours=False,
+            max_inverted_snapshot_ratio=MAX_INVERTED_SNAPSHOT_RATIO,
+        )
+    except BinanceBookDepthArchiveError as exc:
+        return {
+            "day_ms": day_ms, "instrument_id": instrument_id,
+            "status": "FAIL", "checksum_verified": True, "archive_sha256": actual,
+            "reason_code": exc.reason_code, "reason": str(exc),
+            "quality_details": exc.quality_details,
+            "confirmation_outcome_accessed": False,
+        }
     hourly_counts = tuple(int(row["snapshot_count"]) for row in observations)
     result: dict[str, object] = {
+        "status": "PASS",
         "day_ms": day_ms,
         "instrument_id": instrument_id,
         "checksum_verified": True,
@@ -151,19 +162,21 @@ def diagnose_days(
             archives = tuple(executor.map(run, identities))
     day_reports = []
     for day_ms in selected_days:
-        rows = tuple(row for row in archives if row["day_ms"] == day_ms)
+        all_rows = tuple(row for row in archives if row["day_ms"] == day_ms)
+        rows = tuple(row for row in all_rows if row["status"] == "PASS")
         day_reports.append(
             {
                 "day_ms": day_ms,
-                "instrument_count": len(rows),
+                "instrument_count": len(all_rows),
+                "rejected_instrument_count": len(all_rows) - len(rows),
                 "minimum_archive_snapshot_count": min(
-                    int(row["archive_snapshot_count"]) for row in rows
+                    (int(row["archive_snapshot_count"]) for row in rows), default=None
                 ),
                 "maximum_archive_snapshot_count": max(
-                    int(row["archive_snapshot_count"]) for row in rows
+                    (int(row["archive_snapshot_count"]) for row in rows), default=None
                 ),
                 "minimum_hour_snapshot_count": min(
-                    int(row["minimum_hour_snapshot_count"]) for row in rows
+                    (int(row["minimum_hour_snapshot_count"]) for row in rows), default=None
                 ),
                 "instruments_missing_any_hour": sum(
                     int(row["hour_count"]) < 24 for row in rows
@@ -177,7 +190,9 @@ def diagnose_days(
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "status": "FAIL" if any(row["status"] == "FAIL" for row in archives) else "PASS",
+        "rejected_archive_count": sum(row["status"] == "FAIL" for row in archives),
         "mode": "L2_PUBLIC_ARCHIVE_QUALITY_ONLY",
         "observed_at_ms": observed_at_ms,
         "day_count": len(selected_days),

@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-05 DGX 第三批技术回放：** 冻结 Binance 公共 REST 原始响应与时钟，
+> 接通白名单 `perpetual_replay`、定频 Decimal 净权益、registry 与独立控制台技术页。
+> Fraction / VectorBT 各 7 个共同模型案例通过；真实样本回放对账残差为零。
+> 14 标的 bookDepth 原始归档倒挂已复现，新增逐标的拒帧诊断，隔离阈值不放宽。
+> ARM64 BuildKit 构建增加 4 CPU / 16 GiB 上限。完整 M1/M2 尚未验收；公开样本
+> 无法证明完整场所保证金规则，R1 与运维验收仍需完成。用户明确延期异机备份恢复，
+> 不再将提供异机目标作为本地开发前置条件。详见
+> `docs/engineering/specs/2026-09-05-dgx-engine-foundation-increment3.md`。
+
 > **2026-09-05 DGX 第二批订单准入与额度预留：** `OrderRuleProfile` 显式绑定
 > 合约 epoch/场所/可用时间，检查价格 tick、数量上限、最大名义额和订单类型；
 > 反手最低额可明确选择原订单或新仓政策。全仓挂单按 canonical 保证金档位增量、

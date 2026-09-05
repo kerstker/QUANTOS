@@ -671,12 +671,20 @@ def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
         "--driver", "docker-container", "--platform", "linux/arm64",
         "--driver-opt", "image=moby/buildkit@sha256:59795d5a98a9e12ddf49567fcd1976a30f2d2a60ef469c2f9cedb9e5e3251b25",
         "--driver-opt", "network=host",
+        "--driver-opt", "cpu-period=100000",
+        "--driver-opt", "cpu-quota=400000",
+        "--driver-opt", "memory=16g",
+        "--driver-opt", "memory-swap=16g",
     ]
     create_second = [
         "docker", "buildx", "create", "--name", BUILDER_B,
         "--driver", "docker-container", "--platform", "linux/arm64",
         "--driver-opt", "image=moby/buildkit@sha256:59795d5a98a9e12ddf49567fcd1976a30f2d2a60ef469c2f9cedb9e5e3251b25",
         "--driver-opt", "network=host",
+        "--driver-opt", "cpu-period=100000",
+        "--driver-opt", "cpu-quota=400000",
+        "--driver-opt", "memory=16g",
+        "--driver-opt", "memory-swap=16g",
     ]
     cleanup_first = ["docker", "buildx", "rm", "--force", BUILDER_A]
     fake = FakeRunner(

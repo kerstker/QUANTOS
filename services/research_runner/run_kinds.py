@@ -419,7 +419,39 @@ def _adapt_ashare_forward_observation(j: dict) -> dict:
     }
 
 
+def _adapt_perpetual_replay(result: dict) -> dict:
+    if (result.get("evidence_status") != "TECHNICAL_VALIDATION_ONLY"
+            or result.get("authoritative") is not False
+            or result.get("schema_version") != "LINEAR_PERPETUAL_FORWARD_SIMULATION_V3"
+            or result["reconciliation"]["residual"] != "0"
+            or not result.get("order_rule_profiles")):
+        raise ValueError("invalid technical perpetual replay result")
+    metrics = {
+        "capture_id": result["dataset_manifest"]["capture_id"],
+        "result_hash": result["result_hash"], "input_hash": result["input_hash"],
+        "source_sha256": result["release_identity"]["python_source_sha256"],
+        "lock_sha256": result["release_identity"]["dependency_lock_sha256"],
+        "ending_equity": result["reconciliation"]["ending_equity"],
+        "reconciliation_residual": result["reconciliation"]["residual"],
+        "order_count": len(result["orders"]),
+        "rejected_count": sum(o["status"] == "REJECTED" for o in result["orders"]),
+        "configuration": json.dumps(result["research_configuration"], sort_keys=True),
+    }
+    return {"title": "永续引擎技术回放", "metrics": metrics,
+        "series": {"net_equity": [{"label": str(p["timestamp"]), "value": float(p["equity"])}
+                    for p in result["fixed_frequency"]["points"]]},
+        "verdict": "TECHNICAL_VALIDATION_ONLY",
+        "caveats": [*result["dataset_manifest"]["limitations"],
+            "不构成候选选择、晋级或交易授权；完整精确结果按 result_hash 保存。",
+            *[json.dumps(e, ensure_ascii=False, sort_keys=True) for e in result["order_events"]]],
+        "provenance": "tools/perpetual_replay_research.py"}
+
+
 RUN_KINDS: dict = {
+    "perpetual_replay": RunSpec("tools.perpetual_replay_research:run_replay",
+        {"strategy_id": int, "frequency_ms": int}, _adapt_perpetual_replay,
+        "永续引擎技术回放", DIAGNOSTIC_ONLY,
+        param_bounds={"strategy_id": (0, 2), "frequency_ms": (1, 3_600_000)}),
     "carry_strategy": RunSpec("tools.crypto_carry_strategy:main", {}, adapt_carry, "资金费 Carry 策略", DIAGNOSTIC_ONLY,
                               runner=_tool_then_json("tools.crypto_carry_strategy", "crypto_carry_strategy.json")),
     "oi_research": RunSpec("tools.crypto_oi_research:main", {}, adapt_oi_research, "持仓因子研究", DIAGNOSTIC_ONLY,
@@ -489,7 +521,7 @@ def validate_params(kind: str, params: dict) -> dict:
     for k, v in params.items():
         if k not in spec.param_schema:
             raise ValueError(f"unknown param {k!r} for kind {kind!r}")
-        if not isinstance(v, spec.param_schema[k]):
+        if not isinstance(v, spec.param_schema[k]) or (spec.param_schema[k] is int and type(v) is not int):
             raise ValueError(f"param {k!r} must be {spec.param_schema[k].__name__}")
         if k in bounds:
             lo, hi = bounds[k]

@@ -133,6 +133,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # research-ops console: dynamic registry-backed run list + generic detail (real research results)
     "/api/v1/console/research-runs": ("", ("runs",)),
     "/api/v1/console/research-run": ("?run_id=__contract__", ("run",)),
+    "/api/v1/console/technical-replay": ("?run_id=__contract__", ("technical_replay",)),
     # backtest results: aggregate of the done run_registry runs by role (carry/combo/oi/survivorship + factory)
     "/api/v1/console/backtest-results": ("", ("carry", "combo", "oi_research", "survivorship", "factory")),
     # alpha lifecycle monitor: real experiment_registry backtest-side artifacts (live side honestly null)
@@ -225,6 +226,7 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/safety-primitives": "REAL_SAFETY_PRIMITIVES",   # reads the real KillSwitch/gate/config
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
     "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
+    "/api/v1/console/technical-replay": "VERIFIED_RUN_REGISTRY_TECHNICAL_MIRROR",
     # BacktestResults aggregates done runs by role; synthetic (all-None blocks) when the registry is empty.
     "/api/v1/console/backtest-results": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # FX research: REAL ECB snapshot when present, SYNTHETIC-empty in CI / fresh checkout. Both honest.
@@ -1752,3 +1754,16 @@ def test_ashare_alpha_endpoint_numeric_sanity():
     assert body["cost_grid"] and body["turnover_caps"]
     assert body["data_freshness"]["stocks"] > 0 and body["data_freshness"]["last_date"] > 0
     assert body["honest_limitations"]
+
+
+def test_technical_replay_endpoint_has_separate_non_authoritative_contract():
+    from fastapi.testclient import TestClient
+    from services.console.api.main import app
+    payload=TestClient(app).get('/api/v1/console/technical-replay?run_id=missing-replay').json()
+    assert set(payload)=={'source','read_only','api_version','data_provenance','authoritative',
+                          'evidence_status','technical_replay','snapshot_id','snapshot_ids',
+                          'snapshot_status','data_quality'}
+    assert payload['read_only'] is True
+    assert payload['authoritative'] is False
+    assert payload['evidence_status']=='TECHNICAL_VALIDATION_ONLY'
+    assert payload['technical_replay'] is None

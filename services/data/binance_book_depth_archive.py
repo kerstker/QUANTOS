@@ -29,6 +29,12 @@ _EXPECTED_LEVELS = frozenset((*(-value for value in DEPTH_RADII), *DEPTH_RADII))
 class BinanceBookDepthArchiveError(ValueError):
     """One archive cannot be admitted without fabricating depth evidence."""
 
+    def __init__(self, message: str, *, reason_code: str = 'INVALID_ARCHIVE',
+                 quality_details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.quality_details = dict(quality_details or {})
+
 
 class _InvertedSnapshotError(BinanceBookDepthArchiveError):
     """One otherwise-structural snapshot contains a crossed implicit curve."""
@@ -223,7 +229,16 @@ def parse_book_depth_archive(
     quarantined_count = sum(len(values) for values in quarantined_by_hour.values())
     if quarantined_count / len(snapshots) > float(max_inverted_snapshot_ratio):
         raise BinanceBookDepthArchiveError(
-            "implicit bid/ask prices inversion exceeds bounded quarantine policy"
+            "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+            reason_code='INVERTED_SNAPSHOT_LIMIT_EXCEEDED',
+            quality_details={
+                'archive_snapshot_count': len(snapshots),
+                'quarantined_snapshot_count': quarantined_count,
+                'quarantined_snapshot_ratio': quarantined_count / len(snapshots),
+                'maximum_quarantined_snapshot_ratio': float(max_inverted_snapshot_ratio),
+                'quarantined_by_hour': {str(hour): len(times) for hour, times in sorted(quarantined_by_hour.items())},
+                'first_quarantined_event_times_ms': sorted(time for times in quarantined_by_hour.values() for time in times)[:8],
+            },
         )
     if not hourly:
         raise BinanceBookDepthArchiveError(

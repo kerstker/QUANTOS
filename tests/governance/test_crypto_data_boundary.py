@@ -9,7 +9,8 @@ import os
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # every network-bearing out-of-gate fetcher (add new ones here so the boundary covers them)
-_FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
+_FETCHERS = [os.path.join(_ROOT, "tools", "perpetual_public_capture.py"),
+             os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
@@ -145,6 +146,7 @@ _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "con
 # 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
 # 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
 _EXTRA_ALLOWED_BY_FILE = {
+    "perpetual_public_capture.py": {"argparse", "pathlib", "base64", "hashlib"},  # exact public response bytes
     # Archive row/file dates are parsed as explicit UTC instants so source,
     # availability, and ingestion clocks cannot inherit the host timezone.
     "binance_oi_metrics_fetch.py": {"datetime"},

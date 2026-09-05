@@ -147,6 +147,7 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "ashare_forward_observation",
         "ashare_technical_search",
         "data_refresh",
+        "perpetual_replay",
     }
     actual_selection_bearing = {
         kind

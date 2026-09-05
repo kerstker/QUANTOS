@@ -719,6 +719,10 @@ def capture(
                     "--driver", "docker-container", "--platform", TARGET_PLATFORM,
                     "--driver-opt", f"image={BUILDKIT_IMAGE_REF}",
                     "--driver-opt", "network=host",
+                    "--driver-opt", "cpu-period=100000",
+                    "--driver-opt", "cpu-quota=400000",
+                    "--driver-opt", "memory=16g",
+                    "--driver-opt", "memory-swap=16g",
                 ],
                 root,
             )

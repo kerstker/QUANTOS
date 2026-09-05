@@ -121,6 +121,7 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "ashare_forward_observation",
         "ashare_technical_search",
         "data_refresh",
+        "perpetual_replay",
     ]
     assert r.json()["quarantined_kinds"] == {
         "ashare_alpha": "INVALIDATED_PERP_LEDGER_V1",

@@ -2314,6 +2314,20 @@ export interface ResearchRunPayload extends ConsolePayloadBase {
   data_provenance: string;
   run: ResearchRunDetail | null;
 }
+export interface TechnicalReplayPayload extends ConsolePayloadBase {
+  data_provenance: string;
+  authoritative: false;
+  evidence_status: 'TECHNICAL_VALIDATION_ONLY';
+  technical_replay: {
+    run_id: string;
+    metrics: Record<string, number | string | null>;
+    series: Record<string, Array<{ label: string; value: number }>>;
+    caveats: string[];
+    params: Record<string, unknown>;
+    evidence_status: 'TECHNICAL_VALIDATION_ONLY';
+    authoritative: false;
+  } | null;
+}
 export interface ResearchRunsComparePayload extends ConsolePayloadBase {
   data_provenance: string;
   runs: ResearchRunDetail[];

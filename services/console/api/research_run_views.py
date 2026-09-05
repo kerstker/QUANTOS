@@ -128,6 +128,38 @@ def research_run_detail(run_id: str = Query(...)) -> Dict:
     }, run=_run_detail(r) if r else None)
 
 
+def _technical_replay_detail(run) -> Dict | None:
+    """A separate technical projection; no retained V1 result can enter it."""
+    if run is None or run.kind != "perpetual_replay" or run.status != "done":
+        return None
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import validate_run_provenance
+
+    try:
+        validate_run_provenance(run, RUN_KINDS["perpetual_replay"])
+        if (run.verdict != "TECHNICAL_VALIDATION_ONLY"
+                or run.metrics.get("reconciliation_residual") != "0"):
+            return None
+    except (ValueError, TypeError, KeyError):
+        return None
+    return {"run_id": run.run_id, "metrics": run.metrics, "series": run.series,
+            "caveats": run.caveats, "params": run.params,
+            "evidence_status": "TECHNICAL_VALIDATION_ONLY", "authoritative": False}
+
+
+@router.get("/api/v1/console/technical-replay")
+def technical_replay(run_id: str = Query(...)) -> Dict:
+    detail = _technical_replay_detail(_runs_registry().get(run_id))
+    snapshot_id = detail['metrics']['result_hash'] if detail is not None else None
+    return {"source": "BACKEND_COMPUTED_SNAPSHOT", "read_only": True,
+            "api_version": "0.1.0", "data_provenance": "VERIFIED_RUN_REGISTRY_TECHNICAL_MIRROR",
+            "authoritative": False, "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+            "snapshot_id": snapshot_id,
+            "snapshot_ids": [snapshot_id] if snapshot_id else [],
+            "snapshot_status": "REAL" if detail is not None else "NO_SNAPSHOT",
+            "technical_replay": detail}
+
+
 def _latest_done_run(reg, kind: str):
     """Latest DONE run of a kind (by created_ts), or None. run_id is a content hash (re-runs mint a new id),
     so we select by kind+recency — robust to re-running research — instead of pinning a fragile id."""

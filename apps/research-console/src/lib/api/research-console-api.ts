@@ -14,6 +14,7 @@ import type {
   GonogoPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
+  TechnicalReplayPayload,
   ResearchRunsComparePayload,
   ResearchRunDetail,
   DataCatalogPayload,
@@ -382,6 +383,11 @@ export function fetchResearchRuns(signal?: AbortSignal) {
 export function fetchResearchRun(runId: string, signal?: AbortSignal) {
   return fetchConsoleJson<ResearchRunPayload>(
     '/api/v1/console/research-run?run_id=' + encodeURIComponent(runId), signal);
+}
+
+export function fetchTechnicalReplay(runId: string, signal?: AbortSignal) {
+  return fetchConsoleJson<TechnicalReplayPayload>(
+    '/api/v1/console/technical-replay?run_id=' + encodeURIComponent(runId), signal);
 }
 
 /**
