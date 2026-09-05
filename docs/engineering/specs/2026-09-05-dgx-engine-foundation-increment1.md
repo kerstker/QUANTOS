@@ -3,6 +3,9 @@
 依据：[用户提供的开发路线](../plans/2026-09-05-dgx-engine-foundation-roadmap-review.md)。
 当前边界：`L2_DRY_RUN_ONLY`，所有模拟输出为 `TECHNICAL_VALIDATION_ONLY`。
 
+后续进度：[第二批订单准入与全仓额度预留](2026-09-05-dgx-engine-foundation-increment2.md)
+已实现并专项验证。以下表格与验证数字保留为首批交付快照。
+
 ## 交付范围
 
 | 工作包 | 本批状态 | 实现与剩余项 |

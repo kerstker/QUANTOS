@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-05 DGX 第二批订单准入与额度预留：** `OrderRuleProfile` 显式绑定
+> 合约 epoch/场所/可用时间，检查价格 tick、数量上限、最大名义额和订单类型；
+> 反手最低额可明确选择原订单或新仓政策。全仓挂单按 canonical 保证金档位增量、
+> 费用及不利成交缓冲预留；反向挂单不互抵，跨标的竞争同一钱包。拟成交事务内
+> 重新检查剩余承诺，失败释放深度/容量/预留；部分成交、撤单、到期均有审计。
+> schema 为 `LINEAR_PERPETUAL_FORWARD_SIMULATION_V3`。新规则模式暂不支持逐仓，
+> 无 profile 的旧调用明确为未预留的技术诊断。专项 458 passed，治理边界 56 passed。
+> 尚未冻结真实场所 profile/公共数据，D1/I1/V1/R1 与 M1/M2 验收仍待完成。
+> 详见 `docs/engineering/specs/2026-09-05-dgx-engine-foundation-increment2.md`。
+
 > **2026-09-05 DGX 底层路线首批增量：** 按用户提供的
 > `docs/engineering/plans/2026-09-05-dgx-engine-foundation-roadmap-review.md`
 > 开始 B0/E1/E2。建立独立 ARM64 锁定开发环境和 `scripts/dgx_develop.py`，
