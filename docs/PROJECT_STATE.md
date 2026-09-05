@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-06 订单块重建研究：** 用户最新报告 maker 0 / taker 0.036%（3.6bp）。
+> 缺少原结构引擎源码，冻结因果 swing/BOS/FVG 重建规则，在 BTCUSDC 永续完成 24 项情景。
+> 中心 5bp 滑点：2x 净亏 140.25 USDC；5x 触发150预算停机、净亏152.81，未截断亏347.09。
+> 三组成本全亏，0候选过筛；不能称原包精确复现。沿用唯一Decimal账本和技术结果页。
+> 独立13872净值/持仓检查、318完整交易时序复核通过；专项480及71通过，前端264通过。
+> Run run_a955088bcee8af1a458c0af7ff56cb3f；仍TECHNICAL_VALIDATION_ONLY，原完整发布门禁仍失败。
+> 无部署、下单或晋级。详见 `docs/reports/2026-09-06-causal-orderblock-results.md`。
+
 > **2026-09-06 QUANTOS 有限自动永续研究：** BTCUSDC、单边taker4bp，
 > 接通JobQueue/RunRegistry、TrialLedger、固定假设语法/UCB、唯一Decimal账本及既有技术结果页。
 > A/B/C失败后自动生成8个新假设；每轮78项情景，两轮156项均保留，独立各45084净值检查通过。
