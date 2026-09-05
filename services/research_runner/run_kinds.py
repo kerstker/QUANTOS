@@ -447,7 +447,7 @@ def _adapt_perpetual_replay(result: dict) -> dict:
         "provenance": "tools/perpetual_replay_research.py"}
 
 
-def _adapt_perpetual_alpha(result: dict) -> dict:
+def _adapt_perpetual_alpha(result: dict, *, source='tools/perpetual_alpha_research.py', title='USDC永续有限自动研究') -> dict:
     import hashlib
     if (result.get('schema')!='QUANTOS_PERPETUAL_ALPHA_RESEARCH_V1'
             or result.get('status')!='TECHNICAL_VALIDATION_ONLY'
@@ -459,7 +459,7 @@ def _adapt_perpetual_alpha(result: dict) -> dict:
     if result.get('result_hash')!=expected:raise ValueError('alpha research result hash mismatch')
     candidates=[{'label':name,'value':cases['5/1']['metrics']['net_pnl']}
                 for name,cases in result['results'].items() if cases['5/1']['status']!='FAILED']
-    return {'title':'USDC永续有限自动研究','verdict':'TECHNICAL_VALIDATION_ONLY',
+    return {'title':title,'verdict':'TECHNICAL_VALIDATION_ONLY',
             'series':{'candidates':candidates},
             'metrics':{'result_hash':result['result_hash'],'trial_count':len(result['trial_ids']),
                 'candidate_count':len(result['comparison']),
@@ -468,10 +468,16 @@ def _adapt_perpetual_alpha(result: dict) -> dict:
                 'hypothesis_source':result['hypothesis_source'],
                 'stage_status':json.dumps(result['stage_status'],sort_keys=True)},
             'caveats':result['limitations']+['无经济权威、Paper晋级或实盘授权'],
-            'provenance':'tools/perpetual_alpha_research.py'}
+            'provenance':source}
 
+
+from functools import partial
 
 RUN_KINDS: dict = {
+    'orderblock_research': RunSpec('tools.causal_block_research:run_study',
+        {'attempt':int},partial(_adapt_perpetual_alpha, source='tools/causal_block_research.py', title='USDC因果订单块研究'),
+        'USDC因果订单块研究',DIAGNOSTIC_ONLY,
+        param_bounds={'attempt':(1,1000)}),
     'perpetual_alpha': RunSpec('tools.perpetual_alpha_research:run_alpha',
         {'attempt':int},_adapt_perpetual_alpha,'USDC永续有限自动研究',DIAGNOSTIC_ONLY,
         param_bounds={'attempt':(1,1000)}),

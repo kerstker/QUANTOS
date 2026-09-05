@@ -33,8 +33,8 @@ describe('Separate technical replay result', () => {
     expect(screen.getByText('verified-result-digest')).toBeInTheDocument();
     expect(screen.getByText('exact audit record')).toBeInTheDocument();
   });
-  it('shows bounded perpetual research without a USDT equity table', () => {
-    state.kind = 'perpetual_alpha';
+  it.each(['perpetual_alpha', 'orderblock_research'])('shows %s without a USDT equity table', kind => {
+    state.kind = kind;
     show();
     expect(screen.getByText('verified-result-digest')).toBeInTheDocument();
     expect(screen.queryByText('USDT')).not.toBeInTheDocument();

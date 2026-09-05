@@ -32,7 +32,7 @@ export default function RunDetail() {
     && technicalSnapshot.payload.technical_replay?.run_id === id
     && technicalSnapshot.payload.technical_replay.authoritative === false
     && technicalSnapshot.payload.technical_replay.evidence_status === 'TECHNICAL_VALIDATION_ONLY'
-    && (run?.kind === 'perpetual_replay' || run?.kind === 'perpetual_alpha')
+    && (run?.kind === 'perpetual_replay' || run?.kind === 'perpetual_alpha' || run?.kind === 'orderblock_research')
     ? technicalSnapshot.payload.technical_replay : null;
   const active = run != null && (run.status === 'queued' || run.status === 'running');
 
@@ -141,8 +141,8 @@ export default function RunDetail() {
               </table>
             </div>
           </Panel>}
-          {run.kind === 'perpetual_alpha' && <Panel eyebrow="RESEARCH SCREEN" title="候选净收益（USDC）">
-            <p className="mb-3 text-xs text-faint">单边手续费 4bp、滑点 5bp、累计亏损 150 停机；其他成本与未停机情景保存在运行记录中。此表不代表准入。</p>
+          {(run.kind === 'perpetual_alpha' || run.kind === 'orderblock_research') && <Panel eyebrow="RESEARCH SCREEN" title="候选净收益（USDC）">
+            <p className="mb-3 text-xs text-faint">单边手续费 {run.kind === 'orderblock_research' ? '3.6' : '4'}bp、滑点 5bp、累计亏损 150 停机；其他成本与未停机情景保存在运行记录中。此表不代表准入。</p>
             <table className="w-full text-left text-xs"><thead><tr><th>候选 / 基准</th><th>净收益 USDC</th></tr></thead>
               <tbody>{(technical.series.candidates ?? []).map(point => <tr key={point.label}>
                 <td>{point.label}</td><td>{point.value}</td>

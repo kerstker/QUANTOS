@@ -130,7 +130,7 @@ def research_run_detail(run_id: str = Query(...)) -> Dict:
 
 def _technical_replay_detail(run) -> Dict | None:
     """A separate technical projection; no retained V1 result can enter it."""
-    if run is None or run.kind not in ("perpetual_replay", "perpetual_alpha") or run.status != "done":
+    if run is None or run.kind not in ("perpetual_replay", "perpetual_alpha", "orderblock_research") or run.status != "done":
         return None
     from services.research_runner.run_kinds import RUN_KINDS
     from services.research_runner.runner import validate_run_provenance

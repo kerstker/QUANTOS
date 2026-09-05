@@ -121,6 +121,7 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "ashare_forward_observation",
         "ashare_technical_search",
         "data_refresh",
+        "orderblock_research",
         "perpetual_alpha",
         "perpetual_replay",
     ]

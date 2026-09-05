@@ -31,7 +31,7 @@ def digest(value):
     return hashlib.sha256(value if isinstance(value,bytes) else json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 
-def load_data():
+def load_data(*,include_intrabar=False):
     start=timestamp('2025-01-01')+5*MINUTE;end=timestamp('2026-08-01')+5*MINUTE
     _,funding,funding_capture=load_capture(INPUT/'funding-capture.json')
     settlement=8*3600000
@@ -93,8 +93,11 @@ def load_data():
                 'funding_capture_sha256':digest((INPUT/'funding-capture.json').read_bytes()),
                 'unmatched_trade_minutes':len(trade)-len(times),'unmatched_mark_minutes':len(mark)-len(times),
                 'incomplete_signal_days':int(np.isnan(daily[:,0]).sum()),'aligned_minutes':len(times)}
-    return dict(times=times,prices=trade[trade_ids,1],marks=mark[mark_ids,1],funding=funding,start=start,end=end,
-                daily_volume=volumes,maximum_quantity=D(filters['MARKET_LOT_SIZE']['maxQty'])),days,daily,refs,funding_factor,provenance
+    market=dict(times=times,prices=trade[trade_ids,1],marks=mark[mark_ids,1],funding=funding,start=start,end=end,
+                daily_volume=volumes,maximum_quantity=D(filters['MARKET_LOT_SIZE']['maxQty']))
+    if include_intrabar:
+        market.update(trade_highs=trade[trade_ids,2],trade_lows=trade[trade_ids,3],trade_closes=trade[trade_ids,4])
+    return market,days,daily,refs,funding_factor,provenance
 
 
 def metrics(result):

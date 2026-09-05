@@ -39,7 +39,10 @@ def hypothesis_target(hypothesis, trailing_values):
 
 @ledger_decimal_context()
 def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps,stop,
-           maximum_quantity=D('50')):
+           maximum_quantity=D('50'),taker_fee_bps=D('4'),decision_interval_ms=DAY,
+           target_weight=D('.25'),max_position_weight=D('.30'),initial_margin=D(1),
+           maintenance_margin=D('.5'),price_stop=None,trade_lows=None,trade_highs=None,
+           max_holding_ms=None):
     times=np.asarray(times,dtype=np.int64)
     prices=np.asarray(prices,dtype=float);marks=np.asarray(marks,dtype=float)
     if (len(times)!=len(prices) or len(times)!=len(marks) or len(times)<2
@@ -50,16 +53,33 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         raise ValueError('unregistered cost/risk scenario')
     if not isinstance(maximum_quantity,D) or not maximum_quantity.is_finite() or maximum_quantity<=0:
         raise ValueError('invalid quantity maximum')
+    for value in (taker_fee_bps,target_weight,max_position_weight,initial_margin,maintenance_margin):
+        if not isinstance(value,D) or not value.is_finite() or value<=0:
+            raise ValueError('invalid research execution parameter')
+    if maintenance_margin>initial_margin or initial_margin>1 or taker_fee_bps>100:
+        raise ValueError('invalid margin/fee scenario')
+    if type(decision_interval_ms) is not int or decision_interval_ms<=0 or DAY%decision_interval_ms:
+        raise ValueError('invalid decision interval')
+    if max_holding_ms is not None and (type(max_holding_ms) is not int or max_holding_ms<=0 or max_holding_ms%MINUTE):
+        raise ValueError('invalid holding period')
+    if price_stop is not None:
+        if not isinstance(price_stop,D) or not price_stop.is_finite() or not 0<price_stop<1:
+            raise ValueError('invalid protective stop')
+        trade_lows=np.asarray(trade_lows,dtype=float);trade_highs=np.asarray(trade_highs,dtype=float)
+        if (trade_lows.shape!=prices.shape or trade_highs.shape!=prices.shape
+                or not np.isfinite(trade_lows).all() or not np.isfinite(trade_highs).all()
+                or (trade_lows<=0).any() or (trade_lows>prices).any() or (trade_highs<prices).any()):
+            raise ValueError('invalid protective stop observations')
     if start>=end or (end-start)%DAY or start%DAY!=5*MINUTE:
         raise ValueError('invalid evaluation clock')
     lo,hi=map(int,np.searchsorted(times,[start,end]))
     if hi>=len(times) or times[lo]!=start or times[hi]!=end or (np.diff(times[lo:hi+1])!=MINUTE).any():
         raise ValueError('missing evaluation minute')
     spec=ContractSpec(SYMBOL,'LINEAR_USDC_PERPETUAL','USDC',D(1),D('.001'),D('.001'),
-                      D(50),D('.0125'),D('1e-24'),(MarginBracket(D(0),None,D(1),D('.5'),D(0)),))
+                      D(50),D('.0125'),D('1e-24'),(MarginBracket(D(0),None,initial_margin,maintenance_margin,D(0)),))
     ledger=LinearPerpetualLedger((spec,),initial_collateral=D(1500))
     events=[]
-    for at in range(start,end,DAY):heapq.heappush(events,(at,1,'decision',None))
+    for at in range(start,end,decision_interval_ms):heapq.heappush(events,(at,1,'decision',None))
     heapq.heappush(events,(end,3,'end',None))
     previous=-1
     for f in funding:
@@ -70,6 +90,9 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
     cursor=lo
     halted=None
     pending_exit=None
+    protective=None
+    protective_cursor=lo
+    episode=0
     peak=1500.;max_dd=0.;exposure_sum=0.;observed=0
 
     def qty():
@@ -98,6 +121,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         observed+=right-left
 
     def apply_trade(at,weight,reason):
+        nonlocal protective,protective_cursor,episode
         index=int(np.searchsorted(times,at))
         if index>=len(times) or times[index]!=at:raise ValueError('execution quote unavailable')
         reference=D(str(prices[index]));current=qty();equity=ledger.account_equity()
@@ -115,7 +139,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         if not isinstance(volume,D) or not volume.is_finite() or volume<=0:raise ValueError('completed volume unavailable')
         capacity=CapacityPolicy('BINANCE_USDM',str(at//DAY),BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID,
                                 at//DAY,volume,D('.01'),CapacityAction.REJECT)
-        fee=abs(delta)*price*D('.0004')
+        fee=abs(delta)*price*taker_fee_bps/10000
         before=ledger.account_equity()
         # Post-fill risk check uses the canonical transaction rollback, never a
         # second PnL implementation. Oversized new risk is an explicit rejection.
@@ -123,7 +147,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
             if result.filled_quantity!=delta:raise _TradeRejected('CAPACITY')
             after=ledger.account_equity()
             increased=abs(qty())>abs(current) or qty()*current<0
-            if increased and (after<D(1350) and stop or after<=0 or abs(qty())*D(str(marks[index]))>D('.30')*after):
+            if increased and (after<D(1350) and stop or after<=0 or abs(qty())*D(str(marks[index]))>max_position_weight*after):
                 raise _TradeRejected('POST_FILL_RISK')
         try:
             ledger.apply_event(TradeEvent(at,SYMBOL,delta,price,MarginMode.CROSS,capacity,fee=fee),trade_guard=guard)
@@ -132,11 +156,35 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         fills.append({'time':at,'quantity':canonical_decimal(delta),'price':canonical_decimal(price),
                       'fee':canonical_decimal(fee),'reference':canonical_decimal(reference),'reason':reason})
         orders.append({'time':at,'status':'FILLED','quantity':canonical_decimal(delta)})
+        if current==0 and qty()!=0:
+            episode+=1
+            if price_stop is not None:
+                protective=price*(1-price_stop if qty()>0 else 1+price_stop)
+                protective_cursor=index
+            if max_holding_ms is not None and at+max_holding_ms<=end:
+                heapq.heappush(events,(at+max_holding_ms,2,'timeout',episode))
+        elif qty()==0:
+            protective=None
         latch(at)
 
     while events:
         event=heapq.heappop(events)
         at,priority,kind,payload=event
+        # Only completed minute extrema may trigger a protective exit. Schedule
+        # its following open before processing later decisions/funding events.
+        if protective is not None and qty()!=0:
+            closed_right=min(int(np.searchsorted(times,at-MINUTE,side='right')),hi)
+            if closed_right>protective_cursor:
+                observed_prices=trade_lows if qty()>0 else trade_highs
+                segment=observed_prices[protective_cursor:closed_right]
+                hits=np.flatnonzero(segment<=float(protective) if qty()>0 else segment>=float(protective))
+                if len(hits):
+                    triggered=int(times[protective_cursor+int(hits[0])])+MINUTE
+                    protective=None
+                    heapq.heappush(events,event)
+                    heapq.heappush(events,(triggered,2,'price_stop',episode))
+                    continue
+                protective_cursor=closed_right
         right=int(np.searchsorted(times,at,side='left' if kind=='funding' else 'right'))
         right=min(right,hi+1)
         position=ledger.position(SYMBOL)
@@ -144,7 +192,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         interrupted=False
         if cursor<right and quantity:
             values=float(ledger.account_equity())+float(quantity)*(marks[cursor:right]-float(position.mark_price))
-            critical=values<=abs(float(quantity))*marks[cursor:right]*.5+1e-8
+            critical=values<=abs(float(quantity))*marks[cursor:right]*float(maintenance_margin)+1e-8
             if stop and halted is None:critical|=values<=1350+1e-8
             segment_start=cursor
             for offset in np.flatnonzero(critical):
@@ -166,11 +214,12 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
             observations.append({'time':at,'equity':canonical_decimal(ledger.account_equity())})
             latch(at)
         elif kind in ('decision','end'):
-            daily.append({'time':at,'equity':canonical_decimal(ledger.account_equity()),
-                          'quantity':canonical_decimal(qty()),'mark':str(marks[int(np.searchsorted(times,at))])})
+            if (at-start)%DAY==0 or kind=='end':
+                daily.append({'time':at,'equity':canonical_decimal(ledger.account_equity()),
+                              'quantity':canonical_decimal(qty()),'mark':str(marks[int(np.searchsorted(times,at))])})
             if kind=='end':break
             weight=decision(at,qty()!=0)
-            if weight is not None and (not np.isfinite(weight) or weight not in (-.25,0.,.25)):
+            if weight is not None and (not np.isfinite(weight) or D(str(weight)) not in (-target_weight,D(0),target_weight)):
                 raise ValueError('invalid bounded target')
             decisions.append({'time':at,'target':weight,'actual_quantity':canonical_decimal(qty()),'halted':halted is not None})
             if halted is not None:
@@ -179,6 +228,8 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         elif kind=='exit':
             pending_exit=None
             apply_trade(at,0.,'LOSS_BUDGET_NEXT_QUOTE')
+        elif kind in ('price_stop','timeout') and payload==episode and qty()!=0:
+            apply_trade(at,0.,'PROTECTIVE_STOP_NEXT_QUOTE' if kind=='price_stop' else 'HOLDING_TIMEOUT')
         equity=float(ledger.account_equity());max_dd=max(max_dd,1-equity/peak);peak=max(peak,equity)
     reconciliation=ledger.reconciliation_snapshot().as_canonical_dict()
     if reconciliation['residual']!='0':raise ValueError('canonical reconciliation failed')
