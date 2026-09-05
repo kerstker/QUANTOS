@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-05 DGX 回测引擎修复：** 分离决策时风险与成交时重估；合约数量校验统一
+> 处理开仓、减仓和反手，显式零持仓不再被集中度多样性条件阻止平仓；账本回滚改为
+> 当前状态快照 + 追加日志截断 + 单容量项撤销，事件时间以游标推进。新增
+> `services/execution/perpetual_simulation.py`，策略提交订单意图，模拟器处理挂单、撤单、
+> 拒单、部分成交与同时间多腿，权益和风险历史来自同一 Decimal 永续账本。
+> 成交价格区分显式费用与已嵌入的价差/滑点；重复报价不能补回已消耗流动性。
+> DGX 执行/风险相关 407 项测试通过；2,000 个 mark 事件约 12.1s→0.335s。
+> 结果仍为 `TECHNICAL_VALIDATION_ONLY`；旧 V1 经济路径继续隔离，不产生盈利或准入声明。
+> 完整设计、API 和支持范围见
+> `docs/engineering/specs/2026-09-05-backtest-engine-repair.md`。发布级全量验证与外部数据权威
+> 是独立要求，不以本次引擎测试替代。
+
 > **2026-08-31 DGX 容器发布链改为 ARM64 原生：** `deploy/console.Dockerfile`
 > 现在以 ARM64 单平台基础镜像为默认，并在 builder/runtime 两阶段都以
 > `TARGETARCH=arm64` fail-closed；正式验证、供应链 baseline 和发布证据清单改为绑定

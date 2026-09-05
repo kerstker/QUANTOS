@@ -487,6 +487,21 @@ class ContractSpec:
         return qty
 
     @_reviewed_decimal
+    def validate_trade_quantity(
+        self, quantity: Decimal, price: Decimal, *, current_quantity: Decimal = ZERO
+    ) -> Decimal:
+        """Apply opening minimums only to newly opened inventory, including reversals."""
+        current = _decimal(current_quantity, "current_quantity")
+        qty = self.validate_quantity(quantity, price, reducing=True)
+        if current == ZERO or (current > ZERO) == (qty > ZERO):
+            return self.validate_quantity(qty, price)
+        if abs(qty) > abs(current):
+            self.validate_quantity(
+                _exact_sum(current, qty, field="reversal_quantity"), price
+            )
+        return qty
+
+    @_reviewed_decimal
     def floor_quantity(self, quantity: Decimal) -> Decimal:
         absolute = abs(_decimal(quantity, "quantity"))
         steps = (absolute / self.quantity_step).to_integral_value(
@@ -1293,12 +1308,46 @@ class LinearPerpetualLedger:
     def _event_key(self, event: LedgerEvent) -> tuple[int, int]:
         return event.timestamp, self._PRIORITY[type(event)]
 
+    @contextmanager
+    def _transaction(self, trade: TradeEvent | None = None) -> Iterator[None]:
+        """Rollback current state and appended records without copying history.
+
+        A trade touches one capacity budget. Historical budget entries are
+        immutable and market phases never change them, so only that entry needs
+        an undo record. Public history access still returns defensive copies.
+        """
+        historical = {
+            "_events", "_liquidations", "_capacity_consumed", "_capacity_contracts"
+        }
+        before = copy.deepcopy({
+            name: value for name, value in self.__dict__.items()
+            if name not in historical
+        })
+        event_count, liquidation_count = len(self._events), len(self._liquidations)
+        capacity_undo = []
+        if trade is not None:
+            key = (trade.capacity.venue_id, trade.instrument_id,
+                   trade.capacity.period_rule_id, trade.capacity.period_index)
+            for mapping in (self._capacity_consumed, self._capacity_contracts):
+                capacity_undo.append((mapping, key, key in mapping, mapping.get(key)))
+        try:
+            yield
+        except BaseException:
+            self.__dict__.update(before)
+            del self._events[event_count:]
+            del self._liquidations[liquidation_count:]
+            for mapping, key, existed, value in capacity_undo:
+                if existed:
+                    mapping[key] = value
+                else:
+                    mapping.pop(key, None)
+            raise
+
     @_reviewed_decimal
     def apply_event(self, event: LedgerEvent) -> ExecutionResult | None:
         if type(event) not in self._PRIORITY:
             raise TypeError("unsupported ledger event")
-        before = copy.deepcopy(self.__dict__)
-        try:
+        with self._transaction(event if isinstance(event, TradeEvent) else None):
             key = self._event_key(event)
             if self._last_event_key is not None and key < self._last_event_key:
                 raise EventOrderViolation("event clock or priority moved backwards")
@@ -1314,15 +1363,11 @@ class LinearPerpetualLedger:
                 return self._apply_trade(event)
             if isinstance(event, FundingEvent):
                 self._apply_funding(event)
-                self._closed_market_phases.add(key)
+                self._closed_market_phases = {key}
                 return None
             self._apply_mark(event)
-            self._closed_market_phases.add(key)
+            self._closed_market_phases = {key}
             return None
-        except BaseException:
-            self.__dict__.clear()
-            self.__dict__.update(before)
-            raise
 
     @_reviewed_decimal
     def process_events(
@@ -1365,8 +1410,7 @@ class LinearPerpetualLedger:
                 results.extend(self.apply_event(event) for event in group)
                 continue
 
-            before = copy.deepcopy(self.__dict__)
-            try:
+            with self._transaction():
                 if self._last_event_key is not None and key < self._last_event_key:
                     raise EventOrderViolation("event clock or priority moved backwards")
                 if key in self._closed_market_phases:
@@ -1399,12 +1443,8 @@ class LinearPerpetualLedger:
                     timestamp=key[0],
                     backstop=backstop,
                 )
-                self._closed_market_phases.add(key)
+                self._closed_market_phases = {key}
                 results.extend(None for _event in group)
-            except BaseException:
-                self.__dict__.clear()
-                self.__dict__.update(before)
-                raise
         return tuple(results)
 
     def _capacity_quantity(
@@ -1434,7 +1474,10 @@ class LinearPerpetualLedger:
                 raise MarginConfigurationError(
                     "overlapping capacity consumption windows are not allowed"
                 )
-        self._capacity_windows.setdefault(window_scope, set()).add(window_bounds)
+        # Trade timestamps are monotone and must lie inside their window. Only
+        # the latest interval can overlap a later trade's interval. Historical
+        # budgets remain in the audit maps; this lookup index is bounded.
+        self._capacity_windows[window_scope] = {window_bounds}
         prior_contract = self._capacity_contracts.get(budget_key)
         if prior_contract is not None and prior_contract != capacity_contract:
             raise MarginConfigurationError(
@@ -1471,7 +1514,11 @@ class LinearPerpetualLedger:
             return ZERO, "REJECTED", "CAPACITY_BELOW_MINIMUM", consumed
         signed = filled_abs if requested > ZERO else -filled_abs
         try:
-            spec.validate_quantity(signed, event.execution_price)
+            current = self._positions.get(event.instrument_id)
+            spec.validate_trade_quantity(
+                signed, event.execution_price,
+                current_quantity=ZERO if current is None else current.quantity,
+            )
         except QuantityRuleViolation:
             return ZERO, "REJECTED", "CAPACITY_BELOW_MINIMUM", consumed
         return signed, "PARTIALLY_FILLED", "CAPACITY_PARTIAL_FILL", consumed
@@ -1487,13 +1534,9 @@ class LinearPerpetualLedger:
             else self._cash(event.isolated_margin, "trade.isolated_margin")
         )
         current = self._positions.get(event.instrument_id)
-        reducing = bool(
-            current is not None
-            and (current.quantity > ZERO) != (event.quantity_delta > ZERO)
-            and abs(event.quantity_delta) <= abs(current.quantity)
-        )
-        spec.validate_quantity(
-            event.quantity_delta, event.execution_price, reducing=reducing
+        spec.validate_trade_quantity(
+            event.quantity_delta, event.execution_price,
+            current_quantity=ZERO if current is None else current.quantity,
         )
         filled, status, reason, capacity_consumed_before = self._capacity_quantity(
             event, spec
@@ -1667,7 +1710,7 @@ class LinearPerpetualLedger:
                         event.execution_price,
                     )
                 self._pending_initial_margin_prices[event.instrument_id] = (
-                    pending_margin_prices
+                    tuple(sorted({min(pending_margin_prices), max(pending_margin_prices)}))
                 )
             self._positions[event.instrument_id] = _Position(
                 instrument_id=event.instrument_id,

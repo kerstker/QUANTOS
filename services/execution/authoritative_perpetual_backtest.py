@@ -29,6 +29,10 @@ Reviewed V2 scope:
 Cross-rule-epoch runs, partial fills, multiple orders per decision, inverse
 contracts, portfolio margin, and dual-side hedge mode are rejected rather than
 approximated.  They require separately reviewed schema/engine versions.
+
+For strategy-driven order lifecycle simulation, use
+``perpetual_simulation.run_linear_perpetual_simulation``. This module retains
+the strict archived-replay API; future fills are checked at execution time.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
@@ -71,10 +75,10 @@ from services.risk.research_risk.dry_run_guard import (
 
 ZERO = Decimal("0")
 ONE = Decimal("1")
-RESULT_HASH_SCHEMA_VERSION = "TECHNICAL_PERPETUAL_VALIDATION_V1"
+RESULT_HASH_SCHEMA_VERSION = "TECHNICAL_PERPETUAL_VALIDATION_V2"
 TECHNICAL_VALIDATION_STATUS = "TECHNICAL_VALIDATION_ONLY"
 DIRECT_LINEAR_TARGET_SCHEMA = "DIRECT_LINEAR_TARGET_QUANTITY_V1"
-RISK_MARK_POLICY_VERSION = "quantos.perpetual-risk-mark.v1"
+RISK_MARK_POLICY_VERSION = "quantos.perpetual-risk-mark.v2"
 RISK_MARK_MAX_AGE_MS = 60_000
 RISK_EQUITY_POLICY_VERSION = "quantos.perpetual-risk-equity.v1"
 RISK_EQUITY_DENOMINATOR_POLICY = (
@@ -615,6 +619,7 @@ class ExecutionRequest:
     available_time: int
     ingestion_time: int
     source_identity: str
+    price_basis: str = "REFERENCE_PRICE"
 
     def __post_init__(self) -> None:
         _nonempty(self.execution_id, "execution_id")
@@ -655,6 +660,12 @@ class ExecutionRequest:
             )
         if not isinstance(self.cost_model, CostModelSnapshot):
             raise TypeError("cost_model must be CostModelSnapshot")
+        if self.price_basis not in {"REFERENCE_PRICE", "EXECUTABLE_PRICE"}:
+            raise ValueError("execution price_basis must be explicitly recognized")
+        if self.price_basis == "EXECUTABLE_PRICE" and (
+            self.cost_model.spread_rate != ZERO or self.cost_model.impact_rate != ZERO
+        ):
+            raise ValueError("executable price already contains embedded spread/impact")
         if not isinstance(self.opportunity, ExecutionOpportunitySnapshot):
             raise TypeError("opportunity must be ExecutionOpportunitySnapshot")
         if self.opportunity.instrument_id != self.instrument_id:
@@ -695,6 +706,7 @@ class ExecutionRequest:
             "instrument_id": self.instrument_id,
             "quantity_delta": canonical_decimal(self.quantity_delta),
             "execution_price": canonical_decimal(self.execution_price),
+            "price_basis": self.price_basis,
             "margin_mode": self.margin_mode.value,
             "isolated_margin": (
                 None
@@ -1243,7 +1255,7 @@ def run_authoritative_linear_perpetual_v2(
             )
         bind_capacity_snapshot(execution.capacity)
         rule.spec.validate_quantity(
-            execution.quantity_delta, execution.execution_price
+            execution.quantity_delta, execution.execution_price, reducing=True
         )
         requested_notional = rule.spec.notional(
             execution.quantity_delta, execution.execution_price
@@ -1284,11 +1296,70 @@ def run_authoritative_linear_perpetual_v2(
         initial_collateral=_decimal(initial_collateral, "initial_collateral"),
     )
     pending_times = sorted(scheduled)
+    pending_index = 0
     processed_times: set[int] = set()
     known_marks: dict[str, tuple[int, Decimal]] = {}
     last_execution_time: dict[str, int] = {}
     last_execution_price: dict[str, Decimal] = {}
     execution_results: list[dict[str, Any]] = []
+    execution_risk_contexts: list[dict[str, Any]] = []
+    execution_decisions = {
+        decision.execution.execution_id: decision for decision in decision_items
+    }
+
+    def check_execution_risk(execution: ExecutionRequest) -> None:
+        """Reprice permission at execution time, never inside an earlier decision.
+
+        The legacy evidence history remains explicitly caller supplied. The
+        current account and order exposure are computed from the replay ledger.
+        """
+        evidence = execution_decisions[execution.execution_id].research_risk
+        positions = {name: ledger.position(name) for name in universe}
+        quantities = {
+            name: ZERO if position is None else position.quantity
+            for name, position in positions.items()
+        }
+        quantities[execution.instrument_id] += execution.quantity_delta
+        names = {name for name, quantity in quantities.items() if quantity != ZERO}
+        names.add(execution.instrument_id)
+        prices: dict[str, Decimal] = {}
+        for name in names:
+            prices[name] = max(known_marks[name][1], last_execution_price.get(name, ZERO))
+            if name == execution.instrument_id:
+                prices[name] = max(prices[name], execution.execution_price)
+        equity = ledger.account_equity()
+        floored_equity = equity + sum((
+            position.quantity * (prices[name] - position.mark_price)
+            * rules_by_instrument[name].spec.contract_multiplier
+            for name, position in positions.items()
+            if position is not None and name in prices
+        ), ZERO)
+        risk_equity = min(equity, floored_equity)
+        if risk_equity <= ZERO:
+            raise AuthoritativeBacktestInputError("execution risk equity must be positive")
+        weights = {
+            name: float(quantities[name] * prices[name]
+                        * rules_by_instrument[name].spec.contract_multiplier / risk_equity)
+            for name in sorted(names)
+        }
+        result = evaluate_dry_run_risk(
+            list(evidence.returns), weights, list(evidence.equity_curve),
+            timestamps=list(evidence.timestamps), config=evidence.config,
+            full_inputs=replace(evidence.full_inputs, total_aum=float(risk_equity)),
+            require_full_inputs=True,
+        )
+        execution_risk_contexts.append({
+            "execution_id": execution.execution_id,
+            "execution_time_ms": execution.timestamp,
+            "risk_equity": canonical_decimal(risk_equity),
+            "target_weights": weights,
+            "research_risk": result,
+        })
+        if not full_research_risk_approved(result):
+            raise AuthoritativeBacktestInputError(
+                "nine-engine research risk rejected at execution: "
+                + ",".join(str(value) for value in result.get("reasons", ()))
+            )
 
     def process_timestamp(timestamp: int, *, visible_at: int | None) -> None:
         if timestamp in processed_times:
@@ -1315,7 +1386,15 @@ def run_authoritative_linear_perpetual_v2(
             return 30
 
         ordered = sorted(batch, key=phase)
-        results = ledger.process_events(tuple(item.event for item in ordered))
+        market_batch = [item for item in ordered if not isinstance(item.event, TradeEvent)]
+        results = list(ledger.process_events(tuple(item.event for item in market_batch)))
+        for item in market_batch:
+            known_marks[item.event.instrument_id] = (
+                item.event.timestamp, item.event.mark_price
+            )
+        for item in ordered[len(market_batch):]:
+            check_execution_risk(execution_by_id[item.execution_id])
+            results.append(ledger.apply_event(item.event))
         for item, result in zip(ordered, results, strict=True):
             if isinstance(item.event, FundingEvent):
                 known_marks[item.event.instrument_id] = (
@@ -1356,10 +1435,9 @@ def run_authoritative_linear_perpetual_v2(
     weights_by_period: list[dict[str, Any]] = []
     prices_by_period: list[dict[str, Any]] = []
     for decision in decision_items:
-        for timestamp in pending_times:
-            if timestamp > decision.timestamp:
-                break
-            process_timestamp(timestamp, visible_at=decision.timestamp)
+        while pending_index < len(pending_times) and pending_times[pending_index] <= decision.timestamp:
+            process_timestamp(pending_times[pending_index], visible_at=decision.timestamp)
+            pending_index += 1
 
         for signal in decision.signal_inputs:
             _ensure_causal_at_decision(
@@ -1491,11 +1569,9 @@ def run_authoritative_linear_perpetual_v2(
             confirmed_execution_price = last_execution_price.get(instrument_id)
             if confirmed_execution_price is not None:
                 valuation_price = max(valuation_price, confirmed_execution_price)
-            if instrument_id == execution.instrument_id:
-                # The archived fill is never an alpha input, but validating
-                # the resulting exposure must not understate notional when the
-                # causal decision mark was stale or corrupted low.
-                valuation_price = max(valuation_price, execution.execution_price)
+            # Only already confirmed executions may influence this decision.
+            # The new order is repriced separately when the replay reaches its
+            # execution timestamp, before any account mutation for that fill.
             risk_valuation_prices[instrument_id] = canonical_decimal(valuation_price)
             risk_valuation_price_values[instrument_id] = valuation_price
 
@@ -1646,7 +1722,7 @@ def run_authoritative_linear_perpetual_v2(
             }
         )
 
-    for timestamp in pending_times:
+    for timestamp in pending_times[pending_index:]:
         process_timestamp(timestamp, visible_at=None)
 
     for instrument_id, timestamp in last_execution_time.items():
@@ -1760,6 +1836,7 @@ def run_authoritative_linear_perpetual_v2(
         ],
         "decision_contexts": decision_contexts,
         "research_risk_results": risk_results,
+        "execution_risk_contexts": execution_risk_contexts,
         "execution_results": execution_results,
     }
     result_hash = exact_identity_hash(
@@ -1791,6 +1868,7 @@ def run_authoritative_linear_perpetual_v2(
                 "one_execution_per_decision": True,
                 "alpha_target_mapping": DIRECT_LINEAR_TARGET_SCHEMA,
                 "execution_price_source": "FIRST_ARCHIVED_EXECUTABLE_EVENT",
+                "execution_price_basis": "DECLARED_PER_EXECUTION",
                 "risk_valuation": (
                     "STRICT_POST_EXECUTION_CAUSAL_MARK_WITH_"
                     "CONFIRMED_EXECUTION_PRICE_FLOORS"

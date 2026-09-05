@@ -496,7 +496,7 @@ def test_runner_produces_non_authoritative_decimal_perpetual_validation_record()
     }
     payload = record["detail"]["result_hash_payload"]
     assert payload["engine_policy"] == {
-        "risk_mark_policy_version": "quantos.perpetual-risk-mark.v1",
+        "risk_mark_policy_version": "quantos.perpetual-risk-mark.v2",
         "risk_mark_max_age_ms": RISK_MARK_MAX_AGE_MS,
         "existing_position_price_floor": "LAST_CONFIRMED_EXECUTION_PRICE",
         "risk_equity_policy_version": "quantos.perpetual-risk-equity.v1",
@@ -1148,6 +1148,6 @@ def test_technical_record_cannot_be_upgraded_by_flipping_authority_flags() -> No
     # flags while retaining the same manifest and result hash.
     assert (
         record["detail"]["result_hash_payload"]["schema_version"]
-        == "TECHNICAL_PERPETUAL_VALIDATION_V1"
+        == "TECHNICAL_PERPETUAL_VALIDATION_V2"
     )
     assert is_authoritative_backtest_record(record) is False

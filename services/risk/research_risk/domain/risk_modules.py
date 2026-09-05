@@ -149,6 +149,11 @@ class ConcentrationRiskEngine:
         if not weights:
             return ConcentrationRiskReport(passed=False)   # no book -> fail closed
         abs_weights = [abs(value) for value in weights.values()]
+        # An explicit zero target is a closed book, not missing evidence.
+        # Diversification constraints apply to exposure, and must not prevent
+        # flattening the last position. Empty/unknown books still fail above.
+        if all(value == 0.0 for value in abs_weights):
+            return ConcentrationRiskReport(passed=True)
         hhi = sum(value * value for value in abs_weights)
         effective_n = 1 / hhi if hhi > 0 else 0.0
         max_single = max(abs_weights) if abs_weights else 0.0
