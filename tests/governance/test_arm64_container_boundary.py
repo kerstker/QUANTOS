@@ -128,6 +128,7 @@ def test_arm64_console_runtime_pins_fixed_openssl_packages() -> None:
     runtime = _text().split("FROM ${PYTHON_IMAGE}", 2)[-1]
     assert "libcrypto3=3.5.8-r0" in runtime
     assert "libssl3=3.5.8-r0" in runtime
+    assert "libuuid=2.42.3-r0" in runtime
 
 
 def test_arm64_console_build_tools_are_exact_pinned() -> None:

@@ -79,6 +79,7 @@ _ALPHA_LIBRARY_ROUTES = {
 }
 
 _RESEARCH_RUN_ROUTES = {
+    "/api/v1/console/technical-replay",
     "/api/v1/console/backtest-results",
     "/api/v1/console/research-run",
     "/api/v1/console/research-runs",

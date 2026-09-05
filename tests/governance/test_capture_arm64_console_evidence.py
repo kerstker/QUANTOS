@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 from pathlib import Path
 
 import pytest
@@ -632,6 +633,27 @@ def test_reserved_resource_names_are_fixed_and_unambiguous() -> None:
     assert BUILDER_B == "quantos-arm64-evidence-builder-b"
     assert SMOKE_CONTAINER == "quantos-arm64-console-smoke"
     assert len({BUILDER_A, BUILDER_B, SMOKE_CONTAINER}) == 3
+
+
+def test_rejected_scan_is_retained_without_publishing_accepted_evidence(tmp_path):
+    audit = {'verdict': 'FAIL', 'runtime_report': {'Results': [{'Vulnerabilities': [
+        {'VulnerabilityID': 'CVE-FIXTURE', 'PkgName': 'fixture', 'Severity': 'HIGH'}
+    ]}]}}
+    with pytest.raises(CaptureError, match='rejected audit retained'):
+        capture_module._require_clean_audit(audit, tmp_path)
+    files = list(tmp_path.glob('rejected-audit-*.json'))
+    assert len(files) == 1
+    assert json.loads(files[0].read_text()) == audit
+    before = files[0].read_bytes()
+    with pytest.raises(CaptureError, match='rejected audit retained'):
+        capture_module._require_clean_audit(audit, tmp_path)
+    assert files[0].read_bytes() == before
+    assert not (tmp_path / 'arm64-console-evidence-bundle').exists()
+
+
+def test_successful_scan_creates_no_rejected_artifact(tmp_path):
+    capture_module._require_clean_audit({'verdict': 'PASS'}, tmp_path)
+    assert list(tmp_path.iterdir()) == []
 
 
 def _capture_repo(root: Path) -> str:

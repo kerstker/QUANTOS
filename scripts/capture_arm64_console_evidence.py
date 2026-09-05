@@ -636,6 +636,22 @@ def _write_json(path: Path, document: Mapping[str, Any]) -> None:
     )
 
 
+def _require_clean_audit(audit: Mapping[str, Any], output: Path) -> None:
+    """Keep rejected scan findings for diagnosis, outside the accepted bundle."""
+    if audit.get("verdict") == "PASS":
+        return
+    encoded = (json.dumps(audit, ensure_ascii=False, sort_keys=True,
+                          allow_nan=False, indent=2) + "\n").encode("utf-8")
+    path = output / f"rejected-audit-{hashlib.sha256(encoded).hexdigest()}.json"
+    try:
+        with path.open("xb") as handle:
+            handle.write(encoded)
+    except FileExistsError:
+        if path.is_symlink() or path.read_bytes() != encoded:
+            raise CaptureError("rejected audit destination conflicts with scan")
+    raise CaptureError(f"ARM64 vulnerability policy did not pass; rejected audit retained at {path}")
+
+
 def _publish_staged_evidence(
     output: Path, staging: Path, documents: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, Path]:
@@ -875,8 +891,7 @@ def capture(
             runtime_image_manifest_digest=loaded_manifest_digest,
             runtime_image_manifest_size=reproducibility["image"]["manifest_size"],
         )
-        if audit.get("verdict") != "PASS":
-            raise CaptureError("ARM64 vulnerability policy did not pass")
+        _require_clean_audit(audit, output)
         report("TRIVY_OFFLINE_SCAN_PASS platform=linux/arm64")
 
         report("READ_ONLY_SMOKE_START network=none")
