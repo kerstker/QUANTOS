@@ -1209,6 +1209,11 @@
           "path": "services/research/paper_trading/domain/reconciliation.py"
         },
         {
+          "line": 13,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/perpetual_alpha.py"
+        },
+        {
           "line": 3,
           "module": "services.execution.impact",
           "path": "services/research/realism/impact.py"
@@ -1519,7 +1524,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "4d476bae9a2ee1fd7cb15494ddf8517f53fe847aa7e9dd296b28821b60447886",
+  "graph_sha256": "9161569f7097cf7256da4cbfe2665336de8fb6a21c88a50423589ec3054e9cda",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1557,7 +1562,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 503,
+  "source_file_count": 505,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

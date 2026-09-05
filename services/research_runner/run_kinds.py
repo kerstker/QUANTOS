@@ -8,7 +8,6 @@ this module stays import-light (and services/ network-import-clean)."""
 from __future__ import annotations
 
 import importlib
-import hashlib
 import json
 import os
 import subprocess
@@ -449,6 +448,7 @@ def _adapt_perpetual_replay(result: dict) -> dict:
 
 
 def _adapt_perpetual_alpha(result: dict) -> dict:
+    import hashlib
     if (result.get('schema')!='QUANTOS_PERPETUAL_ALPHA_RESEARCH_V1'
             or result.get('status')!='TECHNICAL_VALIDATION_ONLY'
             or result.get('authoritative') is not False or result.get('live_eligible') is not False

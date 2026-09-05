@@ -27,6 +27,14 @@ def test_unbounded_research_requests_are_rejected(params):
     with pytest.raises(ValueError): validate_params('perpetual_alpha',params)
 
 
+@pytest.mark.parametrize('first,end',[(1735689600000,1788220800000),(1704067200000,1785542400000)])
+def test_funding_capture_must_cover_research_window(monkeypatch,first,end):
+    funding=[{'time':first},{'time':end-8*3600000+1}]
+    monkeypatch.setattr(tool,'load_capture',lambda path:([{'time':first}],funding,{'end_ms':end}))
+    with pytest.raises(ValueError,match='funding capture does not cover research window'):
+        tool.load_data()
+
+
 def test_queue_runs_bounded_search_and_console_verifies_provenance(tmp_path,monkeypatch):
     start=1735689900000;end=start+40*86400000
     times=np.arange(start,end+60000,60000,dtype=np.int64)

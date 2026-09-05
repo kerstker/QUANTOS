@@ -32,6 +32,13 @@ def digest(value):
 
 
 def load_data():
+    start=timestamp('2025-01-01')+5*MINUTE;end=timestamp('2026-08-01')+5*MINUTE
+    _,funding,funding_capture=load_capture(INPUT/'funding-capture.json')
+    settlement=8*3600000
+    if (not funding or funding_capture['end_ms']<end
+            or funding[0]['time']//settlement>(start-14*DAY)//settlement
+            or funding[-1]['time']//settlement<(end-1)//settlement):
+        raise ValueError('funding capture does not cover research window')
     manifests={};arrays={}
     for kind in ('klines','markPriceKlines'):
         pieces=[];records=[]
@@ -51,7 +58,6 @@ def load_data():
         arrays[kind]=array;manifests[kind]=records
     trade=arrays['klines'];mark=arrays['markPriceKlines']
     times,trade_ids,mark_ids=np.intersect1d(trade[:,0].astype(np.int64),mark[:,0].astype(np.int64),return_indices=True)
-    start=timestamp('2025-01-01')+5*MINUTE;end=timestamp('2026-08-01')+5*MINUTE
     lo,hi=map(int,np.searchsorted(times,[start,end]))
     if hi>=len(times) or times[lo]!=start or times[hi]!=end or (np.diff(times[lo:hi+1])!=MINUTE).any():
         raise ValueError('trade/mark minute evaluation coverage incomplete')
@@ -67,7 +73,6 @@ def load_data():
             volumes[int(day//DAY+1)]=sum((D(str(x)) for x in rows[:,7]),D(0))
         at=day+DAY+5*MINUTE;idx=int(np.searchsorted(trade[:,0],at))
         if idx<len(trade) and trade[idx,0]==at:refs[i]=trade[idx,1]
-    _,funding,_=load_capture(INPUT/'funding-capture.json')
     funding_factor=np.zeros(len(days))
     for f in funding:
         i=int(np.searchsorted(days,f['time']//DAY*DAY))
