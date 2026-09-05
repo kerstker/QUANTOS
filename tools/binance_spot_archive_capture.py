@@ -1,4 +1,4 @@
-"""Keyless, GET-only Binance spot archives; immutable checksum-bound captures."""
+"""Keyless Binance kline archives with explicit spot/USDM market identity."""
 from __future__ import annotations
 
 import argparse
@@ -36,13 +36,21 @@ def verify_archive(raw: bytes, checksum: str, filename: str) -> str:
     return digest
 
 
-def capture(output: Path, symbol: str, period: str, *, daily: bool = False) -> dict:
+def archive_url(symbol: str, period: str, *, daily=False, market='spot', kind='klines') -> str:
     if symbol not in SYMBOLS:
         raise ValueError('symbol not whitelisted')
+    if market not in ('spot', 'usdm') or kind not in ('klines','markPriceKlines') or (market=='spot' and kind!='klines'):
+        raise ValueError('unsupported archive market/kind')
     datetime.strptime(period, '%Y-%m-%d' if daily else '%Y-%m')
     frequency = 'daily' if daily else 'monthly'
     name = f'{symbol}-1m-{period}.zip'
-    url = f'https://data.binance.vision/data/spot/{frequency}/klines/{symbol}/1m/{name}'
+    segment='spot' if market=='spot' else 'futures/um'
+    return f'https://data.binance.vision/data/{segment}/{frequency}/{kind}/{symbol}/1m/{name}'
+
+
+def capture(output: Path, symbol: str, period: str, *, daily=False, market='spot', kind='klines') -> dict:
+    url=archive_url(symbol,period,daily=daily,market=market,kind=kind)
+    name=url.rsplit('/',1)[-1]
     output.mkdir(parents=True, exist_ok=True)
     path = output / name
     metadata = output / (name + '.json')
@@ -63,7 +71,7 @@ def capture(output: Path, symbol: str, period: str, *, daily: bool = False) -> d
     record = dict(url=url, sha256=digest, official_checksum=checksum,
                   fetched_started_ms=started, fetched_completed_ms=time.time_ns() // 1_000_000,
                   bytes=len(raw), historical_revision_status='UNKNOWN',
-                  source_availability='RETROSPECTIVE_ARCHIVE', symbol=symbol)
+                  source_availability='RETROSPECTIVE_ARCHIVE', symbol=symbol,market=market,kind=kind)
     with path.open('xb') as stream:
         stream.write(raw)
     with metadata.open('x') as stream:

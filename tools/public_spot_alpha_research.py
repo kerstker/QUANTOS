@@ -34,10 +34,16 @@ def timestamp(date: str) -> int:
     return int(datetime.fromisoformat(date).replace(tzinfo=timezone.utc).timestamp()*1000)
 
 
-def decode_archive(raw: bytes) -> np.ndarray:
+def decode_archive(raw: bytes, *, market='spot') -> np.ndarray:
+    if market not in ('spot','usdm'):
+        raise ValueError('unsupported kline market')
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         with archive.open(archive.namelist()[0]) as stream:
-            data = np.loadtxt(stream, delimiter=',', usecols=range(8), ndmin=2)
+            first=stream.readline().strip()
+            header=b'open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore'
+            skip=int(market=='usdm' and first==header)
+            stream.seek(0)
+            data = np.loadtxt(stream, delimiter=',', usecols=range(8), ndmin=2,skiprows=skip)
     if not len(data) or not np.isfinite(data).all():
         raise ValueError('empty or nonfinite minute archive')
     scale = 1000 if data[0, 0] >= 10**15 else 1
@@ -51,8 +57,9 @@ def decode_archive(raw: bytes) -> np.ndarray:
             or (data[:, 2] < np.maximum(data[:, 1], data[:, 4])).any()
             or (data[:, 3] > np.minimum(data[:, 1], data[:, 4])).any()):
         raise ValueError('invalid OHLCV')
-    if ((data[:, 0] >= timestamp('2025-01-01')) != (scale == 1000)).any():
-        raise ValueError('unexpected spot archive timestamp era')
+    expected_microseconds=(data[:, 0] >= timestamp('2025-01-01')) if market=='spot' else np.zeros(len(data),dtype=bool)
+    if (expected_microseconds != (scale == 1000)).any():
+        raise ValueError('unexpected market archive timestamp era')
     return data
 
 

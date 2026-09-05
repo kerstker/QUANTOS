@@ -32,7 +32,7 @@ export default function RunDetail() {
     && technicalSnapshot.payload.technical_replay?.run_id === id
     && technicalSnapshot.payload.technical_replay.authoritative === false
     && technicalSnapshot.payload.technical_replay.evidence_status === 'TECHNICAL_VALIDATION_ONLY'
-    && run?.kind === 'perpetual_replay'
+    && (run?.kind === 'perpetual_replay' || run?.kind === 'perpetual_alpha')
     ? technicalSnapshot.payload.technical_replay : null;
   const active = run != null && (run.status === 'queued' || run.status === 'running');
 
@@ -132,7 +132,7 @@ export default function RunDetail() {
               </div>)}
             </dl>
           </Panel>
-          <Panel eyebrow="NET EQUITY" title="定频净权益">
+          {run.kind === 'perpetual_replay' && <Panel eyebrow="NET EQUITY" title="定频净权益">
             <div className="max-h-72 overflow-auto text-xs">
               <table className="w-full text-left"><thead><tr><th>UTC</th><th>USDT</th></tr></thead>
                 <tbody>{(technical.series.net_equity ?? []).map(point => <tr key={point.label}>
@@ -140,7 +140,15 @@ export default function RunDetail() {
                 </tr>)}</tbody>
               </table>
             </div>
-          </Panel>
+          </Panel>}
+          {run.kind === 'perpetual_alpha' && <Panel eyebrow="RESEARCH SCREEN" title="候选净收益（USDC）">
+            <p className="mb-3 text-xs text-faint">单边手续费 4bp、滑点 5bp、累计亏损 150 停机；其他成本与未停机情景保存在运行记录中。此表不代表准入。</p>
+            <table className="w-full text-left text-xs"><thead><tr><th>候选 / 基准</th><th>净收益 USDC</th></tr></thead>
+              <tbody>{(technical.series.candidates ?? []).map(point => <tr key={point.label}>
+                <td>{point.label}</td><td>{point.value}</td>
+              </tr>)}</tbody>
+            </table>
+          </Panel>}
           <Panel eyebrow="AUDIT" title="订单、拒绝原因与适用边界">
             <ul className="space-y-2 text-xs">{technical.caveats.map((line, index) =>
               <li key={index} className="break-all font-mono">{line}</li>)}</ul>

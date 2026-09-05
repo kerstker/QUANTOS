@@ -14,7 +14,7 @@ vi.mock('@/lib/api/research-console-api', () => ({
   fetchTechnicalReplay: () => ({ authoritative: false, evidence_status: 'TECHNICAL_VALIDATION_ONLY',
     technical_replay: { run_id: state.resultId, authoritative: state.authoritative,
       evidence_status: 'TECHNICAL_VALIDATION_ONLY', metrics: { result_hash: 'verified-result-digest' },
-      series: { net_equity: [{ label: '1000', value: 1000 }] }, caveats: ['exact audit record'] } }),
+      series: { net_equity: [{ label: '1000', value: 1000 }], candidates: [{ label: 'A', value: -12.5 }] }, caveats: ['exact audit record'] } }),
 }));
 vi.mock('@/ui/useConsoleSnapshot', () => ({
   useConsoleSnapshot: (fetcher: () => unknown) => ({ payload: fetcher(), usingBackend: true,
@@ -32,6 +32,13 @@ describe('Separate technical replay result', () => {
     show();
     expect(screen.getByText('verified-result-digest')).toBeInTheDocument();
     expect(screen.getByText('exact audit record')).toBeInTheDocument();
+  });
+  it('shows bounded perpetual research without a USDT equity table', () => {
+    state.kind = 'perpetual_alpha';
+    show();
+    expect(screen.getByText('verified-result-digest')).toBeInTheDocument();
+    expect(screen.queryByText('USDT')).not.toBeInTheDocument();
+    expect(screen.getByText('-12.5')).toBeInTheDocument();
   });
   it.each(['legacy', 'authority', 'different-run'])('rejects %s data from the technical view', problem => {
     if (problem === 'legacy') state.kind = 'combo_book';

@@ -8,6 +8,7 @@ this module stays import-light (and services/ network-import-clean)."""
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
 import os
 import subprocess
@@ -447,7 +448,33 @@ def _adapt_perpetual_replay(result: dict) -> dict:
         "provenance": "tools/perpetual_replay_research.py"}
 
 
+def _adapt_perpetual_alpha(result: dict) -> dict:
+    if (result.get('schema')!='QUANTOS_PERPETUAL_ALPHA_RESEARCH_V1'
+            or result.get('status')!='TECHNICAL_VALIDATION_ONLY'
+            or result.get('authoritative') is not False or result.get('live_eligible') is not False
+            or result.get('trial_ledger_verified') is not True):
+        raise ValueError('invalid diagnostic alpha research result')
+    payload={k:v for k,v in result.items() if k!='result_hash'}
+    expected=hashlib.sha256(json.dumps(payload,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    if result.get('result_hash')!=expected:raise ValueError('alpha research result hash mismatch')
+    candidates=[{'label':name,'value':cases['5/1']['metrics']['net_pnl']}
+                for name,cases in result['results'].items() if cases['5/1']['status']!='FAILED']
+    return {'title':'USDC永续有限自动研究','verdict':'TECHNICAL_VALIDATION_ONLY',
+            'series':{'candidates':candidates},
+            'metrics':{'result_hash':result['result_hash'],'trial_count':len(result['trial_ids']),
+                'candidate_count':len(result['comparison']),
+                'further_review_count':sum(c['worth_further_review'] for c in result['comparison'].values()),
+                'failed_cases':sum(r['status']=='FAILED' for cases in result['results'].values() for r in cases.values()),
+                'hypothesis_source':result['hypothesis_source'],
+                'stage_status':json.dumps(result['stage_status'],sort_keys=True)},
+            'caveats':result['limitations']+['无经济权威、Paper晋级或实盘授权'],
+            'provenance':'tools/perpetual_alpha_research.py'}
+
+
 RUN_KINDS: dict = {
+    'perpetual_alpha': RunSpec('tools.perpetual_alpha_research:run_alpha',
+        {'attempt':int},_adapt_perpetual_alpha,'USDC永续有限自动研究',DIAGNOSTIC_ONLY,
+        param_bounds={'attempt':(1,1000)}),
     "perpetual_replay": RunSpec("tools.perpetual_replay_research:run_replay",
         {"strategy_id": int, "frequency_ms": int}, _adapt_perpetual_replay,
         "永续引擎技术回放", DIAGNOSTIC_ONLY,

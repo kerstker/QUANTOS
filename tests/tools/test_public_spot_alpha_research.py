@@ -72,6 +72,8 @@ def test_2025_microseconds_are_not_milliseconds():
     row=decode_archive(buf.getvalue())[0]
     assert row[0]==1735689600000
     assert row[6]==1735689659999
+    with pytest.raises(ValueError,match='timestamp era'):
+        decode_archive(buf.getvalue(),market='usdm')
 
 
 def test_independent_cash_reconciliation_detects_corrupted_fee_and_equity():
@@ -87,3 +89,13 @@ def test_independent_cash_reconciliation_detects_corrupted_fee_and_equity():
     broken['equity'][-1]['equity']='1500'
     with pytest.raises(AssertionError):
         reconcile(broken,prices)
+
+
+def test_usdm_official_header_and_millisecond_clock():
+    t=1735689600000
+    buf=io.BytesIO()
+    with zipfile.ZipFile(buf,'w') as z:
+        z.writestr('sample.csv','open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore\n'+
+                   f'{t},100,101,99,100,1,{t+59999},100,1,0,0,0\n')
+    assert decode_archive(buf.getvalue(),market='usdm')[0,0]==t
+    with pytest.raises(ValueError):decode_archive(buf.getvalue(),market='spot')

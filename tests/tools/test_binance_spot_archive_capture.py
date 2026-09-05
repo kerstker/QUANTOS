@@ -4,7 +4,7 @@ import zipfile
 
 import pytest
 
-from tools.binance_spot_archive_capture import verify_archive, minute_timestamp
+from tools.binance_spot_archive_capture import verify_archive, minute_timestamp, archive_url
 
 
 def test_spot_microsecond_transition_and_alignment():
@@ -13,6 +13,15 @@ def test_spot_microsecond_transition_and_alignment():
     for bad in ['1735689600000001', '1704067200001', '-1', 'nan']:
         with pytest.raises(ValueError):
             minute_timestamp(bad)
+
+
+def test_spot_and_usdm_archives_have_distinct_explicit_identity():
+    spot=archive_url('BTCUSDC','2025-01',market='spot',kind='klines')
+    perp=archive_url('BTCUSDC','2025-01',market='usdm',kind='klines')
+    mark=archive_url('BTCUSDC','2025-01',market='usdm',kind='markPriceKlines')
+    assert '/spot/' in spot and '/futures/um/' in perp
+    assert '/markPriceKlines/' in mark and mark!=perp
+    with pytest.raises(ValueError): archive_url('BTCUSDC','2025-01',market='spot',kind='markPriceKlines')
 
 
 def test_official_checksum_and_single_member_are_required():
