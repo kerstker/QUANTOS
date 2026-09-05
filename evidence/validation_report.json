@@ -1,10 +1,10 @@
 {
   "checks_manifest_sha256": "8d35214e26bf44dc2050b958d57412238fd9c6c7a4bfdd0d3a0b8d11551a1976",
-  "commit": "06ebb5eec831d8f2a74908249f87f374f2e1bd7f",
+  "commit": "9b4f35603b7e881dedd1cbcac76e1199288e4f0e",
   "derived_refresh_manifest_sha256": "9943925755b925a1103b6653af88d9755273254b99bc374383248cf54d536f5f",
-  "duration_ms": 1947418,
-  "generated_at_ms": 1788615977413,
-  "overall_status": "PASS",
+  "duration_ms": 1871263,
+  "generated_at_ms": 1788619686819,
+  "overall_status": "FAIL",
   "phase13_manifest_sha256": "db9b7fd5dfa6cb8d61087f553904421c6e737a39868bf9ca39ce3c201a7d4644",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -19,7 +19,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 317,
+      "duration_ms": 219,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -32,7 +32,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 64,
+      "duration_ms": 115,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -45,7 +45,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 114,
+      "duration_ms": 117,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -58,10 +58,10 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 365,
-      "returncode": 0,
+      "duration_ms": 517,
+      "returncode": 1,
       "stage": "container-trivy-arm64-evidence:current",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -71,10 +71,10 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 215,
-      "returncode": 0,
+      "duration_ms": 265,
+      "returncode": 1,
       "stage": "container-reproducibility-arm64-evidence:current",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -84,10 +84,10 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 366,
-      "returncode": 0,
+      "duration_ms": 265,
+      "returncode": 1,
       "stage": "console-smoke-arm64-evidence:current",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -97,7 +97,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 666,
+      "duration_ms": 718,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -110,7 +110,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3029,
+      "duration_ms": 2877,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -122,7 +122,7 @@
         "/home/kerstker/QUANTOS-backtest-runtime-integration/tools/provision_artifact_admission_authority.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 266,
+      "duration_ms": 267,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -135,7 +135,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 617,
+      "duration_ms": 769,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -149,7 +149,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1020,
+      "duration_ms": 870,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -163,7 +163,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 13018,
+      "duration_ms": 13092,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -188,7 +188,7 @@
         "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/run_risk_recovery_gate.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 621,
+      "duration_ms": 566,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -200,21 +200,9 @@
         "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 8366,
+      "duration_ms": 8220,
       "returncode": 0,
       "stage": "governance-scanner",
-      "status": "PASS",
-      "timeout_seconds": 1800.0
-    },
-    {
-      "command": [
-        "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/generate_supply_chain_evidence.py"
-      ],
-      "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1573,
-      "returncode": 0,
-      "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
       "timeout_seconds": 1800.0
     },
@@ -225,22 +213,10 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1624,
-      "returncode": 0,
+      "duration_ms": 1226,
+      "returncode": 1,
       "stage": "supply-chain-baseline:current",
-      "status": "PASS",
-      "timeout_seconds": 1800.0
-    },
-    {
-      "command": [
-        "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/QUANTOS-backtest-runtime-integration/scripts/assess_top_tier.py"
-      ],
-      "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 28365,
-      "returncode": 0,
-      "stage": "top-tier-assessment:refresh",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -250,10 +226,10 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 28121,
-      "returncode": 0,
+      "duration_ms": 1072,
+      "returncode": 1,
       "stage": "top-tier-assessment-artifacts",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -286,10 +262,10 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 1495428,
-      "returncode": 0,
+      "duration_ms": 1465414,
+      "returncode": 1,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -303,7 +279,7 @@
         "tests/tools"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 215086,
+      "duration_ms": 219715,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -316,7 +292,7 @@
         "typecheck"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 8664,
+      "duration_ms": 7711,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -329,7 +305,7 @@
         "eslint"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 8060,
+      "duration_ms": 6810,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -344,7 +320,7 @@
         "--no-file-parallelism"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 89564,
+      "duration_ms": 97684,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -357,7 +333,7 @@
         "build"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration/apps/research-console",
-      "duration_ms": 13078,
+      "duration_ms": 15048,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -371,7 +347,7 @@
         "/home/kerstker/QUANTOS-backtest-runtime-integration"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3138,
+      "duration_ms": 3739,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -386,7 +362,7 @@
         "--check"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 3787,
+      "duration_ms": 3283,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -401,7 +377,7 @@
         "/home/kerstker/QUANTOS-backtest-runtime-integration/tests/governance/test_727_final_audit.py"
       ],
       "cwd": "/home/kerstker/QUANTOS-backtest-runtime-integration",
-      "duration_ms": 21685,
+      "duration_ms": 20452,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -425,9 +401,7 @@
     "backup-evidence:current",
     "risk-recovery-drill:fresh",
     "governance-scanner",
-    "supply-chain-baseline:refresh",
     "supply-chain-baseline:current",
-    "top-tier-assessment:refresh",
     "top-tier-assessment-artifacts",
     "pytest: all suites (contracts, governance, research, trading)",
     "pytest: live execution stack (live, trading, tools)",
@@ -440,20 +414,20 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1788614029994,
+  "started_at_ms": 1788617815556,
   "summary": {
     "errored": 0,
-    "failed": 0,
-    "passed": 28,
-    "selected": 28,
+    "failed": 6,
+    "passed": 20,
+    "selected": 26,
     "timed_out": 0
   },
   "timeout_seconds": 1800.0,
   "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
   "validation": {
-    "current": true,
-    "generated_at": 1788615977413,
-    "run_id": "65ce42cb4dd1ec27487aaa28e99cd78167eb4a12ec210565f3dd674a1508a14d",
-    "source_commit": "06ebb5eec831d8f2a74908249f87f374f2e1bd7f"
+    "current": false,
+    "generated_at": 1788619686819,
+    "run_id": "803faf3b81d66fd1e52e78dd60bf8251839f55ef8ba6caff757734d403f21a6e",
+    "source_commit": "9b4f35603b7e881dedd1cbcac76e1199288e4f0e"
   }
 }

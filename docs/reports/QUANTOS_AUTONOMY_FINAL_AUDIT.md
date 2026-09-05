@@ -2,8 +2,8 @@
 
 > 本报告由 `scripts/generate_727_final_audit.py` 只读生成。它不授予任何订单、资金或部署权限。
 
-- 生成时间（Unix ms）：`1788615949843`
-- commit：`06ebb5eec831d8f2a74908249f87f374f2e1bd7f`
+- 生成时间（Unix ms）：`1788619660238`
+- commit：`9b4f35603b7e881dedd1cbcac76e1199288e4f0e`
 - 当前 readiness：`L2_DRY_RUN_ONLY`
 - 当前总状态：`NOT_READY`
 - 不生成任何开放真实实盘的状态或权限
@@ -12,9 +12,9 @@
 
 | 能力 | 当前状态 |
 |---|---|
-| Autonomy Kernel | `READY_FOR_RESEARCH_AUTONOMY` |
+| Autonomy Kernel | `NOT_READY` |
 | Trial Ledger | `NOT_READY` |
-| Factor Garden | `READY_FOR_RESEARCH_AUTONOMY` |
+| Factor Garden | `NOT_READY` |
 | Alpha Lifecycle | `NOT_READY` |
 | Paper / Shadow | `NOT_READY` |
 | MEXC Integration | `NOT_READY` |
@@ -26,16 +26,16 @@
 |---:|---|---|---|
 | 0 | 基线与安全冻结 | `PASS` | evidence/autonomy_baseline.json；evidence/validation_report.json |
 | 1 | 数据血缘与统一门禁 | `PASS` | evidence/data_quality_admission.json；evidence/raw_data_lineage_backfill.json |
-| 2 | Autonomy Kernel | `PASS` | evidence/autonomy_readiness.json |
+| 2 | Autonomy Kernel | `BLOCKED` | evidence/autonomy_readiness.json |
 | 3 | 全局 Trial Ledger | `BLOCKED` | evidence/trial_ledger_integrity.json |
-| 4 | Factor Garden | `PASS` | evidence/factor_garden_status.json |
+| 4 | Factor Garden | `BLOCKED` | evidence/factor_garden_status.json |
 | 5 | Alpha Factory 与 Challenge Council | `BLOCKED` | evidence/autonomy_readiness.json；Trial Ledger |
 | 6 | 三状态生命周期 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
 | 7 | Paper 与 Shadow | `BLOCKED` | evidence/paper_shadow_status.json |
 | 8 | MEXC 行情/只读/Test Order | `BLOCKED` | evidence/mexc_integration_status.json |
 | 9 | Micro-Live Broker Adapter | `BLOCKED` | 默认禁用；缺外部 Deployment Grant、真实 broker 与人工审查 |
 | 10 | Alpha Health、衰减与退役 | `BLOCKED` | evidence/alpha_lifecycle_status.json |
-| 11 | 前端重构 | `PASS` | validation_report frontend typecheck/eslint/tests/build |
+| 11 | 前端重构 | `BLOCKED` | validation_report frontend typecheck/eslint/tests/build |
 | 12 | Chaos、恢复与运维 | `BLOCKED` | evidence/chaos_recovery_status.json |
 | 13 | 最终审计 | `PASS` | 本报告与 7 个机器状态制品；总体状态仍 NOT_READY |
 
