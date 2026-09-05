@@ -11,6 +11,9 @@
 > 完整设计、API 和支持范围见
 > `docs/engineering/specs/2026-09-05-backtest-engine-repair.md`。发布级全量验证与外部数据权威
 > 是独立要求，不以本次引擎测试替代。
+> 全量回归：core 7055 passed / 19 skipped / 4 failed（依赖图过期一项，本次修正；
+> 供应链旧证据三项，已在修复前版本独立复现）；live/trading/tools 3317 passed / 2 skipped；
+> 前端 typecheck、252 tests 和 build 全过。ARM64 发布证据仍绑定旧代码，完整发布门禁未绿。
 
 > **2026-08-31 DGX 容器发布链改为 ARM64 原生：** `deploy/console.Dockerfile`
 > 现在以 ARM64 单平台基础镜像为默认，并在 builder/runtime 两阶段都以

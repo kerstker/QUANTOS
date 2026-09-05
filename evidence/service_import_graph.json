@@ -584,12 +584,12 @@
     {
       "references": [
         {
-          "line": 64,
+          "line": 68,
           "module": "services.risk.research_risk.domain.models",
           "path": "services/execution/authoritative_perpetual_backtest.py"
         },
         {
-          "line": 65,
+          "line": 69,
           "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/execution/authoritative_perpetual_backtest.py"
         },
@@ -1503,7 +1503,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "4099451e687f3646b98464562d525306fc1ef6b4d9f3bdc31abb6a18b2268786",
+  "graph_sha256": "067566310b004b5ce8327353ec4158e689c61d489e4b6f1ea06b7abd0bf73962",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1541,7 +1541,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 500,
+  "source_file_count": 501,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
