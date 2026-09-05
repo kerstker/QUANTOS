@@ -47,6 +47,7 @@ ZERO = Decimal("0")
 ONE = Decimal("1")
 LINEAR_USDT_PERPETUAL = "LINEAR_USDT_PERPETUAL"
 DECIMAL_CONTEXT_VERSION = "quantos.linear-perpetual-decimal-context.v1"
+COST_BASIS_POLICY = "EXACT_ENTRY_NOTIONAL_PRORATA_TRUNCATE_RETAIN_REMAINDER_V1"
 BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID = "BINANCE_USDM.UTC_DAY.v1"
 
 _DECIMAL_CONTEXT_PRECISION = 50
@@ -766,6 +767,28 @@ class TradeEvent:
         )
 
 
+@dataclass(frozen=True, kw_only=True)
+class OrderFillEvent(TradeEvent):
+    """Execution slice of an order already admitted by the simulation runtime.
+
+    Opening minimums belong to the parent order. Each fill still enforces the
+    quantity grid, capacity, margin and exact cash settlement. The caller owns
+    order identity, admission, remaining quantity and terminal-state checks;
+    this accounting event is not an order authorization or a live API.
+    Costs use actual filled notional, avoiding a rounded partial/request ratio.
+    """
+    order_id: str
+    fee_rate: Decimal
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.order_id, str) or not self.order_id.strip():
+            raise ValueError("order_id must be non-empty")
+        object.__setattr__(self, "fee_rate", _non_negative(self.fee_rate, "fee_rate"))
+        if self.fee != ZERO or self.spread_cost != ZERO or self.impact_cost != ZERO:
+            raise ValueError("order fill costs require fee_rate and embedded executable prices")
+
+
 @dataclass(frozen=True)
 class FundingEvent:
     timestamp: int
@@ -823,6 +846,7 @@ class _Position:
     mark_price: Decimal
     margin_mode: MarginMode
     isolated_wallet: Decimal = ZERO
+    entry_notional: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -833,12 +857,14 @@ class PositionView:
     mark_price: Decimal
     margin_mode: MarginMode
     isolated_wallet: Decimal
+    entry_notional: Decimal
 
     def as_canonical_dict(self) -> dict[str, str]:
         return {
             "instrument_id": self.instrument_id,
             "quantity": canonical_decimal(self.quantity),
             "average_entry_price": canonical_decimal(self.average_entry_price),
+            "entry_notional": canonical_decimal(self.entry_notional),
             "mark_price": canonical_decimal(self.mark_price),
             "margin_mode": self.margin_mode.value,
             "isolated_wallet": canonical_decimal(self.isolated_wallet),
@@ -951,7 +977,7 @@ class ReconciliationSnapshot:
 class LinearPerpetualLedger:
     """Single-account deterministic event engine for reviewed v2 contracts."""
 
-    _PRIORITY = {FundingEvent: 10, MarkEvent: 20, TradeEvent: 30}
+    _PRIORITY = {FundingEvent: 10, MarkEvent: 20, TradeEvent: 30, OrderFillEvent: 30}
 
     def __init__(
         self, specs: Sequence[ContractSpec], *, initial_collateral: Decimal
@@ -1084,21 +1110,18 @@ class LinearPerpetualLedger:
             mark_price=position.mark_price,
             margin_mode=position.margin_mode,
             isolated_wallet=position.isolated_wallet,
+            entry_notional=position.entry_notional,
         )
 
     def _unrealized(self, position: _Position) -> Decimal:
+        return self._unrealized_at(position, position.mark_price)
+
+    def _unrealized_at(self, position: _Position, price: Decimal) -> Decimal:
         spec = self._spec(position.instrument_id)
-        price_change = _exact_sum(
-            position.mark_price,
-            -position.average_entry_price,
-            field=f"unrealized[{position.instrument_id}].price_change",
-        )
-        return self._cash_product(
-            position.quantity,
-            price_change,
-            spec.contract_multiplier,
-            field=f"unrealized[{position.instrument_id}]",
-        )
+        direction = ONE if position.quantity > ZERO else -ONE
+        return direction * self._cash_add(
+            spec.notional(position.quantity, price), -position.entry_notional,
+            field=f"unrealized[{position.instrument_id}]")
 
     @_reviewed_decimal
     def account_equity(self) -> Decimal:
@@ -1145,18 +1168,8 @@ class LinearPerpetualLedger:
     def _conservative_initial_margin_unrealized(
         self, position: _Position
     ) -> Decimal:
-        spec = self._spec(position.instrument_id)
         return min(
-            self._cash_product(
-                position.quantity,
-                _exact_sum(
-                    price,
-                    -position.average_entry_price,
-                    field=f"initial_margin[{position.instrument_id}].price_change",
-                ),
-                spec.contract_multiplier,
-                field=f"initial_margin[{position.instrument_id}].unrealized",
-            )
+            self._unrealized_at(position, price)
             for price in self._initial_margin_price_candidates(position)
         )
 
@@ -1196,7 +1209,9 @@ class LinearPerpetualLedger:
             ZERO,
         )
 
-    def _assert_initial_margin(self) -> None:
+    @_reviewed_decimal
+    def initial_margin_snapshot(self) -> dict[str, object]:
+        """Current conservative margin values, shared by admission and reports."""
         cross_equity = self._cash_add(
             self._wallet_balance,
             *(
@@ -1218,8 +1233,7 @@ class LinearPerpetualLedger:
             ),
             ZERO,
         )
-        if cross_equity < cross_initial_margin:
-            raise InsufficientMargin("cross initial margin is insufficient")
+        isolated = {}
         for position in self._positions.values():
             if position.margin_mode != MarginMode.ISOLATED:
                 continue
@@ -1231,9 +1245,22 @@ class LinearPerpetualLedger:
                 self._conservative_initial_margin_unrealized(position),
                 field=f"conservative_isolated_equity[{position.instrument_id}]",
             )
-            if isolated_equity < requirement.initial_margin:
+            isolated[position.instrument_id] = {
+                "equity": isolated_equity, "required": requirement.initial_margin,
+                "available": isolated_equity-requirement.initial_margin,
+            }
+        return {"cross": {"equity": cross_equity, "required": cross_initial_margin,
+                           "available": cross_equity-cross_initial_margin},
+                "isolated": isolated}
+
+    def _assert_initial_margin(self) -> None:
+        snapshot = self.initial_margin_snapshot()
+        if snapshot["cross"]["available"] < ZERO:
+            raise InsufficientMargin("cross initial margin is insufficient")
+        for instrument_id, values in snapshot["isolated"].items():
+            if values["available"] < ZERO:
                 raise InsufficientMargin(
-                    f"isolated initial margin is insufficient for {position.instrument_id}"
+                    f"isolated initial margin is insufficient for {instrument_id}"
                 )
 
     def _liquidation_targets(self) -> tuple[str, ...]:
@@ -1266,44 +1293,52 @@ class LinearPerpetualLedger:
         quantity_delta: Decimal,
         execution_price: Decimal,
         multiplier: Decimal,
-    ) -> tuple[Decimal, Decimal, Decimal]:
+    ) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+        """Exact cost basis owns PnL; average price is a display quotient only.
+
+        A partial close allocates entry cost in integer settlement units, with
+        the remainder retained in the open position. This declared L2 policy
+        preserves cash and total round-trip PnL without claiming venue rounding
+        equivalence. See COST_BASIS_POLICY in every resulting account state.
+        """
+        traded_notional = self._cash_product(
+            abs(quantity_delta), execution_price, multiplier, field="trade.entry_notional")
         if position is None or position.quantity == ZERO:
-            return quantity_delta, execution_price, ZERO
+            return quantity_delta, execution_price, ZERO, traded_notional
         old_quantity = position.quantity
-        old_average = position.average_entry_price
         if (old_quantity > ZERO) == (quantity_delta > ZERO):
             new_quantity = _exact_sum(
                 old_quantity, quantity_delta, field="position_quantity"
             )
-            average = (
-                abs(old_quantity) * old_average
-                + abs(quantity_delta) * execution_price
-            ) / abs(new_quantity)
-            return new_quantity, average, ZERO
+            basis = self._cash_add(position.entry_notional, traded_notional, field="entry_notional")
+            average = basis / (abs(new_quantity) * multiplier)
+            return new_quantity, average, ZERO, basis
         closing = min(abs(old_quantity), abs(quantity_delta))
         direction = ONE if old_quantity > ZERO else -ONE
-        price_change = _exact_sum(
-            execution_price,
-            -old_average,
-            field="realized_price_change",
-        )
-        realized = self._cash_product(
-            closing,
-            price_change,
-            direction,
-            multiplier,
-            field="realized_price_pnl",
-        )
+        # Quantities have their own grid: 0.001 contracts is valid even when
+        # cash settles in cents. Allocate integer CASH units by an exact
+        # rational QUANTITY ratio, never interpreting quantity as cash.
+        closing_num, closing_den = closing.as_integer_ratio()
+        quantity_num, quantity_den = abs(old_quantity).as_integer_ratio()
+        basis_units = self._cash_spec.cash_units(position.entry_notional, "entry_notional")
+        closed_units = basis_units * closing_num * quantity_den // (closing_den * quantity_num)
+        closed_basis = self._cash_spec.cash_from_units(closed_units, "closed_entry_notional")
+        closing_notional = self._cash_product(closing, execution_price, multiplier,
+                                             field="closing_notional")
+        realized = direction * self._cash_add(closing_notional, -closed_basis, field="realized_price_pnl")
         new_quantity = _exact_sum(
             old_quantity, quantity_delta, field="position_quantity"
         )
         if new_quantity == ZERO:
             average = ZERO
+            basis = ZERO
         elif (new_quantity > ZERO) == (old_quantity > ZERO):
-            average = old_average
+            basis = self._cash_add(position.entry_notional, -closed_basis, field="entry_notional")
+            average = basis / (abs(new_quantity) * multiplier)
         else:
             average = execution_price
-        return new_quantity, average, realized
+            basis = self._cash_product(abs(new_quantity), execution_price, multiplier, field="entry_notional")
+        return new_quantity, average, realized, basis
 
     def _event_key(self, event: LedgerEvent) -> tuple[int, int]:
         return event.timestamp, self._PRIORITY[type(event)]
@@ -1344,9 +1379,23 @@ class LinearPerpetualLedger:
             raise
 
     @_reviewed_decimal
-    def apply_event(self, event: LedgerEvent) -> ExecutionResult | None:
+    def apply_event(
+        self, event: LedgerEvent, *,
+        trade_guard: Callable[[ExecutionResult], None] | None = None,
+    ) -> ExecutionResult | None:
+        """Apply an event, optionally checking a simulated trade before commit.
+
+        The guard observes the actual capacity-limited ledger transition. Raising
+        rolls back this trade, including costs, capacity and appended history.
+        Market/funding observations cannot be vetoed this way. This hook is for
+        proposed simulation fills, never for erasing an observed venue fill.
+        """
         if type(event) not in self._PRIORITY:
             raise TypeError("unsupported ledger event")
+        if trade_guard is not None and (
+            not isinstance(event, TradeEvent) or not callable(trade_guard)
+        ):
+            raise TypeError("trade_guard requires a trade and a callable")
         with self._transaction(event if isinstance(event, TradeEvent) else None):
             key = self._event_key(event)
             if self._last_event_key is not None and key < self._last_event_key:
@@ -1360,7 +1409,10 @@ class LinearPerpetualLedger:
                 )
             self._last_event_key = key
             if isinstance(event, TradeEvent):
-                return self._apply_trade(event)
+                result = self._apply_trade(event)
+                if trade_guard is not None and result.filled_quantity != ZERO:
+                    trade_guard(result)
+                return result
             if isinstance(event, FundingEvent):
                 self._apply_funding(event)
                 self._closed_market_phases = {key}
@@ -1514,14 +1566,20 @@ class LinearPerpetualLedger:
             return ZERO, "REJECTED", "CAPACITY_BELOW_MINIMUM", consumed
         signed = filled_abs if requested > ZERO else -filled_abs
         try:
-            current = self._positions.get(event.instrument_id)
-            spec.validate_trade_quantity(
-                signed, event.execution_price,
-                current_quantity=ZERO if current is None else current.quantity,
-            )
+            self._validate_execution_quantity(event, spec, signed)
         except QuantityRuleViolation:
             return ZERO, "REJECTED", "CAPACITY_BELOW_MINIMUM", consumed
         return signed, "PARTIALLY_FILLED", "CAPACITY_PARTIAL_FILL", consumed
+
+    def _validate_execution_quantity(
+        self, event: TradeEvent, spec: ContractSpec, quantity: Decimal,
+    ) -> None:
+        if isinstance(event, OrderFillEvent):
+            spec.validate_quantity(quantity, event.execution_price, reducing=True)
+        else:
+            current = self._positions.get(event.instrument_id)
+            spec.validate_trade_quantity(quantity, event.execution_price,
+                current_quantity=ZERO if current is None else current.quantity)
 
     def _apply_trade(self, event: TradeEvent) -> ExecutionResult:
         spec = self._spec(event.instrument_id)
@@ -1533,11 +1591,7 @@ class LinearPerpetualLedger:
             if event.isolated_margin is None
             else self._cash(event.isolated_margin, "trade.isolated_margin")
         )
-        current = self._positions.get(event.instrument_id)
-        spec.validate_trade_quantity(
-            event.quantity_delta, event.execution_price,
-            current_quantity=ZERO if current is None else current.quantity,
-        )
+        self._validate_execution_quantity(event, spec, event.quantity_delta)
         filled, status, reason, capacity_consumed_before = self._capacity_quantity(
             event, spec
         )
@@ -1625,7 +1679,7 @@ class LinearPerpetualLedger:
             isolated_wallet = current.isolated_wallet
             current_for_cost = current
 
-        new_quantity, new_average, realized = self._apply_average_cost(
+        new_quantity, new_average, realized, entry_notional = self._apply_average_cost(
             current_for_cost,
             filled,
             event.execution_price,
@@ -1639,8 +1693,10 @@ class LinearPerpetualLedger:
         # TradeEvent costs describe the requested order.  A load-bearing
         # capacity partial fill realizes only the corresponding fraction.
         fill_ratio = abs(filled / event.quantity_delta)
-        applied_fee = self._cash_product(
-            requested_fee, fill_ratio, field="trade.applied_fee"
+        applied_fee = (
+            self._cash_product(filled_notional, event.fee_rate, field="trade.applied_fee")
+            if isinstance(event, OrderFillEvent) else
+            self._cash_product(requested_fee, fill_ratio, field="trade.applied_fee")
         )
         applied_spread = self._cash_product(
             requested_spread, fill_ratio, field="trade.applied_spread"
@@ -1729,6 +1785,7 @@ class LinearPerpetualLedger:
                 ),
                 margin_mode=event.margin_mode,
                 isolated_wallet=isolated_wallet,
+                entry_notional=entry_notional,
             )
         self._assert_initial_margin()
         self._assert_cash_state()
@@ -1744,6 +1801,10 @@ class LinearPerpetualLedger:
                 "event_type": "TRADE",
                 "timestamp": event.timestamp,
                 "instrument_id": event.instrument_id,
+                **({"order_id": event.order_id,
+                    "quantity_basis": "ADMITTED_ORDER_FILL",
+                    "fee_rate": canonical_decimal(event.fee_rate)}
+                   if isinstance(event, OrderFillEvent) else {}),
                 **result.as_canonical_dict(),
                 "execution_price": canonical_decimal(event.execution_price),
                 "requested_fee": canonical_decimal(event.fee),
@@ -2214,6 +2275,7 @@ class LinearPerpetualLedger:
                 self._cash_spec.settlement_quantum
             ),
             "initial_collateral": canonical_decimal(self._initial_collateral),
+            "cost_basis_policy": COST_BASIS_POLICY,
             "wallet_balance": canonical_decimal(self._wallet_balance),
             "account_equity": canonical_decimal(self.account_equity()),
             "positions": {
@@ -2266,6 +2328,7 @@ __all__ = [
     "MarginMode",
     "MarginRequirement",
     "MarkEvent",
+    "OrderFillEvent",
     "MissingLiquidationBackstop",
     "PerpetualLedgerError",
     "PositionView",

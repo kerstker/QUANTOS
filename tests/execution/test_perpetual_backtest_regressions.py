@@ -71,6 +71,77 @@ def test_processing_new_events_never_copies_committed_history():
     assert ledger.account_equity() == D("1000")
     assert len(ledger._events) == 2
 
+def test_projected_trade_guard_rolls_back_only_the_tentative_fill():
+    f = _ledger_fixtures()
+    ledger = LinearPerpetualLedger((f["_spec"](),), initial_collateral=D("1000"))
+    ledger.apply_event(f["_trade"](1, "1", "100"))
+    ledger.apply_event(MarkEvent(2, "BTCUSDT", D("90")))
+    before = ledger.state_as_canonical_dict()
+    records = ledger.event_records
+    class GuardRejected(Exception):
+        pass
+    observed = []
+    def reject(fill):
+        observed.append((ledger.account_equity(), fill.filled_quantity,
+                         ledger.initial_margin_snapshot()["cross"]["available"]))
+        raise GuardRejected
+    with pytest.raises(GuardRejected):
+        ledger.apply_event(replace(f["_trade"](3, "1", "90"), fee=D("1")), trade_guard=reject)
+    assert observed == [(D("989"), D("1"), D("971"))]
+    assert ledger.state_as_canonical_dict() == before  # includes the prior 10 loss
+    assert ledger.event_records == records
+    # Retry is bit-identical to an account that never attempted the rejected fill.
+    reference = LinearPerpetualLedger((f["_spec"](),), initial_collateral=D("1000"))
+    reference.apply_event(f["_trade"](1, "1", "100"))
+    reference.apply_event(MarkEvent(2, "BTCUSDT", D("90")))
+    retry = f["_trade"](3, "0.1", "90")
+    ledger.apply_event(retry)
+    reference.apply_event(retry)
+    assert ledger.state_as_canonical_dict() == reference.state_as_canonical_dict()
+    assert ledger.event_records == reference.event_records
+
+def test_projected_guard_never_copies_committed_history_or_vetoes_market_events():
+    f = _ledger_fixtures()
+    ledger = LinearPerpetualLedger((f["_spec"](),), initial_collateral=D("1000"))
+    ledger.apply_event(MarkEvent(1, "BTCUSDT", D("100")))
+    class HistoricalRecord(dict):
+        def __deepcopy__(self, memo):
+            pytest.fail("trade guard copied committed history")
+    ledger._events[0] = HistoricalRecord(ledger._events[0])
+    ledger.apply_event(f["_trade"](2, "1", "100"), trade_guard=lambda fill: None)
+    with pytest.raises(TypeError, match="trade_guard"):
+        ledger.apply_event(MarkEvent(3, "BTCUSDT", D("90")), trade_guard=lambda fill: None)
+
+@pytest.mark.parametrize("direction", [D("1"), D("-1")])
+def test_repeating_average_price_keeps_exact_entry_cost_and_round_trip(direction):
+    f = _ledger_fixtures()
+    ledger = LinearPerpetualLedger((f["_spec"](),), initial_collateral=D("1000"))
+    ledger.apply_event(MarkEvent(1, "BTCUSDT", D("100")))
+    ledger.apply_event(f["_trade"](2, str(direction), "100"))
+    ledger.apply_event(MarkEvent(3, "BTCUSDT", D("90")))
+    ledger.apply_event(f["_trade"](4, str(direction*D(".1")), "90"))
+    assert ledger.account_equity() == D("1000") - direction*D("10")
+    assert ledger.position("BTCUSDT").entry_notional == D("109")
+    # A partial close must retain any sub-quantum cost-basis remainder in the
+    # open position; closing everything later realizes exactly the full loss.
+    ledger.apply_event(f["_trade"](5, str(-direction*D(".1")), "90"))
+    assert ledger.account_equity() == D("1000") - direction*D("10")
+    assert ledger.reconciliation_snapshot().residual == D("0")
+    ledger.apply_event(f["_trade"](6, str(-direction), "90"))
+    assert ledger.account_equity() == D("1000") - direction*D("10")
+    assert ledger.position("BTCUSDT") is None
+    assert ledger.reconciliation_snapshot().residual == D("0")
+
+def test_cost_basis_allocation_uses_quantity_grid_independently_of_cash_quantum():
+    f = _ledger_fixtures()
+    ledger = LinearPerpetualLedger((replace(f["_spec"](), settlement_quantum=D(".01")),),
+                                   initial_collateral=D("1000"))
+    ledger.apply_event(f["_trade"](1, ".01", "1000"))
+    ledger.apply_event(f["_trade"](2, "-.001", "1000"))
+    assert ledger.position("BTCUSDT").entry_notional == D("9")
+    assert ledger.account_equity() == D("1000")
+    assert ledger.reconciliation_snapshot().residual == D("0")
+
 def test_failed_trade_restores_account_and_capacity_then_can_retry():
     f = _ledger_fixtures()
     ledger = LinearPerpetualLedger((f["_spec"](),), initial_collateral=D("10"))

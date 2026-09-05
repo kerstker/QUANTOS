@@ -27,13 +27,20 @@ from services.execution.authoritative_perpetual_backtest import (
 from services.execution.backtest_authority import exact_identity_hash
 from services.execution.perpetual_ledger_v2 import (
     FundingEvent, InsufficientMargin, LinearPerpetualLedger, MarginMode,
-    MarkEvent, PositionView, QuantityRuleViolation, TradeEvent,
+    MarkEvent, OrderFillEvent, PositionView, QuantityRuleViolation,
     canonical_decimal, ledger_decimal_context,
 )
 
 ZERO, ONE = Decimal("0"), Decimal("1")
-SCHEMA = "LINEAR_PERPETUAL_FORWARD_SIMULATION_V1"
+SCHEMA = "LINEAR_PERPETUAL_FORWARD_SIMULATION_V2"
 _T = TypeVar("_T")
+_ORDER_TRANSITIONS = {
+    "OPEN": frozenset({"PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REJECTED"}),
+    "PARTIALLY_FILLED": frozenset({"PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REJECTED"}),
+}
+
+class _ProjectedRiskRejected(RuntimeError):
+    """Internal transaction abort for an uncommitted simulated fill."""
 
 def _decimal(value: Decimal, name: str, *, positive: bool = False) -> Decimal:
     if not isinstance(value, Decimal) or not value.is_finite():
@@ -211,6 +218,7 @@ class OrderState:
     status: str = "OPEN"
     reason: str | None = None
     filled_at: int | None = None
+    minimum_exemption_requires_reduction: bool = False
 
 @dataclass(frozen=True)
 class SimulationContext:
@@ -305,6 +313,7 @@ def run_linear_perpetual_simulation(
     history: list[EquityPoint] = []
     order_events: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
+    risk_events: list[dict[str, Any]] = []
     peak = initial_collateral
 
     def checkpoint(timestamp: int, phase: str) -> None:
@@ -325,8 +334,25 @@ def run_linear_perpetual_simulation(
     def transition(state: OrderState, timestamp: int, status: str,
                    reason: str | None = None, filled: Decimal = ZERO,
                    price: Decimal | None = None) -> OrderState:
+        existing = orders.get(state.intent.order_id)
+        if existing is None:
+            if status not in ("OPEN", "REJECTED") or filled != ZERO:
+                raise ValueError("invalid initial order state")
+        elif existing != state or status not in _ORDER_TRANSITIONS.get(state.status, ()):
+            raise ValueError("invalid or stale order transition")
+        if filled != ZERO and (
+            (filled > ZERO) != (state.remaining_quantity > ZERO)
+            or abs(filled) > abs(state.remaining_quantity)
+            or status not in ("PARTIALLY_FILLED", "FILLED")
+        ):
+            raise ValueError("fill violates order quantity conservation")
+        remaining = state.remaining_quantity-filled
+        if status == "FILLED" and (filled == ZERO or remaining != ZERO):
+            raise ValueError("FILLED requires exact completion")
+        if status == "PARTIALLY_FILLED" and (filled == ZERO or remaining == ZERO):
+            raise ValueError("PARTIALLY_FILLED requires a nonzero remainder")
         updated = replace(state, status=status, reason=reason,
-            remaining_quantity=state.remaining_quantity-filled,
+            remaining_quantity=remaining,
             filled_quantity=state.filled_quantity+filled,
             filled_at=timestamp if filled != ZERO else state.filled_at)
         orders[state.intent.order_id] = updated
@@ -337,6 +363,8 @@ def run_linear_perpetual_simulation(
         order_events.append({
             "order_id": state.intent.order_id, "timestamp": timestamp, "status": status,
             "reason": reason, "filled_quantity": canonical_decimal(filled),
+            "remaining_quantity": canonical_decimal(updated.remaining_quantity),
+            "cumulative_filled_quantity": canonical_decimal(updated.filled_quantity),
             "fill_price": None if price is None else canonical_decimal(price),
         })
         return updated
@@ -416,6 +444,67 @@ def run_linear_perpetual_simulation(
             return None
         return value
 
+    def check_projected_fill(before: SimulationContext, intent: OrderIntent,
+                             filled: Decimal, price: Decimal, *,
+                             minimum_exemption_requires_reduction: bool) -> None:
+        # This context comes from the tentative canonical ledger transition;
+        # fee, funding, realized PnL and margin are not recomputed here.
+        projected = context(before.timestamp)
+        old = before.positions.get(intent.instrument_id)
+        reducing = (old is not None and (old.quantity > ZERO) != (filled > ZERO)
+                    and abs(filled) <= abs(old.quantity))
+        reason = risk_reason(before, intent, filled, price, executing=True)
+        if minimum_exemption_requires_reduction and not reducing:
+            reason = "QUANTITY_RULE"
+        executable_equity = projected.equity
+        notionals = {}
+        for name, position in projected.positions.items():
+            quote = projected.quotes.get(name)
+            if quote is None or projected.timestamp-quote.event_time > limits.quote_max_age_ms:
+                if not reducing:
+                    reason = reason or "STALE_OR_MISSING_QUOTE"
+                continue
+            valuation = quote.bid_price if position.quantity > ZERO else quote.ask_price
+            if name == intent.instrument_id:
+                valuation = (min(valuation, price) if position.quantity > ZERO
+                             else max(valuation, price))
+            executable_equity += (position.quantity * (valuation-position.mark_price)
+                                  * rules[name].spec.contract_multiplier)
+            notional_price = max(quote.bid_price, quote.ask_price, position.mark_price)
+            if name == intent.instrument_id:
+                notional_price = max(notional_price, price)
+            notionals[name] = rules[name].spec.notional(position.quantity, notional_price)
+        risk_equity = min(projected.equity, executable_equity)
+        drawdown = max(ZERO, (peak-risk_equity)/peak)
+        gross = sum(notionals.values(), ZERO)
+        checks = {
+            "positive_equity": risk_equity > ZERO,
+            "drawdown": drawdown <= limits.max_drawdown,
+            "single_name": all(n <= risk_equity*limits.max_single_weight for n in notionals.values()),
+            "gross_exposure": gross <= risk_equity*limits.max_gross_leverage,
+        }
+        if not reducing:
+            for check, code in (
+                ("positive_equity", "NONPOSITIVE_EXECUTABLE_EQUITY"),
+                ("drawdown", "DRAWDOWN_LIMIT"),
+                ("single_name", "SINGLE_NAME_LIMIT"),
+                ("gross_exposure", "GROSS_EXPOSURE_LIMIT"),
+            ):
+                if not checks[check]:
+                    reason = reason or code
+        risk_events.append({
+            "order_id": intent.order_id, "timestamp": before.timestamp,
+            "phase": "PROJECTED_FILL", "filled_quantity": filled,
+            "marked_equity": projected.equity, "executable_equity": executable_equity,
+            "risk_equity": risk_equity, "gross_notional": gross,
+            "instrument_notionals": notionals, "drawdown": drawdown,
+            "limits": asdict(limits), "checks": checks,
+            "margin": ledger.initial_margin_snapshot(),
+            "reducing": reducing, "approved": reason is None, "reason": reason,
+        })
+        if reason is not None:
+            raise _ProjectedRiskRejected(reason)
+
     for frame in frame_items:
         now = frame.timestamp
         if not history: checkpoint(now, "INITIAL")
@@ -488,22 +577,19 @@ def run_linear_perpetual_simulation(
             quantity *= ONE if remaining > ZERO else -ONE
             if quantity == ZERO:
                 continue
-            try:
-                spec.validate_trade_quantity(quantity, px,
-                    current_quantity=ZERO if current is None else current.quantity)
-            except QuantityRuleViolation:
-                continue  # displayed liquidity cannot yet form a legal partial fill
-            reason = risk_reason(context(now), intent, quantity, px, executing=True)
-            if reason:
-                transition(state, now, "REJECTED", reason)
-                continue
-            trade = TradeEvent(timestamp=now, instrument_id=intent.instrument_id,
+            before_fill = context(now)
+            trade = OrderFillEvent(timestamp=now, instrument_id=intent.instrument_id,
                 quantity_delta=quantity, execution_price=px, capacity=cap.policy,
                 margin_mode=intent.margin_mode,
                 isolated_margin=intent.isolated_margin if current is None else None,
-                fee=spec.cash_product(spec.notional(quantity, px), costs.fee_rate, field="simulation.fee"))
+                order_id=intent.order_id, fee_rate=costs.fee_rate)
             try:
-                fill = ledger.apply_event(trade)
+                fill = ledger.apply_event(trade, trade_guard=lambda candidate:
+                    check_projected_fill(before_fill, intent, candidate.filled_quantity, px,
+                        minimum_exemption_requires_reduction=state.minimum_exemption_requires_reduction))
+            except _ProjectedRiskRejected as exc:
+                transition(state, now, "REJECTED", str(exc))
+                continue
             except InsufficientMargin:
                 transition(state, now, "REJECTED", "INSUFFICIENT_MARGIN")
                 continue
@@ -561,6 +647,12 @@ def run_linear_perpetual_simulation(
                 except QuantityRuleViolation:
                     reason = "QUANTITY_RULE"
                 if reason is None:
+                    try:
+                        rules[action.instrument_id].spec.validate_quantity(action.quantity_delta, px)
+                    except QuantityRuleViolation:
+                        # An original closing order admitted only by a minimum
+                        # exemption must never use it to open inventory later.
+                        state = replace(state, minimum_exemption_requires_reduction=True)
                     reason = risk_reason(context(now), action, action.quantity_delta, px)
             transition(state, now, "OPEN" if reason is None else "REJECTED", reason)
         decisions.append({
@@ -597,8 +689,9 @@ def run_linear_perpetual_simulation(
         "orders":[{"order_id":s.intent.order_id, "instrument_id":s.intent.instrument_id,
             "status":s.status, "reason":s.reason, "created_at":s.created_at, "filled_at":s.filled_at,
             "filled_quantity":canonical_decimal(s.filled_quantity),
+            "minimum_exemption_requires_reduction":s.minimum_exemption_requires_reduction,
             "remaining_quantity":canonical_decimal(s.remaining_quantity)} for s in orders.values()],
-        "order_events":order_events, "decision_events":decisions,
+        "order_events":order_events, "decision_events":decisions, "risk_events":risk_events,
         "equity_history":[{"timestamp":p.timestamp,"sequence":p.sequence,"phase":p.phase,
             "equity":canonical_decimal(p.equity),"drawdown":canonical_decimal(p.drawdown),
             "return_since_previous":None if p.return_since_previous is None

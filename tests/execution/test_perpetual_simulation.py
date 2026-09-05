@@ -224,6 +224,168 @@ def test_cost_assumptions_must_be_explicit():
     with pytest.raises(ValueError,match="explicit cost"):
         run((frame(0),frame(10)),costs=None)
 
+@pytest.mark.parametrize("quantity", ["10", "-10"])
+@pytest.mark.parametrize("limit_kind", ["gross", "single"])
+def test_new_risk_uses_equity_after_the_actual_fill_fee(quantity, limit_kind):
+    limits = SimulationLimits(
+        max_gross_leverage=D("1" if limit_kind == "gross" else "2"),
+        max_single_weight=D("1" if limit_kind == "single" else "2"),
+    )
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D(quantity)),) if ctx.timestamp == T else ()
+    result = run((frame(0, size="10"), frame(10, size="10")), strategy,
+                 limits=limits, costs=SimulationCostModel(fee_rate=D(".001")))
+    # 1000 notional / (1000 collateral - 1 fee) exceeds the configured 1x.
+    assert result["orders"][0]["status"] == "REJECTED"
+    assert result["orders"][0]["reason"] == (
+        "GROSS_EXPOSURE_LIMIT" if limit_kind == "gross" else "SINGLE_NAME_LIMIT")
+    assert result["ending_state"]["positions"] == {}
+    assert result["ending_state"]["capacity_consumed"] == {}
+    assert result["reconciliation"]["ending_equity"] == "1000"
+    assert result["reconciliation"]["fee"] == "0"
+
+@pytest.mark.parametrize("quantity,mark", [("10", "99"), ("-10", "101")])
+def test_immediate_mark_loss_is_included_before_new_risk_commits(quantity, mark):
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D(quantity)),) if ctx.timestamp == T else ()
+    result = run((frame(0, size="10"), frame(10, mark, bid="100", ask="100", size="10")),
+                 strategy, limits=SimulationLimits(max_single_weight=D("2")))
+    assert result["orders"][0]["reason"] == "GROSS_EXPOSURE_LIMIT"
+    assert result["ending_state"]["positions"] == {}
+    assert result["reconciliation"]["residual"] == "0"
+
+def test_post_fill_rejection_releases_capacity_for_a_later_retry():
+    capacity = F["_capacity"](adv_notional="10000")  # 1000 budget for the day
+    frames = tuple(replace(frame(t, size="10"), capacity_snapshots=(capacity,))
+                   for t in (0, 10, 20))
+    def strategy(ctx):
+        if ctx.timestamp == T: return (OrderIntent("oversized", "BTCUSDT", D("10")),)
+        if ctx.timestamp == T+10: return (OrderIntent("retry", "BTCUSDT", D("1")),)
+        return ()
+    result = run(frames, strategy, limits=SimulationLimits(max_single_weight=D("2")),
+                 costs=SimulationCostModel(fee_rate=D(".001")))
+    assert [o["status"] for o in result["orders"]] == ["REJECTED", "FILLED"]
+    assert result["reconciliation"]["ending_equity"] == "999.9"
+    assert list(result["ending_state"]["capacity_consumed"].values()) == ["100"]
+
+def test_cost_risk_uses_capacity_filled_slice_instead_of_requested_quantity():
+    from services.execution.perpetual_ledger_v2 import CapacityAction
+    capacity = F["_capacity"](adv_notional="5000")
+    capacity = replace(capacity, policy=replace(capacity.policy, action=CapacityAction.PARTIAL))
+    frames = tuple(replace(frame(t, size="10"), capacity_snapshots=(capacity,)) for t in (0, 10))
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D("10")),) if ctx.timestamp == T else ()
+    result = run(frames, strategy, limits=SimulationLimits(max_single_weight=D("2")),
+                 costs=SimulationCostModel(fee_rate=D(".001")))
+    assert result["orders"][0]["status"] == "PARTIALLY_FILLED"
+    assert result["orders"][0]["filled_quantity"] == "5"
+    assert result["reconciliation"]["ending_equity"] == "999.5"
+
+def test_admitted_ten_dollar_order_fills_as_ten_one_dollar_slices():
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D(".1")),) if ctx.timestamp == T else ()
+    result = run((frame(0), *(frame(t, size=".01") for t in range(1, 11))), strategy,
+                 costs=SimulationCostModel(fee_rate=D(".001")))
+    fills = [e for e in result["order_events"] if e["status"] in ("PARTIALLY_FILLED", "FILLED")]
+    assert len(fills) == 10
+    assert [e["filled_quantity"] for e in fills] == ["0.01"] * 10
+    assert result["orders"][0]["remaining_quantity"] == "0"
+    assert result["orders"][0]["status"] == "FILLED"
+    assert result["reconciliation"]["fee"] == "0.01"
+    assert result["reconciliation"]["ending_equity"] == "999.99"
+    assert result["reconciliation"]["residual"] == "0"
+
+def test_subminimum_original_order_is_still_rejected():
+    def strategy(ctx):
+        return (OrderIntent("too-small", "BTCUSDT", D(".01")),) if ctx.timestamp == T else ()
+    result = run((frame(0), frame(10)), strategy)
+    assert result["orders"][0]["reason"] == "QUANTITY_RULE"
+    assert result["ending_state"]["positions"] == {}
+
+def test_closing_minimum_exemption_cannot_open_a_new_small_position():
+    def strategy(ctx):
+        if ctx.timestamp == T: return (OrderIntent("entry", "BTCUSDT", D(".1")),)
+        if ctx.timestamp == T+20:
+            return (OrderIntent("exit-a", "BTCUSDT", D("-.1")),
+                    OrderIntent("exit-b", "BTCUSDT", D("-.1")))
+        return ()
+    result = run((frame(0), frame(10), frame(20, "20"), frame(30, "20")), strategy)
+    assert result["orders"][1]["status"] == "FILLED"
+    assert result["orders"][2]["status"] == "REJECTED"
+    assert result["orders"][2]["reason"] == "QUANTITY_RULE"
+    assert result["ending_state"]["positions"] == {}
+
+@pytest.mark.parametrize("terminal", ["cancel", "expire"])
+def test_subminimum_partial_fill_then_terminal_state_never_fills_again(terminal):
+    def strategy(ctx):
+        if ctx.timestamp == T:
+            return (OrderIntent("entry", "BTCUSDT", D(".1"),
+                                expires_at=T+2 if terminal == "expire" else None),)
+        if ctx.timestamp == T+1 and terminal == "cancel": return (CancelOrder("entry"),)
+        return ()
+    result = run((frame(0), frame(1, size=".01"), frame(2), frame(3)), strategy)
+    order = result["orders"][0]
+    assert order["status"] == ("CANCELLED" if terminal == "cancel" else "EXPIRED")
+    assert order["filled_quantity"] == "0.01"
+    assert order["remaining_quantity"] == "0.09"
+
+def test_capacity_subminimum_slice_uses_exact_fee_rate_without_ratio_rounding():
+    from services.execution.perpetual_ledger_v2 import CapacityAction
+    capacity = F["_capacity"](adv_notional="10")  # exactly one dollar executable
+    capacity = replace(capacity, policy=replace(capacity.policy, action=CapacityAction.PARTIAL))
+    frames = tuple(replace(frame(t), capacity_snapshots=(capacity,)) for t in (0, 10))
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D(".3")),) if ctx.timestamp == T else ()
+    result = run(frames, strategy, costs=SimulationCostModel(fee_rate=D(".001")))
+    assert result["orders"][0]["filled_quantity"] == "0.01"
+    assert result["reconciliation"]["fee"] == "0.001"
+    assert result["reconciliation"]["ending_equity"] == "999.999"
+
+def test_post_cost_refusal_does_not_consume_shared_quote_depth():
+    def strategy(ctx):
+        if ctx.timestamp == T:
+            return (OrderIntent("buy", "BTCUSDT", D("10")),
+                    OrderIntent("sell", "BTCUSDT", D("-10")))
+        return ()
+    result = run((frame(0, size="10"), frame(10, size="10")), strategy,
+                 limits=SimulationLimits(max_single_weight=D("2")),
+                 costs=SimulationCostModel(fee_rate=D(".001")))
+    assert [o["reason"] for o in result["orders"]] == ["GROSS_EXPOSURE_LIMIT"] * 2
+    assert len(result["risk_events"]) == 2
+    assert result["ending_state"]["capacity_consumed"] == {}
+
+@pytest.mark.parametrize("direction", [D("1"), D("-1")])
+def test_varying_price_partial_fills_hand_reconcile_after_every_close(direction):
+    # Entries: .07*101 + .11*97 + .13*103 = 31.13; exits total 31.
+    # Both sides pay .001 of 62.13 total traded notional = .06213.
+    def strategy(ctx):
+        if ctx.timestamp == T:
+            return (OrderIntent("entry", "BTCUSDT", direction*D(".31")),)
+        if ctx.timestamp == T+3:
+            return (OrderIntent("exit", "BTCUSDT", -direction*D(".31"), reduce_only=True),)
+        return ()
+    result = run((frame(0), frame(1, "101", size=".07"), frame(2, "97", size=".11"),
+                  frame(3, "103", size=".13"), frame(4, size=".1"),
+                  frame(5, size=".1"), frame(6, size=".11")), strategy,
+                 costs=SimulationCostModel(fee_rate=D(".001")))
+    assert result["ending_state"]["positions"] == {}
+    assert D(result["reconciliation"]["price_pnl"]) == -direction*D(".13")
+    assert result["reconciliation"]["fee"] == "0.06213"
+    assert D(result["reconciliation"]["ending_equity"]) == D("1000")-direction*D(".13")-D(".06213")
+    assert result["reconciliation"]["residual"] == "0"
+    closes = [p for p in result["equity_history"] if p["phase"] == "FILL" and p["timestamp"] >= T+4]
+    for point, fees in zip(closes, (".04113", ".05113", ".06213"), strict=True):
+        assert D(point["equity"]) == D("1000")-direction*D(".13")-D(fees)
+
+def test_unchanged_economic_process_has_identical_equity_with_split_fills():
+    def strategy(ctx):
+        return (OrderIntent("entry", "BTCUSDT", D(".1")),) if ctx.timestamp == T else ()
+    costs = SimulationCostModel(fee_rate=D(".001"))
+    whole = run((frame(0), frame(1)), strategy, costs=costs)
+    split = run((frame(0), *(frame(t, size=".01") for t in range(1, 11))), strategy, costs=costs)
+    assert whole["ending_state"] == split["ending_state"]
+    assert whole["reconciliation"] == split["reconciliation"]
+
 @pytest.mark.parametrize("mode", ["deny", "raise", "invalid"])
 def test_additional_risk_policy_fails_closed(mode):
     def strategy(ctx):
