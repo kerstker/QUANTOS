@@ -16,6 +16,7 @@ venue 侧没有这个信息,拿单策略分账去对账户级 venue 仓位必然
 """
 from __future__ import annotations
 
+import math
 from typing import Dict, Mapping
 
 
@@ -23,10 +24,20 @@ def reconcile_positions(ledger_positions: Mapping[str, float], venue_positions: 
                         *, tolerance: float = 0.0) -> dict:
     """union(标的) 上逐个算 drift = venue − ledger;任一 |drift| > tolerance 则整体 not in_sync。
     某标的只在一侧出现时,缺失侧按 0 处理(平仓在两种表示里都等价于"不出现"或"值为 0")。"""
+    if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float))
+            or not math.isfinite(tolerance) or tolerance < 0):
+        raise ValueError("tolerance must be finite and non-negative")
+    for positions in (ledger_positions, venue_positions):
+        for inst, quantity in positions.items():
+            if (isinstance(quantity, bool) or not isinstance(quantity, (int, float))
+                    or not math.isfinite(quantity)):
+                raise ValueError(f"invalid position quantity: {inst}")
     instruments = set(ledger_positions) | set(venue_positions)
     drift: Dict[str, float] = {}
     for inst in instruments:
         drift[inst] = venue_positions.get(inst, 0.0) - ledger_positions.get(inst, 0.0)
+        if not math.isfinite(drift[inst]):
+            raise ValueError(f"non-finite position drift: {inst}")
     max_abs = max((abs(d) for d in drift.values()), default=0.0)
     return {"drift": drift, "in_sync": max_abs <= tolerance, "max_abs_drift": max_abs}
 

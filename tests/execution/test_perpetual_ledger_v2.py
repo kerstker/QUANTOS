@@ -1019,7 +1019,7 @@ def test_liquidation_backstop_cannot_inject_unexplained_profit() -> None:
         )
 
 
-def test_inverse_or_non_usdt_contract_fails_closed_at_construction() -> None:
+def test_inverse_contract_fails_closed_at_construction() -> None:
     with pytest.raises(UnsupportedContract):
         ContractSpec(
             instrument_id="BTCUSD_PERP",
@@ -1033,3 +1033,31 @@ def test_inverse_or_non_usdt_contract_fails_closed_at_construction() -> None:
             settlement_quantum=D("1e-24"),
             margin_brackets=_brackets(),
         )
+
+
+def test_usdc_uses_same_exact_accounting_without_currency_conversion():
+    spec = replace(_spec(), instrument_id="BTCUSDC",
+                   contract_type="LINEAR_USDC_PERPETUAL", margin_asset="USDC")
+    ledger = LinearPerpetualLedger((spec,), initial_collateral=D("1000"))
+    ledger.apply_event(_trade(1, "1", "100", instrument_id="BTCUSDC", fee=".05"))
+    ledger.apply_event(FundingEvent(2, "BTCUSDC", D(".001"), D("110")))
+    ledger.apply_event(_trade(3, "-1", "110", instrument_id="BTCUSDC", fee=".055"))
+    assert ledger.account_equity() == D("1009.785")
+    assert ledger.reconciliation_snapshot().residual == D("0")
+    assert ledger.state_as_canonical_dict()["schema"] == "quantos.linear-usdc-perpetual-ledger.v2"
+
+
+def test_usdt_and_usdc_cannot_share_a_collateral_wallet():
+    usdc = replace(_spec(), instrument_id="BTCUSDC",
+                   contract_type="LINEAR_USDC_PERPETUAL", margin_asset="USDC")
+    with pytest.raises(UnsupportedContract, match="single margin asset"):
+        LinearPerpetualLedger((_spec(), usdc), initial_collateral=D("1000"))
+
+
+@pytest.mark.parametrize("contract_type,asset", [
+    ("LINEAR_USDT_PERPETUAL", "USDC"), ("LINEAR_USDC_PERPETUAL", "USDT"),
+    ("LINEAR_USDC_PERPETUAL", "BTC"),
+])
+def test_linear_contract_currency_must_match(contract_type, asset):
+    with pytest.raises(UnsupportedContract):
+        replace(_spec(), contract_type=contract_type, margin_asset=asset)

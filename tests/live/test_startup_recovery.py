@@ -1,6 +1,7 @@
 """Ordered, fail-closed startup recovery choreography (727 §13.5)."""
 
 from live.execution.startup_recovery import run_startup_recovery
+import pytest
 
 
 def _successful_dependencies(order):
@@ -47,6 +48,18 @@ def test_success_runs_in_documented_order_and_allows_new_orders():
         "recent_trades", "rebuild_local_ledger", "event_chain", "reconciliation",
         "user_stream", "data_health", "account_health",
     ]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), True])
+def test_invalid_venue_position_stops_before_stream_and_new_orders(value):
+    order = []
+    report = run_startup_recovery(
+        **_successful_dependencies(order),
+        ledger_positions={"BTC": 0.01}, venue_positions={"BTC": value},
+    )
+    assert report.ready_for_new_orders is False
+    assert "reconciliation failed: ValueError" in report.blockers
+    assert "stream" not in order
 
 
 def test_mexc_without_user_stream_is_not_ready_and_does_not_claim_completion():

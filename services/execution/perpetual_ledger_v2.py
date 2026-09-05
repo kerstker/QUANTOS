@@ -1,4 +1,4 @@
-"""Deterministic v2 event ledger for linear USDT-margined perpetuals.
+"""Deterministic v2 event ledger for single-currency linear perpetuals.
 
 This module is intentionally independent from the legacy integer spot-like
 paper contracts.  It is a pure L2 research primitive: no network, broker,
@@ -6,7 +6,7 @@ credential, promotion, or order-submission capability lives here.
 
 Supported scope is deliberately narrow and fail-closed:
 
-* linear USDT-margined perpetuals only;
+* linear USDT- or USDC-margined perpetuals, never a mixed-currency wallet;
 * Decimal quantities/prices/cash flows with canonical string serialization;
 * explicit exchange quantity rules and load-bearing participation capacity;
 * cross and isolated collateral, tiered initial/maintenance margin;
@@ -46,6 +46,7 @@ from typing import Callable, Iterator, Mapping, ParamSpec, Sequence, TypeVar
 ZERO = Decimal("0")
 ONE = Decimal("1")
 LINEAR_USDT_PERPETUAL = "LINEAR_USDT_PERPETUAL"
+LINEAR_USDC_PERPETUAL = "LINEAR_USDC_PERPETUAL"
 DECIMAL_CONTEXT_VERSION = "quantos.linear-perpetual-decimal-context.v1"
 COST_BASIS_POLICY = "EXACT_ENTRY_NOTIONAL_PRORATA_TRUNCATE_RETAIN_REMAINDER_V1"
 BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID = "BINANCE_USDM.UTC_DAY.v1"
@@ -131,7 +132,7 @@ class EventOrderViolation(PerpetualLedgerError):
 
 
 class CashQuantumViolation(PerpetualLedgerError):
-    """A USDT cash amount cannot be represented by the reviewed exact grid."""
+    """A settlement cash amount cannot be represented by the reviewed exact grid."""
 
 
 def _decimal(value: object, field: str) -> Decimal:
@@ -333,10 +334,11 @@ class ContractSpec:
     def __post_init__(self) -> None:
         if not isinstance(self.instrument_id, str) or not self.instrument_id.strip():
             raise ValueError("instrument_id must be non-empty")
-        if self.contract_type != LINEAR_USDT_PERPETUAL:
-            raise UnsupportedContract("only LINEAR_USDT_PERPETUAL is supported")
-        if self.margin_asset != "USDT":
-            raise UnsupportedContract("only USDT margin is supported")
+        margin_assets = {LINEAR_USDT_PERPETUAL: "USDT", LINEAR_USDC_PERPETUAL: "USDC"}
+        if self.contract_type not in margin_assets:
+            raise UnsupportedContract("only reviewed linear perpetual types are supported")
+        if self.margin_asset != margin_assets[self.contract_type]:
+            raise UnsupportedContract("margin asset must match the linear contract type")
         multiplier = _positive(self.contract_multiplier, "contract_multiplier")
         step = _positive(self.quantity_step, "quantity_step")
         minimum = _positive(self.min_quantity, "min_quantity")
@@ -359,7 +361,7 @@ class ContractSpec:
             <= _MAX_SETTLEMENT_QUANTUM
         ):
             raise MarginConfigurationError(
-                "settlement_quantum must be a reviewed base-10 USDT quantum "
+                "settlement_quantum must be a reviewed base-10 cash quantum "
                 "between 1e-24 and 1"
             )
         if minimum % step != ZERO:
@@ -433,7 +435,7 @@ class ContractSpec:
         if units_decimal != integral:
             raise CashQuantumViolation(
                 f"{field} is off the {canonical_decimal(self.settlement_quantum)} "
-                "USDT settlement grid"
+                "cash settlement grid"
             )
         units = int(integral)
         if abs(units) > _MAX_SETTLEMENT_UNITS:
@@ -988,10 +990,12 @@ class LinearPerpetualLedger:
         by_id = {item.instrument_id: item for item in items}
         if len(by_id) != len(items):
             raise ValueError("duplicate instrument_id")
+        if len({item.margin_asset for item in items}) != 1:
+            raise UnsupportedContract("one ledger requires a single margin asset")
         settlement_quantums = {item.settlement_quantum for item in items}
         if len(settlement_quantums) != 1:
             raise MarginConfigurationError(
-                "one cross-margin ledger requires one shared USDT settlement quantum"
+                "one cross-margin ledger requires one shared settlement quantum"
             )
         self._specs = by_id
         self._cash_spec = items[0]
@@ -2269,7 +2273,7 @@ class LinearPerpetualLedger:
     @_reviewed_decimal
     def state_as_canonical_dict(self) -> dict[str, object]:
         return {
-            "schema": "quantos.linear-usdt-perpetual-ledger.v2",
+            "schema": f"quantos.linear-{self._cash_spec.margin_asset.lower()}-perpetual-ledger.v2",
             "decimal_context": DECIMAL_CONTEXT_VERSION,
             "settlement_quantum": canonical_decimal(
                 self._cash_spec.settlement_quantum
@@ -2320,6 +2324,7 @@ __all__ = [
     "InsufficientLiquidationBackstop",
     "InsufficientMargin",
     "LINEAR_USDT_PERPETUAL",
+    "LINEAR_USDC_PERPETUAL",
     "LinearPerpetualLedger",
     "LiquidationBackstop",
     "LiquidationRecord",
