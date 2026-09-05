@@ -132,11 +132,14 @@ def candidate_signals(bars, funding, name):
 
 
 @ledger_decimal_context()
-def replay(bars, funding, signals, *, start, end, slippage_bps):
+def replay(bars, funding, signals, *, start, end, slippage_bps, taker_fee_bps=4):
     if len(signals) != len(bars) or any(type(s) is not int or s not in (-1,0,1) for s in signals):
         raise ValueError("invalid signal sequence")
     if slippage_bps not in (0,2,7,17):
         raise ValueError("unregistered cost scenario")
+    fee_rate = _decimal(taker_fee_bps)/10000
+    if not 0 <= fee_rate < 1:
+        raise ValueError("invalid taker fee")
     indices = [i for i,b in enumerate(bars) if start <= b["time"] < end]
     if not indices or indices[0] < 60:
         raise ValueError("missing trading window or warm-up")
@@ -170,7 +173,7 @@ def replay(bars, funding, signals, *, start, end, slippage_bps):
                 adv = (sum(b["volume"] for b in bars[i-30:i])/30).quantize(D(".00000001"))
                 capacity = CapacityPolicy("BINANCE_USDM",str(bar["time"]//DAY),
                     BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID,bar["time"]//DAY,adv,D(".01"),CapacityAction.REJECT)
-                fee = abs(delta)*execution*D(".0005")
+                fee = abs(delta)*execution*fee_rate
                 result = ledger.apply_event(TradeEvent(now,"BTCUSDC",delta,execution,MarginMode.CROSS,
                                                         fee=fee,capacity=capacity))
                 if result.filled_quantity != delta:
@@ -228,7 +231,7 @@ def _timestamp(date):
     return int(datetime.fromisoformat(date).replace(tzinfo=timezone.utc).timestamp()*1000)
 
 
-def run_screen(path):
+def run_screen(path, *, taker_fee_bps=4):
     bars,funding,document = load_capture(path)
     windows = {"development":("2024-04-01","2025-01-01"),
                "validation":("2025-01-01","2026-01-01"),
@@ -240,7 +243,8 @@ def run_screen(path):
         for label,(start,end) in windows.items():
             results[name][label] = {}
             for slip in (2,7,17):
-                r = replay(bars,funding,signals[name],start=_timestamp(start),end=_timestamp(end),slippage_bps=slip)
+                r = replay(bars,funding,signals[name],start=_timestamp(start),end=_timestamp(end),
+                           slippage_bps=slip,taker_fee_bps=taker_fee_bps)
                 results[name][label][str(slip)] = {"metrics":summarize(r),"replay":r}
         print("completed",name,flush=True)
     admission = {}
@@ -257,6 +261,9 @@ def run_screen(path):
         admission[name] = {"checks":checks,"benchmark_regression":alpha,
                            "worth_forward_research":all(checks.values()),"live_eligible":False}
     return {"status":"TECHNICAL_VALIDATION_ONLY","authoritative":False,"live_eligible":False,
+            "execution_fee_model":{"role":"TAKER_PROXY","taker_fee_bps":str(_decimal(taker_fee_bps)),
+                                   "account_fee_verified":False,"maker_fill_evidence":False},
+            "historical_partition_status":"SEEN_HISTORY_NOT_UNTOUCHED_OOS",
             "symbol":"BTCUSDC","margin_asset":"USDC","preregistration_sha256":document["preregistration_sha256"],
             "capture_sha256":hashlib.sha256(Path(path).read_bytes()).hexdigest(),
             "trial_count":3,"cost_scenarios":3,"windows":windows,"results":results,"screen":admission,
@@ -269,10 +276,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
+    parser.add_argument("--taker-fee-bps",type=D,default=D(4))
     args = parser.parse_args(argv)
     if args.output.exists():
         raise ValueError("refusing to overwrite frozen research result")
-    result = run_screen(args.capture)
+    result = run_screen(args.capture,taker_fee_bps=args.taker_fee_bps)
     root = Path(__file__).resolve().parents[1]
     result["source_sha256"] = {p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in (
         "tools/btc_usdc_research.py","services/execution/perpetual_ledger_v2.py")}
