@@ -1,17 +1,7 @@
 import type {
   AlphaLifecyclePayload,
-  AgentsPayload,
-  AShareAlphaPayload,
   AShareInstitutionalSearchPayload,
-  CryptoLivePayload,
-  FxResearchPayload,
-  CarryReadinessPayload,
   DryRunPipelinePayload,
-  IcPanelPayload,
-  ResearchFindingsPayload,
-  Lance1mValidationPayload,
-  LiveTradingPayload,
-  GonogoPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   TechnicalReplayPayload,
@@ -21,8 +11,6 @@ import type {
   EventsPayload,
   ExperimentsPayload,
   MonitoringDriftPayload,
-  OverviewPayload,
-  PaperTradingPayload,
   PortfolioDashboardPayload,
   PopulationOptimizerPayload,
   AlphaGraphPayload,
@@ -31,10 +19,6 @@ import type {
   DslExprRow,
   SafetyPrimitivesPayload,
   MexcMarketPayload,
-  MexcStrategyPayload,
-  MexcReadinessPayload,
-  GoLiveReadinessPayload,
-  LifecycleMonitorPayload,
   BacktestResultsPayload,
   RiskDashboardPayload,
   RuntimeContractPayload,
@@ -84,10 +68,6 @@ export function isResearchConsoleApiEnabled() {
  */
 const SNAPSHOT_CACHE_TTL_MS = 3_000;
 const snapshotCache = new Map<string, { expiresAt: number; value: unknown }>();
-
-export function clearConsoleSnapshotCache() {
-  snapshotCache.clear();
-}
 
 /**
  * Runtime contract guard. `response.json() as TPayload` is a compile-time cast
@@ -208,26 +188,14 @@ export function fetchMftExecutionDelta(
   return fetchGuardedJson(path, assertMftExecutionDelta, signal);
 }
 
-export function assertHourlyAlphaSnapshot(body: unknown): HourlyAlphaSnapshot {
-  return parseHourlyAlphaSnapshot(body);
-}
-
 export function fetchHourlyAlphaSnapshot(signal?: AbortSignal): Promise<HourlyAlphaSnapshot> {
   return fetchGuardedJson(
-    '/api/v1/console/hourly-alpha', assertHourlyAlphaSnapshot, signal,
+    '/api/v1/console/hourly-alpha', parseHourlyAlphaSnapshot, signal,
   );
-}
-
-export function fetchOverviewSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<OverviewPayload>('/api/v1/console/overview', signal);
 }
 
 export function fetchEventsSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<EventsPayload>('/api/v1/console/events', signal);
-}
-
-export function fetchAgentsSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<AgentsPayload>('/api/v1/console/agents', signal);
 }
 
 export function fetchExperimentsSnapshot(signal?: AbortSignal) {
@@ -249,11 +217,6 @@ export function fetchRiskDashboardSnapshot(alphaId: string, signal?: AbortSignal
 
 export function fetchValidationSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<ValidationDashboardPayload>('/api/v1/console/validation', signal);
-}
-
-export function fetchPaperTradingSnapshot(alphaId: string, signal?: AbortSignal) {
-  const path = `/api/v1/console/paper-trading?alpha_id=${encodeURIComponent(alphaId)}`;
-  return fetchConsoleJson<PaperTradingPayload>(path, signal);
 }
 
 export function fetchPortfolioSnapshot(signal?: AbortSignal) {
@@ -294,10 +257,6 @@ export function fetchSafetyPrimitivesSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SafetyPrimitivesPayload>('/api/v1/console/safety-primitives', signal);
 }
 
-export function fetchLifecycleMonitorSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<LifecycleMonitorPayload>('/api/v1/console/lifecycle-monitor', signal);
-}
-
 export function fetchBacktestResultsSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<BacktestResultsPayload>('/api/v1/console/backtest-results', signal);
 }
@@ -314,28 +273,8 @@ export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SystemCompletenessPayload>('/api/v1/console/system-completeness', signal);
 }
 
-export function fetchCryptoLiveSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<CryptoLivePayload>('/api/v1/console/crypto-live', signal);
-}
-
-export function fetchFxResearchSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<FxResearchPayload>('/api/v1/console/fx-research', signal);
-}
-
-export function fetchCarryReadinessSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<CarryReadinessPayload>('/api/v1/console/carry-readiness', signal);
-}
-
 export function fetchDryRunSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<DryRunPipelinePayload>('/api/v1/console/dry-run', signal);
-}
-
-export function fetchIcPanelSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<IcPanelPayload>('/api/v1/console/ic-panel', signal);
-}
-
-export function fetchAShareAlphaSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<AShareAlphaPayload>('/api/v1/console/ashare-alpha', signal);
 }
 
 export function fetchAShareInstitutionalSearch(signal?: AbortSignal) {
@@ -344,36 +283,8 @@ export function fetchAShareInstitutionalSearch(signal?: AbortSignal) {
   );
 }
 
-export function fetchResearchFindings(signal?: AbortSignal) {
-  return fetchConsoleJson<ResearchFindingsPayload>('/api/v1/console/research-findings', signal);
-}
-
-export function fetchLance1mValidation(signal?: AbortSignal) {
-  return fetchConsoleJson<Lance1mValidationPayload>('/api/v1/console/lance-1m-validation', signal);
-}
-
-export function fetchLiveTradingSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<LiveTradingPayload>('/api/v1/console/live-trading', signal);
-}
-
-export function fetchGonogo(signal?: AbortSignal) {
-  return fetchConsoleJson<GonogoPayload>('/api/v1/console/gonogo', signal);
-}
-
 export function fetchMexcMarketSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<MexcMarketPayload>('/api/v1/console/mexc-market', signal);
-}
-
-export function fetchMexcStrategySnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<MexcStrategyPayload>('/api/v1/console/mexc-strategy', signal);
-}
-
-export function fetchMexcReadinessSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<MexcReadinessPayload>('/api/v1/console/mexc-readiness', signal);
-}
-
-export function fetchGoLiveReadiness(signal?: AbortSignal) {
-  return fetchConsoleJson<GoLiveReadinessPayload>('/api/v1/console/go-live-readiness', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

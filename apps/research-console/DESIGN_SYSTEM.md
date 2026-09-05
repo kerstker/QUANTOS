@@ -3,7 +3,7 @@
 顶级 AI 量化交易研究驾驶舱。**保留数据层(types/api/mock/i18n)**,只重建表现层。
 
 ## 铁律
-1. **保留数据合约**:不改 `src/lib/types/research.ts` 的 `*Payload` 类型;不改 `src/lib/api/*`、`src/lib/mock-data/*`。页面消费同样的字段。
+1. **保留数据合约**:不改 `src/lib/types/research.ts` 的 `*Payload` 类型;不改 `src/lib/api/*`。页面消费同样的字段。
 2. **保留取数+回退**:用 `useConsoleSnapshot(fetcher)`;无后端时回退到原 mock。**保留 ProvenanceRibbon**(诚实合成数据标记)。
 3. **先读后写**:重建某页前,先读该页**现有文件**学到它的精确数据接线(fetcher 函数、mock 回退、payload 字段);**完整保留数据逻辑**,只替换 JSX/呈现。
 4. **双语**:所有可见文案用 `bi('中文','English')`。数字用 `format.ts`(`num/pct/pctPoints/fixed/signed/money/compact/shortHash/stamp`),加 `tnum` 等宽。

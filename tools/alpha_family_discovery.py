@@ -652,44 +652,6 @@ def discover(
 
 
 def write_report(report: Mapping[str, Any], *, json_path: str, markdown_path: str) -> None:
-    Path(json_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(markdown_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(json_path).write_text(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2, default=str), encoding="utf-8")
-    lines = [
-        "# QUANTOS Alpha 家族自动发现与纸面观察",
-        "",
-        f"- 数据版本：`{report['dataset_version']}`",
-        f"- PIT 面板：{report['panel']['n_instruments']} 个币种 × {report['panel']['n_periods']} 个日点",
-        f"- 全局试验数：{report['global_trial_count']}（持久化，不按会话清零）",
-        f"- 家族证据链：`{'PASS' if report['registry_chain_valid'] else 'BLOCK'}`，事件 {report['event_count']} 条",
-        "- 运行模式：`L2_DRY_RUN_ONLY`，没有真实下单能力",
-        "",
-        "## 候选结果",
-        "",
-        "| 家族/候选 | 状态 | 净 Sharpe | 回撤 | DSR | PBO | 纸面状态 |",
-        "|---|---|---:|---:|---:|---:|---|",
-    ]
-    for row in report["candidates"]:
-        lines.append(
-            f"| {row['family_id']}/{row['candidate_id']} | {row.get('status')} | "
-            f"{row.get('net_sharpe','—') if row.get('net_sharpe') is not None else '—'} | "
-            f"{row.get('max_drawdown','—') if row.get('max_drawdown') is not None else '—'} | "
-            f"{row.get('dsr','—') if row.get('dsr') is not None else '—'} | "
-            f"{row.get('pbo','—') if row.get('pbo') is not None else '—'} | {row.get('paper_status','—')} |"
-        )
-    lines += ["", "## 解释", "",
-              "`PAPER_ONLY_PENDING_FORWARD` 只表示已通过数据/执行影子门并进入独立纸面观察，不能替代至少 8 个有效前向周期。",
-              "`PIT_DAILY_PROXY` 明确表示目标是分钟/实时但当前只用日线代理；它不会被写成已验证的分钟 Alpha。",
-              "缺少期权、跨所同步、真实期限结构或事件发布时间的数据，候选保持 `DATA_UNAVAILABLE`，不使用合成输入。",
-              "",
-              "## 纸面运行",
-              ""]
-    for row in report.get("paper_runs", []):
-        lines.append(f"- `{row['candidate_id']}`: {row['status']}，run `{row['run_id']}`，周期 {row['n_periods']}，净收益 {row.get('total_return')}，残差 {row.get('reconciliation_residual')}。")
-    Path(markdown_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def write_report(report: Mapping[str, Any], *, json_path: str, markdown_path: str) -> None:
     """写入可读的简体中文报告；JSON 保留完整、机器可审计的证据。"""
     Path(json_path).parent.mkdir(parents=True, exist_ok=True)
     Path(markdown_path).parent.mkdir(parents=True, exist_ok=True)

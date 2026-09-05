@@ -169,22 +169,3 @@ export async function cancelRun(runId: string): Promise<{ run_id: string; cancel
   if (!res.ok) throw new Error(`runner returned ${res.status}`);
   return res.json();
 }
-
-// A typed, bounded param the UI may collect for a run (mirrors the backend's small param_schema). The
-// runner re-validates every value fail-closed, so these are convenience defaults/bounds, not trust.
-export interface RunParamSpec {
-  name: string;
-  type: 'int' | 'bool';
-  label: string;
-  default: number | boolean;
-  min?: number;
-  max?: number;
-}
-
-// The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo. A kind with a
-// non-empty `params` renders typed inputs in the trigger panel; the values are passed to POST /run.
-export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string; params?: RunParamSpec[] }> = [
-  { kind: 'data_refresh', label: '公开持仓数据刷新', params: [
-    { name: 'intraday', type: 'bool', label: '日内归档', default: false },
-  ] },
-];

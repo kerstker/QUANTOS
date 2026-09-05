@@ -13,7 +13,7 @@ afterAll(() => vi.unstubAllEnvs());
 // 每一页异步加载并渲染——新增页面自动被覆盖,永远不会再出现「只冒烟 14/42」的地板缺口。
 // 测试环境 VITE_MOCK_MODE 生效,页面渲染 mock fixtures,零网络;冒烟证明:页面能挂载、
 // 产出非空 DOM、不抛异常。ConfirmDialogHost/ToastProvider mirror AppShell's real mount point
-// (useConfirm/usePrompt/useToast throw outside them, same as in production).
+// (useConfirm/useToast throw outside them, same as in production).
 describe('every registered console page renders in mock mode', () => {
   for (const page of PAGES) {
     it(`${page.en} (${page.path}) mounts and produces non-empty DOM`, async () => {
