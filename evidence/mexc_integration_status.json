@@ -9,7 +9,7 @@
     "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
     "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
   ],
-  "commit": "9b4f35603b7e881dedd1cbcac76e1199288e4f0e",
+  "commit": "ccc3dba41e37edd65aa950e1c0a82872a8fa7a7e",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "external_verification": {
     "account_smoke": false,
@@ -19,7 +19,7 @@
     "test_order_executed": false,
     "user_stream_verified": false
   },
-  "generated_at_ms": 1788619660238,
+  "generated_at_ms": 1788630170311,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
   "implementation": {
@@ -32,7 +32,7 @@
     "unknown_order_persistence": true,
     "user_stream": true
   },
-  "input_hash": "cdb229f7efd615d8069d17afeae1613e8e81d8b7664556a74d3320f83a162f4f",
+  "input_hash": "f85ce1961131b837a3491322d9b466d5a2226a204baa28cb4d498718e5f0643f",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -97,8 +97,8 @@
     "tests/live/test_startup_recovery.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "18eec1206bcc9c1435c38b4bf6319d0d15a8c0ab46e8e69278bc8b15ce38d0d1",
-      "size_bytes": 3149
+      "sha256": "007f3990be29b0ee4907e19ce7e1e5ce4a27ff23cd910573d3ed0e2d2a4e1628",
+      "size_bytes": 3628
     },
     "tests/tools/test_live_testnet_smoke.py": {
       "exists": true,
@@ -138,9 +138,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": false,
-    "head_commit": "9b4f35603b7e881dedd1cbcac76e1199288e4f0e",
+    "head_commit": "ccc3dba41e37edd65aa950e1c0a82872a8fa7a7e",
     "overall_status": "FAIL",
-    "reported_commit": "9b4f35603b7e881dedd1cbcac76e1199288e4f0e",
+    "reported_commit": "ccc3dba41e37edd65aa950e1c0a82872a8fa7a7e",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"

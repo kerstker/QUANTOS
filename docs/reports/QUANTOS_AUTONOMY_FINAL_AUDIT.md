@@ -2,8 +2,8 @@
 
 > 本报告由 `scripts/generate_727_final_audit.py` 只读生成。它不授予任何订单、资金或部署权限。
 
-- 生成时间（Unix ms）：`1788619660238`
-- commit：`9b4f35603b7e881dedd1cbcac76e1199288e4f0e`
+- 生成时间（Unix ms）：`1788630170311`
+- commit：`ccc3dba41e37edd65aa950e1c0a82872a8fa7a7e`
 - 当前 readiness：`L2_DRY_RUN_ONLY`
 - 当前总状态：`NOT_READY`
 - 不生成任何开放真实实盘的状态或权限
