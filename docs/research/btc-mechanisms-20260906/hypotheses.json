@@ -1,0 +1,108 @@
+{
+  "schema": "RESEARCH_MATERIAL_CARDS",
+  "runtime_catalog_ingested": false,
+  "not_strategy_approval": true,
+  "cards": [
+    {
+      "id": "H01",
+      "name": "PRICE_BASELINE",
+      "mechanism": "历史收益可能存在延续或反转，作为信息增量比较基线",
+      "sources": [
+        "S01"
+      ],
+      "features": [
+        "r1",
+        "r7",
+        "v28"
+      ],
+      "status": "EXECUTED_EXPLORATORY",
+      "refutation": "相同窗口不优于零预测；不能靠市场上涨认定Alpha"
+    },
+    {
+      "id": "H02",
+      "name": "AGGRESSOR_VOLUME_INCREMENT",
+      "mechanism": "主动需求的持续或消退可能提供价格之外的信息",
+      "sources": [
+        "S03",
+        "D01"
+      ],
+      "features": [
+        "taker_quote_imbalance"
+      ],
+      "status": "EXECUTED_EXPLORATORY",
+      "refutation": "配对误差不改善或改善不跨阶段；不同于盘口OFI，日频形式并非原论文复刻"
+    },
+    {
+      "id": "H03",
+      "name": "SETTLED_FUNDING_INCREMENT",
+      "mechanism": "滞后资金支付可能反映拥挤或杠杆需求；方向由训练估计",
+      "sources": [
+        "S04"
+      ],
+      "features": [
+        "settled_funding_sum_3d"
+      ],
+      "status": "EXECUTED_EXPLORATORY",
+      "refutation": "对价格基线无增量；不能将预测价格关系等同资金费套利"
+    },
+    {
+      "id": "H04",
+      "name": "OI_STATE_INTERACTION",
+      "mechanism": "同样价格变化在仓位扩张/收缩时可能有不同后续分布",
+      "sources": [
+        "D02",
+        "S04"
+      ],
+      "features": [
+        "delta_log_oi_quantity_24h",
+        "r1_times_delta_log_oi_quantity_24h"
+      ],
+      "status": "PROPOSED_DATA_ACCEPTANCE_PENDING",
+      "refutation": "单位/可用时间未知则不启动；加入后相同风险和成本无稳定净增量",
+      "next_protocol": "小时级特征/24h标签，先冻结时间语义和单一阈值；本卡不是已预注册参数实验"
+    },
+    {
+      "id": "H05",
+      "name": "DELEVERAGING_FLOW_STATE",
+      "mechanism": "仓位收缩与主动卖出可能对应被迫退出，后续延续或修复待区分",
+      "sources": [
+        "S03",
+        "S04"
+      ],
+      "features": [
+        "oi_quantity_change",
+        "aggressor_volume",
+        "depth_if_available"
+      ],
+      "status": "PROPOSED_NO_LIQUIDATION_CAUSAL_IDENTIFICATION",
+      "refutation": "OI下降不识别清算方向，缺逐笔/盘口时不能声称识别机构扫损"
+    },
+    {
+      "id": "H06",
+      "name": "BASIS_CARRY",
+      "mechanism": "杠杆需求和套利资本约束可能维持相对价格与资金支付差异",
+      "sources": [
+        "S04"
+      ],
+      "features": [
+        "synchronized_spot_futures_basis",
+        "realized_funding_events"
+      ],
+      "status": "DEFERRED_MULTILEG",
+      "refutation": "双腿融资/保证金/费用/基差风险吞噬收益；1500不能同时全额分配两腿"
+    },
+    {
+      "id": "H07",
+      "name": "ICT_PRICE_STRUCTURE",
+      "mechanism": "价格结构可写成可证伪规则，经济解释需另证",
+      "sources": [],
+      "features": [
+        "confirmed_swings",
+        "causal_fvg",
+        "causal_breaks"
+      ],
+      "status": "PRIOR_RECONSTRUCTION_FAILED_SCREEN",
+      "refutation": "原结构源码缺失，无法精确复制；本批不重调旧订单块参数"
+    }
+  ]
+}
