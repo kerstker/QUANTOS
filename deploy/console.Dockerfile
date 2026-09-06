@@ -55,7 +55,7 @@ RUN apk add --no-cache \
         libgomp=15.2.0-r5 \
         libssl3=3.5.8-r0 \
         libstdc++=15.2.0-r5 \
-        libuuid=2.42.3-r0 \
+        libuuid=2.42.3-r1 \
         openblas=0.3.30-r2 \
     && rm -f /var/log/apk.log
 COPY --from=builder /install/ /usr/local/

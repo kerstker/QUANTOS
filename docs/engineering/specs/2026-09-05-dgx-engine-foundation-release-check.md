@@ -12,9 +12,10 @@
 
 随后对同一固定基础镜像独立扫描，发现 `libuuid 2.42-r0` 含新披露的
 HIGH/MEDIUM 漏洞。已有 OpenSSL 修正与最终镜像移除 pip 的做法不能消除
-libuuid 的问题。Alpine v3.24 的 ARM64 官方包已提供
+libuuid 的问题。当时 Alpine v3.24 的 ARM64 官方包已提供
 [libuuid 2.42.3-r0](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/libuuid)。
-运行层显式固定该版本；没有变更零已知漏洞策略或提高容许严重程度。
+截至本次重建，仓库索引已将该修订滚动为 `2.42.3-r1`；运行层改为显式固定
+当前修订版本，并保持零已知漏洞策略和严重度门槛不变。
 
 独立诊断容器只应用 libuuid/OpenSSL 补丁并移除 pip，使用同一固定 Trivy
 扫描器与当日数据库，实际结果为零已知漏洞。这只证明基础层修正，仍需完整

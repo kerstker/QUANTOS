@@ -62,8 +62,9 @@
 > `docs/reports/2026-09-05-btc-usdc-readiness-and-alpha-screen.md`。
 
 > **2026-09-05 DGX 发布检查修正：** 两轮 ARM64 冷构建摘要一致，但实际漏洞扫描
-> 拒绝发布。基础镜像 libuuid 2.42-r0 新漏洞已定位，运行层固定 2.42.3-r0；独立
-> 补丁基础层复扫零发现，完整应用镜像须重建重扫。捕获器新增失败扫描报告留存，
+> 拒绝发布。基础镜像 libuuid 2.42-r0 新漏洞已定位；当时可用的补丁为 2.42.3-r0，
+> 当前 Alpine v3.24 索引已滚动到 2.42.3-r1，运行层须跟随该修订版本重建重扫。
+> 捕获器新增失败扫描报告留存，
 > 新技术接口补齐精确只读路由清单，相关 79 tests 通过。最终 canonical 状态以
 > `evidence/validation_report.json` 为准；本记录不宣称发布完成。详见
 > `docs/engineering/specs/2026-09-05-dgx-engine-foundation-release-check.md`。
