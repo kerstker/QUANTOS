@@ -1,0 +1,15 @@
+{
+  "requested_at_ms": 1788683196430,
+  "url": "https://api.github.com/repos/joshyattridge/smart-money-concepts/commits/master",
+  "commit": "1b62fd6c41e1f508e7ed76831a039fa4c82d42f6",
+  "README.md": {
+    "url": "https://raw.githubusercontent.com/joshyattridge/smart-money-concepts/1b62fd6c41e1f508e7ed76831a039fa4c82d42f6/README.md",
+    "sha256": "0b0e9b1b3699a4f8992dec68976ca0a3f66399199ad50d4db7ef08261043ac38"
+  },
+  "smartmoneyconcepts/smc.py": {
+    "url": "https://raw.githubusercontent.com/joshyattridge/smart-money-concepts/1b62fd6c41e1f508e7ed76831a039fa4c82d42f6/smartmoneyconcepts/smc.py",
+    "sha256": "6dd994e65322233be420ae750075cbe11a6ca55531521f2afe26b14adf036793"
+  },
+  "status": "READ_ONLY_SOURCE_CAPTURE",
+  "received_at_ms": 1788683198046
+}

@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-06",
+  "log_type": "TOPIC_AND_ACCESS_AUDIT_WITH_SMALL_EXACT_QUERY_SUBSET",
+  "not_a_complete_raw_search_log": true,
+  "coverage_claim": "All six requested families considered; not all internet evidence or a PRISMA systematic review.",
+  "method": "Mechanism terms plus cost/latency/replication/failure terms; follow original authors, institutions and official implementation docs. Avoid treating mirrors as independent studies.",
+  "topics": [
+    {
+      "family": "price_structure",
+      "query_terms": [
+        "ICT SMC order block FVG swing confirmation lookahead",
+        "stop loss orders price cascades technical analysis transaction costs"
+      ],
+      "selected_ids": [
+        "A01",
+        "A02",
+        "A03"
+      ]
+    },
+    {
+      "family": "position_orderflow",
+      "query_terms": [
+        "Bitcoin order flow imbalance limit order book prediction",
+        "perpetual open interest traded volume consistency reporting liquidation"
+      ],
+      "selected_ids": [
+        "A04",
+        "A05",
+        "A06"
+      ]
+    },
+    {
+      "family": "carry",
+      "query_terms": [
+        "crypto carry basis capital segmentation",
+        "perpetual futures pricing funding rate arbitrage CEX DEX risks"
+      ],
+      "selected_ids": [
+        "A07"
+      ],
+      "prior_ids": [
+        "S04"
+      ]
+    },
+    {
+      "family": "market_making",
+      "query_terms": [
+        "Bitcoin maker strategy live experiment rebate adverse selection",
+        "Avellaneda Stoikov queue fill latency backtest limitations"
+      ],
+      "selected_ids": [
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12"
+      ]
+    },
+    {
+      "family": "cross_venue",
+      "query_terms": [
+        "Bitcoin cross impact leader lagger market fragmentation",
+        "blockchain settlement latency limits arbitrage cross exchange maker hedge"
+      ],
+      "selected_ids": [
+        "A09",
+        "A13",
+        "A14",
+        "A15"
+      ]
+    },
+    {
+      "family": "options",
+      "query_terms": [
+        "Bitcoin variance risk premium options liquidity hedged returns",
+        "Bitcoin implied realized volatility regime skew term structure",
+        "Deribit linear USDC options settlement delivery changes"
+      ],
+      "selected_ids": [
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20"
+      ]
+    },
+    {
+      "family": "methodology",
+      "query_terms": [
+        "Freqtrade lookahead recursive analysis limitations",
+        "backtest overfitting deflated Sharpe nested forecast comparison"
+      ],
+      "selected_ids": [
+        "A21",
+        "A22"
+      ],
+      "prior_ids": [
+        "S05",
+        "S06",
+        "S07",
+        "S08"
+      ]
+    }
+  ],
+  "exact_query_subset": [
+    "\"Fragmentation, Price Formation, and Cross-Impact\" maker experiment profitability",
+    "site.developers.binance.com liquidation streams \"1000ms\" \"latest\"",
+    "site.insights.deribit.com \"Change to option delivery process\" \"2025\""
+  ],
+  "access_and_exclusion_notes": [
+    {
+      "url": "https://www.sciencedirect.com/science/article/pii/S1042443122000816",
+      "disposition": "ABSTRACT_DISCOVERY_ONLY_NOT_USED_FOR_PROFIT_CLAIMS",
+      "reason": "Technical trading costs study discovered; direct fulltext 403, detailed methods not audited."
+    },
+    {
+      "url": "https://doi.org/10.1016/j.bcra.2025.100354",
+      "disposition": "FUNDING_ARBITRAGE_FOLLOWUP_NOT_CORE_EVIDENCE",
+      "reason": "Funding arbitrage study discovered; full capital and execution methodology not verified this round."
+    },
+    {
+      "url": "https://www.sciencedirect.com/science/article/pii/S240591882600022X",
+      "disposition": "NOT_USED",
+      "reason": "Search surfaced a future issue date relative to review and strong best-variant results; publication timing, selection and execution assumptions not verified."
+    },
+    {
+      "url": "https://arxiv.org/abs/2607.11888",
+      "disposition": "NOT_USED",
+      "reason": "High-yield adaptive market-making claims not method-audited; title/theorem or return claim is insufficient."
+    },
+    {
+      "url": "https://papers.ssrn.com/sol3/Delivery.cfm/6185958.pdf?abstractid=6185958&mirid=1",
+      "disposition": "NOT_USED",
+      "reason": "Very recent funding-rule preprint discovered but not audited; no performance inference adopted."
+    },
+    {
+      "url": "https://www.mdpi.com/2227-9091/11/5/85",
+      "disposition": "NOT_CORE_EVIDENCE",
+      "reason": "Bitcoin pricing-kernel paper access returned 429; do not claim full reading."
+    },
+    {
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Liquidation-Order-Streams",
+      "disposition": "OFFICIAL_ALTERNATIVE_USED",
+      "reason": "Redirected page exposed navigation rather than needed body; used A06 official USD-M connector text."
+    },
+    {
+      "source_id": "A09",
+      "disposition": "QUALIFIED_POSITIVE_EVIDENCE",
+      "reason": "Inspected indexed primary sections beyond abstract: positive maker result depended on historical rebates; zero maker fee differs."
+    },
+    {
+      "source_id": "A13",
+      "disposition": "LIMITED_ABSTRACT_USE",
+      "reason": "FMG PDF timeout and alternate MIT PDF access failed. No quantitative profitability claim."
+    },
+    {
+      "category": "anonymous profit screenshots, strategy marketing, inaccessible private algorithms",
+      "disposition": "NOT_PROFIT_EVIDENCE",
+      "reason": "No independently auditable data/complete trial history/cost semantics. No fabricated count of excluded records."
+    }
+  ],
+  "stopping_rule": "Each family has an explicit mechanism, counter-hypothesis or failure mode, data/clock boundary and implementable proposed experiment; remaining source access gaps recorded.",
+  "unresolved": "This does not establish exhaustive saturation, complete paper replication, current account fees, or strategy profitability."
+}

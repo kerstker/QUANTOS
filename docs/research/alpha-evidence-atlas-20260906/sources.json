@@ -1,0 +1,329 @@
+{
+  "schema_version": 1,
+  "status": "EVIDENCE_REVIEW_ONLY",
+  "review_type": "SCOPING_REVIEW_NOT_EXHAUSTIVE",
+  "new_source_count": 22,
+  "sources": [
+    {
+      "id": "A01",
+      "authors": "Lo, Mamaysky and Wang",
+      "title": "Foundations of Technical Analysis",
+      "url": "https://www.nber.org/papers/w7613.pdf",
+      "version": "2000 working paper",
+      "read_scope": "PRIMARY_SEARCH_ABSTRACT_READ; full-text audit not completed",
+      "boundary": "Automated historical US-stock patterns; no BTC net-profit inference.",
+      "families": [
+        "price_structure"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A02",
+      "authors": "Carol Osler / Federal Reserve Bank of New York",
+      "title": "Stop-Loss Orders and Price Cascades in Currency Markets",
+      "url": "https://www.newyorkfed.org/research/staff_reports/sr150.html",
+      "version": "2002 staff report",
+      "read_scope": "INSTITUTIONAL_ABSTRACT_READ",
+      "boundary": "FX stop-trigger cascades support testing continuation as a competing hypothesis.",
+      "families": [
+        "price_structure"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A03",
+      "authors": "joshyattridge/smart-money-concepts contributors",
+      "title": "Smart Money Concepts source and README",
+      "url": "https://github.com/joshyattridge/smart-money-concepts/blob/1b62fd6c41e1f508e7ed76831a039fa4c82d42f6/smartmoneyconcepts/smc.py",
+      "version": "commit 1b62fd6c41e1f508e7ed76831a039fa4c82d42f6",
+      "read_scope": "PINNED_README_AND_RELEVANT_SOURCE_STATIC_READ; not installed or executed",
+      "boundary": "Community implementation, not original missing detector or profitability evidence.",
+      "families": [
+        "price_structure"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A04",
+      "authors": "Rakshit Jha, Mattijs De Paepe, Samuel Holt, James West and Shaun Ng",
+      "title": "Deep Learning for Digital Asset Limit Order Books",
+      "url": "https://arxiv.org/abs/2010.01241",
+      "version": "2020 arXiv",
+      "read_scope": "AUTHOR_ABSTRACT_READ",
+      "boundary": "Short-horizon classification evidence; not a cost-adjusted account backtest.",
+      "families": [
+        "position_orderflow"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A05",
+      "authors": "Ioannis Giagkiozis and Emilio Said",
+      "title": "Reconciling Open Interest with Traded Volume in Perpetual Swaps",
+      "url": "https://arxiv.org/html/2310.14973v2",
+      "version": "2024-04-04 v2; Ledger 9",
+      "read_scope": "PRIMARY_ABSTRACT_AND_SECTIONS_1_2_READ",
+      "boundary": "Quantity consistency needs aligned reporting and complete compatible trade units.",
+      "families": [
+        "position_orderflow"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A06",
+      "authors": "Binance",
+      "title": "USD-M WebsocketStreamsConnection official connector documentation",
+      "url": "https://binance.github.io/binance-connector-js/classes/_binance_derivatives-trading-usds-futures.DerivativesTradingUsdsFuturesWebsocketStreams.WebsocketStreamsConnection.html",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_AGGREGATE_TRADE_AND_LIQUIDATION_SECTIONS_READ",
+      "boundary": "Liquidation snapshot is not a complete liquidation tape; official page version must be frozen for use.",
+      "families": [
+        "position_orderflow"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A07",
+      "authors": "Damien Ackerer, Julien Hugonnier and Urban Jermann",
+      "title": "Perpetual Futures Pricing",
+      "url": "https://arxiv.org/html/2310.11771v1",
+      "version": "2023 arXiv v1",
+      "read_scope": "PRIMARY_ABSTRACT_AND_RELEVANT_PRICING_SECTIONS_READ",
+      "boundary": "Risk-neutral pricing is not a physical expected-return forecast.",
+      "families": [
+        "carry"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A08",
+      "authors": "Marco Avellaneda and Sasha Stoikov",
+      "title": "High-frequency trading in a limit order book",
+      "url": "https://math.nyu.edu/inmemoriam/avellaneda/HighFrequencyTrading.pdf",
+      "version": "2008 model paper",
+      "read_scope": "PRIMARY_PDF_INTRODUCTION_AND_MODEL_SCOPE_READ",
+      "boundary": "Inventory quotation framework; actual adverse selection and queue need separate evidence.",
+      "families": [
+        "market_making"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A09",
+      "authors": "Jakob Albers, Mihai Cucuringu, Sam Howison and Alexander Y. Shestopaloff",
+      "title": "Fragmentation, Price Formation and Cross-Impact in Bitcoin Markets",
+      "url": "https://www.tandfonline.com/doi/abs/10.1080/1350486X.2022.2080083",
+      "version": "2021 author draft; published online 2022-06-17",
+      "read_scope": "AUTHOR_PDF_ABSTRACT_READ; PUBLISHER_INDEXED_FULLTEXT_SECTIONS_6_2_6_3_AND_CONCLUSION_READ; direct publisher open 403",
+      "boundary": "Short live experiment relied on historical rebates, not portable to zero maker fees.",
+      "families": [
+        "market_making",
+        "cross_venue"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false,
+      "alternative_urls": [
+        "https://arxiv.org/abs/2108.09750",
+        "https://www.stats.ox.ac.uk/~cucuring/fragmentation_bitcoin_markets_arXiv.pdf",
+        "https://www.utstat.toronto.edu/~alexander/frag-price-cross.pdf"
+      ]
+    },
+    {
+      "id": "A10",
+      "authors": "hftbacktest maintainers",
+      "title": "Order Fill",
+      "url": "https://hftbacktest.readthedocs.io/en/latest/order_fill.html",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_REPLAY_AND_QUEUE_LIMITATIONS_READ",
+      "boundary": "Replay cannot change historical market; queue/fill estimates require validation.",
+      "families": [
+        "market_making"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A11",
+      "authors": "hftbacktest maintainers",
+      "title": "Accelerated Backtesting",
+      "url": "https://hftbacktest.readthedocs.io/en/latest/tutorials/Accelerated%20Backtesting.html",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_INDEXED_METHOD_LIMITATIONS_READ",
+      "boundary": "Accelerated execution approximations cannot certify exact fills.",
+      "families": [
+        "market_making"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A12",
+      "authors": "Erik Rigtorp",
+      "title": "Estimating order queue position",
+      "url": "https://rigtorp.se/2013/06/08/estimating-order-queue-position.html",
+      "version": "2013-06-08",
+      "read_scope": "AUTHOR_PAGE_RELEVANT_TEXT_READ",
+      "boundary": "Practitioner queue estimation method, not own-order observations.",
+      "families": [
+        "market_making"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A13",
+      "authors": "Igor Makarov and Antoinette Schoar",
+      "title": "Trading and Arbitrage in Cryptocurrency Markets",
+      "url": "https://www.fmg.ac.uk/sites/default/files/publications/DP782.pdf",
+      "version": "2018-12-15 draft",
+      "read_scope": "PRIMARY_INDEXED_ABSTRACT_READ; PDF fetch failed; 2019 MIT version also failed",
+      "boundary": "Market segmentation evidence; no current executable spread or profit estimate used.",
+      "families": [
+        "cross_venue"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A14",
+      "authors": "Nikolaus Hautsch, Christoph Scheuch and Stefan Voigt",
+      "title": "Building Trust Takes Time: Limits to Arbitrage for Blockchain-Based Assets",
+      "url": "https://arxiv.org/abs/1812.00595v4",
+      "version": "2023-10-19 v4",
+      "read_scope": "AUTHOR_ABSTRACT_READ",
+      "boundary": "Transfer latency and prepositioned-counterparty exposure are different risks.",
+      "families": [
+        "cross_venue"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A15",
+      "authors": "Hummingbot maintainers",
+      "title": "Cross Exchange Market Making",
+      "url": "https://hummingbot.org/strategies/v1-strategies/cross-exchange-market-making/",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_WORKFLOW_AND_SUPPORTED_MARKETS_READ",
+      "boundary": "Spot-oriented workflow, not proof of perpetual reconciliation or risk elimination.",
+      "families": [
+        "cross_venue"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A16",
+      "authors": "Caio Almeida, Maria Grith, Ratmir Miftachov and Zijin Wang",
+      "title": "Risk Premia in the Bitcoin Market",
+      "url": "https://arxiv.org/abs/2410.15195v2",
+      "version": "2025-08-01 v2",
+      "read_scope": "AUTHOR_ABSTRACT_READ",
+      "boundary": "State-dependent risk pricing; estimates and trading PnL not reproduced.",
+      "families": [
+        "options"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A17",
+      "authors": "Amberdata, published on Deribit Insights",
+      "title": "Bitcoin Options: Finding Edge in Four Years of Volatility Regimes",
+      "url": "https://insights.deribit.com/industry/bitcoin-options-finding-edge-in-four-years-of-volatility-regimes/",
+      "version": "2023-01-24; sample 2019-04 to 2022-12",
+      "read_scope": "FIRSTHAND_COMMERCIAL_RESEARCH_RELEVANT_SECTIONS_READ",
+      "boundary": "Commercial data-provider study, not independent replicated option account returns.",
+      "families": [
+        "options"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A18",
+      "authors": "Christina Atanasova, Terrel Miao, Ignacio Segarra, Tony (Tong) Sha and Frederick Willeboordse",
+      "title": "Illiquidity Premium and Crypto-Option Returns",
+      "url": "https://acfr.aut.ac.nz/__data/assets/pdf_file/0006/969378/950002_Atanasova_Illiquidity-Premium-and-Crypto-Option-Returns.pdf",
+      "version": "conference working-paper PDF; sample 2020-01 to 2024-07",
+      "read_scope": "PRIMARY_PDF_RELEVANT_HEDGED_RETURN_AND_COST_SECTIONS_READ; full model/table audit incomplete",
+      "boundary": "No numeric return claim adopted; regression/table and filtering semantics require fuller audit.",
+      "families": [
+        "options"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A19",
+      "authors": "Deribit",
+      "title": "USDC-Settled BTC & ETH Options Launch",
+      "url": "https://insights.deribit.com/education/usdc-settled-btc-eth-options-launch/",
+      "version": "2025 launch article",
+      "read_scope": "OFFICIAL_PRODUCT_EXPLANATION_READ",
+      "boundary": "Linear USDC versus inverse settlement distinction; exact contract vintage still required.",
+      "families": [
+        "options"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A20",
+      "authors": "Deribit / Cryptarbitrage",
+      "title": "Change To Option Delivery Process",
+      "url": "https://insights.deribit.com/exchange-updates/change-to-option-delivery-process/",
+      "version": "2026-03-12 publication; page updated 2026-03-17",
+      "read_scope": "OFFICIAL_RELEVANT_DELIVERY_SECTIONS_READ",
+      "boundary": "Announcement date is not automatically a historical contract rule effective date.",
+      "families": [
+        "options"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A21",
+      "authors": "Freqtrade maintainers",
+      "title": "Lookahead analysis",
+      "url": "https://docs.freqtrade.io/en/latest/lookahead-analysis/",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_BIAS_METHOD_AND_SCOPE_READ",
+      "boundary": "Partial diagnostic, not all-path causal certification or permission to disable production risk.",
+      "families": [
+        "methodology"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    },
+    {
+      "id": "A22",
+      "authors": "Freqtrade maintainers",
+      "title": "Recursive analysis",
+      "url": "https://docs.freqtrade.io/en/latest/recursive-analysis/",
+      "version": "live documentation accessed 2026-09-06",
+      "read_scope": "OFFICIAL_METHOD_AND_CAVEATS_READ",
+      "boundary": "Startup-history checks compare indicator outputs; decision/path stability needs additional checks.",
+      "families": [
+        "methodology"
+      ],
+      "retrieved_date": "2026-09-06",
+      "independently_reproduced": false
+    }
+  ],
+  "prior_corpus": "../btc-mechanisms-20260906/sources.json",
+  "prior_corpus_count": 10,
+  "notes": [
+    "Alternative URLs and versions of the same paper are not independent evidence.",
+    "Read scopes distinguish indexed primary text, abstract and full-text sections.",
+    "No external performance result was reproduced in this review."
+  ]
+}

@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "created_date": "2026-09-06",
+  "status": "DESIGN_ONLY_NOT_EXECUTABLE_CONFIGURATION",
+  "count": 18,
+  "primary_market": "Binance BTCUSDC linear perpetual; separate contracts explicitly identified per experiment",
+  "cost_assumption": {
+    "source": "USER_REPORTED_NOT_ACCOUNT_VERIFIED",
+    "maker_bps": 0,
+    "taker_bps": 3.6,
+    "scope": "User Binance BTCUSDC perpetual only; never extend to other legs without evidence"
+  },
+  "global_constraints": {
+    "starting_total_equity_u": 1500,
+    "cumulative_total_loss_budget_u": 150,
+    "auto_restart": false,
+    "live_authorization": false,
+    "all_new_numeric_results": null
+  },
+  "experiments": [
+    {
+      "id": "P1",
+      "family": "price_structure",
+      "title": "因果水平突破后的延续",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "停止订单触发或持续需求可能造成价格延续。",
+      "proposed_design_not_frozen": "前20个完整1h柱的高低点；本柱收盘越过后才形成事件，拟用下一可用报价进入、4h退出。",
+      "baselines": "同波动/时段/既往动量的随机非突破事件；简单动量。",
+      "data_requirements": "1h因果柱、分钟执行报价、mark与资金费、规则版本。",
+      "causal_constraint": "水平只取t之前；当前柱完整后才可知；不根据未来成功突破筛样本。",
+      "falsification": "扣费后对匹配动量无稳定增量，或优势仅一段行情。",
+      "source_ids": [
+        "A01",
+        "A02"
+      ],
+      "readiness": "PRICE_DATA_REUSABLE_EXECUTION_AND_REGISTRATION_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "P2",
+      "family": "price_structure",
+      "title": "相同水平事件的扫掠回归",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "短暂冲击被吸收后可能回到原区间；与P1是竞争机制。",
+      "proposed_design_not_frozen": "使用P1同一水平定义；越界后在预定下一完整1h柱收回才确认，拟4h退出。",
+      "baselines": "P1延续及同幅度冲击后未收回事件；报告等待确认导致的不同样本。",
+      "data_requirements": "与P1同源；逐事件确认与未确认记录。",
+      "causal_constraint": "不在越界时知道未来将收回；等待确认期间不假设已有反向仓位。",
+      "falsification": "只在事后标记扫掠或最乐观成本下成立。",
+      "source_ids": [
+        "A02",
+        "A03"
+      ],
+      "readiness": "CAUSAL_EVENT_SPEC_AND_BASELINE_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "P3",
+      "family": "price_structure",
+      "title": "FVG与订单块标签的额外信息",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "形态可能编码冲击强度/回撤位置，也可能只是已有价格变量的重命名。",
+      "proposed_design_not_frozen": "冻结三柱FVG确认、有限寿命和首次确认后回访；原缺失OB算法不能声称复刻。",
+      "baselines": "相同冲击幅度、ATR、动量与时段；无形态标签模型。",
+      "data_requirements": "完整柱、确认事件、逐次回访记录；源码/参数身份。",
+      "causal_constraint": "前缀不变性；不读取未来缓解索引；不得只保留后来有效的块。",
+      "falsification": "去掉未来字段或加入简单价格控制后增量消失。",
+      "source_ids": [
+        "A01",
+        "A03"
+      ],
+      "readiness": "DETECTOR_DEFINITION_AND_PREFIX_INVARIANCE_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "F1",
+      "family": "position_orderflow",
+      "title": "价格×数量OI×主动成交交互",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "仓位扩张/收缩可能改变相同价格和成交压力的后续分布。",
+      "proposed_design_not_frozen": "拟5m观察、30m标签；线性价格/流量/OI基线后加入预定交互，不立即树模型搜索。",
+      "baselines": "零预测、价格、价格+流量、价格+OI、无交互全变量。",
+      "data_requirements": "全窗数量OI、主动成交、行情、可用时间与单位审计。",
+      "causal_constraint": "OI发布/接收后才入特征；标签退出价成熟后才训练。",
+      "falsification": "统一单位和报告时钟后无增量，或跨期失效、成本吞没。",
+      "source_ids": [
+        "A04",
+        "A05",
+        "A06"
+      ],
+      "readiness": "FULL_WINDOW_OI_AND_KNOWLEDGE_TIME_NOT_ACCEPTED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "F2",
+      "family": "position_orderflow",
+      "title": "成交压力衰减与冲击恢复",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "持续流可能延续，流量衰减可能意味着暂时冲击消退。",
+      "proposed_design_not_frozen": "拟5m成交额不平衡和过去15m衰减；评价未来30m，先单一线性增量。",
+      "baselines": "同期价格冲击、成交量、波动；不以同期解释作为预测。",
+      "data_requirements": "同源逐笔/聚合成交和报价；报告完整性与更新频率。",
+      "causal_constraint": "先聚合金额再求比率；只使用决策前收到的数据。",
+      "falsification": "预测仅来自同刻收益或不可实现的延迟。",
+      "source_ids": [
+        "A04",
+        "A06",
+        "S03"
+      ],
+      "readiness": "DATA_CLOCK_AUDIT_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "F3",
+      "family": "position_orderflow",
+      "title": "已结算资金费的仓位状态条件效应",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "资金费可能反映拥挤，但方向和效应随仓位状态变化。",
+      "proposed_design_not_frozen": "拟固定最近3次已结算费率与OI变化交互，预测下一8h；结算间隔需按历史规则。",
+      "baselines": "价格+流量+OI，不含资金费的同模型；日频失败记录保持。",
+      "data_requirements": "实际结算事件、已知费率、历史规则和OI。",
+      "causal_constraint": "未来结算费率不进入特征；不把今天显示的费率回填历史。",
+      "falsification": "无外层增量、只在极少结算事件成立。",
+      "source_ids": [
+        "A05",
+        "A07"
+      ],
+      "readiness": "FUNDING_SCHEDULE_AND_OI_AUDIT_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "C1",
+      "family": "carry",
+      "title": "现货—到期合约基差",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "杠杆需求与资本分割可能支付持有到期的基差。",
+      "proposed_design_not_frozen": "拟单个到期合约、固定匹配BTC数量持有至交割；入场阈值待成本/资本验收后冻结。",
+      "baselines": "现金与相同资本占用下不交易；报告价格暴露和融资。",
+      "data_requirements": "双腿可执行报价、到期规则、借贷/融资、费用和保证金。",
+      "causal_constraint": "只用入场已知合约与报价；不同步成交逐事件。",
+      "falsification": "双腿成本/储备使净补偿不足，压力保证金超预算。",
+      "source_ids": [
+        "A07",
+        "S04"
+      ],
+      "readiness": "SPOT_DELIVERY_AND_DUAL_LEG_ACCOUNTING_NOT_ACCEPTED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "C2",
+      "family": "carry",
+      "title": "现货—永续滞后资金费选择",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "历史费率可能持续并支付对冲资本，未来费率仍可翻转。",
+      "proposed_design_not_frozen": "拟按过去3次已结算费率决定固定数量对冲；未来3次结算后退出，不假设基差归零。",
+      "baselines": "同资本静态对冲、不选择费率的组合；现金。",
+      "data_requirements": "现货+永续价格、实际逐次资金费、费用、融资、规则。",
+      "causal_constraint": "信号仅已结算历史；两腿PnL与实际资金费分开。",
+      "falsification": "净收益依赖乐观费率或不计退出基差，或单腿失败超预算。",
+      "source_ids": [
+        "A07",
+        "S04"
+      ],
+      "readiness": "SPOT_PERP_DUAL_LEG_AND_CAPITAL_MODEL_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "C3",
+      "family": "carry",
+      "title": "两个永续合约的资金费差",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "场所或合约分割可能使匹配方向的资金费补偿不同。",
+      "proposed_design_not_frozen": "拟以过去3次已结算费率的年化时间一致差选配对；持有/退出规则待合同验收后冻结。",
+      "baselines": "相同配对固定持有、现金；完整分配资本而非重复使用本金。",
+      "data_requirements": "两套合约数量、结算币、费率事件、保证金、可执行报价。",
+      "causal_constraint": "不假设两所结算同刻；不混用币本位和线性名义数量。",
+      "falsification": "多腿成本、基差和资金转移约束消除补偿。",
+      "source_ids": [
+        "A07",
+        "A14",
+        "S04"
+      ],
+      "readiness": "MULTI_LEDGER_AND_FUNDING_CONTRACTS_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "M1",
+      "family": "market_making",
+      "title": "库存约束的固定报价基线",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "提供流动性可能得到价差补偿，也可能被逆向选择完全抵消。",
+      "proposed_design_not_frozen": "固定一档报价及明确库存上限；报价量和更新时间须在盘口/最小单验收后冻结。",
+      "baselines": "不报价；同库存约束下被动单侧执行。",
+      "data_requirements": "盘口重建、逐笔成交、队列模型、费用、自己的延迟分布。",
+      "causal_constraint": "订单在送达后才排队；成交/撤单以事件确认，非触价即成交。",
+      "falsification": "保守队列下无正净补偿或被迫退出亏损集中。",
+      "source_ids": [
+        "A08",
+        "A10",
+        "A12"
+      ],
+      "readiness": "QUEUE_LATENCY_AND_ORDER_EVENT_DATA_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "M2",
+      "family": "market_making",
+      "title": "信号驱动的撤单保护",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "减少在不利价格变化前被成交可能改善M1。",
+      "proposed_design_not_frozen": "仅在M1上增加一个冻结预测阈值的撤单条件，不同时改仓位和报价宽度。",
+      "baselines": "M1；匹配撤单频率的无信息撤单基线。",
+      "data_requirements": "M1数据加当时可见流量/跨市场预测；撤单请求与确认时间。",
+      "causal_constraint": "撤单晚到仍可成交；不得从历史中抹掉已成交订单。",
+      "falsification": "改善全靠返佣、立即撤单假设或极低成交率。",
+      "source_ids": [
+        "A09",
+        "A10"
+      ],
+      "readiness": "FILL_CONDITIONAL_SIGNAL_AND_CANCEL_LATENCY_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "M3",
+      "family": "market_making",
+      "title": "被动与主动执行的条件选择",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "省手续费的被动单与更确定的主动单存在等待/逆向选择权衡。",
+      "proposed_design_not_frozen": "固定同一批外生目标订单，比较maker等待固定期限与taker；期限待延迟验收后冻结。",
+      "baselines": "纯taker与纯maker；均记未完成目标和价格追赶成本。",
+      "data_requirements": "逐笔/盘口、队列、账户费率来源、真实或保守延迟。",
+      "causal_constraint": "不可用未来是否成交选择下单类型；期限到期取消未确认不可重发全量。",
+      "falsification": "只通过忽略未成交、部分成交或机会成本获胜。",
+      "source_ids": [
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "readiness": "EXECUTION_QUALITY_EXPERIMENT_NOT_STRATEGY_ALPHA",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "X1",
+      "family": "cross_venue",
+      "title": "外部市场信息预测BTCUSDC",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "其他市场的价格发现可能提供本场所尚未吸收的信息。",
+      "proposed_design_not_frozen": "拟1s特征、5s预测起步，延迟大于信号尺度则先淘汰；只研究单场所交易。",
+      "baselines": "本场所价格+流量；同接收时间基准，控制计价币差异。",
+      "data_requirements": "多场所报价与本机接收时间，序列连续性、陈旧阈值、数量。",
+      "causal_constraint": "as-of只向后连接；训练集选领先关系，测试固定。",
+      "falsification": "效应来自异步数据或报价陈旧；实测延迟后无增量。",
+      "source_ids": [
+        "A09",
+        "A14"
+      ],
+      "readiness": "MULTIVENUE_RECEIVE_TIME_DATA_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "X2",
+      "family": "cross_venue",
+      "title": "预置资本下可执行跨所价差",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "市场分割可能保留价差，但所需资本和风险同样有价格。",
+      "proposed_design_not_frozen": "拟同BTC数量双腿；机会定义用可执行买卖价和深度，阈值待全部费用冻结。",
+      "baselines": "现金；只看mid价差的诊断明确非交易基线。",
+      "data_requirements": "两所订单/行情/费率/最小量、余额、结算币、可提款条件。",
+      "causal_constraint": "同时意图不等于原子成交；第二腿失败保留第一腿敞口。",
+      "falsification": "价差不能覆盖双腿/调拨/资本成本或故障损失。",
+      "source_ids": [
+        "A13",
+        "A14"
+      ],
+      "readiness": "MULTIVENUE_EXECUTION_AND_CAPITAL_ISOLATION_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "X3",
+      "family": "cross_venue",
+      "title": "跨所maker成交后taker对冲",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "相对价差与被动流动性服务可能补偿对冲成本。",
+      "proposed_design_not_frozen": "先固定报价来源、hedge场所、数量及时间上限，实际maker成交后按已成交量对冲。",
+      "baselines": "同资本M1；全taker双腿。",
+      "data_requirements": "maker队列/成交、hedge深度/延迟、两场所保证金与规则。",
+      "causal_constraint": "不预知maker成交；部分成交逐笔分配对冲，拒单继续记风险。",
+      "falsification": "模拟利润依赖无限hedge深度、即时成交或零故障。",
+      "source_ids": [
+        "A10",
+        "A15"
+      ],
+      "readiness": "DUAL_LEG_FILL_AND_FAILURE_ACCOUNTING_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "O1",
+      "family": "options",
+      "title": "期权曲面作为永续风险信息",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "期限/偏斜可能提供尾部和波动风险状态，不必立即交易期权。",
+      "proposed_design_not_frozen": "拟每日固定时刻取同到期口径的期限斜率/偏斜，预测未来24h波动及尾部，方向另列试验。",
+      "baselines": "价格已实现波动/动量；无期权信息的相同风险控制。",
+      "data_requirements": "当时可得买卖报价、期权规格、期限、IV方法和缺失记录。",
+      "causal_constraint": "未来RV仅标签；不能用收盘修订曲面预测当天。",
+      "falsification": "无风险预测增量，或风险过滤仅靠降低全部市场暴露。",
+      "source_ids": [
+        "A16",
+        "A17"
+      ],
+      "readiness": "PIT_OPTION_QUOTES_AND_CURVE_RULES_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "O2",
+      "family": "options",
+      "title": "有限损失的波动率风险溢价组合",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "保险需求可能支付风险补偿；收益伴随尾部和对冲成本。",
+      "proposed_design_not_frozen": "拟单一到期/固定delta选择的定义最大损失价差组合；阈值和对冲待报价验收后冻结。",
+      "baselines": "相同最大损失预算的现金/基础组合；控制short-vol风险。",
+      "data_requirements": "期权可执行报价、乘数、交割/费用、对冲行情与保证金。",
+      "causal_constraint": "不以未来RV择时；不按不可成交mark买卖；逐合约结算。",
+      "falsification": "最小单或最坏损失超过总预算；扣成本收益不足。",
+      "source_ids": [
+        "A16",
+        "A18",
+        "A19",
+        "A20"
+      ],
+      "readiness": "OPTION_LEDGER_RULES_AND_QUOTES_NOT_ACCEPTED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    },
+    {
+      "id": "O3",
+      "family": "options",
+      "title": "期限与偏斜相对价值",
+      "status": "UNTESTED_PROPOSAL",
+      "mechanism": "曲面不同部分可能有条件错价，亦可能反映真实尾部风险。",
+      "proposed_design_not_frozen": "拟固定两期限的风险匹配价差；对冲权重仅用事前greeks，选择规则另行冻结。",
+      "baselines": "无曲面信号的相同风险/期限组合；简单静态配置。",
+      "data_requirements": "双期限可执行报价、稳定greeks、保证金、交割与展期规则。",
+      "causal_constraint": "不同时用未来成交/未来greeks；保留残余gamma/vega及跳跃敞口。",
+      "falsification": "利润由未记尾部、流动性或错配结算造成。",
+      "source_ids": [
+        "A17",
+        "A18",
+        "A19",
+        "A20"
+      ],
+      "readiness": "MULTICONTRACT_OPTION_ACCOUNTING_REQUIRED",
+      "code_implemented": false,
+      "run_id": null,
+      "authoritative": false,
+      "requires_final_preregistration": true
+    }
+  ]
+}
