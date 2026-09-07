@@ -154,6 +154,11 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "btc_forward",
         "btc_mechanism",
         "ai_factory",
+        "ai_factory_forward",
+        "ai_factory_assessment",
+        "ai_factory_verification",
+        "ai_factory_pipeline",
+        "ai_factory_comparison",
     }
     actual_selection_bearing = {
         kind

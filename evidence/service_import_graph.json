@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 49,
+  "edge_count": 50,
   "edges": [
     {
       "references": [
@@ -1556,10 +1556,21 @@
       ],
       "source": "risk",
       "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 2,
+          "module": "services.governance.artifact_receipt_auth",
+          "path": "services/validation/ai_factory_verification.py"
+        }
+      ],
+      "source": "validation",
+      "target": "governance"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "3adf3200d51d68bddae54fe30f16c2b686a54ec1109d21664404d8f6a7d2465f",
+  "graph_sha256": "3b0833055979ddf5735d65a0c6175225dc97019828926479818e7b9dd1889f97",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1597,7 +1608,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 513,
+  "source_file_count": 518,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

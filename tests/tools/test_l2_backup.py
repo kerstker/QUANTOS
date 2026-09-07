@@ -676,7 +676,7 @@ def test_current_backup_contract_requires_complete_ashare_research_state():
         if source.relative_path.startswith("data/stocks/")
     }
 
-    assert SOURCE_CONTRACT_VERSION == 15
+    assert SOURCE_CONTRACT_VERSION == 16
     assert ashare == {
         "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz": (
             "ashare_tdx_panel_cache",
@@ -702,7 +702,7 @@ def test_current_backup_contract_requires_complete_ashare_research_state():
         "data/stocks/stocks.db": ("ashare_market_data_authority", True),
     }
     contract = l2_backup_module._source_contract(DEFAULT_SOURCES)
-    assert contract["version"] == 15
+    assert contract["version"] == 16
     assert all(
         source["snapshot_policy"] == SNAPSHOT_POLICY_STANDARD
         for source in contract["sources"]
@@ -1707,3 +1707,10 @@ def test_restore_rejects_semantically_tampered_restore_history_database(tmp_path
 def test_l2_backup_uses_reviewed_large_authenticated_chunks():
     assert l2_backup_module.L2_ENCRYPTION_CHUNK_SIZE == 64 * 1024 * 1024
     assert l2_backup_module.L2_ENCRYPTION_CHUNK_SIZE <= 64 * 1024 * 1024
+
+
+def test_ai_factory_checkpoint_is_an_optional_encrypted_backup_source():
+    entries=[s for s in DEFAULT_SOURCES if s.relative_path=='data/cache/ai_factory_checkpoint.zip']
+    assert len(entries)==1
+    assert entries[0].role=='ai_factory_verified_checkpoint'
+    assert entries[0].required is False

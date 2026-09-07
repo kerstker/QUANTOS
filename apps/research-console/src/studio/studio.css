@@ -1649,3 +1649,5 @@ progress::-webkit-progress-value {
 :root[data-studio-theme=dark] .s-badge.active {
   color: #94c9ef;
 }
+
+:root[data-studio-theme=dark]{--s-plot-1:#81c7a9;--s-plot-2:#91b5f1;--s-plot-3:#eab184;--s-plot-4:#c2a0e5;--s-plot-5:#ed9cb0;--s-plot-6:#8ac9d1;--s-plot-7:#c4d089;--s-plot-8:#c1b49b}

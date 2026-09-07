@@ -1,0 +1,49 @@
+import {useId,useState} from 'react';
+import type {FactoryPayload} from '@/lib/types/ai-factory';
+import {Panel,Empty,Badge} from './components';
+import {Chart} from './Charts';
+import {fmt,stamp} from './data';
+
+export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void}) {
+ const tabs=['运行与证据','前向观察','成本决策','压力与组合','过程对照'];
+ const [tab,setTab]=useState(0),id=useId();
+ const forward=data?.forward,assessment=data?.assessment,complete=data?.selected?.state==='COMPLETED';
+ const trace=data?.selected?.result.outer?.decision_trace??[];
+ const resident=data?.resident,residentStale=!!resident&&Date.now()-resident.observed_at_ms>180000;
+ return <>
+ <div className="f-evidence-nav" role="tablist" aria-label="研究证据工作区">{tabs.map((name,i)=><button key={name} role="tab" id={`${id}-tab-${i}`} aria-controls={`${id}-panel`} aria-selected={tab===i} tabIndex={tab===i?0:-1} onClick={()=>setTab(i)} onKeyDown={event=>{let next=i;if(event.key==='ArrowRight')next=(i+1)%tabs.length;else if(event.key==='ArrowLeft')next=(i+tabs.length-1)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();setTab(next);document.getElementById(`${id}-tab-${next}`)?.focus();}}>{name}</button>)}</div>
+ <div className="f-evidence-stack" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${tab}`} tabIndex={0}>
+ {tab===0&&<>
+ <Panel title="常驻研究观察" note="此状态只覆盖当前状态根中的小时观察工作者"><div className="f-toolbar"><Badge value={residentStale?'STALE':resident?.status??'NOT_CONFIGURED'}/><span>最近心跳 {stamp(resident?.observed_at_ms,true)}</span><span>检查点 {resident?.checkpoint?.status??'尚无记录'}</span></div><p className="f-message">{residentStale?'工作者超过三分钟未更新，请查看运行日志。':'研究状态与正式交易服务分开显示；没有心跳时不推断后台正在运行。'}</p></Panel>
+ <Panel title="自动化流程" note="研究完成后自动进行六种压力诊断、两次共享账户对照、三折完整过程比较、验证包准备与前向激活"><div className="f-toolbar"><Badge value={data?.pipeline?.status??'等待研究完成'}/><span>{data?.pipeline?.stage??'实验 → 诊断 → 验证包 → 观察'}</span><button className="s-button" disabled={busy||data?.pipeline?.status!=='FAILED'} onClick={()=>action('resume')}>恢复后续流程</button></div><p className="f-message">{data?.pipeline?.reason}</p></Panel>
+ <Panel title="实验谱系" note="方法来源、父实验和数据截止固定在每次试验记录中"><div className="s-table-wrap" role="region" aria-label="实验谱系" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>父实验数</th><th>评价范围</th><th>标签截止</th><th>数据摘要</th></tr></thead><tbody>{data?.trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.hypothesis?.parent_trial_ids.length??'—'}</td><td>{t.hypothesis?.evaluation_scope??'旧版本未记录'}</td><td>{stamp(t.hypothesis?.evaluation_cutoff_ms,true)}</td><td>{t.hypothesis?.dataset_hash.slice(0,12)??'—'}</td></tr>)}</tbody></table></div></Panel>
+ <Panel title="独立验证与证据包" note="绑定数据、模型、结果及完整实验账本，保留独立否定入口" action={<button className="s-button" disabled={busy||!complete} onClick={()=>action('verify')}>准备 / 检查验证包</button>}><p className="f-message">{data?.verification?.verification.status??'尚未准备独立验证包'}</p><p className="f-message">{data?.verification?.artifact_sha256&&`包摘要：${data.verification.artifact_sha256}`} · 经济准入未开放</p></Panel>
+ </>}
+ {tab===1&&<>
+ <Panel title="自然时间前向" note="冻结模型，每小时生成预测；四小时标签收到后追加，原预测不改写" action={<div className="f-toolbar"><button className="s-button" disabled={busy||!complete} onClick={()=>action('observe')}>启用观察</button><button className="s-button" disabled={busy||!forward} onClick={()=>action('stop_observe')}>停止观察</button><button className="s-button" disabled={busy||!forward} onClick={()=>action('refresh_observe')}>推进一次</button></div>}>
+ {forward?<><div className="f-toolbar"><Badge value={forward.status}/><span>激活 {stamp(forward.activated_at_ms,true)}</span><span>更新 {stamp(forward.observed_at_ms,true)}</span></div><div className="f-metrics"><div><small>已发布预测</small><strong>{forward.predictions??'—'}</strong></div><div><small>成熟标签</small><strong>{forward.labels??'—'}</strong></div><div><small>前向 RMSE</small><strong>{fmt(forward.diagnostics?.rmse,5)}</strong></div><div><small>漂移观察</small><strong style={{fontSize:13}}>{forward.diagnostics?.drift??'UNKNOWN'}</strong></div></div><p className="f-message">仅预测观察，没有账户收益。四小时重叠标签不能视作独立样本。</p></>:<Empty title="模型尚未激活">完成研究后启用观察；现有两分钟调度会在有效决策窗口推进。</Empty>}
+ </Panel>
+ <Panel title="最新预测" note="参考目标按空仓阈值政策展示，不代表实际账户持仓或订单">
+ <div className="s-table-wrap" role="region" aria-label="已发布的小时预测" tabIndex={0}><table className="s-table"><thead><tr><th>信息时点</th><th>发布时点</th><th>预测 bp</th><th>参考目标</th><th>目标终点</th></tr></thead><tbody>{forward?.recent_forecasts?.slice(-12).reverse().map(r=><tr key={r.slot_ms}><td>{stamp(r.slot_ms,true)}</td><td>{stamp(r.issued_at_ms,true)}</td><td>{fmt(r.prediction*10000)}</td><td>{fmt(r.target_weight*100)}%</td><td>{stamp(r.exit_ms,true)}</td></tr>)}</tbody></table></div>
+ </Panel>
+ <Chart title="预测与实际 · 成熟前向标签" rows={(forward?.recent_labels??[]).map(r=>({label:stamp(r.slot_ms,true),time:r.slot_ms,prediction:r.prediction*100,realized:r.realized_return*100}))} series={[{key:'prediction',label:'事前预测'},{key:'realized',label:'成熟实际收益'}]} unit="%" note="标签在实际收到终点参考行情后成熟。"/>
+ </>}
+ {tab===2&&<>
+ <Panel title="预测如何成为持仓" note="使用账本真实持仓、费用、滑点、资金费和风险项；仅展示前 128 个决策">
+ <div className="s-table-wrap" role="region" aria-label="成本决策明细" tabIndex={0}><table className="s-table"><thead><tr><th>时点</th><th>预测 bp</th><th>当前 → 目标</th><th>交易成本 bp</th><th>风险项 bp</th><th>资金费 bp</th><th>原因</th></tr></thead><tbody>{trace.map(r=><tr key={r.time}><td>{stamp(r.time,true)}</td><td>{fmt(r.prediction*10000)}</td><td>{fmt(r.current_weight*100)} → {fmt(r.weight*100)}%</td><td>{fmt(r.trade_cost*10000)}</td><td>{fmt(r.risk_penalty*10000)}</td><td>{fmt(r.funding_cost*10000)}</td><td>{r.reason==='HOLD_COST_BAND'?'持有 · 降低换手':r.reason==='NET_UTILITY'?'净效用较高':'无优势 / 降低风险'}</td></tr>)}</tbody></table></div>{!trace.length&&<p className="f-message">此版本尚无成本决策明细；旧冻结模型保持原政策。</p>}
+ </Panel>
+ </>}
+ {tab===3&&<>
+ <Panel title="压力测试与共享账户" note="固定模型的后选择诊断，不回传 AI，也不建立晋级证据" action={<button className="s-button" disabled={busy||!complete||!!assessment} onClick={()=>action('assess')}>运行诊断</button>}>
+ {assessment?<><div className="s-table-wrap" role="region" aria-label="压力测试结果" tabIndex={0}><table className="s-table"><thead><tr><th>滑点 bp</th><th>费用 bp</th><th>额外延迟</th><th>净损益 USDC</th><th>最大回撤</th><th>成交数</th></tr></thead><tbody>{assessment.cases.map(c=><tr key={c.case}><td>{c.slippage_bps}</td><td>{c.fee_bps}</td><td>{c.delay_hours} 小时</td><td>{fmt(c.metrics.net_pnl)}</td><td>{fmt((c.metrics.drawdown??0)*100)}%</td><td>{c.metrics.fills}</td></tr>)}</tbody></table></div><div className="f-metrics"><div><small>组合加入净损益增量</small><strong>{fmt(assessment.portfolio.add_net_pnl_delta)}</strong></div><div><small>替换净损益增量</small><strong>{fmt(assessment.portfolio.replace_net_pnl_delta)}</strong></div><div><small>搜索重采样尾部比例</small><strong>{fmt(assessment.search_diagnostics.family_tail_fraction,3)}</strong></div><div><small>记录尝试次数</small><strong>{assessment.search_diagnostics.trials_attempted??'—'}</strong></div></div><p className="f-message">组合使用同一账户和真实账本，等权合并两模型预测；不是独立资金曲线相加。重采样保留七日块，但不能认证自适应搜索。</p></>:<Empty title="尚未进行压力与组合诊断">在同一输入上重放六种费用、滑点和延迟情景，并比较加入与替换模型后的共享账户结果。</Empty>}
+ </Panel>
+ {assessment?.portfolio.add&&<Chart title="共享账户 · 加入与替换" rows={assessment.portfolio.add.equity.map((r,i)=>({label:stamp(r.time,true),time:r.time,add:Number(r.equity),replace:Number(assessment.portfolio.replace?.equity[i]?.equity)}))} series={[{key:'add',label:'等权预测组合'},{key:'replace',label:'替换模型'}]} unit="USDC" note="各情景初始资金均为 1,500 USDC；所有结果为后选择技术诊断。"/>}
+ </>}
+ {tab===4&&<>
+ <Panel title="三折滚动 · 完整研究过程对照" note="每折重新训练、内层选择后再看该折外层；比较固定规格、随机搜索与已连接的 AI" action={<button className="s-button" disabled={busy||!complete||!!data?.comparison} onClick={()=>action('compare')}>运行过程对照</button>}>
+ <div className="s-table-wrap" role="region" aria-label="完整过程对照" tabIndex={0}><table className="s-table"><thead><tr><th>时间折</th><th>搜索组</th><th>尝试次数</th><th>所选模型</th><th>外层净损益</th><th>状态</th></tr></thead><tbody>{data?.comparison?.rows.map(r=><tr key={`${r.fold}-${r.group}`}><td>{r.fold+1}</td><td>{r.group}</td><td>{r.trials.length}</td><td>{r.selected?.model??'—'}</td><td>{fmt(r.outer?.net_pnl)}</td><td>{r.status}</td></tr>)}</tbody></table></div><p className="f-message">AI 组：{data?.comparison?.ai_group_status??'等待运行'}。历史过程对照不会恢复已使用样本的独立性。</p>
+ </Panel>
+ </>}
+ </div>
+ </>;
+}

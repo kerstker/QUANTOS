@@ -8,6 +8,11 @@ for (const path of ['/studio/market', '/studio/analysis']) {
    await page.goto(path);
    await expect(page.getByRole('img').first()).toBeVisible();
    if (theme === 'dark') await page.getByRole('button', {name: '切换深色模式'}).click();
+   const palette=await page.locator('.s-plot svg').first().evaluate(svg=>({
+    plot:getComputedStyle(svg.querySelector('rect')!).fill,
+    panel:getComputedStyle(svg.closest('.s-panel')!).backgroundColor,
+   }));
+   expect(palette.plot).toBe(palette.panel);
    for (const width of [1440, 768, 390]) {
     await page.setViewportSize({width, height: 1000});
     await page.evaluate(() => document.fonts.ready);

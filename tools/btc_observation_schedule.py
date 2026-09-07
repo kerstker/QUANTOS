@@ -41,8 +41,12 @@ def advance(root: Path, *, now_ms: int) -> dict:
                                                'observed_at_ms':result['observed_at_ms']})
                 except Exception as exc:
                     report['attempts'].append({'attempt':attempt,'status':'ERROR','error':str(exc)})
+            from tools.ai_factory_forward import advance_factory
+            report['factory_attempts']=advance_factory(root,now_ms=now_ms)
+            if report['factory_attempts']:
+                report['status']='ERROR' if any(r['status']=='ERROR' for r in report['factory_attempts']) else 'OBSERVING'
             if attempts:
-                report['status']='ERROR' if any(r['status']=='ERROR' for r in report['attempts']) else 'OBSERVING'
+                report['status']='ERROR' if report['status']=='ERROR' or any(r['status']=='ERROR' for r in report['attempts']) else 'OBSERVING'
         except (OSError,ValueError) as exc:
             report.update(status='ERROR',error=str(exc))
         report['finished_at_ms']=time.time_ns()//1000000

@@ -1,6 +1,7 @@
 """Bounded, resumable hourly BTC research factory. Technical evidence only."""
 from __future__ import annotations
 from decimal import Decimal as D
+from collections import Counter
 from pathlib import Path
 import numpy as np
 from quantos.runtime_paths import runtime_state_root
@@ -14,7 +15,7 @@ from tools.ai_factory_provider import propose
 
 SCHEMA='QUANTOS_AI_FACTORY_V1'
 POLICY={'schema':SCHEMA,'split':[.65,.82],'purge_hours':4,'entry_delay_minutes':5,
-        'seed':17,'max_training_rows':2048,'fee_bps':4,'slippage_bps':5,'stop':True}
+        'threshold_role':'PREDICTION_CONFIDENCE_HAIRCUT','decision_policy':'DISCRETE_COST_RISK_V1','seed':17,'max_training_rows':2048,'fee_bps':4,'slippage_bps':5,'stop':True}
 
 
 
@@ -86,6 +87,16 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
             except Exception as exc:
                 # Exception messages can include remote payloads or paths; retain a bounded error code.
                 result={'ordinal':ordinal,'candidate_id':picked,'status':'FAILED','reason':stage+'_'+type(exc).__name__,'trial_id':definition}
+            result['hypothesis']={'hypothesis_id':definition,'family_id':record['family_id'],
+                'dataset_hash':bound['inputs'].get('input_hash',bound['panel_hash']),
+                'feature_spec_hash':digest(candidates()[picked]['features']) if picked is not None else None,
+                'target_horizon_ms':4*HOUR,'training_label_cutoff_ms':int((t[train]+4*HOUR+300000).max()),
+                'evaluation_scope':'INNER_ONLY','evaluation_cutoff_ms':int((t[valid]+4*HOUR+300000).max()),
+                'split_plan_hash':digest([train.tolist(),valid.tolist(),test.tolist()]),
+                'cost_profile_hash':digest({'fee_bps':4,'slippage_bps':5,'decision_policy':POLICY['decision_policy']}),
+                'parent_trial_ids':[r['trial_id'] for r in existing],
+                'source_ids':['buildalpha-llm','aqr-cost'],
+                'source_role':'RESEARCH_METHOD_NOT_SIGNAL_PROFITABILITY_EVIDENCE'}
             store.record_trial(attempt,ordinal,result)
             _event(ledger,record,result['status'])
         command=store.get(attempt)['command']
@@ -102,9 +113,15 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
         p=fit_predict(spec,x[fit],y[fit],x[test]);outer=evaluate(spec,t[test],p)
         artifact=seal({'schema':SCHEMA,'identity_hash':digest(bound),'spec':spec,
             'training_x':x[fit].tolist(),'training_y':y[fit].tolist(),'training_last_label_ms':int((t[fit]+4*HOUR+300000).max()),
-            'authoritative':False,'live_eligible':False})
+            'decision_policy':POLICY['decision_policy'],'authoritative':False,'live_eligible':False})
         atomic_write_json(str(dest/'model.json'),artifact)
-        result={'selected':spec,'inner':best['metrics'],'outer':outer,'model_hash':artifact['result_hash'],
+        overlaps=[]
+        for row in FactoryStore.snapshot(Path(output)/'factory.db')['sessions']:
+            prior=row['result'].get('outer',{})
+            if row['attempt']!=attempt and prior.get('start_ms') is not None and outer.get('start_ms') is not None:
+                if prior['start_ms']<outer['end_ms'] and outer['start_ms']<prior['end_ms']:overlaps.append(row['attempt'])
+        result={'outer_overlap_attempts':overlaps,'outer_economic_independence_established':False,
+                'selected':spec,'inner':best['metrics'],'outer':outer,'model_hash':artifact['result_hash'],
                 'outer_rmse':float(np.sqrt(np.mean((p-y[test])**2))), 'train_rows':len(train),'validation_rows':len(valid),
                 'test_rows':len(test),'authoritative':False,'live_eligible':False,'schema':SCHEMA,
                 'limitations':['TECHNICAL_VALIDATION_ONLY','HISTORICAL_RECEIVE_TIME_UNKNOWN','CURRENT_VENUE_RULE_SCENARIO',
@@ -113,7 +130,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
         return store.get(attempt)
 
 
-def evaluate_market(market,spec,t,p):
+def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,slip_bps=5,fee_bps=4,window=None):
     from services.research.perpetual_alpha import replay
     from tools.perpetual_alpha_research import metrics
     day=24*HOUR
@@ -121,13 +138,44 @@ def evaluate_market(market,spec,t,p):
     # The canonical ledger retains its whole-day reconciliation contract.
     start=int((t[0]+day-1)//day*day+300000)
     end=int(t[-1]//day*day+300000)
+    if window is not None:
+        start,end=window
+        if start<int(t[0]+300000) or end>int(t[-1]+HOUR+300000):raise ValueError('comparison window outside prediction coverage')
     if end<=start:raise ValueError('insufficient whole-day evaluation window')
+    trace=[];reason_counts={}
+    context_decision=None
+    if cost_aware:
+        from services.research.ai_factory_decision import decide
+        predictions=dict(zip((t+300000).tolist(),p.tolist()))
+        fund_times=np.asarray([r['time'] for r in market['funding']])
+        fund_rates=np.asarray([float(r['rate']) for r in market['funding']])
+        def context_decision(at,context):
+            mu=predictions.get(at)
+            if mu is None:return 0.
+            hi=int(np.searchsorted(fund_times,at,side='left'));lo=max(0,hi-9)
+            if hi-lo<3:raise ValueError('insufficient settled funding history')
+            funding=float(fund_rates[lo:hi].mean())*.5
+            variance=(variance_by_slot or {}).get(at-300000,.0004)
+            equity=float(context['equity'])
+            if equity<=0:return 0.
+            current=float(context['quantity'])*float(context['mark'])/equity
+            adjusted_mu=float(np.sign(mu)*max(0,abs(mu)-spec['threshold_bps']/20000))
+            decision=decide(prediction=adjusted_mu,variance=variance,current=current,
+                            fee_bps=fee_bps,slip_bps=slip_bps,funding=funding)
+            decision.update(raw_prediction=float(mu),confidence_haircut_bps=spec['threshold_bps']/2)
+            reason_counts[decision['reason']]=reason_counts.get(decision['reason'],0)+1
+            if len(trace)<128:trace.append({'time':at,**decision})
+            return decision['target']
     result=replay(**{**market,'start':start,'end':end},decision=lambda at,held:weights.get(at,0.),
-                  slip_bps=D(5),stop=True,decision_interval_ms=HOUR)
+                  context_decision=context_decision,slip_bps=D(slip_bps),taker_fee_bps=D(fee_bps),
+                  stop=True,decision_interval_ms=HOUR)
     stats=metrics(result)
     return {'score':stats['net_pnl']-1500*stats['max_drawdown'], 'net_pnl':stats['net_pnl'],
             'drawdown':stats['max_drawdown'],'fees':stats['fees'],'funding':stats['funding'],
-            'fills':stats['fills'],'equity':result['daily'],'start_ms':start,'end_ms':end}
+            'fills':stats['fills'],'equity':result['daily'],'start_ms':start,'end_ms':end,
+            'decision_trace':trace,'decision_counts':reason_counts,
+            'order_status_counts':dict(Counter(r['status'] for r in result['orders'])),
+            'decision_policy':'DISCRETE_COST_RISK_V1' if cost_aware else 'FIXED_THRESHOLD_V1'}
 
 
 def run_factory(params):
@@ -151,7 +199,8 @@ def run_factory(params):
                 t,x,y=panel;keep=(t+300000>=market['start'])&(t+4*HOUR+300000<=market['end'])
                 panel=t[keep],x[keep],y[keep]
                 def evaluate(spec,t,p):
-                    return evaluate_market(market,spec,t,p)
+                    return evaluate_market(market,spec,t,p,cost_aware=True,
+                        variance_by_slot={int(at):float(row[3]**2*4) for at,row in zip(panel[0],panel[1])})
                 result=execute(store,params['attempt'],panel,evaluate,identity,output)
                 if result['state']=='FAILED':raise ValueError('research factory failed; inspect retained session receipts')
                 return result

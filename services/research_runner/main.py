@@ -265,16 +265,26 @@ async def factory_control(req: FactoryRequest, x_operator: str = Header(default=
     operator=(x_operator or '').strip()
     if not operator:raise HTTPException(400,'X-Operator header required')
     if not 1<=req.attempt<=1000:raise HTTPException(400,'invalid attempt')
-    if req.action not in ('create','pause','resume','cancel'):raise HTTPException(400,'unknown factory action')
+    if req.action not in ('create','pause','resume','cancel','observe','stop_observe','refresh_observe','assess','verify','compare'):raise HTTPException(400,'unknown factory action')
     try:
         config=validate_config({'attempt':req.attempt,'mode':req.mode,'budget':req.budget,'objective':req.objective})
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
+            if req.action in ('observe','stop_observe','refresh_observe','assess','verify','compare'):
+                row=store.get(req.attempt)
+                if row['state']!='COMPLETED':raise ValueError('completed research required')
+                kind={'assess':'ai_factory_assessment','verify':'ai_factory_verification','compare':'ai_factory_comparison'}.get(req.action,'ai_factory_forward')
+                params={'attempt':req.attempt} if req.action in ('assess','verify','compare') else {'attempt':req.attempt,'action':{'observe':1,'stop_observe':2,'refresh_observe':0}[req.action]}
+                run_id=_queue.submit(kind,params,
+                    now=int(time.time()),operator=operator,invocation_id=idempotency_key)
+                with store.c:store.event(req.attempt,'OPERATOR_ACTION',{'operator':operator,'action':req.action,'run_id':run_id})
+                return {'session':row,'run_id':run_id}
             if req.action=='create':store.create(config)
+            elif req.action=='resume' and store.get(req.attempt)['state']=='COMPLETED':pass
             else:store.control(req.attempt,req.action)
             if req.action in ('create','resume'):
                 row=store.get(req.attempt)
-                if row['state'] in ('COMPLETED','CANCELLED'):return {'session':row,'run_id':None}
-                run_id=_queue.submit('ai_factory',{'attempt':req.attempt},now=int(time.time()),operator=operator,
+                if row['state']=='CANCELLED':return {'session':row,'run_id':None}
+                run_id=_queue.submit('ai_factory_pipeline',{'attempt':req.attempt},now=int(time.time()),operator=operator,
                     invocation_id=idempotency_key or f"factory-{req.attempt}-{req.action}-{row['updated']}")
             else:run_id=None
             with store.c:store.event(req.attempt,'OPERATOR_ACTION',{'operator':operator,'action':req.action,'run_id':run_id})

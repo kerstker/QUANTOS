@@ -63,7 +63,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 15
+SOURCE_CONTRACT_VERSION = 16
 # Larger authenticated chunks reduce Python scheduling and framing overhead for
 # the multi-gigabyte public-data authorities retained by the DGX backup.  The
 # QBK2 format records this value per file, so older 8 MiB batches remain fully
@@ -122,6 +122,7 @@ class BackupSource:
 
 
 DEFAULT_SOURCES = (
+    BackupSource("data/cache/ai_factory_checkpoint.zip", "ai_factory_verified_checkpoint", False),
     BackupSource("data/cache/domain_events.db", "domain_event_authority", True),
     BackupSource("data/cache/domain_event_projection.db", "domain_event_projection", True),
     BackupSource("data/cache/dry_run.db", "dry_run_ledger", True),

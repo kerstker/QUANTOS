@@ -544,6 +544,35 @@ def _adapt_btc_forward(result: dict) -> dict:
 
 from functools import partial
 
+def _adapt_ai_factory_comparison(result):
+    return {'title':'三折研究过程对照','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'factory_attempt':result['attempt'],'comparison_json':json.dumps(result,sort_keys=True)},
+            'caveats':['固定预算完整过程比较；历史诊断不能建立经济准入。'],
+            'provenance':'tools/ai_factory_process_comparison.py'}
+
+
+def _adapt_ai_factory_verification(result):
+    return {'title':'独立研究验证包','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'factory_attempt':result['attempt'],'verification_json':json.dumps(result,sort_keys=True)},
+            'caveats':['外部签名身份与经济准入分离；不自签或晋级。'],
+            'provenance':'tools/ai_factory_verification.py'}
+
+
+def _adapt_ai_factory_assessment(result):
+    return {'title':'工厂压力与共享账户诊断','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'factory_attempt':result['attempt'],'assessment_json':json.dumps(result,sort_keys=True)},
+            'caveats':['后选择诊断；不能用于研究代理反馈或策略晋级。'],
+            'provenance':'tools/ai_factory_assessment.py'}
+
+
+def _adapt_ai_factory_forward(result):
+    return {'title':'AI 小时模型自然时间观察','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'forward_status':result['status'],'factory_attempt':result['attempt'],
+                       'hourly_forward_json':json.dumps(result,sort_keys=True)},
+            'caveats':['仅记录自然时间预测与成熟标签，不计算账户收益。'],
+            'provenance':'tools/ai_factory_forward.py'}
+
+
 def _adapt_ai_factory(result):
     return {'title':'AI 量化研究工厂','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'factory_state':result['state'],'factory_attempt':result['attempt'],
@@ -552,6 +581,16 @@ def _adapt_ai_factory(result):
 
 
 RUN_KINDS: dict = {
+    'ai_factory_comparison': RunSpec('tools.ai_factory_process_comparison:run_comparison', {'attempt':int},
+        _adapt_ai_factory_comparison,'三折研究过程对照',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_pipeline': RunSpec('tools.ai_factory_pipeline:run_pipeline', {'attempt':int},
+        _adapt_ai_factory,'自动化 AI 研究工厂全流程',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_verification': RunSpec('tools.ai_factory_verification:run_verification', {'attempt':int},
+        _adapt_ai_factory_verification,'独立研究验证包',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_assessment': RunSpec('tools.ai_factory_assessment:run_assessment', {'attempt':int},
+        _adapt_ai_factory_assessment,'工厂压力与共享账户诊断',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_forward': RunSpec('tools.ai_factory_forward:run_observation', {'attempt':int,'action':int},
+        _adapt_ai_factory_forward,'AI 小时模型自然时间观察',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'action':(0,2)}),
     'ai_factory': RunSpec('tools.ai_quant_factory:run_factory', {'attempt':int}, _adapt_ai_factory,
         'AI 量化研究工厂', DIAGNOSTIC_ONLY, param_bounds={'attempt':(1,1000)}),
     'btc_forward': RunSpec('tools.btc_forward_observation:run_forward',

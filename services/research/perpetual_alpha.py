@@ -42,7 +42,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
            maximum_quantity=D('50'),taker_fee_bps=D('4'),decision_interval_ms=DAY,
            target_weight=D('.25'),max_position_weight=D('.30'),initial_margin=D(1),
            maintenance_margin=D('.5'),price_stop=None,trade_lows=None,trade_highs=None,
-           max_holding_ms=None):
+           max_holding_ms=None,context_decision=None):
     times=np.asarray(times,dtype=np.int64)
     prices=np.asarray(prices,dtype=float);marks=np.asarray(marks,dtype=float)
     if (len(times)!=len(prices) or len(times)!=len(marks) or len(times)<2
@@ -218,7 +218,15 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
                 daily.append({'time':at,'equity':canonical_decimal(ledger.account_equity()),
                               'quantity':canonical_decimal(qty()),'mark':str(marks[int(np.searchsorted(times,at))])})
             if kind=='end':break
-            weight=decision(at,qty()!=0)
+            if context_decision is None:
+                weight=decision(at,qty()!=0)
+            else:
+                from types import MappingProxyType
+                equity=ledger.account_equity()
+                context=MappingProxyType({'quantity':canonical_decimal(qty()),'equity':canonical_decimal(equity),
+                    'mark':str(marks[int(np.searchsorted(times,at))]),'halted':halted is not None,
+                    'pending_exit_ms':pending_exit})
+                weight=context_decision(at,context)
             if weight is not None and (not np.isfinite(weight) or D(str(weight)) not in (-target_weight,D(0),target_weight)):
                 raise ValueError('invalid bounded target')
             decisions.append({'time':at,'target':weight,'actual_quantity':canonical_decimal(qty()),'halted':halted is not None})

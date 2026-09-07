@@ -67,3 +67,16 @@ def test_reversal_checks_new_risk_even_when_absolute_quantity_decreases():
                   slip_bps=5,stop=False)
     assert result['orders'][-1]['status']=='REJECTED_POST_FILL_RISK'
     assert D(result['daily'][-1]['quantity'])<0
+
+
+def test_context_decision_observes_real_fills_without_ledger_access():
+    data=market();contexts=[]
+    def choose(at,context):
+        contexts.append(context)
+        with pytest.raises(TypeError):context['quantity']='999'
+        return .25 if len(contexts)==1 else None
+    result=replay(**data,decision=lambda *a:pytest.fail('legacy callback called'),
+                  context_decision=choose,slip_bps=5,stop=True)
+    assert contexts[0]['quantity']=='0'
+    assert D(contexts[1]['quantity'])>0
+    assert len(result['fills'])==1
