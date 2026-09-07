@@ -76,6 +76,7 @@ SAFE_ONESHOT_MODULES = frozenset(
         "binance_realtime_market",
         "binance_rpi_depth",
         "binance_systemic_risk",
+        "btc_observation_schedule",
         "cftc_tff_forward_refresh",
         "cross_venue_liquidation_health",
         "defillama_stablecoin_forward_refresh",
