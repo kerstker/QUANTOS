@@ -26,3 +26,13 @@ it('does not show invented equity when no experiments exist',async()=>{
  render(<Factory/>);await screen.findByText('AI 模型尚未配置');
  expect(screen.queryByRole('img')).not.toBeInTheDocument();
 });
+it('submits on an HTTP LAN origin where randomUUID is unavailable',async()=>{
+ const getRandomValues=globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+ vi.stubGlobal('crypto',{getRandomValues});
+ try {
+  vi.mocked(controlFactory).mockResolvedValue({session:{attempt:1}});
+  render(<Factory/>);await screen.findByText('AI 模型尚未配置');
+  fireEvent.click(screen.getByRole('button',{name:'启动研究工厂'}));
+  await waitFor(()=>expect(controlFactory).toHaveBeenCalledWith(expect.any(Object),expect.stringMatching(/^[0-9a-f-]{36}$/)));
+ } finally {vi.unstubAllGlobals();}
+});

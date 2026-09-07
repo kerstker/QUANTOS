@@ -1,3 +1,4 @@
+import {newRequestIdentity} from '@/lib/api/request-identity';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from '@/lib/router';
 import { fetchResearchRun, fetchTechnicalReplay, fetchForwardDashboard } from '@/lib/api/research-console-api';
@@ -165,9 +166,9 @@ export function Launch({ health, initialKind, initialAttempt="1", initialAction=
       params.frequency_ms = Number(frequency);
     }
     const key = JSON.stringify([kind, params, operator]);
-    if (invocation.current?.key !== key)
-      invocation.current = { key, id: crypto.randomUUID() };
     try {
+      if (invocation.current?.key !== key)
+        invocation.current = { key, id: newRequestIdentity() };
       const result = await triggerRun(kind, params, invocation.current.id);
       nav(`/research/runs/${encodeURIComponent(result.run_id)}`);
     }

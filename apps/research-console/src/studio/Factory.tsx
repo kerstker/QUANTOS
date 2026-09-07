@@ -1,3 +1,4 @@
+import {newRequestIdentity} from '@/lib/api/request-identity';
 import {useEffect,useRef,useState} from 'react';
 import {fetchFactory,controlFactory} from '@/lib/api/ai-factory-api';
 import {getOperator,getRunnerToken,setOperator,setRunnerToken} from '@/lib/api/research-runner-api';
@@ -19,9 +20,9 @@ export function Factory() {
  const data=resource.data,session=data?.selected,trials=data?.trials??[],result=session?.result;
  const run=async(action:string)=>{
   const request=action==='create'?{action,attempt,mode,budget,objective}:{action,attempt:session?.attempt};
-  const body=JSON.stringify(request);if(pending.current?.body!==body)pending.current={body,id:crypto.randomUUID()};
+  const body=JSON.stringify(request);
   setBusy(true);setMessage('');setOperator(operator.trim());setRunnerToken(token.trim());
-  try {const response=await controlFactory(request,pending.current.id);setSelected(response.session.attempt);setMessage(action==='pause'?'已请求暂停，当前实验完成后停止。':action==='cancel'?'已请求取消，已完成实验将保留。':'请求已提交，进度会自动更新。');pending.current=null;resource.refresh();}
+  try {if(pending.current?.body!==body)pending.current={body,id:newRequestIdentity()};const response=await controlFactory(request,pending.current.id);setSelected(response.session.attempt);setMessage(action==='pause'?'已请求暂停，当前实验完成后停止。':action==='cancel'?'已请求取消，已完成实验将保留。':'请求已提交，进度会自动更新。');pending.current=null;resource.refresh();}
   catch(e){setMessage(e instanceof Error?e.message:'请求失败');}finally{setBusy(false);}
  };
  const terminal=!!session&&['COMPLETED','CANCELLED'].includes(session.state);
