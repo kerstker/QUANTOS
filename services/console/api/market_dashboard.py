@@ -40,13 +40,16 @@ def market_payload(path: Path, symbol: str, *, now_ms: int) -> dict:
         candles = {}
         samples = []
         for row in rows:
-            bar = row.get('kline_1m',{})
+            bar = row.get('last_closed_kline_1m',row.get('kline_1m',{}))
             if not isinstance(bar, dict):
                 raise ValueError('invalid candle shape')
             if bar.get('closed') is True and number(bar.get('close_time_ms')) < now_ms:
                 opened, closed = number(bar['open_time_ms']), number(bar['close_time_ms'])
+                received = number(bar.get('received_at_ms',row['observed_at_ms']))
                 if opened < 0 or opened % 60000 or closed != opened + 59999 or closed > row['observed_at_ms']:
                     raise ValueError('invalid candle availability or interval')
+                if received < closed or received > row['observed_at_ms']:
+                    raise ValueError('invalid closed candle receive time')
                 item = {k:number(bar[k]) for k in ('open','high','low','close','volume')}
                 if not 0 < item['low'] <= min(item['open'],item['close']) <= max(item['open'],item['close']) <= item['high'] or item['volume'] < 0:
                     raise ValueError('invalid OHLCV range')

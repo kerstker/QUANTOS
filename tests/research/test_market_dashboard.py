@@ -16,6 +16,25 @@ def test_missing_store_is_not_created(tmp_path):
     assert result['candles']==[]
     assert not (tmp_path/'absent.db').exists()
 
+def test_closed_candle_survives_next_open_update_before_snapshot_flush(tmp_path):
+    from tools.binance_realtime_stream import StreamState
+    state=StreamState(('BTC',))
+    def frame(opened,closed,event):
+        return {'stream':'btcusdt@kline_1m','data':{'e':'kline','s':'BTCUSDT','E':event,
+            'k':{'t':opened,'T':opened+59999,'o':'100','h':'105','l':'99','c':'102',
+                 'v':'12','q':'1200','n':10,'V':'6','Q':'600','x':closed}}}
+    state.handle(frame(60000,True,120000),received_at_ms=120010)
+    state.handle(frame(120000,False,120250),received_at_ms=120260)
+    row=state.snapshots(125000)['BTCUSDT']
+    assert row['kline_1m']['closed'] is False
+    assert row['last_closed_kline_1m']['received_at_ms']==120010
+    path=tmp_path/'market.db'
+    store=BinanceRealtimeStore(str(path),create=True)
+    try:store.append_snapshot(row)
+    finally:store.close()
+    result=dashboard.market_payload(path,'BTCUSDT',now_ms=130000)
+    assert len(result['candles'])==1 and result['candles'][0]['time']==60000
+
 
 def test_deduplicates_candles_and_hides_stale_orderbook(tmp_path):
     path=tmp_path/'market.db';store=BinanceRealtimeStore(str(path),create=True)

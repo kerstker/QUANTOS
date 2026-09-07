@@ -434,6 +434,13 @@ class StreamState:
                 ),
                 "closed": bool(kline.get("x")),
             }
+            # A new open-bar update can arrive before the five-second flush.
+            # Retain the actual closed event separately, with its receive clock.
+            completed = slot.get("last_closed_kline_1m")
+            if slot["kline_1m"]["closed"] and (
+                completed is None or slot["kline_1m"]["close_time_ms"] >= completed["close_time_ms"]
+            ):
+                slot["last_closed_kline_1m"] = dict(slot["kline_1m"])
             self._count("kline_1m")
         elif "@aggTrade" in stream or event == "aggTrade":
             price = _finite(data.get("p"), "trade.price", positive=True)
