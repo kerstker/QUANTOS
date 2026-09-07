@@ -9,7 +9,7 @@ from services.research.trial_ledger import TrialLedger
 from quantos.runtime_paths import runtime_state_root
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.governance.artifact_receipt_auth import SignedArtifactVerificationReceipt,ReceiptAuthorityKey
-from services.validation.ai_factory_verification import verify_research_receipt
+from services.governance.ai_factory_verification import verify_research_receipt
 from tools.btc_factory_research import verified,seal
 from tools.cache_io import atomic_write_json
 

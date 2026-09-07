@@ -60,6 +60,7 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         for source in DEFAULT_SOURCES
     }
     assert actual == {
+        "data/cache/ai_factory_checkpoint.zip": ("ai_factory_verified_checkpoint", False),
         "data/cache/alpha_maintenance.db": ("alpha_maintenance", False),
         "data/cache/alpha_production_workflow.db": (
             "alpha_production_workflow",

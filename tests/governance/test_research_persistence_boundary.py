@@ -14,6 +14,7 @@ CORE_MODULES = (
 )
 
 SQLITE_PERSISTENCE_OWNERS = {
+    "services/research/ai_factory_store.py",
     "services/research/alpha_workflow_store.py",
     "services/research/experiment_registry/store.py",
     "services/research/experiment_registry/family_schema_runtime.py",

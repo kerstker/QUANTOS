@@ -1,6 +1,6 @@
 import pytest
 from tests.governance.test_artifact_receipt_auth import _signed_envelope
-from services.validation.ai_factory_verification import verify_research_receipt
+from services.governance.ai_factory_verification import verify_research_receipt
 
 
 def test_unconfigured_authority_does_not_admit_local_evidence():

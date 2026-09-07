@@ -548,8 +548,14 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  15,
+                                                                                   "version":  16,
                                                                                    "sources":  [
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/ai_factory_checkpoint.zip",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "ai_factory_verified_checkpoint",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
                                                                                                        "required":  false,
@@ -810,8 +816,14 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  15,
+                                                                                   "version":  16,
                                                                                    "sources":  [
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/ai_factory_checkpoint.zip",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "ai_factory_verified_checkpoint",
+                                                                                                       "snapshot_policy":  "STANDARD"
+                                                                                                   },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
                                                                                                        "required":  false,

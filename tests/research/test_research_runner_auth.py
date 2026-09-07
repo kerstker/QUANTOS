@@ -118,6 +118,12 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
     assert r.status_code == 200
     policies = r.json()["kind_policies"]
     assert r.json()["kinds"] == [
+        "ai_factory",
+        "ai_factory_assessment",
+        "ai_factory_comparison",
+        "ai_factory_forward",
+        "ai_factory_pipeline",
+        "ai_factory_verification",
         "ashare_forward_observation",
         "ashare_technical_search",
         "btc_factory",
@@ -141,6 +147,9 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "survivorship": "INVALIDATED_PERP_LEDGER_V1",
         "wide_gauntlet": "INVALIDATED_PERP_LEDGER_V1",
     }
+    for kind in r.json()["kinds"]:
+        if kind.startswith("ai_factory"):
+            assert policies[kind] == {"purpose": "DIAGNOSTIC_ONLY", "evidence_authority": None}
     assert policies["factory_loop"]["purpose"] == "SELECTION_BEARING"
     assert policies["factory_loop"]["evidence_authority"] == (
         "EXPERIMENT_REGISTRY_GLOBAL_TRIAL_LEDGER"

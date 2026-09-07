@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 50,
+  "edge_count": 49,
   "edges": [
     {
       "references": [
@@ -1556,21 +1556,10 @@
       ],
       "source": "risk",
       "target": "validation"
-    },
-    {
-      "references": [
-        {
-          "line": 2,
-          "module": "services.governance.artifact_receipt_auth",
-          "path": "services/validation/ai_factory_verification.py"
-        }
-      ],
-      "source": "validation",
-      "target": "governance"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "3b0833055979ddf5735d65a0c6175225dc97019828926479818e7b9dd1889f97",
+  "graph_sha256": "83d97dee31e21a01fd315017e3aba88757b7e15398b831202e3b0f152744bf52",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
