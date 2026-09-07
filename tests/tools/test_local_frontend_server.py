@@ -130,8 +130,32 @@ def test_proxy_body_contract_accepts_only_small_authenticated_json_mutations():
         "POST", "/__runner__/run", headers
     ) == len(body)
     assert _validated_proxy_body_length(
+        "POST", "/__runner__/factory", headers
+    ) == len(body)
+    assert _validated_proxy_body_length(
         "GET", "/api/v1/console/system-health", _headers()
     ) == 0
+
+def test_factory_proxy_requires_auth_and_rejects_get():
+    assert _client_request_is_allowed('POST','/__runner__/factory','127.0.0.1')
+    assert not _client_request_is_allowed('GET','/__runner__/factory','127.0.0.1')
+    with pytest.raises(ValueError):
+        _validated_proxy_body_length('POST','/__runner__/factory',_headers(('Content-Length','2'),('Content-Type','application/json')))
+
+def test_isolated_frontend_uses_explicit_loopback_backend_ports():
+    from types import SimpleNamespace
+    handler=object.__new__(SpaRequestHandler)
+    handler.server=SimpleNamespace(console_port=14840,runner_port=14842)
+    handler.path='/__runner__/factory'
+    assert handler._proxy_target()==('127.0.0.1',14842,'/factory')
+    handler.path='/api/v1/console/ai-factory'
+    assert handler._proxy_target()==('127.0.0.1',14840,'/api/v1/console/ai-factory')
+
+@pytest.mark.parametrize('ports', [(0,8420),(8400,65536),(True,8420),(8400,8400),(14910,8420)])
+def test_backend_ports_reject_invalid_or_recursive_targets(ports):
+    from tools.local_frontend_server import LocalThreadingServer
+    with pytest.raises(ValueError):
+        LocalThreadingServer(('127.0.0.1',14910),SpaRequestHandler,console_port=ports[0],runner_port=ports[1])
 
 
 @pytest.mark.parametrize(

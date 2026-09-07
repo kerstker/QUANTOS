@@ -131,7 +131,7 @@ def _request_surface_is_allowed(method: str, path: str) -> bool:
         return method in {"GET", "HEAD"}
     if request_path == "/__runner__/health":
         return method in {"GET", "HEAD"}
-    if request_path in {"/__runner__/run", "/__runner__/cancel"}:
+    if request_path in {"/__runner__/run", "/__runner__/cancel", "/__runner__/factory"}:
         return method == "POST"
     if request_path == "/__runner__" or request_path.startswith("/__runner__/"):
         return False
@@ -174,6 +174,7 @@ def _validated_proxy_body_length(
     is_json_mutation = method == "POST" and target_path in {
         "/__runner__/run",
         "/__runner__/cancel",
+        "/__runner__/factory",
     }
     if headers.get_all("Transfer-Encoding", []):
         raise _ProxyRequestError(400, "Transfer-Encoding request bodies are not allowed")
@@ -297,10 +298,10 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
     def _proxy_target(self) -> tuple[str, int, str] | None:
         parsed = urlsplit(self.path)
         if parsed.path.startswith("/api/v1/console/"):
-            return ("127.0.0.1", 8400, parsed.path + (f"?{parsed.query}" if parsed.query else ""))
+            return ("127.0.0.1", getattr(getattr(self, 'server', None), 'console_port', 8400), parsed.path + (f"?{parsed.query}" if parsed.query else ""))
         if parsed.path == "/__runner__" or parsed.path.startswith("/__runner__/"):
             upstream_path = parsed.path.removeprefix("/__runner__") or "/"
-            return ("127.0.0.1", 8420, upstream_path + (f"?{parsed.query}" if parsed.query else ""))
+            return ("127.0.0.1", getattr(getattr(self, 'server', None), 'runner_port', 8420), upstream_path + (f"?{parsed.query}" if parsed.query else ""))
         return None
 
     def _proxy(self) -> None:
@@ -408,7 +409,15 @@ class LocalThreadingServer(http.server.ThreadingHTTPServer):
         request_handler: type[http.server.BaseHTTPRequestHandler],
         *,
         allowed_network: AllowedNetwork | None = None,
+        console_port: int = 8400,
+        runner_port: int = 8420,
     ) -> None:
+        if any(type(p) is not int or not 1 <= p <= 65535 for p in (console_port, runner_port)):
+            raise ValueError('backend ports must be integers in 1..65535')
+        if console_port == runner_port or server_address[1] in (console_port, runner_port):
+            raise ValueError('frontend and backend ports must be distinct')
+        self.console_port = console_port
+        self.runner_port = runner_port
         self.allowed_network = allowed_network
         super().__init__(server_address, request_handler)
 
@@ -483,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--allow-network")
+    parser.add_argument("--console-port", type=int, default=8400)
+    parser.add_argument("--runner-port", type=int, default=8420)
     args = parser.parse_args(argv)
     try:
         host, allowed_network = _validated_listener(args.host, args.allow_network)
@@ -497,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
         (host, args.port),
         SpaRequestHandler,
         allowed_network=allowed_network,
+        console_port=args.console_port,
+        runner_port=args.runner_port,
     ) as server:
         server.serve_forever()
     return 0
