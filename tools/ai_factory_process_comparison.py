@@ -34,7 +34,7 @@ def run_comparison(params):
         keep=(t+300000>=market['start'])&(t+4*HOUR+300000<=market['end']);t,x,y=t[keep],x[keep],y[keep]
         if digest([t.tolist(),x.tolist(),y.tolist()])!=plan['identity']['panel_hash']:raise ValueError('comparison panel changed')
         budget=state['config']['budget'];groups=['baseline','random']
-        if provider_status()['status']=='CONFIGURED_UNVERIFIED':groups.append('ai')
+        if state['config']['mode']=='ai' and provider_status()['status']=='CONFIGURED_UNVERIFIED':groups.append('ai')
         identity={'source':source_identity(),'input_hash':plan['identity']['inputs']['input_hash'],
                   'budget_per_group_per_fold':budget,'groups':groups,'folds':3,'seed':17,'scope':'POST_SELECTION_PROCESS_DIAGNOSTIC'}
         frozen=dest/'comparison-plan.json'

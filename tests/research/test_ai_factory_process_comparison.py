@@ -7,7 +7,8 @@ from tools.ai_quant_factory import execute
 from tools import ai_factory_process_comparison as module
 
 
-def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_path, monkeypatch):
+@pytest.mark.parametrize('provider', ['NOT_CONFIGURED', 'CONFIGURED_UNVERIFIED'])
+def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_path, monkeypatch, provider):
     monkeypatch.setenv('QUANTOS_STATE_ROOT', str(tmp_path))
     root = tmp_path / 'data/cache'; out = root / 'ai_factory'
     (root / 'perpetual_alpha/input').mkdir(parents=True)
@@ -26,7 +27,8 @@ def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_
     monkeypatch.setattr(module, 'load_verified_minutes', lambda d: (None, None))
     monkeypatch.setattr(module, 'hourly_panel', lambda a: (t, x, y))
     monkeypatch.setattr(module, 'load_data', lambda **k: (market, None))
-    monkeypatch.setattr(module, 'provider_status', lambda: {'status': 'NOT_CONFIGURED'})
+    monkeypatch.setattr(module, 'provider_status', lambda: {'status': provider})
+    monkeypatch.setattr(module, 'propose', lambda *args: pytest.fail('baseline mode must not contact a language model'))
     result = module.run_comparison({'attempt': 1})
     assert len(result['rows']) == 6
     assert all(r['status'] == 'COMPLETED' and len(r['trials']) == 3 for r in result['rows'])

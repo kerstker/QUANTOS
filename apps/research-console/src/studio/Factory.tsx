@@ -39,7 +39,7 @@ export function Factory() {
  <div className="f-fields"><label>任务编号<input type="number" min={1} max={1000} value={attempt} onChange={e=>{assigned.current=true;setAttempt(Number(e.target.value));}} required/></label><label>实验预算<select value={budget} onChange={e=>setBudget(Number(e.target.value))}>{[3,6,9,12,18].map(n=><option key={n} value={n}>{n} 次实验</option>)}</select></label></div>
  <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="baseline">基线研究 · 无需语言模型</option><option value="ai" disabled={data?.provider.status!=='CONFIGURED_UNVERIFIED'}>AI 编排 · 模型选择下一次实验</option></select></label>
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究执行令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label><p>使用现有研究服务令牌；这里不接收模型或交易所密钥。</p></details>
- <p className="f-muted">实验完成后自动运行固定压力与组合诊断，并启用自然时间预测观察。</p>
+ <p className="f-muted">主研究 {budget} 次，三折过程对照另 {budget*(mode==='ai'?9:6)} 次候选尝试。外层与固定压力诊断单列；完成后启用自然时间预测观察。</p>
  <button className="s-button primary" disabled={busy||!operator.trim()||!token.trim()}>启动研究工厂</button>
  </form></Panel>
  <Panel title="任务历史"><div className="f-history">{data?.sessions.map(s=><button className={s.attempt===session?.attempt?'selected':''} key={s.attempt} onClick={()=>setSelected(s.attempt)}><span>#{s.attempt} · {s.config.mode==='ai'?'AI 编排':'基线研究'}</span><Badge value={s.state}/><small>{s.config.objective}</small></button>)}{!data?.sessions.length&&<p>尚无研究任务。创建后，记录将在此持续保留。</p>}</div></Panel>
