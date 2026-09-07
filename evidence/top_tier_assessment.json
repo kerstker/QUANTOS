@@ -57,7 +57,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M0",
       "domain": "reliability_operations",
       "passed": 0,
       "red_lines_failed": 1,
@@ -642,6 +642,12 @@
         "expected_source_contract": {
           "sources": [
             {
+              "relative_path": "data/cache/ai_factory_checkpoint.zip",
+              "required": false,
+              "role": "ai_factory_verified_checkpoint",
+              "snapshot_policy": "STANDARD"
+            },
+            {
               "relative_path": "data/cache/alpha_maintenance.db",
               "required": false,
               "role": "alpha_maintenance",
@@ -864,7 +870,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 15
+          "version": 16
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -884,23 +890,11 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M0",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
+      "detail": "invalid expected source contract: source contract version must be an integer from 2 through 15",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "tools/l2_scheduler_watchdog.py",
-        "tools/external_heartbeat.py",
-        "tools/domain_event_seal.py",
-        "tools/restore_drill.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/tools/test_l2_scheduler_watchdog.py",
-        "tests/tools/test_external_heartbeat.py",
-        "tests/tools/test_domain_event_seal.py",
-        "tests/governance/test_l2_operations_boundary.py",
-        "evidence/l2_backup_latest.json"
-      ],
+      "evidence": [],
       "id": "OPS.BACKUP.ENCRYPTED",
       "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
@@ -912,7 +906,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "UNVERIFIED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -924,6 +918,12 @@
         "clean_lookback_ms": 2592000000,
         "expected_source_contract": {
           "sources": [
+            {
+              "relative_path": "data/cache/ai_factory_checkpoint.zip",
+              "required": false,
+              "role": "ai_factory_verified_checkpoint",
+              "snapshot_policy": "STANDARD"
+            },
             {
               "relative_path": "data/cache/alpha_maintenance.db",
               "required": false,
@@ -1147,7 +1147,7 @@
               "snapshot_policy": "STANDARD"
             }
           ],
-          "version": 15
+          "version": 16
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -1173,20 +1173,11 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
+      "detail": "restore-history checker arguments are incomplete",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "services/governance/l2_restore_history.py",
-        "services/governance/l2_restore_checkpoint.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/governance/test_l2_restore_history.py",
-        "tests/governance/test_l2_restore_checkpoint.py",
-        "tests/governance/test_l2_restore_top_tier.py",
-        "data/cache/l2_restore_history.db"
-      ],
+      "evidence": [],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -1198,7 +1189,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "UNVERIFIED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1858,19 +1849,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 2,
+    "failed": 1,
     "manual_evidence_required": 0,
-    "partial": 7,
+    "partial": 6,
     "passed": 13,
     "red_lines_failed": 4,
     "total": 22,
-    "unverified": 0
+    "unverified": 2
   },
   "validation": {
     "current": true,
-    "generated_at": 1788786141173,
-    "run_id": "a9726081d37d4d8ff55edb205c118ab70da9b307ad5e80219ea2b810c9fc57dc",
-    "source_commit": "7436acd8f3017b5af4f6801a7fefa3a60ff92534"
+    "generated_at": 1788806037264,
+    "run_id": "8d5e8aec6c3fee4f2c7034da4104a6b85fe7ab09eab10b818f9c23d436c38719",
+    "source_commit": "2dee4e95ae29d6fb7661626822ac48a543818dc8"
   },
   "verdict": "NOT_TOP_TIER"
 }
