@@ -8,5 +8,7 @@ export async function installStudioApi(page:Page){
  await page.route('**/api/v1/console/research-runs',route=>route.fulfill({json:{...snapshot,registry_available:true,runs:[run]}}));
  await page.route('**/api/v1/console/research-run?*',route=>route.fulfill({json:{...snapshot,run}}));
  await page.route('**/api/v1/console/technical-replay?*',route=>route.fulfill({json:{...snapshot,snapshot_status:'REAL',technical_replay:{run_id:run.run_id,metrics:{result_hash:'a'.repeat(64)},params:{attempt:1},series:{},caveats:[],factory_report:factory}}}));
+ await page.route('**/api/v1/console/forward-dashboard',route=>route.fulfill({json:{...snapshot,as_of_ms:1788768060000,observations:[],schedule:null,errors:[]}}));
+ await page.route('**/api/v1/console/market-dashboard?*',route=>route.fulfill({json:{...snapshot,symbol:'BTCUSDT',symbols:['BTCUSDT','BTCUSDC'],as_of_ms:1788768060000,observed_at_ms:1788768060000,status:'AVAILABLE',candles:[{time:1788767940000,open:100,high:104,low:99,close:102,volume:12},{time:1788768000000,open:102,high:105,low:100,close:103,volume:15}],samples:[{time:1788768060000,mark:103,index:104,funding_rate:0.0001}],depth:{bids:[[102,2],[101,3]],asks:[[104,3],[105,4]]}}}));
  await page.route('**/api/v1/console/system-completeness',route=>route.fulfill({json:{...snapshot,status:'NOT_TOP_TIER',checks:[{name:'source evidence',status:'UNAVAILABLE'}]}}));
 }

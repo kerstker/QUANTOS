@@ -60,6 +60,8 @@ def _unlock_fd(fd: int) -> None:
 @contextmanager
 def acquire_runtime_lock(
     path: str | Path = DEFAULT_RUNTIME_LOCK,
+    *,
+    process_lock: threading.Lock | None = None,
 ) -> Iterator[bool]:
     """Attempt one non-blocking lock acquisition and yield its result.
 
@@ -69,7 +71,9 @@ def acquire_runtime_lock(
     arbitrates the systemd service and the localhost research runner.
     """
 
-    if not _IN_PROCESS_LOCK.acquire(blocking=False):
+    # Distinct orchestration scopes may nest; the OS lock always guards the file.
+    mutex = _IN_PROCESS_LOCK if process_lock is None else process_lock
+    if not mutex.acquire(blocking=False):
         yield False
         return
 
@@ -99,7 +103,7 @@ def acquire_runtime_lock(
         finally:
             if fd is not None:
                 os.close(fd)
-            _IN_PROCESS_LOCK.release()
+            mutex.release()
 
 
 __all__ = [

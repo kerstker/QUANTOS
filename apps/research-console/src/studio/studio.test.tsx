@@ -6,6 +6,8 @@ vi.mock('@/lib/api/research-console-api', () => ({
   fetchResearchRuns: vi.fn().mockResolvedValue({ source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, registry_available: true, runs: [] }),
   fetchResearchRun: vi.fn().mockResolvedValue({ run: null }),
   fetchTechnicalReplay: vi.fn().mockResolvedValue({ technical_replay: null }),
+  fetchForwardDashboard: vi.fn().mockResolvedValue({observations:[],schedule:null,errors:[]}),
+  fetchMarketDashboard: vi.fn().mockResolvedValue({candles:[],samples:[],symbols:['BTCUSDT'],status:'UNAVAILABLE'}),
   fetchConsoleModuleSnapshot: vi.fn().mockRejectedValue(new Error('offline')),
 }));
 vi.mock('@/lib/api/research-runner-api', () => ({
@@ -13,13 +15,13 @@ vi.mock('@/lib/api/research-runner-api', () => ({
   getOperator: () => 'researcher', getRunnerToken: () => '', setOperator: vi.fn(), setRunnerToken: vi.fn(), triggerRun: vi.fn(), cancelRun: vi.fn(),
 }));
 describe('Research Studio', () => {
-  it('opens a research workspace with explicit empty records and five clear destinations', async () => {
+  it('opens a research workspace with explicit empty records and nine connected destinations', async () => {
     render(<MemoryRouter>
       <Studio />
     </MemoryRouter>);
     expect(screen.getByRole('heading', { name: '研究工作台' })).toBeInTheDocument();
     expect(await screen.findByText('还没有研究运行')).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: '主导航' }).querySelectorAll('a')).toHaveLength(5);
+    expect(screen.getByRole('navigation', { name: '主导航' }).querySelectorAll('a')).toHaveLength(9);
     expect(screen.getByText('研究模式')).toHaveAttribute('title', 'L2_DRY_RUN_ONLY');
   });
   it('shows an actual missing run instead of an empty result chart', async () => {

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from '@/lib/router';
-import { fetchResearchRun, fetchTechnicalReplay } from '@/lib/api/research-console-api';
+import { fetchResearchRun, fetchTechnicalReplay, fetchForwardDashboard } from '@/lib/api/research-console-api';
 import { cancelRun, getOperator, getRunnerToken, setOperator, setRunnerToken, triggerRun, type RunnerHealth } from '@/lib/api/research-runner-api';
 import type { ResearchRunSummary, BtcFactoryReport, BtcForwardReport, TechnicalReplayPayload } from '@/lib/types/research';
 import { Badge, Empty, ErrorNote, Header, Icon, Loading, Metric, Panel, SparkChart } from './components';
@@ -448,6 +448,7 @@ export function Detail({ id }: {
       </div>
       <Link className="s-button" to={`/studio/new?kind=${run.kind}`}>创建后续任务</Link>
     </div>}
+    {technical?.factory_report && <Link className="s-button" to={`/studio/analysis?run=${encodeURIComponent(id)}`}>打开策略分析与图表 →</Link>}
     {technical?.factory_report ? <FactoryReport report={technical.factory_report} /> : technical?.forward_report ? <ForwardReport report={technical.forward_report} /> : technical ? <TechnicalMetrics data={technical} /> : <Empty title={['queued', 'running'].includes(run.status) ? '任务正在推进' : '没有可展示的技术结果'}>{['queued', 'running'].includes(run.status) ? '运行结束后会自动显示结果。' : '此记录仅保留运行身份；不会复用已失效的历史收益。'}</Empty>}
     <details className="s-evidence">
       <summary>运行参数、日志与证据</summary>
@@ -486,17 +487,23 @@ function TechnicalMetrics({ data }: {
       </div>
     </details>)}</Panel>;
 }
-export function Forward({ runs }: {
-  runs: RunsState;
-}) {
-  const latest = runs.rows.find(r => r.kind === 'btc_forward' && r.status === 'done');
-  const result = useResource(`forward:${latest?.run_id}`, signal => latest ? fetchTechnicalReplay(latest.run_id, signal) : Promise.resolve(null), 15000);
+export function Forward({ runs }: { runs: RunsState }) {
+  const [attempt,setAttempt]=useState('');
+  const latest=runs.rows.find(r=>r.kind==='btc_forward'&&r.status==='done');
+  const current=useResource('forward-dashboard',fetchForwardDashboard,15000);
+  const retained=useResource(`forward:${latest?.run_id}`,signal=>latest?fetchTechnicalReplay(latest.run_id,signal):Promise.resolve(null),15000);
+  const observations=current.error?[]:current.data?.observations??[];
+  const selected=observations.find(r=>String(r.attempt)===attempt)??observations[0];
+  const report=selected??retained.data?.technical_replay?.forward_report;
+  const schedule=current.error?null:current.data?.schedule;
   return <>
-    <Header eyebrow="RESEARCH / FORWARD LAB" title="前向观察" action={<Link className="s-button primary" to={`/studio/new?kind=btc_forward&attempt=${String(result.data?.technical_replay?.forward_report?.attempt??latest?.params.attempt??1)}&action=2`}>
-      <Icon name="plus" />推进观察</Link>}>保留当时的预测，等待真实时间给出答案。</Header>
-    <ErrorNote error={runs.error ?? result.error} retry={() => { runs.refresh(); result.refresh(); }} />{result.loading && !result.data ? <Loading /> : result.data?.technical_replay?.forward_report ? <>
-      <ForwardReport report={result.data.technical_replay.forward_report} />
-      <Link className="s-text-link" to={`/research/runs/${latest?.run_id}`}>查看本次观察记录 <Icon name="arrow" />
-      </Link>
-    </> : <Empty title="还没有前向观察记录" action={<Link className="s-button" to="/studio/new?kind=btc_forward">开始冻结模型</Link>}>先完成工厂回放，再使用相同实验编号冻结对照模型。</Empty>}</>;
+    <Header eyebrow="RESEARCH / FORWARD LAB" title="前向观察" action={<Link className="s-button primary" to={`/studio/new?kind=btc_forward&attempt=${String(report?.attempt??latest?.params.attempt??1)}&action=2`}><Icon name="plus"/>推进观察</Link>}>保留当时的预测，等待真实时间给出答案。</Header>
+    <ErrorNote error={current.error??runs.error??retained.error} retry={()=>{current.refresh();runs.refresh();retained.refresh();}}/>
+    <Panel title="持续观察调度" note="每2分钟检查已冻结实验；错过的预测不回填。" action={<Badge value={schedule?(schedule.fresh?schedule.status:'STALE'):'UNAVAILABLE'}/>}>
+      <div className="s-analysis-controls"><span>{schedule?'最近检查 '+stamp(schedule.observed_at_ms,true):'尚未收到调度运行回执'}</span>{observations.length>0&&<label>观察实验<select aria-label="观察实验" value={selected?.attempt??''} onChange={e=>setAttempt(e.target.value)}>{observations.map(r=><option key={r.attempt} value={r.attempt}>实验 {r.attempt} · {statusLabel(r.status)}</option>)}</select></label>}</div>
+      {schedule?.attempts.filter(r=>r.error).map(r=><p className="s-error" key={r.attempt}>实验 {r.attempt}：{r.error}</p>)}
+      {current.data?.errors.map((e,i)=><p className="s-error" key={i}>观察材料无法验证：{e.attempt??'调度'} · {e.reason}</p>)}
+    </Panel>
+    {current.loading&&!current.data&&retained.loading?<Loading/>:report?<><p className="s-inline-note">{selected?'当前观察材料':'最近手动运行快照'} · {stamp(report.observed_at_ms,true)}</p><ForwardReport report={report}/>{latest&&<Link className="s-text-link" to={`/research/runs/${latest.run_id}`}>查看最近手动观察记录 <Icon name="arrow"/></Link>}</>:<Empty title="还没有前向观察记录" action={<Link className="s-button" to="/studio/new?kind=btc_forward">开始冻结模型</Link>}>先完成工厂回放，再使用相同实验编号冻结对照模型。</Empty>}
+  </>;
 }

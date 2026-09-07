@@ -138,6 +138,7 @@ class TaskSnapshot:
 
 
 _EXPECTED_TASK_SPECS: dict[str, tuple[int, frozenset[int]]] = {
+    "btc_observation_schedule": (35 * 60_000, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})),
     "artifact_admission_seal": (2 * _DAY_MS, frozenset({2})),
     "ashare_alpha_search_worker": (
         9 * _DAY_MS,

@@ -296,6 +296,13 @@ export function fetchResearchRun(runId: string, signal?: AbortSignal) {
     '/api/v1/console/research-run?run_id=' + encodeURIComponent(runId), signal);
 }
 
+export function fetchMarketDashboard(symbol: string, signal?: AbortSignal) {
+  return fetchConsoleJson<import('../types/research').MarketDashboardPayload>(`/api/v1/console/market-dashboard?symbol=${encodeURIComponent(symbol)}`, signal);
+}
+export function fetchForwardDashboard(signal?: AbortSignal) {
+  return fetchConsoleJson<import('../types/research').ForwardDashboardPayload>('/api/v1/console/forward-dashboard', signal);
+}
+
 export function fetchTechnicalReplay(runId: string, signal?: AbortSignal) {
   return fetchConsoleJson<TechnicalReplayPayload>(
     '/api/v1/console/technical-replay?run_id=' + encodeURIComponent(runId), signal);

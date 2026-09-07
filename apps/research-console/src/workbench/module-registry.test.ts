@@ -8,7 +8,7 @@ import {
 
 describe('console module registry', () => {
   it('registers each fixed read-only endpoint exactly once', () => {
-    expect(CONSOLE_MODULES).toHaveLength(56);
+    expect(CONSOLE_MODULES).toHaveLength(58);
     expect(new Set(CONSOLE_MODULE_PATHS).size).toBe(CONSOLE_MODULE_PATHS.length);
     expect(CONSOLE_MODULE_PATHS.every(path => path.startsWith('/api/v1/console/'))).toBe(true);
   });

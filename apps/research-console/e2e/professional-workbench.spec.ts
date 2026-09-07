@@ -364,14 +364,14 @@ async function installReadOnlyApi(page: Page, options: ApiOptions = {}) {
   }
 }
 
-test('five studio destinations and keyboard search stay on research surfaces',async({page})=>{
+test('nine studio destinations and keyboard search stay on research surfaces',async({page})=>{
  await installReadOnlyApi(page);
- for(const [path,heading] of [['/','研究工作台'],['/research/runs','实验运行'],['/studio/forward','前向观察'],['/studio/modules','数据与模块'],['/studio/system','系统状态']]){
+ for(const [path,heading] of [['/','研究工作台'],['/research/runs','实验运行'],['/studio/forward','前向观察'],['/studio/modules','数据与模块'],['/studio/system','系统状态'],['/studio/market','行情终端'],['/studio/analysis','研究分析'],['/studio/models','模型诊断'],['/studio/operations','运行监控']]){
   await page.goto(path);await expect(page.getByRole('heading',{name:heading,level:1,exact:true})).toBeVisible();
   await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
  }
  await page.keyboard.press('Control+k');await expect(page.getByLabel('全局搜索运行')).toBeFocused();
- await expect(page.getByRole('navigation',{name:'主导航'}).getByRole('link')).toHaveCount(5);
+ await expect(page.getByRole('navigation',{name:'主导航'}).getByRole('link')).toHaveCount(9);
  await expect(page.getByRole('button',{name:'生成服务端影响预览'})).toHaveCount(0);
 });
 

@@ -237,6 +237,11 @@
           "path": "services/console/api/data_catalog.py"
         },
         {
+          "line": 10,
+          "module": "services.data.binance_realtime_store",
+          "path": "services/console/api/market_dashboard.py"
+        },
+        {
           "line": 21,
           "module": "services.data.distribution_drift",
           "path": "services/console/api/monitoring_views.py"
@@ -313,6 +318,11 @@
           "line": 16,
           "module": "services.governance.top_tier_assessment",
           "path": "services/console/api/architecture_views.py"
+        },
+        {
+          "line": 9,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/forward_dashboard.py"
         },
         {
           "line": 47,
@@ -1534,7 +1544,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "2f85dd0a92e00775fa091bf96013839e9f0fd6eec89a512fe87d69527d38424c",
+  "graph_sha256": "1fc484bb4b44c9a52d9209b97bcbf3cdfec2c34b6aff6b55e1d38b886db3d832",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1572,7 +1582,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 508,
+  "source_file_count": 510,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -21,6 +21,8 @@ export interface ConsoleModuleDefinition {
  * from their owning page because they require a concrete object identity.
  */
 export const CONSOLE_MODULES: readonly ConsoleModuleDefinition[] = [
+  { id: 'forward-dashboard', label: '持续前向观察', group: 'ALPHA', endpoint: '/api/v1/console/forward-dashboard' },
+  { id: 'market-dashboard', label: '公开行情图表', group: 'DATA', endpoint: '/api/v1/console/market-dashboard' },
   { id: 'data-catalog', label: '数据目录 / PIT 数据', group: 'DATA', endpoint: '/api/v1/console/data-catalog' },
   { id: 'crypto-live', label: '加密公开市场', group: 'DATA', endpoint: '/api/v1/console/crypto-live' },
   { id: 'mexc-market', label: 'MEXC 市场', group: 'DATA', endpoint: '/api/v1/console/mexc-market' },

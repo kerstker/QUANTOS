@@ -102,6 +102,7 @@ CALENDARS: dict[str, tuple[str, str]] = {
 }
 
 INTERVALS: dict[str, tuple[str, str]] = {
+    "btc_observation_schedule": ("*-*-* *:00/2:00 Asia/Shanghai", "30m"),
     "cross_venue_liquidation_health": (
         "*-*-* *:17/30:00 Asia/Shanghai",
         "10m",

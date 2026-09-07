@@ -8,6 +8,7 @@ import { Modules, System } from './Modules';
 import { Empty, Header, Icon, StudioBoundary } from './components';
 import { useResource } from './data';
 import { Compare } from './Compare';
+import {Market,Analysis,Models,Operations} from './Analysis';
 import { NAV, LEGACY } from './routes';
 export default function Studio() {
   const location = useLocation(), nav = useNavigate();
@@ -61,6 +62,14 @@ export default function Studio() {
     page = <Detail id={path.slice('/research/runs/'.length)} />;
   else if (path === '/studio/new')
     page = <Launch key={location.search} health={runner.data} initialKind={new URLSearchParams(location.search).get('kind') ?? ''} initialAttempt={new URLSearchParams(location.search).get('attempt')??'1'} initialAction={new URLSearchParams(location.search).get('action')??'0'} />;
+  else if (path === '/studio/market')
+    page = <Market/>;
+  else if (path === '/studio/analysis')
+    page = <Analysis runs={runs} initialRun={new URLSearchParams(location.search).get('run')??''}/>;
+  else if (path === '/studio/models')
+    page = <Models runs={runs}/>;
+  else if (path === '/studio/operations')
+    page = <Operations runs={runs}/>;
   else if (path === '/studio/compare')
     page = <Compare runs={runs}/>;
   else if (path === '/studio/forward')

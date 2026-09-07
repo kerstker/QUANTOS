@@ -14,6 +14,7 @@ from __future__ import annotations
 
 
 MVP_EXPECTED_TASKS: dict[str, str] = {
+    "QUANTOS_btc_observation_schedule": "btc_observation_schedule",
     "QUANTOS_ashare_alpha_search": "ashare_alpha_search_worker",
     "QUANTOS_ashare_forward_observation": "ashare_forward_observation",
     "QUANTOS_artifact_admission_seal": "artifact_admission_seal",
@@ -113,9 +114,9 @@ def _validate_static_policy() -> None:
         HARD_QUARANTINED_MODULES,
         MVP_DISABLED_MODULES,
     )
-    if tuple(map(len, task_groups)) != (25, 13, 15):
+    if tuple(map(len, task_groups)) != (26, 13, 15):
         raise RuntimeError("L2 schedule policy task cardinality is invalid")
-    if tuple(map(len, groups)) != (25, 13, 15):
+    if tuple(map(len, groups)) != (26, 13, 15):
         raise RuntimeError("L2 schedule policy closed-set cardinality is invalid")
     if frozenset(MVP_EXPECTED_TASKS.values()) != MVP_SAFE_MODULES:
         raise RuntimeError("L2 MVP expected tasks do not equal the safe module set")

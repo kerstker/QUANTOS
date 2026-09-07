@@ -100,6 +100,7 @@ RELEASE_TOKEN = "__QUANTOS_RELEASE_SHA__"
 # admitted A-share jobs.  Conditional external seal/heartbeat workers are not
 # silently enabled: they require separately reviewed endpoints and mounts.
 DEFAULT_WORKER_MODULES = (
+    "btc_observation_schedule",
     "ashare_alpha_search_worker",
     "ashare_forward_observation",
     "binance_book_depth_forward_refresh",

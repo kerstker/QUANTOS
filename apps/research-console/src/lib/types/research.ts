@@ -2302,6 +2302,12 @@ export interface ResearchRunsPayload extends ConsolePayloadBase {
   data_provenance: string;
   runs: ResearchRunSummary[];
 }
+export interface MarketDashboardPayload extends ConsolePayloadBase {
+  symbol: string; symbols: string[]; status: string; as_of_ms: number; observed_at_ms: number | null;
+  candles: Array<{time:number;open:number;high:number;low:number;close:number;volume:number}>;
+  samples: Array<{time:number;mark:number;index:number;funding_rate:number}>;
+  depth: {bids:number[][];asks:number[][]} | null; integrity:string; reason:string;
+}
 export interface ResearchRunDetail {
   run_id: string; kind: string; title: string; params: Record<string, unknown>; status: string;
   created_ts: number; finished_ts: number | null;
@@ -2345,6 +2351,11 @@ export interface BtcForwardReport {
   models: Array<{ model: string; candidate_id: string; frozen_at_ms: number; decisions: number;
     completed: number; pending: number; rmse_bps: number | null; account_pnl_computed: false }>;
   authoritative: false; account_pnl_computed: false;
+}
+export interface ForwardDashboardPayload extends ConsolePayloadBase {
+  as_of_ms:number; observations:BtcForwardReport[];
+  schedule:{status:string;observed_at_ms:number;fresh:boolean;attempts:Array<{attempt:number;status:string;error?:string}>}|null;
+  errors:Array<{attempt:number|null;reason:string}>;
 }
 
 /** btc_mechanism uses {all|2025|2026}_{rmse_bps|r2_vs_price|r2_vs_zero|holm_p}

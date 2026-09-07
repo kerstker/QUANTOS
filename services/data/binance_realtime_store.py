@@ -214,6 +214,26 @@ class BinanceRealtimeStore:
         ).fetchone()
         return None if row is None else self._decode(row)
 
+    def recent_for_instrument(self, instrument_id: str, *, as_of_ms: int, limit: int = 2000) -> list[dict[str, Any]]:
+        """Bounded diagnostic history, decoded with payload hashes; not full-chain authority."""
+        if type(limit) is not int or not 1 <= limit <= 2000 or type(as_of_ms) is not int or as_of_ms < 0:
+            raise ValueError("invalid diagnostic history bounds")
+        rows = self._conn.execute(
+            "SELECT * FROM binance_market_snapshots WHERE instrument_id=? "
+            "AND event_time_ms<=? AND observed_at_ms<=? "
+            "ORDER BY event_time_ms DESC, seq DESC LIMIT ?",
+            (instrument_id, as_of_ms, as_of_ms, limit),
+        ).fetchall()
+        result = []
+        for row in reversed(rows):
+            payload = self._decode(row)
+            identity = self._identity(payload)
+            if identity != (row['instrument_id'], row['observed_at_ms'], row['event_time_ms']):
+                raise BinanceRealtimeStoreError("snapshot row identity mismatch")
+            if int(payload.get('knowledge_time_ms', identity[1])) <= as_of_ms:
+                result.append(payload)
+        return result
+
     def latest_for_provider(
         self,
         instrument_id: str,

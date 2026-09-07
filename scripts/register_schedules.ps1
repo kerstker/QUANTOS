@@ -461,6 +461,11 @@ $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
     -RepetitionInterval (New-TimeSpan -Minutes 5))
 )
+$btcObservationTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 2)
+Register-L2Task -Name "QUANTOS_btc_observation_schedule" -Module "btc_observation_schedule" `
+  -Trigger $btcObservationTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+
 Register-L2Task -Name "QUANTOS_defillama_tvl_forward_refresh" -Module "defillama_tvl_forward_refresh" `
   -Trigger $defillamaTvlForwardRefreshTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_mexc_market_refresh" -Module "mexc_klines_fetch" `
