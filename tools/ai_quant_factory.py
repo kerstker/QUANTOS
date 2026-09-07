@@ -46,6 +46,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
         for ordinal in range(config['budget']):
             existing=store.trials(attempt)
             if ordinal<len(existing):
+                if existing[ordinal]['ordinal']!=ordinal:raise ValueError('trial receipt ordinal gap')
                 current=ledger.load(existing[ordinal]['trial_id'])
                 if current.status=='RUNNING':
                     record={key:getattr(current,key) for key in ('trial_id','alpha_id','family_id','exact_definition_id','validation_policy_digest')}
@@ -61,6 +62,8 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                         exact_definition_id=definition,validation_policy_digest=digest(POLICY))
             previous=_trial(ledger,definition)
             if previous is not None:
+                if previous.status not in ('PLANNED','RUNNING'):
+                    raise ValueError('factory terminal receipt missing')
                 if previous.status=='PLANNED':_event(ledger,record,'RUNNING')
                 if previous.status in ('RUNNING','PLANNED'):_event(ledger,record,'FAILED')
                 store.record_trial(attempt,ordinal,{'ordinal':ordinal,'status':'FAILED','candidate_id':None,

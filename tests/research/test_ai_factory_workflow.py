@@ -35,6 +35,19 @@ def test_pause_and_resume_preserves_trials(tmp_path):
         assert execute(s,1,panel(),evaluate,{},tmp_path)['state']=='COMPLETED'
         assert len(s.trials(1))==3
 
+def test_missing_completed_trial_is_not_rewritten_as_interrupted(tmp_path):
+    def evaluate(spec,t,p):
+        if spec['id']==0:s.control(1,'pause')
+        return {'score':0.,'equity':[]}
+    with FactoryStore(tmp_path/'factory.db') as s:
+        s.create(validate_config({'attempt':1,'mode':'baseline','objective':'BTC','budget':3}))
+        assert execute(s,1,panel(),evaluate,{},tmp_path)['state']=='PAUSED'
+        with s.c:s.c.execute('DELETE FROM trials WHERE attempt=1')
+        s.control(1,'resume')
+        with pytest.raises(ValueError,match='terminal receipt missing'):
+            execute(s,1,panel(),evaluate,{},tmp_path)
+        assert s.trials(1)==[]
+
 def test_identity_drift_refused(tmp_path):
     with FactoryStore(tmp_path/'factory.db') as s:
         s.create(validate_config({'attempt':1,'mode':'baseline','objective':'BTC','budget':3}))
