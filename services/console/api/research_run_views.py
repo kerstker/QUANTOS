@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from typing import Dict
 
 from fastapi import APIRouter, Query
@@ -52,10 +53,32 @@ def _runs_registry():
     return RunRegistry(ResearchRunStore(_RUNS_DB, create=False))
 
 
+def _predictive_identity(run, payload: Dict) -> Dict:
+    """Do not label a verified new prediction experiment as an invalidated V1 backtest."""
+    if run.kind not in ('btc_mechanism', 'btc_factory', 'btc_forward'):
+        return payload
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import validate_run_provenance
+    try:
+        validate_run_provenance(run, RUN_KINDS[run.kind])
+        if run.status == 'done' and _technical_replay_detail(run) is None:
+            return payload
+    except (ValueError, TypeError, KeyError):
+        return payload
+    payload.pop('invalidation_code', None)
+    status = 'EXPLORATORY_PREDICTION_ONLY' if run.kind == 'btc_mechanism' else 'TECHNICAL_VALIDATION_ONLY'
+    payload['evidence_status'] = status
+    payload['verdict'] = (status if run.status == 'done'
+                          else 'RESEARCH_' + run.status.upper())
+    if 'caveats' in payload:
+        payload['caveats'] = ['预测研究，不计算账户净收益。'] if run.kind == 'btc_mechanism' else ['工厂技术回放，仅研究用途。']
+    return payload
+
+
 def _run_summary(r) -> Dict:
     """Project operational identity without legacy economic result fields."""
 
-    return {
+    return _predictive_identity(r, {
         "run_id": r.run_id,
         "kind": r.kind,
         "title": r.title,
@@ -68,13 +91,13 @@ def _run_summary(r) -> Dict:
         "authoritative": False,
         "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
         "invalidation_code": LEGACY_INVALIDATION_CODE,
-    }
+    })
 
 
 def _run_detail(r) -> Dict:
     """Keep queue/audit identity while suppressing retained result content."""
 
-    return {
+    return _predictive_identity(r, {
         "run_id": r.run_id,
         "kind": r.kind,
         "title": r.title,
@@ -93,7 +116,7 @@ def _run_detail(r) -> Dict:
         "authoritative": False,
         "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
         "invalidation_code": LEGACY_INVALIDATION_CODE,
-    }
+    })
 
 
 def _invalidated_envelope(payload: Dict, **identity_fields: object) -> Dict:
@@ -130,7 +153,7 @@ def research_run_detail(run_id: str = Query(...)) -> Dict:
 
 def _technical_replay_detail(run) -> Dict | None:
     """A separate technical projection; no retained V1 result can enter it."""
-    if run is None or run.kind not in ("perpetual_replay", "perpetual_alpha", "orderblock_research") or run.status != "done":
+    if run is None or run.kind not in ("perpetual_replay", "perpetual_alpha", "orderblock_research", "btc_mechanism", "btc_factory", "btc_forward") or run.status != "done":
         return None
     from services.research_runner.run_kinds import RUN_KINDS
     from services.research_runner.runner import validate_run_provenance
@@ -142,7 +165,15 @@ def _technical_replay_detail(run) -> Dict | None:
             return None
     except (ValueError, TypeError, KeyError):
         return None
-    return {"run_id": run.run_id, "metrics": run.metrics, "series": run.series,
+    extra = {}
+    if run.kind in ('btc_factory', 'btc_forward'):
+        field = 'factory_report' if run.kind == 'btc_factory' else 'forward_report'
+        try:
+            extra[field] = json.loads(run.metrics[field + '_json'])
+        except (KeyError, TypeError, ValueError):
+            return None
+    return {**extra, "run_id": run.run_id,
+            "metrics": {k:v for k,v in run.metrics.items() if k not in ('factory_report_json', 'forward_report_json')}, "series": run.series,
             "caveats": run.caveats, "params": run.params,
             "evidence_status": "TECHNICAL_VALIDATION_ONLY", "authoritative": False}
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MemoryRouter } from '@/lib/router';
 import { ToastProvider } from '@/ui/toast';
+import { triggerRun } from '@/lib/api/research-runner-api';
 import ResearchRuns from '../ResearchRuns';
 
 const harness = vi.hoisted(() => ({
@@ -88,6 +89,37 @@ describe('ResearchRuns polling', () => {
     expect(harness.snapshotCalls.mock.calls.length).toBeGreaterThan(callsBeforeTick);
     const lastCall = harness.snapshotCalls.mock.calls[harness.snapshotCalls.mock.calls.length - 1];
     expect(lastCall[0]).toEqual([1]);
+  });
+
+  it.each(['btc_mechanism', 'perpetual_alpha', 'orderblock_research', 'btc_factory'])('submits the explicit attempt for %s', async kind => {
+    harness.runnerEnabled = true;
+    harness.healthMock.mockResolvedValue({ mode: 'L2_DRY_RUN_ONLY', live_disallowed: true, kinds: [kind] });
+    vi.mocked(triggerRun).mockResolvedValue({ run_id: 'new-run', kind: 'btc_mechanism', status: 'queued' });
+    renderPage();
+    const button = await screen.findByRole('button', { name: new RegExp(kind) });
+    fireEvent.change(screen.getByLabelText(/Runner token/), { target: { value: 'test-only' } });
+    fireEvent.change(screen.getByLabelText(/实验编号/), { target: { value: '0' } });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/实验编号/), { target: { value: '7' } });
+    fireEvent.click(button);
+    expect(triggerRun).toHaveBeenLastCalledWith(kind, { attempt: 7 });
+  });
+
+  it('sends explicit resume and forward operations', async () => {
+    harness.runnerEnabled = true;
+    harness.healthMock.mockResolvedValue({ mode: 'RESEARCH_RUNNER', live_disallowed: true, kinds: ['btc_factory', 'btc_forward'] });
+    vi.mocked(triggerRun).mockResolvedValue({ run_id: 'new-run', kind: 'btc_factory', status: 'queued' });
+    renderPage();
+    const factory = await screen.findByRole('button', { name: /btc_factory/ });
+    fireEvent.change(screen.getByLabelText(/Runner token/), { target: { value: 'test-only' } });
+    fireEvent.click(screen.getByLabelText(/恢复同编号/));
+    fireEvent.click(factory);
+    expect(triggerRun).toHaveBeenLastCalledWith('btc_factory', { attempt: 1, resume: true });
+    const forward = await screen.findByRole('button', { name: /btc_forward/ });
+    fireEvent.change(screen.getByLabelText('前向操作'), { target: { value: '1' } });
+    await act(async () => {});
+    fireEvent.click(forward);
+    expect(triggerRun).toHaveBeenLastCalledWith('btc_forward', { attempt: 1, action: 1 });
   });
 
   it('shows UNAVAILABLE when the fail-closed health client rejects a malformed body', async () => {

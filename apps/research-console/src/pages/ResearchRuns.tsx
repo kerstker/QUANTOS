@@ -17,6 +17,8 @@ import { PageShell } from '@/ui/primitives';
 import { useToast } from '@/ui/toast';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 
+const ATTEMPT_KINDS = new Set(['btc_mechanism', 'perpetual_alpha', 'orderblock_research', 'btc_factory', 'btc_forward']);
+
 const PARAM_DEFAULTS: Readonly<Record<string, Record<string, unknown>>> = {
   data_refresh: { intraday: false },
 };
@@ -38,6 +40,11 @@ function statusTone(status: string): string {
 }
 
 export default function ResearchRuns() {
+  const [attempt, setAttempt] = useState('1');
+  const [resumeFactory, setResumeFactory] = useState(false);
+  const [forwardAction, setForwardAction] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const validAttempt = Number.isInteger(Number(attempt)) && Number(attempt) >= 1 && Number(attempt) <= 1000;
   const [reload, setReload] = useState(0);
   const [query, setQuery] = useState('');
   const [operatorTag, setOperatorTag] = useState(getOperator());
@@ -93,12 +100,19 @@ export default function ResearchRuns() {
   }, [active]);
 
   async function run(kind: string) {
+    if (submitting || (ATTEMPT_KINDS.has(kind) && !validAttempt)) return;
+    setSubmitting(true);
     try {
-      const result = await triggerRun(kind, PARAM_DEFAULTS[kind] ?? {});
+      const params: Record<string, unknown> = ATTEMPT_KINDS.has(kind) ? { attempt: Number(attempt) } : { ...PARAM_DEFAULTS[kind] };
+      if (kind === 'btc_factory' && resumeFactory) params.resume = true;
+      if (kind === 'btc_forward') params.action = forwardAction;
+      const result = await triggerRun(kind, params);
       toast.success(`研究任务已排队：${result.kind} · ${result.run_id}`);
       setReload(value => value + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -110,10 +124,9 @@ export default function ResearchRuns() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Guarded research runner</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">研究运行与受控触发</h1>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink">研究实验工作台</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            8400 只读运行登记与 8420 研究 runner 分离。这里只允许后端白名单中的搜索、回测和数据任务；
-            不接券商、不触碰凭证、不提交订单。
+            发起实验，跟踪进度，对比基线与机制增量。每次运行保留独立编号和数据版本，失败结果也会留存。
           </p>
         </div>
         <div className={`rounded border px-3 py-2 font-mono text-xs font-semibold ${
@@ -172,6 +185,23 @@ export default function ResearchRuns() {
             </label>
           </div>
 
+          {kinds.some(kind => ATTEMPT_KINDS.has(kind)) && <div className="rounded-lg border border-line bg-inset p-3">
+            <label className="text-xs text-ink">实验编号（1–1000）
+              <input type="number" min="1" max="1000" step="1" value={attempt}
+                onChange={event => setAttempt(event.target.value)}
+                className="ml-3 w-24 rounded border border-line bg-panel px-2 py-1" />
+            </label>
+            <p className="mt-2 text-xs text-muted">机制、工厂、永续和订单块实验使用此编号；前向观察填写来源工厂的实验编号。重跑使用新编号，重跑不增加独立样本。</p>
+            {kinds.includes('btc_factory') && <label className="mt-3 flex items-center gap-2 text-xs text-ink">
+              <input type="checkbox" checked={resumeFactory} onChange={event => setResumeFactory(event.target.checked)} />恢复同编号工厂实验（保留已完成和失败情景）
+            </label>}
+            {kinds.includes('btc_forward') && <label className="mt-3 block text-xs text-ink">前向操作
+              <select className="ml-3 rounded border border-line bg-panel p-2" value={forwardAction} onChange={event => setForwardAction(Number(event.target.value))}>
+                <option value={0}>查看冻结状态</option><option value={1}>冻结四模型版本</option><option value={2}>采集公开数据并推进观察</option>
+              </select>
+            </label>}
+            {!validAttempt && <p role="alert" className="mt-2 text-xs text-neg">请输入 1–1000 的整数。</p>}
+          </div>}
           <div className="flex flex-wrap gap-2">
             {kinds.map(kind => {
               const policy = runner.health?.kind_policies?.[kind];
@@ -180,12 +210,12 @@ export default function ResearchRuns() {
                   key={kind}
                   type="button"
                   onClick={() => run(kind)}
-                  disabled={!canTrigger}
+                  disabled={!canTrigger || submitting || (ATTEMPT_KINDS.has(kind) && !validAttempt)}
                   title={policy ? `${policy.purpose} · ${policy.evidence_authority ?? 'NO_SELECTION_AUTHORITY'}` : kind}
                   className="rounded-md border border-accent/45 px-3 py-2 text-left text-xs text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:border-line disabled:text-faint"
                 >
                   <span className="block font-mono font-semibold">▷ {kind}</span>
-                  <span className="mt-1 block text-[9px] opacity-75">{policy?.purpose ?? 'RESEARCH_ONLY'}</span>
+                  <span className="mt-1 block text-[9px] opacity-75">{kind === 'btc_mechanism' ? '价格基线与机制信息增量' : kind === 'btc_factory' ? '月度选择、连续账本与48成本/风险情景' : kind === 'btc_forward' ? '冻结版本，记录新预测与成熟标签' : policy?.purpose ?? 'RESEARCH_ONLY'}</span>
                 </button>
               );
             })}

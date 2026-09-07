@@ -288,7 +288,7 @@
           "path": "services/console/api/mexc_views.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.execution.backtest_authority",
           "path": "services/console/api/research_run_views.py"
         }
@@ -494,12 +494,12 @@
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 47,
+          "line": 48,
           "module": "services.research.run_registry.store",
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 48,
+          "line": 49,
           "module": "services.research.run_registry.registry",
           "path": "services/console/api/research_run_views.py"
         }
@@ -510,12 +510,22 @@
     {
       "references": [
         {
-          "line": 135,
+          "line": 60,
           "module": "services.research_runner.run_kinds",
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 136,
+          "line": 61,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 158,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 159,
           "module": "services.research_runner.runner",
           "path": "services/console/api/research_run_views.py"
         }
@@ -1524,7 +1534,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "90694e876452384b7224fe9a17a8f9a1164390bc61b19bce058c1d6501f8b7c4",
+  "graph_sha256": "ea8f26ce96d5466d45c90a60d0d2de6f86cbc682106c552d97e5a96278970426",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1562,7 +1572,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 506,
+  "source_file_count": 508,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

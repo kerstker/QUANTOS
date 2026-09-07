@@ -31,9 +31,10 @@ def digest(value):
     return hashlib.sha256(value if isinstance(value,bytes) else json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
 
-def load_data(*,include_intrabar=False):
+def load_data(*,include_intrabar=False,directory=None):
+    directory = INPUT if directory is None else Path(directory)
     start=timestamp('2025-01-01')+5*MINUTE;end=timestamp('2026-08-01')+5*MINUTE
-    _,funding,funding_capture=load_capture(INPUT/'funding-capture.json')
+    _,funding,funding_capture=load_capture(directory/'funding-capture.json')
     settlement=8*3600000
     if (not funding or funding_capture['end_ms']<end
             or funding[0]['time']//settlement>(start-14*DAY)//settlement
@@ -42,7 +43,7 @@ def load_data(*,include_intrabar=False):
     manifests={};arrays={}
     for kind in ('klines','markPriceKlines'):
         pieces=[];records=[]
-        for path in sorted((INPUT/kind).glob('BTCUSDC-1m-*.zip')):
+        for path in sorted((directory/kind).glob('BTCUSDC-1m-*.zip')):
             if path.is_symlink():raise ValueError('symlink input forbidden')
             raw=path.read_bytes();meta=json.loads(path.with_suffix('.zip.json').read_text())
             expected=f'https://data.binance.vision/data/futures/um/'
@@ -77,7 +78,7 @@ def load_data(*,include_intrabar=False):
     for f in funding:
         i=int(np.searchsorted(days,f['time']//DAY*DAY))
         if i<len(days) and days[i]==f['time']//DAY*DAY:funding_factor[i]+=float(f['rate'])
-    rules_raw=(INPUT/'exchange-info.json').read_bytes()
+    rules_raw=(directory/'exchange-info.json').read_bytes()
     rules=next(r for r in json.loads(rules_raw)['symbols'] if r['symbol']=='BTCUSDC')
     filters={f['filterType']:f for f in rules['filters']}
     if (rules['contractType']!='PERPETUAL' or rules['marginAsset']!='USDC' or rules['quoteAsset']!='USDC'
@@ -90,7 +91,7 @@ def load_data(*,include_intrabar=False):
     if set(filters)-allowed or filters.get('POSITION_RISK_CONTROL',{}).get('positionControlSide')!='NONE':
         raise ValueError('unsupported filter/position control')
     provenance={'archives':manifests,'rules_sha256':digest(rules_raw),
-                'funding_capture_sha256':digest((INPUT/'funding-capture.json').read_bytes()),
+                'funding_capture_sha256':digest((directory/'funding-capture.json').read_bytes()),
                 'unmatched_trade_minutes':len(trade)-len(times),'unmatched_mark_minutes':len(mark)-len(times),
                 'incomplete_signal_days':int(np.isnan(daily[:,0]).sum()),'aligned_minutes':len(times)}
     market=dict(times=times,prices=trade[trade_ids,1],marks=mark[mark_ids,1],funding=funding,start=start,end=end,

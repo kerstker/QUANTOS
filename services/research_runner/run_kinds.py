@@ -471,9 +471,89 @@ def _adapt_perpetual_alpha(result: dict, *, source='tools/perpetual_alpha_resear
             'provenance':source}
 
 
+def _adapt_btc_mechanism(result: dict) -> dict:
+    import hashlib
+    if (result.get('schema') != 'QUANTOS_BTC_MECHANISM_V1'
+            or result.get('authoritative') is not False
+            or result.get('account_pnl_computed') is not False
+            or result.get('trial_ledger_verified') is not True
+            or result['identity'].get('status') != 'EXPLORATORY_PREDICTION_ONLY'):
+        raise ValueError('invalid predictive research result')
+    payload = {k: v for k, v in result.items() if k != 'result_hash'}
+    expected = hashlib.sha256(json.dumps(payload, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    if result.get('result_hash') != expected:
+        raise ValueError('predictive research result hash mismatch')
+    series = {}
+    for window in ('all', '2025', '2026'):
+        for metric in ('rmse_bps', 'r2_vs_price', 'r2_vs_zero', 'holm_p'):
+            series[f'{window}_{metric}'] = [
+                {'label': name, 'value': row[metric]}
+                for name, row in result['results'][window].items() if row.get(metric) is not None]
+    return {'title': 'BTC 机制实验 · 价格 / 成交方向 / 资金费',
+        'verdict': 'TECHNICAL_VALIDATION_ONLY', 'series': series,
+        'metrics': {'result_hash': result['result_hash'], 'trial_count': len(result['trial_ids']),
+            'evaluation': 'EXPLORATORY_PREDICTION_ONLY', 'account_pnl_computed': 'false',
+            'sample_count': result['results']['all']['PRICE']['n'],
+            'input_hash': result['identity']['input_snapshot_sha256'],
+            'spec_hash': result['identity']['spec_sha256'],
+            'predictions_sha256': result['predictions_sha256'],
+            'source_identity': json.dumps(result['identity']['source'], sort_keys=True)},
+        'caveats': ['已查看历史，仅评估 24 小时收益预测误差；未计算账户净收益。',
+            '每月重拟合，只使用决策时已成熟标签；四个冻结模型、三项增量比较。',
+            '历史接收时间 UNKNOWN；OI 和基差未纳入。',
+            'Holm 校正仅覆盖本批三项比较；重跑不是独立证据。'],
+        'provenance': 'tools/btc_mechanism_study.py'}
+
+
+def _adapt_btc_factory(result: dict) -> dict:
+    import hashlib
+    if (result.get('schema') != 'QUANTOS_BTC_FACTORY_REPLAY_V1'
+            or result.get('status') != 'TECHNICAL_VALIDATION_ONLY'
+            or result.get('authoritative') is not False or result.get('live_eligible') is not False
+            or result.get('trial_ledger_verified') is not True or len(result['cases']) != 48):
+        raise ValueError('invalid factory replay result')
+    expected = hashlib.sha256(json.dumps({k:v for k,v in result.items() if k!='result_hash'},
+                                       sort_keys=True,allow_nan=False).encode()).hexdigest()
+    if result.get('result_hash') != expected:raise ValueError('factory result hash mismatch')
+    for case in result['cases']:
+        if case['status'] == 'PASSED' and case['metrics']['reconciliation_residual'] != '0':
+            raise ValueError('factory reconciliation failed')
+    report = {'cases': result['cases'], 'selection_updates': result['selection_updates'],
+              'fee_bps': result['identity']['fee_bps'], 'threshold_bps': result['identity']['threshold_bps']}
+    return {'title':'BTC 全工厂规则回放','verdict':'TECHNICAL_VALIDATION_ONLY', 'series':{},
+        'metrics':{'result_hash':result['result_hash'],'trial_count':48,
+            'failed_cases':sum(c['status']=='FAILED' for c in result['cases']),
+            'input_hash':result['identity']['input_hash'], 'plan_hash':result['identity']['plan_hash'],
+            'factory_report_json':json.dumps(report,sort_keys=True,allow_nan=False)},
+        'caveats':result['limitations'],'provenance':'tools/btc_factory_research.py'}
+
+
+def _adapt_btc_forward(result: dict) -> dict:
+    import hashlib
+    expected = hashlib.sha256(json.dumps({k:v for k,v in result.items() if k!='result_hash'},
+                                       sort_keys=True,allow_nan=False).encode()).hexdigest()
+    if (result.get('schema') != 'QUANTOS_BTC_FORWARD_OBSERVATION_V1'
+            or result.get('authoritative') is not False or result.get('account_pnl_computed') is not False
+            or result.get('result_hash') != expected):
+        raise ValueError('invalid forward observation result')
+    return {'title':'BTC 冻结前向观察','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'result_hash':result['result_hash'],'forward_report_json':json.dumps(result,sort_keys=True)},
+            'caveats':['仅记录冻结预测和成熟标签；没有账户收益、Paper成交或交易授权。'],
+            'provenance':'tools/btc_forward_observation.py'}
+
+
 from functools import partial
 
 RUN_KINDS: dict = {
+    'btc_forward': RunSpec('tools.btc_forward_observation:run_forward',
+        {'attempt': int, 'action': int}, _adapt_btc_forward, 'BTC 冻结前向观察', DIAGNOSTIC_ONLY,
+        param_bounds={'attempt': (1, 1000), 'action': (0, 2)}),
+    'btc_factory': RunSpec('tools.btc_factory_research:run_factory',
+        {'attempt': int, 'resume': bool}, _adapt_btc_factory, 'BTC 全工厂规则回放', DIAGNOSTIC_ONLY,
+        param_bounds={'attempt': (1, 1000)}),
+    'btc_mechanism': RunSpec('tools.btc_mechanism_study:run_study',
+        {'attempt': int}, _adapt_btc_mechanism, 'BTC 机制实验', DIAGNOSTIC_ONLY,
+        param_bounds={'attempt': (1, 1000)}),
     'orderblock_research': RunSpec('tools.causal_block_research:run_study',
         {'attempt':int},partial(_adapt_perpetual_alpha, source='tools/causal_block_research.py', title='USDC因果订单块研究'),
         'USDC因果订单块研究',DIAGNOSTIC_ONLY,

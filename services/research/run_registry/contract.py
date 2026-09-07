@@ -20,7 +20,7 @@ ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
                  "factory_orthogonal", "factory_loop", "data_refresh",
                  "ic_panel", "wide_gauntlet", "paper_cycle",
                  "ashare_alpha", "ashare_paper_track",
-                 "ashare_technical_search", "ashare_forward_observation", "perpetual_replay", "perpetual_alpha", "orderblock_research"}
+                 "ashare_technical_search", "ashare_forward_observation", "perpetual_replay", "perpetual_alpha", "orderblock_research", "btc_mechanism", "btc_factory", "btc_forward"}
 
 _INVOCATION_ID_MAX_LENGTH = 128
 _REQUEST_IDENTITY_SCHEMA = "quantos.research_runner.request.v1"

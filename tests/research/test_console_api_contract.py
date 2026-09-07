@@ -1767,3 +1767,63 @@ def test_technical_replay_endpoint_has_separate_non_authoritative_contract():
     assert payload['authoritative'] is False
     assert payload['evidence_status']=='TECHNICAL_VALIDATION_ONLY'
     assert payload['technical_replay'] is None
+
+
+def test_predictive_result_contract_carries_errors_not_profit(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from services.console.api import research_run_views as views
+    from services.research.run_registry.contract import ResearchRun
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import _build_provenance, _result_digest
+
+    # Bind a minimal completed predictive mirror through the real provenance validator.
+    fields = dict(title='BTC mechanism', params={'attempt': 1},
+                  metrics={'result_hash':'a'*64, 'evaluation':'EXPLORATORY_PREDICTION_ONLY',
+                           'account_pnl_computed':'false'},
+                  series={'all_rmse_bps':[{'label':'PRICE','value':123.5}],
+                          'all_r2_vs_zero':[{'label':'PRICE','value':-0.02}]},
+                  verdict='TECHNICAL_VALIDATION_ONLY', caveats=['Seen history'])
+    run = ResearchRun(run_id='predictive-contract', kind='btc_mechanism', status='done',
+                      created_ts=1, finished_ts=2, log=[], code_version=None,
+                      provenance=_build_provenance('btc_mechanism', RUN_KINDS['btc_mechanism'], None,
+                                                  result_sha256=_result_digest(**fields)), **fields)
+    class Registry:
+        def get(self, run_id): return run if run_id == run.run_id else None
+    monkeypatch.setattr(views, '_runs_registry', Registry)
+    body = client.get('/api/v1/console/technical-replay?run_id=predictive-contract').json()
+    assert body['snapshot_status'] == 'REAL'
+    assert body['authoritative'] is False
+    detail = body['technical_replay']
+    assert detail['metrics']['account_pnl_computed'] == 'false'
+    assert detail['series']['all_rmse_bps'][0]['value'] == 123.5
+    assert detail['series']['all_r2_vs_zero'][0]['value'] == -0.02
+    assert 'net_equity' not in detail['series']
+    assert views._technical_replay_detail(replace(run, status='error')) is None
+    identity = client.get('/api/v1/console/research-run?run_id=predictive-contract').json()['run']
+    assert identity['verdict'] == 'EXPLORATORY_PREDICTION_ONLY'
+    assert identity['metrics'] == {}
+    assert 'invalidation_code' not in identity
+
+
+def test_factory_and_forward_report_contracts(monkeypatch):
+    from services.console.api import research_run_views as views
+    from services.research.run_registry.contract import ResearchRun
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import _build_provenance, _result_digest
+    reports = {
+        'btc_factory': ('factory_report', {'cases': [], 'selection_updates': [], 'fee_bps':'3.6', 'threshold_bps':19.2}),
+        'btc_forward': ('forward_report', {'status':'NO_FREEZE','models':[],'reason':'No frozen models',
+                                         'observed_at_ms':1,'attempt':1,'authoritative':False,'account_pnl_computed':False}),
+    }
+    for kind,(field,report) in reports.items():
+        fields = dict(title=kind,params={'attempt':1},metrics={'result_hash':'b'*64,field+'_json':json.dumps(report)},
+                      series={},verdict='TECHNICAL_VALIDATION_ONLY',caveats=[])
+        run=ResearchRun(run_id=kind,kind=kind,status='done',created_ts=1,finished_ts=2,log=[],code_version=None,
+                        provenance=_build_provenance(kind,RUN_KINDS[kind],None,result_sha256=_result_digest(**fields)),**fields)
+        class Registry:
+            def get(self, run_id): return run if run_id==kind else None
+        monkeypatch.setattr(views,'_runs_registry',Registry)
+        body=client.get('/api/v1/console/technical-replay',params={'run_id':kind}).json()
+        assert body['technical_replay'][field]==report
+        assert field+'_json' not in body['technical_replay']['metrics']
+        assert body['read_only'] is True and body['authoritative'] is False

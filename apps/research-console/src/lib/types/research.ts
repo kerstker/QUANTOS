@@ -2314,11 +2314,39 @@ export interface ResearchRunPayload extends ConsolePayloadBase {
   data_provenance: string;
   run: ResearchRunDetail | null;
 }
+export interface BtcFactoryCase {
+  policy: string; slip_bps: number; stop: boolean; trial_id: string; status: 'PASSED' | 'FAILED';
+  error?: string;
+  metrics?: {
+    net_pnl: number; annual_pnl: Record<string, number | null>; fills: number;
+    max_drawdown: number; fees: string; funding: string; reconciliation_residual: string;
+    halted_at: number | null; order_reasons: Record<string, number>;
+  };
+  equity?: Array<{ time: number; equity: string; quantity: string; mark: string }>;
+}
+export interface BtcFactoryReport {
+  cases: BtcFactoryCase[]; fee_bps: string; threshold_bps: number;
+  selection_updates: Array<{ decision_ms: number; selected: string; n: number;
+    latest_label_ms: number | null; mse: Record<string, number>; zero_mse: number | null }>;
+}
+export interface BtcForwardReport {
+  status: string; reason: string; observed_at_ms: number; attempt: number; freeze_hash?: string;
+  models: Array<{ model: string; candidate_id: string; frozen_at_ms: number; decisions: number;
+    completed: number; pending: number; rmse_bps: number | null; account_pnl_computed: false }>;
+  authoritative: false; account_pnl_computed: false;
+}
+
+/** btc_mechanism uses {all|2025|2026}_{rmse_bps|r2_vs_price|r2_vs_zero|holm_p}
+ * series. R2 values are fractions; RMSE is basis points; absent p is not zero.
+ * metrics.evaluation=EXPLORATORY_PREDICTION_ONLY, account_pnl_computed="false".
+ */
 export interface TechnicalReplayPayload extends ConsolePayloadBase {
   data_provenance: string;
   authoritative: false;
   evidence_status: 'TECHNICAL_VALIDATION_ONLY';
   technical_replay: {
+    factory_report?: BtcFactoryReport;
+    forward_report?: BtcForwardReport;
     run_id: string;
     metrics: Record<string, number | string | null>;
     series: Record<string, Array<{ label: string; value: number }>>;

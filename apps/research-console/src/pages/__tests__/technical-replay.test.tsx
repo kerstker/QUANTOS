@@ -14,7 +14,8 @@ vi.mock('@/lib/api/research-console-api', () => ({
   fetchTechnicalReplay: () => ({ authoritative: false, evidence_status: 'TECHNICAL_VALIDATION_ONLY',
     technical_replay: { run_id: state.resultId, authoritative: state.authoritative,
       evidence_status: 'TECHNICAL_VALIDATION_ONLY', metrics: { result_hash: 'verified-result-digest' },
-      series: { net_equity: [{ label: '1000', value: 1000 }], candidates: [{ label: 'A', value: -12.5 }] }, caveats: ['exact audit record'] } }),
+      factory_report: { cases: [], selection_updates: [], fee_bps: '3.6', threshold_bps: 19.2 },
+      series: { all_rmse_bps: [{ label: 'PRICE', value: 123.456 }], all_r2_vs_price: [{ label: 'PRICE', value: 0 }], all_r2_vs_zero: [{ label: 'PRICE', value: -0.02 }], net_equity: [{ label: '1000', value: 1000 }], candidates: [{ label: 'A', value: -12.5 }] }, caveats: ['exact audit record'] } }),
 }));
 vi.mock('@/ui/useConsoleSnapshot', () => ({
   useConsoleSnapshot: (fetcher: () => unknown) => ({ payload: fetcher(), usingBackend: true,
@@ -46,6 +47,19 @@ describe('Separate technical replay result', () => {
     if (problem === 'different-run') state.resultId = 'other-run';
     show();
     expect(screen.queryByText('verified-result-digest')).not.toBeInTheDocument();
+  });
+  it('shows the complete factory comparison from a verified run', () => {
+    state.kind = 'btc_factory';
+    show();
+    expect(screen.getByText('完整工厂与固定基线')).toBeInTheDocument();
+  });
+  it('shows predictive errors separately from account returns', () => {
+    state.kind = 'btc_mechanism';
+    show();
+    expect(screen.getByText('预测误差与机制增量')).toBeInTheDocument();
+    expect(screen.getByText('123.46')).toBeInTheDocument();
+    expect(screen.queryByText('USDT')).not.toBeInTheDocument();
+    expect(screen.queryByText('-12.5')).not.toBeInTheDocument();
   });
   it('explains soft cancellation instead of claiming the computation stopped', async () => {
     state.status = 'running';

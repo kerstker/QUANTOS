@@ -120,6 +120,9 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
     assert r.json()["kinds"] == [
         "ashare_forward_observation",
         "ashare_technical_search",
+        "btc_factory",
+        "btc_forward",
+        "btc_mechanism",
         "data_refresh",
         "orderblock_research",
         "perpetual_alpha",

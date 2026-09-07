@@ -150,6 +150,9 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "perpetual_replay",
         "orderblock_research",
         "perpetual_alpha",
+        "btc_factory",
+        "btc_forward",
+        "btc_mechanism",
     }
     actual_selection_bearing = {
         kind

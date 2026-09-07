@@ -14,6 +14,7 @@ import zipfile
 
 import numpy as np
 
+from quantos.runtime_paths import runtime_state_root
 from services.research.trial_ledger import TrialLedger, TrialRecord
 from tools.binance_spot_archive_capture import verify_archive
 from tools.btc_usdc_research import load_capture
@@ -167,7 +168,7 @@ def run(directory,output,attempt):
     if type(attempt) is not int or not 1<=attempt<=1000:raise ValueError('invalid attempt')
     dest=output/str(attempt);dest.mkdir(parents=True,exist_ok=False)
     input_paths=sorted((directory/'klines').glob('BTCUSDC-1m-*.zip*'))+[directory/'funding-capture.json']
-    snapshot={str(p.relative_to(directory)):digest(p.read_bytes()) for p in input_paths}
+    snapshot={str(p.relative_to(directory)):digest(p.read_bytes()) if p.is_file() else 'MISSING' for p in input_paths}
     identity={'source':source_identity(),'input_snapshot_sha256':digest(snapshot),'spec_sha256':digest(PLAN.read_bytes()),'attempt':attempt,
               'models':MODELS,'status':'EXPLORATORY_PREDICTION_ONLY'}
     ledger=TrialLedger(str(output/'trials.db'));records={}
@@ -190,20 +191,32 @@ def run(directory,output,attempt):
             for i,day in enumerate(days):
                 values=[int(day),int(day+DAY),int(day+DAY+5*MINUTE),int(day+2*DAY+5*MINUTE),*x[i],y[i],*p[i]]
                 writer.writerow(['' if isinstance(v,(float,np.floating)) and not math.isfinite(v) else v for v in values])
-        document={'identity':identity,'data':data,'fits':fits,'results':result,
+        document={'schema':'QUANTOS_BTC_MECHANISM_V1','identity':identity,'data':data,'fits':fits,'results':result,
                   'trial_ids':[r['trial_id'] for r in records.values()],
                   'authoritative':False,'account_pnl_computed':False,
                   'predictions_sha256':digest((dest/'predictions.csv').read_bytes())}
-        document['result_hash']=digest(document)
-        (dest/'result.json').write_text(json.dumps(document,indent=2,allow_nan=False))
         status='PASSED'
     except Exception as exc:
-        (dest/'failure.json').write_text(json.dumps({'identity':identity,'error':str(exc)}));status='FAILED'
+        (dest/'failure.json').write_text(json.dumps({'identity':identity,'trial_ids':[r['trial_id'] for r in records.values()],'error':str(exc)}));status='FAILED'
         raise
     finally:
         for record in records.values():
             ledger.append(TrialRecord(**record,status=locals().get('status','FAILED'),event_index=2,at=time.time_ns()//1000000))
+        verified=ledger.verify()
+        ledger.close()
+    document['trial_ledger_verified']=verified
+    document['result_hash']=digest(document)
+    (dest/'result.json').write_text(json.dumps(document,indent=2,allow_nan=False))
     print(json.dumps({'attempt':attempt,'hash':document['result_hash'],'results':result['all']},indent=2))
+
+    return document
+
+
+def run_study(params):
+    if set(params) != {'attempt'} or type(params['attempt']) is not int or not 1 <= params['attempt'] <= 1000:
+        raise ValueError('bounded attempt identity required')
+    root = runtime_state_root() / 'data/cache'
+    return run(root / 'perpetual_alpha/input', root / 'btc_mechanism/results', params['attempt'])
 
 
 if __name__=='__main__':
