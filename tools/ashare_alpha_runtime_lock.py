@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from _thread import LockType
 import os
 from pathlib import Path
 import stat
@@ -61,7 +62,7 @@ def _unlock_fd(fd: int) -> None:
 def acquire_runtime_lock(
     path: str | Path = DEFAULT_RUNTIME_LOCK,
     *,
-    process_lock: threading.Lock | None = None,
+    process_lock: LockType | None = None,
 ) -> Iterator[bool]:
     """Attempt one non-blocking lock acquisition and yield its result.
 

@@ -17,6 +17,8 @@ One package contains:
 - `quantos-research-runner.service`, loopback-only on port 8420;
 - the two admitted A-share timers:
   `ashare_alpha_search_worker` and `ashare_forward_observation`;
+- `btc_observation_schedule`, every two minutes, advancing only existing explicitly
+  frozen experiments (NOT_CONFIGURED when none exist);
 - hashes and semantic counts for an external TongDaXin SQLite/panel pair; and
 - an exact `SHA256SUMS` plus `PACKAGE_MANIFEST.json` cutover contract; and
 - an executable, package-hash-bound `deploy.sh` implementing the transaction
@@ -71,7 +73,7 @@ failures; they are not profitability or promotion gates.
    release evidence, state ownership and unchanged Python dependency lock.
 2. Install the Git checkout, venv link and frontend under commit-addressed
    `/opt/quantos` paths.  Never run an x86 container or emulation layer.
-3. Render the package's 19 worker pairs, four resident/watchdog units and the
+3. Render the package manifest's worker pairs, four resident/watchdog units and the
    runner.  Bind every executable and `PYTHONPATH` to the same release commit,
    then run `systemd-analyze verify` before touching installed units.
 4. Stop only worker and watchdog timers.  Let active oneshot workers finish;

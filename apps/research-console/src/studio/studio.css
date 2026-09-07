@@ -1636,3 +1636,16 @@ progress::-webkit-progress-value {
 .s-heatmap th {white-space:nowrap;}
 @media(max-width:1100px){.s-analytics-grid{grid-template-columns:1fr;}}
 @media(max-width:600px){.s-chart-actions{gap:8px;}.s-plot{padding:6px;}.s-plot-expanded{inset:8px;}.s-analysis-controls{display:grid;grid-template-columns:1fr 1fr;}.s-analysis-controls label:first-child{grid-column:1/-1;}}
+
+.s-chart-actions button.s-text-link {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  min-height: 32px;
+  min-width: 28px;
+  padding: 6px;
+  font-size: 11px;
+}
+:root[data-studio-theme=dark] .s-badge.active {
+  color: #94c9ef;
+}
