@@ -32,3 +32,18 @@ describe('Factory economic and observation results', () => {
     expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });
 });
+
+it('shows online training progress, immutable version and cash observation', () => {
+  render(<BtcForwardResults report={{ status: 'OBSERVING', reason: '观察中', observed_at_ms: 1788825600000,
+    attempt: 1, authoritative: false, account_pnl_computed: false, models: [],
+    online_factory: { enabled_at_ms: 1788825600000, training_required: 180, training_available: 12,
+      status: 'WAITING_TRAINING', factory_decisions: 1, latest_decision: { decision_time_ms: 1788825600000,
+        selected: 'CASH', prediction: null, target_weight: 0 },
+      versions: [{ month: '2026-09', version_hash: 'a'.repeat(64), status: 'WAITING_TRAINING',
+        created_at_ms: 1788825600000, training_n: 0, models: [], selection: { selected: 'CASH', n: 0,
+          latest_label_ms: null, mse: {}, zero_mse: null } }] } }} />);
+  expect(screen.getByText('12 / 180')).toBeInTheDocument();
+  expect(screen.getByText('在线月度工厂')).toBeInTheDocument();
+  expect(screen.getByText('2026-09')).toBeInTheDocument();
+  expect(screen.getByText(/未形成成交或账户收益/)).toBeInTheDocument();
+});

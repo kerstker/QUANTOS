@@ -197,7 +197,7 @@ export default function ResearchRuns() {
             </label>}
             {kinds.includes('btc_forward') && <label className="mt-3 block text-xs text-ink">前向操作
               <select className="ml-3 rounded border border-line bg-panel p-2" value={forwardAction} onChange={event => setForwardAction(Number(event.target.value))}>
-                <option value={0}>查看冻结状态</option><option value={1}>冻结四模型版本</option><option value={2}>采集公开数据并推进观察</option>
+                <option value={0}>查看冻结状态</option><option value={1}>冻结四模型版本</option><option value={2}>采集公开数据并推进观察</option><option value={3}>启用在线月度工厂</option>
               </select>
             </label>}
             {!validAttempt && <p role="alert" className="mt-2 text-xs text-neg">请输入 1–1000 的整数。</p>}
@@ -215,7 +215,7 @@ export default function ResearchRuns() {
                   className="rounded-md border border-accent/45 px-3 py-2 text-left text-xs text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:border-line disabled:text-faint"
                 >
                   <span className="block font-mono font-semibold">▷ {kind}</span>
-                  <span className="mt-1 block text-[9px] opacity-75">{kind === 'btc_mechanism' ? '价格基线与机制信息增量' : kind === 'btc_factory' ? '月度选择、连续账本与48成本/风险情景' : kind === 'btc_forward' ? '冻结版本，记录新预测与成熟标签' : policy?.purpose ?? 'RESEARCH_ONLY'}</span>
+                  <span className="mt-1 block text-[9px] opacity-75">{kind === 'btc_mechanism' ? '价格基线与机制信息增量' : kind === 'btc_factory' ? '月度选择、连续账本与48成本/风险情景' : kind === 'btc_forward' ? '冻结对照与月度工厂，记录新预测与成熟标签' : policy?.purpose ?? 'RESEARCH_ONLY'}</span>
                 </button>
               );
             })}

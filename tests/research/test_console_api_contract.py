@@ -1813,7 +1813,9 @@ def test_factory_and_forward_report_contracts(monkeypatch):
     reports = {
         'btc_factory': ('factory_report', {'cases': [], 'selection_updates': [], 'fee_bps':'3.6', 'threshold_bps':19.2}),
         'btc_forward': ('forward_report', {'status':'NO_FREEZE','models':[],'reason':'No frozen models',
-                                         'observed_at_ms':1,'attempt':1,'authoritative':False,'account_pnl_computed':False}),
+                                         'observed_at_ms':1,'attempt':1,'authoritative':False,'account_pnl_computed':False,
+                                         'online_factory':{'enabled_at_ms':1,'training_required':180,'training_available':0,
+                                             'status':'WAITING_WINDOW','versions':[],'factory_decisions':0,'latest_decision':None}}),
     }
     for kind,(field,report) in reports.items():
         fields = dict(title=kind,params={'attempt':1},metrics={'result_hash':'b'*64,field+'_json':json.dumps(report)},

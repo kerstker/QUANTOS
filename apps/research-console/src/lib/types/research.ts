@@ -2329,7 +2329,17 @@ export interface BtcFactoryReport {
   selection_updates: Array<{ decision_ms: number; selected: string; n: number;
     latest_label_ms: number | null; mse: Record<string, number>; zero_mse: number | null }>;
 }
+export interface BtcOnlineFactoryReport {
+  enabled_at_ms: number; training_required: number; training_available: number; status: string;
+  factory_decisions: number;
+  versions: Array<{ month: string; version_hash: string; status: string; created_at_ms: number;
+    training_n: number; models: Array<{ model: string; candidate_id: string; decisions: number; pending: number; completed: number; rmse_bps: number | null }>; selection: { selected: string; n: number; latest_label_ms: number | null;
+      mse: Record<string, number>; zero_mse: number | null } }>;
+  latest_decision: { decision_time_ms: number; selected: string; prediction: number | null;
+    target_weight: number } | null;
+}
 export interface BtcForwardReport {
+  online_factory?: BtcOnlineFactoryReport | null;
   status: string; reason: string; observed_at_ms: number; attempt: number; freeze_hash?: string;
   models: Array<{ model: string; candidate_id: string; frozen_at_ms: number; decisions: number;
     completed: number; pending: number; rmse_bps: number | null; account_pnl_computed: false }>;

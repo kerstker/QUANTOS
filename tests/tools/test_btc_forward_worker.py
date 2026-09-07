@@ -9,7 +9,7 @@ def test_status_without_freeze_is_honest_and_does_not_create_state(tmp_path,monk
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize('params',[{'attempt':True},{'attempt':0},{'attempt':1,'action':True},{'attempt':1,'action':3},{'attempt':1,'path':'/tmp'}])
+@pytest.mark.parametrize('params',[{'attempt':True},{'attempt':0},{'attempt':1,'action':True},{'attempt':1,'action':4},{'attempt':1,'path':'/tmp'}])
 def test_worker_parameters_bounded(params):
     with pytest.raises(ValueError):worker.run_forward(params)
 
@@ -54,3 +54,61 @@ def test_public_worker_freeze_predict_settle_and_repeat(tmp_path,monkeypatch):
     before=len(calls)
     third=worker.run_forward({'attempt':1,'action':2})
     assert third['status']=='WAITING_WINDOW' and len(calls)==before
+
+
+def test_partial_public_capture_is_retained_when_second_request_fails(tmp_path,monkeypatch):
+    from tools.btc_factory_research import seal
+    import json
+    slot=1788825600000
+    monkeypatch.setenv('QUANTOS_STATE_ROOT',str(tmp_path))
+    monkeypatch.setattr(worker,'_now',lambda:slot+worker.MINUTE)
+    directory=tmp_path/'data/cache/btc_forward/1';directory.mkdir(parents=True)
+    fits={name:{'mean':[0.]*n,'scale':[1.]*n,'beta':[0.]*(n+1),
+                'train_n':180,'latest_label_ms':slot-worker.DAY}
+          for name,n in [('PRICE',3),('PRICE_FLOW',4),('PRICE_FUNDING',4),('PRICE_FLOW_FUNDING',5)]}
+    (directory/'freeze.json').write_text(json.dumps(seal({'source_hash':'a'*64,'frozen_at_ms':slot-worker.DAY,'fits':fits})))
+    def get(path):
+        if 'fundingRate' in path:raise ValueError('funding unavailable')
+        return {'payload':[],'received_at_ms':slot,'sha256':'b'*64}
+    monkeypatch.setattr(worker,'_get',get)
+    with pytest.raises(ValueError,match='funding unavailable'):
+        worker.run_forward({'attempt':1,'action':2})
+    assert len(list((directory/'captures').glob('*.json')))==1
+    assert len(list((directory/'errors').glob('*.json')))==1
+    assert all(row['decisions']==0 for row in worker.run_forward({'attempt':1})['models'])
+    enabled=worker.run_forward({'attempt':1,'action':3})
+    assert enabled['online_factory']['status']=='WAITING_WINDOW'
+    assert enabled['online_factory']['training_available']==0
+    assert worker.run_forward({'attempt':1,'action':3})['online_factory']==enabled['online_factory']
+
+
+def test_interrupted_prediction_group_reuses_first_received_daily_features(tmp_path,monkeypatch):
+    import json
+    from tools.btc_factory_research import seal
+    slot=1788825600000
+    monkeypatch.setenv('QUANTOS_STATE_ROOT',str(tmp_path))
+    monkeypatch.setattr(worker,'_now',lambda:slot+worker.MINUTE)
+    directory=tmp_path/'data/cache/btc_forward/1';directory.mkdir(parents=True)
+    fits={name:{'mean':[0.]*n,'scale':[1.]*n,'beta':[0.]*(n+1),
+                'train_n':180,'latest_label_ms':slot-worker.DAY}
+          for name,n in [('PRICE',3),('PRICE_FLOW',4),('PRICE_FUNDING',4),('PRICE_FLOW_FUNDING',5)]}
+    (directory/'freeze.json').write_text(json.dumps(seal({'source_hash':'a'*64,'frozen_at_ms':slot-worker.DAY,'fits':fits})))
+    calls=[]
+    def features(slot,records):
+        calls.append(slot);records.append({'received_at_ms':slot+worker.MINUTE,'payload':'original'})
+        return [1,2,3,4,5],slot+worker.MINUTE
+    monkeypatch.setattr(worker,'_features',features)
+    original=worker.record_forecast;count=[0]
+    def fail_once(*args,**kwargs):
+        count[0]+=1
+        if count[0]==2:raise RuntimeError('interrupted group')
+        return original(*args,**kwargs)
+    monkeypatch.setattr(worker,'record_forecast',fail_once)
+    with pytest.raises(RuntimeError,match='interrupted group'):
+        worker.run_forward({'attempt':1,'action':2})
+    report=worker.run_forward({'attempt':1,'action':2})
+    assert len(calls)==1 and all(row['decisions']==1 for row in report['models'])
+    with worker.RealtimeAlphaShadowStore(str(directory/'observations.db')) as store:
+        decisions=[store.decisions(row['candidate_id'])[0]['payload'] for row in report['models']]
+        assert len({row['source_hash'] for row in decisions})==1
+        assert all(row['features']==[1,2,3,4,5] for row in decisions)

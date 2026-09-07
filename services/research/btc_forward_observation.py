@@ -108,3 +108,68 @@ def observation_summary(store,candidate_id):
             'completed':len(rows),'pending':len(store.pending(candidate_id)),
             'rmse_bps':math.sqrt(sum(r['payload']['squared_error'] for r in rows)/len(rows))*10000 if rows else None,
             'account_pnl_computed':False}
+
+
+def _mature_panel(rows, cutoff_ms):
+    _clock(cutoff_ms)
+    eligible=[];seen=set()
+    for row in rows:
+        _clock(row['entry_time_ms']);_clock(row['available_at_ms'])
+        if row['entry_time_ms'] in seen:raise ValueError('duplicate forward day')
+        seen.add(row['entry_time_ms'])
+        if row['available_at_ms']>cutoff_ms:continue
+        if row['available_at_ms']<row['entry_time_ms']+DAY+MINUTE:
+            raise ValueError('immature online label')
+        if not math.isfinite(row['label']):raise ValueError('nonfinite online label')
+        eligible.append(row)
+    return sorted(eligible,key=lambda row:row['entry_time_ms'])
+
+
+def online_month_fit(rows, cutoff_ms):
+    """Expanding OLS from actually received forward labels; no archive bootstrap."""
+    rows=_mature_panel(rows,cutoff_ms)
+    if len(rows)<180:return {}
+    x=np.asarray([row['features'] for row in rows],dtype=float)
+    y=np.asarray([row['label'] for row in rows],dtype=float)
+    if x.shape!=(len(rows),5) or not np.isfinite(x).all():raise ValueError('invalid online features')
+    fits={}
+    for name,columns in COLUMNS.items():
+        train=x[:,columns];mean=train.mean(axis=0);scale=train.std(axis=0);scale[scale==0]=1
+        design=np.column_stack((np.ones(len(rows)),(train-mean)/scale))
+        beta,_,rank,_=np.linalg.lstsq(design,y,rcond=None)
+        fits[name]={'decision_ms':cutoff_ms,'train_n':len(rows),'rank':int(rank),
+                    'latest_label_ms':max(row['available_at_ms'] for row in rows),
+                    'mean':mean.tolist(),'scale':scale.tolist(),'beta':beta.tolist()}
+    return fits
+
+
+def online_month_selection(rows, cutoff_ms):
+    rows=_mature_panel(rows,cutoff_ms)[-90:]
+    result={'selected':'CASH','n':len(rows),'mse':{},'zero_mse':None,
+            'latest_label_ms':max((r['available_at_ms'] for r in rows),default=None)}
+    if len(rows)<60:return result
+    if any(set(row['predictions'])!=set(COLUMNS) for row in rows):
+        raise ValueError('incomplete online prediction group')
+    p=np.asarray([[row['predictions'][name] for name in COLUMNS] for row in rows])
+    y=np.asarray([row['label'] for row in rows])
+    if not np.isfinite(p).all():raise ValueError('nonfinite online predictions')
+    errors=np.mean((p-y[:,None])**2,axis=0);zero=float(np.mean(y*y))
+    best=int(np.argmin(errors))
+    result.update(mse={name:float(error) for name,error in zip(COLUMNS,errors)},zero_mse=zero)
+    if errors[best]<zero:result['selected']=list(COLUMNS)[best]
+    return result
+
+
+def forward_training_rows(store, candidate_id):
+    """Join original decisions with durable receipt times, never event time alone."""
+    _chain(store)
+    decisions={r['payload']['decision_time_ms']:r['payload'] for r in store.decisions(candidate_id)}
+    rows=[]
+    for event in store.realizations(candidate_id):
+        outcome=event['payload'];decision=decisions[outcome['decision_time_ms']]
+        rows.append({'entry_time_ms':decision['entry_time_ms'],'features':decision['features'],
+                     'label':outcome['label'],'prediction':decision['prediction'],
+                     'available_at_ms':max(event['recorded_at_ms'],outcome['entry_reference']['available_at_ms'],
+                                           outcome['exit_reference']['available_at_ms']),
+                     'decision_hash':stable_hash(decision),'outcome_hash':event['row_hash']})
+    return rows

@@ -536,9 +536,9 @@ def _adapt_btc_forward(result: dict) -> dict:
             or result.get('authoritative') is not False or result.get('account_pnl_computed') is not False
             or result.get('result_hash') != expected):
         raise ValueError('invalid forward observation result')
-    return {'title':'BTC 冻结前向观察','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+    return {'title':'BTC 前向观察与在线工厂','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'result_hash':result['result_hash'],'forward_report_json':json.dumps(result,sort_keys=True)},
-            'caveats':['仅记录冻结预测和成熟标签；没有账户收益、Paper成交或交易授权。'],
+            'caveats':['仅记录版本化预测和成熟标签；没有账户收益、Paper成交或交易授权。'],
             'provenance':'tools/btc_forward_observation.py'}
 
 
@@ -546,8 +546,8 @@ from functools import partial
 
 RUN_KINDS: dict = {
     'btc_forward': RunSpec('tools.btc_forward_observation:run_forward',
-        {'attempt': int, 'action': int}, _adapt_btc_forward, 'BTC 冻结前向观察', DIAGNOSTIC_ONLY,
-        param_bounds={'attempt': (1, 1000), 'action': (0, 2)}),
+        {'attempt': int, 'action': int}, _adapt_btc_forward, 'BTC 前向观察与在线工厂', DIAGNOSTIC_ONLY,
+        param_bounds={'attempt': (1, 1000), 'action': (0, 3)}),
     'btc_factory': RunSpec('tools.btc_factory_research:run_factory',
         {'attempt': int, 'resume': bool}, _adapt_btc_factory, 'BTC 全工厂规则回放', DIAGNOSTIC_ONLY,
         param_bounds={'attempt': (1, 1000)}),
