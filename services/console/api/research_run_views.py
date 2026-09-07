@@ -55,23 +55,29 @@ def _runs_registry():
 
 def _predictive_identity(run, payload: Dict) -> Dict:
     """Do not label a verified new prediction experiment as an invalidated V1 backtest."""
-    if run.kind not in ('btc_mechanism', 'btc_factory', 'btc_forward'):
+    from services.research_runner.run_kinds import RUN_KINDS, LEGACY_QUARANTINED_RUN_KINDS
+    if run.kind not in RUN_KINDS or run.kind in LEGACY_QUARANTINED_RUN_KINDS:
         return payload
-    from services.research_runner.run_kinds import RUN_KINDS
     from services.research_runner.runner import validate_run_provenance
     try:
         validate_run_provenance(run, RUN_KINDS[run.kind])
-        if run.status == 'done' and _technical_replay_detail(run) is None:
+        if (run.kind in ('btc_mechanism', 'btc_factory', 'btc_forward', 'perpetual_replay', 'perpetual_alpha', 'orderblock_research')
+                and run.status == 'done' and _technical_replay_detail(run) is None):
             return payload
     except (ValueError, TypeError, KeyError):
         return payload
     payload.pop('invalidation_code', None)
-    status = 'EXPLORATORY_PREDICTION_ONLY' if run.kind == 'btc_mechanism' else 'TECHNICAL_VALIDATION_ONLY'
+    payload['params'] = run.params
+    if 'error' in payload:
+        payload.update(error=run.error, log=run.log)
+    status = ('EXPLORATORY_PREDICTION_ONLY' if run.kind == 'btc_mechanism' else
+              'TECHNICAL_VALIDATION_ONLY' if run.kind in ('btc_factory', 'btc_forward', 'perpetual_replay', 'perpetual_alpha', 'orderblock_research')
+              else 'DIAGNOSTIC_ONLY')
     payload['evidence_status'] = status
     payload['verdict'] = (status if run.status == 'done'
                           else 'RESEARCH_' + run.status.upper())
     if 'caveats' in payload:
-        payload['caveats'] = ['预测研究，不计算账户净收益。'] if run.kind == 'btc_mechanism' else ['工厂技术回放，仅研究用途。']
+        payload['caveats'] = list(run.caveats) or ['研究记录，仅用于技术诊断。']
     return payload
 
 
@@ -135,7 +141,7 @@ def research_runs(kind: str = Query(None)) -> Dict:
         "api_version": "0.1.0",
         "data_provenance": "RESEARCH_RUN_REGISTRY",
         "runs": [],
-    }, runs=rows)
+    }, runs=rows, registry_available=not isinstance(reg, _EmptyRunRegistry))
 
 
 @router.get("/api/v1/console/research-run")

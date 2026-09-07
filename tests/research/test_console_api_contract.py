@@ -1829,3 +1829,44 @@ def test_factory_and_forward_report_contracts(monkeypatch):
         assert body['technical_replay'][field]==report
         assert field+'_json' not in body['technical_replay']['metrics']
         assert body['read_only'] is True and body['authoritative'] is False
+
+
+def test_verified_forward_error_keeps_operational_context(monkeypatch):
+    from services.console.api import research_run_views as views
+    from services.research.run_registry.contract import ResearchRun
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import _build_provenance
+    run=ResearchRun(run_id='forward-error',kind='btc_forward',title='Forward',params={'attempt':2,'action':2},
+        status='error',created_ts=1,finished_ts=2,metrics={},series={},verdict='',caveats=[],
+        provenance=_build_provenance('btc_forward',RUN_KINDS['btc_forward'],None),
+        log=['public capture failed'],error='funding unavailable',code_version=None)
+    class Registry:
+        def get(self,run_id):return run
+        def list(self,**kwargs):return [run]
+    monkeypatch.setattr(views,'_runs_registry',Registry)
+    body=client.get('/api/v1/console/research-run',params={'run_id':run.run_id}).json()['run']
+    assert body['params']==run.params and body['error']==run.error and body['log']==run.log
+    assert body['metrics']=={} and body['authoritative'] is False
+    rows=client.get('/api/v1/console/research-runs').json()
+    assert rows['registry_available'] is True and rows['runs'][0]['params']==run.params
+
+
+def test_missing_run_registry_does_not_claim_empty_available_database(monkeypatch):
+    from services.console.api import research_run_views as views
+    monkeypatch.setattr(views,'_runs_registry',views._EmptyRunRegistry)
+    body=client.get('/api/v1/console/research-runs').json()
+    assert body['runs']==[] and body['registry_available'] is False
+
+
+def test_verified_perpetual_failure_keeps_diagnostics_without_legacy_metrics():
+    from services.console.api import research_run_views as views
+    from services.research.run_registry.contract import ResearchRun
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import _build_provenance
+    run=ResearchRun(run_id='perp-error',kind='perpetual_alpha',title='Research',params={'attempt':3},
+        status='error',created_ts=1,finished_ts=2,metrics={},series={},verdict='',caveats=[],
+        provenance=_build_provenance('perpetual_alpha',RUN_KINDS['perpetual_alpha'],None),
+        log=['input missing'],error='data unavailable',code_version=None)
+    body=views._run_detail(run)
+    assert body['error']=='data unavailable' and body['params']=={'attempt':3}
+    assert body['metrics']=={} and body['authoritative'] is False

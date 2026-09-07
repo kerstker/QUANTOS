@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
-import App from '@/App';
+// Retained legacy regression suite; this UI is no longer imported by the production entry.
+import App from '@/legacy/LegacyApp';
 import { MemoryRouter } from '@/lib/router';
 
-describe('Wave 3 app shell integration', () => {
+describe('Retained Wave 3 compatibility regression', () => {
   it('lands on Market Monitor with exactly five object workspaces', async () => {
     render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: /市场监控/ })).toBeTruthy();

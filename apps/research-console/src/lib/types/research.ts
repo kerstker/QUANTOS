@@ -2298,6 +2298,7 @@ export interface ResearchRunSummary {
   authoritative?: boolean; evidence_status?: string; invalidation_code?: string;
 }
 export interface ResearchRunsPayload extends ConsolePayloadBase {
+  registry_available?: boolean;
   data_provenance: string;
   runs: ResearchRunSummary[];
 }

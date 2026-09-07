@@ -24,9 +24,9 @@ def test_frontend_e2e_dependencies_and_font_are_exactly_pinned() -> None:
     assert package["devDependencies"]["@axe-core/playwright"] == "4.12.1"
     assert package["dependencies"]["@fontsource-variable/noto-sans-sc"] == "5.3.0"
 
-    styles = (CONSOLE / "src" / "index.css").read_text(encoding="utf-8")
+    styles = (CONSOLE / "src" / "studio" / "studio.css").read_text(encoding="utf-8")
     assert "@import '@fontsource-variable/noto-sans-sc';" in styles
-    assert '"Noto Sans SC Variable"' in styles
+    assert "'Noto Sans SC Variable'" in styles
 
 
 def test_frontend_e2e_contract_is_deterministic_accessible_and_no_overflow() -> None:
@@ -44,15 +44,15 @@ def test_frontend_e2e_contract_is_deterministic_accessible_and_no_overflow() -> 
         assert marker in config
 
     for marker in (
-        "installFixedApi(page)",
+        "installStudioApi(page)",
         "document.documentElement.scrollWidth",
         "document.body.scrollWidth",
-        "new AxeBuilder({ page })",
+        "new AxeBuilder({page})",
         "'wcag2a'",
         "'wcag2aa'",
         "'wcag21a'",
         "'wcag21aa'",
-        "toHaveScreenshot('paper-cockpit.png')",
+        "toHaveScreenshot('research-studio.png')",
     ):
         assert marker in spec
 
@@ -66,6 +66,12 @@ def test_frontend_visual_contract_has_reviewable_windows_and_linux_baselines() -
     assert _png_size(linux) == (1440, 1000)
     assert windows.stat().st_size > 100_000
     assert linux.stat().st_size > 100_000
+
+
+def test_rebuilt_studio_has_a_current_linux_visual_baseline() -> None:
+    baseline = CONSOLE / "e2e" / "__snapshots__" / "research-studio-linux.png"
+    assert _png_size(baseline) == (1440, 1000)
+    assert baseline.stat().st_size > 30_000
 
 
 def test_frontend_e2e_is_load_bearing_in_ci_and_top_tier_assessment() -> None:

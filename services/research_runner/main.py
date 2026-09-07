@@ -26,6 +26,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from quantos.runtime_paths import runtime_state_root
 from services.monitoring.audit_store import DurableAuditLog
 from services.execution.backtest_authority import BacktestIntegrityBlocked
 from services.research.run_registry.contract import (
@@ -38,9 +39,10 @@ from .run_kinds import RUN_KINDS
 from .run_kinds import LEGACY_QUARANTINED_RUN_KINDS, enforce_run_kind_authority
 from .runner import JobQueue
 
-_RUNS_DB = os.path.join("data", "cache", "research_runs.db")
-_AUDIT_DB = os.path.join("data", "cache", "governance_audit.db")
-_TOKEN_FILE = os.path.join("key", "research_runner_token.txt")
+_STATE_ROOT = runtime_state_root()
+_RUNS_DB = str(_STATE_ROOT / "data/cache/research_runs.db")
+_AUDIT_DB = str(_STATE_ROOT / "data/cache/governance_audit.db")
+_TOKEN_FILE = str(_STATE_ROOT / "key/research_runner_token.txt")
 _LOG = logging.getLogger(__name__)
 
 

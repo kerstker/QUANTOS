@@ -142,11 +142,11 @@ export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHea
   return assertRunnerHealth(await res.json());
 }
 
-export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {
+export async function triggerRun(kind: string, params: Record<string, unknown> = {}, invocationId?: string): Promise<TriggerResult> {
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   const res = await fetch(runnerUrl('/run'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
+    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken(), ...(invocationId ? { 'Idempotency-Key': invocationId } : {}) },
     body: JSON.stringify({ kind, params }),
   });
   if (!res.ok) {

@@ -17,7 +17,7 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    colorScheme: 'dark',
+    colorScheme: 'light',
     locale: 'en-US',
     timezoneId: 'UTC',
     trace: 'retain-on-failure',
@@ -25,12 +25,13 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run dev -- --mode e2e --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173/research/dry-run',
+    url: 'http://127.0.0.1:4173/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       VITE_API_URL: 'http://127.0.0.1:4173',
       VITE_MOCK_MODE: 'false',
+      VITE_RUNNER_URL: 'http://127.0.0.1:4173/runner',
     },
   },
   projects: [

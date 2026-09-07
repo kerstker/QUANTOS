@@ -171,3 +171,16 @@ describe('research-runner-api health contract', () => {
     await expect(fetchRunnerHealth()).rejects.toThrow('RUNNER_HEALTH_INVALID:');
   });
 });
+
+describe('research invocation retry identity', () => {
+  afterEach(() => { vi.unstubAllEnvs();vi.unstubAllGlobals(); });
+  it('retains the explicit invocation identity across a transport retry', async () => {
+    vi.resetModules();vi.stubEnv('VITE_RUNNER_URL','http://127.0.0.1:8420');
+    const fetchMock=vi.fn().mockRejectedValueOnce(new Error('connection lost')).mockResolvedValue({ok:true,json:async()=>({run_id:'same-run',status:'queued'})});
+    vi.stubGlobal('fetch',fetchMock);
+    const {triggerRun}=await import('./research-runner-api');
+    await expect(triggerRun('btc_forward',{attempt:2,action:2},'same-invocation')).rejects.toThrow('connection lost');
+    await triggerRun('btc_forward',{attempt:2,action:2},'same-invocation');
+    expect(fetchMock.mock.calls.map(call=>call[1].headers['Idempotency-Key'])).toEqual(['same-invocation','same-invocation']);
+  });
+});

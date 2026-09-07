@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { MFT_CONSOLE_SCHEMA, type MftDelta, type MftSnapshot } from '../src/workbench/contracts';
 import { makeMftSnapshot } from '../src/workbench/__tests__/mft-fixtures';
+import { installStudioApi } from './studio-fixtures';
 import { canonicalMftJson, stableMftHash } from '../src/workbench/mft-reducer';
 
 const OBSERVED_AT = 1_786_122_000_000;
@@ -335,6 +336,7 @@ async function fulfill(route: Route, json: unknown, status = 200) {
 }
 
 async function installReadOnlyApi(page: Page, options: ApiOptions = {}) {
+  await installStudioApi(page);
   await page.addInitScript(({ now, disableEventSource }) => {
     Date.now = () => now;
     if (disableEventSource) {
@@ -362,45 +364,15 @@ async function installReadOnlyApi(page: Page, options: ApiOptions = {}) {
   }
 }
 
-test('five object workspaces, keyboard navigation, and global drawers use read-only authorities', async ({ page }) => {
-  await installReadOnlyApi(page);
-  const workspaces = [
-    ['/workbench/market', '市场监控'],
-    ['/workbench/alpha', 'Alpha 控制平面'],
-    ['/workbench/validation', '验证证据'],
-    ['/workbench/portfolio-risk', '组合与风险'],
-    ['/workbench/execution', '执行与订单'],
-  ] as const;
-  for (const [path, heading] of workspaces) {
-    await page.goto(path);
-    await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
-    await expect(page.getByText('L2_DRY_RUN_ONLY').first()).toBeVisible();
-  }
-
-  await page.goto('/workbench/alpha');
-  const rows = page.getByTestId('candidate-row');
-  await expect(rows).toHaveCount(2);
-  await rows.first().focus();
-  await page.keyboard.press('ArrowDown');
-  await expect(rows.nth(1)).toBeFocused();
-
-  await page.keyboard.press('/');
-  await expect(page.getByRole('dialog', { name: '全局搜索' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: '全局搜索' })).toBeHidden();
-
-  for (const label of ['治理', '审计', '健康', '任务']) {
-    await page.getByRole('button', { name: label, exact: true }).click();
-    await expect(page.getByRole('dialog', { name: `${label}抽屉` })).toBeVisible();
-    if (label === '治理') {
-      await expect(page.getByText('GOVERNANCE_CONTRACT_VERIFIED')).toBeVisible();
-      await expect(page.getByText('EXTERNAL IDENTITY PENDING')).toBeVisible();
-      await expect(page.getByText('COMMANDS DISABLED')).toBeVisible();
-      await expect(page.getByRole('button', { name: '生成服务端影响预览' })).toBeDisabled();
-    }
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog', { name: `${label}抽屉` })).toBeHidden();
-  }
+test('five studio destinations and keyboard search stay on research surfaces',async({page})=>{
+ await installReadOnlyApi(page);
+ for(const [path,heading] of [['/','研究工作台'],['/research/runs','实验运行'],['/studio/forward','前向观察'],['/studio/modules','数据与模块'],['/studio/system','系统状态']]){
+  await page.goto(path);await expect(page.getByRole('heading',{name:heading,level:1,exact:true})).toBeVisible();
+  await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
+ }
+ await page.keyboard.press('Control+k');await expect(page.getByLabel('全局搜索运行')).toBeFocused();
+ await expect(page.getByRole('navigation',{name:'主导航'}).getByRole('link')).toHaveCount(5);
+ await expect(page.getByRole('button',{name:'生成服务端影响预览'})).toHaveCount(0);
 });
 
 test('authoritative snapshot advances through a hash-bound delta without duplicate effects', async ({ page }) => {
@@ -411,7 +383,7 @@ test('authoritative snapshot advances through a hash-bound delta without duplica
     deltaHandler: route => fulfill(route, advanced.delta),
   });
   await page.goto('/workbench/execution');
-  await expect(page.getByRole('heading', { name: '执行与订单', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '执行读模型', level: 1 })).toBeVisible();
   await expect(page.getByTestId('authority-event')).toHaveCount(1);
   await expect(page.getByTestId('authority-event')).toContainText('oms.order.completed');
   await expect(page.getByText('current authority sequence 1')).toBeVisible();
@@ -443,10 +415,10 @@ test('cursor gap performs one full resnapshot and resets session event history',
     },
   });
   await page.goto('/workbench/execution');
-  await expect(page.getByRole('heading', { name: '执行与订单', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '执行读模型', level: 1 })).toBeVisible();
   await expect(page.getByText('NO_SESSION_DELTA_EVENTS · RESET_BY_RESNAPSHOT')).toBeVisible();
-  expect(gapsDelivered).toBeGreaterThanOrEqual(2);
-  expect(reloadsDelivered).toBeGreaterThanOrEqual(2);
+  expect(gapsDelivered).toBe(1);
+  expect(reloadsDelivered).toBe(1);
 });
 
 const CONTRACT_FAILURES = [
@@ -464,16 +436,17 @@ const CONTRACT_FAILURES = [
       policy_version: '1', max_age_ms: 7_200_000,
     },
     reason: 'FRESHNESS_STALE',
-  }), 'MFT_STALE'],
+  }), 'FRESHNESS_STALE'],
 ] as const;
 
 for (const [name, makeValue, reason] of CONTRACT_FAILURES) {
   test(`fails closed on ${name} without mock fallback`, async ({ page }) => {
     await installReadOnlyApi(page, { snapshot: makeValue() });
-    await page.goto('/workbench/market');
-    await expect(page.getByRole('heading', { name: '市场监控', level: 1 })).toBeVisible();
+    await page.goto('/workbench/execution');
+    await expect(page.getByRole('heading', { name: '执行读模型', level: 1 })).toBeVisible();
     await expect(page.getByText(reason, { exact: true })).toBeVisible();
-    await expect(page.getByText('DIAGNOSTIC_ONLY')).toBeVisible();
+    await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
+  await expect(page.getByRole('heading',{name:'执行状态',exact:true})).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('SYNTHETIC');
   });
 }
@@ -483,8 +456,9 @@ test('classifies HTTP 429 as an explicit unavailable authority', async ({ page }
     snapshotHandler: route => fulfill(route, { error: 'rate limited' }, 429),
   });
   await page.goto('/workbench/execution');
-  await expect(page.getByText('HTTP_429 · BACKOFF_THEN_RETRY_READ_ONLY')).toBeVisible();
-  await expect(page.getByText('DIAGNOSTIC_ONLY')).toBeVisible();
+  await expect(page.getByText('HTTP_429',{exact:true})).toBeVisible();
+  await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
+  await expect(page.getByRole('heading',{name:'执行状态',exact:true})).toHaveCount(0);
 });
 
 test('classifies request timeout without retaining operational values', async ({ page }) => {
@@ -498,8 +472,9 @@ test('classifies request timeout without retaining operational values', async ({
     },
   });
   await page.goto('/workbench/execution');
-  await expect(page.getByText('TIMEOUT · RETRY_READ_ONLY_WITH_BACKOFF')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('DIAGNOSTIC_ONLY')).toBeVisible();
+  await expect(page.getByText('TIMEOUT',{exact:true})).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
+  await expect(page.getByRole('heading',{name:'执行状态',exact:true})).toHaveCount(0);
 });
 
 test('SSE disconnect becomes reconnecting and hides retained execution values', async ({ page }) => {
@@ -508,23 +483,23 @@ test('SSE disconnect becomes reconnecting and hides retained execution values', 
     streamHandler: route => route.abort('connectionreset'),
   });
   await page.goto('/workbench/execution');
-  await expect(page.getByText('MFT_RECONNECTING')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText('STREAM_RECONNECTING · WAIT_FOR_DELTA_CATCHUP')).toBeVisible();
-  await expect(page.getByText('DIAGNOSTIC_ONLY')).toBeVisible();
+  await expect(page.getByText('连接已中断，正在恢复')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('STREAM_RECONNECTING',{exact:true})).toBeVisible();
+  await expect(page.getByTitle('L2_DRY_RUN_ONLY',{exact:true})).toHaveAttribute('title','L2_DRY_RUN_ONLY');
+  await expect(page.getByRole('heading',{name:'执行状态',exact:true})).toHaveCount(0);
 });
 
-test('empty hourly result remains an explicit no-run state', async ({ page }) => {
-  await installReadOnlyApi(page, { hourly: noHourlySnapshot() });
-  await page.goto('/workbench/validation');
-  await expect(page.getByRole('heading', { name: '验证证据', level: 1 })).toBeVisible();
-  await expect(page.getByText('NO_VALIDATION_RUN')).toBeVisible();
-  await expect(page.getByText('Authority stores are available, but no candidate batch has run.')).toBeVisible();
+test('empty hourly result remains an explicit no-run state',async({page})=>{
+ await installReadOnlyApi(page,{hourly:noHourlySnapshot()});await page.goto('/studio/modules/hourly-alpha');
+ await expect(page.getByRole('heading',{name:'数据与模块',level:1})).toBeVisible();
+ await expect(page.getByText('当前没有快照',{exact:true})).toBeVisible();
+ await expect(page.getByText('尚无真实运行结果；不会把缺失样本显示为零值。')).toBeVisible();
 });
 
 test('wide dark and narrow light workbench layouts are accessible and do not overflow', async ({ page }) => {
   await installReadOnlyApi(page);
-  await page.goto('/workbench/market');
-  await expect(page.getByRole('heading', { name: '市场监控', level: 1 })).toBeVisible();
+  await page.goto('/workbench/execution');
+  await expect(page.getByRole('heading', { name: '执行读模型', level: 1 })).toBeVisible();
 
   const darkPixels = await page.screenshot({ animations: 'disabled' });
   expect(darkPixels.byteLength).toBeGreaterThan(10_000);
@@ -536,8 +511,8 @@ test('wide dark and narrow light workbench layouts are accessible and do not ove
     results.violations.map(item => `${item.id}: ${item.help}`).join('\n'),
   ).toEqual([]);
 
-  await page.getByRole('button', { name: '切换浅色模式' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: '切换深色模式' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-studio-theme', 'dark');
   await page.setViewportSize({ width: 390, height: 844 });
   const geometry = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

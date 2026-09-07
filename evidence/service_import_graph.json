@@ -510,7 +510,7 @@
     {
       "references": [
         {
-          "line": 60,
+          "line": 58,
           "module": "services.research_runner.run_kinds",
           "path": "services/console/api/research_run_views.py"
         },
@@ -520,12 +520,12 @@
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 158,
+          "line": 164,
           "module": "services.research_runner.run_kinds",
           "path": "services/console/api/research_run_views.py"
         },
         {
-          "line": 159,
+          "line": 165,
           "module": "services.research_runner.runner",
           "path": "services/console/api/research_run_views.py"
         }
@@ -1439,7 +1439,7 @@
     {
       "references": [
         {
-          "line": 30,
+          "line": 31,
           "module": "services.execution.backtest_authority",
           "path": "services/research_runner/main.py"
         },
@@ -1455,7 +1455,7 @@
     {
       "references": [
         {
-          "line": 29,
+          "line": 30,
           "module": "services.monitoring.audit_store",
           "path": "services/research_runner/main.py"
         }
@@ -1466,17 +1466,17 @@
     {
       "references": [
         {
-          "line": 31,
+          "line": 32,
           "module": "services.research.run_registry.contract",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 35,
+          "line": 36,
           "module": "services.research.run_registry.registry",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 36,
+          "line": 37,
           "module": "services.research.run_registry.store",
           "path": "services/research_runner/main.py"
         },
@@ -1534,7 +1534,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "ea8f26ce96d5466d45c90a60d0d2de6f86cbc682106c552d97e5a96278970426",
+  "graph_sha256": "2f85dd0a92e00775fa091bf96013839e9f0fd6eec89a512fe87d69527d38424c",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

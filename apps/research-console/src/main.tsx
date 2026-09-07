@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from '@/lib/router';
 import App from './App';
-import './index.css';
+import './studio/studio.css';
 import { getConsoleRuntimeMode } from '@/lib/api/research-console-api';
 
 console.log(`[QUANTOS Research Console] Mode: ${getConsoleRuntimeMode()}`);
