@@ -153,6 +153,7 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "btc_factory",
         "btc_forward",
         "btc_mechanism",
+        "ai_factory",
     }
     actual_selection_bearing = {
         kind

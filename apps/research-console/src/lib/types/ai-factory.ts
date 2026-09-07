@@ -1,0 +1,5 @@
+export interface FactorySpec {id:number; model:string; features:number[]; threshold_bps:number}
+export interface FactoryMetrics {score:number; net_pnl?:number; drawdown?:number; fees?:number|string; funding?:number|string; fills?:number; equity:{time:number;equity:string}[]}
+export interface FactorySession {attempt:number;state:string;command:string;updated:number;config:{mode:'baseline'|'ai';objective:string;budget:number;attempt:number};result:{selected?:FactorySpec;inner?:FactoryMetrics;outer?:FactoryMetrics;model_hash?:string;reason?:string;limitations?:string[]}}
+export interface FactoryTrial {ordinal:number;candidate_id:number|null;status:string;spec?:FactorySpec;metrics?:FactoryMetrics;rmse?:number;reason?:string;trial_id:string}
+export interface FactoryPayload {sessions:FactorySession[];selected:FactorySession|null;trials:FactoryTrial[];events:{seq:number;at:number;kind:string;payload:Record<string,unknown>}[];provider:{status:string;model:string;connected:false};errors:string[];authoritative:false;snapshot_status:string;data_provenance:string;read_only:true;as_of_ms:number}

@@ -94,7 +94,7 @@ def hac_mean(values):
             'ci95':[mean-1.96*se,mean+1.96*se]}
 
 
-def load_panel(directory):
+def load_verified_minutes(directory):
     pieces=[];manifests=[]
     for path in sorted((directory/'klines').glob('BTCUSDC-1m-*.zip')):
         if path.is_symlink():raise ValueError('symlink archive')
@@ -115,6 +115,11 @@ def load_panel(directory):
     if not pieces:raise ValueError('missing archives')
     array=np.concatenate(pieces);array=array[np.argsort(array[:,0],kind='stable')]
     if (np.diff(array[:,0])<=0).any():raise ValueError('duplicate minute partition')
+    return array,manifests
+
+
+def load_panel(directory):
+    array,manifests=load_verified_minutes(directory)
     days=np.arange(timestamp('2024-01-01'),timestamp('2026-08-01'),DAY,dtype=np.int64)
     close=np.full(len(days),np.nan);flow=close.copy();refs=close.copy();counts=np.zeros(len(days),dtype=int)
     for i,day in enumerate(days):

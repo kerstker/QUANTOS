@@ -394,6 +394,11 @@
     {
       "references": [
         {
+          "line": 7,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
           "line": 17,
           "module": "services.research.alpha_family_catalog",
           "path": "services/console/api/alpha_family_views.py"
@@ -1491,6 +1496,16 @@
           "path": "services/research_runner/main.py"
         },
         {
+          "line": 263,
+          "module": "services.research.ai_factory",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 264,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
           "line": 20,
           "module": "services.research.run_registry.indexer",
           "path": "services/research_runner/run_kinds.py"
@@ -1544,7 +1559,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "1fc484bb4b44c9a52d9209b97bcbf3cdfec2c34b6aff6b55e1d38b886db3d832",
+  "graph_sha256": "3adf3200d51d68bddae54fe30f16c2b686a54ec1109d21664404d8f6a7d2465f",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1582,7 +1597,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 510,
+  "source_file_count": 513,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

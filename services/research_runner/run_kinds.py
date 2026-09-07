@@ -544,7 +544,16 @@ def _adapt_btc_forward(result: dict) -> dict:
 
 from functools import partial
 
+def _adapt_ai_factory(result):
+    return {'title':'AI 量化研究工厂','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'factory_state':result['state'],'factory_attempt':result['attempt'],
+                       'factory_result_json':json.dumps(result['result'],sort_keys=True)},
+            'caveats':['研究诊断结果；不建立 Paper 或实盘经济授权。'], 'provenance':'tools/ai_quant_factory.py'}
+
+
 RUN_KINDS: dict = {
+    'ai_factory': RunSpec('tools.ai_quant_factory:run_factory', {'attempt':int}, _adapt_ai_factory,
+        'AI 量化研究工厂', DIAGNOSTIC_ONLY, param_bounds={'attempt':(1,1000)}),
     'btc_forward': RunSpec('tools.btc_forward_observation:run_forward',
         {'attempt': int, 'action': int}, _adapt_btc_forward, 'BTC 前向观察与在线工厂', DIAGNOSTIC_ONLY,
         param_bounds={'attempt': (1, 1000), 'action': (0, 3)}),

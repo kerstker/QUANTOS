@@ -19,3 +19,6 @@ app.include_router(forward_dashboard_router)
 
 
 __all__ = ["app"]
+
+from services.console.api.ai_factory import router as ai_factory_router
+app.include_router(ai_factory_router)

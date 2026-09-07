@@ -24,7 +24,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from quantos.runtime_paths import runtime_state_root
 from services.monitoring.audit_store import DurableAuditLog
@@ -246,3 +246,37 @@ async def cancel(req: CancelRequest, x_operator: str = Header(default=None)) -> 
     except Exception:
         pass
     return {"run_id": req.run_id, "cancelled": cancelled, "operator": operator}
+
+
+class FactoryRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    action: str
+    attempt: int
+    mode: str = 'baseline'
+    budget: int = 3
+    objective: str = 'BTC 小时级因果研究'
+
+
+@app.post('/factory', dependencies=[Depends(require_runner_token)])
+async def factory_control(req: FactoryRequest, x_operator: str = Header(default=None),
+                          idempotency_key: Optional[str] = Header(default=None,alias='Idempotency-Key')):
+    from services.research.ai_factory import validate_config
+    from services.research.ai_factory_store import FactoryStore
+    operator=(x_operator or '').strip()
+    if not operator:raise HTTPException(400,'X-Operator header required')
+    if not 1<=req.attempt<=1000:raise HTTPException(400,'invalid attempt')
+    if req.action not in ('create','pause','resume','cancel'):raise HTTPException(400,'unknown factory action')
+    try:
+        config=validate_config({'attempt':req.attempt,'mode':req.mode,'budget':req.budget,'objective':req.objective})
+        with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
+            if req.action=='create':store.create(config)
+            else:store.control(req.attempt,req.action)
+            if req.action in ('create','resume'):
+                row=store.get(req.attempt)
+                if row['state'] in ('COMPLETED','CANCELLED'):return {'session':row,'run_id':None}
+                run_id=_queue.submit('ai_factory',{'attempt':req.attempt},now=int(time.time()),operator=operator,
+                    invocation_id=idempotency_key or f"factory-{req.attempt}-{req.action}-{row['updated']}")
+            else:run_id=None
+            with store.c:store.event(req.attempt,'OPERATOR_ACTION',{'operator':operator,'action':req.action,'run_id':run_id})
+            return {'session':store.get(req.attempt),'run_id':run_id}
+    except (ValueError,InvocationConflictError) as exc:raise HTTPException(409,str(exc)) from exc
