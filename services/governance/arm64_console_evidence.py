@@ -919,12 +919,30 @@ def verify_arm64_container_reproducibility_evidence(
         for index, value in enumerate(captures_value)
     ]
     recipe = _recipe(root)
+    # A retained receipt describes the directory used at capture time. Moving
+    # the same committed source into a release/worktree must not rewrite it.
+    # Relocation requires the caller's independently resolved source anchor;
+    # both builds must still use one canonical absolute context, and the full
+    # command plus the current recipe hashes remain checked below.
+    capture_root = root
+    recorded_context = captures[0]["argv"][-1]
+    if recorded_context != str(root):
+        recorded_root = Path(recorded_context)
+        if (
+            expected_source_commit is None
+            or not recorded_root.is_absolute()
+            or str(recorded_root) != recorded_context
+            or ".." in recorded_root.parts
+            or any(char in recorded_context for char in ("\0", "\n", "\r"))
+        ):
+            raise Arm64ConsoleEvidenceError("cold-build capture context is invalid")
+        capture_root = recorded_root
     if (
         any(
             not _valid_build_capture_argv(
                 value["argv"],
                 recipe["source_date_epoch"],
-                root,
+                capture_root,
                 builder,
                 str(_object(record, "ARM64 build record").get("archive_name")),
             )

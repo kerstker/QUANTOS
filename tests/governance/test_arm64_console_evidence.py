@@ -655,6 +655,56 @@ def test_arm64_reproducibility_is_separate_recipe_bound_and_byte_identical(
     assert summary["verdict"] == "PASS"
 
 
+def test_arm64_reproducibility_survives_checkout_relocation(tmp_path: Path) -> None:
+    evidence = _reproducibility(tmp_path / "captured")
+    retained = json.dumps(evidence, sort_keys=True)
+    relocated = tmp_path / "relocated"
+    _write_recipe(relocated)
+
+    result = verify_arm64_container_reproducibility_evidence(
+        evidence, relocated, expected_source_commit=SOURCE_COMMIT
+    )
+    assert result["verdict"] == "PASS"
+    assert json.dumps(evidence, sort_keys=True) == retained
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_reproducibility_evidence(evidence, relocated)
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_reproducibility_evidence(
+            evidence, relocated, expected_source_commit="0" * 40
+        )
+    (relocated / "requirements.txt").write_text("demo==2.0\n")
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_reproducibility_evidence(
+            evidence, relocated, expected_source_commit=SOURCE_COMMIT
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation", ["context_only", "different_roots", "relative", "traversal"]
+)
+def test_relocated_arm64_evidence_keeps_exact_build_context_contract(
+    tmp_path: Path, mutation: str
+) -> None:
+    evidence = _reproducibility(tmp_path / "captured")
+    relocated = tmp_path / "relocated"
+    _write_recipe(relocated)
+    captures = evidence["build_captures"]
+    if mutation == "context_only":
+        captures[0]["argv"][-1] = str(tmp_path / "other")
+    elif mutation == "different_roots":
+        captures[1]["argv"][-2:] = [
+            str(tmp_path / "other/deploy/console.Dockerfile"), str(tmp_path / "other")
+        ]
+    else:
+        context = "relative" if mutation == "relative" else str(tmp_path / "captured/../other")
+        for capture in captures:
+            capture["argv"][-2:] = [context + "/deploy/console.Dockerfile", context]
+    with pytest.raises(Arm64ConsoleEvidenceError):
+        verify_arm64_container_reproducibility_evidence(
+            evidence, relocated, expected_source_commit=SOURCE_COMMIT
+        )
+
+
 def test_arm64_reproducibility_rejects_amd64_or_nonidentical_archive(
     tmp_path: Path,
 ) -> None:
