@@ -510,6 +510,9 @@
           "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
           "apps/research-console/playwright.config.ts",
           "apps/research-console/e2e/paper-cockpit.spec.ts",
+          "apps/research-console/src/studio/routes.ts",
+          "apps/research-console/src/studio/studio.test.tsx",
+          "apps/research-console/e2e/__snapshots__/research-studio-linux.png",
           "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
           "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
           "tests/governance/test_frontend_institutional_e2e_gate.py"
@@ -517,7 +520,7 @@
       },
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
-      "description": "Routes navigation and smoke tests share registry; the paper cockpit has a deterministic cross-platform accessibility, overflow, and visual-regression gate",
+      "description": "Research Studio navigation and bookmarks share a registry; current Linux visual and accessibility gates accompany retained historical cockpit baselines",
       "detail": "all declared evidence paths exist",
       "domain": "frontend_console",
       "evidence": [
@@ -526,6 +529,9 @@
         "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
         "apps/research-console/playwright.config.ts",
         "apps/research-console/e2e/paper-cockpit.spec.ts",
+        "apps/research-console/src/studio/routes.ts",
+        "apps/research-console/src/studio/studio.test.tsx",
+        "apps/research-console/e2e/__snapshots__/research-studio-linux.png",
         "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
         "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
         "tests/governance/test_frontend_institutional_e2e_gate.py"
@@ -1862,9 +1868,9 @@
   },
   "validation": {
     "current": true,
-    "generated_at": 1788760509519,
-    "run_id": "2864a16115f4a25b1f1fa0e1a6ff310e1b09d5b81a8727cf7c7f82111396abd2",
-    "source_commit": "42825b8a7a57881378faf6325db2147ea4711e6d"
+    "generated_at": 1788774674884,
+    "run_id": "73ff927f754b25dc1b00c38cbe3d04f468a968f82299e71acd69cf645d0b0dff",
+    "source_commit": "b35e6eddcdae90180c2805fe8659398eeb5ef278"
   },
   "verdict": "NOT_TOP_TIER"
 }
