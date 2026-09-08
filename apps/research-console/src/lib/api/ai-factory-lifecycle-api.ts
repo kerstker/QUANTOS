@@ -1,5 +1,5 @@
 import {RESEARCH_CONSOLE_API_BASE} from './research-console-api';
-import {RESEARCH_RUNNER_BASE,getRunnerToken,getOperator} from './research-runner-api';
+import {RESEARCH_RUNNER_BASE,getRunnerToken,getOperatorHeaders} from './research-runner-api';
 import type {FactoryLifecyclePayload} from '../types/ai-factory-lifecycle';
 export async function fetchLifecycle(signal:AbortSignal):Promise<FactoryLifecyclePayload>{
  const response=await fetch(new URL('/api/v1/console/ai-factory-lifecycle',RESEARCH_CONSOLE_API_BASE),{signal});
@@ -9,6 +9,6 @@ export async function fetchLifecycle(signal:AbortSignal):Promise<FactoryLifecycl
  return body;
 }
 export async function controlCampaign(body:Record<string,unknown>){
- const response=await fetch(`${RESEARCH_RUNNER_BASE}/factory-campaign`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),'X-Operator':getOperator()},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+ const response=await fetch(`${RESEARCH_RUNNER_BASE}/factory-campaign`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),...getOperatorHeaders()},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
  const result=await response.json();if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:`计划操作失败 (${response.status})`);return result;
 }

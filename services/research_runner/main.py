@@ -39,6 +39,7 @@ from services.research.run_registry.store import ResearchRunStore
 from .run_kinds import RUN_KINDS
 from .run_kinds import LEGACY_QUARANTINED_RUN_KINDS, enforce_run_kind_authority
 from .runner import JobQueue
+from .operator_tag import decode_operator_tag
 
 _STATE_ROOT = runtime_state_root()
 _RUNS_DB = str(_STATE_ROOT / "data/cache/research_runs.db")
@@ -85,6 +86,21 @@ _extra_cors_origins = tuple(
 def require_runner_token(x_runner_token: Optional[str] = Header(default=None)) -> None:
     if x_runner_token is None or not secrets.compare_digest(x_runner_token, _RUNNER_TOKEN):
         raise HTTPException(401, "missing or invalid X-Runner-Token")
+
+
+def require_operator(
+    x_operator: list[str] | None = Header(default=None),
+    x_operator_encoding: list[str] | None = Header(default=None),
+) -> str:
+    values = x_operator or []
+    encodings = x_operator_encoding or []
+    if len(values) > 1 or len(encodings) > 1:
+        raise HTTPException(400, 'duplicate operator headers are not allowed')
+    try:
+        return decode_operator_tag(values[0] if values else None,
+                                   encodings[0] if encodings else None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _reconcile_interrupted_runs_on_startup() -> tuple[tuple[str, str], ...]:
@@ -189,16 +205,13 @@ async def health() -> dict:
 @app.post("/run", dependencies=[Depends(require_runner_token)])
 async def run(
     req: RunRequest,
-    x_operator: str = Header(default=None),
+    operator: str = Depends(require_operator),
     idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
     # Rank #18: the only mutating surface must record WHO triggered each run. X-Operator is a
     # SELF-ASSERTED, UNAUTHENTICATED accountability tag (NOT RBAC/authn — that needs a Phase-14
     # identity layer). Required so no run is anonymous; persisted on the run row + the governance
     # audit chain.
-    operator = (x_operator or "").strip()
-    if not operator:
-        raise HTTPException(status_code=400, detail="X-Operator header required (self-asserted operator tag)")
     try:
         enforce_run_kind_authority(req.kind)
     except BacktestIntegrityBlocked as exc:
@@ -248,14 +261,11 @@ class CancelRequest(BaseModel):
 
 
 @app.post("/cancel", dependencies=[Depends(require_runner_token)])
-async def cancel(req: CancelRequest, x_operator: str = Header(default=None)) -> dict:
+async def cancel(req: CancelRequest, operator: str = Depends(require_operator)) -> dict:
     # 2026-07-05 安全审查 MEDIUM 修复:/cancel 此前不要求 X-Operator,与 /run 的问责要求
     # 不对称——任何人可以枚举 /api/v1/console/research-runs(公开只读)拿到 run_id 后匿名
     # 撤销别人的任务,连事后追责都做不到。同 /run 一样,这是自报的问责标签,不是身份认证
     # (那是 Phase 14 的范畴)。
-    operator = (x_operator or "").strip()
-    if not operator:
-        raise HTTPException(status_code=400, detail="X-Operator header required (self-asserted operator tag)")
     # soft cancel: mark the run cancelled and drop its result (a running tool is not force-killed)
     cancelled = _queue.cancel(req.run_id)
     try:
@@ -278,12 +288,10 @@ class FactoryRequest(BaseModel):
 
 
 @app.post('/factory', dependencies=[Depends(require_runner_token)])
-async def factory_control(req: FactoryRequest, x_operator: str = Header(default=None),
+async def factory_control(req: FactoryRequest, operator: str = Depends(require_operator),
                           idempotency_key: Optional[str] = Header(default=None,alias='Idempotency-Key')):
     from services.research.ai_factory import validate_config
     from services.research.ai_factory_store import FactoryStore
-    operator=(x_operator or '').strip()
-    if not operator:raise HTTPException(400,'X-Operator header required')
     if not 1<=req.attempt<=1000:raise HTTPException(400,'invalid attempt')
     if req.action not in ('create','pause','resume','cancel','observe','stop_observe','refresh_observe','assess','verify','compare'):raise HTTPException(400,'unknown factory action')
     try:
@@ -327,10 +335,8 @@ class FactoryCampaignRequest(BaseModel):
 
 
 @app.post('/factory-campaign',dependencies=[Depends(require_runner_token)])
-async def factory_campaign_control(req:FactoryCampaignRequest,x_operator:str=Header(default=None)):
+async def factory_campaign_control(req:FactoryCampaignRequest,operator:str=Depends(require_operator)):
     from services.research.ai_factory_store import FactoryStore
-    operator=(x_operator or '').strip()
-    if not 1<=len(operator)<=128:raise HTTPException(400,'X-Operator header required')
     if not 1<=req.campaign_id<=1000:raise HTTPException(400,'invalid campaign id')
     try:
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:

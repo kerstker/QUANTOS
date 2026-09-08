@@ -171,3 +171,77 @@ def test_post_run_quarantines_legacy_kind_before_stub_queue(tmp_path, monkeypatc
     assert response.status_code == 409
     assert "INVALIDATED_PERP_LEDGER_V1" in response.json()["detail"]
     assert stub.calls == []
+
+
+@pytest.mark.parametrize('path,body',[
+    ('/run',{'kind':'data_refresh','params':{}}),
+    ('/cancel',{'run_id':'run_1'}),
+    ('/factory',{'action':'create','attempt':1}),
+    ('/factory-campaign',{'action':'create','campaign_id':1}),
+])
+def test_unicode_operator_reaches_persisted_record(tmp_path,monkeypatch,path,body):
+    import base64
+    from services.research.ai_factory_store import FactoryStore
+    client,stub=_client(tmp_path,monkeypatch)
+    monkeypatch.setattr(m,'_STATE_ROOT',tmp_path)
+    operator='研究员张三 · Alpha 🚀'
+    response=client.post(path,json=body,headers={'X-Runner-Token':m._RUNNER_TOKEN,
+        'X-Operator':base64.b64encode(operator.encode()).decode(),'X-Operator-Encoding':'base64-utf8-v1'})
+    assert response.status_code==200,response.text
+    if path=='/run':assert stub.calls[0]['operator']==operator
+    elif path=='/cancel':assert response.json()['operator']==operator
+    elif path=='/factory':
+        assert stub.calls[0]['operator']==operator
+        with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+            import json
+            event=store.c.execute("SELECT payload FROM events WHERE kind='OPERATOR_ACTION'").fetchone()
+            assert json.loads(event[0])['operator']==operator
+    else:assert response.json()['campaigns'][0]['operator']==operator
+
+
+@pytest.mark.parametrize('value,encoding',[
+    ('alice','unknown'),('%%%','base64-utf8-v1'),('/w==','base64-utf8-v1'),
+    ('Cg==','base64-utf8-v1'),('YWxpY2U=garbage','base64-utf8-v1'),
+    ('a'*129,None),('',None),
+])
+def test_invalid_operator_envelope_never_submits(tmp_path,monkeypatch,value,encoding):
+    client,stub=_client(tmp_path,monkeypatch)
+    headers={'X-Runner-Token':m._RUNNER_TOKEN,'X-Operator':value}
+    if encoding is not None:headers['X-Operator-Encoding']=encoding
+    assert client.post('/run',json={'kind':'data_refresh','params':{}},headers=headers).status_code==400
+    assert stub.calls==[]
+
+
+def test_duplicate_operator_encoding_rejected(tmp_path,monkeypatch):
+    client,stub=_client(tmp_path,monkeypatch)
+    headers=[('X-Runner-Token',m._RUNNER_TOKEN),('X-Operator','YWxpY2U='),
+             ('X-Operator-Encoding','base64-utf8-v1'),('X-Operator-Encoding','base64-utf8-v1')]
+    assert client.post('/run',json={'kind':'data_refresh','params':{}},headers=headers).status_code==400
+    assert stub.calls==[]
+
+
+@pytest.mark.parametrize('name,expected', [('🚀'*128,200),('🚀'*129,400)])
+def test_unicode_operator_length_boundary(tmp_path,monkeypatch,name,expected):
+    import base64
+    client,stub=_client(tmp_path,monkeypatch)
+    response=client.post('/run',json={'kind':'data_refresh','params':{}},headers={
+        'X-Runner-Token':m._RUNNER_TOKEN,'X-Operator':base64.b64encode(name.encode()).decode(),
+        'X-Operator-Encoding':'base64-utf8-v1'})
+    assert response.status_code==expected
+    assert len(stub.calls)==(1 if expected==200 else 0)
+
+
+def test_unicode_envelope_does_not_replace_authentication(tmp_path,monkeypatch):
+    client,stub=_client(tmp_path,monkeypatch)
+    response=client.post('/run',json={'kind':'data_refresh','params':{}},headers={
+        'X-Operator':'YWxpY2U=','X-Operator-Encoding':'base64-utf8-v1'})
+    assert response.status_code==401
+    assert stub.calls==[]
+
+
+def test_duplicate_operator_rejected(tmp_path,monkeypatch):
+    client,stub=_client(tmp_path,monkeypatch)
+    response=client.post('/run',json={'kind':'data_refresh','params':{}},headers=[
+        ('X-Runner-Token',m._RUNNER_TOKEN),('X-Operator','alice'),('X-Operator','bob')])
+    assert response.status_code==400
+    assert stub.calls==[]

@@ -124,6 +124,15 @@ export function setOperator(name: string): void {
   try { localStorage.setItem(OPERATOR_KEY, name.trim()); } catch { /* ignore */ }
 }
 
+export function getOperatorHeaders(): Record<string,string> {
+  const name=getOperator();
+  if(Array.from(name).length>128||/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(name))
+    throw new Error('操作记录名称最多128个字符，不能包含控制字符或无效Unicode。');
+  if(/^[\x20-\x7e]+$/.test(name))return {'X-Operator':name};
+  const bytes=new TextEncoder().encode(name);
+  return {'X-Operator':btoa(String.fromCharCode(...bytes)),'X-Operator-Encoding':'base64-utf8-v1'};
+}
+
 // 2026-07-06 安全审查 punch-list:后端 /run + /cancel 现在要求本机共享密钥 `X-Runner-Token`
 // (镜像 live_ops_api 的 `X-Ops-Token` / LiveDesk 的 useOpsToken)。这是一个真实密钥,不是问责标签
 // ——只存 sessionStorage(关闭标签页即清空),绝不进 localStorage/构建产物。
@@ -146,7 +155,7 @@ export async function triggerRun(kind: string, params: Record<string, unknown> =
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   const res = await fetch(runnerUrl('/run'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken(), ...(invocationId ? { 'Idempotency-Key': invocationId } : {}) },
+    headers: { 'Content-Type': 'application/json', ...getOperatorHeaders(), 'X-Runner-Token': getRunnerToken(), ...(invocationId ? { 'Idempotency-Key': invocationId } : {}) },
     body: JSON.stringify({ kind, params }),
   });
   if (!res.ok) {
@@ -163,7 +172,7 @@ export async function cancelRun(runId: string): Promise<{ run_id: string; cancel
   // (本机共享密钥),少了任一个头都会出错(400/401)。
   const res = await fetch(runnerUrl('/cancel'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
+    headers: { 'Content-Type': 'application/json', ...getOperatorHeaders(), 'X-Runner-Token': getRunnerToken() },
     body: JSON.stringify({ run_id: runId }),
   });
   if (!res.ok) throw new Error(`runner returned ${res.status}`);

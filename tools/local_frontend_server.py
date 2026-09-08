@@ -16,7 +16,14 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from urllib.parse import unquote, urlsplit
+
+# The packaged launcher invokes this file directly, including outside the repo cwd.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from services.research_runner.operator_tag import decode_operator_tag
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -201,8 +208,11 @@ def _validated_proxy_body_length(
             raise _ProxyRequestError(415, "runner mutations require application/json")
         if not _single_header(headers, "X-Runner-Token"):
             raise _ProxyRequestError(401, "X-Runner-Token is required")
-        if not _single_header(headers, "X-Operator"):
-            raise _ProxyRequestError(400, "X-Operator is required")
+        try:
+            decode_operator_tag(_single_header(headers, "X-Operator"),
+                                _single_header(headers, "X-Operator-Encoding"))
+        except ValueError as exc:
+            raise _ProxyRequestError(400, str(exc)) from exc
     elif content_length != 0 or content_type is not None:
         raise _ProxyRequestError(400, "read-only proxy requests must not carry a body")
     return content_length

@@ -1,5 +1,5 @@
 import {RESEARCH_CONSOLE_API_BASE} from './research-console-api';
-import {RESEARCH_RUNNER_BASE,getRunnerToken,getOperator} from './research-runner-api';
+import {RESEARCH_RUNNER_BASE,getRunnerToken,getOperatorHeaders} from './research-runner-api';
 import type {FactoryPayload} from '../types/ai-factory';
 export async function fetchFactory(attempt:number|null,signal:AbortSignal):Promise<FactoryPayload> {
  if(!RESEARCH_CONSOLE_API_BASE)throw new Error('研究数据 API 尚未配置');
@@ -11,6 +11,6 @@ export async function fetchFactory(attempt:number|null,signal:AbortSignal):Promi
 }
 export async function controlFactory(request:Record<string,unknown>,id:string) {
  if(!RESEARCH_RUNNER_BASE)throw new Error('研究执行服务尚未配置');
- const response=await fetch(`${RESEARCH_RUNNER_BASE}/factory`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),'X-Operator':getOperator(),'Idempotency-Key':id},body:JSON.stringify(request),signal:AbortSignal.timeout(15000)});
+ const response=await fetch(`${RESEARCH_RUNNER_BASE}/factory`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),...getOperatorHeaders(),'Idempotency-Key':id},body:JSON.stringify(request),signal:AbortSignal.timeout(15000)});
  const body=await response.json();if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:`请求失败 (${response.status})`);return body;
 }

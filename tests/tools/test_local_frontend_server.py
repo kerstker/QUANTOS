@@ -445,3 +445,35 @@ def test_campaign_proxy_preserves_mutation_auth_boundary():
     assert not _client_request_is_allowed('GET','/__runner__/factory-campaign','127.0.0.1')
     with pytest.raises(Exception):
         _validated_proxy_body_length('POST','/__runner__/factory-campaign',_headers(('Content-Length','2'),('Content-Type','application/json')))
+
+
+@pytest.mark.parametrize('encoding_headers',[
+    [('X-Operator-Encoding','unknown')],
+    [('X-Operator-Encoding','base64-utf8-v1'),('X-Operator-Encoding','base64-utf8-v1')],
+])
+def test_proxy_rejects_ambiguous_operator_encoding_before_body_read(encoding_headers):
+    headers=_headers(('Content-Length','2'),('Content-Type','application/json'),
+        ('X-Runner-Token','test-token'),('X-Operator','YWxpY2U='),*encoding_headers)
+    with pytest.raises(_ProxyRequestError) as error:
+        _validated_proxy_body_length('POST','/__runner__/factory-campaign',headers)
+    assert error.value.status_code==400
+
+
+def test_proxy_accepts_versioned_utf8_operator_envelope():
+    headers=_headers(('Content-Length','2'),('Content-Type','application/json'),
+        ('X-Runner-Token','test-token'),('X-Operator','5byg5LiJ'),
+        ('X-Operator-Encoding','base64-utf8-v1'))
+    assert _validated_proxy_body_length('POST','/__runner__/factory-campaign',headers)==2
+
+
+def test_direct_frontend_launcher_imports_without_pythonpath(tmp_path):
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+    env={key:value for key,value in os.environ.items() if key!='PYTHONPATH'}
+    script=Path(__file__).resolve().parents[2]/'tools/local_frontend_server.py'
+    result=subprocess.run([sys.executable,str(script),'--help'],cwd=tmp_path,env=env,
+                          capture_output=True,text=True,timeout=15)
+    assert result.returncode==0,result.stderr
+    assert '--port' in result.stdout
