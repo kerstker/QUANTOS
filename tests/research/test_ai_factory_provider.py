@@ -74,3 +74,29 @@ def test_local_transport_bypasses_proxy_sends_no_key_and_does_not_follow_redirec
         assert propose('BTC',[0],[],environ=env)['candidate_id']==0
         assert len(requests)==2 and all('Authorization' not in r for r in requests)
     finally:server.shutdown();server.server_close();thread.join()
+
+
+@pytest.mark.parametrize('endpoint',[
+    'https://example.test:0/v1/chat/completions',
+    'https://example.test:65536/v1/chat/completions',
+    'https://user@example.test/v1/chat/completions',
+    'https://example.test\\@another.test/v1/chat/completions',
+    'https://example.test/v1/chat/completions#fragment',
+    'https://example.test/v1/chat/completions\x00',
+    'https://[bad::address]/v1/chat/completions',
+])
+def test_offline_endpoint_grammar_rejects_ambiguous_authorities(endpoint):
+    assert provider_status({**ENV,'QUANTOS_FACTORY_ENDPOINT':endpoint})['status']=='NOT_CONFIGURED'
+
+
+@pytest.mark.parametrize('endpoint',[
+    'https://example.test/v1/chat/completions',
+    'https://api.example.test:8443/v1/chat/completions',
+    'https://[::1]:8443/v1/chat/completions',
+])
+def test_offline_endpoint_grammar_accepts_supported_https(endpoint):
+    assert provider_status({**ENV,'QUANTOS_FACTORY_ENDPOINT':endpoint})['status']=='CONFIGURED_UNVERIFIED'
+
+
+def test_offline_endpoint_grammar_supports_explicit_ipv6_loopback():
+    assert provider_status({**LOCAL,'QUANTOS_FACTORY_ENDPOINT':'http://[::1]:8001/v1/chat/completions'})['status']=='CONFIGURED_UNVERIFIED'
