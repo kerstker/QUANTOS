@@ -8,6 +8,8 @@ from services.research.ai_factory_store import FactoryStore
 from services.research.ai_factory_provider_contract import provider_status, provider_identity
 from services.console.api.forward_dashboard import _read
 
+from services.console.api.ai_factory_workflow import workflow_payload
+
 router=APIRouter()
 
 def factory_payload(root,attempt=None):
@@ -69,7 +71,7 @@ def factory_payload(root,attempt=None):
                 and 0<=now-received<=900000):
                 provider={**provider,'status':'RECENT_CALL_SUCCEEDED','connected':True}
                 break
-    return {**data,'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
+    return {**data,'workflow':workflow_payload(root,data['selected'],data['events'],pipeline),'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
             'data_provenance':'REAL_AI_FACTORY_DIAGNOSTIC','snapshot_status':'REAL' if data['sessions'] else 'NO_SNAPSHOT',
             'authoritative':False,'as_of_ms':time.time_ns()//1000000,
             'provider':{key:provider[key] for key in ('status','model','connected')}}

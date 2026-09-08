@@ -18,3 +18,12 @@ it('does not fabricate predictions or enable an unfinished model',()=>{
  expect(screen.getByRole('button',{name:'启用观察'})).toBeDisabled();
  expect(screen.queryByRole('img')).not.toBeInTheDocument();
 });
+it('recovers failed result registration even when pipeline artifacts completed',()=>{
+ const action=vi.fn();
+ const data={selected:{state:'COMPLETED',result:{}},trials:[],pipeline:{status:'COMPLETED'},workflow:{status:'FAILED',stage:'COMPLETED',runner_status:'error',run_id:'run_failed',reason:'RUNNER_FAILED',can_resume:true}} as unknown as FactoryPayload;
+ const view=render(<FactoryEvidence data={data} busy={false} action={action}/>);
+ fireEvent.click(screen.getByRole('button',{name:'恢复后续流程'}));
+ expect(action).toHaveBeenCalledWith('resume');
+ view.rerender(<FactoryEvidence data={{...data,workflow:{...data.workflow,status:'RUNNING',can_resume:false}}} busy={false} action={action}/>);
+ expect(screen.getByRole('button',{name:'恢复后续流程'})).toBeDisabled();
+});

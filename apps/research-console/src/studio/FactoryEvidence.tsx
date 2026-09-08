@@ -5,6 +5,9 @@ import {Chart} from './Charts';
 import {fmt,stamp} from './data';
 
 export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void}) {
+ const workflow=data?.workflow;
+ const stages:Record<string,string>={RESEARCH:'主研究',POSTPROCESSING:'后续处理',ASSESSMENT:'压力与组合诊断',COMPARISON:'完整过程对照',VERIFICATION:'验证包准备',FORWARD:'自然时间观察',CHECKPOINT:'保存检查点',COMPLETED:'处理结束',RESULT_REGISTRATION:'结果登记'};
+ const reasons:Record<string,string>={RUNNER_FAILED:'执行器失败或中断，可恢复流程；已有实验记录保留。',WORKFLOW_INCOMPLETE:'执行器已结束，流程尚未完整完成，可继续恢复。',RUNNER_EVIDENCE_UNAVAILABLE:'尚无可核实的执行器记录，暂不能确认整条流程状态。'};
  const tabs=['运行与证据','前向观察','成本决策','压力与组合','过程对照'];
  const [tab,setTab]=useState(0),id=useId();
  const forward=data?.forward,assessment=data?.assessment,complete=data?.selected?.state==='COMPLETED';
@@ -15,7 +18,7 @@ export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;bus
  <div className="f-evidence-stack" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${tab}`} tabIndex={0}>
  {tab===0&&<>
  <Panel title="常驻研究观察" note="此状态只覆盖当前状态根中的小时观察工作者"><div className="f-toolbar"><Badge value={residentStale?'STALE':resident?.status??'NOT_CONFIGURED'}/><span>最近心跳 {stamp(resident?.observed_at_ms,true)}</span><span>检查点 {resident?.checkpoint?.status??'尚无记录'}</span></div><p className="f-message">{residentStale?'工作者超过三分钟未更新，请查看运行日志。':'研究状态与正式交易服务分开显示；没有心跳时不推断后台正在运行。'}</p></Panel>
- <Panel title="自动化流程" note="研究完成后自动进行六种压力诊断、两次共享账户对照、三折完整过程比较、验证包准备与前向激活"><div className="f-toolbar"><Badge value={data?.pipeline?.status??'等待研究完成'}/><span>{data?.pipeline?.stage??'实验 → 诊断 → 验证包 → 观察'}</span><button className="s-button" disabled={busy||data?.pipeline?.status!=='FAILED'} onClick={()=>action('resume')}>恢复后续流程</button></div><p className="f-message">{data?.pipeline?.reason}</p></Panel>
+ <Panel title="自动化流程" note="研究完成后自动进行六种压力诊断、两次共享账户对照、三折完整过程比较、验证包准备与前向激活"><div className="f-toolbar"><Badge value={workflow?.status??'UNKNOWN'}/><span>{stages[workflow?.stage??'']??workflow?.stage??'实验 → 诊断 → 验证包 → 观察'}</span><button className="s-button" disabled={busy||!complete||!workflow?.can_resume} onClick={()=>action('resume')}>恢复后续流程</button></div><p className="f-message">{reasons[workflow?.reason??'']} {workflow?.run_id&&`Runner：${workflow.runner_status} · ${workflow.run_id}`}。流程完成表示研究处理结束，前向观察仍按自然时间持续积累。</p></Panel>
  <Panel title="实验谱系" note="方法来源、父实验和数据截止固定在每次试验记录中"><div className="s-table-wrap" role="region" aria-label="实验谱系" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>父实验数</th><th>评价范围</th><th>标签截止</th><th>数据摘要</th></tr></thead><tbody>{data?.trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.hypothesis?.parent_trial_ids.length??'—'}</td><td>{t.hypothesis?.evaluation_scope??'旧版本未记录'}</td><td>{stamp(t.hypothesis?.evaluation_cutoff_ms,true)}</td><td>{t.hypothesis?.dataset_hash.slice(0,12)??'—'}</td></tr>)}</tbody></table></div></Panel>
  <Panel title="独立验证与证据包" note="绑定数据、模型、结果及完整实验账本，保留独立否定入口" action={<button className="s-button" disabled={busy||!complete} onClick={()=>action('verify')}>准备 / 检查验证包</button>}><p className="f-message">{data?.verification?.verification.status??'尚未准备独立验证包'}</p><p className="f-message">{data?.verification?.artifact_sha256&&`包摘要：${data.verification.artifact_sha256}`} · 经济准入未开放</p></Panel>
  </>}

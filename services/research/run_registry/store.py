@@ -59,6 +59,23 @@ class ResearchRunStore:
             with self._lock:
                 self._initialize_schema()
 
+    @classmethod
+    def read_snapshot(cls, db_path, run_id: str) -> Optional[ResearchRun]:
+        """Read one verified identity without creating, migrating or retaining a connection."""
+        from pathlib import Path
+        path = Path(db_path)
+        if path.is_symlink():
+            raise ValueError("unsafe run registry")
+        if not path.is_file():
+            return None
+        obj = object.__new__(cls)
+        obj._lock = threading.Lock()
+        obj._c = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            return obj.get(run_id)
+        finally:
+            obj._c.close()
+
     def _initialize_schema(self) -> None:
         """Create or atomically migrate the pre-invocation schema.
 
