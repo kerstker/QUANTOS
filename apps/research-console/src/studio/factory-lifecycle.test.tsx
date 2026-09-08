@@ -1,0 +1,30 @@
+import {it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {MemoryRouter} from '@/lib/router';
+import {FactoryLifecycle} from './FactoryLifecycle';
+import {fetchLifecycle,controlCampaign} from '@/lib/api/ai-factory-lifecycle-api';
+vi.mock('@/lib/api/ai-factory-lifecycle-api',()=>({fetchLifecycle:vi.fn(),controlCampaign:vi.fn()}));
+vi.mock('@/lib/api/research-runner-api',()=>({getOperator:()=> 'operator',getRunnerToken:()=> 'test',setOperator:vi.fn(),setRunnerToken:vi.fn()}));
+const data={campaigns:[],rounds:[],models:[],comparisons:[],sources:[{id:'aqr',name:'AQR',category:'国际机构',url:'https://www.aqr.com/',adopt:'成本后评价',limitation:'研究方法'}],capabilities:[{id:'R4',title:'执行与实际反馈',status:'BLOCKED',detail:'等待真实证据'}],scheduler_enabled:true,errors:[],as_of_ms:1,read_only:true,authoritative:false} as const;
+it('starts a bounded campaign and does not invent an active model',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue(structuredClone(data) as never);vi.mocked(controlCampaign).mockResolvedValue({});
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);
+ await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ fireEvent.click(screen.getByRole('button',{name:'启动持续研究计划'}));
+ await waitFor(()=>expect(controlCampaign).toHaveBeenCalledWith(expect.objectContaining({action:'create',max_cycles:3,budget:3,interval_hours:24})));
+ fireEvent.change(screen.getByLabelText('最多轮次'),{target:{value:'12'}});
+ fireEvent.change(screen.getByLabelText('每轮主实验'),{target:{value:'18'}});
+ expect(screen.getByRole('button',{name:'启动持续研究计划'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('tab',{name:'模型演进'}));
+ expect(screen.getByText('尚无冻结模型')).toBeInTheDocument();
+});
+it('supports keyboard navigation and searches actual source records',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue(structuredClone(data) as never);
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.keyDown(screen.getByRole('tab',{name:'生命周期'}),{key:'End'});
+ expect(screen.getByRole('tab',{name:'来源对标'})).toHaveFocus();
+ expect(screen.getByRole('link',{name:'AQR ↗'})).toHaveAttribute('href','https://www.aqr.com/');
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'missing'}});
+ expect(screen.queryByRole('link',{name:'AQR ↗'})).not.toBeInTheDocument();
+});

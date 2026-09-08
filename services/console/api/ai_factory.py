@@ -17,6 +17,7 @@ def factory_payload(root,attempt=None):
     try: data=FactoryStore.snapshot(root/'data/cache/ai_factory/factory.db',attempt)
     except (OSError,ValueError,sqlite3.Error):
         data={'sessions':[],'selected':None,'trials':[],'events':[]};errors=['FACTORY_STORE_UNAVAILABLE']
+    source_capture=None
     forward=None;assessment=None;verification=None;pipeline=None;comparison=None;resident=None
     path=root/'data/cache/ai_factory/resident.json'
     if path.exists():
@@ -57,6 +58,14 @@ def factory_payload(root,attempt=None):
         if path.exists():
             try:comparison=_read(path)
             except (OSError,ValueError):errors.append('COMPARISON_UNAVAILABLE')
+    if data['selected']:
+        path=root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'sources.json'
+        if path.exists():
+            try:
+                captured=_read(path)
+                if captured.get('authoritative') is not False:raise ValueError('invalid source capture')
+                source_capture={**captured,'records':[{k:v for k,v in r.items() if k!='excerpt'} for r in captured['records']]}
+            except (OSError,ValueError,TypeError,KeyError):errors.append('SOURCE_CAPTURE_UNAVAILABLE')
     # Avoid returning every historical equity curve and duplicate event payload on each poll.
     data['sessions']=[{**row,'result':{'selected':row['result'].get('selected'),'model_hash':row['result'].get('model_hash')}} for row in data['sessions']]
     data['events']=[{**row,'payload':{k:v for k,v in row['payload'].items() if k in ('reason','action','operator','run_id','trial_id','candidate_id','ordinal')}} for row in data['events']]
@@ -71,7 +80,7 @@ def factory_payload(root,attempt=None):
                 and 0<=now-received<=900000):
                 provider={**provider,'status':'RECENT_CALL_SUCCEEDED','connected':True}
                 break
-    return {**data,'workflow':workflow_payload(root,data['selected'],data['events'],pipeline),'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
+    return {**data,'source_capture':source_capture,'workflow':workflow_payload(root,data['selected'],data['events'],pipeline),'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
             'data_provenance':'REAL_AI_FACTORY_DIAGNOSTIC','snapshot_status':'REAL' if data['sessions'] else 'NO_SNAPSHOT',
             'authoritative':False,'as_of_ms':time.time_ns()//1000000,
             'provider':{key:provider[key] for key in ('status','model','connected')}}
@@ -79,3 +88,9 @@ def factory_payload(root,attempt=None):
 @router.get('/api/v1/console/ai-factory')
 def factory(attempt: int|None=Query(default=None,ge=1,le=1000)):
     return factory_payload(runtime_state_root(),attempt)
+
+
+@router.get('/api/v1/console/ai-factory-lifecycle')
+def lifecycle():
+    from services.console.api.ai_factory_lifecycle import lifecycle_payload
+    return lifecycle_payload(runtime_state_root())

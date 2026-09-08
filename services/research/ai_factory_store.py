@@ -22,6 +22,11 @@ class FactoryStore:
         p.parent.mkdir(parents=True,exist_ok=True)
         self.c=sqlite3.connect(p,timeout=30);self.c.row_factory=sqlite3.Row
         self.c.executescript('''
+          CREATE TABLE IF NOT EXISTS campaigns(campaign_id INTEGER PRIMARY KEY, config TEXT NOT NULL,
+          config_hash TEXT NOT NULL, state TEXT NOT NULL, operator TEXT NOT NULL, created_ms INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS campaign_rounds(campaign_id INTEGER NOT NULL, ordinal INTEGER NOT NULL,
+          attempt INTEGER NOT NULL UNIQUE, state TEXT NOT NULL, created_ms INTEGER NOT NULL, finished_ms INTEGER, trigger_key TEXT,
+          PRIMARY KEY(campaign_id,ordinal));
           CREATE TABLE IF NOT EXISTS sessions(attempt INTEGER PRIMARY KEY, config TEXT NOT NULL,
           config_hash TEXT NOT NULL, state TEXT NOT NULL, command TEXT NOT NULL, updated INTEGER NOT NULL,
           result TEXT NOT NULL DEFAULT '{}');
@@ -100,3 +105,109 @@ class FactoryStore:
             return {'sessions':sessions,'selected':selected,'trials':obj.trials(selected['attempt']) if selected else [],
                     'events':obj.events(selected['attempt']) if selected else []}
         finally:obj.c.close()
+
+    def create_campaign(self,config,*,operator,now):
+        from services.research.ai_factory_campaign import validate_campaign
+        config=validate_campaign(config)
+        if not isinstance(operator,str) or not 1<=len(operator.strip())<=128:raise ValueError('invalid operator')
+        if config.get('trigger')=='drift':
+            champion=self.get(config['champion_attempt'])
+            if champion['state']!='COMPLETED' or not champion['result'].get('model_hash'):raise ValueError('frozen champion required')
+        with self.c:
+            self.c.execute('BEGIN IMMEDIATE')
+            old=self.c.execute('SELECT config,operator FROM campaigns WHERE campaign_id=?',(config['campaign_id'],)).fetchone()
+            if old:
+                if old[0]!=encode(config) or old[1]!=operator:raise ValueError('campaign identity already exists')
+                return
+            if self.c.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0]>=100:raise ValueError('campaign registry capacity reached')
+            self.c.execute('INSERT INTO campaigns VALUES(?,?,?,?,?,?)',(config['campaign_id'],encode(config),digest(config),'RUNNING',operator,now))
+            self.event(None,'CAMPAIGN_CREATED',{'campaign_id':config['campaign_id'],'operator':operator})
+
+    def control_campaign(self,campaign_id,action,*,operator):
+        if action not in ('pause','resume','stop'):raise ValueError('invalid campaign action')
+        with self.c:
+            self.c.execute('BEGIN IMMEDIATE')
+            row=self.c.execute('SELECT state FROM campaigns WHERE campaign_id=?',(campaign_id,)).fetchone()
+            if row is None or row[0]=='STOPPED':raise ValueError('unknown or stopped campaign')
+            state={'pause':'PAUSED','resume':'RUNNING','stop':'STOPPED'}[action]
+            self.c.execute('UPDATE campaigns SET state=? WHERE campaign_id=?',(state,campaign_id))
+            self.event(None,'CAMPAIGN_CONTROL',{'campaign_id':campaign_id,'action':action,'operator':operator})
+
+    def campaign_snapshot(self):
+        # Older frozen databases remain readable without a schema migration.
+        if not self.c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='campaigns'").fetchone():
+            return {'campaigns':[],'rounds':[]}
+        campaigns=[]
+        for row in self.c.execute('SELECT * FROM campaigns ORDER BY campaign_id DESC LIMIT 100'):
+            item=dict(row);item['config']=json.loads(item['config'])
+            if digest(item['config'])!=item['config_hash']:raise ValueError('campaign integrity failed')
+            campaigns.append(item)
+        return {'campaigns':campaigns,'rounds':[dict(r) for r in self.c.execute('SELECT * FROM campaign_rounds ORDER BY campaign_id DESC,ordinal DESC LIMIT 1200')]}
+
+    def reserve_campaign(self,campaign_id,*,now,trigger_key=None):
+        from services.research.ai_factory import validate_config
+        from services.research.ai_factory_campaign import validate_campaign
+        with self.c:
+            self.c.execute('BEGIN IMMEDIATE')
+            row=self.c.execute('SELECT * FROM campaigns WHERE campaign_id=?',(campaign_id,)).fetchone()
+            if row is None or row['state']!='RUNNING':return None
+            config=validate_campaign(json.loads(row['config']))
+            if digest(config)!=row['config_hash']:raise ValueError('campaign integrity failed')
+            rounds=[dict(r) for r in self.c.execute('SELECT * FROM campaign_rounds WHERE campaign_id=? ORDER BY ordinal',(campaign_id,))]
+            pending=[r for r in rounds if r['state']=='RESERVED']
+            if pending:return pending[0]
+            if len(rounds)>=config['max_cycles']:
+                self.c.execute("UPDATE campaigns SET state='COMPLETED' WHERE campaign_id=?",(campaign_id,));return None
+            if trigger_key is not None and rounds and rounds[-1]['trigger_key']==trigger_key:return None
+            if rounds and now-rounds[-1]['finished_ms']<config['interval_hours']*3600000:return None
+            excluded=[];memory=[]
+            for prior in rounds:
+                memory.extend({'candidate_id':t['candidate_id'],'score':t.get('metrics',{}).get('score'),'status':t['status']} for t in self.trials(prior['attempt']) if t.get('candidate_id') is not None)
+                excluded.extend(t['candidate_id'] for t in self.trials(prior['attempt']) if t.get('candidate_id') is not None)
+            excluded=sorted(set(excluded))
+            if 72-len(excluded)<config['budget']:
+                self.c.execute("UPDATE campaigns SET state='EXHAUSTED' WHERE campaign_id=?",(campaign_id,));return None
+            attempt=self.c.execute('SELECT COALESCE(MAX(attempt),0)+1 FROM sessions').fetchone()[0]
+            session=validate_config({'attempt':attempt,'mode':config['mode'],'budget':config['budget'],'objective':config['objective'],
+                'search_plan':{'version':2,'excluded_ids':excluded,'source_ids':config['source_ids'],'memory':memory}})
+            self.c.execute('INSERT INTO sessions(attempt,config,config_hash,state,command,updated) VALUES(?,?,?,?,?,?)',
+                (attempt,encode(session),digest(session),'READY','run',now))
+            self.event(attempt,'CREATED',session)
+            ordinal=len(rounds)
+            self.event(attempt,'CAMPAIGN_ROUND',{'campaign_id':campaign_id,'ordinal':ordinal,'parent_attempts':[r['attempt'] for r in rounds]})
+            self.c.execute('INSERT INTO campaign_rounds VALUES(?,?,?,?,?,?,?)',(campaign_id,ordinal,attempt,'RESERVED',now,None,trigger_key))
+            return dict(self.c.execute('SELECT * FROM campaign_rounds WHERE campaign_id=? AND ordinal=?',(campaign_id,ordinal)).fetchone())
+
+    def finish_campaign_round(self,campaign_id,ordinal,state,*,now):
+        if state not in ('COMPLETED','FAILED','CANCELLED'):raise ValueError('invalid terminal round state')
+        with self.c:
+            self.c.execute("UPDATE campaign_rounds SET state=?,finished_ms=? WHERE campaign_id=? AND ordinal=? AND state='RESERVED'",(state,now,campaign_id,ordinal))
+
+    @classmethod
+    def read_campaigns(cls,path):
+        p=Path(path)
+        if p.is_symlink():raise ValueError('unsafe factory store')
+        if not p.exists():return {'campaigns':[],'rounds':[]}
+        obj=object.__new__(cls);obj.c=sqlite3.connect(p.resolve().as_uri()+'?mode=ro',uri=True,timeout=5);obj.c.row_factory=sqlite3.Row
+        try:
+            obj.c.execute('BEGIN')
+            obj.verify_campaigns()
+            return obj.campaign_snapshot()
+        finally:obj.c.close()
+
+    def verify_campaigns(self):
+        from services.research.ai_factory_campaign import validate_campaign
+        from services.research.ai_factory import validate_config
+        snapshot=self.campaign_snapshot()
+        campaigns={c['campaign_id']:c for c in snapshot['campaigns']}
+        for cid,campaign in campaigns.items():
+            config=validate_campaign(campaign['config'])
+            rounds=sorted((r for r in snapshot['rounds'] if r['campaign_id']==cid),key=lambda r:r['ordinal'])
+            if len(rounds)>config['max_cycles'] or [r['ordinal'] for r in rounds]!=list(range(len(rounds))):raise ValueError('campaign round budget or sequence corrupt')
+            for row in rounds:
+                session=validate_config(self.get(row['attempt'])['config'])
+                if any(session[k]!=config[k] for k in ('objective','mode','budget')) or session.get('search_plan',{}).get('source_ids')!=config['source_ids']:
+                    raise ValueError('campaign session binding corrupt')
+                if row['state'] not in ('RESERVED','COMPLETED','FAILED','CANCELLED'):raise ValueError('campaign round state corrupt')
+                if (row['state']=='RESERVED')!=(row['finished_ms'] is None):raise ValueError('campaign terminal time corrupt')
+        if any(r['campaign_id'] not in campaigns for r in snapshot['rounds']):raise ValueError('orphan campaign round')

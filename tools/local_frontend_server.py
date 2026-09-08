@@ -131,7 +131,7 @@ def _request_surface_is_allowed(method: str, path: str) -> bool:
         return method in {"GET", "HEAD"}
     if request_path == "/__runner__/health":
         return method in {"GET", "HEAD"}
-    if request_path in {"/__runner__/run", "/__runner__/cancel", "/__runner__/factory"}:
+    if request_path in {"/__runner__/run", "/__runner__/cancel", "/__runner__/factory", "/__runner__/factory-campaign"}:
         return method == "POST"
     if request_path == "/__runner__" or request_path.startswith("/__runner__/"):
         return False
@@ -175,6 +175,7 @@ def _validated_proxy_body_length(
         "/__runner__/run",
         "/__runner__/cancel",
         "/__runner__/factory",
+        "/__runner__/factory-campaign",
     }
     if headers.get_all("Transfer-Encoding", []):
         raise _ProxyRequestError(400, "Transfer-Encoding request bodies are not allowed")

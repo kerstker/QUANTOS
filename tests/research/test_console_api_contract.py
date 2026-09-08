@@ -54,7 +54,8 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/ai-factory": ("", ("sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow")),
+    "/api/v1/console/ai-factory-lifecycle": ("", ("models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
+    "/api/v1/console/ai-factory": ("", ("sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),
     "/api/v1/console/market-dashboard": ("", ("symbol", "symbols", "status", "as_of_ms", "observed_at_ms", "candles", "samples", "depth", "integrity", "reason")),
     "/api/v1/console/overview": ("", ("stats", "funnel", "agents")),
@@ -224,6 +225,7 @@ BACKEND_ONLY_ROUTES = {
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
     "/api/v1/console/ai-factory": "REAL_AI_FACTORY_DIAGNOSTIC",
+    "/api/v1/console/ai-factory-lifecycle": "REAL_AI_FACTORY_DIAGNOSTIC",
     "/api/v1/console/market-dashboard": "REAL_PUBLIC_MARKET_DIAGNOSTIC",
     "/api/v1/console/forward-dashboard": "REAL_FORWARD_OBSERVATION_DIAGNOSTIC",
     "/api/v1/console/agents": "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT",

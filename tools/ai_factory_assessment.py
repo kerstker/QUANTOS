@@ -82,6 +82,9 @@ def run_assessment(params):
             comparison={'status':'POST_SELECTION_DIAGNOSTIC','context':context,'replace':replacement,'add':combined,
                         'add_net_pnl_delta':combined['net_pnl']-base['net_pnl'],
                         'replace_net_pnl_delta':replacement['net_pnl']-base['net_pnl'],
+                        'prediction_correlation':float(np.corrcoef(p,q)[0,1]) if min(np.std(p),np.std(q))>0 else None,
+                        'prediction_disagreement_fraction':float(np.mean(np.sign(p)!=np.sign(q))),
+                        'capital_model':'SHARED_CANONICAL_ACCOUNT','capacity_scenario':'ONE_PERCENT_DAILY_QUOTE_VOLUME',
                         'authoritative':False,'independent_forward_increment':'NOT_ESTABLISHED'}
         histories=[_returns(r['metrics']) for r in successful]
         n=min(map(len,histories)) if histories else 0

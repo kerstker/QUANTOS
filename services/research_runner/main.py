@@ -16,6 +16,7 @@ anything. Wall-clock is taken only here, at the service/HTTP adapter boundary.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import os
 import secrets
@@ -122,7 +123,25 @@ def _reconcile_interrupted_runs_on_startup() -> tuple[tuple[str, str], ...]:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     _reconcile_interrupted_runs_on_startup()
-    yield
+    task=None
+    if os.getenv('QUANTOS_FACTORY_CAMPAIGNS_ENABLED','false')=='true':
+        async def campaigns():
+            from .factory_campaign import campaign_tick
+            while True:
+                try:
+                    status=await asyncio.to_thread(campaign_tick,_STATE_ROOT,_queue,_registry,now=time.time_ns()//1000000)
+                    from tools.cache_io import atomic_write_json
+                    from tools.btc_factory_research import seal
+                    atomic_write_json(str(_STATE_ROOT/'data/cache/ai_factory/campaign-worker.json'),seal({**status,'observed_at_ms':time.time_ns()//1000000,'authoritative':False}))
+                except Exception:_LOG.exception('factory campaign scheduling failed')
+                await asyncio.sleep(30)
+        task=asyncio.create_task(campaigns())
+    try:yield
+    finally:
+        if task:
+            task.cancel()
+            try:await task
+            except asyncio.CancelledError:pass
 
 
 app = FastAPI(title="QUANTOS Research Runner", version="0.1.0", lifespan=_lifespan)
@@ -255,6 +274,7 @@ class FactoryRequest(BaseModel):
     mode: str = 'baseline'
     budget: int = 3
     objective: str = 'BTC 小时级因果研究'
+    search_plan: Optional[dict] = None
 
 
 @app.post('/factory', dependencies=[Depends(require_runner_token)])
@@ -267,7 +287,7 @@ async def factory_control(req: FactoryRequest, x_operator: str = Header(default=
     if not 1<=req.attempt<=1000:raise HTTPException(400,'invalid attempt')
     if req.action not in ('create','pause','resume','cancel','observe','stop_observe','refresh_observe','assess','verify','compare'):raise HTTPException(400,'unknown factory action')
     try:
-        config=validate_config({'attempt':req.attempt,'mode':req.mode,'budget':req.budget,'objective':req.objective})
+        config=validate_config({'attempt':req.attempt,'mode':req.mode,'budget':req.budget,'objective':req.objective,**({'search_plan':req.search_plan} if req.search_plan is not None else {})})
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
             if req.action in ('observe','stop_observe','refresh_observe','assess','verify','compare'):
                 row=store.get(req.attempt)
@@ -290,3 +310,33 @@ async def factory_control(req: FactoryRequest, x_operator: str = Header(default=
             with store.c:store.event(req.attempt,'OPERATOR_ACTION',{'operator':operator,'action':req.action,'run_id':run_id})
             return {'session':store.get(req.attempt),'run_id':run_id}
     except (ValueError,InvocationConflictError) as exc:raise HTTPException(409,str(exc)) from exc
+
+
+class FactoryCampaignRequest(BaseModel):
+    model_config=ConfigDict(strict=True,extra='forbid')
+    action:str
+    campaign_id:int
+    objective:str='BTC 小时级成本后机制研究'
+    mode:str='ai'
+    budget:int=3
+    max_cycles:int=3
+    interval_hours:int=24
+    source_ids:list[str]=['buildalpha','aqr','rd_agent']
+    trigger:str='schedule'
+    champion_attempt:Optional[int]=None
+
+
+@app.post('/factory-campaign',dependencies=[Depends(require_runner_token)])
+async def factory_campaign_control(req:FactoryCampaignRequest,x_operator:str=Header(default=None)):
+    from services.research.ai_factory_store import FactoryStore
+    operator=(x_operator or '').strip()
+    if not 1<=len(operator)<=128:raise HTTPException(400,'X-Operator header required')
+    if not 1<=req.campaign_id<=1000:raise HTTPException(400,'invalid campaign id')
+    try:
+        with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
+            if req.action=='create':
+                store.create_campaign(req.model_dump(exclude={'action'}),operator=operator,now=time.time_ns()//1000000)
+            elif req.action in ('pause','resume','stop'):store.control_campaign(req.campaign_id,req.action,operator=operator)
+            else:raise ValueError('unknown campaign action')
+            return {**store.campaign_snapshot(),'scheduler_enabled':os.getenv('QUANTOS_FACTORY_CAMPAIGNS_ENABLED','false')=='true'}
+    except (ValueError,TypeError) as exc:raise HTTPException(409,str(exc)) from exc

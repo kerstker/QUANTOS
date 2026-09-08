@@ -4,7 +4,7 @@ import time
 import threading
 import numpy as np
 from quantos.runtime_paths import runtime_state_root
-from services.research.ai_factory import HOUR,candidates,fit_predict,hourly_panel
+from services.research.ai_factory import HOUR,candidates,candidate_pool,fit_predict,hourly_panel
 from services.research.ai_factory_walkforward import folds
 from services.research.ai_factory_store import FactoryStore,digest
 from services.research.trial_ledger import TrialLedger
@@ -33,10 +33,12 @@ def run_comparison(params):
         minutes,_=load_verified_minutes(directory);t,x,y=hourly_panel(minutes);market,*_=load_data(directory=directory)
         keep=(t+300000>=market['start'])&(t+4*HOUR+300000<=market['end']);t,x,y=t[keep],x[keep],y[keep]
         if digest([t.tolist(),x.tolist(),y.tolist()])!=plan['identity']['panel_hash']:raise ValueError('comparison panel changed')
+        pool=candidate_pool(state['config']);space={c['id']:c for c in pool}
         budget=state['config']['budget'];groups=['baseline','random']
         if state['config']['mode']=='ai' and provider_status()['status']=='CONFIGURED_UNVERIFIED':groups.append('ai')
         identity={'source':source_identity(),'input_hash':plan['identity']['inputs']['input_hash'],
                   'budget_per_group_per_fold':budget,'groups':groups,'folds':3,'seed':17,'scope':'POST_SELECTION_PROCESS_DIAGNOSTIC'}
+        if 'search_plan' in state['config']:identity['search_plan']=state['config']['search_plan']
         frozen=dest/'comparison-plan.json'
         if frozen.exists() and verified(frozen)!=seal(identity):raise ValueError('comparison identity changed')
         if not frozen.exists():atomic_write_json(str(frozen),seal(identity))
@@ -45,7 +47,7 @@ def run_comparison(params):
             ledger.verify()
             for fold,(train,valid,test) in enumerate(folds(t,t+4*HOUR+300000)):
                 for group in groups:
-                    history=[];order=list(range(18)) if group=='baseline' else np.random.default_rng(17+fold).permutation(18).tolist()
+                    history=[];order=list(space) if group=='baseline' else np.random.default_rng(17+fold).permutation(list(space)).tolist()
                     for ordinal in range(budget):
                         definition=digest({'identity':identity,'fold':fold,'group':group,'ordinal':ordinal})
                         record={'trial_id':definition,'alpha_id':digest(group),'family_id':digest('PROCESS_COMPARISON'),
@@ -69,19 +71,21 @@ def run_comparison(params):
                             try:
                                 picked=order[ordinal]
                                 if group=='ai':
-                                    remaining=[c['id'] for c in candidates() if c['id'] not in [r['candidate_id'] for r in history]]
-                                    picked=propose(state['config']['objective'],remaining,[{'candidate_id':r['candidate_id'],'score':r.get('score'),'status':r['status']} for r in history if r['candidate_id'] is not None])['candidate_id']
-                                spec=candidates()[picked];p=fit_predict(spec,x[train],y[train],x[valid])
+                                    remaining=[c['id'] for c in pool if c['id'] not in [r['candidate_id'] for r in history]]
+                                    picked=propose(state['config']['objective'],remaining,[{'candidate_id':r['candidate_id'],'score':r.get('score'),'status':r['status']} for r in history if r['candidate_id'] is not None],**({'search_plan':state['config']['search_plan']} if 'search_plan' in state['config'] else {}))['candidate_id']
+                                spec=space[picked];p=fit_predict(spec,x[train],y[train],x[valid])
+                                prediction_hash=digest([t[valid].tolist(),p.tolist()])
+                                if 'search_plan' in state['config'] and any(r.get('prediction_hash')==prediction_hash for r in history):raise ValueError('duplicate inner prediction')
                                 stats=evaluate_market(market,spec,t[valid],p,cost_aware=True,variance_by_slot=variance)
                                 receipt=seal({'status':'PASSED','candidate_id':picked,'score':stats['score'],'trial_id':definition,
-                                              'net_pnl':stats['net_pnl'],'elapsed_seconds':time.perf_counter()-started})
+                                              'net_pnl':stats['net_pnl'],**({'prediction_hash':prediction_hash} if 'search_plan' in state['config'] else {}),'elapsed_seconds':time.perf_counter()-started})
                             except Exception as exc:receipt=seal({'status':'FAILED','candidate_id':picked,'reason':type(exc).__name__,'trial_id':definition})
                             atomic_write_json(str(receipt_path),receipt);_event(ledger,record,receipt['status'])
                         history.append(receipt)
                     successful=[r for r in history if r['status']=='PASSED']
                     if not successful:
                         rows.append({'fold':fold,'group':group,'status':'FAILED','trials':history});continue
-                    best=max(successful,key=lambda r:(r['score'],-r['candidate_id']));spec=candidates()[best['candidate_id']]
+                    best=max(successful,key=lambda r:(r['score'],-r['candidate_id']));spec=space[best['candidate_id']]
                     outer_path=dest/f'comparison-outer-{fold}-{group}.json';started_path=outer_path.with_suffix('.started.json')
                     if outer_path.exists():outer=verified(outer_path)['metrics']
                     elif started_path.exists():

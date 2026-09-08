@@ -438,3 +438,10 @@ def test_event_stream_proxy_relays_without_buffering_or_content_length():
     assert all(key.lower() != "content-length" for key, _ in headers)
     assert all(key.lower() != "transfer-encoding" for key, _ in headers)
     assert handler.close_connection is True
+
+
+def test_campaign_proxy_preserves_mutation_auth_boundary():
+    assert _client_request_is_allowed('POST','/__runner__/factory-campaign','127.0.0.1')
+    assert not _client_request_is_allowed('GET','/__runner__/factory-campaign','127.0.0.1')
+    with pytest.raises(Exception):
+        _validated_proxy_body_length('POST','/__runner__/factory-campaign',_headers(('Content-Length','2'),('Content-Type','application/json')))

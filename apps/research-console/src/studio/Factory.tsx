@@ -10,7 +10,7 @@ import {FactoryEvidence} from './FactoryEvidence';
 
 const STAGES:Record<string,number>={READY:0,VALIDATING_INPUT:0,RUNNING:1,PAUSED:1,OUTER_VALIDATION:2,COMPLETED:3};
 export function Factory() {
- const [selected,setSelected]=useState<number|null>(null),[mode,setMode]=useState('baseline'),[budget,setBudget]=useState(3),[attempt,setAttempt]=useState(1);
+ const [selected,setSelected]=useState<number|null>(()=>{const n=Number(new URLSearchParams(window.location.search).get('attempt'));return Number.isInteger(n)&&n>=1&&n<=1000?n:null;}),[mode,setMode]=useState('baseline'),[budget,setBudget]=useState(3),[attempt,setAttempt]=useState(1);
  const [objective,setObjective]=useState('研究 BTC 小时级价格动量与主动成交量信息，比较规则、Ridge 和 GBM，评估费用后的稳定性。');
  const [operator,editOperator]=useState(getOperator),[token,editToken]=useState(getRunnerToken),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const pending=useRef<{body:string;id:string}|null>(null);
@@ -57,7 +57,7 @@ export function Factory() {
  </Panel>
  <Chart title="外层技术验证 · 账户权益" rows={curve.map(r=>({label:stamp(r.time,true),time:r.time,equity:Number(r.equity)}))} series={[{key:'equity',label:'技术回放权益'}]} unit="USDC" note="真实账本技术回放；包含费用、资金费与风险约束，历史接收时间未知；历史外层窗口可能被不同任务重复使用，不建立独立经济证据。"/>
  <Panel title="实验对比" note="内层结果用于模型选择；外层结果不回传给模型">
- <div className="s-table-wrap" role="region" aria-label="实验对比表格" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>模型</th><th>执行结果</th><th>净损益</th><th>回撤</th><th>预测 RMSE</th></tr></thead><tbody>{trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.spec?.model.toUpperCase()??'—'}</td><td><Badge value={t.status==='PASSED'?'done':t.status}/>{t.reason&&<small>{t.reason}</small>}</td><td>{fmt(t.metrics?.net_pnl)}</td><td>{t.metrics?.drawdown===undefined?'—':`${fmt(t.metrics.drawdown*100)}%`}</td><td>{fmt(t.rmse,6)}</td></tr>)}</tbody></table></div>{!trials.length&&<p className="f-muted">实验开始后自动显示结果。</p>}
+ <div className="s-table-wrap" role="region" aria-label="实验对比表格" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>模型</th><th>执行结果</th><th>净损益</th><th>回撤</th><th>预测 RMSE</th></tr></thead><tbody>{trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.spec?.model.toUpperCase()??'—'}<small>{({flow_interaction:'成交量交互',volatility_scaled:'波动归一化',reversal:'反转组合'} as Record<string,string>)[t.spec?.transform??'']??'原始特征'}</small></td><td><Badge value={t.status==='PASSED'?'done':t.status}/>{t.reason&&<small>{t.reason}</small>}</td><td>{fmt(t.metrics?.net_pnl)}</td><td>{t.metrics?.drawdown===undefined?'—':`${fmt(t.metrics.drawdown*100)}%`}</td><td>{fmt(t.rmse,6)}</td></tr>)}</tbody></table></div>{!trials.length&&<p className="f-muted">实验开始后自动显示结果。</p>}
  </Panel>
  <FactoryEvidence data={data} busy={busy||!operator.trim()||!token.trim()} action={name=>void run(name)}/>
  <Panel title="运行事件" note="包括暂停、失败和操作记录"><ol className="f-events" aria-label="运行事件列表" tabIndex={0}>{data?.events.slice(0,20).map(e=><li key={e.seq}><time>{stamp(e.at,true)}</time><strong>{({TRIAL:'实验已记录',CREATED:'任务已创建',CONTROL:'控制请求',OPERATOR_ACTION:'操作记录'} as Record<string,string>)[e.kind]??statusLabel(e.kind)}</strong><span>{typeof e.payload.reason==='string'?e.payload.reason:typeof e.payload.action==='string'?e.payload.action:''}</span></li>)}</ol></Panel>

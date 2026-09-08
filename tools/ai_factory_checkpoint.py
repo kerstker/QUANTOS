@@ -69,6 +69,7 @@ def _verify_state(base):
     try:
         sessions=[obj.get(row[0]) for row in obj.c.execute('SELECT attempt FROM sessions ORDER BY attempt')]
         receipts={row['attempt']:obj.trials(row['attempt']) for row in sessions}
+        obj.verify_campaigns()
     finally:obj.c.close()
     for session in sessions:
         if session['state']=='COMPLETED':

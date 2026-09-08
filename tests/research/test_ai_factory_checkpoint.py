@@ -22,3 +22,16 @@ def test_checkpoint_rejects_symlink_artifacts(tmp_path):
     root=tmp_path/'state';base=root/'data/cache/ai_factory';base.mkdir(parents=True)
     (base/'bad.json').symlink_to('/etc/hostname')
     with pytest.raises(ValueError):create_checkpoint(root,tmp_path/'backup.zip')
+
+
+def test_checkpoint_restores_campaign_outbox_and_rejects_broken_binding(tmp_path):
+    root=tmp_path/'state';base=root/'data/cache/ai_factory'
+    config={'campaign_id':1,'objective':'BTC','mode':'baseline','budget':3,'max_cycles':2,'interval_hours':1,'source_ids':['aqr']}
+    with FactoryStore(base/'factory.db') as s:
+        s.create_campaign(config,operator='test',now=0);s.reserve_campaign(1,now=0)
+    create_checkpoint(root,tmp_path/'campaign.zip');restore_checkpoint(tmp_path/'campaign.zip',tmp_path/'restored')
+    with FactoryStore(tmp_path/'restored/factory.db') as s:
+        s.verify_campaigns();assert s.reserve_campaign(1,now=1)['attempt']==1
+    with FactoryStore(base/'factory.db') as s:
+        s.c.execute('UPDATE campaign_rounds SET attempt=999');s.c.commit()
+    with pytest.raises(ValueError):create_checkpoint(root,tmp_path/'broken.zip')

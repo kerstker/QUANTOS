@@ -54,7 +54,7 @@ def _run(base,dest,attempt,action,clock,get):
         if session['state']!='COMPLETED':raise ValueError('completed research required')
         model=verified(dest.parent/'model.json');result=verified(dest.parent/'result.json')
         if (model['result_hash']!=result['model_hash'] or model['result_hash']!=session['result']['model_hash']
-                or model['schema']!='QUANTOS_AI_FACTORY_V1' or model['spec'] not in candidates()
+                or model['schema']!='QUANTOS_AI_FACTORY_V1' or model['spec'] not in candidates(2)
                 or model['authoritative'] is not False or model['live_eligible'] is not False
                 or model['training_last_label_ms']>=now):raise ValueError('model activation identity failed')
         if not freeze_path.exists():

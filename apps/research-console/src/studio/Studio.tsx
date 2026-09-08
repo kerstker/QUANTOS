@@ -10,6 +10,7 @@ import { useResource } from './data';
 import { Compare } from './Compare';
 import {Market,Analysis,Models,Operations} from './Analysis';
 import {Factory} from './Factory';
+import {FactoryLifecycle} from './FactoryLifecycle';
 import { NAV, LEGACY } from './routes';
 export default function Studio() {
   const location = useLocation(), nav = useNavigate();
@@ -67,6 +68,8 @@ export default function Studio() {
     page = <Factory/>;
   else if (path === '/studio/market')
     page = <Market/>;
+  else if (path === '/studio/lifecycle')
+    page = <FactoryLifecycle/>;
   else if (path === '/studio/analysis')
     page = <Analysis runs={runs} initialRun={new URLSearchParams(location.search).get('run')??''}/>;
   else if (path === '/studio/models')

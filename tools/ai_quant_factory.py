@@ -5,13 +5,17 @@ from collections import Counter
 from pathlib import Path
 import numpy as np
 from quantos.runtime_paths import runtime_state_root
-from services.research.ai_factory import HOUR,candidates,fit_predict,hourly_panel,partition,targets,validate_config
+from services.research.ai_factory import HOUR,candidates,candidate_pool,fit_predict,hourly_panel,partition,targets,validate_config
 from services.research.ai_factory_store import FactoryStore,digest
 from services.research.trial_ledger import TrialLedger
 from tools.ashare_alpha_runtime_lock import acquire_runtime_lock
 from tools.btc_factory_research import _event,_trial,seal,verified,snapshot
 from tools.cache_io import atomic_write_json
 from tools.ai_factory_provider import propose
+
+class DuplicateInnerPrediction(ValueError):
+    pass
+
 
 SCHEMA='QUANTOS_AI_FACTORY_V1'
 POLICY={'schema':SCHEMA,'split':[.65,.82],'purge_hours':4,'entry_delay_minutes':5,
@@ -24,6 +28,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
     session=store.get(attempt);config=validate_config(session['config']);dest=Path(output)/str(attempt)
     dest.mkdir(parents=True,exist_ok=True)
     t,x,y=panel
+    pool=candidate_pool(config);space={c['id']:c for c in pool}
     bound={'config':config,'policy':POLICY,'inputs':identity,
            'panel_hash':digest([t.tolist(),x.tolist(),y.tolist()])}
     plan=dest/'plan.json'
@@ -69,18 +74,21 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                 store.record_trial(attempt,ordinal,{'ordinal':ordinal,'status':'FAILED','candidate_id':None,
                     'reason':'INTERRUPTED','trial_id':definition});continue
             _event(ledger,record,'PLANNED');_event(ledger,record,'RUNNING')
-            picked=None;stage='PROPOSAL'
+            picked=None;prediction_hash=None;stage='PROPOSAL'
             try:
-                remaining=[c['id'] for c in candidates() if c['id'] not in [r['candidate_id'] for r in existing]]
+                remaining=[c['id'] for c in pool if c['id'] not in [r['candidate_id'] for r in existing]]
                 receipt={'candidate_id':remaining[0],'model':'deterministic_baseline'}
                 if config['mode']=='ai':
                     history=[{'candidate_id':r['candidate_id'],'score':r.get('metrics',{}).get('score'),'status':r['status']}
                              for r in existing if r['candidate_id'] is not None]
-                    receipt=proposal(config['objective'],remaining,history)
+                    receipt=proposal(config['objective'],remaining,config.get('search_plan',{}).get('memory',[])+history,**({'search_plan':config['search_plan'],'source_context':identity.get('research_sources',{}).get('records',[])} if 'search_plan' in config else {}))
                 picked=receipt['candidate_id']
                 if type(picked) is not int or picked not in remaining:raise ValueError('invalid candidate proposal')
                 stage='MODEL_FIT'
-                spec=candidates()[picked];p=fit_predict(spec,x[train],y[train],x[valid])
+                spec=space[picked];p=fit_predict(spec,x[train],y[train],x[valid])
+                if 'search_plan' in config:
+                    prediction_hash=digest([t[valid].tolist(),p.tolist()])
+                    if any(r.get('prediction_hash')==prediction_hash for r in existing):raise DuplicateInnerPrediction('duplicate inner forecast')
                 stage='LEDGER_REPLAY'
                 stats=evaluate(spec,t[valid],p)
                 if not np.isfinite(stats['score']):raise ValueError('nonfinite trial score')
@@ -90,15 +98,16 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
             except Exception as exc:
                 # Exception messages can include remote payloads or paths; retain a bounded error code.
                 result={'ordinal':ordinal,'candidate_id':picked,'status':'FAILED','reason':stage+'_'+type(exc).__name__,'trial_id':definition}
+            if prediction_hash is not None:result['prediction_hash']=prediction_hash
             result['hypothesis']={'hypothesis_id':definition,'family_id':record['family_id'],
                 'dataset_hash':bound['inputs'].get('input_hash',bound['panel_hash']),
-                'feature_spec_hash':digest(candidates()[picked]['features']) if picked is not None else None,
+                'feature_spec_hash':digest(space[picked] if 'search_plan' in config else space[picked]['features']) if picked is not None else None,
                 'target_horizon_ms':4*HOUR,'training_label_cutoff_ms':int((t[train]+4*HOUR+300000).max()),
                 'evaluation_scope':'INNER_ONLY','evaluation_cutoff_ms':int((t[valid]+4*HOUR+300000).max()),
                 'split_plan_hash':digest([train.tolist(),valid.tolist(),test.tolist()]),
                 'cost_profile_hash':digest({'fee_bps':4,'slippage_bps':5,'decision_policy':POLICY['decision_policy']}),
                 'parent_trial_ids':[r['trial_id'] for r in existing],
-                'source_ids':['buildalpha-llm','aqr-cost'],
+                'source_ids':config.get('search_plan',{}).get('source_ids',['buildalpha-llm','aqr-cost']),
                 'source_role':'RESEARCH_METHOD_NOT_SIGNAL_PROFITABILITY_EVIDENCE'}
             store.record_trial(attempt,ordinal,result)
             _event(ledger,record,result['status'])
@@ -173,7 +182,8 @@ def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,sli
                   context_decision=context_decision,slip_bps=D(slip_bps),taker_fee_bps=D(fee_bps),
                   stop=True,decision_interval_ms=HOUR)
     stats=metrics(result)
-    return {'score':stats['net_pnl']-1500*stats['max_drawdown'], 'net_pnl':stats['net_pnl'],
+    from services.research.ai_factory_execution_feedback import execution_feedback
+    return {'execution_feedback':execution_feedback(result),'score':stats['net_pnl']-1500*stats['max_drawdown'], 'net_pnl':stats['net_pnl'],
             'drawdown':stats['max_drawdown'],'fees':stats['fees'],'funding':stats['funding'],
             'fills':stats['fills'],'equity':result['daily'],'start_ms':start,'end_ms':end,
             'decision_trace':trace,'decision_counts':reason_counts,
@@ -196,6 +206,10 @@ def run_factory(params):
                 store.update(params['attempt'],'VALIDATING_INPUT',{})
                 directory=root/'perpetual_alpha/input'
                 identity={'source':source_identity(),'input_hash':digest(snapshot(directory))}
+                config=store.get(params['attempt'])['config']
+                if 'search_plan' in config:
+                    from tools.ai_factory_source_capture import capture_sources
+                    identity['research_sources']=capture_sources(output/str(params['attempt'])/'sources.json',config['search_plan']['source_ids'])
                 minutes,_=load_verified_minutes(directory);panel=hourly_panel(minutes)
                 market,*_=load_data(directory=directory)
                 # Respect the canonical replay's supported market window.

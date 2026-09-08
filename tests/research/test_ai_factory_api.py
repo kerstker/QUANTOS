@@ -51,3 +51,24 @@ def test_provider_success_requires_current_configuration_and_recent_receipt(tmp_
     monkeypatch.setenv('QUANTOS_FACTORY_MODEL','qwen3.8-27b')
     monkeypatch.setattr('services.console.api.ai_factory.time.time_ns',lambda:time.time()*1e9+901*1e9)
     assert factory_payload(tmp_path)['provider']['connected'] is False
+
+
+def test_lifecycle_contract_reads_36_sources_and_leaves_missing_state_untouched(tmp_path):
+    from services.console.api.ai_factory_lifecycle import lifecycle_payload
+    payload=lifecycle_payload(tmp_path)
+    assert len(payload['sources'])==36 and len({r['id'] for r in payload['sources']})==36
+    assert payload['models']==[] and payload['campaigns']==[]
+    assert payload['read_only'] and not payload['authoritative']
+    assert not (tmp_path/'data').exists()
+
+
+def test_campaign_control_requires_token_and_immutable_policy(monkeypatch,tmp_path):
+    from services.research_runner import main
+    monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
+    client=TestClient(main.app);body={'action':'create','campaign_id':1}
+    assert client.post('/factory-campaign',json=body).status_code==401
+    headers={'X-Runner-Token':main._RUNNER_TOKEN,'X-Operator':'test'}
+    assert client.post('/factory-campaign',headers=headers,json=body).status_code==200
+    assert client.post('/factory-campaign',headers=headers,json=body).status_code==200
+    assert client.post('/factory-campaign',headers=headers,json={**body,'budget':6}).status_code==409
+    assert client.post('/factory-campaign',headers=headers,json={'action':'stop','campaign_id':1}).status_code==200
