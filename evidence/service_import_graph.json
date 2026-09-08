@@ -404,6 +404,31 @@
           "path": "services/console/api/ai_factory.py"
         },
         {
+          "line": 5,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 6,
+          "module": "services.research.ai_factory_sources",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research.ai_factory_lifecycle",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 3,
+          "module": "services.research.run_registry.store",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.run_registry.contract",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
           "line": 17,
           "module": "services.research.alpha_family_catalog",
           "path": "services/console/api/alpha_family_views.py"
@@ -529,6 +554,16 @@
     },
     {
       "references": [
+        {
+          "line": 5,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 6,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
         {
           "line": 58,
           "module": "services.research_runner.run_kinds",
@@ -1459,7 +1494,7 @@
     {
       "references": [
         {
-          "line": 31,
+          "line": 32,
           "module": "services.execution.backtest_authority",
           "path": "services/research_runner/main.py"
         },
@@ -1475,7 +1510,7 @@
     {
       "references": [
         {
-          "line": 30,
+          "line": 31,
           "module": "services.monitoring.audit_store",
           "path": "services/research_runner/main.py"
         }
@@ -1486,27 +1521,42 @@
     {
       "references": [
         {
-          "line": 32,
+          "line": 3,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.ai_factory_lifecycle",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 33,
           "module": "services.research.run_registry.contract",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 36,
+          "line": 37,
           "module": "services.research.run_registry.registry",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 37,
+          "line": 38,
           "module": "services.research.run_registry.store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 263,
+          "line": 283,
           "module": "services.research.ai_factory",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 264,
+          "line": 284,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 331,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
@@ -1564,7 +1614,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "b06fe0dc53568d25a4e66ac0a6bd3844b39bcaf41b414318b3f2603c89b9bdb2",
+  "graph_sha256": "daa8f21c2e270745ad73b3bf40cc94f11f7723e0fadf1ff94d36b568da3de21e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1602,7 +1652,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 519,
+  "source_file_count": 526,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
