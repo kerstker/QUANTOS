@@ -754,6 +754,7 @@ def restore_l2_batch(
     sources: Iterable[BackupSource] = DEFAULT_SOURCES,
 ) -> dict:
     """Restore into an isolated tree and verify the encrypted manifest and SQLite files."""
+    started = time.perf_counter()
     source_specs = tuple(sources)
     expected_contract = _source_contract(source_specs)
     target = Path(restore_dir).resolve(strict=False)
@@ -897,11 +898,19 @@ def restore_l2_batch(
         if actual_batch != expected_batch:
             raise L2BackupError("backup batch storage encoding does not match its manifest")
         shutil.copy2(manifest_path, tree / ".quantos_backup_manifest.json")
+        # Readiness requires the entire verification above, including SQLite
+        # integrity and history semantics, not merely decrypted bytes.
+        elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+        if elapsed_ms > rto_ms:
+            raise L2BackupError(
+                f"restore drill exceeded RTO: {elapsed_ms}ms > {rto_ms}ms"
+            )
         if target.exists():
             target.rmdir()
         os.replace(tree, target)
         return {
             **drill,
+            "elapsed_ms": elapsed_ms,
             "manifest_verified": True,
             "source_contract_verified": True,
             "source_contract_sha256": source_contract_digest,

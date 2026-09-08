@@ -1282,6 +1282,36 @@ def _restore_contract_batch(tmp_path, batch: Path, sources: tuple[BackupSource, 
     )
 
 
+@pytest.mark.parametrize("validation_ms", [20, 40])
+def test_restore_rto_includes_post_decryption_validation(tmp_path, monkeypatch, validation_ms):
+    batch, sources, now_ms = _contract_batch(tmp_path)
+    clock = [0.0]
+    original = l2_backup_module._verify_manifest_source_contract
+
+    def slow_validation(*args):
+        result = original(*args)
+        clock[0] += validation_ms / 1000
+        return result
+
+    monkeypatch.setattr(l2_backup_module.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module, "_verify_manifest_source_contract", slow_validation)
+    target = tmp_path / "restored"
+    kwargs = dict(
+        batch_dir=batch, restore_dir=target, passphrase=PASSPHRASE,
+        rto_ms=30, max_rpo_ms=86_400_000, now_ms=now_ms, sources=sources,
+    )
+    if validation_ms > 30:
+        with pytest.raises(L2BackupError, match="restore drill exceeded RTO"):
+            restore_l2_batch(**kwargs)
+        assert not target.exists()
+        assert not list(tmp_path.glob(".quantos-l2-restore-*"))
+    else:
+        result = restore_l2_batch(**kwargs)
+        assert result["elapsed_ms"] == validation_ms
+        assert result["rto_met"] is True
+        assert (target / "data/cache/first.json").is_file()
+
+
 def test_restore_rejects_tampered_source_contract_digest(tmp_path):
     batch, sources, now_ms = _contract_batch(tmp_path)
     manifest = _read_manifest(batch)
