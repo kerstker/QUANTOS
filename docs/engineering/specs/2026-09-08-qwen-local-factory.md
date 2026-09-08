@@ -23,3 +23,10 @@ API 合同共 66 项通过、1 项跳过；工厂恢复/过程比较/服务边�
 组件回归通过。类型、eslint、构建和实际网页任务回执以本轮输出记录为准。
 输出目录：`/home/kerstker/quantos-dev-output/ai-factory-roadmap-20260907`，`qwen-*`。
 上一版 28/28 完整验收绑定 2dee4e95a，本次连接增量不借用旧版完整门禁证明。
+
+
+最终真实任务发现并复现了原流水线结果适配器的来源标记错误：流水线已完成，但 Runner
+拒绝把 `tools/ai_quant_factory.py` 作为 `tools/ai_factory_pipeline.py` 的输出来源。
+修复为各入口绑定各自来源；原 Runner 来源一致性检查保留。回归通过真实 JobQueue
+分别执行工厂与流水线适配器，而不是只断言字符串。原失败 Run 保留，通过完成态恢复
+重新登记已有研究结果，不重新搜索或改写实验文件。

@@ -573,18 +573,18 @@ def _adapt_ai_factory_forward(result):
             'provenance':'tools/ai_factory_forward.py'}
 
 
-def _adapt_ai_factory(result):
+def _adapt_ai_factory(result, *, source='tools/ai_quant_factory.py'):
     return {'title':'AI 量化研究工厂','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'factory_state':result['state'],'factory_attempt':result['attempt'],
                        'factory_result_json':json.dumps(result['result'],sort_keys=True)},
-            'caveats':['研究诊断结果；不建立 Paper 或实盘经济授权。'], 'provenance':'tools/ai_quant_factory.py'}
+            'caveats':['研究诊断结果；不建立 Paper 或实盘经济授权。'], 'provenance':source}
 
 
 RUN_KINDS: dict = {
     'ai_factory_comparison': RunSpec('tools.ai_factory_process_comparison:run_comparison', {'attempt':int},
         _adapt_ai_factory_comparison,'三折研究过程对照',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_pipeline': RunSpec('tools.ai_factory_pipeline:run_pipeline', {'attempt':int},
-        _adapt_ai_factory,'自动化 AI 研究工厂全流程',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+        partial(_adapt_ai_factory,source='tools/ai_factory_pipeline.py'),'自动化 AI 研究工厂全流程',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_verification': RunSpec('tools.ai_factory_verification:run_verification', {'attempt':int},
         _adapt_ai_factory_verification,'独立研究验证包',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_assessment': RunSpec('tools.ai_factory_assessment:run_assessment', {'attempt':int},
