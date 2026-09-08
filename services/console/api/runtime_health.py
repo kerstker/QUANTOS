@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict
 
@@ -17,7 +18,7 @@ def receipt_service(
     *,
     service: str,
     filename: str,
-    now_ms: int,
+    now_ms: int | None = None,
     max_age_ms: int,
     healthy_verdicts: frozenset[str],
 ) -> Dict:
@@ -40,6 +41,11 @@ def receipt_service(
             "observed_at_ms": None,
         }
 
+    # Live probes sample the clock after reading the receipt: another process
+    # may have published it while earlier monitoring work was still running.
+    # Explicit as-of callers retain their fixed reference time.
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
     generated_at_ms = payload.get("generated_at_ms", payload.get("observed_at_ms"))
     age_ms = (
         now_ms - generated_at_ms
@@ -73,7 +79,7 @@ def receipt_service(
     }
 
 
-def operational_receipt_services(*, now_ms: int) -> list[Dict]:
+def operational_receipt_services(*, now_ms: int | None = None) -> list[Dict]:
     """Project market, recovery and archive receipts without coupling them to HTTP routes."""
     return [
         receipt_service(

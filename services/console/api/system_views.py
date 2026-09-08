@@ -372,7 +372,6 @@ def _ashare_search_runtime_service() -> Dict:
 
 
 def _system_health_payload() -> Dict:
-    now_ms = int(time.time() * 1_000)
     ashare_search = _ashare_search_runtime_service()
     probe_started = time.perf_counter()
     try:
@@ -396,14 +395,12 @@ def _system_health_payload() -> Dict:
     event_authority = _receipt_service(
         service="domain-event-authority",
         filename="domain_event_ops_status.json",
-        now_ms=now_ms,
         max_age_ms=30 * 60_000,
         healthy_verdicts=frozenset({"PASS"}),
     )
     scheduler = _receipt_service(
         service="l2-scheduler-watchdog",
         filename="scheduler_watchdog_status.json",
-        now_ms=now_ms,
         max_age_ms=30 * 60_000,
         healthy_verdicts=frozenset({"PASS"}),
     )
@@ -422,7 +419,7 @@ def _system_health_payload() -> Dict:
                 "probe": "LOCAL_MONITORING_CALL",
             },
             scheduler,
-            *_operational_receipt_services(now_ms=now_ms),
+            *_operational_receipt_services(),
             event_authority,
             ashare_search,
             {
