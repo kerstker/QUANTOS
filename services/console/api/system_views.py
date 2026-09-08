@@ -27,7 +27,10 @@ from quantos.contracts.events import (
 from services.monitoring.domain_event_runtime import read_domain_event_bus_health
 from services.monitoring.event_projection import DomainEventProjection
 from services.console.api import ashare_views as _ashare_views
-from services.console.api.runtime_health import receipt_service as _receipt_service
+from services.console.api.runtime_health import (
+    receipt_service as _receipt_service,
+    operational_receipt_services as _operational_receipt_services,
+)
 from services.console.api.snapshot_cache import SingleFlightTtlCache
 from services.console.api.realtime_inputs import (
     realtime_agent_input_payload as _realtime_agent_input_payload,
@@ -404,20 +407,6 @@ def _system_health_payload() -> Dict:
         max_age_ms=30 * 60_000,
         healthy_verdicts=frozenset({"PASS"}),
     )
-    binance_stream = _receipt_service(
-        service="binance-public-market-stream",
-        filename="binance_realtime_stream_status.json",
-        now_ms=now_ms,
-        max_age_ms=30_000,
-        healthy_verdicts=frozenset({"PASS"}),
-    )
-    bybit_stream = _receipt_service(
-        service="bybit-public-market-stream",
-        filename="bybit_realtime_stream_status.json",
-        now_ms=now_ms,
-        max_age_ms=30_000,
-        healthy_verdicts=frozenset({"PASS"}),
-    )
     return {
         "data_provenance": "REAL_RUNTIME_HEALTH",
         "monitoring": monitoring,
@@ -433,22 +422,7 @@ def _system_health_payload() -> Dict:
                 "probe": "LOCAL_MONITORING_CALL",
             },
             scheduler,
-            binance_stream,
-            bybit_stream,
-            *[
-                _receipt_service(
-                    service=service,
-                    filename=filename,
-                    now_ms=now_ms,
-                    max_age_ms=max_age_ms,
-                    healthy_verdicts=frozenset({"PASS"}),
-                )
-                for service, filename, max_age_ms in (
-                    ("l2-backup-restore", "l2_backup_status.json", 36 * 60 * 60_000),
-                    ("binance-book-depth-archive", "binance_book_depth_archive_status.json", 36 * 60 * 60_000),
-                    ("binance-rpi-depth", "binance_rpi_depth_status.json", 2 * 60 * 60_000),
-                )
-            ],
+            *_operational_receipt_services(now_ms=now_ms),
             event_authority,
             ashare_search,
             {

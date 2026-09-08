@@ -71,3 +71,23 @@ def receipt_service(
         "age_ms": age_ms,
         "observed_at_ms": generated_at_ms if age_ms is not None else None,
     }
+
+
+def operational_receipt_services(*, now_ms: int) -> list[Dict]:
+    """Project market, recovery and archive receipts without coupling them to HTTP routes."""
+    return [
+        receipt_service(
+            service=service,
+            filename=filename,
+            now_ms=now_ms,
+            max_age_ms=max_age_ms,
+            healthy_verdicts=frozenset({"PASS"}),
+        )
+        for service, filename, max_age_ms in (
+            ("binance-public-market-stream", "binance_realtime_stream_status.json", 30_000),
+            ("bybit-public-market-stream", "bybit_realtime_stream_status.json", 30_000),
+            ("l2-backup-restore", "l2_backup_status.json", 36 * 60 * 60_000),
+            ("binance-book-depth-archive", "binance_book_depth_archive_status.json", 36 * 60 * 60_000),
+            ("binance-rpi-depth", "binance_rpi_depth_status.json", 2 * 60 * 60_000),
+        )
+    ]
