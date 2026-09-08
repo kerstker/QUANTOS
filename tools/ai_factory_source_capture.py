@@ -9,13 +9,45 @@ from tools.cache_io import atomic_write_json
 
 
 class _Text(HTMLParser):
-    def __init__(self):super().__init__();self.skip=0;self.parts=[]
+    """Prefer semantic article bodies to navigation, dialogs and repository chrome."""
+    _VOID = frozenset(('area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'))
+
+    def __init__(self):
+        super().__init__()
+        self.stack=[]
+        self.parts={0:[],1:[],2:[],3:[]}
+
     def handle_starttag(self,tag,attrs):
-        if tag in ('script','style','noscript'):self.skip+=1
+        attrs=dict(attrs)
+        parent_skip,parent_rank=self.stack[-1][1:] if self.stack else (False,0)
+        classes=set((attrs.get('class') or '').split())
+        skip=(parent_skip or tag in ('script','style','noscript','nav','header','footer')
+              or attrs.get('role') in ('navigation','dialog','alertdialog')
+              or attrs.get('aria-hidden')=='true' or 'hidden' in attrs
+              or 'display:none' in (attrs.get('style') or '').replace(' ','').lower())
+        rank=3 if classes & {'article-page__body','article-page-body__wrapper','markdown-body','entry-content','post-content'} else 2 if tag=='article' else 1 if tag=='main' or attrs.get('role')=='main' else 0
+        if tag not in self._VOID:
+            if len(self.stack)>=512:raise ValueError('research page nesting exceeds limit')
+            self.stack.append((tag,skip,max(rank,parent_rank)))
+
+    def handle_startendtag(self,tag,attrs):
+        self.handle_starttag(tag,attrs)
+        if tag not in self._VOID:self.handle_endtag(tag)
+
     def handle_endtag(self,tag):
-        if tag in ('script','style','noscript'):self.skip=max(0,self.skip-1)
+        for index in range(len(self.stack)-1,-1,-1):
+            if self.stack[index][0]==tag:
+                del self.stack[index:]
+                break
+
     def handle_data(self,data):
-        if not self.skip and data.strip():self.parts.append(data.strip())
+        skip,rank=self.stack[-1][1:] if self.stack else (False,0)
+        if not skip and data.strip():self.parts[rank].append(data.strip())
+
+    def excerpt(self):
+        for rank in (3,2,1,0):
+            if self.parts[rank]:return ' '.join(self.parts[rank])[:1600]
+        return ''
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -45,7 +77,7 @@ def capture_sources(destination,source_ids,*,fetch=fetch_source):
             content=fetch(source_id)
             if not isinstance(content,bytes) or len(content)>1048576:raise ValueError('invalid public source response')
             parser=_Text();parser.feed(content.decode('utf-8',errors='replace'))
-            excerpt=' '.join(parser.parts)[:1600]
+            excerpt=parser.excerpt()
             if not excerpt:raise ValueError('empty public source')
             records.append({'source_id':source_id,'status':'CAPTURED_PUBLIC_TEXT','content_sha256':hashlib.sha256(content).hexdigest(),'excerpt':excerpt})
         except Exception as exc:
