@@ -126,7 +126,12 @@ export function setOperator(name: string): void {
 
 export function getOperatorHeaders(): Record<string,string> {
   const name=getOperator();
-  if(Array.from(name).length>128||/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(name))
+  const characters=Array.from(name);
+  const invalid=characters.some(character=>{
+    const point=character.codePointAt(0)!;
+    return point<32||(point>=127&&point<=159)||(point>=0xd800&&point<=0xdfff);
+  });
+  if(characters.length>128||invalid)
     throw new Error('操作记录名称最多128个字符，不能包含控制字符或无效Unicode。');
   if(/^[\x20-\x7e]+$/.test(name))return {'X-Operator':name};
   const bytes=new TextEncoder().encode(name);

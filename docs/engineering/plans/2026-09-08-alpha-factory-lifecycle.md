@@ -64,3 +64,9 @@ frozen model → forecast → target → order/rejection → cashflow → attrib
 覆盖普通任务、工厂与持续研究计划，详见[实现与验证](../specs/2026-09-08-operator-unicode-transport.md)。
 该增量尚未发布；上述完整门禁不覆盖后续源码。R4 真实场所回执、独立经济权威、
 自然前向成熟样本、合格策略组合与生产恢复验收仍未完成。
+
+## 后续软件收尾
+
+R0 的全部来源选择、R2/R3 的预测校准与严格模型比较、R6 的移动端图表、
+中文任务操作和调度日期已补齐，详见[收尾与验收记录](../specs/2026-09-08-lifecycle-calibration-delivery.md)。
+新源码进入完整验收；没有将外部经济事实或生产恢复标为已完成。

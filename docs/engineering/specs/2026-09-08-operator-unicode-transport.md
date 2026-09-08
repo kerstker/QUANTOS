@@ -25,7 +25,8 @@
   相关回归纳入上述 82 项。`stack-final.log`：另有启动器 10 项通过。
   最初合跑时隔离状态变量触发了启动器的发布身份保护，2 项失败保留在
   `backend-final.log`；启动器测试按其环境合同独立运行，未修改或放宽保护。
-- `frontend-full.log`：47 文件、312 测试通过；`eslint.log`、`build.log` 通过。
+- `frontend-full.log`：47 文件、312 测试通过；`build.log` 通过。原报告对 `eslint.log` 的 PASS 表述有误，进程最终报
+  `no-control-regex`；2026-09-08 后续校准增量改为码点校验，重新确认 ESLint 退出 0。
   覆盖四种调用、ASCII 兼容、Unicode 长度及无效字符在发送前拒绝。
 - `http-qa-final.log`：真实 Chromium 加载当前客户端模块，经实际同源代理到
   FastAPI Runner，在临时状态库创建、暂停、恢复、停止计划，状态依次

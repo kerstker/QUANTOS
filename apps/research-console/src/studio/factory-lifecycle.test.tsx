@@ -28,3 +28,14 @@ it('supports keyboard navigation and searches actual source records',async()=>{
  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'missing'}});
  expect(screen.queryByRole('link',{name:'AQR ↗'})).not.toBeInTheDocument();
 });
+it('offers all catalogue sources while enforcing eight selections',async()=>{
+ const sources=Array.from({length:12},(_,i)=>({id:`source_${i}`,name:`研究来源 ${i}`,category:'系统',url:'https://example.com',adopt:'研究',limitation:'公开方法'}));
+ vi.mocked(fetchLifecycle).mockResolvedValue({...structuredClone(data),sources} as never);
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).toBeInTheDocument();
+ for(let i=0;i<5;i++)fireEvent.click(screen.getByRole('checkbox',{name:`研究来源 ${i}`}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('checkbox',{name:'研究来源 0'}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).not.toBeDisabled();
+});

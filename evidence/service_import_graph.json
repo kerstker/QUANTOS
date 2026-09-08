@@ -1546,17 +1546,17 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 283,
+          "line": 293,
           "module": "services.research.ai_factory",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 284,
+          "line": 294,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 331,
+          "line": 339,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
@@ -1614,7 +1614,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "daa8f21c2e270745ad73b3bf40cc94f11f7723e0fadf1ff94d36b568da3de21e",
+  "graph_sha256": "c21947e374af406c99de130ce3dd6b27c9106970d2836ba8d6759a26012045ff",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1652,7 +1652,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 526,
+  "source_file_count": 527,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

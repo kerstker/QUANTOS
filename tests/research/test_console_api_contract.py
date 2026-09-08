@@ -1888,3 +1888,30 @@ def test_factory_provider_connection_contract_is_explicit(tmp_path):
     assert isinstance(provider['model'], str)
     assert type(provider['connected']) is bool
     assert provider['connected'] == (provider['status'] == 'RECENT_CALL_SUCCEEDED')
+
+
+def test_factory_lifecycle_calibration_contract_uses_only_valid_mature_labels(tmp_path,monkeypatch):
+    from services.console.api import ai_factory_lifecycle as lifecycle
+    from services.research.ai_factory_store import FactoryStore
+    from tools.btc_factory_research import seal
+    from tools.cache_io import atomic_write_json
+    monkeypatch.setattr(lifecycle.time,'time_ns',lambda:10000*1000000)
+    base=tmp_path/'data/cache/ai_factory'
+    with FactoryStore(base/'factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'calibration'})
+        store.update(1,'COMPLETED',{'model_hash':'a'*64,'selected':{'model':'ridge'}})
+    label={'slot_ms':1,'prediction':.01,'realized_return':.02,'available_at_ms':9000,
+           'model_hash':'a'*64,'authoritative':False,'account_pnl_computed':False}
+    forward={'attempt':1,'status':'WAITING_WINDOW','observed_at_ms':10000,'labels':1,'predictions':2,
+             'recent_labels':[label],'authoritative':False,'account_pnl_computed':False}
+    path=base/'1/forward/status.json';path.parent.mkdir(parents=True)
+    atomic_write_json(str(path),seal(forward))
+    payload=lifecycle.lifecycle_payload(tmp_path)
+    diagnostics=payload['models'][0]['diagnostics']
+    assert diagnostics['observations']==[{'time':1,'prediction':.01,'actual':.02,'residual':.01}]
+    assert diagnostics['mae']==.01 and diagnostics['directional_count']==1
+    assert len(diagnostics['calibration'])==6 and diagnostics['economic_eligible'] is False
+    atomic_write_json(str(path),seal({**forward,'recent_labels':[dict(label,available_at_ms=10001)]}))
+    rejected=lifecycle.lifecycle_payload(tmp_path)
+    assert rejected['models'][0]['state']=='UNKNOWN'
+    assert rejected['models'][0]['diagnostics']['observations']==[]
