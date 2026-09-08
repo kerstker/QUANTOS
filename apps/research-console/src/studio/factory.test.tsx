@@ -46,3 +46,14 @@ it('submits on an HTTP LAN origin where randomUUID is unavailable',async()=>{
   await waitFor(()=>expect(controlFactory).toHaveBeenCalledWith(expect.any(Object),expect.stringMatching(/^[0-9a-f-]{36}$/)));
  } finally {vi.unstubAllGlobals();}
 });
+it('distinguishes input features and execution thresholds for otherwise identical models',async()=>{
+ const first={id:1,model:'ridge',features:[0,1,2,3],threshold_bps:20};
+ const second={id:10,model:'ridge',features:[4],threshold_bps:30};
+ vi.mocked(fetchFactory).mockResolvedValue({...empty,trials:[{ordinal:0,status:'PASSED',spec:first},{ordinal:1,status:'FAILED',spec:second,reason:'MODEL_FIT_ValueError'}]} as never);
+ render(<Factory/>);
+ const table=await screen.findByRole('region',{name:'实验对比表格'});
+ await waitFor(()=>expect(table).toHaveTextContent('阈值 20 bp'));
+ expect(table).toHaveTextContent('阈值 30 bp');
+ expect(table).toHaveTextContent('1h 收益');
+ expect(table).toHaveTextContent('主动成交不平衡');
+});

@@ -82,8 +82,9 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                     history=[{'candidate_id':r['candidate_id'],'score':r.get('metrics',{}).get('score'),'status':r['status']}
                              for r in existing if r['candidate_id'] is not None]
                     receipt=proposal(config['objective'],remaining,config.get('search_plan',{}).get('memory',[])+history,**({'search_plan':config['search_plan'],'source_context':identity.get('research_sources',{}).get('records',[])} if 'search_plan' in config else {}))
-                picked=receipt['candidate_id']
-                if type(picked) is not int or picked not in remaining:raise ValueError('invalid candidate proposal')
+                proposed=receipt['candidate_id']
+                if type(proposed) is not int or proposed not in remaining:raise ValueError('invalid candidate proposal')
+                picked=proposed
                 stage='MODEL_FIT'
                 spec=space[picked];p=fit_predict(spec,x[train],y[train],x[valid])
                 if 'search_plan' in config:
@@ -98,6 +99,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
             except Exception as exc:
                 # Exception messages can include remote payloads or paths; retain a bounded error code.
                 result={'ordinal':ordinal,'candidate_id':picked,'status':'FAILED','reason':stage+'_'+type(exc).__name__,'trial_id':definition}
+                if stage!='PROPOSAL':result.update(proposal=receipt,spec=space[picked])
             if prediction_hash is not None:result['prediction_hash']=prediction_hash
             result['hypothesis']={'hypothesis_id':definition,'family_id':record['family_id'],
                 'dataset_hash':bound['inputs'].get('input_hash',bound['panel_hash']),

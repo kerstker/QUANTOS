@@ -6,8 +6,11 @@ import {Header,Panel,Empty,ErrorNote,Badge} from './components';
 import {Chart} from './Charts';
 import {useResource,fmt,stamp,download,statusLabel} from './data';
 import './factory.css';
+import type {FactorySpec} from '@/lib/types/ai-factory';
 import {FactoryEvidence} from './FactoryEvidence';
 
+const FEATURE_NAMES=['1h 收益','6h 收益','24h 收益','24h 波动','主动成交不平衡'];
+const specDescription=(spec?:FactorySpec)=>spec?`${spec.features.map(i=>FEATURE_NAMES[i]??`特征 ${i}`).join(' · ')} · 阈值 ${spec.threshold_bps} bp`:'候选参数未记录';
 const STAGES:Record<string,number>={READY:0,VALIDATING_INPUT:0,RUNNING:1,PAUSED:1,OUTER_VALIDATION:2,COMPLETED:3};
 export function Factory() {
  const [selected,setSelected]=useState<number|null>(()=>{const n=Number(new URLSearchParams(window.location.search).get('attempt'));return Number.isInteger(n)&&n>=1&&n<=1000?n:null;}),[mode,setMode]=useState('baseline'),[budget,setBudget]=useState(3),[attempt,setAttempt]=useState(1);
@@ -41,15 +44,16 @@ export function Factory() {
  <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="baseline">基线研究 · 无需语言模型</option><option value="ai" disabled={!['CONFIGURED_UNVERIFIED','RECENT_CALL_SUCCEEDED'].includes(data?.provider.status??'')}>AI 编排 · 模型选择下一次实验</option></select></label>
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究执行令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label><p>使用现有研究服务令牌；这里不接收模型或交易所密钥。</p></details>
  <p className="f-muted">主研究 {budget} 次，三折过程对照另 {budget*(mode==='ai'?9:6)} 次候选尝试。外层与固定压力诊断单列；完成后启用自然时间预测观察。</p>
+ {(!operator.trim()||!token.trim())&&<p className="f-muted">请在“研究执行连接”中填写操作记录名称与研究令牌。</p>}
  <button className="s-button primary" disabled={busy||!operator.trim()||!token.trim()}>启动研究工厂</button>
  </form></Panel>
  <Panel title="任务历史"><div className="f-history">{data?.sessions.map(s=><button className={s.attempt===session?.attempt?'selected':''} key={s.attempt} onClick={()=>setSelected(s.attempt)}><span>#{s.attempt} · {s.config.mode==='ai'?'AI 编排':'基线研究'}</span><Badge value={s.state}/><small>主研究状态 · {s.config.objective}</small></button>)}{!data?.sessions.length&&<p>尚无研究任务。创建后，记录将在此持续保留。</p>}</div></Panel>
  </div><div>
  <Panel title={session?`任务 #${session.attempt}`:'实验控制台'} note={session?.config.objective??'等待启动第一个研究任务'}>
- {session?<><div className="f-toolbar"><Badge value={data?.workflow?.status??'UNKNOWN'}/><span>主研究：{session.state}</span><span>{trials.length} / {session.config.budget} 次实验</span><button className="s-button" disabled={busy||terminal||session.command==='pause'} onClick={()=>void run('pause')}>暂停</button><button className="s-button" disabled={busy||terminal||!data?.workflow?.can_resume} onClick={()=>void run('resume')}>恢复</button><button className="s-button" disabled={busy||terminal||session.command==='cancel'} onClick={()=>void run('cancel')}>取消</button></div>
+ {session?<><div className="f-toolbar"><Badge value={data?.workflow?.status??'UNKNOWN'}/><span>主研究：{statusLabel(session.state)}</span><span>{trials.length} / {session.config.budget} 次实验</span><button className="s-button" disabled={busy||terminal||session.command==='pause'} onClick={()=>void run('pause')}>暂停</button><button className="s-button" disabled={busy||terminal||!data?.workflow?.can_resume} onClick={()=>void run('resume')}>恢复</button><button className="s-button" disabled={busy||terminal||session.command==='cancel'} onClick={()=>void run('cancel')}>取消</button></div>
  <progress aria-label="实验预算完成进度" value={trials.length} max={session.config.budget}/>
  <div className="f-stages">{['固定输入','训练与内层比较','外层验证','保存模型'].map((name,i)=><div key={name} className={(i<=(STAGES[session.state]??0))?'reached':''}><span>0{i+1}</span>{name}</div>)}</div>
- <div className="f-metrics"><div><small>完成实验</small><strong>{trials.filter(t=>t.status==='PASSED').length}<em> / {trials.length}</em></strong></div><div><small>研究比较模型</small><strong>{result?.selected?.model.toUpperCase()??'—'}</strong></div><div><small>外层净损益 · USDC</small><strong>{fmt(result?.outer?.net_pnl)}</strong></div><div><small>外层最大回撤</small><strong>{result?.outer?.drawdown===undefined?'—':`${fmt(result.outer.drawdown*100)}%`}</strong></div></div>
+ <div className="f-metrics"><div><small>完成实验</small><strong>{trials.filter(t=>t.status==='PASSED').length}<em> / {trials.length}</em></strong></div><div><small>研究比较模型</small><strong>{result?.selected?.model.toUpperCase()??'—'}</strong><span className="f-spec">{specDescription(result?.selected)}</span></div><div><small>外层净损益 · USDC</small><strong>{fmt(result?.outer?.net_pnl)}</strong></div><div><small>外层最大回撤</small><strong>{result?.outer?.drawdown===undefined?'—':`${fmt(result.outer.drawdown*100)}%`}</strong></div></div>
  {result?.inner&&result.inner.score<=0&&<p className="f-message" role="status">内层风险调整净效用未超过空仓基线。该模型仅用于研究观察，没有已证明的可交易优势。</p>}
  {result?.reason&&<p role="alert">任务未完成：{result.reason}</p>}
  </>:<Empty title="让每个研究想法留下证据">先用 3 次实验比较规则、Ridge 与 GBM。不会生成占位收益或伪造 AI 结果。</Empty>}
@@ -57,7 +61,7 @@ export function Factory() {
  </Panel>
  <Chart title="外层技术验证 · 账户权益" rows={curve.map(r=>({label:stamp(r.time,true),time:r.time,equity:Number(r.equity)}))} series={[{key:'equity',label:'技术回放权益'}]} unit="USDC" note="真实账本技术回放；包含费用、资金费与风险约束，历史接收时间未知；历史外层窗口可能被不同任务重复使用，不建立独立经济证据。"/>
  <Panel title="实验对比" note="内层结果用于模型选择；外层结果不回传给模型">
- <div className="s-table-wrap" role="region" aria-label="实验对比表格" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>模型</th><th>执行结果</th><th>净损益</th><th>回撤</th><th>预测 RMSE</th></tr></thead><tbody>{trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.spec?.model.toUpperCase()??'—'}<small>{({flow_interaction:'成交量交互',volatility_scaled:'波动归一化',reversal:'反转组合'} as Record<string,string>)[t.spec?.transform??'']??'原始特征'}</small></td><td><Badge value={t.status==='PASSED'?'done':t.status}/>{t.reason&&<small>{t.reason}</small>}</td><td>{fmt(t.metrics?.net_pnl)}</td><td>{t.metrics?.drawdown===undefined?'—':`${fmt(t.metrics.drawdown*100)}%`}</td><td>{fmt(t.rmse,6)}</td></tr>)}</tbody></table></div>{!trials.length&&<p className="f-muted">实验开始后自动显示结果。</p>}
+ <div className="s-table-wrap" role="region" aria-label="实验对比表格" tabIndex={0}><table className="s-table"><thead><tr><th>实验</th><th>模型</th><th>执行结果</th><th>净损益</th><th>回撤</th><th>预测 RMSE</th></tr></thead><tbody>{trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.spec?.model.toUpperCase()??'—'}<small>{({flow_interaction:'成交量交互',volatility_scaled:'波动归一化',reversal:'反转组合'} as Record<string,string>)[t.spec?.transform??'']??'原始特征'}</small><small className="f-spec">{specDescription(t.spec)}</small></td><td><Badge value={t.status==='PASSED'?'done':t.status}/>{t.reason&&<small>{t.reason}</small>}</td><td>{fmt(t.metrics?.net_pnl)}</td><td>{t.metrics?.drawdown===undefined?'—':`${fmt(t.metrics.drawdown*100)}%`}</td><td>{fmt(t.rmse,6)}</td></tr>)}</tbody></table></div>{!trials.length&&<p className="f-muted">实验开始后自动显示结果。</p>}
  </Panel>
  <FactoryEvidence data={data} busy={busy||!operator.trim()||!token.trim()} action={name=>void run(name)}/>
  <Panel title="运行事件" note="包括暂停、失败和操作记录"><ol className="f-events" aria-label="运行事件列表" tabIndex={0}>{data?.events.slice(0,20).map(e=><li key={e.seq}><time>{stamp(e.at,true)}</time><strong>{({TRIAL:'实验已记录',CREATED:'任务已创建',CONTROL:'控制请求',OPERATOR_ACTION:'操作记录'} as Record<string,string>)[e.kind]??statusLabel(e.kind)}</strong><span>{typeof e.payload.reason==='string'?e.payload.reason:typeof e.payload.action==='string'?e.payload.action:''}</span></li>)}</ol></Panel>

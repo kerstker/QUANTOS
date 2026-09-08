@@ -50,3 +50,31 @@ def test_same_forecast_with_distinct_execution_thresholds_is_not_deduplicated(tm
         worker.execute(s,1,(t,x,y),evaluate,{},tmp_path,proposal=proposal)
         assert [r['status'] for r in s.trials(1)]==['PASSED','PASSED','FAILED']
         assert calls==[20,30,30]  # Both policies, then frozen winner's outer evaluation.
+
+
+def test_failed_model_fit_keeps_accepted_ai_call_receipt(tmp_path,monkeypatch):
+    from services.research.ai_factory_store import FactoryStore
+    from tools import ai_quant_factory as worker
+    t=np.arange(600,dtype=np.int64)*3600000;x=np.zeros((600,5));y=np.zeros(600)
+    monkeypatch.setattr(worker,'fit_predict',lambda *args: (_ for _ in ()).throw(ValueError('model fit failed')))
+    receipts=[]
+    def proposal(objective,remaining,history,**kwargs):
+        receipt={'candidate_id':remaining[0],'model':'local-test','request_hash':'a'*64,'usage':{'total_tokens':25},'elapsed_ms':5}
+        receipts.append(receipt);return receipt
+    with FactoryStore(tmp_path/'factory.db') as s:
+        s.create({'attempt':1,'mode':'ai','budget':3,'objective':'BTC','search_plan':{'version':2,'excluded_ids':[],'source_ids':['aqr']}})
+        worker.execute(s,1,(t,x,y),lambda *args:None,{},tmp_path,proposal=proposal)
+        assert [r.get('proposal') for r in s.trials(1)]==receipts
+        assert all(r['spec']['id']==r['candidate_id'] for r in s.trials(1))
+        assert all(r['status']=='FAILED' for r in s.trials(1))
+
+
+def test_invalid_candidate_is_recorded_as_failed_attempt_without_indexing_unknown_spec(tmp_path):
+    from services.research.ai_factory_store import FactoryStore
+    from tools import ai_quant_factory as worker
+    t=np.arange(600,dtype=np.int64)*3600000;x=np.zeros((600,5));y=np.zeros(600)
+    with FactoryStore(tmp_path/'factory.db') as s:
+        s.create({'attempt':1,'mode':'ai','budget':3,'objective':'BTC','search_plan':{'version':2,'excluded_ids':[],'source_ids':['aqr']}})
+        worker.execute(s,1,(t,x,y),lambda *args:None,{},tmp_path,proposal=lambda *args,**kwargs:{'candidate_id':999})
+        assert len(s.trials(1))==3
+        assert all(r['status']=='FAILED' and r['candidate_id'] is None for r in s.trials(1))

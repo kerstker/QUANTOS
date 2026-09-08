@@ -5,3 +5,5 @@
 .f-message,.f-metrics strong{overflow-wrap:anywhere}
 
 .f-evidence-nav{display:flex;gap:6px;overflow:auto;padding:6px;background:var(--s-soft);border:1px solid var(--s-line);border-radius:12px}.f-evidence-nav button{flex:1;white-space:nowrap;border:0;background:transparent;color:var(--s-muted);padding:12px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:12px}.f-evidence-nav button[aria-selected=true]{background:var(--s-panel);color:var(--s-ink);box-shadow:0 1px 4px #0001}.f-evidence-nav button:focus-visible,.f-evidence-stack:focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}.f-evidence-stack{display:flex;flex-direction:column;gap:22px;min-width:0}.f-evidence-stack .s-table-wrap{max-height:440px;overflow:auto}.f-evidence-stack th{position:sticky;top:0;z-index:1;background:var(--s-panel)}
+
+.f-spec{display:block;max-width:260px;white-space:normal;line-height:1.6;font-size:11px;color:var(--muted)}
