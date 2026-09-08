@@ -87,7 +87,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                 stage='MODEL_FIT'
                 spec=space[picked];p=fit_predict(spec,x[train],y[train],x[valid])
                 if 'search_plan' in config:
-                    prediction_hash=digest([t[valid].tolist(),p.tolist()])
+                    prediction_hash=digest([t[valid].tolist(),p.tolist(),spec['threshold_bps']])
                     if any(r.get('prediction_hash')==prediction_hash for r in existing):raise DuplicateInnerPrediction('duplicate inner forecast')
                 stage='LEDGER_REPLAY'
                 stats=evaluate(spec,t[valid],p)

@@ -8,7 +8,8 @@ from tools import ai_factory_process_comparison as module
 
 
 @pytest.mark.parametrize('provider', ['NOT_CONFIGURED', 'CONFIGURED_UNVERIFIED'])
-def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize('policy_variants', [False, True])
+def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_path, monkeypatch, provider, policy_variants):
     monkeypatch.setenv('QUANTOS_STATE_ROOT', str(tmp_path))
     root = tmp_path / 'data/cache'; out = root / 'ai_factory'
     (root / 'perpetual_alpha/input').mkdir(parents=True)
@@ -16,7 +17,9 @@ def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_
     x = np.random.default_rng(3).normal(size=(600, 5)); x[:, 3] = .005
     y = x[:, 0] * .001
     with FactoryStore(out / 'factory.db') as store:
-        store.create({'attempt': 1, 'mode': 'baseline', 'objective': 'BTC', 'budget': 3})
+        config={'attempt': 1, 'mode': 'baseline', 'objective': 'BTC', 'budget': 3}
+        if policy_variants:config['search_plan']={'version':2,'excluded_ids':[],'source_ids':['aqr']}
+        store.create(config)
         execute(store, 1, (t, x, y), lambda spec, t, p: {'score': float(spec['id'])},
                 {'input_hash': digest({})}, out)
     times = np.arange(0, 611 * HOUR, 60000, dtype=np.int64)
@@ -29,9 +32,18 @@ def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_
     monkeypatch.setattr(module, 'load_data', lambda **k: (market, None))
     monkeypatch.setattr(module, 'provider_status', lambda: {'status': provider})
     monkeypatch.setattr(module, 'propose', lambda *args: pytest.fail('baseline mode must not contact a language model'))
+    if policy_variants:
+        pool=[module.candidates(2)[i] for i in (0,9,1)]
+        monkeypatch.setattr(module,'candidate_pool',lambda _:pool)
+        monkeypatch.setattr(module,'fit_predict',lambda spec,tx,ty,z:np.full(len(z),.0025))
     result = module.run_comparison({'attempt': 1})
     assert len(result['rows']) == 6
     assert all(r['status'] == 'COMPLETED' and len(r['trials']) == 3 for r in result['rows'])
+    if policy_variants:
+        for row in result['rows']:
+            passed=[t for t in row['trials'] if t['status']=='PASSED']
+            assert len(passed)==2
+            assert {module.candidates(2)[t['candidate_id']]['threshold_bps'] for t in passed}=={20,30}
     assert result['ai_group_status'] == 'NOT_CONFIGURED' and result['authoritative'] is False
     assert module.run_comparison({'attempt': 1}) == result
     (out / '1/process-comparison.json').unlink()

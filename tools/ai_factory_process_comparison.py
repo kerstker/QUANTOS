@@ -74,7 +74,7 @@ def run_comparison(params):
                                     remaining=[c['id'] for c in pool if c['id'] not in [r['candidate_id'] for r in history]]
                                     picked=propose(state['config']['objective'],remaining,[{'candidate_id':r['candidate_id'],'score':r.get('score'),'status':r['status']} for r in history if r['candidate_id'] is not None],**({'search_plan':state['config']['search_plan']} if 'search_plan' in state['config'] else {}))['candidate_id']
                                 spec=space[picked];p=fit_predict(spec,x[train],y[train],x[valid])
-                                prediction_hash=digest([t[valid].tolist(),p.tolist()])
+                                prediction_hash=digest([t[valid].tolist(),p.tolist(),spec['threshold_bps']])
                                 if 'search_plan' in state['config'] and any(r.get('prediction_hash')==prediction_hash for r in history):raise ValueError('duplicate inner prediction')
                                 stats=evaluate_market(market,spec,t[valid],p,cost_aware=True,variance_by_slot=variance)
                                 receipt=seal({'status':'PASSED','candidate_id':picked,'score':stats['score'],'trial_id':definition,
