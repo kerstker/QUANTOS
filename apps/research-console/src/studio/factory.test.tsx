@@ -6,6 +6,16 @@ vi.mock('@/lib/api/ai-factory-api',()=>({fetchFactory:vi.fn(),controlFactory:vi.
 vi.mock('@/lib/api/research-runner-api',()=>({getOperator:()=> 'researcher',getRunnerToken:()=> 'local-test-token',setOperator:vi.fn(),setRunnerToken:vi.fn()}));
 const empty={sessions:[],selected:null,trials:[],events:[],errors:[],provider:{status:'NOT_CONFIGURED',model:'',connected:false},authoritative:false,read_only:true};
 beforeEach(()=>{vi.mocked(fetchFactory).mockResolvedValue(empty as never);vi.mocked(controlFactory).mockReset();});
+it('uses the configured local model and distinguishes recent successful calls',async()=>{
+ vi.mocked(fetchFactory).mockResolvedValue({...empty,provider:{status:'RECENT_CALL_SUCCEEDED',model:'qwen3.8-27b',connected:true}} as never);
+ vi.mocked(controlFactory).mockResolvedValue({session:{attempt:1}});
+ render(<Factory/>);
+ expect(await screen.findByText('模型最近调用成功')).toBeInTheDocument();
+ expect(screen.getByText('qwen3.8-27b')).toBeInTheDocument();
+ await waitFor(()=>expect(screen.getByLabelText('编排方式')).toHaveValue('ai'));
+ fireEvent.click(screen.getByRole('button',{name:'启动研究工厂'}));
+ await waitFor(()=>expect(controlFactory).toHaveBeenCalledWith(expect.objectContaining({mode:'ai'}),expect.any(String)));
+});
 it('shows disconnected AI and submits an executable baseline configuration',async()=>{
  render(<Factory/>);
  expect(await screen.findByText('AI 模型尚未配置')).toBeInTheDocument();

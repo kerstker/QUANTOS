@@ -1876,3 +1876,13 @@ def test_verified_perpetual_failure_keeps_diagnostics_without_legacy_metrics():
     body=views._run_detail(run)
     assert body['error']=='data unavailable' and body['params']=={'attempt':3}
     assert body['metrics']=={} and body['authoritative'] is False
+
+
+def test_factory_provider_connection_contract_is_explicit(tmp_path):
+    from services.console.api.ai_factory import factory_payload
+    provider = factory_payload(tmp_path)['provider']
+    assert set(provider) == {'status', 'model', 'connected'}
+    assert provider['status'] in {'NOT_CONFIGURED', 'CONFIGURED_UNVERIFIED', 'RECENT_CALL_SUCCEEDED'}
+    assert isinstance(provider['model'], str)
+    assert type(provider['connected']) is bool
+    assert provider['connected'] == (provider['status'] == 'RECENT_CALL_SUCCEEDED')

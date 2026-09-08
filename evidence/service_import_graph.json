@@ -399,6 +399,11 @@
           "path": "services/console/api/ai_factory.py"
         },
         {
+          "line": 8,
+          "module": "services.research.ai_factory_provider_contract",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
           "line": 17,
           "module": "services.research.alpha_family_catalog",
           "path": "services/console/api/alpha_family_views.py"
@@ -1559,7 +1564,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "83d97dee31e21a01fd315017e3aba88757b7e15398b831202e3b0f152744bf52",
+  "graph_sha256": "b06fe0dc53568d25a4e66ac0a6bd3844b39bcaf41b414318b3f2603c89b9bdb2",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1597,7 +1602,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 518,
+  "source_file_count": 519,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

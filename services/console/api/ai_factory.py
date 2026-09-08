@@ -5,6 +5,7 @@ import time
 from fastapi import APIRouter,Query
 from quantos.runtime_paths import runtime_state_root
 from services.research.ai_factory_store import FactoryStore
+from services.research.ai_factory_provider_contract import provider_status, provider_identity
 from services.console.api.forward_dashboard import _read
 
 router=APIRouter()
@@ -57,12 +58,21 @@ def factory_payload(root,attempt=None):
     # Avoid returning every historical equity curve and duplicate event payload on each poll.
     data['sessions']=[{**row,'result':{'selected':row['result'].get('selected'),'model_hash':row['result'].get('model_hash')}} for row in data['sessions']]
     data['events']=[{**row,'payload':{k:v for k,v in row['payload'].items() if k in ('reason','action','operator','run_id','trial_id','candidate_id','ordinal')}} for row in data['events']]
-    configured=bool(os.environ.get('QUANTOS_FACTORY_ENDPOINT') and os.environ.get('QUANTOS_FACTORY_MODEL'))
+    provider=provider_status(os.environ)
+    now=time.time_ns()//1000000
+    if provider['status']!='NOT_CONFIGURED':
+        for trial in data['trials']:
+            receipt=trial.get('proposal',{})
+            received=receipt.get('received_at_ms')
+            if (receipt.get('provider_id')==provider_identity(os.environ)
+                and receipt.get('model')==provider['model'] and type(received) is int
+                and 0<=now-received<=900000):
+                provider={**provider,'status':'RECENT_CALL_SUCCEEDED','connected':True}
+                break
     return {**data,'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
             'data_provenance':'REAL_AI_FACTORY_DIAGNOSTIC','snapshot_status':'REAL' if data['sessions'] else 'NO_SNAPSHOT',
             'authoritative':False,'as_of_ms':time.time_ns()//1000000,
-            'provider':{'status':'CONFIGURED_UNVERIFIED' if configured else 'NOT_CONFIGURED',
-                        'model':os.environ.get('QUANTOS_FACTORY_MODEL',''),'connected':False}}
+            'provider':{key:provider[key] for key in ('status','model','connected')}}
 
 @router.get('/api/v1/console/ai-factory')
 def factory(attempt: int|None=Query(default=None,ge=1,le=1000)):

@@ -16,7 +16,7 @@ export function Factory() {
  const pending=useRef<{body:string;id:string}|null>(null);
  const resource=useResource(`factory:${selected}`,signal=>fetchFactory(selected,signal),10000);
  const assigned=useRef(false);
- useEffect(()=>{if(resource.data&&!assigned.current){assigned.current=true;setAttempt(Math.min(1000,Math.max(0,...resource.data.sessions.map(s=>s.attempt))+1));}},[resource.data]);
+ useEffect(()=>{if(resource.data&&!assigned.current){assigned.current=true;if(['CONFIGURED_UNVERIFIED','RECENT_CALL_SUCCEEDED'].includes(resource.data.provider.status))setMode('ai');setAttempt(Math.min(1000,Math.max(0,...resource.data.sessions.map(s=>s.attempt))+1));}},[resource.data]);
  const data=resource.data,session=data?.selected,trials=data?.trials??[],result=session?.result;
  const run=async(action:string)=>{
   const request=action==='create'?{action,attempt,mode,budget,objective}:{action,attempt:session?.attempt};
@@ -32,13 +32,13 @@ export function Factory() {
   设定目标和实验预算，工厂依次训练、验证并保存每一次尝试。模型提案与实际实验使用同一条执行链。
  </Header>
  <ErrorNote error={resource.error} retry={resource.refresh}/>
- <div className="f-provider"><div><strong>{data?.provider.status==='CONFIGURED_UNVERIFIED'?'模型接口已配置 · 连接未验证':'AI 模型尚未配置'}</strong><p>{data?.provider.model||'先运行基线研究；完成服务端接入后再启用 AI 编排。'}</p></div><span className="s-badge">研究模式 · 无交易授权</span></div>
+ <div className="f-provider"><div><strong>{data?.provider.status==='RECENT_CALL_SUCCEEDED'?'模型最近调用成功':data?.provider.status==='CONFIGURED_UNVERIFIED'?'模型接口已配置 · 连接未验证':'AI 模型尚未配置'}</strong><p>{data?.provider.model||'先运行基线研究；完成服务端接入后再启用 AI 编排。'}</p></div><span className="s-badge">研究模式 · 无交易授权</span></div>
  <div className="f-layout"><div>
  <Panel title="创建研究任务" note="每次任务固定数据、模型范围与预算">
  <form className="f-form" onSubmit={e=>{e.preventDefault();void run('create');}}>
  <label>研究目标<textarea value={objective} onChange={e=>setObjective(e.target.value)} maxLength={2000} required rows={4}/></label>
  <div className="f-fields"><label>任务编号<input type="number" min={1} max={1000} value={attempt} onChange={e=>{assigned.current=true;setAttempt(Number(e.target.value));}} required/></label><label>实验预算<select value={budget} onChange={e=>setBudget(Number(e.target.value))}>{[3,6,9,12,18].map(n=><option key={n} value={n}>{n} 次实验</option>)}</select></label></div>
- <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="baseline">基线研究 · 无需语言模型</option><option value="ai" disabled={data?.provider.status!=='CONFIGURED_UNVERIFIED'}>AI 编排 · 模型选择下一次实验</option></select></label>
+ <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="baseline">基线研究 · 无需语言模型</option><option value="ai" disabled={!['CONFIGURED_UNVERIFIED','RECENT_CALL_SUCCEEDED'].includes(data?.provider.status??'')}>AI 编排 · 模型选择下一次实验</option></select></label>
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究执行令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label><p>使用现有研究服务令牌；这里不接收模型或交易所密钥。</p></details>
  <p className="f-muted">主研究 {budget} 次，三折过程对照另 {budget*(mode==='ai'?9:6)} 次候选尝试。外层与固定压力诊断单列；完成后启用自然时间预测观察。</p>
  <button className="s-button primary" disabled={busy||!operator.trim()||!token.trim()}>启动研究工厂</button>
