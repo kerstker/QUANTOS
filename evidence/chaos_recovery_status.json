@@ -12,9 +12,9 @@
     "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
     "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
   ],
-  "commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b",
+  "commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1788865370673,
+  "generated_at_ms": 1788898928733,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
   "input_hash": "34b43b7ad9ab20655ae6b71cb7ed292d80b8a8eb2ca0d5a8b0f25d8e18195f06",
@@ -99,9 +99,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b",
+    "head_commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66",
     "overall_status": "PASS",
-    "reported_commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b",
+    "reported_commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"

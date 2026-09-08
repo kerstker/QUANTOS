@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "c539363bd8cbe0f557a825c4b8088d4799d58af28c3421333fda542a4ac83ca4",
-  "commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b",
-  "derived_refresh_manifest_sha256": "fc3c9e220c960099ce08d809b3d14689ff6eaf70c56f2670846a9dd44a4274fa",
-  "duration_ms": 2094570,
-  "generated_at_ms": 1788865396128,
+  "checks_manifest_sha256": "6f5f1df90ffc3ab6216909efa7c8a4325ee10bd5621a7d14889e0397692a8603",
+  "commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66",
+  "derived_refresh_manifest_sha256": "1443b289e50b63b605e8c97988eaaf4c67968645725b5b6924a605cba053ddea",
+  "duration_ms": 2498615,
+  "generated_at_ms": 1788898956424,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "69f40dd28856415cc0bb5648b246aadf9362786461bdbb79b1bf2611867b981a",
+  "phase13_manifest_sha256": "d63741b50abe4453e9a2279eefb699ffdf130196d678b54f31f65e0a302d9cfe",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -15,11 +15,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_python_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 114,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 165,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -28,11 +28,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_npm_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 114,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 115,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -41,11 +41,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_actions_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 468,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 115,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -54,11 +54,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_arm64_container_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_arm64_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 315,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 618,
       "returncode": 0,
       "stage": "container-trivy-arm64-evidence:current",
       "status": "PASS",
@@ -67,11 +67,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_arm64_container_reproducibility_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_arm64_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 216,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 266,
       "returncode": 0,
       "stage": "container-reproducibility-arm64-evidence:current",
       "status": "PASS",
@@ -80,11 +80,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_arm64_console_smoke_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_arm64_console_smoke_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 369,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 268,
       "returncode": 0,
       "stage": "console-smoke-arm64-evidence:current",
       "status": "PASS",
@@ -93,11 +93,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_event_schema_catalog.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 1781,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 771,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -106,11 +106,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_service_import_graph.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 3136,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 3183,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -119,10 +119,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/tools/provision_artifact_admission_authority.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/tools/provision_artifact_admission_authority.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 720,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 515,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -131,11 +131,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/update_model_risk_history.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 769,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 616,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -148,8 +148,8 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 1019,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 1069,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -162,8 +162,8 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 13539,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 13661,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -172,10 +172,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/check_backup_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
       "duration_ms": 65,
       "returncode": 0,
       "stage": "backup-evidence:current",
@@ -185,10 +185,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/run_risk_recovery_gate.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/run_risk_recovery_gate.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 667,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 1069,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -197,10 +197,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/apps/research-console/scripts/run_paper_to_live_governance_check.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 8449,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 8948,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -209,10 +209,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_supply_chain_evidence.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_supply_chain_evidence.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 1726,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 1973,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -221,11 +221,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_supply_chain_evidence.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 1676,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 1826,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -234,10 +234,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/assess_top_tier.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/assess_top_tier.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 28629,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 28806,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -246,11 +246,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/assess_top_tier.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/assess_top_tier.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 28392,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 28772,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -285,8 +285,8 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 1587133,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 1840662,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -302,8 +302,8 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 242991,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 392395,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -315,8 +315,8 @@
         "run",
         "typecheck"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/apps/research-console",
-      "duration_ms": 10362,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/apps/research-console",
+      "duration_ms": 12708,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -328,8 +328,8 @@
         "run",
         "eslint"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/apps/research-console",
-      "duration_ms": 8862,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/apps/research-console",
+      "duration_ms": 8750,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -343,8 +343,8 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/apps/research-console",
-      "duration_ms": 109396,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/apps/research-console",
+      "duration_ms": 108185,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -356,8 +356,8 @@
         "run",
         "build"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/apps/research-console",
-      "duration_ms": 17114,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/apps/research-console",
+      "duration_ms": 14417,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -366,12 +366,12 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 3177,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 2727,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -380,13 +380,13 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 2928,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 3078,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -398,10 +398,10 @@
         "-m",
         "pytest",
         "-q",
-        "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6/tests/governance/test_727_final_audit.py"
+        "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3/tests/governance/test_727_final_audit.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/lifecycle-completion-20260908/source-b301b99b6",
-      "duration_ms": 20386,
+      "cwd": "/home/kerstker/quantos-dev-output/operations-roadmap-20260909/source-1e54fd7a3",
+      "duration_ms": 22793,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -440,7 +440,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1788863301557,
+  "started_at_ms": 1788896457808,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -452,8 +452,8 @@
   "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
   "validation": {
     "current": true,
-    "generated_at": 1788865396128,
-    "run_id": "bfeb9c5a84754a213614694c28990de395126399b72c21c856c8b2a3fb4b9f03",
-    "source_commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b"
+    "generated_at": 1788898956424,
+    "run_id": "f06f13cc59e31b600634e1b9268d8de4e64b8b031ce2dd9487b45f616a643860",
+    "source_commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66"
   }
 }

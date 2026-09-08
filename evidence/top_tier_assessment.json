@@ -43,10 +43,10 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "platform_engineering",
-      "passed": 0,
-      "red_lines_failed": 2,
+      "passed": 1,
+      "red_lines_failed": 1,
       "requirements": 2
     },
     {
@@ -1202,7 +1202,9 @@
           "python-audit-evidence:current",
           "npm-audit-evidence:current",
           "actions-osv-evidence:current",
-          "container-trivy-evidence:current",
+          "container-trivy-arm64-evidence:current",
+          "container-reproducibility-arm64-evidence:current",
+          "console-smoke-arm64-evidence:current",
           "service-import-graph:current",
           "artifact-admission-authority:provision",
           "model-risk-history:current",
@@ -1215,15 +1217,15 @@
         "path": "scripts/validate.py"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M4",
       "description": "One gate covers backend frontend governance and evidence",
-      "detail": "missing required markers: container-trivy-evidence:current",
+      "detail": "all required markers are present",
       "domain": "platform_engineering",
       "evidence": [
         "scripts/validate.py"
       ],
       "id": "PLATFORM.CI.UNIFIED_GATE",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Keep backend frontend governance and evidence checks synchronized",
       "red_line": true,
       "required_evidence": [
@@ -1232,7 +1234,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -1849,19 +1851,19 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 1,
+    "failed": 0,
     "manual_evidence_required": 0,
     "partial": 6,
-    "passed": 13,
-    "red_lines_failed": 4,
+    "passed": 14,
+    "red_lines_failed": 3,
     "total": 22,
     "unverified": 2
   },
   "validation": {
     "current": true,
-    "generated_at": 1788863337829,
-    "run_id": "bfeb9c5a84754a213614694c28990de395126399b72c21c856c8b2a3fb4b9f03",
-    "source_commit": "b301b99b6ebc1c1277a2aa1d79255fa25c0d7c3b"
+    "generated_at": 1788896494133,
+    "run_id": "f06f13cc59e31b600634e1b9268d8de4e64b8b031ce2dd9487b45f616a643860",
+    "source_commit": "1e54fd7a38d2c4d8e5fc1248e19c92e448ea8f66"
   },
   "verdict": "NOT_TOP_TIER"
 }
