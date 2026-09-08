@@ -135,6 +135,9 @@ export interface ServiceHealth {
   latency_ms: number | null;
   error_rate: number | null;
   probe?: string;
+  reason_code?: string | null;
+  age_ms?: number | null;
+  observed_at_ms?: number | null;
 }
 
 export interface ChartPoint {

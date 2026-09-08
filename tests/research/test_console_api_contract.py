@@ -29,6 +29,31 @@ from services.console.api import ashare_views
 
 client = TestClient(app)
 
+
+def test_system_health_includes_operational_failure_receipts(tmp_path, monkeypatch):
+    from services.console.api import runtime_health, system_views
+
+    monkeypatch.setattr(runtime_health, "_STATE_ROOT", tmp_path)
+    monkeypatch.setattr(system_views.time, "time", lambda: 1000)
+    monkeypatch.setattr(system_views, "_real_monitoring_snapshot", lambda: {"healthy": True})
+    monkeypatch.setattr(system_views, "_ashare_search_runtime_service", lambda: {"service": "ashare", "status": "unknown"})
+    cache = tmp_path / "data/cache"
+    cache.mkdir(parents=True)
+    (cache / "l2_backup_status.json").write_text(json.dumps({
+        "verdict": "BREACH", "observed_at_ms": 999000,
+        "last_reason_code": "RESTORE_RTO_EXCEEDED",
+    }))
+    (cache / "binance_book_depth_archive_status.json").write_text(json.dumps({
+        "status": "FAIL", "generated_at_ms": 999000, "reason_code": "QUALITY_REJECTED",
+    }))
+    rows = {row["service"]: row for row in system_views._system_health_payload()["services"]}
+    for service, reason in (("l2-backup-restore", "RESTORE_RTO_EXCEEDED"), ("binance-book-depth-archive", "QUALITY_REJECTED")):
+        assert rows[service]["status"] == "down"
+        assert rows[service]["reason_code"] == reason
+        assert rows[service]["age_ms"] == 1000
+        assert rows[service]["observed_at_ms"] == 999000
+    assert rows["binance-rpi-depth"]["reason_code"] == "RECEIPT_MISSING"
+
 BASE_MARKERS = (
     "source",
     "read_only",

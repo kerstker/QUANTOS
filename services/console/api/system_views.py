@@ -435,6 +435,20 @@ def _system_health_payload() -> Dict:
             scheduler,
             binance_stream,
             bybit_stream,
+            *[
+                _receipt_service(
+                    service=service,
+                    filename=filename,
+                    now_ms=now_ms,
+                    max_age_ms=max_age_ms,
+                    healthy_verdicts=frozenset({"PASS"}),
+                )
+                for service, filename, max_age_ms in (
+                    ("l2-backup-restore", "l2_backup_status.json", 36 * 60 * 60_000),
+                    ("binance-book-depth-archive", "binance_book_depth_archive_status.json", 36 * 60 * 60_000),
+                    ("binance-rpi-depth", "binance_rpi_depth_status.json", 2 * 60 * 60_000),
+                )
+            ],
             event_authority,
             ashare_search,
             {

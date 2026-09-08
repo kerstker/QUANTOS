@@ -34,7 +34,7 @@ export function Icon({ name }: {
 export function Badge({ value }: {
   value: string;
 }) {
-  return <span className={`s-badge ${['done', 'PASSED', 'REAL', 'READY'].includes(value) ? 'good' : ['error', 'FAILED', 'CORRUPT_OR_UNREADABLE'].includes(value) ? 'bad' : ['running', 'queued', 'OBSERVING'].includes(value) ? 'active' : ''}`}>
+  return <span className={`s-badge ${['healthy', 'done', 'PASSED', 'REAL', 'READY'].includes(value) ? 'good' : ['down', 'error', 'FAILED', 'CORRUPT_OR_UNREADABLE'].includes(value) ? 'bad' : ['running', 'queued', 'OBSERVING'].includes(value) ? 'active' : ''}`}>
     <i />{statusLabel(value)}</span>;
 }
 export function Empty({ title, children, action }: {
