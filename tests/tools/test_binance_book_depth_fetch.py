@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import urllib.error
 import zipfile
 
@@ -25,6 +26,39 @@ from tools.binance_book_depth_fetch import (
 DAY_MS = 1_786_320_000_000
 OBSERVED_MS = DAY_MS + 2 * 86_400_000
 LEVELS = (-5.0, -4.0, -3.0, -2.0, -1.0, -0.2, 0.2, 1.0, 2.0, 3.0, 4.0, 5.0)
+
+
+@pytest.mark.parametrize("quality", [True, False])
+def test_failed_cli_refresh_replaces_stale_pass_without_claiming_admission(
+    tmp_path, monkeypatch, quality,
+) -> None:
+    from tools import binance_book_depth_fetch as fetch
+
+    status = tmp_path / "status.json"
+    status.write_text(json.dumps({"status": "PASS", "generated_at_ms": 1}))
+    failure = {
+        "instrument_id": "BTCUSDT", "day": "2026-09-06",
+        "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+        "reason_code": "INVERTED_SNAPSHOT_LIMIT_EXCEEDED",
+        "quality_details": {"quarantined_snapshot_count": 2880},
+    }
+    error = (
+        BinanceBookDepthQualityRejected((failure,)) if quality
+        else BinanceBookDepthFetchError("transport failure")
+    )
+
+    def reject(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(fetch, "refresh_latest_available_days", reject)
+    assert fetch.main(["--status", str(status)]) == 1
+    report = json.loads(status.read_text())
+    assert report["status"] == "FAIL"
+    assert report["generated_at_ms"] > 1
+    assert report["formal_forward_credit"] is False
+    assert "accepted_archives" not in report
+    assert report["failures"] == ([failure] if quality else [])
+    assert report["reason_code"] == ("QUALITY_REJECTED" if quality else "FETCH_FAILED")
 
 
 def test_default_hourly_coverage_is_fixed_at_eighty_percent_of_nominal() -> None:
@@ -170,6 +204,8 @@ def test_refresh_surfaces_checksum_verified_quality_rejection(tmp_path) -> None:
     assert failure["book_depth_checksum_verified"] is True
     assert failure["mark_price_checksum_verified"] is True
     assert "minimum snapshot count" in failure["reason"]
+    assert failure["reason_code"] == "INVALID_ARCHIVE"
+    assert failure["quality_details"] == {}
 
 
 def test_refresh_rejects_mark_price_checksum_mismatch_before_alignment(tmp_path) -> None:

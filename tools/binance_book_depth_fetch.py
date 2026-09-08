@@ -276,6 +276,8 @@ def refresh_book_depth_days(
                         "day_ms": day_ms,
                         "day": _day_string(day_ms),
                         "reason": str(exc),
+                        "reason_code": exc.reason_code,
+                        "quality_details": exc.quality_details,
                         "book_depth_archive_sha256": actual,
                         "mark_price_archive_sha256": actual_mark,
                         "book_depth_checksum_verified": True,
@@ -556,16 +558,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--availability-lookback-days must be between 0 and 7")
     now_ms = int(time.time() * 1000)
     closed_day = (now_ms // DAY_MS) * DAY_MS - DAY_MS
-    report = refresh_latest_available_days(
-        tuple(part.strip() for part in args.instruments.split(",") if part.strip()),
-        closed_day_ms=closed_day,
-        day_count=args.days,
-        availability_lookback_days=args.availability_lookback_days,
-        observed_at_ms=now_ms,
-        store_path=args.store,
-        archive_root=args.archive_root,
-        max_workers=args.workers,
-    )
+    try:
+        report = refresh_latest_available_days(
+            tuple(part.strip() for part in args.instruments.split(",") if part.strip()),
+            closed_day_ms=closed_day,
+            day_count=args.days,
+            availability_lookback_days=args.availability_lookback_days,
+            observed_at_ms=now_ms,
+            store_path=args.store,
+            archive_root=args.archive_root,
+            max_workers=args.workers,
+        )
+    except BinanceBookDepthFetchError as exc:
+        # This cache describes the latest attempt, not the last successful
+        # admission. Preserve authority rows; never leave a stale PASS behind.
+        quality_rejected = isinstance(exc, BinanceBookDepthQualityRejected)
+        report = {
+            "schema_version": 1,
+            "generated_at_ms": int(time.time() * 1000),
+            "status": "FAIL",
+            "mode": "L2_PUBLIC_BOOK_DEPTH_ARCHIVE",
+            "dataset": DATASET,
+            "reason_code": "QUALITY_REJECTED" if quality_rejected else "FETCH_FAILED",
+            "failures": list(exc.failures) if quality_rejected else [],
+            "formal_forward_credit": False,
+            "safety": {
+                "paper_only": True,
+                "credentials_accessed": False,
+                "broker_connectivity": False,
+                "order_submission": False,
+                "live_trading": False,
+            },
+        }
+        Path(args.status).parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(args.status, report, indent=2)
+        print(json.dumps(report, sort_keys=True))
+        return 1
     atomic_write_json(args.status, report, indent=2)
     print(json.dumps(report, sort_keys=True))
     return 0
