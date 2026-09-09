@@ -22,15 +22,16 @@ from tools.profitability_position_study import stability
 from tools.profitability_trial_receipts import registered_trial
 
 
-def run_p4(p0_path,information,directory,output):
-    return _run_information(p0_path,information,directory,output,stage="P4")
+def run_p4(p0_path,information,directory,output,*,prior_trials_attempted=0):
+    return _run_information(p0_path,information,directory,output,stage="P4",prior_trials_attempted=prior_trials_attempted)
 
 
-def run_p3(p0_path,information,directory,output):
-    return _run_information(p0_path,information,directory,output,stage="P3")
+def run_p3(p0_path,information,directory,output,*,prior_trials_attempted=0):
+    return _run_information(p0_path,information,directory,output,stage="P3",prior_trials_attempted=prior_trials_attempted)
 
 
-def _run_information(p0_path,information,directory,output,*,stage):
+def _run_information(p0_path,information,directory,output,*,stage,prior_trials_attempted):
+    if type(prior_trials_attempted) is not int or not 0<=prior_trials_attempted<=100:raise ValueError("bounded prior attempt count required")
     p0_path=Path(p0_path).resolve();information=Path(information).resolve();output=Path(output).resolve()
     p0=verified(p0_path/'result.json');prior=verified(p0_path/'preregistration.json')
     if p0['decision']!='P1_BOUNDED_INNER_COMPARISON_ALLOWED':raise ValueError('reconciled P0 required')
@@ -41,7 +42,7 @@ def _run_information(p0_path,information,directory,output,*,stage):
     specs=basis_specs() if stage=="P3" else controlled_specs()
     columns_contract=BASIS_COLUMNS if stage=="P3" else INFORMATION_COLUMNS
     registration={'stage':stage,'created_at_ms':time.time_ns()//1000000,'source':source_identity(),
-                  'p0_hash':p0['result_hash'],'specs':specs,'cost_cases':[[4,5],[4,10],[8,5]],
+                  'p0_hash':p0['result_hash'],'prior_input_revision_trials':prior_trials_attempted,'specs':specs,'cost_cases':[[4,5],[4,10],[8,5]],
                   'model':'RIDGE_L2_1_TRAIN_SCALE_ONLY','threshold_bps':20,
                   'selection':'INNER_NET_PNL_MINUS_1500_DRAWDOWN_BASELINE_WINS_TIES',
                   'history':'ALREADY_OBSERVED_HISTORY',
@@ -84,7 +85,7 @@ def _run_information(p0_path,information,directory,output,*,stage):
         for row in success:
             equity=np.asarray([float(v['equity']) for v in row['metrics']['equity']])
             histories.append(equity[1:]/equity[:-1]-1)
-        search_diagnostics=search_bootstrap(histories,trials_attempted=len(trials))
+        search_diagnostics=search_bootstrap(histories,trials_attempted=len(trials)+prior_trials_attempted)
         write_new(output/'selection.json',{'selected_id':best['id'],'trials_attempted':len(trials),'scope':'INNER_ONLY'})
         cases=[];fit=np.r_[train,valid][-2048:]
         for identifier in dict.fromkeys((0,best['id'])):
@@ -101,7 +102,7 @@ def _run_information(p0_path,information,directory,output,*,stage):
                 write_new(output/f'{name}.json',case);cases.append(case)
         result={'stage':stage,'status':'COMPLETED_TECHNICAL_ONLY','trials':trials,'trials_attempted':len(trials),
                 'p0_hash':p0['result_hash'],'preregistration_hash':digest(registration),'information_hash':digest(data),
-                'search_diagnostics':search_diagnostics,
+                'search_diagnostics':search_diagnostics,'all_input_revision_trials_attempted':len(trials)+prior_trials_attempted,
                 'selected_id':best['id'],'cases':cases,'decision':continuation_decision(best['id'],cases),
                 'economic_eligible':False,'authoritative':False,'causal_increment_established':False,
                 'limitations':['ALL_TRIALS_RETAINED_NO_FORMAL_ADAPTIVE_SEARCH_CERTIFICATION',

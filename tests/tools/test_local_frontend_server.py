@@ -477,3 +477,9 @@ def test_direct_frontend_launcher_imports_without_pythonpath(tmp_path):
                           capture_output=True,text=True,timeout=15)
     assert result.returncode==0,result.stderr
     assert '--port' in result.stdout
+def test_profitability_import_has_its_own_bounded_proxy_envelope():
+    from tools.local_frontend_server import _validated_proxy_body_length,_ProxyRequestError
+    headers=_headers(('Content-Length','100000'),('Content-Type','application/json'),
+                     ('X-Runner-Token','test'),('X-Operator','test'))
+    assert _validated_proxy_body_length('POST','/__runner__/profitability-input',headers)==100000
+    with pytest.raises(_ProxyRequestError):_validated_proxy_body_length('POST','/__runner__/factory',headers)

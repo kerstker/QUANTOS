@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 49,
+  "edge_count": 50,
   "edges": [
     {
       "references": [
@@ -532,6 +532,11 @@
           "line": 16,
           "module": "services.research.paper_trading.domain.pnl",
           "path": "services/console/api/primary_views.py"
+        },
+        {
+          "line": 3,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/profitability_views.py"
         },
         {
           "line": 153,
@@ -1289,6 +1294,11 @@
           "path": "services/research/profitability_attribution.py"
         },
         {
+          "line": 3,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_calibration.py"
+        },
+        {
           "line": 7,
           "module": "services.execution.perpetual_simulation",
           "path": "services/research/profitability_fixed_replay.py"
@@ -1302,6 +1312,11 @@
           "line": 9,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.perpetual_public_replay",
+          "path": "services/research/profitability_inputs.py"
         },
         {
           "line": 5,
@@ -1540,6 +1555,17 @@
     {
       "references": [
         {
+          "line": 301,
+          "module": "services.governance.json_integrity",
+          "path": "services/research_runner/main.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
           "line": 31,
           "module": "services.monitoring.audit_store",
           "path": "services/research_runner/main.py"
@@ -1576,17 +1602,22 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 293,
-          "module": "services.research.ai_factory",
-          "path": "services/research_runner/main.py"
-        },
-        {
-          "line": 294,
+          "line": 300,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 339,
+          "line": 317,
+          "module": "services.research.ai_factory",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 318,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 363,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
@@ -1644,7 +1675,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "9d50fb6725f78955510eb1f8c7ae066f9b1ba55d3d29012effa619fe9dda3eb1",
+  "graph_sha256": "d54c2608c13378cd071cc13754951206ccba84bddc1c76148b49679e2123fbcd",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1682,7 +1713,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 535,
+  "source_file_count": 538,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

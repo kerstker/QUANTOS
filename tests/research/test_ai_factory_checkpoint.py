@@ -35,3 +35,20 @@ def test_checkpoint_restores_campaign_outbox_and_rejects_broken_binding(tmp_path
     with FactoryStore(base/'factory.db') as s:
         s.c.execute('UPDATE campaign_rounds SET attempt=999');s.c.commit()
     with pytest.raises(ValueError):create_checkpoint(root,tmp_path/'broken.zip')
+
+
+def test_checkpoint_includes_profitability_evidence_and_ledger(tmp_path):
+    from services.research.trial_ledger import TrialLedger
+    root=tmp_path/'state';cache=root/'data/cache'
+    with FactoryStore(cache/'ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','objective':'BTC','budget':3})
+    evidence=cache/'profitability/1/p6';evidence.mkdir(parents=True)
+    (evidence/'status.json').write_text('{"status":"WAITING"}')
+    with TrialLedger(str(evidence/'trials.db')) as ledger:ledger.verify()
+    report=create_checkpoint(root,tmp_path/'full.zip')
+    restored=tmp_path/'restored'
+    result=restore_checkpoint(tmp_path/'full.zip',restored)
+    assert report['layout']==result['layout']=='CACHE_ROOT_V2'
+    assert (restored/'profitability/1/p6/status.json').read_bytes()==(evidence/'status.json').read_bytes()
+    assert FactoryStore.snapshot(restored/'ai_factory/factory.db')['selected']['state']=='READY'
+    with TrialLedger(str(restored/'profitability/1/p6/trials.db'),create=False) as ledger:ledger.verify()

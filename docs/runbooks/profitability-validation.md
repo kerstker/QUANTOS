@@ -6,7 +6,7 @@
 
 新代码验收并另行部署后，在 AI 研究工厂选择已完成的冻结实验，打开「成本决策」→「运行盈利验证」。
 该动作需要既有研究令牌与操作人，不新增审批层。系统依次运行 P0、P1、P2，执行一次 P3 公开采集；
-只有对应输入存在时才运行 P4/P5。自然前向继续使用既有观察流程，P6 成本后账户账本仍待补齐。
+对应输入存在时运行 P3 独立研究与 P4/P5；执行轨迹可独立于 P0 运行。自然前向继续使用既有观察流程，已登记的 P6 成本账户随观察推进。
 本轮没有切换现有常驻服务，所以现有线上页面不会自动获得本次功能。
 
 同一冻结实验保留一份独立研究记录。失败或中断目录不被重跑覆盖；完整回执可重复读取。
@@ -75,3 +75,22 @@ USDT 数据可以单独检查，但不能借用 USDC 账本给出成本后结果
 `services.research.profitability_fixed_replay.run_fixed_actions` 接收冻结的 `(timestamp, OrderIntent|CancelOrder)` 序列、`cancel_latency_ms`（0–60000）以及原 `run_linear_perpetual_simulation` 的场所规则、资金费、成本、风险、容量、帧和来源参数。
 不接受可变策略；策略摘要包含动作身份和延迟。输出中的 `trajectory` 可与外部规范化回执组成 `observed/simulated` 输入，交由现有轨迹导入器比较。
 这是离线研究接口，尚未增加前端仿真参数编辑器；标准成本和风险要求全部沿用。撤单拒绝保存在 `cancel_responses`，不伪装为订单终结后的新成交。
+
+
+## 新版输入与账户操作
+
+「执行与数据」支持 basis、information、trajectory、calibration 四种 JSON。使用既有操作名和研究令牌，内容上限 4 MB，每类最多三个版本；相同内容重复请求不占新版本。旧失败不会被覆盖，队列固定到提交时版本。basis/information 等待 P0，trajectory/calibration 可独立执行。只允许研究资料，不上传凭证。
+calibration 根字段为 observed、capture、actions、calibration_cutoff_ms。capture 沿用公开 V2 回放格式（BTCUSDT、3–60 个真实接收的快照），actions 为有序的 ORDER/CANCEL 客户端动作；金额使用十进制字符串。三组延迟固定，不提供无限参数编辑器。规范化轨迹导入不构成来源认证。
+
+「前向账户」→「登记 / 更新前向账户」使用下一 UTC 自然日 00:05 至第十四天的固定窗口。先确保对应冻结模型已有自然时间预测观察；登记账户不会启动或补造预测。首个完整日度前缀需再等待最后预测的四小时标签成熟，最早在起点之后 27 小时具备技术回放条件。断档、失败与未成熟均可见，后续修改源码需另立研究，不让旧窗口静默换引擎。
+
+隔离研究命令（不会安装常驻服务；来源可为已有预测观察的只读状态根）：
+
+```bash
+python -m tools.profitability_forward_account --state-root <隔离研究输出根> --source-root <已有预测状态根> --attempt 7 --register --once
+python -m tools.profitability_forward_account --state-root <同一隔离研究输出根> --source-root <同一预测状态根> --attempt 7 --interval 60
+```
+
+第二条持续至预登记窗口成熟或出现不可恢复缺口/预算耗尽；中断后重复同一命令恢复。每次更新输出简短状态，完整证据在 profitability/<attempt>/p6。真实场所费用仍未知；这是冻结参考目标的模拟账户，不是实际下单盈亏。
+
+含盈利证据的新检查点恢复返回 layout=CACHE_ROOT_V2，隔离目标下为 ai_factory/、profitability/、profitability_inputs/。旧包返回 FACTORY_ROOT_V1，目标下直接为 factory.db 等。调用者必须按返回布局解释，不能将两者混用。生产恢复与异机迁移不包含在本开发操作内。

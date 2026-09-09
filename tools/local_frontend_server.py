@@ -138,7 +138,7 @@ def _request_surface_is_allowed(method: str, path: str) -> bool:
         return method in {"GET", "HEAD"}
     if request_path == "/__runner__/health":
         return method in {"GET", "HEAD"}
-    if request_path in {"/__runner__/run", "/__runner__/cancel", "/__runner__/factory", "/__runner__/factory-campaign"}:
+    if request_path in {"/__runner__/run", "/__runner__/cancel", "/__runner__/factory", "/__runner__/factory-campaign", "/__runner__/profitability-input"}:
         return method == "POST"
     if request_path == "/__runner__" or request_path.startswith("/__runner__/"):
         return False
@@ -178,11 +178,13 @@ def _validated_proxy_body_length(
     if not _request_surface_is_allowed(method, path):
         raise _ProxyRequestError(405, "method or proxy path is not allowed")
     target_path = urlsplit(path).path
+    body_limit = 8 * 1024 * 1024 if target_path == "/__runner__/profitability-input" else _MAX_PROXY_BODY_BYTES
     is_json_mutation = method == "POST" and target_path in {
         "/__runner__/run",
         "/__runner__/cancel",
         "/__runner__/factory",
         "/__runner__/factory-campaign",
+        "/__runner__/profitability-input",
     }
     if headers.get_all("Transfer-Encoding", []):
         raise _ProxyRequestError(400, "Transfer-Encoding request bodies are not allowed")
@@ -195,10 +197,10 @@ def _validated_proxy_body_length(
     elif not re.fullmatch(r"0|[1-9][0-9]*", length_value):
         raise _ProxyRequestError(400, "Content-Length must be a non-negative decimal")
     else:
-        if len(length_value) > len(str(_MAX_PROXY_BODY_BYTES)):
+        if len(length_value) > len(str(body_limit)):
             raise _ProxyRequestError(413, "request body exceeds the proxy limit")
         content_length = int(length_value)
-    if content_length > _MAX_PROXY_BODY_BYTES:
+    if content_length > body_limit:
         raise _ProxyRequestError(413, "request body exceeds the proxy limit")
 
     content_type = _single_header(headers, "Content-Type")

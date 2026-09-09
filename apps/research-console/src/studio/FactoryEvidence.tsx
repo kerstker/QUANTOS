@@ -5,13 +5,16 @@ import {Chart} from './Charts';
 import {fmt,stamp} from './data';
 import {ProfitabilityAttribution} from './ProfitabilityAttribution';
 import {ProfitabilityStudy} from './ProfitabilityStudy';
+import {ProfitabilityInputUpload} from './ProfitabilityInputUpload';
+import {ExecutionCalibrationEvidence} from './ExecutionCalibrationEvidence';
+import {ForwardCostEvidence} from './ForwardCostEvidence';
 import {ProfitabilityReadiness} from './ProfitabilityReadiness';
 
-export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void}) {
+export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void;importInput?:(kind:string,content:string)=>Promise<void>}) {
  const workflow=data?.workflow;
  const stages:Record<string,string>={RESEARCH:'主研究',POSTPROCESSING:'后续处理',ASSESSMENT:'压力与组合诊断',COMPARISON:'完整过程对照',VERIFICATION:'验证包准备',FORWARD:'自然时间观察',CHECKPOINT:'保存检查点',COMPLETED:'处理结束',RESULT_REGISTRATION:'结果登记'};
  const reasons:Record<string,string>={RUNNER_FAILED:'执行器失败或中断，可恢复流程；已有实验记录保留。',WORKFLOW_INCOMPLETE:'执行器已结束，流程尚未完整完成，可继续恢复。',RUNNER_EVIDENCE_UNAVAILABLE:'尚无可核实的执行器记录，暂不能确认整条流程状态。'};
- const tabs=['运行与证据','前向观察','成本决策','压力与组合','过程对照'];
+ const tabs=['运行与证据','前向观察','成本决策','压力与组合','过程对照','执行与数据','前向账户'];
  const [tab,setTab]=useState(0),id=useId();
  const forward=data?.forward,assessment=data?.assessment,complete=data?.selected?.state==='COMPLETED';
  const execution=data?.selected?.result.outer?.execution_feedback;
@@ -64,6 +67,8 @@ export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;bus
  <div className="s-table-wrap" role="region" aria-label="完整过程对照" tabIndex={0}><table className="s-table"><thead><tr><th>时间折</th><th>搜索组</th><th>尝试次数</th><th>所选模型</th><th>外层净损益</th><th>状态</th></tr></thead><tbody>{data?.comparison?.rows.map(r=><tr key={`${r.fold}-${r.group}`}><td>{r.fold+1}</td><td>{r.group}</td><td>{r.trials.length}</td><td>{r.selected?.model??'—'}</td><td>{fmt(r.outer?.net_pnl)}</td><td>{r.status}</td></tr>)}</tbody></table></div><p className="f-message">AI 组：{data?.comparison?.ai_group_status??'等待运行'}。历史过程对照不会恢复已使用样本的独立性。</p>
  </Panel>
  </>}
+ {tab===5&&<><ExecutionCalibrationEvidence data={data?.profitability?.p5_calibration}/>{importInput&&<ProfitabilityInputUpload busy={busy} complete={complete} versions={data?.profitability?.inputs} onImport={importInput}/>}</>}
+ {tab===6&&<><div className="f-toolbar"><button className="s-button" disabled={busy||!complete} onClick={()=>action('forward_cost')}>登记 / 更新前向账户</button><span>已登记的策略、窗口和成本规则保持冻结。</span></div><ForwardCostEvidence data={data?.profitability?.p6}/></>}
  </div>
  </>;
 }

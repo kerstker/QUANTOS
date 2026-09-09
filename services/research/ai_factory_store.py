@@ -34,9 +34,56 @@ class FactoryStore:
           at INTEGER NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS trials(attempt INTEGER, ordinal INTEGER, payload TEXT NOT NULL,
           sha256 TEXT NOT NULL, PRIMARY KEY(attempt,ordinal));
+          CREATE TABLE IF NOT EXISTS profitability_inputs(attempt INTEGER NOT NULL,kind TEXT NOT NULL,
+          revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 3),input_hash TEXT NOT NULL,
+          data TEXT NOT NULL,operator TEXT NOT NULL,created_ms INTEGER NOT NULL,
+          PRIMARY KEY(attempt,kind,revision),UNIQUE(attempt,kind,input_hash));
+          CREATE TRIGGER IF NOT EXISTS profitability_inputs_no_update BEFORE UPDATE ON profitability_inputs
+          BEGIN SELECT RAISE(ABORT,'profitability inputs are immutable'); END;
+          CREATE TRIGGER IF NOT EXISTS profitability_inputs_no_delete BEFORE DELETE ON profitability_inputs
+          BEGIN SELECT RAISE(ABORT,'profitability inputs are immutable'); END;
         ''')
     def __enter__(self):return self
     def __exit__(self,*args):self.c.close()
+
+    def add_profitability_input(self,attempt,kind,data,operator):
+        from services.research.profitability_inputs import validate_input
+        validate_input(kind,data)
+        if not isinstance(operator,str) or not 1<=len(operator.strip())<=128:raise ValueError('operator required')
+        identity=digest(data)
+        with self.c:
+            self.c.execute('BEGIN IMMEDIATE')
+            if self.get(attempt)['state']!='COMPLETED':raise ValueError('completed frozen experiment required')
+            old=self.c.execute('SELECT revision FROM profitability_inputs WHERE attempt=? AND kind=? AND input_hash=?',
+                               (attempt,kind,identity)).fetchone()
+            if old:return {'kind':kind,'revision':old[0],'input_hash':identity}
+            count=self.c.execute('SELECT COUNT(*) FROM profitability_inputs WHERE attempt=? AND kind=?',(attempt,kind)).fetchone()[0]
+            if count>=3:raise ValueError('three immutable input revisions already registered')
+            self.c.execute('INSERT INTO profitability_inputs VALUES(?,?,?,?,?,?,?)',
+                           (attempt,kind,count+1,identity,encode(data),operator,now_ms()))
+            self.event(attempt,'PROFITABILITY_INPUT',{'kind':kind,'revision':count+1,'input_hash':identity,'operator':operator})
+        return {'kind':kind,'revision':count+1,'input_hash':identity}
+
+    @classmethod
+    def profitability_inputs(cls,path,attempt,*,include_data=False,input_kind=None,revision=None):
+        p=Path(path)
+        if not p.exists():return []
+        if p.is_symlink():raise ValueError('unsafe factory store')
+        c=sqlite3.connect(p.resolve().as_uri()+'?mode=ro',uri=True,timeout=5);c.row_factory=sqlite3.Row
+        try:
+            if not c.execute("SELECT name FROM sqlite_master WHERE name='profitability_inputs'").fetchone():return []
+            columns='p.kind,p.revision,p.input_hash,p.operator,p.created_ms'+(',p.data' if include_data else '')
+            latest=' AND p.revision=(SELECT MAX(q.revision) FROM profitability_inputs q WHERE q.attempt=p.attempt AND q.kind=p.kind)' if include_data else ''
+            params=(attempt,)
+            if input_kind is not None and revision is not None:
+                latest=' AND p.kind=? AND p.revision=?';params=(attempt,input_kind,revision)
+            rows=[dict(r) for r in c.execute('SELECT '+columns+' FROM profitability_inputs p WHERE p.attempt=?'+latest+' ORDER BY p.kind,p.revision',params)]
+            for row in rows:
+                if include_data:
+                    row['data']=json.loads(row['data'])
+                    if digest(row['data'])!=row['input_hash']:raise ValueError('input version integrity failed')
+            return rows
+        finally:c.close()
     def event(self,attempt,kind,payload):
         self.c.execute('INSERT INTO events(attempt,at,kind,payload) VALUES(?,?,?,?)',(attempt,now_ms(),kind,encode(payload)))
     def create(self,config):

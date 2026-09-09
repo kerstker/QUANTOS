@@ -7,8 +7,8 @@ from tools.profitability_study import run_p0
 from tools.profitability_position_study import run_p1
 from tools.profitability_timing_study import run_p2
 from tools.profitability_market_capture import capture_basis
-from tools.profitability_information_study import run_p3,run_p4
-from tools.profitability_trajectory_import import import_trajectories
+from tools.profitability_input_workflow import run_inputs
+from tools.profitability_forward_account import advance_cost_account
 
 
 def run_profitability(params):
@@ -21,13 +21,15 @@ def run_profitability(params):
     with acquire_runtime_lock(output/'study.lock') as acquired:
         if not acquired:raise ValueError('profitability study busy')
         experiment=cache/'ai_factory'/str(attempt);directory=cache/'perpetual_alpha/input'
+        execution_inputs=run_inputs(cache,output,attempt,directory,execution_only=True)
+        forward_cost=advance_cost_account(runtime_state_root(),attempt,register=True)
         # A partial or failed directory is intentionally not restarted as a new attempt.
         # The original failure stays visible and requires a separately registered study.
         if not (output/'p0/result.json').exists():run_p0(experiment,directory,output/'p0')
         p0=verified(output/'p0/result.json')
         if p0['model_hash']!=verified(experiment/'model.json')['result_hash']:
             raise ValueError('cached study belongs to a different frozen model')
-        if p0['decision']!='P1_BOUNDED_INNER_COMPARISON_ALLOWED':return {'attempt':attempt,'p0':p0,'p1':None}
+        if p0['decision']!='P1_BOUNDED_INNER_COMPARISON_ALLOWED':return {'attempt':attempt,'p0':p0,'p1':None,'p6':forward_cost,**execution_inputs}
         if not (output/'p1/result.json').exists():run_p1(output/'p0',directory,output/'p1')
         if verified(output/'p1/result.json')['p0_hash']!=p0['result_hash']:
             raise ValueError('cached P1/P0 binding mismatch')
@@ -35,11 +37,6 @@ def run_profitability(params):
         if verified(output/'p2/result.json')['p1_hash']!=verified(output/'p1/result.json')['result_hash']:
             raise ValueError('cached P2/P1 binding mismatch')
         if not (output/'p3/result.json').exists():capture_basis(output/'p3')
-        basis=cache/'profitability_inputs'/str(attempt)/'basis.json'
-        if basis.exists() and not (output/'p3_study/result.json').exists():run_p3(output/'p0',basis,directory,output/'p3_study')
-        information=cache/'profitability_inputs'/str(attempt)/'information.json'
-        trajectory=cache/'profitability_inputs'/str(attempt)/'trajectory.json'
-        if information.exists() and not (output/'p4/result.json').exists():run_p4(output/'p0',information,directory,output/'p4')
-        if trajectory.exists() and not (output/'p5/result.json').exists():import_trajectories(trajectory,output/'p5')
-        return {'attempt':attempt,**{stage:verified(output/stage/'result.json') if (output/stage/'result.json').exists() else None
-                                    for stage in ('p0','p1','p2','p3','p3_study','p4','p5')}}
+        information_inputs=run_inputs(cache,output,attempt,directory,execution_only=False)
+        return {'attempt':attempt,'p6':forward_cost,**{stage:verified(output/stage/'result.json') if (output/stage/'result.json').exists() else None
+                                    for stage in ('p0','p1','p2','p3')},**execution_inputs,**information_inputs}

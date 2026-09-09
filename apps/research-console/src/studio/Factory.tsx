@@ -1,6 +1,6 @@
 import {newRequestIdentity} from '@/lib/api/request-identity';
 import {useEffect,useRef,useState} from 'react';
-import {fetchFactory,controlFactory} from '@/lib/api/ai-factory-api';
+import {fetchFactory,controlFactory,importProfitabilityInput} from '@/lib/api/ai-factory-api';
 import {getOperator,getRunnerToken,setOperator,setRunnerToken} from '@/lib/api/research-runner-api';
 import {Header,Panel,Empty,ErrorNote,Badge} from './components';
 import {Chart} from './Charts';
@@ -27,6 +27,12 @@ export function Factory() {
   setBusy(true);setMessage('');setOperator(operator.trim());setRunnerToken(token.trim());
   try {if(pending.current?.body!==body)pending.current={body,id:newRequestIdentity()};const response=await controlFactory(request,pending.current.id);setSelected(response.session.attempt);setMessage(action==='pause'?'已请求暂停，当前实验完成后停止。':action==='cancel'?'已请求取消，已完成实验将保留。':'请求已提交，进度会自动更新。');pending.current=null;resource.refresh();}
   catch(e){setMessage(e instanceof Error?e.message:'请求失败');}finally{setBusy(false);}
+ };
+ const importInput=async(kind:string,content:string)=>{
+  if(!session)throw new Error('请选择已完成的实验');
+  setBusy(true);setOperator(operator.trim());setRunnerToken(token.trim());
+  const body=JSON.stringify({attempt:session.attempt,kind,content});
+  try {if(pending.current?.body!==body)pending.current={body,id:newRequestIdentity()};const response=await importProfitabilityInput(session.attempt,kind,content,pending.current.id);pending.current=null;setMessage(`输入版本 ${response.input.revision} 已登记，研究任务已排队。`);resource.refresh();}finally{setBusy(false);}
  };
  const terminal=!!session&&['COMPLETED','CANCELLED'].includes(session.state);
  const curve=result?.outer?.equity??[];
@@ -63,7 +69,7 @@ export function Factory() {
  <Panel title="实验对比" note="内层结果用于模型选择；外层结果不回传给模型">
  <div className="s-table-wrap" role="region" aria-label="实验对比表格" tabIndex={0}><table className="s-table f-trials"><thead><tr><th>实验</th><th>模型</th><th>执行结果</th><th>净损益</th><th>回撤</th><th>预测 RMSE</th></tr></thead><tbody>{trials.map(t=><tr key={t.ordinal}><td>#{t.ordinal+1}</td><td>{t.spec?.model.toUpperCase()??'—'}<small>{({flow_interaction:'成交量交互',volatility_scaled:'波动归一化',reversal:'反转组合'} as Record<string,string>)[t.spec?.transform??'']??'原始特征'}</small><small className="f-spec">{specDescription(t.spec)}</small></td><td><Badge value={t.status==='PASSED'?'done':t.status}/>{t.reason&&<small>{t.reason}</small>}</td><td>{fmt(t.metrics?.net_pnl)}</td><td>{t.metrics?.drawdown===undefined?'—':`${fmt(t.metrics.drawdown*100)}%`}</td><td>{fmt(t.rmse,6)}</td></tr>)}</tbody></table></div>{!trials.length&&<p className="f-muted">实验开始后自动显示结果。</p>}
  </Panel>
- <FactoryEvidence data={data} busy={busy||!operator.trim()||!token.trim()} action={name=>void run(name)}/>
+ <FactoryEvidence data={data} busy={busy||!operator.trim()||!token.trim()} importInput={importInput} action={name=>void run(name)}/>
  <Panel title="运行事件" note="包括暂停、失败和操作记录"><ol className="f-events" aria-label="运行事件列表" tabIndex={0}>{data?.events.slice(0,20).map(e=><li key={e.seq}><time>{stamp(e.at,true)}</time><strong>{({TRIAL:'实验已记录',CREATED:'任务已创建',CONTROL:'控制请求',OPERATOR_ACTION:'操作记录'} as Record<string,string>)[e.kind]??statusLabel(e.kind)}</strong><span>{typeof e.payload.reason==='string'?e.payload.reason:typeof e.payload.action==='string'?e.payload.action:''}</span></li>)}</ol></Panel>
  </div></div></>;
 }

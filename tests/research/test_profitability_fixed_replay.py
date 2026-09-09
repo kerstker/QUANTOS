@@ -42,3 +42,13 @@ def test_replay_wrapper_binds_latency_and_reuses_canonical_engine(monkeypatch):
     assert result['economic_eligible'] is False
     assert result['trajectory']['source']=='CANONICAL_SIMULATOR_NOT_VENUE'
     assert result['trajectory']['cancel_responses']
+
+
+def test_normalized_trace_preserves_client_cancel_before_delayed_delivery():
+    from services.research.profitability_trajectory import compare_trajectories
+    frames=(frame(0),frame(5,quotes=()),frame(10,size='.1'),frame(15,size='.1'),frame(20))
+    schedule=[(T,OrderIntent('a','BTCUSDT',D('.2'))),(T+5,CancelOrder('a'))]
+    strategy=fixed_action_strategy(schedule,frames,cancel_latency_ms=10)
+    trace=normalized_trajectory(run(frames,strategy),schedule,strategy.action_hash)
+    assert [{'at_ms':T+5,'state':'CANCEL_SENT','filled':'0'}]==[e for e in trace['orders'][0]['events'] if e['state']=='CANCEL_SENT']
+    assert compare_trajectories(trace,trace)['unmatched_events']==0

@@ -67,9 +67,20 @@ def normalized_trajectory(result,schedule,action_hash):
                            'filled':canonical_decimal(abs(Decimal(event['cumulative_filled_quantity']))),
                            'simulator_reason':event['reason']})
         if len(events)==1:raise ValueError('missing simulator order receipt')
+        # Client send time is distinct from delayed venue cancellation.
+        # Venue fills at a shared timestamp precede client actions; cancellation
+        # acknowledgements at that timestamp follow their client request.
+        for sent,action in schedule:
+            if not isinstance(action,CancelOrder) or action.order_id!=intent.order_id:continue
+            index=next((i for i,e in enumerate(events) if e['at_ms']>sent or
+                        e['at_ms']==sent and e['state']=='CANCELLED'),len(events))
+            prior=events[:index]
+            if any(e['state'] in ('FILLED','CANCELLED','REJECTED') for e in prior):continue
+            events.insert(index,{'at_ms':sent,'state':'CANCEL_SENT','filled':prior[-1]['filled'] if prior else '0'})
         rows.append({'id':intent.order_id,'side':'BUY' if intent.quantity_delta>0 else 'SELL',
                      'quantity':canonical_decimal(abs(intent.quantity_delta)),'events':events})
     return {'action_hash':action_hash,'symbol':next(iter(symbols)),'orders':rows,
+            'client_cancel_requests':[{'order_id':a.order_id,'at_ms':at} for at,a in schedule if isinstance(a,CancelOrder)],
             'cancel_responses':[e for e in result['order_events'] if e['status']=='CANCEL_REJECTED'],
             'source':'CANONICAL_SIMULATOR_NOT_VENUE','economic_eligible':False}
 

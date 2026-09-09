@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from services.console.api.ai_factory import factory_payload
 from services.research.ai_factory_store import FactoryStore
@@ -35,10 +36,33 @@ def test_factory_mutation_requires_auth(monkeypatch,tmp_path):
     assert client.post('/factory',headers=headers,json={'action':'pause','attempt':1}).status_code==200
 
 
-def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monkeypatch,tmp_path):
+def test_profitability_import_requires_auth_and_preserves_registered_revision(monkeypatch,tmp_path):
+    import json
+    from services.research_runner import main
+    from tests.research.test_profitability_basis_panel import observation
+    monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
+    client=TestClient(main.app)
+    body={'attempt':1,'kind':'basis','content':json.dumps({'quote':'USDC','observations':[observation(3600000)]})}
+    assert client.post('/profitability-input',json=body).status_code==401
+    headers={'X-Runner-Token':main._RUNNER_TOKEN,'X-Operator':'test'}
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'})
+        assert client.post('/profitability-input',json=body,headers=headers).status_code==400
+        store.update(1,'COMPLETED',{})
+    calls=[]
+    monkeypatch.setattr(main._queue,'submit',lambda *args,**kwargs:calls.append(args) or 'input-run')
+    response=client.post('/profitability-input',json=body,headers=headers)
+    assert response.status_code==200 and response.json()['input']['revision']==1
+    assert calls==[('profitability_input',{'attempt':1,'input_kind':0,'revision':1})]
+    assert client.post('/profitability-input',json={**body,'kind':'../key'},headers=headers).status_code==400
+    assert client.post('/profitability-input',json={**body,'content':'{"quote":"USDC","quote":"USDT"}'},headers=headers).status_code==400
+
+
+@pytest.mark.parametrize(("action","kind"),[("profitability","profitability_study"),("forward_cost","profitability_forward")])
+def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monkeypatch,tmp_path,action,kind):
     from services.research_runner import main
     monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
-    client=TestClient(main.app);body={'action':'profitability','attempt':1}
+    client=TestClient(main.app);body={'action':action,'attempt':1}
     assert client.post('/factory',json=body).status_code==401
     with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
         store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'})
@@ -48,7 +72,7 @@ def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monke
     calls=[]
     monkeypatch.setattr(main._queue,'submit',lambda *args,**kwargs:calls.append(args) or 'research-only-run')
     assert client.post('/factory',headers=headers,json=body).status_code==200
-    assert calls==[('profitability_study',{'attempt':1})]
+    assert calls==[(kind,{'attempt':1})]
 
 def test_provider_success_requires_current_configuration_and_recent_receipt(tmp_path,monkeypatch):
     import time

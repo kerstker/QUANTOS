@@ -9,3 +9,5 @@
 .f-spec{display:block;max-width:260px;white-space:normal;line-height:1.6;font-size:11px;color:var(--s-muted)}
 
 .f-trials td:nth-child(n+4){white-space:nowrap;overflow-wrap:normal}
+
+.f-import-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.f-import-fields>label{min-width:0}.f-import-fields input{max-width:100%}@media(max-width:600px){.f-import-fields{grid-template-columns:1fr}}

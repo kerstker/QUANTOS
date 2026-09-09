@@ -25,10 +25,30 @@ def _files(base):
     return paths
 
 
+def _inventory(base,schema):
+    if schema==1:return _files(base)
+    paths=[]
+    for name in ('ai_factory','profitability','profitability_inputs'):
+        paths.extend(_files(base/name))
+    if len(paths)>100000:raise ValueError('checkpoint inventory exceeds bound')
+    return sorted(paths)
+
+
+def _verify_bundle(base,schema):
+    _verify_state(base if schema==1 else base/'ai_factory')
+    if schema==2:
+        from services.research.trial_ledger import TrialLedger
+        for path in (base/'profitability').rglob('trials.db'):
+            with TrialLedger(str(path),create=False) as ledger:ledger.verify()
+
+
 def create_checkpoint(root,destination):
-    base=Path(root)/'data/cache/ai_factory';destination=Path(destination)
+    cache=Path(root)/'data/cache';destination=Path(destination)
+    schema=2 if any((cache/name).exists() for name in ('profitability','profitability_inputs')) else 1
+    base=cache if schema==2 else cache/'ai_factory'
+    layout='CACHE_ROOT_V2' if schema==2 else 'FACTORY_ROOT_V1'
     if destination.exists() or destination.resolve().is_relative_to(base.resolve()):raise ValueError('new external checkpoint destination required')
-    files=_files(base)
+    files=_inventory(base,schema)
     if not files:raise ValueError('no research checkpoint sources')
     before={str(p.relative_to(base)):_sha(p) for p in files if p.suffix=='.json'}
     destination.parent.mkdir(parents=True,exist_ok=True)
@@ -42,21 +62,21 @@ def create_checkpoint(root,destination):
                     if dst.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('checkpoint database integrity failed')
             else:copy.write_bytes(path.read_bytes())
             entries[name]={'sha256':_sha(copy),'size':copy.stat().st_size}
-        after_files=_files(base)
+        after_files=_inventory(base,schema)
         after={str(p.relative_to(base)):_sha(p) for p in after_files if p.suffix=='.json'}
         if before!=after:raise ValueError('research artifacts changed during checkpoint; retry')
-        _verify_state(stage)
+        _verify_bundle(stage,schema)
         archive=stage/'checkpoint.zip'
         with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1) as z:
             for name in entries:z.write(stage/name,name)
-            z.writestr('checkpoint-manifest.json',json.dumps({'schema':1,'entries':entries},sort_keys=True))
+            z.writestr('checkpoint-manifest.json',json.dumps({'schema':schema,'layout':layout,'entries':entries},sort_keys=True))
         # Publish only after a complete archive can be verified and restored elsewhere.
         restore_checkpoint(archive,stage/'verification')
         with archive.open('rb') as src,destination.open('xb') as dst:
             os.chmod(destination,0o600)
             for chunk in iter(lambda:src.read(1024*1024),b''):dst.write(chunk)
             dst.flush();os.fsync(dst.fileno())
-    return {'status':'VERIFIED_RESEARCH_CHECKPOINT','files':len(entries),'sha256':_sha(destination),
+    return {'status':'VERIFIED_RESEARCH_CHECKPOINT','layout':layout,'files':len(entries),'sha256':_sha(destination),
             'credential_paths_included':False,'encrypted':False,'production_restore_performed':False}
 
 
@@ -97,6 +117,11 @@ def restore_checkpoint(archive,destination):
             if any(PurePosixPath(n).is_absolute() or '..' in PurePosixPath(n).parts or '\\' in n for n in names):raise ValueError('unsafe checkpoint member')
             if z.getinfo('checkpoint-manifest.json').file_size>32*1024*1024:raise ValueError('checkpoint manifest too large')
             manifest=json.loads(z.read('checkpoint-manifest.json'));entries=manifest['entries']
+            schema=manifest.get('schema')
+            if type(schema) is not int or schema not in (1,2):raise ValueError('unsupported checkpoint schema')
+            layout='CACHE_ROOT_V2' if schema==2 else 'FACTORY_ROOT_V1'
+            if schema==2 and any(PurePosixPath(n).parts[0] not in ('ai_factory','profitability','profitability_inputs') for n in entries):
+                raise ValueError('unsupported checkpoint scope')
             if set(names)!=set(entries)|{'checkpoint-manifest.json'}:raise ValueError('checkpoint inventory mismatch')
             if sum(z.getinfo(n).file_size for n in names)>20*1024**3:raise ValueError('checkpoint size exceeds bound')
             for name,info in entries.items():
@@ -104,6 +129,6 @@ def restore_checkpoint(archive,destination):
                 with z.open(name) as src,target.open('wb') as dst:
                     for chunk in iter(lambda:src.read(1024*1024),b''):dst.write(chunk)
                 if target.stat().st_size!=info['size'] or _sha(target)!=info['sha256']:raise ValueError('checkpoint content mismatch')
-        _verify_state(stage)
+        _verify_bundle(stage,schema)
         os.rename(stage,destination)
-    return {'status':'RESTORED_ISOLATED','files':len(entries)}
+    return {'status':'RESTORED_ISOLATED','layout':layout,'files':len(entries)}

@@ -14,3 +14,9 @@ export async function controlFactory(request:Record<string,unknown>,id:string) {
  const response=await fetch(`${RESEARCH_RUNNER_BASE}/factory`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),...getOperatorHeaders(),'Idempotency-Key':id},body:JSON.stringify(request),signal:AbortSignal.timeout(15000)});
  const body=await response.json();if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:`请求失败 (${response.status})`);return body;
 }
+
+export async function importProfitabilityInput(attempt:number,kind:string,content:string,id:string) {
+ if(!RESEARCH_RUNNER_BASE)throw new Error('研究执行服务尚未配置');
+ const response=await fetch(`${RESEARCH_RUNNER_BASE}/profitability-input`,{method:'POST',headers:{'Content-Type':'application/json','X-Runner-Token':getRunnerToken(),...getOperatorHeaders(),'Idempotency-Key':id},body:JSON.stringify({attempt,kind,content}),signal:AbortSignal.timeout(15000)});
+ const body=await response.json();if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:`导入失败 (${response.status})`);return body;
+}

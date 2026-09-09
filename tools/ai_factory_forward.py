@@ -117,6 +117,9 @@ def advance_factory(root,*,now_ms):
     for attempt in enabled:
         try:
             r=run_observation({'attempt':attempt,'action':0},root=root)
-            results.append({'attempt':attempt,'status':r['status'],'observed_at_ms':r['observed_at_ms']})
+            from tools.profitability_forward_account import advance_cost_account
+            cost=advance_cost_account(root,attempt)
+            results.append({'attempt':attempt,'status':r['status'],'observed_at_ms':r['observed_at_ms'],
+                            'forward_cost_status':cost['status'] if cost else 'NOT_REGISTERED'})
         except Exception as exc:results.append({'attempt':attempt,'status':'ERROR','reason':type(exc).__name__})
     return results

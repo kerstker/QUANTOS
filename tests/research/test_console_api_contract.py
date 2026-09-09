@@ -1967,3 +1967,16 @@ def test_profitability_basis_study_is_a_separate_read_only_projection(tmp_path):
     assert payload['p3_study']['trials_attempted']==4
     assert payload['p3_study']['projection']=='CONSOLE_SUMMARY'
     assert payload['authoritative'] is False
+
+
+def test_profitability_forward_cost_status_preserves_unknown_costs(tmp_path):
+    from services.console.api.profitability_views import profitability_payload
+    from tools.profitability_study import write_new
+    directory=tmp_path/'data/cache/profitability/1/p6';directory.mkdir(parents=True)
+    write_new(directory/'status.json',{'stage':'P6','status':'WAITING_MATURITY','economic_eligible':False,
+              'actual_venue_costs':None,'missing_slots':[],'window_start_ms':86400300000})
+    result=profitability_payload(tmp_path,1)
+    assert result['p6']['actual_venue_costs'] is None
+    assert result['p6']['status']=='WAITING_MATURITY'
+    assert result['p6']['projection']=='CONSOLE_SUMMARY'
+    assert result['inputs']==[] and result['p5_calibration'] is None
