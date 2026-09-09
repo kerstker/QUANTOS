@@ -41,6 +41,35 @@ def controlled_specs():
 
 
 INFORMATION_COLUMNS=('price','flow','funding','oi_change','funding_x_oi','flow_x_oi')
+BASIS_COLUMNS=('price','flow','basis','basis_change','relative_return','index_premium')
+
+
+def basis_specs():
+    groups=(('price','flow'),('price','flow','basis'),
+            ('price','flow','basis','basis_change','relative_return'),BASIS_COLUMNS)
+    return [{'id':i,'features':list(features),'selection_scope':'INNER_ONLY',
+             'outer_feedback_allowed':False,'economic_eligible':False} for i,features in enumerate(groups)]
+
+
+def basis_panel(times,price_features,observations,*,quote):
+    t=np.asarray(times);x=np.asarray(price_features,dtype=float)
+    if (quote not in ('USDC','USDT') or t.ndim!=1 or len(set(t.tolist()))!=len(t)
+            or x.shape!=(len(t),5) or not np.isfinite(x).all()):
+        raise ValueError('aligned price panel and separate currency required')
+    rows={}
+    for row in observations:
+        slot=row['slot_ms']
+        if type(slot) is not int or slot<0 or slot in rows:
+            raise ValueError('unique integer basis slots required')
+        if not isinstance(row['source_hash'],str) or not re.fullmatch('[0-9a-f]{64}',row['source_hash']):
+            raise ValueError('basis source receipt identity required')
+        previous=synchronized_basis(row['previous'],decision_ms=slot)
+        current=synchronized_basis(row['current'],decision_ms=slot)
+        if previous['quote']!=quote or current['quote']!=quote:raise ValueError('basis currency mismatch')
+        change=basis_change(previous,current)
+        rows[slot]=[current['basis'],change['basis_change'],change['relative_return'],current['index_premium']]
+    if set(rows)!=set(t.tolist()):raise ValueError('missing or extra basis slots')
+    return np.asarray([[float(x[i,0]),float(x[i,4]),*rows[int(at)]] for i,at in enumerate(t)])
 
 
 def information_panel(times,price_features,observations,*,quote):

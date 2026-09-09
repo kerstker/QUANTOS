@@ -23,3 +23,11 @@ it('does not allow overwriting a failed registered study',()=>{
  expect(action).not.toHaveBeenCalled();
  expect(screen.getByRole('status')).toHaveTextContent('INPUT_GAP');
 });
+
+it('separates synchronized prices from independent basis experiment results',async()=>{
+ const {ProfitabilityReadiness}=await import('./ProfitabilityReadiness');
+ render(<ProfitabilityReadiness study={{p0:null,p1:null,p3_study:{status:'COMPLETED_TECHNICAL_ONLY',trials_attempted:4,selected_id:1,decision:'STOP_COST_UNSTABLE_INCREMENT',cases:[{id:0,fee_bps:4,slippage_bps:5,metrics:{net_pnl:-2},state_controls:{matched_rows:0,within_state_covariance:null}}]},failures:[],authoritative:false}}/>);
+ expect(screen.getByText('P3 基差增量')).toBeInTheDocument();
+ expect(screen.getByText('价格 / 主动成交量基线')).toBeInTheDocument();
+ expect(screen.getByText(/4 次尝试 · STOP_COST_UNSTABLE_INCREMENT/)).toBeInTheDocument();
+});

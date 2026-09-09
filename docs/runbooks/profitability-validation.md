@@ -60,3 +60,12 @@ Runner 在当前状态根的 `data/cache/profitability_inputs/<冻结实验编�
 - P2：毛收益差包含错失行情和库存变化；单独逐笔价格改善没有证据时仍为未知。
 - P3/P4：输入通过不代表有信息增量，组内关联也不等同因果识别；需要成本后对照和自然前向。
 - P5/P6：导入轨迹不自证真实场所，预测观察不等于账户净收益。
+
+### P3 独立成本后对照
+
+可选输入 `data/cache/profitability_inputs/<attempt>/basis.json`，独立结果 `profitability/<attempt>/p3_study`。
+JSON 根为 `quote`（当前账本驱动仅 USDC）和 `observations`。
+每条观察包含 `slot_ms`、64 位 `source_hash`、`previous`、`current`；后两者各包含 spot/perpetual/index 三行：
+`market, base, quote, event_ms, available_ms, price`。同组事件时间完全一致，两组均不超过决策前五分钟、可用时间不晚于决策，previous 必须早于 current。
+USDT 数据可以单独检查，但不能借用 USDC 账本给出成本后结果。
+调用现有信息研究入口时加 `--stage P3`；默认 P4 保持兼容。受限工作流发现 basis.json 后自动运行独立对照，未提供时不会生成占位实验。

@@ -28,8 +28,8 @@ def profitability_payload(root, attempt):
     if attempt is None:return None
     directory=root/'data/cache/profitability'/str(attempt)
     if not directory.exists():return None
-    result={'p0':None,'p1':None,'p2':None,'p3':None,'p4':None,'p5':None,'failures':[],'authoritative':False}
-    for stage in ('p0','p1','p2','p3','p4','p5'):
+    result={'p0':None,'p1':None,'p2':None,'p3':None,'p3_study':None,'p4':None,'p5':None,'failures':[],'authoritative':False}
+    for stage in ('p0','p1','p2','p3','p3_study','p4','p5'):
         path=directory/stage/'result.json'
         try:
             if path.exists():

@@ -7,7 +7,7 @@ from tools.profitability_study import run_p0
 from tools.profitability_position_study import run_p1
 from tools.profitability_timing_study import run_p2
 from tools.profitability_market_capture import capture_basis
-from tools.profitability_information_study import run_p4
+from tools.profitability_information_study import run_p3,run_p4
 from tools.profitability_trajectory_import import import_trajectories
 
 
@@ -35,9 +35,11 @@ def run_profitability(params):
         if verified(output/'p2/result.json')['p1_hash']!=verified(output/'p1/result.json')['result_hash']:
             raise ValueError('cached P2/P1 binding mismatch')
         if not (output/'p3/result.json').exists():capture_basis(output/'p3')
+        basis=cache/'profitability_inputs'/str(attempt)/'basis.json'
+        if basis.exists() and not (output/'p3_study/result.json').exists():run_p3(output/'p0',basis,directory,output/'p3_study')
         information=cache/'profitability_inputs'/str(attempt)/'information.json'
         trajectory=cache/'profitability_inputs'/str(attempt)/'trajectory.json'
         if information.exists() and not (output/'p4/result.json').exists():run_p4(output/'p0',information,directory,output/'p4')
         if trajectory.exists() and not (output/'p5/result.json').exists():import_trajectories(trajectory,output/'p5')
         return {'attempt':attempt,**{stage:verified(output/stage/'result.json') if (output/stage/'result.json').exists() else None
-                                    for stage in ('p0','p1','p2','p3','p4','p5')}}
+                                    for stage in ('p0','p1','p2','p3','p3_study','p4','p5')}}

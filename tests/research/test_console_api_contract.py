@@ -1953,3 +1953,17 @@ def test_factory_lifecycle_calibration_contract_uses_only_valid_mature_labels(tm
     rejected=lifecycle.lifecycle_payload(tmp_path)
     assert rejected['models'][0]['state']=='UNKNOWN'
     assert rejected['models'][0]['diagnostics']['observations']==[]
+
+
+def test_profitability_basis_study_is_a_separate_read_only_projection(tmp_path):
+    from services.console.api.profitability_views import profitability_payload
+    from tools.profitability_study import write_new
+    directory=tmp_path/'data/cache/profitability/1/p3_study'
+    directory.mkdir(parents=True)
+    write_new(directory/'result.json',{'stage':'P3','economic_eligible':False,
+              'status':'COMPLETED_TECHNICAL_ONLY','trials_attempted':4,'cases':[]})
+    payload=profitability_payload(tmp_path,1)
+    assert payload['p3'] is None
+    assert payload['p3_study']['trials_attempted']==4
+    assert payload['p3_study']['projection']=='CONSOLE_SUMMARY'
+    assert payload['authoritative'] is False
