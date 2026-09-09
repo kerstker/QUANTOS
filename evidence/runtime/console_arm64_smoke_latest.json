@@ -71,7 +71,7 @@
           ],
           "exit_code": 0,
           "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "stdout_sha256": "f614f9bee93eb3bed58a43e091d050fcadceea76349cf626d12f3d63fdf04942"
+          "stdout_sha256": "0a46c1543ad0f90f78ffa0c2eae5e673cf2490a9c20fb74190bf6987bf9a88d4"
         },
         {
           "argv": [
@@ -81,7 +81,7 @@
           ],
           "exit_code": 0,
           "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "stdout_sha256": "307af5b27576eb7e751dcc43aa35093c7d46840919bf3c13d342ba877c1a4d58"
+          "stdout_sha256": "04d632f6c51ff21ed8e597a021cb94b0dedb5706359804a30e73beb7868c471c"
         },
         {
           "argv": [
@@ -92,7 +92,7 @@
           ],
           "exit_code": 0,
           "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "stdout_sha256": "2b9096417994d07f46e624109ed2021860e3707f51281c34b76ec54402aeac05"
+          "stdout_sha256": "51bdf418b4ceb95687cf9e08a7a475cc48a487cdc70c31fbf43a76d825fc95c4"
         },
         {
           "argv": [
@@ -110,7 +110,7 @@
       ],
       "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
       "source_clean": true,
-      "source_commit": "ab3620e86c2c9454432111cbe0fd7645e9dc2953"
+      "source_commit": "521da5e1a660bc3d61c6a968252b2d644013fb04"
     },
     "container_inspect": {
       "AppArmorProfile": "docker-default",
@@ -140,21 +140,21 @@
         "Domainname": "",
         "Entrypoint": null,
         "Env": [
-          "LIVE_TRADING_ENABLED=false",
-          "ALLOW_AI_DIRECT_TRADING=false",
-          "FTP_PROXY=",
-          "ftp_proxy=",
-          "REAL_BROKER_ENABLED=false",
-          "NO_PROXY=",
-          "no_proxy=",
-          "ALLOW_ORDER_SUBMISSION=false",
-          "REQUIRE_HUMAN_APPROVAL=true",
-          "http_proxy=",
-          "HTTP_PROXY=",
-          "HTTPS_PROXY=",
           "ALL_PROXY=",
           "https_proxy=",
+          "REQUIRE_HUMAN_APPROVAL=true",
+          "FTP_PROXY=",
+          "NO_PROXY=",
+          "http_proxy=",
+          "no_proxy=",
+          "HTTP_PROXY=",
           "all_proxy=",
+          "LIVE_TRADING_ENABLED=false",
+          "ALLOW_ORDER_SUBMISSION=false",
+          "HTTPS_PROXY=",
+          "ftp_proxy=",
+          "REAL_BROKER_ENABLED=false",
+          "ALLOW_AI_DIRECT_TRADING=false",
           "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
           "LANG=C.UTF-8",
           "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
@@ -166,7 +166,7 @@
         "ExposedPorts": {
           "8400/tcp": {}
         },
-        "Hostname": "ee72a1ca38e5",
+        "Hostname": "ccaebda03d6c",
         "Image": "quantos-console:l2-arm64",
         "Labels": {},
         "OpenStdin": false,
@@ -176,7 +176,7 @@
         "Volumes": null,
         "WorkingDir": "/app"
       },
-      "Created": "2026-09-08T21:24:26.090572154Z",
+      "Created": "2026-09-09T09:49:54.755075478Z",
       "Driver": "overlayfs",
       "ExecIDs": null,
       "HostConfig": {
@@ -279,17 +279,17 @@
         "VolumeDriver": "",
         "VolumesFrom": null
       },
-      "HostnamePath": "/var/lib/docker/containers/ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2/hostname",
-      "HostsPath": "/var/lib/docker/containers/ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2/hosts",
-      "Id": "ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2",
-      "Image": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+      "HostnamePath": "/var/lib/docker/containers/ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0/hostname",
+      "HostsPath": "/var/lib/docker/containers/ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0/hosts",
+      "Id": "ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0",
+      "Image": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
       "ImageManifestDescriptor": {
         "annotations": {
           "io.containerd.image.name": "docker.io/library/quantos-console:l2-arm64",
           "org.opencontainers.image.created": "2026-06-16T00:20:04Z",
           "org.opencontainers.image.ref.name": "l2-arm64"
         },
-        "digest": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+        "digest": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "platform": {
           "architecture": "arm64",
@@ -297,7 +297,7 @@
         },
         "size": 3255
       },
-      "LogPath": "/var/lib/docker/containers/ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2/ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2-json.log",
+      "LogPath": "/var/lib/docker/containers/ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0/ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0-json.log",
       "MountLabel": "",
       "Mounts": [],
       "Name": "/quantos-arm64-console-smoke",
@@ -307,7 +307,7 @@
             "Aliases": null,
             "DNSNames": null,
             "DriverOpts": null,
-            "EndpointID": "3baad2c6ad55c7ef5ace6cb3f816fd9c08d324264b228cc7bec8d6be14303974",
+            "EndpointID": "f18f6b6a15fe2286eebe7987717aa193bf2b8034a89c643f3adb617b445fbb14",
             "Gateway": "",
             "GlobalIPv6Address": "",
             "GlobalIPv6PrefixLen": 0,
@@ -322,13 +322,13 @@
           }
         },
         "Ports": {},
-        "SandboxID": "3f7812a3e0172e1e63edf285f54e5dd7b690d1fc49f2b28e76825e0ca6d9c203",
-        "SandboxKey": "/var/run/docker/netns/3f7812a3e017"
+        "SandboxID": "260c89b52305ecc8ef12cf3b4d157a59aaaf0c19863412d090adcd17fd04142f",
+        "SandboxKey": "/var/run/docker/netns/260c89b52305"
       },
       "Path": "python",
       "Platform": "linux",
       "ProcessLabel": "",
-      "ResolvConfPath": "/var/lib/docker/containers/ee72a1ca38e53b2b70cf978a09d2ea3e08b3154ea3570882bee905ebc4e206f2/resolv.conf",
+      "ResolvConfPath": "/var/lib/docker/containers/ccaebda03d6cad8687d7b3cd56bbaf044cf4a89564e295735dcc70f805cc76c0/resolv.conf",
       "RestartCount": 0,
       "State": {
         "Dead": false,
@@ -337,10 +337,10 @@
         "FinishedAt": "0001-01-01T00:00:00Z",
         "OOMKilled": false,
         "Paused": false,
-        "Pid": 3045099,
+        "Pid": 3809523,
         "Restarting": false,
         "Running": true,
-        "StartedAt": "2026-09-08T21:24:26.178954736Z",
+        "StartedAt": "2026-09-09T09:49:54.870523687Z",
         "Status": "running"
       },
       "Storage": {
@@ -404,17 +404,17 @@
           "org.opencontainers.image.created": "2026-06-16T00:20:04Z",
           "org.opencontainers.image.ref.name": "l2-arm64"
         },
-        "digest": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+        "digest": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "size": 3255
       },
-      "Id": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+      "Id": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
       "Metadata": {
-        "LastTagTime": "2026-09-08T21:23:52.561885516Z"
+        "LastTagTime": "2026-09-09T09:49:22.442329793Z"
       },
       "Os": "linux",
       "RepoDigests": [
-        "quantos-console@sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03"
+        "quantos-console@sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c"
       ],
       "RepoTags": [
         "quantos-console:l2-arm64"
@@ -428,26 +428,26 @@
           "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
           "sha256:87b6fda826019af7ab903470268ca579ea2dfccaa3bc5b71a964b0f185e0f94c",
           "sha256:e3a57921130d1ba9f455a710d83317043d2ae6726e0dd3a48ccc9e6a9c5382bf",
-          "sha256:2e3e42fe06817ffa7c3da9120a53e25f3cdfd3f11d42c5150d1f7eff278dcb8c",
+          "sha256:4fd1e6a3c095d8b5520a5d9974ebe61ae0ed8e0c73e852705b7307f064d2e995",
           "sha256:2336e4125b788964f456d75295e48d9cda4372a0ae7cda0b59108b76f5f86727",
-          "sha256:bc21d676e2b305e4c61913843db9630bc1673cf853d6aaee69ba23741697ed9a",
+          "sha256:c99cb5a388444238430b03738b4fb309ebe9f1c670d656c803b8909dcccb29e9",
           "sha256:fae27bbeda66f785d9092df6e3ab8bc3b1db29efd5f4828c788ba6bbc43e87e7",
-          "sha256:1df3ab3fd5bb91ca913f32b6c7b4f0c666570ded0018869b2b665b25a52f389e"
+          "sha256:d6834e59b1ad05826688c8c42aa95a3e16d65397645c5671482e1cd9cb3c7ab0"
         ],
         "Type": "layers"
       },
-      "Size": 134463572
+      "Size": 134481478
     },
-    "observed_at": 1788902672,
-    "runtime_image_config_digest": "sha256:5b1ced121955bfd9b96ca17084ef58e8c2057dd0675d02f7d6a150ec60a4feeb",
-    "runtime_image_manifest_digest": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+    "observed_at": 1788947398,
+    "runtime_image_config_digest": "sha256:af5183aefcee342eb1410318a2e6385a61bda704305b0d69dafe8ce3569244ca",
+    "runtime_image_manifest_digest": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
     "schema_version": 3
   },
-  "observation_sha256": "d8423557e4bab5806a9d279a1d7f1515221edbcd1c2b34f581de45391f44543c",
-  "observed_at": 1788902672,
+  "observation_sha256": "6359f518907c9e07be59f28a4f1e66365bcbce741adfbea5ecfa92318f557c59",
+  "observed_at": 1788947398,
   "platform": "linux/arm64",
-  "runtime_image_config_digest": "sha256:5b1ced121955bfd9b96ca17084ef58e8c2057dd0675d02f7d6a150ec60a4feeb",
-  "runtime_image_manifest_digest": "sha256:93dc6a81a726bca3b66c74789006ad8bd40d7e5ad28742de6d3b57c6365dac03",
+  "runtime_image_config_digest": "sha256:af5183aefcee342eb1410318a2e6385a61bda704305b0d69dafe8ce3569244ca",
+  "runtime_image_manifest_digest": "sha256:cd41aba2afb1cfb0e1a5f2378a6864ba5ba6dffffebb149c4f1e523a2038d22c",
   "runtime_image_ref": "quantos-console:l2-arm64",
   "schema_version": 3,
   "source": {
@@ -461,7 +461,7 @@
         ],
         "exit_code": 0,
         "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "stdout_sha256": "4964a305b8f578c5f8ad340b14eca11a676984c437dddf5258f746bc2f9db43e"
+        "stdout_sha256": "a782a690d0a3854ace85b1f00757dc21c27876712f847a082666dd228d28d84e"
       },
       {
         "argv": [
@@ -484,7 +484,7 @@
         "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
       }
     ],
-    "commit": "ab3620e86c2c9454432111cbe0fd7645e9dc2953",
+    "commit": "521da5e1a660bc3d61c6a968252b2d644013fb04",
     "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
   },
   "verdict": "PASS"
