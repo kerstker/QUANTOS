@@ -97,8 +97,9 @@ def advance_cost_account(root,attempt,*,register=False,source_root=None,
                              'limitations':result['limitations'],'forward_orders_executed':False}
                     (output/'completed').mkdir(exist_ok=True)
                     write_new(trial/'market.json',{'market':market_identity,'source_hash':digest(receipts)})
-                    write_new(destination,{'window_end_ms':end,'attempt_ms':now,'summary':summary,
-                              'forecast_bindings':{str(r['slot_ms']):r['result_hash'] for r in rows if r['entry_ms']<end}})
+                # Publish completion only after the canonical trial ledger commits PASSED.
+                write_new(destination,{'window_end_ms':end,'attempt_ms':now,'summary':summary,
+                          'forecast_bindings':{str(r['slot_ms']):r['result_hash'] for r in rows if r['entry_ms']<end}})
                 atomic_write_json(str(output/'status.json'),seal(summary));return summary
             except Exception as exc:
                 write_new(trial/'failure.json',{'reason':type(exc).__name__,'detail':str(exc),'economic_eligible':False})

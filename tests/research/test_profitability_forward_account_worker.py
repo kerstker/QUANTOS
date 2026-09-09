@@ -68,3 +68,28 @@ def test_cli_rejects_unbounded_polling_before_creating_state(tmp_path):
     from tools.profitability_forward_account import main
     with pytest.raises(SystemExit):main(['--state-root',str(tmp_path),'--attempt','1','--interval','0'])
     assert not (tmp_path/'data').exists()
+
+
+def test_trial_terminal_write_failure_cannot_publish_completed_account(tmp_path,monkeypatch):
+    from tests.research.test_profitability_forward_account import forecasts
+    from tests.research.test_profitability_forward_market import receipts
+    from tools.profitability_forward_market import market_from_receipts
+    from tools import profitability_trial_receipts
+    model=tmp_path/'data/cache/ai_factory/1/model.json';model.parent.mkdir(parents=True)
+    write_new(model,{'authoritative':False,'live_eligible':False,'training_last_label_ms':0})
+    advance_cost_account(tmp_path,1,register=True,clock=lambda:DAY+1)
+    output=tmp_path/'data/cache/profitability/1/p6';plan=verified(output/'plan.json')
+    path=model.parent/'forward/forecasts';path.mkdir(parents=True)
+    for row in forecasts(plan)[:24]:
+        write_new(path/f"{row['slot_ms']}.json",{**{k:v for k,v in row.items() if k!='result_hash'},'model_hash':plan['model_hash']})
+    def capture(*args,**kwargs):
+        start,end,records=receipts();return market_from_receipts(records,start=start,end=end),records
+    original=profitability_trial_receipts._event
+    def failed_terminal(ledger,record,status):
+        if status=='PASSED':raise OSError('simulated ledger write failure')
+        return original(ledger,record,status)
+    monkeypatch.setattr(profitability_trial_receipts,'_event',failed_terminal)
+    assert advance_cost_account(tmp_path,1,clock=lambda:4*DAY,capture=capture)['status']=='ERROR'
+    assert not list((output/'completed').glob('*.json'))
+    assert advance_cost_account(tmp_path,1,clock=lambda:4*DAY+1,capture=capture)['status']=='RETRY_BACKOFF'
+    assert list((output/'attempts').glob('*/*/failure.json'))
