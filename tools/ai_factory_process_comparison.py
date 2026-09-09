@@ -11,7 +11,7 @@ from services.research.trial_ledger import TrialLedger
 from tools.ai_factory_provider import provider_status,propose
 from tools.ai_quant_factory import evaluate_market
 from tools.ai_factory_portfolio import run_study
-from tools.ai_factory_collaboration import bounded_proposal
+from tools.ai_factory_collaboration import bounded_proposal,usage_summary
 from tools.ai_factory_research_records import inner_context,retain_inner,proposal_context
 from tools.btc_mechanism_study import load_verified_minutes
 from tools.perpetual_alpha_research import load_data
@@ -97,9 +97,7 @@ def run_comparison(params):
                             atomic_write_json(str(receipt_path),receipt);_event(ledger,record,receipt['status'])
                         retain_inner(research,context(),receipt)
                         history.append(receipt)
-                    call_records=[verified(path) for path in research.glob('research-roles/*/roles/*.json') if not path.name.endswith('.started.json')]
-                    compute={'model_calls':len(call_records),'model_elapsed_ms':sum(r.get('wall_elapsed_ms',0) for r in call_records),
-                        'model_total_tokens':sum(r['proposal']['usage']['total_tokens'] for r in call_records) if all(type(r.get('proposal',{}).get('usage',{}).get('total_tokens')) is int for r in call_records) else None}
+                    compute=usage_summary(research)
                     successful=[r for r in history if r['status']=='PASSED']
                     if not successful:
                         rows.append({'fold':fold,'group':group,**compute,'status':'FAILED','trials':history});continue

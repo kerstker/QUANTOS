@@ -9,6 +9,18 @@ from tools.profitability_study import write_new
 PROTOCOLS={'SINGLE_V1':('PROPOSE',),'THREE_ROLES_V1':('PROPOSE','COUNTER_PROPOSE','SYNTHESIZE')}
 
 
+def usage_summary(research):
+    reservations=list(Path(research).glob('research-roles/*/roles/*.started.json'))
+    receipts=[]
+    for path in reservations:
+        receipt=path.with_name(path.name.replace('.started.json','.json'))
+        if receipt.exists():receipts.append(verified(receipt))
+    complete=len(receipts)==len(reservations)
+    return {'model_calls':len(reservations),'model_completed_calls':len(receipts),
+        'model_elapsed_ms':sum(r['wall_elapsed_ms'] for r in receipts) if complete and all(type(r.get('wall_elapsed_ms')) is int for r in receipts) else None,
+        'model_total_tokens':sum(r['proposal']['usage']['total_tokens'] for r in receipts) if complete and all(type(r.get('proposal',{}).get('usage',{}).get('total_tokens')) is int for r in receipts) else None}
+
+
 def verify_collaboration(output):
     output=Path(output);plan=verified(output/'plan.json');raw={k:v for k,v in plan.items() if k!='result_hash'}
     roles=PROTOCOLS.get(plan['protocol'])

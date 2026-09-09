@@ -1,6 +1,14 @@
 import pytest
 
 
+def test_usage_counts_interrupted_reservations_without_inventing_latency(tmp_path):
+    from tools.ai_factory_collaboration import bounded_proposal,usage_summary
+    def stop(*args,**kwargs):raise KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt):
+        bounded_proposal('BTC',[0],[],protocol='SINGLE_V1',output=tmp_path/'research-roles/one',options={},propose_fn=stop)
+    assert usage_summary(tmp_path)=={'model_calls':1,'model_completed_calls':0,'model_elapsed_ms':None,'model_total_tokens':None}
+
+
 def test_cached_role_result_rejects_a_changed_source_receipt(tmp_path):
     from tools.ai_factory_collaboration import bounded_proposal
     from tools.btc_factory_research import verified,seal
