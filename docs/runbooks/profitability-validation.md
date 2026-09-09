@@ -69,3 +69,9 @@ JSON 根为 `quote`（当前账本驱动仅 USDC）和 `observations`。
 `market, base, quote, event_ms, available_ms, price`。同组事件时间完全一致，两组均不超过决策前五分钟、可用时间不晚于决策，previous 必须早于 current。
 USDT 数据可以单独检查，但不能借用 USDC 账本给出成本后结果。
 调用现有信息研究入口时加 `--stage P3`；默认 P4 保持兼容。受限工作流发现 basis.json 后自动运行独立对照，未提供时不会生成占位实验。
+
+### 固定动作回放（Python 研究接口）
+
+`services.research.profitability_fixed_replay.run_fixed_actions` 接收冻结的 `(timestamp, OrderIntent|CancelOrder)` 序列、`cancel_latency_ms`（0–60000）以及原 `run_linear_perpetual_simulation` 的场所规则、资金费、成本、风险、容量、帧和来源参数。
+不接受可变策略；策略摘要包含动作身份和延迟。输出中的 `trajectory` 可与外部规范化回执组成 `observed/simulated` 输入，交由现有轨迹导入器比较。
+这是离线研究接口，尚未增加前端仿真参数编辑器；标准成本和风险要求全部沿用。撤单拒绝保存在 `cancel_responses`，不伪装为订单终结后的新成交。

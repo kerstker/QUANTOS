@@ -1289,6 +1289,21 @@
           "path": "services/research/profitability_attribution.py"
         },
         {
+          "line": 7,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
           "line": 5,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/profitability_trajectory.py"
@@ -1629,7 +1644,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "dc314b6f9781772ebc201c8b8d76222476360f71de865b7c98be618766bdb72c",
+  "graph_sha256": "9d50fb6725f78955510eb1f8c7ae066f9b1ba55d3d29012effa619fe9dda3eb1",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1667,7 +1682,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 534,
+  "source_file_count": 535,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
