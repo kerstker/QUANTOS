@@ -2000,6 +2000,31 @@ def test_profitability_causal_information_preserves_separate_quotes_and_no_predi
     assert result['causal']['collection']['failures'][0]['http_status']==429
 
 
+def test_portfolio_research_contract_keeps_account_curves_and_hides_training_data(tmp_path):
+    from services.console.api.ai_factory import factory_payload
+    from services.research.ai_factory_store import FactoryStore
+    from tools.profitability_study import write_new
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'})
+    dest=tmp_path/'data/cache/ai_factory/1/portfolio';dest.mkdir(parents=True)
+    write_new(dest/'result.json',{'schema':'QUANTOS_FACTORY_PORTFOLIO_V1','status':'COMPLETED_TECHNICAL_ONLY',
+        'authoritative':False,'economic_eligible':False,'training_x':[[123]],
+        'selected':{'id':0,'quarters':[0]},'components':[],'inner_trials_attempted':1,
+        'inner_trials':[{'spec':{'id':0},'status':'PASSED','metrics':{'net_pnl':0,'drawdown':0,'equity':[{'time':1,'equity':'1500'}]}}],
+        'outer_cases':[{'name':'portfolio','status':'PASSED','metrics':{'net_pnl':0,'equity':[{'time':1,'equity':'1500'}]}}]})
+    (dest/'forward').mkdir()
+    write_new(dest/'forward/status.json',{'schema':'QUANTOS_PORTFOLIO_FORWARD_V1','status':'WAITING_WINDOW',
+        'authoritative':False,'account_pnl_computed':False,'predictions':0,'recent_forecasts':[]})
+    cost=tmp_path/'data/cache/profitability/1/portfolio-forward';cost.mkdir(parents=True)
+    write_new(cost/'status.json',{'status':'WAITING_MATURITY','authoritative':False,'economic_eligible':False})
+    report=factory_payload(tmp_path,1)['portfolio_research']
+    assert report['forward']['predictions']==0
+    assert report['forward_cost']['status']=='WAITING_MATURITY'
+    assert 'training_x' not in report
+    assert 'equity' not in report['inner_trials'][0]['metrics']
+    assert report['outer_cases'][0]['metrics']['equity'][0]['equity']=='1500'
+
+
 def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_path, monkeypatch):
     from services.console.api import runtime_health
     monkeypatch.setattr(runtime_health, "_STATE_ROOT", tmp_path)

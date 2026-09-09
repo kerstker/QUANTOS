@@ -565,12 +565,24 @@ def _adapt_ai_factory_assessment(result):
             'provenance':'tools/ai_factory_assessment.py'}
 
 
-def _adapt_ai_factory_forward(result):
+def _adapt_ai_factory_portfolio(result):
+    from services.research.ai_factory_store import digest
+    if (result.get('schema')!='QUANTOS_FACTORY_PORTFOLIO_V1'
+            or result.get('authoritative') is not False or result.get('economic_eligible') is not False
+            or result.get('result_hash')!=digest({k:v for k,v in result.items() if k!='result_hash'})):
+        raise ValueError('invalid portfolio research result')
+    return {'title':'内层组合研究与整体回放','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'result_hash':result['result_hash'],'portfolio_json':json.dumps(result,sort_keys=True)},
+            'caveats':['固定权重搜索与同账户成本比较；已使用历史，不建立经济准入。'],
+            'provenance':'tools/ai_factory_portfolio.py'}
+
+
+def _adapt_ai_factory_forward(result,*,source='tools/ai_factory_forward.py'):
     return {'title':'AI 小时模型自然时间观察','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'forward_status':result['status'],'factory_attempt':result['attempt'],
                        'hourly_forward_json':json.dumps(result,sort_keys=True)},
             'caveats':['仅记录自然时间预测与成熟标签，不计算账户收益。'],
-            'provenance':'tools/ai_factory_forward.py'}
+            'provenance':source}
 
 
 def _adapt_ai_factory(result, *, source='tools/ai_quant_factory.py'):
@@ -590,6 +602,11 @@ def _adapt_profitability(result):
 
 
 RUN_KINDS: dict = {
+    'ai_factory_portfolio': RunSpec('tools.ai_factory_portfolio:run_portfolio',{'attempt':int},
+        _adapt_ai_factory_portfolio,'内层组合研究与整体回放',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_portfolio_forward': RunSpec('tools.ai_factory_portfolio_forward:run_observation',{'attempt':int,'action':int},
+        lambda result:_adapt_ai_factory_forward(result,source='tools/ai_factory_portfolio_forward.py'),
+        '组合与单模型配对前向观察',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'action':(0,2)}),
     'profitability_information': RunSpec('tools.profitability_causal_workflow:run_information',{'attempt':int},
         _adapt_profitability,'自然时间信息采集与受限实验',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'profitability_forward': RunSpec('tools.profitability_forward_account:run_forward_cost',{'attempt':int},

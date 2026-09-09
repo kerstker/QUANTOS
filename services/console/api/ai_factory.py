@@ -11,6 +11,7 @@ from services.console.api.forward_dashboard import _read
 from services.console.api.ai_factory_workflow import workflow_payload
 from services.console.api.profitability_views import profitability_payload
 from services.research.profitability_forward import forward_summary
+from services.console.api.factory_portfolio import portfolio_payload
 
 router=APIRouter()
 
@@ -20,6 +21,7 @@ def factory_payload(root,attempt=None):
     except (OSError,ValueError,sqlite3.Error):
         data={'sessions':[],'selected':None,'trials':[],'events':[]};errors=['FACTORY_STORE_UNAVAILABLE']
     source_capture=None
+    portfolio=None
     forward=None;assessment=None;verification=None;pipeline=None;comparison=None;resident=None
     path=root/'data/cache/ai_factory/resident.json'
     if path.exists():
@@ -56,7 +58,9 @@ def factory_payload(root,attempt=None):
             try:pipeline=_read(path)
             except (OSError,ValueError):errors.append('PIPELINE_UNAVAILABLE')
     if data['selected']:
-        path=root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'process-comparison.json'
+        directory=root/'data/cache/ai_factory'/str(data['selected']['attempt'])
+        path=directory/'process-v2/process-comparison.json'
+        if not path.exists():path=directory/'process-comparison.json'
         if path.exists():
             try:comparison=_read(path)
             except (OSError,ValueError):errors.append('COMPARISON_UNAVAILABLE')
@@ -68,6 +72,10 @@ def factory_payload(root,attempt=None):
                 if captured.get('authoritative') is not False:raise ValueError('invalid source capture')
                 source_capture={**captured,'records':[{k:v for k,v in r.items() if k!='excerpt'} for r in captured['records']]}
             except (OSError,ValueError,TypeError,KeyError):errors.append('SOURCE_CAPTURE_UNAVAILABLE')
+    if data['selected']:
+        try:portfolio=portfolio_payload(root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'portfolio')
+        except (OSError,ValueError,KeyError,TypeError):errors.append('PORTFOLIO_RESEARCH_UNAVAILABLE')
+    data['portfolio_research']=portfolio
     # Avoid returning every historical equity curve and duplicate event payload on each poll.
     data['sessions']=[{**row,'result':{'selected':row['result'].get('selected'),'model_hash':row['result'].get('model_hash')}} for row in data['sessions']]
     data['events']=[{**row,'payload':{k:v for k,v in row['payload'].items() if k in ('reason','action','operator','run_id','trial_id','candidate_id','ordinal')}} for row in data['events']]

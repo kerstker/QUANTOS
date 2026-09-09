@@ -156,7 +156,13 @@ def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,sli
         from services.research.profitability_timing import TimingGate
         timing=TimingGate(wait_ms=HOUR)
     day=24*HOUR
-    weights=dict(zip((t+300000).tolist(),targets(p,spec['threshold_bps'])))
+    if cost_aware:
+        # A portfolio arrives after each component's confidence haircut. Zero
+        # means no second haircut; fixed-threshold strategy targets are unused.
+        if spec['threshold_bps'] not in (0,20,30) or not np.isfinite(p).all():
+            raise ValueError('invalid cost-aware decision input')
+        weights={}
+    else:weights=dict(zip((t+300000).tolist(),targets(p,spec['threshold_bps'])))
     # The canonical ledger retains its whole-day reconciliation contract.
     start=int((t[0]+day-1)//day*day+300000)
     end=int(t[-1]//day*day+300000)

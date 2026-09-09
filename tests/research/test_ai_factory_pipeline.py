@@ -18,13 +18,13 @@ def test_pipeline_has_real_dependency_order(monkeypatch,tmp_path):
     monkeypatch.setenv('QUANTOS_STATE_ROOT',str(tmp_path));(tmp_path/'data/cache/ai_factory/1').mkdir(parents=True)
     calls=[]
     monkeypatch.setattr(tool,'run_factory',lambda p:{'state':'COMPLETED','command':'run'})
-    for name in ('run_assessment','run_comparison','run_verification','run_observation','checkpoint'):
+    for name in ('run_assessment','run_portfolio','run_comparison','run_verification','run_observation','run_portfolio_observation','checkpoint'):
         monkeypatch.setattr(tool,name,lambda p,n=name:calls.append(n) or {'result_hash':'a'*64})
     tool.run_pipeline({'attempt':1})
-    assert calls==['run_assessment','run_comparison','run_verification','run_observation','checkpoint']
+    assert calls==['run_assessment','run_portfolio','run_comparison','run_verification','run_observation','run_portfolio_observation','checkpoint']
 
 
-@pytest.mark.parametrize('kind',['ai_factory','ai_factory_pipeline'])
+@pytest.mark.parametrize('kind',['ai_factory','ai_factory_pipeline','ai_factory_portfolio','ai_factory_portfolio_forward'])
 def test_real_runner_accepts_each_factory_adapter_source(tmp_path,monkeypatch,kind):
     from dataclasses import replace
     from services.research.run_registry.registry import RunRegistry
@@ -32,10 +32,13 @@ def test_real_runner_accepts_each_factory_adapter_source(tmp_path,monkeypatch,ki
     from services.research_runner.run_kinds import RUN_KINDS
     from services.research_runner.runner import JobQueue,validate_run_provenance
     registry=RunRegistry(ResearchRunStore(str(tmp_path/'runs.db')))
-    spec=replace(RUN_KINDS[kind],runner=lambda params:{'state':'COMPLETED','attempt':1,'result':{}})
+    from tools.btc_factory_research import seal
+    result=seal({'schema':'QUANTOS_FACTORY_PORTFOLIO_V1','authoritative':False,'economic_eligible':False}) if kind=='ai_factory_portfolio' else {'state':'COMPLETED','attempt':1,'result':{}}
+    if kind=='ai_factory_portfolio_forward':result={'status':'WAITING_WINDOW','attempt':1}
+    spec=replace(RUN_KINDS[kind],runner=lambda params:result)
     monkeypatch.setitem(RUN_KINDS,kind,spec)
     queue=JobQueue(registry,max_workers=1)
-    run_id=queue.submit(kind,{'attempt':1},now=1)
+    run_id=queue.submit(kind,{'attempt':1,**({'action':1} if kind=='ai_factory_portfolio_forward' else {})},now=1)
     queue.join()
     run=registry.get(run_id)
     assert run.status=='done',run.error

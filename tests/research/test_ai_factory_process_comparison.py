@@ -45,9 +45,14 @@ def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_
             assert len(passed)==2
             assert {module.candidates(2)[t['candidate_id']]['threshold_bps'] for t in passed}=={20,30}
     assert result['ai_group_status'] == 'NOT_CONFIGURED' and result['authoritative'] is False
+    assert result['schema']=='QUANTOS_AI_FACTORY_PROCESS_COMPARISON_V2'
+    for row in result['rows']:
+        assert row['portfolio']['inner_trials_attempted']<=16
+        assert len(row['portfolio']['comparisons'])==3
+        assert row['portfolio']['scope']=='USED_HISTORY_TECHNICAL_RESEARCH'
     assert module.run_comparison({'attempt': 1}) == result
-    (out / '1/process-comparison.json').unlink()
-    lost = out / '1/comparison-cases' / (result['rows'][0]['trials'][0]['trial_id'] + '.json')
+    (out / '1/process-v2/process-comparison.json').unlink()
+    lost = out / '1/process-v2/comparison-cases' / (result['rows'][0]['trials'][0]['trial_id'] + '.json')
     lost.unlink()
     with pytest.raises(ValueError, match='terminal receipt missing'):
         module.run_comparison({'attempt': 1})

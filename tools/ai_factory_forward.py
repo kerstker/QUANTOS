@@ -46,19 +46,21 @@ def run_observation(params,*,root=None,clock=_now,get=_get):
             raise
 
 
-def _run(base,dest,attempt,action,clock,get):
+def _run(base,dest,attempt,action,clock,get,*,load_model=None,predict=None,schema=SCHEMA):
     freeze_path=dest/'freeze.json';control_path=dest/'control.json'
     now=clock()
     if action==1:
-        session=FactoryStore.snapshot(base/'factory.db',attempt)['selected']
-        if session['state']!='COMPLETED':raise ValueError('completed research required')
-        model=verified(dest.parent/'model.json');result=verified(dest.parent/'result.json')
-        if (model['result_hash']!=result['model_hash'] or model['result_hash']!=session['result']['model_hash']
+        if load_model is not None:model=load_model(now)
+        else:
+            session=FactoryStore.snapshot(base/'factory.db',attempt)['selected']
+            if session['state']!='COMPLETED':raise ValueError('completed research required')
+            model=verified(dest.parent/'model.json');result=verified(dest.parent/'result.json')
+            if (model['result_hash']!=result['model_hash'] or model['result_hash']!=session['result']['model_hash']
                 or model['schema']!='QUANTOS_AI_FACTORY_V1' or model['spec'] not in candidates(2)
                 or model['authoritative'] is not False or model['live_eligible'] is not False
                 or model['training_last_label_ms']>=now):raise ValueError('model activation identity failed')
         if not freeze_path.exists():
-            _immutable(freeze_path,{'schema':SCHEMA,'attempt':attempt,'activated_at_ms':now,
+            _immutable(freeze_path,{'schema':schema,'attempt':attempt,'activated_at_ms':now,
                                     'model':model,'authoritative':False,'account_pnl_computed':False})
         atomic_write_json(str(control_path),seal({'enabled':True,'updated_ms':now}))
     elif action==2:
@@ -75,12 +77,15 @@ def _run(base,dest,attempt,action,clock,get):
                 capture=get(f'/fapi/v1/klines?symbol=BTCUSDC&interval=1h&startTime={slot-25*HOUR}&endTime={slot-1}&limit=25')
                 captured=_immutable(dest/'captures'/f"{digest(capture)}.json",capture)
                 features=forward_features(capture['payload'],slot)
-                prediction=float(fit_predict(model['spec'],model['training_x'],model['training_y'],[features])[0])
+                options=predict(model,features) if predict is not None else {
+                    'prediction':float(fit_predict(model['spec'],model['training_x'],model['training_y'],[features])[0]),
+                    'threshold_bps':model['spec']['threshold_bps']}
                 issued=clock()
                 if issued<slot+300000:
                     document=forecast_document(slot=slot,available=capture['received_at_ms'],issued=issued,
                         activated=freeze['activated_at_ms'],model_hash=model['result_hash'],input_hash=captured['result_hash'],
-                        features=features,prediction=prediction,threshold_bps=model['spec']['threshold_bps'])
+                        features=features,**{k:v for k,v in options.items() if k!='extra'})
+                    document.update(options.get('extra',{}))
                     _immutable(forecast_path,document);status='OBSERVING'
                 else:status='MISSED_WINDOW'
             # Mature outcomes may be collected after downtime; predictions are never backfilled.
@@ -98,7 +103,7 @@ def _run(base,dest,attempt,action,clock,get):
     forecast_paths=sorted((dest/'forecasts').glob('*.json'));label_paths=sorted((dest/'labels').glob('*.json'))
     # Bounded UI history; immutable full receipts remain on disk.
     labels=[verified(p) for p in label_paths[-1000:]]
-    report={'schema':SCHEMA,'attempt':attempt,'status':status,'observed_at_ms':clock(),
+    report={'schema':schema,'attempt':attempt,'status':status,'observed_at_ms':clock(),
             'activated_at_ms':verified(freeze_path)['activated_at_ms'] if freeze_path.exists() else None,
             'predictions':len(forecast_paths),'labels':len(label_paths),'pending':len(forecast_paths)-len(label_paths),
             'diagnostics':diagnostics(labels),'recent_forecasts':[verified(p) for p in forecast_paths[-48:]],
@@ -123,5 +128,7 @@ def advance_factory(root,*,now_ms):
             results.append({'attempt':attempt,'status':r['status'],'observed_at_ms':r['observed_at_ms'],
                             'forward_cost_status':cost['status'] if cost else 'NOT_REGISTERED'})
         except Exception as exc:results.append({'attempt':attempt,'status':'ERROR','reason':type(exc).__name__})
+    from tools.ai_factory_portfolio_forward import advance_portfolios
+    results.extend(advance_portfolios(root))
     results.extend(advance_registered_information(root))
     return results

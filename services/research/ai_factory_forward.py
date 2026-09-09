@@ -23,15 +23,19 @@ def forward_features(rows,slot):
     return [float(ret[-1]),float(close[-1]/close[-7]-1),float(close[-1]/close[0]-1),float(ret.std()),2*buy/volume-1]
 
 
-def forecast_document(*,slot,available,issued,activated,model_hash,input_hash,features,prediction,threshold_bps):
+def forecast_document(*,slot,available,issued,activated,model_hash,input_hash,features,prediction,threshold_bps,
+                      decision_policy='FIXED_THRESHOLD_V1'):
     _hash(model_hash);_hash(input_hash)
     if any(type(t) is not int for t in (slot,available,issued,activated)) or slot%HOUR or not 0<activated<=slot<=available<=issued<slot+300000:
         raise ValueError('forecast must precede execution and follow activation and input receipt')
     if len(features)!=5 or not np.isfinite(features).all() or not np.isfinite(prediction):
         raise ValueError('invalid forecast values')
+    if decision_policy not in ('FIXED_THRESHOLD_V1','DISCRETE_COST_RISK_V1'):raise ValueError('unknown forecast decision policy')
     return {'slot_ms':slot,'available_at_ms':available,'issued_at_ms':issued,'entry_ms':slot+300000,
             'exit_ms':slot+300000+4*HOUR,'model_hash':model_hash,'input_hash':input_hash,
-            'features':list(features),'prediction':float(prediction),'target_weight':targets([prediction],threshold_bps)[0],
+            'features':list(features),'prediction':float(prediction),
+            'target_weight':targets([prediction],threshold_bps)[0] if decision_policy=='FIXED_THRESHOLD_V1' else None,
+            **({'decision_policy':decision_policy} if decision_policy!='FIXED_THRESHOLD_V1' else {}),
             'horizon_ms':4*HOUR,'unit':'simple_return','authoritative':False,'account_pnl_computed':False}
 
 

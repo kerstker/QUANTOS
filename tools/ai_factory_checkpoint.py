@@ -122,6 +122,12 @@ def _verify_state(base):
         receipts={row['attempt']:obj.trials(row['attempt']) for row in sessions}
         obj.verify_campaigns()
     finally:obj.c.close()
+    from tools.ai_factory_portfolio_verify import verify_portfolio
+    for directory in list(base.glob('*/portfolio'))+list(base.glob('*/process-v2/portfolios/*')):
+        verify_portfolio(directory)
+    from services.research.trial_ledger import TrialLedger
+    for path in base.glob('*/process-v2/comparison-trials.db'):
+        with TrialLedger(str(path),create=False) as ledger:ledger.verify()
     for session in sessions:
         if session['state']=='COMPLETED':
             dest=base/str(session['attempt']);model=verified(dest/'model.json');result=verified(dest/'result.json')

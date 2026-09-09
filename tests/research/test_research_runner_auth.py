@@ -38,6 +38,23 @@ def _client(tmp_path, monkeypatch):
     return TestClient(m.app), stub
 
 
+@pytest.mark.parametrize('action,kind,number',[
+    ('portfolio','ai_factory_portfolio',None),('portfolio_observe','ai_factory_portfolio_forward',1),
+    ('portfolio_refresh','ai_factory_portfolio_forward',0),('portfolio_stop','ai_factory_portfolio_forward',2)])
+def test_portfolio_actions_queue_only_whitelisted_research(tmp_path,monkeypatch,action,kind,number):
+    from services.research.ai_factory_store import FactoryStore
+    monkeypatch.setattr(m,'_STATE_ROOT',tmp_path)
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','objective':'BTC','budget':3})
+        store.update(1,'COMPLETED',{})
+    client,queue=_client(tmp_path,monkeypatch)
+    response=client.post('/factory',json={'attempt':1,'action':action},
+        headers={'X-Operator':'fixture','X-Runner-Token':m._RUNNER_TOKEN})
+    assert response.status_code==200,response.text
+    assert queue.calls[0]['kind']==kind
+    assert queue.calls[0]['params']=={'attempt':1,**({'action':number} if number is not None else {})}
+
+
 def test_managed_runner_requires_preprovisioned_private_token(
     tmp_path: Path, monkeypatch
 ):
@@ -123,6 +140,8 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "ai_factory_comparison",
         "ai_factory_forward",
         "ai_factory_pipeline",
+        "ai_factory_portfolio",
+        "ai_factory_portfolio_forward",
         "ai_factory_verification",
         "ashare_forward_observation",
         "ashare_technical_search",

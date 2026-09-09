@@ -317,15 +317,15 @@ async def factory_control(req: FactoryRequest, operator: str = Depends(require_o
     from services.research.ai_factory import validate_config
     from services.research.ai_factory_store import FactoryStore
     if not 1<=req.attempt<=1000:raise HTTPException(400,'invalid attempt')
-    if req.action not in ('create','pause','resume','cancel','observe','stop_observe','refresh_observe','assess','verify','compare','profitability','forward_cost','information'):raise HTTPException(400,'unknown factory action')
+    if req.action not in ('create','pause','resume','cancel','observe','stop_observe','refresh_observe','assess','verify','compare','profitability','forward_cost','information','portfolio','portfolio_observe','portfolio_refresh','portfolio_stop'):raise HTTPException(400,'unknown factory action')
     try:
         config=validate_config({'attempt':req.attempt,'mode':req.mode,'budget':req.budget,'objective':req.objective,**({'search_plan':req.search_plan} if req.search_plan is not None else {})})
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
-            if req.action in ('observe','stop_observe','refresh_observe','assess','verify','compare','profitability','forward_cost','information'):
+            if req.action in ('observe','stop_observe','refresh_observe','assess','verify','compare','profitability','forward_cost','information','portfolio','portfolio_observe','portfolio_refresh','portfolio_stop'):
                 row=store.get(req.attempt)
                 if row['state']!='COMPLETED':raise ValueError('completed research required')
-                kind={'information':'profitability_information','forward_cost':'profitability_forward','profitability':'profitability_study','assess':'ai_factory_assessment','verify':'ai_factory_verification','compare':'ai_factory_comparison'}.get(req.action,'ai_factory_forward')
-                params={'attempt':req.attempt} if req.action in ('assess','verify','compare','profitability','forward_cost','information') else {'attempt':req.attempt,'action':{'observe':1,'stop_observe':2,'refresh_observe':0}[req.action]}
+                kind={'portfolio_observe':'ai_factory_portfolio_forward','portfolio_refresh':'ai_factory_portfolio_forward','portfolio_stop':'ai_factory_portfolio_forward','portfolio':'ai_factory_portfolio','information':'profitability_information','forward_cost':'profitability_forward','profitability':'profitability_study','assess':'ai_factory_assessment','verify':'ai_factory_verification','compare':'ai_factory_comparison'}.get(req.action,'ai_factory_forward')
+                params={'attempt':req.attempt} if req.action in ('assess','verify','compare','profitability','forward_cost','information','portfolio') else {'attempt':req.attempt,'action':{'observe':1,'stop_observe':2,'refresh_observe':0,'portfolio_observe':1,'portfolio_refresh':0,'portfolio_stop':2}[req.action]}
                 run_id=_queue.submit(kind,params,
                     now=int(time.time()),operator=operator,invocation_id=idempotency_key)
                 with store.c:store.event(req.attempt,'OPERATOR_ACTION',{'operator':operator,'action':req.action,'run_id':run_id})

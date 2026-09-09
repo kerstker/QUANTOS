@@ -22,24 +22,26 @@ def _market_identity(market):
             str(v) if k=='maximum_quantity' else v for k,v in market.items()}
 
 
-def advance_cost_account(root,attempt,*,register=False,source_root=None,
+def advance_cost_account(root,attempt,*,register=False,source_root=None,portfolio=False,
                          clock=lambda:time.time_ns()//1000000,capture=capture_market):
     if type(attempt) is not int or not 1<=attempt<=1000:raise ValueError('invalid forward attempt')
     root=Path(root);source_root=root if source_root is None else Path(source_root)
-    output=root/'data/cache/profitability'/str(attempt)/'p6'
+    output=root/'data/cache/profitability'/str(attempt)/('portfolio-forward' if portfolio else 'p6')
     if not register and not (output/'plan.json').exists():return None
     output.mkdir(parents=True,exist_ok=True)
     with acquire_runtime_lock(output/'worker.lock',process_lock=_LOCK) as acquired:
         if not acquired:return {'stage':'P6','status':'BUSY','economic_eligible':False}
         try:
             now=clock();base=source_root/'data/cache/ai_factory'/str(attempt)
+            if portfolio:base=base/'portfolio'
             model=verified(base/'model.json')
             if (model.get('authoritative') is not False or model.get('live_eligible') is not False
                     or model['training_last_label_ms']>=now):raise ValueError('frozen research model required')
             if not (output/'plan.json').exists():
                 if not (output/'source.json').exists():write_new(output/'source.json',{'source':source_identity(),'model_hash':model['result_hash']})
                 if verified(output/'source.json')['model_hash']!=model['result_hash']:raise ValueError('incomplete registration model changed')
-                write_new(output/'plan.json',make_plan(now_ms=now,model_hash=model['result_hash']))
+                write_new(output/'plan.json',make_plan(now_ms=now,model_hash=model['result_hash'],
+                    **({'policy':'COST_AWARE_PORTFOLIO_AND_INNER_BASELINE'} if portfolio else {})))
             frozen_source=verified(output/'source.json')['source'];current_source=source_identity()
             if any(current_source[k]!=frozen_source[k] for k in ('python_source_sha256','dependency_lock_sha256','python_version','architecture')):
                 raise ValueError('frozen forward runner source or environment changed')

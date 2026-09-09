@@ -3,9 +3,11 @@ import time
 from quantos.runtime_paths import runtime_state_root
 from tools.ai_quant_factory import run_factory
 from tools.ai_factory_assessment import run_assessment
+from tools.ai_factory_portfolio import run_portfolio
 from tools.ai_factory_process_comparison import run_comparison
 from tools.ai_factory_verification import run_verification
 from tools.ai_factory_forward import run_observation
+from tools.ai_factory_portfolio_forward import run_observation as run_portfolio_observation
 from tools.btc_factory_research import seal,verified
 from tools.ai_factory_checkpoint import create_checkpoint,publish_checkpoint
 from tools.cache_io import atomic_write_json
@@ -19,8 +21,10 @@ def run_pipeline(params):
     if (dest/'pipeline.json').exists() and verified(dest/'pipeline.json')['status']=='COMPLETED':return research
     stages=[]
     for name,worker,request in (
-        ('ASSESSMENT',run_assessment,params),('PROCESS_COMPARISON',run_comparison,params),('INDEPENDENT_PACKAGE',run_verification,params),
+        ('ASSESSMENT',run_assessment,params),('PORTFOLIO_RESEARCH',run_portfolio,params),
+        ('PROCESS_COMPARISON',run_comparison,params),('INDEPENDENT_PACKAGE',run_verification,params),
         ('NATURAL_OBSERVATION',run_observation,{'attempt':params['attempt'],'action':1}),
+        ('PORTFOLIO_OBSERVATION',run_portfolio_observation,{'attempt':params['attempt'],'action':1}),
         ('CHECKPOINT',checkpoint,params)):
         atomic_write_json(str(dest/'pipeline.json'),seal({'status':'RUNNING','stage':name,'completed':stages,
             'updated_ms':time.time_ns()//1000000,'authoritative':False}))
