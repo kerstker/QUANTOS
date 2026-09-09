@@ -48,6 +48,21 @@ def _observations(output,plan,quote):
     return rows
 
 
+def _collection_summary(output,plan):
+    captures=output/'captures'
+    folders=[p for p in captures.glob('*') if p.is_dir() and p.name.isdigit()
+             and plan['warmup_ms']<=int(p.name)<=plan['end_slot_ms']]
+    if not folders:return None
+    latest=max(folders,key=lambda p:int(p.name));path=latest/'result.json'
+    if not path.exists():return {'slot_ms':int(latest.name),'status':'INCOMPLETE','failures':[]}
+    result=verified(path);count=len(result['rows'])
+    return {'slot_ms':int(latest.name),'status':'COMPLETE' if count==2 else 'PARTIAL' if count else 'FAILED',
+            'request_attempts':result.get('request_attempts'),'recovered_requests':result.get('recovered_requests'),
+            'elapsed_ms':result.get('elapsed_ms'),
+            'failures':[{k:r[k] for k in ('quote','kind','reason','category','http_status','retry_after_seconds') if k in r}
+                        for r in result.get('failures',[])]}
+
+
 def advance_information(root,attempt,*,register=False,clock=lambda:time.time_ns()//1000000,
                         capture=capture_information,study=run_collected_studies):
     if type(attempt) is not int or not 1<=attempt<=1000:raise ValueError('bounded experiment required')
@@ -70,7 +85,9 @@ def advance_information(root,attempt,*,register=False,clock=lambda:time.time_ns(
             # Validate the full contract before doing any network work.
             panel(plan,[],quote='USDC',as_of_ms=now)
             slot=now//HOUR*HOUR;destination=output/'captures'/str(slot)
-            if plan['warmup_ms']<=slot<=plan['end_slot_ms'] and now<slot+240000 and not destination.exists():
+            fresh=not destination.exists() and now<slot+240000
+            resumable=destination.exists() and not (destination/'result.json').exists() and now<slot+295000
+            if plan['warmup_ms']<=slot<=plan['end_slot_ms'] and (fresh or resumable):
                 capture(destination,slot=slot,clock=clock)
             panels={quote:panel(plan,_observations(output,plan,quote),quote=quote,as_of_ms=clock()) for quote in plan['quotes']}
             if (output/'frozen-panel.json').exists():
@@ -94,6 +111,7 @@ def advance_information(root,attempt,*,register=False,clock=lambda:time.time_ns(
             for quote,values in panels.items():
                 summary.append({k:values[k] for k in ('quote','status','ready_rows','required_rows','missing_slots')})
             status={'status':'WINDOW_FINISHED' if now>=plan['mature_ms'] else 'COLLECTING' if now>=plan['warmup_ms'] else 'WAITING_WINDOW',
+                    'collection':_collection_summary(output,plan),
                     'observed_at_ms':clock(),'plan_hash':plan['result_hash'],'start_ms':plan['warmup_ms'],
                     'mature_ms':plan['mature_ms'],'quotes':summary,'study':studies['USDC'],'usdt_study':studies['USDT'],
                     'trials_attempted':sum(1 for _ in output.glob('study*/P*/inner-*.started.json')),

@@ -63,3 +63,11 @@ it('keeps prospective feature counts separate from profitability and exposes mis
  fireEvent.click(screen.getByRole('button',{name:'更新信息窗口'}));
  expect(action).toHaveBeenCalledOnce();
 });
+
+it('shows collection retries and actionable source errors',async()=>{
+ const {CausalInformationEvidence}=await import('./CausalInformationEvidence');
+ render(<CausalInformationEvidence busy={false} complete action={vi.fn()} data={{status:'COLLECTING',observed_at_ms:Date.now(),economic_eligible:false,collection:{slot_ms:3600000,status:'PARTIAL',request_attempts:14,recovered_requests:1,elapsed_ms:1200,failures:[{quote:'USDT',kind:'oi',category:'HTTP_ERROR',http_status:429}]}}}/>);
+ expect(screen.getByRole('region',{name:'最近采集诊断'})).toHaveTextContent('14');
+ expect(screen.getByRole('region',{name:'最近采集诊断'})).toHaveTextContent('429');
+ expect(screen.getByText(/交易所限流/)).toBeInTheDocument();
+});

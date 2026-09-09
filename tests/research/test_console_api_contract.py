@@ -1988,12 +1988,16 @@ def test_profitability_causal_information_preserves_separate_quotes_and_no_predi
     directory=tmp_path/'data/cache/profitability/1/causal';directory.mkdir(parents=True)
     write_new(directory/'status.json',{'status':'COLLECTING','economic_eligible':False,
         'prediction_evidence':'NONE_FEATURE_COLLECTION_ONLY','study':None,
+        'collection':{'slot_ms':3600000,'status':'PARTIAL','request_attempts':14,'recovered_requests':1,
+                      'elapsed_ms':1200,'failures':[{'quote':'USDT','kind':'oi','category':'HTTP_ERROR','http_status':429}]},
         'quotes':[{'quote':'USDC','ready_rows':1,'required_rows':504,'missing_slots':[]},
                   {'quote':'USDT','ready_rows':0,'required_rows':504,'missing_slots':[3600000]}]})
     result=profitability_payload(tmp_path,1)
     assert result['causal']['study'] is None and result['causal']['projection']=='CONSOLE_SUMMARY'
     assert [r['ready_rows'] for r in result['causal']['quotes']]==[1,0]
     assert result['causal']['prediction_evidence']=='NONE_FEATURE_COLLECTION_ONLY'
+    assert result['causal']['collection']['request_attempts']==14
+    assert result['causal']['collection']['failures'][0]['http_status']==429
 
 
 def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_path, monkeypatch):

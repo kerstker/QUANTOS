@@ -147,3 +147,124 @@ def test_completed_window_runs_each_currency_once_and_keeps_failed_stage(root,mo
     assert calls==['USDC','USDT']
     data['USDC'][-1]['price_features'][0]+=.01
     with pytest.raises(ValueError,match='panel changed'):module.advance_information(root,1,clock=lambda:plan['mature_ms']+2000,study=study)
+
+
+def test_transient_requests_retry_with_retained_attempts_and_actual_receipts(tmp_path):
+    from tools import profitability_causal_capture as collector
+    slot=48*HOUR;calls={}
+    def fetch(url):
+        calls[url]=calls.get(url,0)+1
+        if calls[url]==1:raise TimeoutError('transient')
+        query=parse_qs(urlparse(url).query);quote=(query.get('symbol') or query['pair'])[0][-4:]
+        kind='hourly' if query.get('interval')==['1h'] else 'spot' if 'api.binance.com/api' in url else 'index' if 'indexPrice' in url else 'funding' if 'fundingRate' in url else 'oi' if 'openInterest' in url else 'perpetual'
+        return receipts(slot,quote)[kind]['payload']
+    destination=tmp_path/'capture'
+    rows,failures=collector.capture_information(destination,slot=slot,fetch=fetch,clock=lambda:slot+1000,sleep=lambda _:None)
+    assert len(rows)==2 and not failures and set(calls.values())=={2}
+    result=verified(destination/'result.json')
+    assert result['request_attempts']==24 and result['recovered_requests']==12
+    assert len(list((destination/'attempts').glob('*.json')))==24
+    assert all(r['issued_ms']==slot+1000 for r in rows)
+
+
+def test_requests_that_cross_decision_deadline_do_not_become_observations(tmp_path):
+    from tools import profitability_causal_capture as collector
+    slot=48*HOUR;now=[slot+239000];calls=[]
+    def fetch(url):
+        calls.append(url);now[0]=slot+300000
+        raise TimeoutError('late')
+    rows,failures=collector.capture_information(tmp_path/'late',slot=slot,fetch=fetch,clock=lambda:now[0],sleep=lambda _:None)
+    assert not rows and failures
+    assert len(calls)<=3
+    assert any(f.get('category')=='DEADLINE_EXCEEDED' for f in failures)
+
+
+def test_invalid_payload_is_not_retried(tmp_path):
+    from tools import profitability_causal_capture as collector
+    calls=[]
+    def malformed(url):calls.append(url);return None
+    rows,failures=collector.capture_information(tmp_path/'invalid',slot=48*HOUR,fetch=malformed,clock=lambda:48*HOUR+1000,sleep=lambda _:None)
+    assert not rows and len(calls)==12
+    assert all(f.get('category')=='INVALID_RESPONSE' for f in failures if 'kind' in f)
+
+
+def test_scheduler_resumes_only_unfinished_current_capture(root):
+    module.advance_information(root,1,register=True,clock=lambda:47*HOUR+1)
+    folder=root/'data/cache/profitability/1/causal/captures'/str(48*HOUR)
+    folder.mkdir(parents=True)
+    called=[]
+    def unfinished(output,*,slot,clock):called.append(slot)
+    module.advance_information(root,1,clock=lambda:48*HOUR+245000,capture=unfinished)
+    assert called==[48*HOUR]
+    module.advance_information(root,1,clock=lambda:48*HOUR+300000,capture=unfinished)
+    assert called==[48*HOUR]
+
+
+def test_interrupted_request_reservation_survives_resume(tmp_path,monkeypatch):
+    from tools import profitability_causal_capture as collector
+    class SerialPool:
+        def __init__(self,**kwargs):pass
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def map(self,fn,values):return map(fn,values)
+    monkeypatch.setattr(collector,'ThreadPoolExecutor',SerialPool)
+    slot=48*HOUR;calls=[];interrupted=[False]
+    def fetch(url):
+        calls.append(url)
+        if 'api.binance.com/api' in url and not interrupted[0]:
+            interrupted[0]=True;raise KeyboardInterrupt()
+        query=parse_qs(urlparse(url).query);quote=(query.get('symbol') or query['pair'])[0][-4:]
+        kind='hourly' if query.get('interval')==['1h'] else 'spot' if 'api.binance.com/api' in url else 'index' if 'indexPrice' in url else 'funding' if 'fundingRate' in url else 'oi' if 'openInterest' in url else 'perpetual'
+        return receipts(slot,quote)[kind]['payload']
+    dest=tmp_path/'capture'
+    with pytest.raises(KeyboardInterrupt):collector.capture_information(dest,slot=slot,fetch=fetch,clock=lambda:slot+1000)
+    original=(dest/'USDC-hourly.json').read_bytes()
+    rows,failures=collector.capture_information(dest,slot=slot,fetch=fetch,clock=lambda:slot+2000)
+    assert len(rows)==2 and not failures
+    assert (dest/'USDC-hourly.json').read_bytes()==original
+    assert sum('interval=1h' in url and 'USDC' in url for url in calls)==1
+    assert verified(dest/'result.json')['request_attempts']==13
+    assert (dest/'attempts/reservations/USDC-spot-1.json').exists()
+    assert (dest/'attempts/USDC-spot-2.json').exists()
+
+
+def test_status_exposes_latest_capture_attempt_diagnostics(root):
+    module.advance_information(root,1,register=True,clock=lambda:47*HOUR+1)
+    result=module.advance_information(root,1,clock=lambda:48*HOUR+1000,capture=capture)
+    assert result['collection']['slot_ms']==48*HOUR
+    assert result['collection']['request_attempts']==12
+    assert result['collection']['status']=='COMPLETE' and result['collection']['failures']==[]
+
+
+def test_rate_limit_holds_other_requests_until_retry_after(tmp_path,monkeypatch):
+    from tools import profitability_causal_capture as collector
+    from tools.profitability_market_capture import PublicRequestError
+    class SerialPool:
+        def __init__(self,**kwargs):pass
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def map(self,fn,values):return map(fn,values)
+    monkeypatch.setattr(collector,'ThreadPoolExecutor',SerialPool)
+    slot=48*HOUR;elapsed=[0.0];calls=[]
+    def fetch(url):
+        calls.append(elapsed[0])
+        if len(calls)==1:raise PublicRequestError('HTTP_ERROR',http_status=429,retry_after_seconds=9)
+        return None
+    collector.capture_information(tmp_path/'rate',slot=slot,fetch=fetch,
+        clock=lambda:slot+1000+int(elapsed[0]*1000),monotonic=lambda:elapsed[0],
+        sleep=lambda seconds:elapsed.__setitem__(0,elapsed[0]+seconds))
+    assert calls[0]==0 and min(calls[1:])>=9
+
+
+def test_saving_receipt_failure_is_not_retried_as_network(tmp_path,monkeypatch):
+    from tools import profitability_causal_capture as collector
+    original=collector.write_new
+    def disk_error(path,value):
+        if path.name=='USDC-hourly.json':raise OSError('disk unavailable')
+        return original(path,value)
+    monkeypatch.setattr(collector,'write_new',disk_error)
+    with pytest.raises(OSError,match='disk unavailable'):
+        capture(tmp_path/'capture',slot=48*HOUR,clock=lambda:48*HOUR+1000)
+    attempts=tmp_path/'capture/attempts/reservations'
+    assert len(list(attempts.glob('USDC-hourly-*.json')))==1
+    assert not (tmp_path/'capture/result.json').exists()

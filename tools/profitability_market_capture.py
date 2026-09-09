@@ -6,26 +6,67 @@ import json
 import time
 import subprocess
 import sys
+import math
 
 from services.research.profitability_information import synchronized_basis,basis_change
 from tools.profitability_study import write_new
 from tools.perpetual_replay_research import source_identity
+from tools.profitability_public_http import PREFIXES
 
 
-def bounded_public_json(url):
+class PublicRequestError(RuntimeError):
+    def __init__(self, category, *, http_status=None, retry_after_seconds=None):
+        self.category=category
+        self.http_status=http_status
+        self.retry_after_seconds=retry_after_seconds
+        self.retryable=category in ('TIMEOUT','TRANSPORT_ERROR') or (
+            category=='HTTP_ERROR' and (http_status==429 or (http_status is not None and 500<=http_status<=599)))
+        super().__init__(category if http_status is None else f'{category}_{http_status}')
+
+
+def bounded_public_json(url, *, timeout_seconds=45, retry_transport=True):
+    if type(retry_transport) is not bool:raise ValueError('explicit transport retry policy required')
+    if type(timeout_seconds) not in (int,float) or not math.isfinite(timeout_seconds) or not 0<timeout_seconds<=45:
+        raise ValueError('bounded positive request deadline required')
+    started=time.monotonic()
+    for ordinal in range(4 if retry_transport else 1):
+        budget=timeout_seconds if ordinal==0 else timeout_seconds-(time.monotonic()-started)
+        if budget<=0:raise PublicRequestError('TIMEOUT')
+        try:return _single_public_json(url,timeout_seconds=budget)
+        except PublicRequestError as exc:
+            # Preserve bounded socket retries for existing basis/forward callers.
+            # The causal collector owns its separately recorded retry budget.
+            if not retry_transport or ordinal==3 or exc.category not in ('TIMEOUT','TRANSPORT_ERROR'):raise
+            delay=(.25,.75,1.5)[ordinal]
+            if timeout_seconds-(time.monotonic()-started)<=delay:raise
+            time.sleep(delay)
+    raise AssertionError('bounded transport retry exhausted')
+
+
+def _single_public_json(url, *, timeout_seconds=45):
     # A socket timeout is not a total deadline across DNS addresses and retries.
     # Keep the approved public collector in a child with a real wall-clock limit.
-    if not url.startswith(('https://api.binance.com/api/v3/klines?',
-                           'https://fapi.binance.com/fapi/v1/klines?',
-                           'https://fapi.binance.com/fapi/v1/markPriceKlines?',
-                           'https://fapi.binance.com/fapi/v1/fundingRate?',
-                           'https://fapi.binance.com/fapi/v1/openInterest?',
-                           'https://fapi.binance.com/fapi/v1/indexPriceKlines?')):
+    if not isinstance(url,str) or not url.startswith(PREFIXES):
         raise ValueError('unregistered public source')
-    code='import json,sys; from tools.binance_realtime_market import _http_get_json; print(json.dumps(_http_get_json(sys.argv[1])))'
-    result=subprocess.run([sys.executable,'-c',code,url],cwd=Path(__file__).resolve().parents[1],
-                          capture_output=True,text=True,timeout=45,check=True)
-    return json.loads(result.stdout)
+    if type(timeout_seconds) not in (int,float) or not math.isfinite(timeout_seconds) or not 0<timeout_seconds<=45:
+        raise ValueError('bounded positive request deadline required')
+    try:
+        result=subprocess.run([sys.executable,'-m','tools.profitability_public_http',url,str(min(10,timeout_seconds))],
+            cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,timeout=timeout_seconds,check=True)
+    except subprocess.CalledProcessError:
+        raise PublicRequestError('CHILD_PROCESS_FAILED') from None
+    try:
+        response=json.loads(result.stdout)
+        if response.get('ok') is True:return response['payload']
+        if response.get('ok') is not False:raise ValueError()
+        category=response['category'];status=response.get('http_status');retry=response.get('retry_after_seconds')
+        if category not in ('HTTP_ERROR','RESPONSE_TOO_LARGE','INVALID_RESPONSE','TLS_VERIFICATION_FAILED','TRANSPORT_ERROR','TIMEOUT'):
+            raise ValueError()
+        if status is not None and (type(status) is not int or not 100<=status<=599):raise ValueError()
+        if retry is not None and (type(retry) is not int or retry<0):raise ValueError()
+    except (ValueError,KeyError,TypeError,AttributeError):
+        raise PublicRequestError('INVALID_CHILD_RESPONSE') from None
+    raise PublicRequestError(category,http_status=status,retry_after_seconds=retry)
 
 
 def capture_basis(output, *, fetch=bounded_public_json, clock=lambda:time.time_ns()//1000000):
