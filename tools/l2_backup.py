@@ -52,6 +52,7 @@ from tools.restore_drill import (
     TEE_BINARY as RESTORE_TEE_BINARY,
     RestoreDrillError,
     run_restore_drill,
+    measure_restore_stage,
 )
 
 
@@ -752,11 +753,16 @@ def restore_l2_batch(
     max_rpo_ms: int,
     now_ms: int | None = None,
     sources: Iterable[BackupSource] = DEFAULT_SOURCES,
+    diagnostics: dict | None = None,
 ) -> dict:
     """Restore into an isolated tree and verify the encrypted manifest and SQLite files."""
     started = time.perf_counter()
+    diagnostics = {} if diagnostics is None else diagnostics
+    diagnostics.update(scope="RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY", stages=[], completed=False)
     source_specs = tuple(sources)
     expected_contract = _source_contract(source_specs)
+    if Path(restore_dir).is_symlink():
+        raise L2BackupError("restore target must be non-symlink")
     target = Path(restore_dir).resolve(strict=False)
     if target.is_symlink() or (target.exists() and (not target.is_dir() or any(target.iterdir()))):
         raise L2BackupError("restore target must be empty or absent")
@@ -766,20 +772,23 @@ def restore_l2_batch(
     tree = stage_root / "tree"
     tree.mkdir()
     try:
-        drill = run_restore_drill(
-            batch_dir=os.fspath(batch_dir),
-            restore_dir=os.fspath(flat),
-            passphrase=passphrase,
-            rto_ms=rto_ms,
-            max_rpo_ms=max_rpo_ms,
-            now_ms=now_ms,
-        )
+        with measure_restore_stage(diagnostics, "ARTIFACT_RESTORE"):
+            drill = run_restore_drill(
+                batch_dir=os.fspath(batch_dir),
+                restore_dir=os.fspath(flat),
+                passphrase=passphrase,
+                rto_ms=rto_ms,
+                max_rpo_ms=max_rpo_ms,
+                now_ms=now_ms,
+                diagnostics=diagnostics,
+            )
         drill_hashes = drill.get("sha256")
         if not isinstance(drill_hashes, dict):
             raise L2BackupError("restore drill did not return artifact digests")
         manifest_path = flat / "manifest.json"
-        manifest = _load_manifest(manifest_path)
-        source_contract_digest = _verify_manifest_source_contract(manifest, expected_contract)
+        with measure_restore_stage(diagnostics, "MANIFEST_CONTRACT"):
+            manifest = _load_manifest(manifest_path)
+            source_contract_digest = _verify_manifest_source_contract(manifest, expected_contract)
         entries = manifest.get("entries")
         if not isinstance(entries, list) or not entries:
             raise L2BackupError("restored backup manifest has no entries")
@@ -868,15 +877,17 @@ def restore_l2_batch(
                 "SQLITE_ONLINE_BACKUP",
                 "SQLITE_WAL_PINNED_BACKUP",
             }:
-                _sqlite_integrity(output)
+                with measure_restore_stage(diagnostics, "SQLITE_INTEGRITY", artifact):
+                    _sqlite_integrity(output)
             if expected_source["role"] == "l2_restore_history_authority":
                 history_store = None
                 try:
-                    history_store = L2RestoreHistoryStore(os.fspath(output), create=False)
-                    if not history_store.chain_valid():
-                        raise L2RestoreHistoryStoreError("restore history authority chain is invalid")
-                    history_store.read_snapshot()
-                    restore_history_verified = True
+                    with measure_restore_stage(diagnostics, "HISTORY_SEMANTICS", artifact):
+                        history_store = L2RestoreHistoryStore(os.fspath(output), create=False)
+                        if not history_store.chain_valid():
+                            raise L2RestoreHistoryStoreError("restore history authority chain is invalid")
+                        history_store.read_snapshot()
+                        restore_history_verified = True
                 except (L2RestoreHistoryStoreError, ValueError, TypeError) as exc:
                     raise L2BackupError("restore history semantic verification failed") from exc
                 finally:
@@ -908,6 +919,7 @@ def restore_l2_batch(
         if target.exists():
             target.rmdir()
         os.replace(tree, target)
+        diagnostics["completed"] = True
         return {
             **drill,
             "elapsed_ms": elapsed_ms,
@@ -921,6 +933,7 @@ def restore_l2_batch(
     except RestoreDrillError as exc:
         raise L2BackupError(str(exc)) from exc
     finally:
+        diagnostics["total_ms"] = max(0, round((time.perf_counter() - started) * 1000))
         shutil.rmtree(stage_root, ignore_errors=True)
 
 
@@ -1003,7 +1016,9 @@ def run_l2_backup(
     max_rpo_ms: int = DEFAULT_MAX_RPO_MS,
     now_ms: int | None = None,
     _publish_compatibility: bool = True,
+    restore_diagnostics: dict | None = None,
 ) -> dict:
+    restore_diagnostics = {} if restore_diagnostics is None else restore_diagnostics
     _check_passphrase_strength(passphrase)
     root = Path(repo_root).resolve()
     destination, destination_class = _validate_destination(
@@ -1100,6 +1115,7 @@ def run_l2_backup(
                 max_rpo_ms=max_rpo_ms,
                 now_ms=observed_at_ms,
                 sources=source_specs,
+                diagnostics=restore_diagnostics,
             )
         _assert_destination_boundary(
             repo_root=root,
@@ -1151,6 +1167,7 @@ def run_l2_backup(
             "restore_verified": verification["integrity_verified"],
             "sqlite_integrity_verified": verification["sqlite_integrity_verified"],
             "restore_elapsed_ms": verification["elapsed_ms"],
+            "restore_diagnostics": restore_diagnostics,
             "rto_ms": rto_ms,
             "rto_met": verification["rto_met"],
             "source_age_ms": verification["source_age_ms"],
@@ -1544,6 +1561,7 @@ def run_recorded_l2_backup(
             history_store.close()
         raise L2BackupError(reason_code) from None
 
+    restore_diagnostics: dict = {}
     try:
         if destination_root is None or passphrase is None:
             raise L2BackupError("BACKUP_CONFIGURATION_UNAVAILABLE")
@@ -1559,6 +1577,7 @@ def run_recorded_l2_backup(
             max_rpo_ms=max_rpo_ms,
             now_ms=observed_at_ms,
             _publish_compatibility=False,
+            restore_diagnostics=restore_diagnostics,
         )
         if result.get("external_destination_verified") is not True:
             raise L2BackupError("EXTERNAL_DESTINATION_REQUIRED")
@@ -1645,6 +1664,8 @@ def run_recorded_l2_backup(
                 reason_code=reason_code,
                 snapshot=snapshot,
             )
+            if restore_diagnostics:
+                evidence["restore_diagnostics"] = restore_diagnostics
             _write_recorded_projections(
                 evidence_path=resolved_evidence,
                 status_path=resolved_status,

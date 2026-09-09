@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -34,6 +35,25 @@ SHA256SUM_BINARY = "/usr/bin/sha256sum"
 
 class RestoreDrillError(RuntimeError):
     """The restore drill cannot prove a safe, complete recovery."""
+
+
+@contextmanager
+def measure_restore_stage(diagnostics: dict, stage: str, artifact: str | None = None):
+    """Record wall time, including failures, without paths or exception text.
+
+    Concurrent artifact durations overlap; they must not be summed as RTO.
+    These measurements never establish restore authority.
+    """
+    record = {"stage": stage, "completed": False}
+    if artifact is not None:
+        record["artifact_ref"] = hashlib.sha256(artifact.encode("utf-8")).hexdigest()
+    started = time.perf_counter()
+    try:
+        yield
+        record["completed"] = True
+    finally:
+        record["elapsed_ms"] = max(0, round((time.perf_counter() - started) * 1000))
+        diagnostics.setdefault("stages", []).append(record)
 
 
 def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
@@ -283,7 +303,9 @@ def run_restore_drill(
     max_rpo_ms: int,
     allow_plaintext: bool = False,
     now_ms: int | None = None,
+    diagnostics: dict | None = None,
 ) -> dict[str, Any]:
+    diagnostics = {} if diagnostics is None else diagnostics
     if rto_ms <= 0 or max_rpo_ms <= 0:
         raise RestoreDrillError("rto_ms and max_rpo_ms must be positive")
     files = _batch_files(batch_dir)
@@ -322,19 +344,20 @@ def run_restore_drill(
             def restore_encrypted(item: tuple[str, str]) -> tuple[str, str]:
                 source_path, restored_name = item
                 output_path = os.path.join(stage, restored_name)
-                if source_path.endswith(f"{ZSTD_SUFFIX}.enc"):
-                    restored_sha256 = _decompress_zstd_encrypted(
+                with measure_restore_stage(diagnostics, "DECRYPT_DECOMPRESS_HASH", restored_name):
+                    if source_path.endswith(f"{ZSTD_SUFFIX}.enc"):
+                        restored_sha256 = _decompress_zstd_encrypted(
+                            source_path,
+                            output_path,
+                            passphrase or "",
+                        )
+                        return restored_name, restored_sha256
+                    return restored_name, decrypt_file(
                         source_path,
                         output_path,
                         passphrase or "",
+                        parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
                     )
-                    return restored_name, restored_sha256
-                return restored_name, decrypt_file(
-                    source_path,
-                    output_path,
-                    passphrase or "",
-                    parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
-                )
 
             workers = min(MAX_PARALLEL_RESTORE_FILES, len(files))
             with ThreadPoolExecutor(max_workers=workers) as executor:

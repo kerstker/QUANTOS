@@ -1994,3 +1994,37 @@ def test_profitability_causal_information_preserves_separate_quotes_and_no_predi
     assert result['causal']['study'] is None and result['causal']['projection']=='CONSOLE_SUMMARY'
     assert [r['ready_rows'] for r in result['causal']['quotes']]==[1,0]
     assert result['causal']['prediction_evidence']=='NONE_FEATURE_COLLECTION_ONLY'
+
+
+def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_path, monkeypatch):
+    from services.console.api import runtime_health
+    monkeypatch.setattr(runtime_health, "_STATE_ROOT", tmp_path)
+    cache = tmp_path / "data/cache"
+    cache.mkdir(parents=True)
+    (tmp_path / "evidence").mkdir()
+    head = {"history_event_hash": "a" * 64, "history_event_seq": 4}
+    receipt = {**head, "verdict": "BREACH", "observed_at_ms": 999000,
+               "last_reason_code": "RESTORE_RTO_EXCEEDED"}
+    (cache / "l2_backup_status.json").write_text(json.dumps(receipt))
+    evidence = {**head, "restore_diagnostics": {
+        "scope": "RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY", "total_ms": 310000,
+        "completed": False, "private_path": "/private/source",
+        "stages": [{"stage": "ARTIFACT_RESTORE", "elapsed_ms": 310000, "completed": False,
+                    "error": "secret exception"}]}}
+    path = tmp_path / "evidence/l2_backup_latest.json"
+    path.write_text(json.dumps(evidence))
+    def row():
+        return next(r for r in runtime_health.operational_receipt_services(now_ms=1000000)
+                    if r["service"] == "l2-backup-restore")
+    result = row()
+    assert result["status"] == "down"
+    assert result["restore_diagnostics"] == {
+        "scope": "RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY", "total_ms": 310000,
+        "completed": False, "stages": [{"stage": "ARTIFACT_RESTORE", "elapsed_ms": 310000, "completed": False}]}
+    evidence["history_event_seq"] = 3
+    path.write_text(json.dumps(evidence))
+    assert row().get("restore_diagnostics") is None
+    evidence["history_event_seq"] = 4
+    evidence["restore_diagnostics"]["total_ms"] = True
+    path.write_text(json.dumps(evidence))
+    assert row().get("restore_diagnostics") is None

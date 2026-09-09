@@ -14,6 +14,41 @@ from quantos.runtime_paths import runtime_state_root
 _STATE_ROOT = runtime_state_root()
 
 
+def _restore_profile(receipt: dict) -> dict | None:
+    """Only expose bounded diagnostic fields bound to this history projection."""
+    head = receipt.get("history_event_hash")
+    seq = receipt.get("history_event_seq")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{64}", head) or type(seq) is not int or seq < 1:
+        return None
+    try:
+        with (Path(_STATE_ROOT) / "evidence/l2_backup_latest.json").open("rb") as source:
+            raw = source.read(131073)
+        if len(raw) > 131072:
+            return None
+        evidence = json.loads(raw)
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(evidence, dict) or evidence.get("history_event_hash") != head or evidence.get("history_event_seq") != seq:
+        return None
+    profile = evidence.get("restore_diagnostics")
+    if not isinstance(profile, dict) or profile.get("scope") != "RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY":
+        return None
+    if type(profile.get("total_ms")) is not int or profile["total_ms"] < 0 or type(profile.get("completed")) is not bool:
+        return None
+    stages = profile.get("stages")
+    if not isinstance(stages, list) or len(stages) > 512:
+        return None
+    allowed = {"ARTIFACT_RESTORE", "DECRYPT_DECOMPRESS_HASH", "MANIFEST_CONTRACT", "SQLITE_INTEGRITY", "HISTORY_SEMANTICS"}
+    clean = []
+    for stage in stages:
+        if not isinstance(stage, dict) or not isinstance(stage.get("stage"), str) or stage["stage"] not in allowed:
+            return None
+        if type(stage.get("elapsed_ms")) is not int or stage["elapsed_ms"] < 0 or type(stage.get("completed")) is not bool:
+            return None
+        clean.append({key: stage[key] for key in ("stage", "elapsed_ms", "completed")})
+    return {"scope": profile["scope"], "total_ms": profile["total_ms"], "completed": profile["completed"], "stages": clean}
+
+
 def receipt_service(
     *,
     service: str,
@@ -76,6 +111,7 @@ def receipt_service(
         "reason_code": reason,
         "age_ms": age_ms,
         "observed_at_ms": generated_at_ms if age_ms is not None else None,
+        **({"restore_diagnostics": _restore_profile(payload)} if service == "l2-backup-restore" else {}),
     }
 
 

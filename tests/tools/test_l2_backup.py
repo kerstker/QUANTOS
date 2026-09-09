@@ -1744,3 +1744,111 @@ def test_ai_factory_checkpoint_is_an_optional_encrypted_backup_source():
     assert len(entries)==1
     assert entries[0].role=='ai_factory_verified_checkpoint'
     assert entries[0].required is False
+
+
+@pytest.mark.parametrize("validation_ms", [20, 40])
+def test_restore_profile_survives_validation_timeout(tmp_path, monkeypatch, validation_ms):
+    batch, sources, now_ms = _contract_batch(tmp_path)
+    clock = [0.0]
+    original = l2_backup_module._verify_manifest_source_contract
+
+    def slow_validation(*args):
+        result = original(*args)
+        clock[0] += validation_ms / 1000
+        return result
+
+    monkeypatch.setattr(l2_backup_module.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module, "_verify_manifest_source_contract", slow_validation)
+    diagnostics = {}
+    kwargs = dict(batch_dir=batch, restore_dir=tmp_path / "profile-restore",
+                  passphrase=PASSPHRASE, rto_ms=30, max_rpo_ms=86_400_000,
+                  now_ms=now_ms, sources=sources, diagnostics=diagnostics)
+    if validation_ms > 30:
+        with pytest.raises(L2BackupError, match="exceeded RTO"):
+            restore_l2_batch(**kwargs)
+    else:
+        restore_l2_batch(**kwargs)
+    assert diagnostics["scope"] == "RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY"
+    assert diagnostics["total_ms"] == validation_ms
+    assert diagnostics["completed"] is (validation_ms <= 30)
+    contract_stage = next(s for s in diagnostics["stages"] if s["stage"] == "MANIFEST_CONTRACT")
+    assert contract_stage["elapsed_ms"] == validation_ms
+    assert contract_stage["completed"] is True
+    assert str(tmp_path) not in json.dumps(diagnostics)
+    assert PASSPHRASE not in json.dumps(diagnostics)
+
+
+@pytest.mark.parametrize("dangling", [False, True])
+def test_restore_rejects_target_symlink_before_writing(tmp_path, dangling):
+    batch, sources, now_ms = _contract_batch(tmp_path)
+    actual = tmp_path / "untouched"
+    if not dangling:
+        actual.mkdir()
+    link = tmp_path / "restore-link"
+    link.symlink_to(actual, target_is_directory=True)
+    with pytest.raises(L2BackupError, match="non-symlink"):
+        restore_l2_batch(batch_dir=batch, restore_dir=link, passphrase=PASSPHRASE,
+                         rto_ms=30_000, max_rpo_ms=86_400_000,
+                         now_ms=now_ms, sources=sources)
+    assert link.is_symlink()
+    assert actual.exists() is (not dangling)
+    assert not actual.exists() or list(actual.iterdir()) == []
+
+
+def test_recorded_restore_timeout_retains_profile_and_failed_history(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _seed_recorded_state(repo)
+    destination = tmp_path / "backup"
+    destination.mkdir()
+    clock = [0.0]
+    original = l2_backup_module._sqlite_integrity
+
+    def slow_sqlite(path):
+        original(path)
+        clock[0] += 0.040
+
+    monkeypatch.setattr(l2_backup_module.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module, "_sqlite_integrity", slow_sqlite)
+    with pytest.raises(L2BackupError, match="RESTORE_RTO_EXCEEDED"):
+        run_recorded_l2_backup(repo_root=repo, destination_root=destination,
+                               passphrase=PASSPHRASE, sources=_recorded_sources(),
+                               allow_local_destination=True, rto_ms=30,
+                               now_ms=1_784_044_800_000)
+    evidence = json.loads((repo / "evidence/l2_backup_latest.json").read_text())
+    assert evidence["verdict"] == "FAIL"
+    profile = evidence["restore_diagnostics"]
+    assert profile["completed"] is False
+    assert profile["total_ms"] > 30
+    assert any(s["stage"] == "SQLITE_INTEGRITY" and s["elapsed_ms"] == 40
+               for s in profile["stages"])
+    assert any(s["stage"] == "HISTORY_SEMANTICS" and s["completed"]
+               for s in profile["stages"])
+    assert str(tmp_path) not in json.dumps(profile)
+    assert PASSPHRASE not in json.dumps(profile)
+    store = L2RestoreHistoryStore(str(repo / "data/cache/l2_restore_history.db"), create=False)
+    try:
+        snapshot = store.read_snapshot()
+        assert snapshot.outcomes[-1].outcome.verdict == "FAIL"
+        assert snapshot.outcomes[-1].outcome.reason_code == "RESTORE_RTO_EXCEEDED"
+        assert snapshot.open_attempts == ()
+    finally:
+        store.close()
+    assert not list(destination.glob(".quantos-l2-*"))
+
+
+def test_restore_corrupt_ciphertext_retains_failed_artifact_profile(tmp_path):
+    batch, sources, now_ms = _contract_batch(tmp_path)
+    artifact = next(p for p in batch.glob("*.enc") if p.name != "manifest.json.enc")
+    damaged = bytearray(artifact.read_bytes())
+    damaged[-1] ^= 1
+    artifact.write_bytes(damaged)
+    profile = {}
+    with pytest.raises((L2BackupError, l2_backup_module.BackupDecryptionError)):
+        restore_l2_batch(batch_dir=batch, restore_dir=tmp_path / "failed-restore",
+                         passphrase=PASSPHRASE, rto_ms=30_000, max_rpo_ms=86_400_000,
+                         now_ms=now_ms, sources=sources, diagnostics=profile)
+    assert profile["completed"] is False
+    assert any(s["stage"] == "DECRYPT_DECOMPRESS_HASH" and not s["completed"]
+               for s in profile["stages"])
+    assert not (tmp_path / "failed-restore").exists()
+    assert not list(tmp_path.glob(".quantos-l2-restore-*"))

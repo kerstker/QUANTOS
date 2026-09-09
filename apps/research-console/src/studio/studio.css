@@ -1651,3 +1651,15 @@ progress::-webkit-progress-value {
 }
 
 :root[data-studio-theme=dark]{--s-plot-1:#81c7a9;--s-plot-2:#91b5f1;--s-plot-3:#eab184;--s-plot-4:#c2a0e5;--s-plot-5:#ed9cb0;--s-plot-6:#8ac9d1;--s-plot-7:#c4d089;--s-plot-8:#c1b49b}
+
+
+@media (max-width: 600px) {
+  .s-health-table { display: block; min-width: 0; width: 100%; }
+  .s-health-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .s-health-table tbody { display: block; }
+  .s-health-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px 4px; border-bottom: 1px solid var(--s-line); }
+  .s-health-table td { display: block; min-width: 0; border: 0; white-space: normal; overflow-wrap: anywhere; padding: 8px 14px; }
+  .s-health-table td:nth-child(n+3) { grid-column: 1 / -1; }
+  .s-health-table td::before { content: attr(data-label); display: block; margin-bottom: 6px; color: var(--s-muted); font-size: 11px; }
+  .s-health-table ol { padding-left: 20px; }
+}

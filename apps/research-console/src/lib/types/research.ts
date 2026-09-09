@@ -129,7 +129,14 @@ export interface PortfolioWeights { weights_id: string; weights: Record<string,n
 export interface PortfolioSimulation { run_id: string; status: string; metrics: Record<string,number>; equity_curve: {day:number;equity:number}[]; }
 export interface RiskReport { run_id: string; portfolio_id: string; decision: RiskDecision; gates_passed: number; gates_total: number; reasons: string[]; gate_results: Record<string,boolean>; }
 export interface EventRecord { event_id: string; event_type: string; timestamp: number; source: string; correlation_id?: string; payload: Record<string,unknown>; }
+export interface RestoreDiagnostics {
+  scope: 'RESTORE_PERFORMANCE_DIAGNOSTIC_ONLY';
+  total_ms: number;
+  completed: boolean;
+  stages: {stage: 'ARTIFACT_RESTORE'|'DECRYPT_DECOMPRESS_HASH'|'MANIFEST_CONTRACT'|'SQLITE_INTEGRITY'|'HISTORY_SEMANTICS'; elapsed_ms: number; completed: boolean}[];
+}
 export interface ServiceHealth {
+  restore_diagnostics?: RestoreDiagnostics | null;
   service: string;
   status: "healthy"|"degraded"|"down"|"unknown";
   latency_ms: number | null;
