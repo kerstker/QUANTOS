@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "058d41990c836e6ad8049f9babc5822a1411beab2db363129f5d054060987773",
-  "commit": "521da5e1a660bc3d61c6a968252b2d644013fb04",
-  "derived_refresh_manifest_sha256": "9d5f6c02d2c875e7b35e8842b30ac39ce127d3c4c36387cdc8ccfe77cdb4506c",
-  "duration_ms": 2179406,
-  "generated_at_ms": 1788949586221,
+  "checks_manifest_sha256": "db45bec3a736725f6a93d2321a834bb4839f7b6f273aacce2e892a8d9105f1c6",
+  "commit": "4674ffe595d56c395fa22fd03a687c1941cf06d7",
+  "derived_refresh_manifest_sha256": "bb5b227557ea18a5c5f401652db57b8afb862abd6fbe08184bca891b83139dd4",
+  "duration_ms": 2124480,
+  "generated_at_ms": 1788958196224,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "30800fcf730e3854e120fb5f312757a2d9b3093983e37a57f553cc9a589e82d1",
+  "phase13_manifest_sha256": "1a8442655f3f1060e98207a103e1726311a68ce06af17fe68c40d46a82ff3a58",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -15,11 +15,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_python_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 167,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 367,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -28,11 +28,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_npm_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 115,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 267,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -41,10 +41,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_actions_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
       "duration_ms": 115,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
@@ -54,11 +54,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_arm64_container_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_arm64_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 517,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 519,
       "returncode": 0,
       "stage": "container-trivy-arm64-evidence:current",
       "status": "PASS",
@@ -67,11 +67,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_arm64_container_reproducibility_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_arm64_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 215,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 417,
       "returncode": 0,
       "stage": "container-reproducibility-arm64-evidence:current",
       "status": "PASS",
@@ -80,11 +80,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_arm64_console_smoke_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_arm64_console_smoke_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 215,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 265,
       "returncode": 0,
       "stage": "console-smoke-arm64-evidence:current",
       "status": "PASS",
@@ -93,11 +93,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_event_schema_catalog.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 1171,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 566,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -106,11 +106,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_service_import_graph.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 3235,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 3178,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -119,10 +119,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/tools/provision_artifact_admission_authority.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/tools/provision_artifact_admission_authority.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 468,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 1474,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -131,11 +131,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/update_model_risk_history.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 667,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 668,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -148,8 +148,8 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 1070,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 1069,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -162,8 +162,8 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 13383,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 13194,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -172,11 +172,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/check_backup_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 66,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 65,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -185,10 +185,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/run_risk_recovery_gate.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/run_risk_recovery_gate.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 671,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 869,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -197,10 +197,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/apps/research-console/scripts/run_paper_to_live_governance_check.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 8959,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 8711,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -209,10 +209,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_supply_chain_evidence.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_supply_chain_evidence.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 1829,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 1419,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -221,11 +221,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_supply_chain_evidence.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 1777,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 2125,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -234,10 +234,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/assess_top_tier.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/assess_top_tier.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 29462,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 28902,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -246,11 +246,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/assess_top_tier.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/assess_top_tier.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 28560,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 28626,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -285,8 +285,8 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 1672995,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 1594005,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -302,8 +302,8 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 241800,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 249616,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -315,8 +315,8 @@
         "run",
         "typecheck"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/apps/research-console",
-      "duration_ms": 14345,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/apps/research-console",
+      "duration_ms": 11368,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -328,8 +328,8 @@
         "run",
         "eslint"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/apps/research-console",
-      "duration_ms": 7763,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/apps/research-console",
+      "duration_ms": 10462,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -343,8 +343,8 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/apps/research-console",
-      "duration_ms": 103010,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/apps/research-console",
+      "duration_ms": 121520,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -356,8 +356,8 @@
         "run",
         "build"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/apps/research-console",
-      "duration_ms": 19912,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/apps/research-console",
+      "duration_ms": 16713,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -366,12 +366,12 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 3433,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 4037,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -380,13 +380,13 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 3179,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 2839,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -398,10 +398,10 @@
         "-m",
         "pytest",
         "-q",
-        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a/tests/governance/test_727_final_audit.py"
+        "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59/tests/governance/test_727_final_audit.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-521da5e1a",
-      "duration_ms": 20126,
+      "cwd": "/home/kerstker/quantos-dev-output/profitability-validation-20260909/source-4674ffe59",
+      "duration_ms": 21018,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -440,7 +440,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1788947406815,
+  "started_at_ms": 1788956071743,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -452,8 +452,8 @@
   "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
   "validation": {
     "current": true,
-    "generated_at": 1788949586221,
-    "run_id": "49f9ffc9e78d81e1d5f8ef2625c69d3e91fe231737c2371e733fa12161429fcf",
-    "source_commit": "521da5e1a660bc3d61c6a968252b2d644013fb04"
+    "generated_at": 1788958196224,
+    "run_id": "85cdb273662bf5cb8ea7e4277258118043c38301e31210f6674ecb2ec2a4daec",
+    "source_commit": "4674ffe595d56c395fa22fd03a687c1941cf06d7"
   }
 }
