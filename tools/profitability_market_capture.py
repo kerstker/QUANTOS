@@ -19,6 +19,7 @@ def bounded_public_json(url):
                            'https://fapi.binance.com/fapi/v1/klines?',
                            'https://fapi.binance.com/fapi/v1/markPriceKlines?',
                            'https://fapi.binance.com/fapi/v1/fundingRate?',
+                           'https://fapi.binance.com/fapi/v1/openInterest?',
                            'https://fapi.binance.com/fapi/v1/indexPriceKlines?')):
         raise ValueError('unregistered public source')
     code='import json,sys; from tools.binance_realtime_market import _http_get_json; print(json.dumps(_http_get_json(sys.argv[1])))'

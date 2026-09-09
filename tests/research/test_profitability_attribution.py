@@ -54,3 +54,14 @@ def test_legacy_compact_feedback_cannot_invent_full_fill_attribution():
 def test_no_trades_does_not_establish_absence_of_prediction_edge():
     result=replay(**market(),decision=lambda at,held:0.,slip_bps=5,stop=True)
     assert attribute_replay(result)['diagnosis']=='NO_TRADING_EVIDENCE'
+
+
+def test_usdt_replay_retains_its_own_settlement_currency_and_same_ledger_math():
+    from services.research.ai_factory_execution_feedback import execution_feedback
+    usdc=replay(**market(),decision=lambda at,held:.25,slip_bps=5,stop=True)
+    usdt=replay(**market(),quote='USDT',decision=lambda at,held:.25,slip_bps=5,stop=True)
+    assert usdt['cash_model']=='CANONICAL_LINEAR_USDT_PERPETUAL'
+    assert usdt['reconciliation']==usdc['reconciliation']
+    assert execution_feedback(usdt)['profitability_attribution']['status']=='RECONCILED_TECHNICAL_ONLY'
+    with pytest.raises(ValueError,match='currency'):
+        replay(**market(),quote='USD',decision=lambda at,held:0.,slip_bps=5,stop=True)

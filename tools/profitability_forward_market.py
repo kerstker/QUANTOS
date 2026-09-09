@@ -13,7 +13,8 @@ MINUTE=60000
 FUNDING_CLOCK_TOLERANCE_MS=1000
 
 
-def market_from_receipts(receipts,*,start,end):
+def market_from_receipts(receipts,*,start,end,quote='USDC'):
+    if quote not in ('USDC','USDT'):raise ValueError('separate supported quote required')
     arrays={};funding=[]
     for kind in ('klines','markPriceKlines'):
         rows=[]
@@ -37,7 +38,7 @@ def market_from_receipts(receipts,*,start,end):
     previous=-1
     for r in records[0]['payload']:
         at=r['fundingTime'];rate=Decimal(r['fundingRate']);mark=Decimal(r['markPrice'])
-        if (r['symbol']!='BTCUSDC' or type(at) is not int or not previous<at<end
+        if (r['symbol']!='BTC'+quote or type(at) is not int or not previous<at<end
                 or not rate.is_finite() or abs(rate)>1 or not mark.is_finite() or not 0<mark<Decimal('1e12') or at>records[0]['received_ms']):
             raise ValueError('invalid ordered settled funding')
         previous=at;funding.append({'time':at,'rate':rate,'mark':mark})
@@ -53,10 +54,11 @@ def market_from_receipts(receipts,*,start,end):
     trade=trade[trade[:,0]>=start]
     if not np.array_equal(trade[:,0],mark[:,0]):raise ValueError('unaligned execution/mark series')
     return {'times':trade[:,0].astype(np.int64),'prices':trade[:,1],'marks':mark[:,1],
-            'funding':funding,'start':start,'end':end,'daily_volume':volume,'maximum_quantity':Decimal('50')}
+            'funding':funding,'start':start,'end':end,'daily_volume':volume,'maximum_quantity':Decimal('50'),**({'quote':quote} if quote!='USDC' else {})}
 
 
-def capture_market(output,*,start,end,fetch=bounded_public_json,clock=lambda:time.time_ns()//1000000):
+def capture_market(output,*,start,end,quote='USDC',fetch=bounded_public_json,clock=lambda:time.time_ns()//1000000):
+    if quote not in ('USDC','USDT'):raise ValueError('separate supported quote required')
     if type(start) is not int or type(end) is not int or not 0<end-start<=14*DAY or clock()<=end+MINUTE:
         raise ValueError('bounded completed forward market window required')
     output=Path(output);output.mkdir(parents=True,exist_ok=False)
@@ -64,8 +66,8 @@ def capture_market(output,*,start,end,fetch=bounded_public_json,clock=lambda:tim
     for kind,lo in [('klines',start//DAY*DAY-DAY),('markPriceKlines',start)]:
         for at in range(lo,end+MINUTE,1000*MINUTE):
             last=min(end,at+999*MINUTE)
-            requests.append((kind,f'https://fapi.binance.com/fapi/v1/{kind}?symbol=BTCUSDC&interval=1m&startTime={at}&endTime={last+59999}&limit=1000'))
-    requests.append(('fundingRate',f'https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDC&startTime={start-DAY}&endTime={end-1}&limit=1000'))
+            requests.append((kind,f'https://fapi.binance.com/fapi/v1/{kind}?symbol=BTC{quote}&interval=1m&startTime={at}&endTime={last+59999}&limit=1000'))
+    requests.append(('fundingRate',f'https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTC{quote}&startTime={start-DAY}&endTime={end-1}&limit=1000'))
     write_new(output/'request-plan.json',{'start_ms':start,'end_ms':end,'requests':requests,'economic_eligible':False})
     def receive(item):
         kind,url=item
@@ -82,5 +84,5 @@ def capture_market(output,*,start,end,fetch=bounded_public_json,clock=lambda:tim
                 error={'request':requests[i],'reason':type(exc).__name__};errors.append(error)
                 write_new(output/f'{i}.failure.json',error)
     if errors:raise ValueError('public outcome capture incomplete; response failures retained')
-    market=market_from_receipts(receipts,start=start,end=end)
+    market=market_from_receipts(receipts,start=start,end=end,quote=quote)
     return market,receipts

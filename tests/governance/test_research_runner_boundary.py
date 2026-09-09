@@ -159,7 +159,7 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "ai_factory_verification",
         "ai_factory_pipeline",
         "ai_factory_comparison",
-        "profitability_study", "profitability_input", "profitability_forward",
+        "profitability_study", "profitability_input", "profitability_forward", "profitability_information",
     }
     actual_selection_bearing = {
         kind

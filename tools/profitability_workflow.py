@@ -9,6 +9,7 @@ from tools.profitability_timing_study import run_p2
 from tools.profitability_market_capture import capture_basis
 from tools.profitability_input_workflow import run_inputs
 from tools.profitability_forward_account import advance_cost_account
+from tools.profitability_causal_workflow import advance_information
 
 
 def run_profitability(params):
@@ -30,6 +31,7 @@ def run_profitability(params):
         if p0['model_hash']!=verified(experiment/'model.json')['result_hash']:
             raise ValueError('cached study belongs to a different frozen model')
         if p0['decision']!='P1_BOUNDED_INNER_COMPARISON_ALLOWED':return {'attempt':attempt,'p0':p0,'p1':None,'p6':forward_cost,**execution_inputs}
+        causal_information=advance_information(runtime_state_root(),attempt,register=True)
         if not (output/'p1/result.json').exists():run_p1(output/'p0',directory,output/'p1')
         if verified(output/'p1/result.json')['p0_hash']!=p0['result_hash']:
             raise ValueError('cached P1/P0 binding mismatch')
@@ -38,5 +40,5 @@ def run_profitability(params):
             raise ValueError('cached P2/P1 binding mismatch')
         if not (output/'p3/result.json').exists():capture_basis(output/'p3')
         information_inputs=run_inputs(cache,output,attempt,directory,execution_only=False)
-        return {'attempt':attempt,'p6':forward_cost,**{stage:verified(output/stage/'result.json') if (output/stage/'result.json').exists() else None
+        return {'attempt':attempt,'p6':forward_cost,'causal':causal_information,**{stage:verified(output/stage/'result.json') if (output/stage/'result.json').exists() else None
                                     for stage in ('p0','p1','p2','p3')},**execution_inputs,**information_inputs}

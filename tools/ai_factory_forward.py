@@ -109,7 +109,8 @@ def _run(base,dest,attempt,action,clock,get):
 
 def advance_factory(root,*,now_ms):
     base=Path(root)/'data/cache/ai_factory';enabled=[];results=[]
-    if not base.exists():return results
+    from tools.profitability_causal_workflow import advance_registered_information
+    if not base.exists():return advance_registered_information(root)
     for attempt in range(1,1001):
         control=base/str(attempt)/'forward/control.json'
         if control.exists() and verified(control)['enabled'] is True:enabled.append(attempt)
@@ -122,4 +123,5 @@ def advance_factory(root,*,now_ms):
             results.append({'attempt':attempt,'status':r['status'],'observed_at_ms':r['observed_at_ms'],
                             'forward_cost_status':cost['status'] if cost else 'NOT_REGISTERED'})
         except Exception as exc:results.append({'attempt':attempt,'status':'ERROR','reason':type(exc).__name__})
+    results.extend(advance_registered_information(root))
     return results

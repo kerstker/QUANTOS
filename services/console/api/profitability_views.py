@@ -50,9 +50,10 @@ def profitability_payload(root, attempt):
                 break
         if row['result_status']=='NOT_RUN' and folder.exists():row['result_status']='INCOMPLETE'
     result={'p0':None,'p1':None,'p2':None,'p3':None,'p3_study':None,'p6':None,'p4':None,'p5':None,'p5_calibration':None,'inputs':inputs,'failures':([{'stage':'inputs','reason':'INPUT_INDEX_UNAVAILABLE'}] if input_error else []),'authoritative':False}
-    for stage in ('p0','p1','p2','p3','p3_study','p4','p5','p5_calibration','p6'):
+    result['causal']=None
+    for stage in ('p0','p1','p2','p3','p3_study','p4','p5','p5_calibration','p6','causal'):
         stage_directory=latest.get(stage,directory/stage)
-        path=stage_directory/('status.json' if stage=='p6' else 'result.json')
+        path=stage_directory/('status.json' if stage in ('p6','causal') else 'result.json')
         try:
             if path.exists():
                 value=_read(path)

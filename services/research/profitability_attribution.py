@@ -32,7 +32,7 @@ def attribute_replay(result):
                               'SLIPPAGE_INCLUDES_TICK_ROUNDING_NOT_SEPARATE_SPREAD',
                               'NO_CAUSAL_PREDICTION_EDGE_OR_ECONOMIC_AUTHORITY'])
     try:
-        if result['cash_model'] != 'CANONICAL_LINEAR_USDC_PERPETUAL':
+        if result['cash_model'] not in ('CANONICAL_LINEAR_USDC_PERPETUAL','CANONICAL_LINEAR_USDT_PERPETUAL'):
             return {**empty, 'reason': 'UNSUPPORTED_LEDGER'}
         r = {k: _amount(result['reconciliation'][k]) for k in
              ('initial_equity', 'ending_equity', 'price_pnl', 'fee', 'spread', 'impact',

@@ -42,7 +42,9 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
            maximum_quantity=D('50'),taker_fee_bps=D('4'),decision_interval_ms=DAY,
            target_weight=D('.25'),max_position_weight=D('.30'),initial_margin=D(1),
            maintenance_margin=D('.5'),price_stop=None,trade_lows=None,trade_highs=None,
-           max_holding_ms=None,context_decision=None):
+           max_holding_ms=None,context_decision=None,quote='USDC'):
+    if quote not in ('USDC','USDT'):raise ValueError('unsupported research settlement currency')
+    symbol='BTC'+quote
     times=np.asarray(times,dtype=np.int64)
     prices=np.asarray(prices,dtype=float);marks=np.asarray(marks,dtype=float)
     if (len(times)!=len(prices) or len(times)!=len(marks) or len(times)<2
@@ -75,7 +77,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
     lo,hi=map(int,np.searchsorted(times,[start,end]))
     if hi>=len(times) or times[lo]!=start or times[hi]!=end or (np.diff(times[lo:hi+1])!=MINUTE).any():
         raise ValueError('missing evaluation minute')
-    spec=ContractSpec(SYMBOL,'LINEAR_USDC_PERPETUAL','USDC',D(1),D('.001'),D('.001'),
+    spec=ContractSpec(symbol,f'LINEAR_{quote}_PERPETUAL',quote,D(1),D('.001'),D('.001'),
                       D(50),D('.0125'),D('1e-24'),(MarginBracket(D(0),None,initial_margin,maintenance_margin,D(0)),))
     ledger=LinearPerpetualLedger((spec,),initial_collateral=D(1500))
     events=[]
@@ -96,7 +98,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
     peak=1500.;max_dd=0.;exposure_sum=0.;observed=0
 
     def qty():
-        position=ledger.position(SYMBOL)
+        position=ledger.position(symbol)
         return D(0) if position is None else position.quantity
 
     def latch(at):
@@ -109,7 +111,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
     def observe(left,right):
         nonlocal peak,max_dd,exposure_sum,observed
         if right<=left:return
-        position=ledger.position(SYMBOL)
+        position=ledger.position(symbol)
         quantity=qty()
         current=ledger.account_equity()
         reference=D(str(marks[left])) if position is None else position.mark_price
@@ -150,7 +152,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
             if increased and (after<D(1350) and stop or after<=0 or abs(qty())*D(str(marks[index]))>max_position_weight*after):
                 raise _TradeRejected('POST_FILL_RISK')
         try:
-            ledger.apply_event(TradeEvent(at,SYMBOL,delta,price,MarginMode.CROSS,capacity,fee=fee),trade_guard=guard)
+            ledger.apply_event(TradeEvent(at,symbol,delta,price,MarginMode.CROSS,capacity,fee=fee),trade_guard=guard)
         except _TradeRejected as exc:
             orders.append({'time':at,'status':'REJECTED_'+str(exc),'equity_before':str(before)});return
         fills.append({'time':at,'quantity':canonical_decimal(delta),'price':canonical_decimal(price),
@@ -187,7 +189,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
                 protective_cursor=closed_right
         right=int(np.searchsorted(times,at,side='left' if kind=='funding' else 'right'))
         right=min(right,hi+1)
-        position=ledger.position(SYMBOL)
+        position=ledger.position(symbol)
         quantity=qty()
         interrupted=False
         if cursor<right and quantity:
@@ -199,7 +201,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
                 index=segment_start+int(offset)
                 observe(cursor,index+1)
                 cursor=index+1
-                ledger.apply_event(MarkEvent(int(times[index]),SYMBOL,D(str(marks[index]))))
+                ledger.apply_event(MarkEvent(int(times[index]),symbol,D(str(marks[index]))))
                 observations.append({'time':int(times[index]),'equity':canonical_decimal(ledger.account_equity())})
                 old=halted;latch(int(times[index]))
                 if old is None and halted is not None:
@@ -207,10 +209,10 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         if interrupted:continue
         if cursor<right:
             observe(cursor,right)
-            ledger.apply_event(MarkEvent(int(times[right-1]),SYMBOL,D(str(marks[right-1]))))
+            ledger.apply_event(MarkEvent(int(times[right-1]),symbol,D(str(marks[right-1]))))
             cursor=right
         if kind=='funding':
-            ledger.apply_event(FundingEvent(at,SYMBOL,payload['rate'],payload['mark']))
+            ledger.apply_event(FundingEvent(at,symbol,payload['rate'],payload['mark']))
             observations.append({'time':at,'equity':canonical_decimal(ledger.account_equity())})
             latch(at)
         elif kind in ('decision','end'):
@@ -241,7 +243,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         equity=float(ledger.account_equity());max_dd=max(max_dd,1-equity/peak);peak=max(peak,equity)
     reconciliation=ledger.reconciliation_snapshot().as_canonical_dict()
     if reconciliation['residual']!='0':raise ValueError('canonical reconciliation failed')
-    return {'cash_model':'CANONICAL_LINEAR_USDC_PERPETUAL','reconciliation':reconciliation,
+    return {'cash_model':f'CANONICAL_LINEAR_{quote}_PERPETUAL','reconciliation':reconciliation,
             'daily':daily,'fills':fills,'orders':orders,'decisions':decisions,'funding_observations':observations,
             'halted_at':halted,'minute_max_drawdown':max_dd,'average_exposure':exposure_sum/observed,
             'mark_observations':observed,'authoritative':False,'live_eligible':False}

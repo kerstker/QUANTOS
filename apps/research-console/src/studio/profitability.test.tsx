@@ -51,3 +51,15 @@ it('does not show zero venue profit for a pending forward account',async()=>{
  expect(screen.queryByRole('region',{name:'前向账户成本对照'})).not.toBeInTheDocument();
  expect(screen.getByText(/未下单/)).toBeInTheDocument();
 });
+
+it('keeps prospective feature counts separate from profitability and exposes missing hours',async()=>{
+ const {CausalInformationEvidence}=await import('./CausalInformationEvidence');
+ const action=vi.fn();
+ render(<CausalInformationEvidence busy={false} complete action={action} data={{status:'COLLECTING',observed_at_ms:Date.now(),economic_eligible:false,quotes:[{quote:'USDC',status:'COLLECTING',ready_rows:2,required_rows:504,missing_slots:[]},{quote:'USDT',status:'COLLECTING',ready_rows:0,required_rows:504,missing_slots:[3600000]}],study:null}}/>);
+ expect(screen.getByLabelText('USDC 采集进度')).toHaveAttribute('value','2');
+ expect(screen.getByText('1 个缺口')).toBeInTheDocument();
+ expect(screen.getByText(/不算提前发出的预测/)).toBeInTheDocument();
+ expect(screen.getByText('尚未建立')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'更新信息窗口'}));
+ expect(action).toHaveBeenCalledOnce();
+});

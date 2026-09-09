@@ -590,6 +590,8 @@ def _adapt_profitability(result):
 
 
 RUN_KINDS: dict = {
+    'profitability_information': RunSpec('tools.profitability_causal_workflow:run_information',{'attempt':int},
+        _adapt_profitability,'自然时间信息采集与受限实验',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'profitability_forward': RunSpec('tools.profitability_forward_account:run_forward_cost',{'attempt':int},
         _adapt_profitability,'冻结预测前向成本账户',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'profitability_input': RunSpec('tools.profitability_input_workflow:run_input_version', {'attempt':int,'input_kind':int,'revision':int},

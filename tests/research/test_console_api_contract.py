@@ -1980,3 +1980,17 @@ def test_profitability_forward_cost_status_preserves_unknown_costs(tmp_path):
     assert result['p6']['status']=='WAITING_MATURITY'
     assert result['p6']['projection']=='CONSOLE_SUMMARY'
     assert result['inputs']==[] and result['p5_calibration'] is None
+
+
+def test_profitability_causal_information_preserves_separate_quotes_and_no_prediction_claim(tmp_path):
+    from services.console.api.profitability_views import profitability_payload
+    from tools.profitability_study import write_new
+    directory=tmp_path/'data/cache/profitability/1/causal';directory.mkdir(parents=True)
+    write_new(directory/'status.json',{'status':'COLLECTING','economic_eligible':False,
+        'prediction_evidence':'NONE_FEATURE_COLLECTION_ONLY','study':None,
+        'quotes':[{'quote':'USDC','ready_rows':1,'required_rows':504,'missing_slots':[]},
+                  {'quote':'USDT','ready_rows':0,'required_rows':504,'missing_slots':[3600000]}]})
+    result=profitability_payload(tmp_path,1)
+    assert result['causal']['study'] is None and result['causal']['projection']=='CONSOLE_SUMMARY'
+    assert [r['ready_rows'] for r in result['causal']['quotes']]==[1,0]
+    assert result['causal']['prediction_evidence']=='NONE_FEATURE_COLLECTION_ONLY'

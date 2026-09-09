@@ -62,56 +62,64 @@ def _run_information(p0_path,information,directory,output,*,stage,prior_trials_a
         write_new(output/'input-identity.json',{'information_hash':digest(data),
                   'price_input_hash':plan['identity']['inputs']['input_hash'],
                   'provenance':'IMPORTED_SOURCE_RECEIPTS_NOT_INDEPENDENTLY_CERTIFIED'})
-        train,valid,test=partition(t,t+4*HOUR+300000);train=train[-2048:]
-        variance={int(at):float(row[3]**2*4) for at,row in zip(t,x)}
-        def predict(spec,fit,indices):
-            columns=[columns_contract.index(name) for name in spec['features']]
-            # Identical trailing volatility control in every candidate, derived before decisions.
-            features=np.column_stack((info[:,columns],x[:,3]))
-            return fit_information(features[fit],y[fit],features[indices])
-        for spec in specs:
-            write_new(output/f'inner-{spec["id"]}.started.json',{'spec':spec,'scope':'INNER_ONLY'})
-            try:
-                with registered_trial(output,registration,{'scope':'INNER','spec':spec}) as trial_id:
-                    p=predict(spec,train,valid)
-                    metrics=evaluate_market(market,{'threshold_bps':20},t[valid],p,cost_aware=True,variance_by_slot=variance)
-                row={'id':spec['id'],'status':'COMPLETED','metrics':metrics,'prediction_hash':digest(p.tolist()),'trial_id':trial_id}
-            except Exception as exc:row={'id':spec['id'],'status':'FAILED','reason':type(exc).__name__}
-            write_new(output/f'inner-{spec["id"]}.json',row);trials.append(row)
-        success=[r for r in trials if r['status']=='COMPLETED']
-        if not success or trials[0]['status']!='COMPLETED':raise ValueError('price baseline failed')
-        best=max(success,key=lambda r:r['metrics']['score'])
-        histories=[]
-        for row in success:
-            equity=np.asarray([float(v['equity']) for v in row['metrics']['equity']])
-            histories.append(equity[1:]/equity[:-1]-1)
-        search_diagnostics=search_bootstrap(histories,trials_attempted=len(trials)+prior_trials_attempted)
-        write_new(output/'selection.json',{'selected_id':best['id'],'trials_attempted':len(trials),'scope':'INNER_ONLY'})
-        cases=[];fit=np.r_[train,valid][-2048:]
-        for identifier in dict.fromkeys((0,best['id'])):
-            p=predict(specs[identifier],fit,test)
-            controls=matched_state_diagnostic(t[test],x[test],p,y[test])
-            for fee,slip in registration['cost_cases']:
-                name=f'outer-{identifier}-{fee}-{slip}'
-                write_new(output/f'{name}.started.json',{'selected_id':identifier,'preregistration_hash':digest(registration)})
-                with registered_trial(output,registration,{'scope':'OUTER_COST_DIAGNOSTIC','id':identifier,'fee':fee,'slip':slip}) as trial_id:
-                    metrics=evaluate_market(market,{'threshold_bps':20},t[test],p,cost_aware=True,
-                                            variance_by_slot=variance,fee_bps=fee,slip_bps=slip)
-                case={'id':identifier,'fee_bps':fee,'slippage_bps':slip,'metrics':metrics,
-                      'state_controls':controls,'stability':stability(metrics),'trial_id':trial_id}
-                write_new(output/f'{name}.json',case);cases.append(case)
-        result={'stage':stage,'status':'COMPLETED_TECHNICAL_ONLY','trials':trials,'trials_attempted':len(trials),
-                'p0_hash':p0['result_hash'],'preregistration_hash':digest(registration),'information_hash':digest(data),
-                'search_diagnostics':search_diagnostics,'all_input_revision_trials_attempted':len(trials)+prior_trials_attempted,
-                'selected_id':best['id'],'cases':cases,'decision':continuation_decision(best['id'],cases),
-                'economic_eligible':False,'authoritative':False,'causal_increment_established':False,
-                'limitations':['ALL_TRIALS_RETAINED_NO_FORMAL_ADAPTIVE_SEARCH_CERTIFICATION',
-                               'WITHIN_STATE_ASSOCIATION_NOT_CAUSAL_PROOF','ALREADY_OBSERVED_HISTORY']}
-        write_new(output/'result.json',result);return result
+        return evaluate_information_panel(output,registration,t,x,y,info,market,information_hash=digest(data),trials=trials)
     except Exception as exc:
         write_new(output/'failure.json',{'stage':stage,'status':'FAILED','reason':type(exc).__name__,
                   'detail':str(exc),'trials_attempted':len(trials),'economic_eligible':False})
         raise
+
+
+def evaluate_information_panel(output,registration,t,x,y,info,market,*,information_hash,trials):
+    """Shared bounded inner/outer evaluation; caller freezes input clock and provenance."""
+    stage=registration['stage'];specs=registration['specs']
+    columns_contract=BASIS_COLUMNS if stage=='P3' else INFORMATION_COLUMNS
+    prior_trials_attempted=registration['prior_input_revision_trials']
+    train,valid,test=partition(t,t+4*HOUR+300000);train=train[-2048:]
+    variance={int(at):float(row[3]**2*4) for at,row in zip(t,x)}
+    def predict(spec,fit,indices):
+        columns=[columns_contract.index(name) for name in spec['features']]
+        # Identical trailing volatility control in every candidate, derived before decisions.
+        features=np.column_stack((info[:,columns],x[:,3]))
+        return fit_information(features[fit],y[fit],features[indices])
+    for spec in specs:
+        write_new(output/f'inner-{spec["id"]}.started.json',{'spec':spec,'scope':'INNER_ONLY'})
+        try:
+            with registered_trial(output,registration,{'scope':'INNER','spec':spec}) as trial_id:
+                p=predict(spec,train,valid)
+                metrics=evaluate_market(market,{'threshold_bps':20},t[valid],p,cost_aware=True,variance_by_slot=variance)
+            row={'id':spec['id'],'status':'COMPLETED','metrics':metrics,'prediction_hash':digest(p.tolist()),'trial_id':trial_id}
+        except Exception as exc:row={'id':spec['id'],'status':'FAILED','reason':type(exc).__name__}
+        write_new(output/f'inner-{spec["id"]}.json',row);trials.append(row)
+    success=[r for r in trials if r['status']=='COMPLETED']
+    if not success or trials[0]['status']!='COMPLETED':raise ValueError('price baseline failed')
+    best=max(success,key=lambda r:r['metrics']['score'])
+    histories=[]
+    for row in success:
+        equity=np.asarray([float(v['equity']) for v in row['metrics']['equity']])
+        histories.append(equity[1:]/equity[:-1]-1)
+    search_diagnostics=search_bootstrap(histories,trials_attempted=len(trials)+prior_trials_attempted)
+    write_new(output/'selection.json',{'selected_id':best['id'],'trials_attempted':len(trials),'scope':'INNER_ONLY'})
+    cases=[];fit=np.r_[train,valid][-2048:]
+    for identifier in dict.fromkeys((0,best['id'])):
+        p=predict(specs[identifier],fit,test)
+        controls=matched_state_diagnostic(t[test],x[test],p,y[test])
+        for fee,slip in registration['cost_cases']:
+            name=f'outer-{identifier}-{fee}-{slip}'
+            write_new(output/f'{name}.started.json',{'selected_id':identifier,'preregistration_hash':digest(registration)})
+            with registered_trial(output,registration,{'scope':'OUTER_COST_DIAGNOSTIC','id':identifier,'fee':fee,'slip':slip}) as trial_id:
+                metrics=evaluate_market(market,{'threshold_bps':20},t[test],p,cost_aware=True,
+                                        variance_by_slot=variance,fee_bps=fee,slip_bps=slip)
+            case={'id':identifier,'fee_bps':fee,'slippage_bps':slip,'metrics':metrics,
+                  'state_controls':controls,'stability':stability(metrics),'trial_id':trial_id}
+            write_new(output/f'{name}.json',case);cases.append(case)
+    result={'stage':stage,'status':'COMPLETED_TECHNICAL_ONLY','trials':trials,'trials_attempted':len(trials),
+            'p0_hash':registration['p0_hash'],'preregistration_hash':digest(registration),'information_hash':information_hash,
+            'search_diagnostics':search_diagnostics,'all_input_revision_trials_attempted':len(trials)+prior_trials_attempted,
+            'selected_id':best['id'],'cases':cases,'decision':continuation_decision(best['id'],cases),
+            'economic_eligible':False,'authoritative':False,'causal_increment_established':False,
+            'limitations':['ALL_TRIALS_RETAINED_NO_FORMAL_ADAPTIVE_SEARCH_CERTIFICATION',
+                           'WITHIN_STATE_ASSOCIATION_NOT_CAUSAL_PROOF',registration['history']]}
+    write_new(output/'result.json',result);return result
 
 
 def continuation_decision(selected,cases):

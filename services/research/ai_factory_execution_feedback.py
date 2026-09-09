@@ -5,7 +5,7 @@ from services.research.profitability_attribution import attribute_replay
 
 def execution_feedback(result):
     reconciliation=result['reconciliation']
-    if result.get('cash_model')!='CANONICAL_LINEAR_USDC_PERPETUAL' or reconciliation.get('residual')!='0':
+    if result.get('cash_model') not in ('CANONICAL_LINEAR_USDC_PERPETUAL','CANONICAL_LINEAR_USDT_PERPETUAL') or reconciliation.get('residual')!='0':
         raise ValueError('canonical reconciled replay required')
     return {'schema':'QUANTOS_FACTORY_EXECUTION_FEEDBACK_V1','evidence_type':'TECHNICAL_REPLAY',
             'profitability_attribution':attribute_replay(result),

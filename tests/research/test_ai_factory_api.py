@@ -58,7 +58,7 @@ def test_profitability_import_requires_auth_and_preserves_registered_revision(mo
     assert client.post('/profitability-input',json={**body,'content':'{"quote":"USDC","quote":"USDT"}'},headers=headers).status_code==400
 
 
-@pytest.mark.parametrize(("action","kind"),[("profitability","profitability_study"),("forward_cost","profitability_forward")])
+@pytest.mark.parametrize(("action","kind"),[("profitability","profitability_study"),("forward_cost","profitability_forward"),("information","profitability_information")])
 def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monkeypatch,tmp_path,action,kind):
     from services.research_runner import main
     monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
