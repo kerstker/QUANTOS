@@ -52,3 +52,14 @@ def test_checkpoint_includes_profitability_evidence_and_ledger(tmp_path):
     assert (restored/'profitability/1/p6/status.json').read_bytes()==(evidence/'status.json').read_bytes()
     assert FactoryStore.snapshot(restored/'ai_factory/factory.db')['selected']['state']=='READY'
     with TrialLedger(str(restored/'profitability/1/p6/trials.db'),create=False) as ledger:ledger.verify()
+
+
+@pytest.mark.parametrize('scope',['ai_factory','profitability','profitability_inputs'])
+def test_v2_checkpoint_rejects_destination_inside_source_scope_or_alias(tmp_path,scope):
+    root=tmp_path/'state';cache=root/'data/cache'
+    (cache/'profitability').mkdir(parents=True)
+    target=cache/scope;target.mkdir(exist_ok=True)
+    alias=tmp_path/'alias';alias.symlink_to(target,target_is_directory=True)
+    for destination in (target/'backup.zip',alias/'backup.zip'):
+        with pytest.raises(ValueError,match='outside checkpoint source scopes'):
+            create_checkpoint(root,destination)

@@ -55,6 +55,32 @@ def test_collection_can_nest_under_orchestrator_but_same_worker_file_stays_exclu
         assert module.advance_information(root,1,clock=lambda:48*HOUR+1000)['status']=='BUSY'
 
 
+@pytest.mark.parametrize('failure',[False,True])
+def test_resident_consumes_information_only_success_and_failure_reports(root,monkeypatch,failure):
+    from tools import ai_factory_daemon
+    now=47*HOUR+1
+    module.advance_information(root,1,register=True,clock=lambda:now)
+    monkeypatch.setattr(module.time,'time_ns',lambda:now*1000000)
+    from services.research.ai_factory_store import FactoryStore
+    from tools.ai_factory_checkpoint import restore_checkpoint
+    with FactoryStore(root/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','objective':'BTC','budget':3})
+    if failure:
+        def failed(*a,**kw):raise ValueError('retained source mismatch')
+        monkeypatch.setattr(module,'advance_information',failed)
+    result=ai_factory_daemon.tick(root,now_ms=now)
+    assert result['status']==('ERROR' if failure else 'RUNNING')
+    assert result['attempts'][0]['status']==('ERROR' if failure else 'WAITING_WINDOW')
+    assert result['attempts'][0]['kind']=='information'
+    assert result['checkpoint']['status']=='VERIFIED_RESEARCH_CHECKPOINT'
+    restored=root/'restored'
+    restore_checkpoint(root/'data/cache/ai_factory_checkpoint.zip',restored)
+    assert (restored/'profitability/1/causal/plan.json').read_bytes()==(root/'data/cache/profitability/1/causal/plan.json').read_bytes()
+    again=ai_factory_daemon.tick(root,now_ms=now)
+    assert again['checkpoint']['status']=='DAILY_CHECKPOINT_EXISTS'
+    assert verified(root/'data/cache/ai_factory/resident.json')['status']==result['status']
+
+
 def test_failed_public_receipts_remain_visible_without_backfill(root):
     module.advance_information(root,1,register=True,clock=lambda:47*HOUR+1)
     def failed(output,*,slot,clock):

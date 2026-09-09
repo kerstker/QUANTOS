@@ -115,8 +115,11 @@ def advance_registered_information(root):
     if len(attempts)>8:raise ValueError('at most eight information windows may be scheduled')
     results=[]
     for attempt in attempts:
-        try:result=advance_information(root,attempt);results.append({'attempt':attempt,'information_status':result['status']})
-        except Exception as exc:results.append({'attempt':attempt,'information_status':'ERROR','reason':type(exc).__name__})
+        try:
+            result=advance_information(root,attempt)
+            results.append({'attempt':attempt,'kind':'information','status':result['status'],'information_status':result['status']})
+        except Exception as exc:
+            results.append({'attempt':attempt,'kind':'information','status':'ERROR','information_status':'ERROR','reason':type(exc).__name__})
     return results
 
 

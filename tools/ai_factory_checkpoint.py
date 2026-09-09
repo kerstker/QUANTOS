@@ -8,6 +8,8 @@ import sqlite3
 import tempfile
 import zipfile
 
+_SOURCE_SCOPES=('ai_factory','profitability','profitability_inputs')
+
 
 def _sha(path):
     h=hashlib.sha256()
@@ -28,7 +30,7 @@ def _files(base):
 def _inventory(base,schema):
     if schema==1:return _files(base)
     paths=[]
-    for name in ('ai_factory','profitability','profitability_inputs'):
+    for name in _SOURCE_SCOPES:
         paths.extend(_files(base/name))
     if len(paths)>100000:raise ValueError('checkpoint inventory exceeds bound')
     return sorted(paths)
@@ -47,7 +49,9 @@ def create_checkpoint(root,destination):
     schema=2 if any((cache/name).exists() for name in ('profitability','profitability_inputs')) else 1
     base=cache if schema==2 else cache/'ai_factory'
     layout='CACHE_ROOT_V2' if schema==2 else 'FACTORY_ROOT_V1'
-    if destination.exists() or destination.resolve().is_relative_to(base.resolve()):raise ValueError('new external checkpoint destination required')
+    source_roots=[base] if schema==1 else [base/name for name in _SOURCE_SCOPES]
+    if destination.exists() or any(destination.resolve().is_relative_to(p.resolve()) for p in source_roots):
+        raise ValueError('new destination outside checkpoint source scopes required')
     files=_inventory(base,schema)
     if not files:raise ValueError('no research checkpoint sources')
     before={str(p.relative_to(base)):_sha(p) for p in files if p.suffix=='.json'}
