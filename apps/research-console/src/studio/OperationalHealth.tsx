@@ -14,6 +14,7 @@ const names: Record<string,string> = {
 };
 const stages:Record<string,string>={ARTIFACT_RESTORE:'全部文件恢复',DECRYPT_DECOMPRESS_HASH:'单文件解密、解压与校验',MANIFEST_CONTRACT:'清单与数据契约',SQLITE_INTEGRITY:'数据库完整性',HISTORY_SEMANTICS:'恢复历史校验'};
 const reasons: Record<string,{title:string;next:string}> = {
+ SQLITE_SNAPSHOT_NO_PROGRESS:{title:'备份快照持续停滞',next:'快照尚未完成，未进入恢复验收。检查数据库写入与快照策略；保留失败记录后重试。'},
  RESTORE_RTO_EXCEEDED:{title:'恢复耗时超过目标',next:'检查完整恢复耗时与大文件处理；完成优化后重新演练。'},
  QUALITY_REJECTED:{title:'原始数据未通过质量检查',next:'核对归档日期与质量明细；保留拒收记录，等待合格数据。'},
  FETCH_FAILED:{title:'本轮采集失败',next:'检查网络、发布状态与采集日志，确认原因后重试。'},

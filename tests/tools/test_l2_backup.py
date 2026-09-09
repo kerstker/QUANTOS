@@ -902,6 +902,61 @@ def test_online_sqlite_backup_is_paginated_and_yields_to_authority_writers(monke
     assert pauses == [l2_backup_module.SQLITE_BACKUP_WRITER_YIELD_SECONDS]
 
 
+@pytest.mark.parametrize("status", [sqlite3.SQLITE_OK, sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED])
+def test_standard_snapshot_rejects_sustained_non_progress(monkeypatch, status):
+    clock = [0.0]
+
+    class SourceConnection:
+        def backup(self, target, *, pages, progress, sleep):
+            for second in range(0, 121):
+                clock[0] = float(second)
+                progress(status, 500, 1000)
+
+    monkeypatch.setattr(l2_backup_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module.time, "sleep", lambda _: None)
+    with pytest.raises(L2BackupError, match="^SQLITE_SNAPSHOT_NO_PROGRESS$"):
+        l2_backup_module._online_sqlite_backup(SourceConnection(), object())
+
+
+def test_standard_snapshot_progress_can_exceed_stall_window(monkeypatch):
+    clock = [0.0]
+
+    class SourceConnection:
+        def backup(self, target, *, pages, progress, sleep):
+            # A transient restart must not fail; sustained new progress resets
+            # the stall clock even when total elapsed time exceeds its window.
+            for second, remaining in [(1, 900), (30, 950), (50, 800),
+                                      (100, 700), (150, 600), (200, 0)]:
+                clock[0] = float(second)
+                progress(sqlite3.SQLITE_DONE if remaining == 0 else sqlite3.SQLITE_OK,
+                         remaining, 1000)
+
+    monkeypatch.setattr(l2_backup_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module.time, "sleep", lambda _: None)
+    l2_backup_module._online_sqlite_backup(SourceConnection(), object())
+
+
+def test_snapshot_stall_failure_has_redacted_stage():
+    assert l2_backup_module._recorded_failure_classification(
+        L2BackupError("SQLITE_SNAPSHOT_NO_PROGRESS")
+    ) == ("SQLITE_SNAPSHOT_NO_PROGRESS", "SNAPSHOT")
+
+
+def test_repeated_snapshot_restarts_do_not_refresh_progress_clock(monkeypatch):
+    clock = [0.0]
+
+    class SourceConnection:
+        def backup(self, target, *, pages, progress, sleep):
+            for second in range(121):
+                clock[0] = float(second)
+                progress(sqlite3.SQLITE_OK, 500 if second % 2 == 0 else 750, 1000)
+
+    monkeypatch.setattr(l2_backup_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(l2_backup_module.time, "sleep", lambda _: None)
+    with pytest.raises(L2BackupError, match="^SQLITE_SNAPSHOT_NO_PROGRESS$"):
+        l2_backup_module._online_sqlite_backup(SourceConnection(), object())
+
+
 def test_wal_pinned_sqlite_backup_uses_one_fixed_step_without_yielding(monkeypatch):
     calls: dict[str, object] = {}
 
@@ -1579,24 +1634,29 @@ def test_recorded_backup_appends_redacted_failure_and_overwrites_old_pass_projec
 
 
 @pytest.mark.parametrize(
-    ("detail", "reason_code"),
+    ("detail", "reason_code", "stage"),
     [
         (
             "restore drill exceeded RTO: 900001ms > 300000ms",
             "RESTORE_RTO_EXCEEDED",
+            "RESTORE_VERIFICATION",
         ),
         (
             "backup batch exceeds RPO: 900001ms > 300000ms",
             "RESTORE_RPO_EXCEEDED",
+            "RESTORE_VERIFICATION",
         ),
         (
             "zstd restore codec is unavailable",
             "RESTORE_CODEC_UNAVAILABLE",
+            "RESTORE_VERIFICATION",
         ),
         (
             "zstd restore codec failed",
             "RESTORE_CODEC_FAILED",
+            "RESTORE_VERIFICATION",
         ),
+        ("SQLITE_SNAPSHOT_NO_PROGRESS", "SQLITE_SNAPSHOT_NO_PROGRESS", "SNAPSHOT"),
     ],
 )
 def test_recorded_backup_retains_redacted_restore_gate_reason(
@@ -1604,6 +1664,7 @@ def test_recorded_backup_retains_redacted_restore_gate_reason(
     monkeypatch,
     detail,
     reason_code,
+    stage,
 ):
     repo = tmp_path / "repo"
     _seed_recorded_state(repo)
@@ -1628,7 +1689,7 @@ def test_recorded_backup_retains_redacted_restore_gate_reason(
     snapshot = store.read_snapshot()
     store.close()
     outcome = snapshot.outcomes[0].outcome
-    assert outcome.stage == "RESTORE_VERIFICATION"
+    assert outcome.stage == stage
     assert outcome.reason_code == reason_code
 
 

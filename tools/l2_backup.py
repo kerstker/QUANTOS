@@ -88,6 +88,9 @@ ZSTD_BINARY = "/usr/bin/zstd"
 SQLITE_BACKUP_PAGES = 256
 SQLITE_BACKUP_BUSY_SLEEP_SECONDS = 0.05
 SQLITE_BACKUP_WRITER_YIELD_SECONDS = 0.002
+# This bounds repeated callbacks without new progress, not total snapshot time
+# or the independent restore RTO. A slow but advancing copy remains valid.
+SQLITE_BACKUP_NO_PROGRESS_SECONDS = 60.0
 SNAPSHOT_POLICY_STANDARD = "STANDARD"
 SNAPSHOT_POLICY_SQLITE_WAL_PINNED = "SQLITE_WAL_PINNED"
 _SNAPSHOT_POLICIES = frozenset(
@@ -569,7 +572,23 @@ def _online_sqlite_backup(
     if snapshot_policy != SNAPSHOT_POLICY_STANDARD:
         raise L2BackupError("unsupported SQLite snapshot policy")
 
-    def yield_to_writers(_status: int, remaining: int, _total: int) -> None:
+    best_remaining: int | None = None
+    last_progress = time.monotonic()
+
+    def yield_to_writers(status: int, remaining: int, _total: int) -> None:
+        nonlocal best_remaining, last_progress
+        if status == sqlite3.SQLITE_DONE:
+            return
+        now = time.monotonic()
+        # Busy/locked callbacks may contain stale page counters. Restarts must
+        # exceed the previous high-water mark before resetting the clock.
+        if status == sqlite3.SQLITE_OK and (
+            best_remaining is None or remaining < best_remaining
+        ):
+            best_remaining = remaining
+            last_progress = now
+        elif now - last_progress >= SQLITE_BACKUP_NO_PROGRESS_SECONDS:
+            raise L2BackupError("SQLITE_SNAPSHOT_NO_PROGRESS")
         if remaining > 0:
             time.sleep(SQLITE_BACKUP_WRITER_YIELD_SECONDS)
 
@@ -1384,6 +1403,10 @@ def _recorded_failure_classification(exc: Exception) -> tuple[str, str]:
     message = str(exc)
     if isinstance(exc, L2BackupError):
         exact = {
+            "SQLITE_SNAPSHOT_NO_PROGRESS": (
+                "SQLITE_SNAPSHOT_NO_PROGRESS",
+                "SNAPSHOT",
+            ),
             "BACKUP_CONFIGURATION_UNAVAILABLE": (
                 "BACKUP_CONFIGURATION_UNAVAILABLE",
                 "PREFLIGHT",
