@@ -39,7 +39,7 @@ def _client(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('action,kind,number',[
-    ('portfolio','ai_factory_portfolio',None),('portfolio_observe','ai_factory_portfolio_forward',1),
+    ('explain','ai_factory_verdict',None),('portfolio','ai_factory_portfolio',None),('portfolio_observe','ai_factory_portfolio_forward',1),
     ('portfolio_refresh','ai_factory_portfolio_forward',0),('portfolio_stop','ai_factory_portfolio_forward',2)])
 def test_portfolio_actions_queue_only_whitelisted_research(tmp_path,monkeypatch,action,kind,number):
     from services.research.ai_factory_store import FactoryStore
@@ -142,6 +142,7 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "ai_factory_pipeline",
         "ai_factory_portfolio",
         "ai_factory_portfolio_forward",
+        "ai_factory_verdict",
         "ai_factory_verification",
         "ashare_forward_observation",
         "ashare_technical_search",

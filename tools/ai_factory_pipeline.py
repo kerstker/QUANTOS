@@ -8,6 +8,7 @@ from tools.ai_factory_process_comparison import run_comparison
 from tools.ai_factory_verification import run_verification
 from tools.ai_factory_forward import run_observation
 from tools.ai_factory_portfolio_forward import run_observation as run_portfolio_observation
+from tools.ai_factory_verdict import run_verdict
 from tools.btc_factory_research import seal,verified
 from tools.ai_factory_checkpoint import create_checkpoint,publish_checkpoint
 from tools.cache_io import atomic_write_json
@@ -25,6 +26,7 @@ def run_pipeline(params):
         ('PROCESS_COMPARISON',run_comparison,params),('INDEPENDENT_PACKAGE',run_verification,params),
         ('NATURAL_OBSERVATION',run_observation,{'attempt':params['attempt'],'action':1}),
         ('PORTFOLIO_OBSERVATION',run_portfolio_observation,{'attempt':params['attempt'],'action':1}),
+        ('RESEARCH_EXPLANATION',run_verdict,params),
         ('CHECKPOINT',checkpoint,params)):
         atomic_write_json(str(dest/'pipeline.json'),seal({'status':'RUNNING','stage':name,'completed':stages,
             'updated_ms':time.time_ns()//1000000,'authoritative':False}))

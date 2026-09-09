@@ -20,7 +20,7 @@ ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
                  "factory_orthogonal", "factory_loop", "data_refresh",
                  "ic_panel", "wide_gauntlet", "paper_cycle",
                  "ashare_alpha", "ashare_paper_track",
-                 "ashare_technical_search", "ashare_forward_observation", "perpetual_replay", "perpetual_alpha", "orderblock_research", "btc_mechanism", "btc_factory", "btc_forward", "ai_factory", "ai_factory_forward", "ai_factory_assessment", "ai_factory_portfolio", "ai_factory_portfolio_forward", "ai_factory_verification", "ai_factory_pipeline", "ai_factory_comparison", "profitability_study", "profitability_input", "profitability_forward", "profitability_information"}
+                 "ashare_technical_search", "ashare_forward_observation", "perpetual_replay", "perpetual_alpha", "orderblock_research", "btc_mechanism", "btc_factory", "btc_forward", "ai_factory", "ai_factory_forward", "ai_factory_assessment", "ai_factory_portfolio", "ai_factory_portfolio_forward", "ai_factory_verification", "ai_factory_verdict", "ai_factory_pipeline", "ai_factory_comparison", "profitability_study", "profitability_input", "profitability_forward", "profitability_information"}
 
 _INVOCATION_ID_MAX_LENGTH = 128
 _REQUEST_IDENTITY_SCHEMA = "quantos.research_runner.request.v1"

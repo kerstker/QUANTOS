@@ -29,6 +29,46 @@ def test_unknown_or_executable_proposals_rejected(content):
 def test_no_outer_results_can_be_sent():
     with pytest.raises(ValueError):propose('BTC',[0,1],[{'outer_score':12}],environ=ENV,transport=Transport({}))
 
+
+def test_provider_checks_scoped_evidence_and_rejects_future_memory_before_request():
+    from services.research.ai_factory_context import ResearchContext
+    from services.research.ai_factory_store import digest
+    context=ResearchContext(digest('experiment'),digest('data'),digest('fold'),100,80,'INNER_SEARCH')
+    history=[{'candidate_id':0,'score':-1,'status':'PASSED'}]
+    record={'experiment_hash':context.experiment_hash,'snapshot_hash':context.snapshot_hash,
+        'partition_hash':context.partition_hash,'scope':'INNER_SEARCH','known_at_ms':90,'market_max_ms':75,'summary':history[0]}
+    t=Transport({'candidate_id':1,'reason':'test'})
+    result=propose('BTC',[1],history,environ=ENV,transport=t,research_context=context.document(),history_evidence=[record])
+    assert result['context_hash']==context.cache_key
+    t=Transport({'candidate_id':1,'reason':'test'})
+    with pytest.raises(ValueError,match='scoped'):
+        propose('BTC',[1],history,environ=ENV,transport=t,research_context=context.document(),history_evidence=[{**record,'known_at_ms':101}])
+    assert t.request is None
+
+
+def test_role_views_only_receive_bounded_peer_candidates():
+    t=Transport({'candidate_id':1,'reason':'Compare the alternative'})
+    r=propose('BTC',[0,1],[],environ=ENV,transport=t,role='COUNTER_PROPOSE',peer_candidates=[0],timeout_seconds=15)
+    assert r['candidate_id']==1
+    assert 'COUNTER_PROPOSE' in json.dumps(t.request)
+    with pytest.raises(ValueError):
+        propose('BTC',[0,1],[],environ=ENV,transport=t,role='SYNTHESIZE',peer_candidates=[99])
+
+
+def test_local_transport_applies_parent_process_deadline_and_drops_credential_environment(monkeypatch):
+    import subprocess
+    from tools.ai_factory_provider import LocalModelTransport
+    def run(*args,**kwargs):
+        assert kwargs['timeout']==2
+        assert 'QUANTOS_FACTORY_API_KEY' not in kwargs['env']
+        assert 'HTTP_PROXY' not in kwargs['env']
+        raise subprocess.TimeoutExpired(args[0],2)
+    monkeypatch.setenv('QUANTOS_FACTORY_API_KEY','private-local-fixture')
+    monkeypatch.setenv('HTTP_PROXY','http://127.0.0.1:1')
+    monkeypatch.setattr(subprocess,'run',run)
+    with pytest.raises(ValueError,match='deadline'):
+        LocalModelTransport().post(endpoint='http://127.0.0.1:8001/v1/chat/completions',headers={},body=b'{}',timeout_seconds=2,max_response_bytes=65536)
+
 LOCAL={'QUANTOS_FACTORY_ENDPOINT':'http://127.0.0.1:8001/v1/chat/completions',
        'QUANTOS_FACTORY_MODEL':'qwen3.8-27b','QUANTOS_FACTORY_TRANSPORT':'LOCAL_HTTP'}
 

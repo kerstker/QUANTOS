@@ -112,3 +112,18 @@ def test_campaign_control_requires_token_and_immutable_policy(monkeypatch,tmp_pa
     assert client.post('/factory-campaign',headers=headers,json=body).status_code==200
     assert client.post('/factory-campaign',headers=headers,json={**body,'budget':6}).status_code==409
     assert client.post('/factory-campaign',headers=headers,json={'action':'stop','campaign_id':1}).status_code==200
+
+
+def test_factory_api_freezes_bounded_role_protocol(monkeypatch,tmp_path):
+    from services.research_runner import main
+    monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
+    monkeypatch.setattr(main._queue,'submit',lambda *a,**k:'fixture-run')
+    client=TestClient(main.app);headers={'X-Runner-Token':main._RUNNER_TOKEN,'X-Operator':'test'}
+    body={'action':'create','attempt':1,'mode':'ai','research_protocol':'THREE_ROLES_V1'}
+    response=client.post('/factory',json=body,headers=headers)
+    assert response.status_code==200
+    assert response.json()['session']['config']['research_protocol']=='THREE_ROLES_V1'
+    assert client.post('/factory',json={**body,'research_protocol':'UNBOUNDED'},headers=headers).status_code==409
+    response=client.post('/factory-campaign',json={'action':'create','campaign_id':1,'research_protocol':'SINGLE_V1'},headers=headers)
+    assert response.status_code==200
+    assert response.json()['campaigns'][0]['config']['research_protocol']=='SINGLE_V1'

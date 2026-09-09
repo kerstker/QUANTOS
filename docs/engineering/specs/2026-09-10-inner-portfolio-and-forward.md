@@ -44,3 +44,8 @@ Runner 仅增加两个受限研究种类及对应操作；Console 投影不输�
 浏览器首次验收暴露完整组合报告 5.9 MB 超出通用 4 MB 读取上限。修复采用专用、最高 16 MB 的有界读取，HTTP 仍只返回白名单摘要及外层曲线，通用读取上限不变。失败测试及浏览器回执保留。后续浏览器结果另行追加；本记录不表示完整 canonical 已通过。
 
 本机实验与检查记录位于 `/home/kerstker/quantos-dev-output/balder-roadmap-20260910/`；源码冻结目录 `source-portfolio-2e99dfbcc`，研究输出 `portfolio-state-2e99dfbcc`。
+
+
+2026-09-10 HTTP 尾验：修复源码 `2021a4273` 的隔离真实 Console/Runner/前端检查通过，
+`portfolio-browser-v2.json`、1440/390 像素截图保留。UI 发起组合观察后实际 Runner 登记
+成功，显示 WAITING_MATURITY、零伪造预测。预览服务已关闭，没有安装常驻观察或切换服务。

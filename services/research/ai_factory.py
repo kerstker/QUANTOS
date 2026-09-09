@@ -101,10 +101,12 @@ def hourly_panel(minutes):
 
 
 def validate_config(config):
-    if set(config)-{'search_plan'}!={'attempt','mode','objective','budget'}:raise ValueError('invalid factory configuration fields')
+    if set(config)-{'search_plan','research_protocol'}!={'attempt','mode','objective','budget'}:raise ValueError('invalid factory configuration fields')
     if type(config['attempt']) is not int or not 1<=config['attempt']<=1000:raise ValueError('invalid attempt')
     if type(config['budget']) is not int or not 3<=config['budget']<=18:raise ValueError('budget must be 3..18')
     if config['mode'] not in ('baseline','ai'):raise ValueError('invalid research mode')
+    if 'research_protocol' in config and (config['mode']!='ai' or config['research_protocol'] not in ('SINGLE_V1','THREE_ROLES_V1')):
+        raise ValueError('invalid bounded research protocol')
     if not isinstance(config['objective'],str) or not 1<=len(config['objective'].strip())<=2000:raise ValueError('invalid research objective')
     if 'search_plan' in config:
         from services.research.ai_factory_sources import SOURCES

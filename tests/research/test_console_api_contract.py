@@ -2040,6 +2040,29 @@ def test_portfolio_projects_large_trial_evidence_without_exposing_raw_details(tm
     assert len(json.dumps(value))<2000
 
 
+def test_research_notes_contract_keeps_outer_explanations_out_of_search(tmp_path):
+    import pytest
+    from services.console.api.ai_factory import factory_payload
+    from services.research.ai_factory_store import FactoryStore
+    from tools.profitability_study import write_new
+    base=tmp_path/'data/cache/ai_factory'
+    with FactoryStore(base/'factory.db') as store:store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'})
+    (base/'1').mkdir()
+    write_new(base/'1/research-verdict.json',{'schema':'QUANTOS_RESEARCH_VERDICT_V1','scope':'OUTER_EXPLANATION',
+        'authoritative':False,'economic_eligible':False,'search_feedback_allowed':False,'facts':[]})
+    notes=factory_payload(tmp_path,1)['research_notes']
+    assert notes['role_runs']==[]
+    assert notes['scope']=='HUMAN_READ_ONLY' and notes['outer_results_available_to_search'] is False
+    assert notes['verdict']['scope']=='OUTER_EXPLANATION' and notes['episodes']==[] and notes['history'] is None
+    from tools.ai_factory_collaboration import bounded_proposal
+    def fail(*args,**kwargs):raise TimeoutError()
+    with pytest.raises(ValueError,match='role'):
+        bounded_proposal('BTC',[0],[],protocol='SINGLE_V1',output=base/'1/research-roles'/('a'*64),options={},propose_fn=fail)
+    notes=factory_payload(tmp_path,1)['research_notes']
+    assert notes['role_runs'][0]['calls'][0]['reason']=='TimeoutError'
+    assert notes['role_runs'][0]['calls'][0]['candidate_id'] is None
+
+
 def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_path, monkeypatch):
     from services.console.api import runtime_health
     monkeypatch.setattr(runtime_health, "_STATE_ROOT", tmp_path)

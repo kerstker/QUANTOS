@@ -13,8 +13,9 @@ it('uses the configured local model and distinguishes recent successful calls',a
  expect(await screen.findByText('模型最近调用成功')).toBeInTheDocument();
  expect(screen.getByText('qwen3.8-27b')).toBeInTheDocument();
  await waitFor(()=>expect(screen.getByLabelText('编排方式')).toHaveValue('ai'));
+ fireEvent.change(screen.getByLabelText('AI 研究协议'),{target:{value:'THREE_ROLES_V1'}});
  fireEvent.click(screen.getByRole('button',{name:'启动研究工厂'}));
- await waitFor(()=>expect(controlFactory).toHaveBeenCalledWith(expect.objectContaining({mode:'ai'}),expect.any(String)));
+ await waitFor(()=>expect(controlFactory).toHaveBeenCalledWith(expect.objectContaining({mode:'ai',research_protocol:'THREE_ROLES_V1'}),expect.any(String)));
 });
 it('shows disconnected AI and submits an executable baseline configuration',async()=>{
  render(<Factory/>);

@@ -123,11 +123,28 @@ def _verify_state(base):
         obj.verify_campaigns()
     finally:obj.c.close()
     from tools.ai_factory_portfolio_verify import verify_portfolio
-    for directory in list(base.glob('*/portfolio'))+list(base.glob('*/process-v2/portfolios/*')):
+    for directory in list(base.glob('*/portfolio'))+list(base.glob('*/process-v2/portfolios/*'))+list(base.glob('*/process-v3/portfolios/*')):
         verify_portfolio(directory)
     from services.research.trial_ledger import TrialLedger
-    for path in base.glob('*/process-v2/comparison-trials.db'):
+    for path in list(base.glob('*/process-v2/comparison-trials.db'))+list(base.glob('*/process-v3/comparison-trials.db')):
         with TrialLedger(str(path),create=False) as ledger:ledger.verify()
+    from services.research.ai_factory_episodes import ResearchEpisodes
+    for path in base.glob('*/research-episodes.db'):
+        with ResearchEpisodes(path,read_only=True) as episodes:episodes.verify()
+    from tools.ai_factory_research_records import verify_records
+    for session in sessions:verify_records(base/str(session['attempt']),receipts[session['attempt']])
+    from tools.ai_factory_collaboration import verify_collaboration
+    for path in base.glob('**/research-roles/*/plan.json'):verify_collaboration(path.parent)
+    for directory in base.glob('*/process-v3/research/*'):
+        fold,group=directory.name.split('-',1);cases=[]
+        result_path=directory.parents[1]/'process-comparison.json'
+        if result_path.exists():
+            report=verified(result_path)
+            cases=[t for r in report['rows'] if str(r['fold'])==fold and r['group']==group for t in r['trials']]
+        else:
+            # Incomplete comparisons still retain evidence, matched by episode trial identity below.
+            cases=[verified(p) for p in (directory.parents[1]/'comparison-cases').glob('*.json')]
+        verify_records(directory,cases)
     for session in sessions:
         if session['state']=='COMPLETED':
             dest=base/str(session['attempt']);model=verified(dest/'model.json');result=verified(dest/'result.json')

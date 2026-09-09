@@ -12,6 +12,7 @@ from services.console.api.ai_factory_workflow import workflow_payload
 from services.console.api.profitability_views import profitability_payload
 from services.research.profitability_forward import forward_summary
 from services.console.api.factory_portfolio import portfolio_payload
+from services.console.api.factory_research_notes import research_notes
 
 router=APIRouter()
 
@@ -59,7 +60,8 @@ def factory_payload(root,attempt=None):
             except (OSError,ValueError):errors.append('PIPELINE_UNAVAILABLE')
     if data['selected']:
         directory=root/'data/cache/ai_factory'/str(data['selected']['attempt'])
-        path=directory/'process-v2/process-comparison.json'
+        path=directory/'process-v3/process-comparison.json'
+        if not path.exists():path=directory/'process-v2/process-comparison.json'
         if not path.exists():path=directory/'process-comparison.json'
         if path.exists():
             try:comparison=_read(path)
@@ -76,6 +78,10 @@ def factory_payload(root,attempt=None):
         try:portfolio=portfolio_payload(root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'portfolio')
         except (OSError,ValueError,KeyError,TypeError):errors.append('PORTFOLIO_RESEARCH_UNAVAILABLE')
     data['portfolio_research']=portfolio
+    data['research_notes']=None
+    if data['selected']:
+        try:data['research_notes']=research_notes(root/'data/cache/ai_factory'/str(data['selected']['attempt']))
+        except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):errors.append('RESEARCH_NOTES_UNAVAILABLE')
     # Avoid returning every historical equity curve and duplicate event payload on each poll.
     data['sessions']=[{**row,'result':{'selected':row['result'].get('selected'),'model_hash':row['result'].get('model_hash')}} for row in data['sessions']]
     data['events']=[{**row,'payload':{k:v for k,v in row['payload'].items() if k in ('reason','action','operator','run_id','trial_id','candidate_id','ordinal')}} for row in data['events']]

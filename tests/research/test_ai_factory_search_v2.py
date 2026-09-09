@@ -23,6 +23,13 @@ def test_search_plan_cannot_exclude_every_candidate_or_reference_unknown_source(
     with pytest.raises(ValueError):validate_config({**config,'search_plan':{**config['search_plan'],'excluded_ids':list(range(72))}})
 
 
+def test_research_protocol_is_frozen_and_bounded():
+    config={'attempt':1,'mode':'ai','objective':'BTC','budget':3,'research_protocol':'THREE_ROLES_V1'}
+    assert validate_config(config)==config
+    with pytest.raises(ValueError):validate_config({**config,'research_protocol':'UNLIMITED_AGENTS'})
+    with pytest.raises(ValueError):validate_config({**config,'mode':'baseline'})
+
+
 def test_v2_counts_duplicate_predictions_without_replaying_them(tmp_path,monkeypatch):
     from services.research.ai_factory_store import FactoryStore
     from tools import ai_quant_factory as worker

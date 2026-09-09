@@ -216,6 +216,7 @@ class FactoryStore:
                 self.c.execute("UPDATE campaigns SET state='EXHAUSTED' WHERE campaign_id=?",(campaign_id,));return None
             attempt=self.c.execute('SELECT COALESCE(MAX(attempt),0)+1 FROM sessions').fetchone()[0]
             session=validate_config({'attempt':attempt,'mode':config['mode'],'budget':config['budget'],'objective':config['objective'],
+                **({'research_protocol':config['research_protocol']} if 'research_protocol' in config else {}),
                 'search_plan':{'version':2,'excluded_ids':excluded,'source_ids':config['source_ids'],'memory':memory}})
             self.c.execute('INSERT INTO sessions(attempt,config,config_hash,state,command,updated) VALUES(?,?,?,?,?,?)',
                 (attempt,encode(session),digest(session),'READY','run',now))
@@ -253,7 +254,8 @@ class FactoryStore:
             if len(rounds)>config['max_cycles'] or [r['ordinal'] for r in rounds]!=list(range(len(rounds))):raise ValueError('campaign round budget or sequence corrupt')
             for row in rounds:
                 session=validate_config(self.get(row['attempt'])['config'])
-                if any(session[k]!=config[k] for k in ('objective','mode','budget')) or session.get('search_plan',{}).get('source_ids')!=config['source_ids']:
+                if (any(session[k]!=config[k] for k in ('objective','mode','budget')) or session.get('search_plan',{}).get('source_ids')!=config['source_ids']
+                        or session.get('research_protocol')!=config.get('research_protocol')):
                     raise ValueError('campaign session binding corrupt')
                 if row['state'] not in ('RESERVED','COMPLETED','FAILED','CANCELLED'):raise ValueError('campaign round state corrupt')
                 if (row['state']=='RESERVED')!=(row['finished_ms'] is None):raise ValueError('campaign terminal time corrupt')

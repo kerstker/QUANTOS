@@ -13,6 +13,7 @@ export function FactoryLifecycle(){
  const resource=useResource('factory-lifecycle',fetchLifecycle,15000),data=resource.data;
  const [tab,setTab]=useState(0),id=useId(),[query,setQuery]=useState('');
  const [sourceQuery,setSourceQuery]=useState('');
+ const [protocol,setProtocol]=useState('SINGLE_V1');
  const [objective,setObjective]=useState('研究 BTC 小时级价格、波动与主动成交信息的组合，在相同成本和风险约束下比较新模型。');
  const [trigger,setTrigger]=useState('schedule'),[champion,setChampion]=useState(0);
  const [cycles,setCycles]=useState(3),[budget,setBudget]=useState(3),[interval,setInterval]=useState(24),[mode,setMode]=useState('ai');
@@ -22,13 +23,13 @@ export function FactoryLifecycle(){
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const [chosenModel,setChosenModel]=useState<number|null>(null);
  const model=data?.models.find(m=>m.attempt===chosenModel)??data?.models[0];
- const multiplier=mode==='ai'?10:7;
+ const multiplier=mode==='ai'?13:7;
  const act=async(action:string,campaign_id?:number)=>{
   setBusy(true);setMessage('');setOperator(operator.trim());setRunnerToken(token.trim());
-  const intent=JSON.stringify({objective,mode,budget,cycles,interval,sourceIds,trigger,champion});
+  const intent=JSON.stringify({objective,mode,budget,cycles,interval,sourceIds,trigger,champion,protocol});
   if(action==='create'&&pendingCreate.current?.intent!==intent)pendingCreate.current={intent,campaign_id:Math.max(0,...(data?.campaigns.map(c=>c.campaign_id)??[]))+1};
   const next=campaign_id??pendingCreate.current!.campaign_id;
-  try {await controlCampaign(action==='create'?{action,campaign_id:next,objective,mode,budget,max_cycles:cycles,interval_hours:interval,source_ids:sourceIds,trigger,champion_attempt:trigger==='drift'?champion:null}:{action,campaign_id:next});if(action==='create')pendingCreate.current=null;setMessage(action==='stop'?'计划已停止，正在执行的轮次会保留并完成；如需立即暂停，请进入对应任务。':'计划已保存，调度状态将在下一次刷新显示。');resource.refresh();}
+  try {await controlCampaign(action==='create'?{action,campaign_id:next,objective,mode,budget,...(mode==='ai'?{research_protocol:protocol}:{}),max_cycles:cycles,interval_hours:interval,source_ids:sourceIds,trigger,champion_attempt:trigger==='drift'?champion:null}:{action,campaign_id:next});if(action==='create')pendingCreate.current=null;setMessage(action==='stop'?'计划已停止，正在执行的轮次会保留并完成；如需立即暂停，请进入对应任务。':'计划已保存，调度状态将在下一次刷新显示。');resource.refresh();}
   catch(e){setMessage(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  };
  const tabs=['生命周期','持续研究','模型演进','来源对标'];
@@ -56,6 +57,7 @@ export function FactoryLifecycle(){
  {trigger==='drift'&&<label>观察中的基准模型<select value={champion} onChange={e=>setChampion(Number(e.target.value))}><option value={0}>选择冻结模型</option>{data?.models.map(m=><option key={m.attempt} value={m.attempt}>模型 #{m.attempt} · {m.spec?.model}</option>)}</select></label>}
  <label>轮次冷却间隔（小时）<input type="number" min={1} max={168} value={interval} onChange={e=>setInterval(Number(e.target.value))}/></label>
  <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="ai">本地模型编排</option><option value="baseline">确定性基线</option></select></label>
+ {mode==='ai'&&<><label>AI 研究协议<select value={protocol} onChange={e=>setProtocol(e.target.value)}><option value="SINGLE_V1">单次提案 · 每次实验最多 1 次调用</option><option value="THREE_ROLES_V1">提案 → 反证 → 综合 · 最多 3 次调用</option></select></label><p className="f-muted">复用同一本地模型，每次提案总限时 60 秒，每次调用最多输出 400 Token。三角色只提交一个候选；过程对照同时比较两种协议，失败计入预算。</p></>}
  <fieldset><legend>方法来源（最多 8 项）</legend><label>筛选可选来源<input type="search" value={sourceQuery} onChange={e=>setSourceQuery(e.target.value)} placeholder="名称、类别或研究方法"/></label><p className="lf-source-limit">已选择 {sourceIds.length} / 8 · 可从全部 {data?.sources.length??0} 个来源中选择</p><div className="lf-source-choices">{data?.sources.filter(s=>`${s.name} ${s.category} ${s.adopt}`.toLowerCase().includes(sourceQuery.toLowerCase())).map(s=><label key={s.id}><input type="checkbox" disabled={!sourceIds.includes(s.id)&&sourceIds.length>=8} checked={sourceIds.includes(s.id)} onChange={e=>setSourceIds(e.target.checked?[...sourceIds,s.id].slice(0,8):sourceIds.filter(i=>i!==s.id))}/>{s.name}</label>)}</div></fieldset>
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label></details>
  <p className="lf-budget">最多 <strong>{cycles*budget}</strong> 次主实验，连同三折过程对照最多 <strong>{cycles*budget*multiplier}</strong> 次候选评估。失败消耗尝试，固定压力诊断另计。主实验不重复已尝试规格；历史窗口复用不建立独立证据。</p>

@@ -577,6 +577,18 @@ def _adapt_ai_factory_portfolio(result):
             'provenance':'tools/ai_factory_portfolio.py'}
 
 
+def _adapt_ai_factory_verdict(result):
+    from services.research.ai_factory_store import digest
+    if (result.get('schema')!='QUANTOS_RESEARCH_VERDICT_V1' or result.get('scope')!='OUTER_EXPLANATION'
+            or result.get('authoritative') is not False or result.get('economic_eligible') is not False
+            or result.get('search_feedback_allowed') is not False
+            or result.get('result_hash')!=digest({k:v for k,v in result.items() if k!='result_hash'})):
+        raise ValueError('invalid research explanation')
+    return {'title':'可追溯研究结论','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+        'metrics':{'result_hash':result['result_hash'],'research_verdict_json':json.dumps(result,sort_keys=True)},
+        'caveats':['只读解释已冻结结果；外层结论不反馈同一搜索。'],'provenance':'tools/ai_factory_verdict.py'}
+
+
 def _adapt_ai_factory_forward(result,*,source='tools/ai_factory_forward.py'):
     return {'title':'AI 小时模型自然时间观察','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'forward_status':result['status'],'factory_attempt':result['attempt'],
@@ -602,6 +614,8 @@ def _adapt_profitability(result):
 
 
 RUN_KINDS: dict = {
+    'ai_factory_verdict': RunSpec('tools.ai_factory_verdict:run_verdict',{'attempt':int},
+        _adapt_ai_factory_verdict,'可追溯研究结论',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_portfolio': RunSpec('tools.ai_factory_portfolio:run_portfolio',{'attempt':int},
         _adapt_ai_factory_portfolio,'内层组合研究与整体回放',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_portfolio_forward': RunSpec('tools.ai_factory_portfolio_forward:run_observation',{'attempt':int,'action':int},

@@ -6,6 +6,15 @@ def policy():
     return {'campaign_id':1,'objective':'BTC 成本后研究','mode':'baseline','budget':3,'max_cycles':2,'interval_hours':1,'source_ids':['aqr','buildalpha']}
 
 
+def test_campaign_reserves_the_same_frozen_research_protocol(tmp_path):
+    config={**policy(),'mode':'ai','research_protocol':'THREE_ROLES_V1'}
+    with FactoryStore(tmp_path/'factory.db') as store:
+        store.create_campaign(config,operator='fixture',now=0)
+        first=store.reserve_campaign(1,now=0)
+        assert store.get(first['attempt'])['config']['research_protocol']=='THREE_ROLES_V1'
+        store.verify_campaigns()
+
+
 def test_reservation_survives_restart_and_counts_failures(tmp_path):
     path=tmp_path/'factory.db'
     with FactoryStore(path) as s:

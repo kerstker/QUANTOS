@@ -494,6 +494,11 @@
           "path": "services/console/api/backtest_views.py"
         },
         {
+          "line": 4,
+          "module": "services.research.ai_factory_episodes",
+          "path": "services/console/api/factory_research_notes.py"
+        },
+        {
           "line": 11,
           "module": "services.research.alpha_workflow_store",
           "path": "services/console/api/hourly_alpha_views.py"
@@ -1555,7 +1560,7 @@
     {
       "references": [
         {
-          "line": 301,
+          "line": 302,
           "module": "services.governance.json_integrity",
           "path": "services/research_runner/main.py"
         }
@@ -1602,22 +1607,22 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 300,
+          "line": 301,
           "module": "services.research.ai_factory_store",
-          "path": "services/research_runner/main.py"
-        },
-        {
-          "line": 317,
-          "module": "services.research.ai_factory",
           "path": "services/research_runner/main.py"
         },
         {
           "line": 318,
+          "module": "services.research.ai_factory",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 319,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 363,
+          "line": 365,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
@@ -1628,6 +1633,11 @@
         },
         {
           "line": 569,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 581,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/run_kinds.py"
         },
@@ -1680,7 +1690,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "023966e68b91a405b1d6b7e897a07333ebd27a8bcfdbfbd4aea8b1b06a306e79",
+  "graph_sha256": "1753a778964524cda8993930bb353380b4e18f40180cf0b82b935c791835228f",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1718,7 +1728,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 541,
+  "source_file_count": 545,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

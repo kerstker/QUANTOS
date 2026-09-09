@@ -14,6 +14,7 @@ const specDescription=(spec?:FactorySpec)=>spec?`${spec.features.map(i=>FEATURE_
 const STAGES:Record<string,number>={READY:0,VALIDATING_INPUT:0,RUNNING:1,PAUSED:1,OUTER_VALIDATION:2,COMPLETED:3};
 export function Factory() {
  const [selected,setSelected]=useState<number|null>(()=>{const n=Number(new URLSearchParams(window.location.search).get('attempt'));return Number.isInteger(n)&&n>=1&&n<=1000?n:null;}),[mode,setMode]=useState('baseline'),[budget,setBudget]=useState(3),[attempt,setAttempt]=useState(1);
+ const [protocol,setProtocol]=useState('SINGLE_V1');
  const [objective,setObjective]=useState('研究 BTC 小时级价格动量与主动成交量信息，比较规则、Ridge 和 GBM，评估费用后的稳定性。');
  const [operator,editOperator]=useState(getOperator),[token,editToken]=useState(getRunnerToken),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const pending=useRef<{body:string;id:string}|null>(null);
@@ -22,7 +23,7 @@ export function Factory() {
  useEffect(()=>{if(resource.data&&!assigned.current){assigned.current=true;if(['CONFIGURED_UNVERIFIED','RECENT_CALL_SUCCEEDED'].includes(resource.data.provider.status))setMode('ai');setAttempt(Math.min(1000,Math.max(0,...resource.data.sessions.map(s=>s.attempt))+1));}},[resource.data]);
  const data=resource.data,session=data?.selected,trials=data?.trials??[],result=session?.result;
  const run=async(action:string)=>{
-  const request=action==='create'?{action,attempt,mode,budget,objective}:{action,attempt:session?.attempt};
+  const request=action==='create'?{action,attempt,mode,budget,objective,...(mode==='ai'?{research_protocol:protocol}:{})}:{action,attempt:session?.attempt};
   const body=JSON.stringify(request);
   setBusy(true);setMessage('');setOperator(operator.trim());setRunnerToken(token.trim());
   try {if(pending.current?.body!==body)pending.current={body,id:newRequestIdentity()};const response=await controlFactory(request,pending.current.id);setSelected(response.session.attempt);setMessage(action==='pause'?'已请求暂停，当前实验完成后停止。':action==='cancel'?'已请求取消，已完成实验将保留。':'请求已提交，进度会自动更新。');pending.current=null;resource.refresh();}
@@ -48,8 +49,9 @@ export function Factory() {
  <label>研究目标<textarea value={objective} onChange={e=>setObjective(e.target.value)} maxLength={2000} required rows={4}/></label>
  <div className="f-fields"><label>任务编号<input type="number" min={1} max={1000} value={attempt} onChange={e=>{assigned.current=true;setAttempt(Number(e.target.value));}} required/></label><label>实验预算<select value={budget} onChange={e=>setBudget(Number(e.target.value))}>{[3,6,9,12,18].map(n=><option key={n} value={n}>{n} 次实验</option>)}</select></label></div>
  <label>编排方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="baseline">基线研究 · 无需语言模型</option><option value="ai" disabled={!['CONFIGURED_UNVERIFIED','RECENT_CALL_SUCCEEDED'].includes(data?.provider.status??'')}>AI 编排 · 模型选择下一次实验</option></select></label>
+ {mode==='ai'&&<><label>AI 研究协议<select value={protocol} onChange={e=>setProtocol(e.target.value)}><option value="SINGLE_V1">单次提案 · 每次实验最多 1 次调用</option><option value="THREE_ROLES_V1">提案 → 反证 → 综合 · 最多 3 次调用</option></select></label><p className="f-muted">复用同一本地模型，每次提案总限时 60 秒，每次调用最多输出 400 Token。三角色只提交一个候选；过程对照同时比较两种协议，失败计入预算。</p></>}
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究执行令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label><p>使用现有研究服务令牌；这里不接收模型或交易所密钥。</p></details>
- <p className="f-muted">主研究 {budget} 次，三折过程对照另 {budget*(mode==='ai'?9:6)} 次候选尝试。外层与固定压力诊断单列；完成后启用自然时间预测观察。</p>
+ <p className="f-muted">主研究 {budget} 次，三折过程对照另 {budget*(mode==='ai'?12:6)} 次候选尝试。外层与固定压力诊断单列；完成后启用自然时间预测观察。</p>
  {(!operator.trim()||!token.trim())&&<p className="f-muted">请在“研究执行连接”中填写操作记录名称与研究令牌。</p>}
  <button className="s-button primary" disabled={busy||!operator.trim()||!token.trim()}>启动研究工厂</button>
  </form></Panel>

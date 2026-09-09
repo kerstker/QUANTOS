@@ -1,4 +1,4 @@
-export interface CampaignConfig {campaign_id:number;objective:string;mode:string;budget:number;max_cycles:number;interval_hours:number;source_ids:string[]}
+export interface CampaignConfig {research_protocol?:'SINGLE_V1'|'THREE_ROLES_V1';campaign_id:number;objective:string;mode:string;budget:number;max_cycles:number;interval_hours:number;source_ids:string[]}
 export interface Campaign {campaign_id:number;config:CampaignConfig;state:string;created_ms:number;wait_reason:string;next_due_ms:number|null}
 export interface CampaignRound {campaign_id:number;ordinal:number;attempt:number;state:string;created_ms:number;finished_ms:number|null}
 export interface ModelDiagnostics {

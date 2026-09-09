@@ -46,6 +46,8 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
         store.update(attempt,'FAILED',{'reason':'OUTER_INTERRUPTED_CREATE_NEW_ATTEMPT','authoritative':False})
         return store.get(attempt)
     train,valid,test=partition(t,t+4*HOUR+300000);train=train[-2048:]
+    from tools.ai_factory_research_records import inner_context,retain_inner,proposal_context
+    def research_context():return inner_context(bound,(train,valid,test),int((t[valid]+4*HOUR+300000).max()))
     with TrialLedger(str(Path(output)/'trials.db')) as ledger:
         ledger.verify()
         for ordinal in range(config['budget']):
@@ -57,6 +59,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                     record={key:getattr(current,key) for key in ('trial_id','alpha_id','family_id','exact_definition_id','validation_policy_digest')}
                     _event(ledger,record,existing[ordinal]['status'])
                 elif current.status!=existing[ordinal]['status']:raise ValueError('trial ledger receipt conflict')
+                retain_inner(dest,research_context(),existing[ordinal])
                 continue
             command=store.get(attempt)['command']
             if command in ('pause','cancel'):
@@ -72,16 +75,21 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                 if previous.status=='PLANNED':_event(ledger,record,'RUNNING')
                 if previous.status in ('RUNNING','PLANNED'):_event(ledger,record,'FAILED')
                 store.record_trial(attempt,ordinal,{'ordinal':ordinal,'status':'FAILED','candidate_id':None,
-                    'reason':'INTERRUPTED','trial_id':definition});continue
+                    'reason':'INTERRUPTED','trial_id':definition})
+                retain_inner(dest,research_context(),store.trials(attempt)[ordinal]);continue
             _event(ledger,record,'PLANNED');_event(ledger,record,'RUNNING')
             picked=None;prediction_hash=None;stage='PROPOSAL'
             try:
                 remaining=[c['id'] for c in pool if c['id'] not in [r['candidate_id'] for r in existing]]
                 receipt={'candidate_id':remaining[0],'model':'deterministic_baseline'}
                 if config['mode']=='ai':
-                    history=[{'candidate_id':r['candidate_id'],'score':r.get('metrics',{}).get('score'),'status':r['status']}
-                             for r in existing if r['candidate_id'] is not None]
-                    receipt=proposal(config['objective'],remaining,config.get('search_plan',{}).get('memory',[])+history,**({'search_plan':config['search_plan'],'source_context':identity.get('research_sources',{}).get('records',[])} if 'search_plan' in config else {}))
+                    history,context_options=proposal_context(dest,research_context(),definition)
+                    options={**context_options,**({'search_plan':config['search_plan'],'source_context':identity.get('research_sources',{}).get('records',[])} if 'search_plan' in config else {})}
+                    if 'research_protocol' in config:
+                        from tools.ai_factory_collaboration import bounded_proposal
+                        receipt=bounded_proposal(config['objective'],remaining,history,protocol=config['research_protocol'],
+                            output=dest/'research-roles'/definition,options=options,propose_fn=proposal)
+                    else:receipt=proposal(config['objective'],remaining,history,**options)
                 proposed=receipt['candidate_id']
                 if type(proposed) is not int or proposed not in remaining:raise ValueError('invalid candidate proposal')
                 picked=proposed
@@ -113,6 +121,7 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
                 'source_role':'RESEARCH_METHOD_NOT_SIGNAL_PROFITABILITY_EVIDENCE'}
             store.record_trial(attempt,ordinal,result)
             _event(ledger,record,result['status'])
+            retain_inner(dest,research_context(),result)
         command=store.get(attempt)['command']
         if command in ('pause','cancel'):
             store.update(attempt,'PAUSED' if command=='pause' else 'CANCELLED');return store.get(attempt)
