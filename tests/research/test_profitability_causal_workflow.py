@@ -77,7 +77,7 @@ def test_resident_consumes_information_only_success_and_failure_reports(root,mon
     restore_checkpoint(root/'data/cache/ai_factory_checkpoint.zip',restored)
     assert (restored/'profitability/1/causal/plan.json').read_bytes()==(root/'data/cache/profitability/1/causal/plan.json').read_bytes()
     again=ai_factory_daemon.tick(root,now_ms=now)
-    assert again['checkpoint']['status']=='DAILY_CHECKPOINT_EXISTS'
+    assert again['checkpoint']['status']=='VERIFIED_DAILY_CHECKPOINT'
     assert verified(root/'data/cache/ai_factory/resident.json')['status']==result['status']
 
 

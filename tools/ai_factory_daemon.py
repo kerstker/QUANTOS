@@ -5,11 +5,10 @@ import json
 import os
 from pathlib import Path
 import signal
-import tempfile
 import threading
 import time
 from tools.ai_factory_forward import advance_factory
-from tools.ai_factory_checkpoint import create_checkpoint
+from tools.ai_factory_checkpoint import create_checkpoint,publish_checkpoint
 from tools.cache_io import atomic_write_json
 from tools.btc_factory_research import seal
 
@@ -21,22 +20,11 @@ def tick(root,*,now_ms):
         day=time.strftime('%Y%m%d',time.gmtime(now_ms/1000))
         folder=root/'data/cache/ai_factory_checkpoints';folder.mkdir(parents=True,exist_ok=True)
         path=folder/f'daily-{day}.zip'
-        temporary=None
         try:
-            publish=not path.exists() or not (root/'data/cache/ai_factory_checkpoint.zip').exists()
             if not path.exists():backup=create_checkpoint(root,path)
-            else:backup={'status':'DAILY_CHECKPOINT_EXISTS','day':day}
-            latest=root/'data/cache/ai_factory_checkpoint.zip'
-            if publish:
-                with tempfile.NamedTemporaryFile(dir=latest.parent,prefix='.checkpoint-',delete=False) as target:
-                    temporary=Path(target.name)
-                    with path.open('rb') as source:
-                        for chunk in iter(lambda:source.read(1024*1024),b''):target.write(chunk)
-                    target.flush();os.fsync(target.fileno())
-                os.replace(temporary,latest)
+            else:backup={'status':'VERIFIED_DAILY_CHECKPOINT','day':day}
+            publish_checkpoint(path,root/'data/cache/ai_factory_checkpoint.zip')
         except Exception as exc:backup={'status':'RETRY_REQUIRED','reason':type(exc).__name__}
-        finally:
-            if temporary is not None:temporary.unlink(missing_ok=True)
     report=seal({'schema':'QUANTOS_AI_FACTORY_RESIDENT_V1','observed_at_ms':now_ms,'attempts':reports,
                  'checkpoint':backup,'status':'ERROR' if any(r['status']=='ERROR' for r in reports) else 'DEGRADED' if backup['status']=='RETRY_REQUIRED' else 'RUNNING',
                  'authoritative':False,'account_pnl_computed':False})

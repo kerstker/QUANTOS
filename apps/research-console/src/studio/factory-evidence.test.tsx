@@ -2,6 +2,15 @@ import {it,expect,vi} from 'vitest';
 import {render,screen,fireEvent} from '@testing-library/react';
 import {FactoryEvidence} from './FactoryEvidence';
 import type {FactoryPayload} from '@/lib/types/ai-factory';
+it('explains checkpoint rejection and clears the alert after successful verification',()=>{
+ const data={trials:[],resident:{status:'DEGRADED',observed_at_ms:Date.now(),checkpoint:{status:'RETRY_REQUIRED'}}} as unknown as FactoryPayload;
+ const view=render(<FactoryEvidence data={data} busy={false} action={vi.fn()}/>);
+ expect(screen.getByRole('alert')).toHaveTextContent('检查点校验或发布失败');
+ expect(screen.getByText('运行降级')).toBeInTheDocument();
+ view.rerender(<FactoryEvidence data={{...data,resident:{...data.resident!,status:'RUNNING',checkpoint:{status:'VERIFIED_DAILY_CHECKPOINT'}}}} busy={false} action={vi.fn()}/>);
+ expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+ expect(screen.getByText(/当日检查点已复核/)).toBeInTheDocument();
+});
 it('keeps missing profitability evidence unknown instead of inferring gross profits',()=>{
  render(<FactoryEvidence data={null} busy={false} action={vi.fn()}/>);
  fireEvent.click(screen.getByRole('tab',{name:'成本决策'}));
@@ -39,4 +48,11 @@ it('recovers failed result registration even when pipeline artifacts completed',
  expect(action).toHaveBeenCalledWith('resume');
  view.rerender(<FactoryEvidence data={{...data,workflow:{...data.workflow,status:'RUNNING',can_resume:false}}} busy={false} action={action}/>);
  expect(screen.getByRole('button',{name:'恢复后续流程'})).toBeDisabled();
+});
+
+it('does not label a legacy archive-exists receipt as reverified',()=>{
+ const data={trials:[],resident:{status:'RUNNING',observed_at_ms:Date.now(),checkpoint:{status:'DAILY_CHECKPOINT_EXISTS'}}} as unknown as FactoryPayload;
+ render(<FactoryEvidence data={data} busy={false} action={vi.fn()}/>);
+ expect(screen.getByText(/已有当日检查点/)).toBeInTheDocument();
+ expect(screen.queryByText(/已复核/)).not.toBeInTheDocument();
 });

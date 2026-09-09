@@ -7,9 +7,7 @@ from tools.ai_factory_process_comparison import run_comparison
 from tools.ai_factory_verification import run_verification
 from tools.ai_factory_forward import run_observation
 from tools.btc_factory_research import seal,verified
-from tools.ai_factory_checkpoint import create_checkpoint
-import hashlib
-import os
+from tools.ai_factory_checkpoint import create_checkpoint,publish_checkpoint
 from tools.cache_io import atomic_write_json
 
 
@@ -42,11 +40,6 @@ def checkpoint(params):
     root=runtime_state_root();output=root/'data/cache/ai_factory_checkpoints';output.mkdir(parents=True,exist_ok=True)
     path=output/f"attempt-{params['attempt']}.zip"
     if not path.exists():report=create_checkpoint(root,path)
-    else:report={'status':'EXISTING_IMMUTABLE_CHECKPOINT'}
-    latest=root/'data/cache/ai_factory_checkpoint.zip';temporary=latest.with_suffix('.partial')
-    with path.open('rb') as source,temporary.open('wb') as target:
-        os.chmod(temporary,0o600)
-        for chunk in iter(lambda:source.read(1024*1024),b''):target.write(chunk)
-        target.flush();os.fsync(target.fileno())
-    os.replace(temporary,latest)
+    else:report={'status':'VERIFIED_EXISTING_CHECKPOINT'}
+    publish_checkpoint(path,root/'data/cache/ai_factory_checkpoint.zip')
     return seal(report)

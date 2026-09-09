@@ -2,7 +2,7 @@ import {useId,useState} from 'react';
 import type {FactoryPayload} from '@/lib/types/ai-factory';
 import {Panel,Empty,Badge} from './components';
 import {Chart} from './Charts';
-import {fmt,stamp} from './data';
+import {fmt,stamp,statusLabel} from './data';
 import {ProfitabilityAttribution} from './ProfitabilityAttribution';
 import {ProfitabilityStudy} from './ProfitabilityStudy';
 import {ProfitabilityInputUpload} from './ProfitabilityInputUpload';
@@ -25,7 +25,8 @@ export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayl
  <div className="f-evidence-nav" role="tablist" aria-label="研究证据工作区">{tabs.map((name,i)=><button key={name} role="tab" id={`${id}-tab-${i}`} aria-controls={`${id}-panel`} aria-selected={tab===i} tabIndex={tab===i?0:-1} onClick={()=>setTab(i)} onKeyDown={event=>{let next=i;if(event.key==='ArrowRight')next=(i+1)%tabs.length;else if(event.key==='ArrowLeft')next=(i+tabs.length-1)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();setTab(next);document.getElementById(`${id}-tab-${next}`)?.focus();}}>{name}</button>)}</div>
  <div className="f-evidence-stack" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${tab}`} tabIndex={0}>
  {tab===0&&<>
- <Panel title="常驻研究观察" note="此状态只覆盖当前状态根中的小时观察工作者"><div className="f-toolbar"><Badge value={residentStale?'STALE':resident?.status??'NOT_CONFIGURED'}/><span>最近心跳 {stamp(resident?.observed_at_ms,true)}</span><span>检查点 {resident?.checkpoint?.status??'尚无记录'}</span></div><p className="f-message">{residentStale?'工作者超过三分钟未更新，请查看运行日志。':'研究状态与正式交易服务分开显示；没有心跳时不推断后台正在运行。'}</p></Panel>
+ <Panel title="常驻研究观察" note="此状态只覆盖当前状态根中的小时观察工作者"><div className="f-toolbar"><Badge value={residentStale?'STALE':resident?.status??'NOT_CONFIGURED'}/><span>最近心跳 {stamp(resident?.observed_at_ms,true)}</span><span>检查点 {resident?.checkpoint?.status?statusLabel(resident.checkpoint.status):'尚无记录'}</span></div><p className="f-message">{residentStale?'工作者超过三分钟未更新，请查看运行日志。':'研究状态与正式交易服务分开显示；没有心跳时不推断后台正在运行。'}</p></Panel>
+ {resident?.checkpoint?.status==='RETRY_REQUIRED'&&<p className="f-message" role="alert">检查点校验或发布失败，本次恢复未验收。请查看运行日志并处理存储问题；后台下一轮会重新校验。保留的下载文件不能作为本次备份成功的依据。</p>}
  <Panel title="自动化流程" note="研究完成后自动进行六种压力诊断、两次共享账户对照、三折完整过程比较、验证包准备与前向激活"><div className="f-toolbar"><Badge value={workflow?.status??'UNKNOWN'}/><span>{stages[workflow?.stage??'']??workflow?.stage??'实验 → 诊断 → 验证包 → 观察'}</span><button className="s-button" disabled={busy||!complete||!workflow?.can_resume} onClick={()=>action('resume')}>恢复后续流程</button></div><p className="f-message">{reasons[workflow?.reason??'']} {workflow?.run_id&&`Runner：${workflow.runner_status} · ${workflow.run_id}`}。流程完成表示研究处理结束，前向观察仍按自然时间持续积累。</p></Panel>
  <Panel title="来源读取记录" note="仅抓取所选公开方法页；拒绝重定向，无法读取时如实记录，旧研究不补造来源">
  {data?.source_capture?<><p className="f-message">读取时间 {stamp(data.source_capture.captured_at_ms,true)} · 当前公开资料，不代表历史当时可知</p><div className="s-table-wrap" role="region" aria-label="来源读取状态" tabIndex={0}><table className="s-table"><thead><tr><th>来源</th><th>读取状态</th><th>内容摘要身份 / 原因</th></tr></thead><tbody>{data.source_capture.records.map(r=><tr key={r.source_id}><td>{r.source_id}</td><td>{r.status==='CAPTURED_PUBLIC_TEXT'?'已获取公开文本':'无法读取'}</td><td>{r.content_sha256?.slice(0,16)??r.reason}</td></tr>)}</tbody></table></div></>:<p className="f-message">此版本没有来源抓取回执；方法来源清单可在 Alpha 生命周期工作区查看。</p>}

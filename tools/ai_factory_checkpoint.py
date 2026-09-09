@@ -18,6 +18,31 @@ def _sha(path):
     return h.hexdigest()
 
 
+def _copy_synced(source,destination):
+    with source.open('rb') as src,destination.open('xb') as dst:
+        os.chmod(destination,0o600)
+        for chunk in iter(lambda:src.read(1024*1024),b''):dst.write(chunk)
+        dst.flush();os.fsync(dst.fileno())
+
+
+def publish_checkpoint(archive,destination):
+    """Verify the bytes to be downloaded before atomically replacing the latest copy."""
+    archive=Path(archive);destination=Path(destination)
+    if archive.is_symlink() or destination.is_symlink() or archive.resolve()==destination.resolve():
+        raise ValueError('distinct regular checkpoint archive and download required')
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.checkpoint-',dir=destination.parent) as tmp:
+        stage=Path(tmp);copy=stage/'archive.zip'
+        _copy_synced(archive,copy)
+        restored=restore_checkpoint(copy,stage/'verification')
+        checksum=_sha(copy)
+        if _sha(archive)!=checksum:raise ValueError('checkpoint archive changed during publication')
+        replaced=not destination.exists() or _sha(destination)!=checksum
+        if replaced:os.replace(copy,destination)
+    return {'status':'VERIFIED_RESEARCH_DOWNLOAD','sha256':checksum,'files':restored['files'],
+            'layout':restored['layout'],'replaced':replaced,'production_restore_performed':False}
+
+
 def _files(base):
     paths=sorted(p for p in base.rglob('*') if p.suffix in ('.db','.json'))
     if len(paths)>100000:raise ValueError('checkpoint inventory exceeds bound')
@@ -76,10 +101,12 @@ def create_checkpoint(root,destination):
             z.writestr('checkpoint-manifest.json',json.dumps({'schema':schema,'layout':layout,'entries':entries},sort_keys=True))
         # Publish only after a complete archive can be verified and restored elsewhere.
         restore_checkpoint(archive,stage/'verification')
-        with archive.open('rb') as src,destination.open('xb') as dst:
-            os.chmod(destination,0o600)
-            for chunk in iter(lambda:src.read(1024*1024),b''):dst.write(chunk)
-            dst.flush();os.fsync(dst.fileno())
+        # Same-filesystem hard link publishes complete synced bytes without overwriting
+        # an immutable archive created by another worker while this one was copying.
+        with tempfile.TemporaryDirectory(prefix='.checkpoint-new-',dir=destination.parent) as tmp:
+            copy=Path(tmp)/'archive.zip';_copy_synced(archive,copy)
+            if _sha(copy)!=_sha(archive):raise ValueError('checkpoint publication content mismatch')
+            os.link(copy,destination)
     return {'status':'VERIFIED_RESEARCH_CHECKPOINT','layout':layout,'files':len(entries),'sha256':_sha(destination),
             'credential_paths_included':False,'encrypted':False,'production_restore_performed':False}
 
