@@ -40,13 +40,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/restore-performance-20260909/arm64-capture-ec02a770d-attempt1/.arm64-console-capture-_j9jhzb9/console-a.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/real-public-restore-20260909/arm64-capture-c59ff4c95-attempt2/.arm64-console-capture-0q6ujpj8/console-a.oci.tar,rewrite-timestamp=true",
         "-f",
-        "/home/kerstker/quantos-dev-output/restore-performance-20260909/source-ec02a770d/deploy/console.Dockerfile",
-        "/home/kerstker/quantos-dev-output/restore-performance-20260909/source-ec02a770d"
+        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/deploy/console.Dockerfile",
+        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95"
       ],
       "exit_code": 0,
-      "stderr_sha256": "933b6fa034387986e9b79eddfd400d4541474c625c92cfa5bec815a099e65cd3",
+      "stderr_sha256": "338c65dc31c97cfa5512dd383d84657af258aaeb7fe8311249c14401c90c0f6b",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -87,13 +87,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/restore-performance-20260909/arm64-capture-ec02a770d-attempt1/.arm64-console-capture-_j9jhzb9/console-b.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/real-public-restore-20260909/arm64-capture-c59ff4c95-attempt2/.arm64-console-capture-0q6ujpj8/console-b.oci.tar,rewrite-timestamp=true",
         "-f",
-        "/home/kerstker/quantos-dev-output/restore-performance-20260909/source-ec02a770d/deploy/console.Dockerfile",
-        "/home/kerstker/quantos-dev-output/restore-performance-20260909/source-ec02a770d"
+        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/deploy/console.Dockerfile",
+        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95"
       ],
       "exit_code": 0,
-      "stderr_sha256": "c7eabecc8dece114b11e921b0dd10654078a05cceb67c69d9610a31bf1df1e76",
+      "stderr_sha256": "620e82863301aaefff7d671ccf820dd9738ed760d1da5afc3b8634d3dae2aeed",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
@@ -233,7 +233,7 @@
   ],
   "mode": "LOCAL_NATIVE_ARM64_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1788965422,
+  "observed_at": 1788971444,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
@@ -253,7 +253,7 @@
         ],
         "exit_code": 0,
         "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "stdout_sha256": "276dc7da22532a08e668388a3f56f0a7e92cf9eadc36e97e421fcc6cbd512d9b"
+        "stdout_sha256": "05f5acc3098ea17eec3a100aa74c42acfe0bc5db652d6268f61dd177132645f1"
       },
       {
         "argv": [
@@ -276,7 +276,7 @@
         "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
       }
     ],
-    "commit": "ec02a770d14befdec2a32e23140a87db130c2cb5",
+    "commit": "c59ff4c9550a4694c5355af5d4b1adc87346dda0",
     "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
   },
   "source_date_epoch": 1781569204,
