@@ -1,6 +1,7 @@
 """Finite automatic P3/P4 acquisition and research, isolated from frozen P6 predictions."""
 from pathlib import Path
 import time
+import threading
 
 from services.research.profitability_causal_information import make_plan,observation,panel,HOUR
 from tools.profitability_causal_capture import capture_information
@@ -10,6 +11,8 @@ from tools.btc_factory_research import verified,seal
 from tools.perpetual_replay_research import source_identity
 from tools.cache_io import atomic_write_json
 from tools.ashare_alpha_runtime_lock import acquire_runtime_lock
+
+_LOCK=threading.Lock()
 
 
 def _study_summary(result):
@@ -51,7 +54,7 @@ def advance_information(root,attempt,*,register=False,clock=lambda:time.time_ns(
     base=Path(root)/'data/cache/profitability'/str(attempt);output=base/'causal'
     if not register and not (output/'plan.json').exists():return None
     output.mkdir(parents=True,exist_ok=True)
-    with acquire_runtime_lock(output/'worker.lock') as acquired:
+    with acquire_runtime_lock(output/'worker.lock',process_lock=_LOCK) as acquired:
         if not acquired:return {'status':'BUSY','economic_eligible':False}
         try:
             now=clock();p0=verified(base/'p0/result.json')

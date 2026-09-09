@@ -42,6 +42,19 @@ def test_registration_recovery_actual_clock_and_no_repeated_capture(root):
     assert [q['ready_rows'] for q in current['quotes']]==[1,1]
 
 
+def test_collection_can_nest_under_orchestrator_but_same_worker_file_stays_exclusive(root):
+    import threading
+    from tools.ashare_alpha_runtime_lock import acquire_runtime_lock
+    with acquire_runtime_lock(root/'outer-study.lock') as outer:
+        assert outer
+        result=module.advance_information(root,1,register=True,clock=lambda:47*HOUR+1)
+        assert result['status']=='WAITING_WINDOW'
+    worker=root/'data/cache/profitability/1/causal/worker.lock'
+    with acquire_runtime_lock(worker,process_lock=threading.Lock()) as same_file:
+        assert same_file
+        assert module.advance_information(root,1,clock=lambda:48*HOUR+1000)['status']=='BUSY'
+
+
 def test_failed_public_receipts_remain_visible_without_backfill(root):
     module.advance_information(root,1,register=True,clock=lambda:47*HOUR+1)
     def failed(output,*,slot,clock):
