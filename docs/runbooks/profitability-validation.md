@@ -94,3 +94,5 @@ python -m tools.profitability_forward_account --state-root <同一隔离研究�
 第二条持续至预登记窗口成熟或出现不可恢复缺口/预算耗尽；中断后重复同一命令恢复。每次更新输出简短状态，完整证据在 profitability/<attempt>/p6。真实场所费用仍未知；这是冻结参考目标的模拟账户，不是实际下单盈亏。
 
 含盈利证据的新检查点恢复返回 layout=CACHE_ROOT_V2，隔离目标下为 ai_factory/、profitability/、profitability_inputs/。旧包返回 FACTORY_ROOT_V1，目标下直接为 factory.db 等。调用者必须按返回布局解释，不能将两者混用。生产恢复与异机迁移不包含在本开发操作内。
+
+资金费覆盖检查允许最多一秒的场所结算时钟偏移；仅用于辨别相邻事件覆盖，原始事件毫秒时间完整进入账本。不填补缺失资金费，明显超过八小时的缺口仍拒绝。当前规则仍属技术约束，不构成独立场所规则认证。

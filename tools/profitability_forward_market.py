@@ -9,6 +9,8 @@ from tools.profitability_study import write_new
 
 DAY=86400000
 MINUTE=60000
+# Coverage-only tolerance for venue settlement clock jitter; never round ledger events.
+FUNDING_CLOCK_TOLERANCE_MS=1000
 
 
 def market_from_receipts(receipts,*,start,end):
@@ -39,8 +41,8 @@ def market_from_receipts(receipts,*,start,end):
                 or not rate.is_finite() or abs(rate)>1 or not mark.is_finite() or not 0<mark<Decimal('1e12') or at>records[0]['received_ms']):
             raise ValueError('invalid ordered settled funding')
         previous=at;funding.append({'time':at,'rate':rate,'mark':mark})
-    if (not funding or funding[0]['time']>start-8*3600000 or funding[-1]['time']<end-8*3600000
-            or any(b['time']-a['time']>8*3600000 for a,b in zip(funding,funding[1:]))):
+    if (not funding or funding[0]['time']>start-8*3600000+FUNDING_CLOCK_TOLERANCE_MS or funding[-1]['time']<end-8*3600000-FUNDING_CLOCK_TOLERANCE_MS
+            or any(b['time']-a['time']>8*3600000+FUNDING_CLOCK_TOLERANCE_MS for a,b in zip(funding,funding[1:]))):
         raise ValueError('funding coverage unavailable')
     rows,trade=arrays['klines'];mark=arrays['markPriceKlines'][1]
     volume={}

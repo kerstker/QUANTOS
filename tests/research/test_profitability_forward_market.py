@@ -26,3 +26,23 @@ def test_market_gaps_are_not_replaced_by_zero_cost_or_flat_prices(fault):
     if fault=='unclosed':rows[1]['received_ms']=end
     if fault=='funding_gap':rows[2]['payload']=[]
     with pytest.raises(ValueError):market_from_receipts(rows,start=start,end=end)
+
+
+def test_venue_settlement_millisecond_offsets_preserve_actual_event_times():
+    start,end,rows=receipts()
+    for i,row in enumerate(rows[2]['payload']):row['fundingTime']+=i%6
+    expected=[r['fundingTime'] for r in rows[2]['payload']]
+    market=market_from_receipts(rows,start=start,end=end)
+    assert [r['time'] for r in market['funding']]==expected
+
+
+def test_settlement_clock_tolerance_does_not_hide_missing_settlement():
+    start,end,rows=receipts()
+    rows[2]['payload'].pop(2)
+    with pytest.raises(ValueError,match='funding coverage'):market_from_receipts(rows,start=start,end=end)
+
+
+def test_settlement_clock_tolerance_is_bounded_to_one_second():
+    start,end,rows=receipts()
+    rows[2]['payload'][2]['fundingTime']+=1001
+    with pytest.raises(ValueError,match='funding coverage'):market_from_receipts(rows,start=start,end=end)
