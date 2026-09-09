@@ -2025,6 +2025,21 @@ def test_portfolio_research_contract_keeps_account_curves_and_hides_training_dat
     assert report['outer_cases'][0]['metrics']['equity'][0]['equity']=='1500'
 
 
+def test_portfolio_projects_large_trial_evidence_without_exposing_raw_details(tmp_path):
+    import pytest
+    from services.console.api.factory_portfolio import portfolio_payload
+    from services.console.api.forward_dashboard import _read
+    from tools.profitability_study import write_new
+    dest=tmp_path/'data/cache/ai_factory/1/portfolio';dest.mkdir(parents=True)
+    write_new(dest/'result.json',{'authoritative':False,'economic_eligible':False,'status':'COMPLETED_TECHNICAL_ONLY',
+        'inner_trials':[{'status':'PASSED','spec':{'id':0},'metrics':{'net_pnl':0.,'raw_replay':'x'*4_100_000}}],
+        'outer_cases':[]})
+    with pytest.raises(ValueError):_read(dest/'result.json')
+    value=portfolio_payload(dest)
+    assert value['inner_trials'][0]['metrics']=={'net_pnl':0.}
+    assert len(json.dumps(value))<2000
+
+
 def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_path, monkeypatch):
     from services.console.api import runtime_health
     monkeypatch.setattr(runtime_health, "_STATE_ROOT", tmp_path)

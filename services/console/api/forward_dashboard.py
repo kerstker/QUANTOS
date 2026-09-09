@@ -11,10 +11,14 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 router=APIRouter()
 
 
-def _read(path: Path) -> dict:
-    if path.is_symlink() or path.stat().st_size>4_000_000:
+def _read(path: Path,*,max_bytes: int=4_000_000) -> dict:
+    if type(max_bytes) is not int or not 1<=max_bytes<=16_000_000:
+        raise ValueError('bounded observation read required')
+    if path.is_symlink() or path.stat().st_size>max_bytes:
         raise ValueError('unsafe observation artifact')
-    data=load_json_without_duplicate_keys(path.read_bytes())
+    with path.open('rb') as stream:raw=stream.read(max_bytes+1)
+    if len(raw)>max_bytes:raise ValueError('observation artifact grew beyond limit')
+    data=load_json_without_duplicate_keys(raw)
     if not isinstance(data,dict):
         raise ValueError('invalid observation artifact')
     expected=hashlib.sha256(json.dumps({k:v for k,v in data.items() if k!='result_hash'},sort_keys=True,allow_nan=False).encode()).hexdigest()

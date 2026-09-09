@@ -5,7 +5,9 @@ from services.console.api.forward_dashboard import _read
 def portfolio_payload(directory):
     result_path=directory/'result.json';status_path=directory/'status.json'
     if not result_path.exists() and not status_path.exists():return None
-    value=_read(result_path if result_path.exists() else status_path)
+    # Full immutable trial receipts stay on disk; only the bounded projection
+    # below crosses HTTP. Real 16-candidate studies exceed the generic 4 MB cap.
+    value=_read(result_path if result_path.exists() else status_path,max_bytes=16_000_000)
     if value.get('authoritative') is not False or value.get('economic_eligible') is not False:
         raise ValueError('invalid portfolio research boundary')
     fields=('schema','status','stage','reason','decision','selected','baseline','components','inner_trials_attempted',
