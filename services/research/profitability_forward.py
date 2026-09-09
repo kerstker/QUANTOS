@@ -2,6 +2,7 @@
 import math
 import re
 from services.research.ai_factory_lifecycle import model_diagnostics
+from services.research.ai_factory_store import digest
 
 
 def forward_summary(forecasts, labels, *, as_of_ms):
@@ -29,7 +30,7 @@ def forward_summary(forecasts, labels, *, as_of_ms):
         if slot in issued and (available<issued[slot]['exit_ms'] or row['prediction']!=issued[slot]['prediction']):
             raise ValueError('label conflicts with frozen prediction')
         if slot in issued and (row.get('model_hash',issued[slot]['model_hash'])!=issued[slot]['model_hash']
-                               or row.get('forecast_hash') is not None and row['forecast_hash']!=issued[slot].get('result_hash')):
+                               or row.get('forecast_hash') is not None and row['forecast_hash']!=digest(issued[slot])):
             raise ValueError('label/model/forecast identity mismatch')
         mature[slot]=row
     slots=sorted(issued);common=sorted(set(issued)&set(mature));gaps=[]
