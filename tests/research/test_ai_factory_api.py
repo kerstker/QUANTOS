@@ -34,6 +34,22 @@ def test_factory_mutation_requires_auth(monkeypatch,tmp_path):
     assert client.post('/factory',headers=headers,json={**request,'budget':4}).status_code==409
     assert client.post('/factory',headers=headers,json={'action':'pause','attempt':1}).status_code==200
 
+
+def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monkeypatch,tmp_path):
+    from services.research_runner import main
+    monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
+    client=TestClient(main.app);body={'action':'profitability','attempt':1}
+    assert client.post('/factory',json=body).status_code==401
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'})
+    headers={'X-Runner-Token':main._RUNNER_TOKEN,'X-Operator':'test'}
+    assert client.post('/factory',headers=headers,json=body).status_code==409
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:store.update(1,'COMPLETED',{})
+    calls=[]
+    monkeypatch.setattr(main._queue,'submit',lambda *args,**kwargs:calls.append(args) or 'research-only-run')
+    assert client.post('/factory',headers=headers,json=body).status_code==200
+    assert calls==[('profitability_study',{'attempt':1})]
+
 def test_provider_success_requires_current_configuration_and_recent_receipt(tmp_path,monkeypatch):
     import time
     from services.research.ai_factory_provider_contract import provider_identity

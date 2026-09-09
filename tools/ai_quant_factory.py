@@ -144,9 +144,17 @@ def execute(store,attempt,panel,evaluate,identity,output,proposal=propose):
         return store.get(attempt)
 
 
-def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,slip_bps=5,fee_bps=4,window=None):
+def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,slip_bps=5,fee_bps=4,window=None,position_policy=None,timing_wait=False):
     from services.research.perpetual_alpha import replay
     from tools.perpetual_alpha_research import metrics
+    if position_policy is not None:
+        from services.research.profitability_decision import POLICY_IDS
+        if not cost_aware or position_policy not in POLICY_IDS:raise ValueError('invalid registered policy')
+    if type(timing_wait) is not bool or timing_wait and not cost_aware:raise ValueError('invalid timing policy')
+    timing=None;timing_trace=[]
+    if timing_wait:
+        from services.research.profitability_timing import TimingGate
+        timing=TimingGate(wait_ms=HOUR)
     day=24*HOUR
     weights=dict(zip((t+300000).tolist(),targets(p,spec['threshold_bps'])))
     # The canonical ledger retains its whole-day reconciliation contract.
@@ -174,11 +182,26 @@ def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,sli
             if equity<=0:return 0.
             current=float(context['quantity'])*float(context['mark'])/equity
             adjusted_mu=float(np.sign(mu)*max(0,abs(mu)-spec['threshold_bps']/20000))
-            decision=decide(prediction=adjusted_mu,variance=variance,current=current,
-                            fee_bps=fee_bps,slip_bps=slip_bps,funding=funding)
+            inputs=dict(prediction=adjusted_mu,variance=variance,current=current,
+                        fee_bps=fee_bps,slip_bps=slip_bps,funding=funding)
+            if position_policy is None:
+                decision=decide(**inputs)
+            else:
+                from services.research.profitability_decision import decide_registered
+                decision=decide_registered(position_policy,**inputs)
             decision.update(raw_prediction=float(mu),confidence_haircut_bps=spec['threshold_bps']/2)
             reason_counts[decision['reason']]=reason_counts.get(decision['reason'],0)+1
             if len(trace)<128:trace.append({'time':at,**decision})
+            if timing is not None:
+                # Use observed minute OPEN prices strictly before the decision.
+                # No future extrema, current close, or future execution quote enters timing.
+                right=int(np.searchsorted(market['times'],at,side='left'))-1
+                left=int(np.searchsorted(market['times'],at-HOUR,side='right'))-1
+                if min(left,right)<0:raise ValueError('timing signal history unavailable')
+                short=float(market['prices'][right]/market['prices'][left]-1)
+                timed=timing.decide(at=at,current=current,target=decision['target'],short_signal=short)
+                timing_trace.append(timed)
+                return timed['target']
             return decision['target']
     result=replay(**{**market,'start':start,'end':end},decision=lambda at,held:weights.get(at,0.),
                   context_decision=context_decision,slip_bps=D(slip_bps),taker_fee_bps=D(fee_bps),
@@ -189,8 +212,9 @@ def evaluate_market(market,spec,t,p,*,cost_aware=False,variance_by_slot=None,sli
             'drawdown':stats['max_drawdown'],'fees':stats['fees'],'funding':stats['funding'],
             'fills':stats['fills'],'equity':result['daily'],'start_ms':start,'end_ms':end,
             'decision_trace':trace,'decision_counts':reason_counts,
+            'timing_trace':timing_trace,'timing_pending_at_end':timing.pending if timing else None,
             'order_status_counts':dict(Counter(r['status'] for r in result['orders'])),
-            'decision_policy':'DISCRETE_COST_RISK_V1' if cost_aware else 'FIXED_THRESHOLD_V1'}
+            'decision_policy':position_policy or ('DISCRETE_COST_RISK_V1' if cost_aware else 'FIXED_THRESHOLD_V1')}
 
 
 def run_factory(params):

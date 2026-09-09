@@ -404,6 +404,11 @@
           "path": "services/console/api/ai_factory.py"
         },
         {
+          "line": 13,
+          "module": "services.research.profitability_forward",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
           "line": 5,
           "module": "services.research.ai_factory_store",
           "path": "services/console/api/ai_factory_lifecycle.py"
@@ -1279,6 +1284,16 @@
           "path": "services/research/perpetual_alpha.py"
         },
         {
+          "line": 4,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_attribution.py"
+        },
+        {
+          "line": 5,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_trajectory.py"
+        },
+        {
           "line": 3,
           "module": "services.execution.impact",
           "path": "services/research/realism/impact.py"
@@ -1614,7 +1629,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c21947e374af406c99de130ce3dd6b27c9106970d2836ba8d6759a26012045ff",
+  "graph_sha256": "dc314b6f9781772ebc201c8b8d76222476360f71de865b7c98be618766bdb72c",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1652,7 +1667,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 527,
+  "source_file_count": 534,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

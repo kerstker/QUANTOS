@@ -2,6 +2,19 @@ import {it,expect,vi} from 'vitest';
 import {render,screen,fireEvent} from '@testing-library/react';
 import {FactoryEvidence} from './FactoryEvidence';
 import type {FactoryPayload} from '@/lib/types/ai-factory';
+it('keeps missing profitability evidence unknown instead of inferring gross profits',()=>{
+ render(<FactoryEvidence data={null} busy={false} action={vi.fn()}/>);
+ fireEvent.click(screen.getByRole('tab',{name:'成本决策'}));
+ expect(screen.getByText('完整成本归因尚不可用')).toBeInTheDocument();
+});
+it('queues the bounded study only for a completed frozen experiment',()=>{
+ const action=vi.fn();const data={selected:{state:'COMPLETED',result:{}},trials:[]} as unknown as FactoryPayload;
+ render(<FactoryEvidence data={data} busy={false} action={action}/>);
+ fireEvent.click(screen.getByRole('tab',{name:'成本决策'}));
+ fireEvent.click(screen.getByRole('button',{name:'运行盈利验证'}));
+ expect(action).toHaveBeenCalledWith('profitability');
+ expect(screen.getByText('缺少真实场所轨迹')).toBeInTheDocument();
+});
 it('activates observations only for a completed model and routes each action',()=>{
  const action=vi.fn();const data={selected:{state:'COMPLETED',result:{}},trials:[],forward:null,assessment:null,verification:null,pipeline:null} as unknown as FactoryPayload;
  render(<FactoryEvidence data={data} busy={false} action={action}/>);

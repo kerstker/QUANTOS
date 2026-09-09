@@ -580,7 +580,18 @@ def _adapt_ai_factory(result, *, source='tools/ai_quant_factory.py'):
             'caveats':['研究诊断结果；不建立 Paper 或实盘经济授权。'], 'provenance':source}
 
 
+def _adapt_profitability(result):
+    summary={'attempt':result['attempt'],'stages':{stage:{k:row[k] for k in ('status','decision','result_hash') if k in row}
+             for stage,row in result.items() if stage!='attempt' and isinstance(row,dict)}}
+    return {'title':'盈利能力验证 · 归因与持仓对照','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+            'metrics':{'factory_attempt':result['attempt'],'profitability_json':json.dumps(summary,sort_keys=True)},
+            'caveats':['成本后历史技术比较；不代表新外层样本或经济准入。'],
+            'provenance':'tools/profitability_workflow.py'}
+
+
 RUN_KINDS: dict = {
+    'profitability_study': RunSpec('tools.profitability_workflow:run_profitability', {'attempt':int},
+        _adapt_profitability,'盈利能力验证 P0–P5',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_comparison': RunSpec('tools.ai_factory_process_comparison:run_comparison', {'attempt':int},
         _adapt_ai_factory_comparison,'三折研究过程对照',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_pipeline': RunSpec('tools.ai_factory_pipeline:run_pipeline', {'attempt':int},

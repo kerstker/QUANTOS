@@ -30,6 +30,19 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_factory_execution_cost_contract_keeps_unknown_real_costs():
+    from services.research.ai_factory_execution_feedback import execution_feedback
+    from services.research.perpetual_alpha import replay
+    from tests.research.test_perpetual_alpha import market
+    report = execution_feedback(replay(**market(), decision=lambda at, held: .25,
+                                      slip_bps=5, stop=True))['profitability_attribution']
+    assert report['status'] == 'RECONCILED_TECHNICAL_ONLY'
+    assert report['actual_venue_fees'] is None and report['spread_component'] is None
+    assert report['economic_eligible'] is False
+    assert report['reconciliation_residual'] == '0'
+    assert set(report['position_contribution']) == {'long', 'short'}
+
+
 def test_system_health_includes_operational_failure_receipts(tmp_path, monkeypatch):
     from services.console.api import runtime_health, system_views
 
@@ -80,7 +93,7 @@ SNAPSHOT_STATUSES = {
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ai-factory-lifecycle": ("", ("models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
-    "/api/v1/console/ai-factory": ("", ("sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture")),
+    "/api/v1/console/ai-factory": ("", ("sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),
     "/api/v1/console/market-dashboard": ("", ("symbol", "symbols", "status", "as_of_ms", "observed_at_ms", "candles", "samples", "depth", "integrity", "reason")),
     "/api/v1/console/overview": ("", ("stats", "funnel", "agents")),

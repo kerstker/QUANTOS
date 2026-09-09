@@ -9,6 +9,8 @@ from services.research.ai_factory_provider_contract import provider_status, prov
 from services.console.api.forward_dashboard import _read
 
 from services.console.api.ai_factory_workflow import workflow_payload
+from services.console.api.profitability_views import profitability_payload
+from services.research.profitability_forward import forward_summary
 
 router=APIRouter()
 
@@ -80,7 +82,13 @@ def factory_payload(root,attempt=None):
                 and 0<=now-received<=900000):
                 provider={**provider,'status':'RECENT_CALL_SUCCEEDED','connected':True}
                 break
-    return {**data,'source_capture':source_capture,'workflow':workflow_payload(root,data['selected'],data['events'],pipeline),'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
+    forward_profitability=None
+    if forward:
+        try:
+            forward_profitability=forward_summary(forward.get('recent_forecasts',[]),forward.get('recent_labels',[]),as_of_ms=now)
+        except (ValueError,KeyError,TypeError):
+            forward_profitability={'status':'UNKNOWN','reason':'FORWARD_WINDOW_CONTRACT_FAILED','economic_eligible':False}
+    return {**data,'forward_profitability':forward_profitability,'profitability':profitability_payload(root,data['selected']['attempt'] if data['selected'] else None),'source_capture':source_capture,'workflow':workflow_payload(root,data['selected'],data['events'],pipeline),'resident':resident,'forward':forward,'assessment':assessment,'verification':verification,'pipeline':pipeline,'comparison':comparison,'errors':errors,'source':'BACKEND_COMPUTED_SNAPSHOT','read_only':True,'api_version':'0.1.0',
             'data_provenance':'REAL_AI_FACTORY_DIAGNOSTIC','snapshot_status':'REAL' if data['sessions'] else 'NO_SNAPSHOT',
             'authoritative':False,'as_of_ms':time.time_ns()//1000000,
             'provider':{key:provider[key] for key in ('status','model','connected')}}

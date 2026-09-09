@@ -1,5 +1,6 @@
 """Expose canonical replay receipts without turning simulations into venue fills."""
 from collections import Counter
+from services.research.profitability_attribution import attribute_replay
 
 
 def execution_feedback(result):
@@ -7,6 +8,7 @@ def execution_feedback(result):
     if result.get('cash_model')!='CANONICAL_LINEAR_USDC_PERPETUAL' or reconciliation.get('residual')!='0':
         raise ValueError('canonical reconciled replay required')
     return {'schema':'QUANTOS_FACTORY_EXECUTION_FEEDBACK_V1','evidence_type':'TECHNICAL_REPLAY',
+            'profitability_attribution':attribute_replay(result),
             'venue_receipts_verified':False,'economic_eligible':False,
             'reconciliation':dict(reconciliation),'order_counts':dict(Counter(r['status'] for r in result['orders'])),
             'fill_count':len(result['fills']),'order_count':len(result['orders']),

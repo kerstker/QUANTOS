@@ -133,6 +133,7 @@ def test_health_needs_no_token(tmp_path, monkeypatch):
         "orderblock_research",
         "perpetual_alpha",
         "perpetual_replay",
+        "profitability_study",
     ]
     assert r.json()["quarantined_kinds"] == {
         "ashare_alpha": "INVALIDATED_PERP_LEDGER_V1",

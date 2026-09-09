@@ -3,6 +3,9 @@ import type {FactoryPayload} from '@/lib/types/ai-factory';
 import {Panel,Empty,Badge} from './components';
 import {Chart} from './Charts';
 import {fmt,stamp} from './data';
+import {ProfitabilityAttribution} from './ProfitabilityAttribution';
+import {ProfitabilityStudy} from './ProfitabilityStudy';
+import {ProfitabilityReadiness} from './ProfitabilityReadiness';
 
 export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void}) {
  const workflow=data?.workflow;
@@ -39,6 +42,9 @@ export function FactoryEvidence({data,busy,action}:{data:FactoryPayload|null;bus
  <Chart title="预测与实际 · 成熟前向标签" rows={(forward?.recent_labels??[]).map(r=>({label:stamp(r.slot_ms,true),time:r.slot_ms,prediction:r.prediction*100,realized:r.realized_return*100}))} series={[{key:'prediction',label:'事前预测'},{key:'realized',label:'成熟实际收益'}]} unit="%" note="标签在实际收到终点参考行情后成熟。"/>
  </>}
  {tab===2&&<>
+ <ProfitabilityStudy data={data?.profitability} busy={busy} complete={complete} action={()=>action('profitability')}/>
+ <ProfitabilityReadiness study={data?.profitability} forward={data?.forward_profitability}/>
+ {!data?.profitability?.p0&&<ProfitabilityAttribution data={execution?.profitability_attribution}/>}
  <Panel title="执行与现金流归因" note="直接读取唯一账本；这里是技术回放，尚无真实场所成交验收">
  {execution?<><div className="f-metrics">{[['价格损益','price_pnl'],['费用','fee'],['资金费','funding'],['对账残差','residual']].map(([label,key])=><div key={key}><small>{label} · USDC</small><strong>{execution.reconciliation[key]??'—'}</strong></div>)}</div><p className="f-message">订单记录 {execution.order_count} · 成交 {execution.fill_count} · 平均敞口 {fmt(execution.average_exposure,3)}。滑点已计入成交价格，不重复扣费。</p><div className="s-table-wrap" role="region" aria-label="技术成交回执" tabIndex={0}><table className="s-table"><thead><tr><th>时间</th><th>数量</th><th>参考价 → 成交价</th><th>费用</th><th>原因</th></tr></thead><tbody>{execution.recent_fills.map((f,i)=><tr key={i}><td>{stamp(f.time,true)}</td><td>{f.quantity}</td><td>{f.reference} → {f.price}</td><td>{f.fee}</td><td>{f.reason}</td></tr>)}</tbody></table></div></>:<Empty title="此版本尚无执行归因回执">新研究会保留账本现金流与末尾成交记录；原有冻结结果不回写。</Empty>}
  </Panel>
