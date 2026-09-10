@@ -15,6 +15,8 @@ CORE_MODULES = (
 
 SQLITE_PERSISTENCE_OWNERS = {
     "services/research/ai_factory_store.py",
+    # Dedicated append-only research episode database; scope/citation checks live in its API.
+    "services/research/ai_factory_episodes.py",
     "services/research/alpha_workflow_store.py",
     "services/research/experiment_registry/store.py",
     "services/research/experiment_registry/family_schema_runtime.py",
