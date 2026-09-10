@@ -1,11 +1,11 @@
 {
-  "checks_manifest_sha256": "7224628adc5dd3c9cbcf973404d47bffbbf0283e4dde377e50e97dcfc6ba4239",
-  "commit": "c59ff4c9550a4694c5355af5d4b1adc87346dda0",
-  "derived_refresh_manifest_sha256": "770ea57a89c7d3fd2b15c9cbdce8e42f5a7e69326f58989c5bff8904f345e492",
-  "duration_ms": 2100519,
-  "generated_at_ms": 1788973600012,
+  "checks_manifest_sha256": "552487d40c17ae67d29f80bdb18123d40a2a1b9ec36da4fa6246be77c1340532",
+  "commit": "fce9c6c7a9b0527634d801cccd0279f31b8d76a0",
+  "derived_refresh_manifest_sha256": "3d2cfa5b6d806f4292aa31f9d8ab99e2e9b735a72586cf932b5b45936f9be00a",
+  "duration_ms": 2562600,
+  "generated_at_ms": 1789003930174,
   "overall_status": "PASS",
-  "phase13_manifest_sha256": "2eeb08013df0138d76389e5849b3a48ed17f4eb84efe3384ce9a7cb8874f58d2",
+  "phase13_manifest_sha256": "3a715afcfa6a5144263017a5a1e1976522af88ef521c36ced02457c2fff3ef32",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -15,11 +15,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_python_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_python_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 517,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 317,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -28,10 +28,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_npm_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_npm_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
       "duration_ms": 114,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
@@ -41,11 +41,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_actions_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_actions_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 265,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 114,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -54,11 +54,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_arm64_container_audit_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_arm64_container_audit_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 466,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 316,
       "returncode": 0,
       "stage": "container-trivy-arm64-evidence:current",
       "status": "PASS",
@@ -67,11 +67,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_arm64_container_reproducibility_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_arm64_container_reproducibility_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 517,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 265,
       "returncode": 0,
       "stage": "container-reproducibility-arm64-evidence:current",
       "status": "PASS",
@@ -80,11 +80,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_arm64_console_smoke_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_arm64_console_smoke_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 468,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 265,
       "returncode": 0,
       "stage": "console-smoke-arm64-evidence:current",
       "status": "PASS",
@@ -93,11 +93,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_event_schema_catalog.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_event_schema_catalog.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 1023,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 821,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -106,11 +106,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_service_import_graph.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_service_import_graph.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 3082,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 3539,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -119,10 +119,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/tools/provision_artifact_admission_authority.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/tools/provision_artifact_admission_authority.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 516,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 518,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -131,11 +131,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/update_model_risk_history.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/update_model_risk_history.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 616,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 620,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -148,8 +148,8 @@
         "tools.crowding_metric_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 1675,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 1073,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -162,8 +162,8 @@
         "tools.feature_distribution_drift_research",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 13142,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 13346,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -172,11 +172,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/check_backup_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/check_backup_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 265,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 65,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -185,10 +185,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/run_risk_recovery_gate.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/run_risk_recovery_gate.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 670,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 1021,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -197,10 +197,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/apps/research-console/scripts/run_paper_to_live_governance_check.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/apps/research-console/scripts/run_paper_to_live_governance_check.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 8811,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 8922,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -209,10 +209,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_supply_chain_evidence.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_supply_chain_evidence.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 1927,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 1574,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -221,11 +221,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_supply_chain_evidence.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_supply_chain_evidence.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 1675,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 2178,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -234,10 +234,10 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/assess_top_tier.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/assess_top_tier.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 28568,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 28785,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -246,11 +246,11 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/assess_top_tier.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/assess_top_tier.py",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 28253,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 29137,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -285,8 +285,8 @@
         "services/trading/dry_run_adapters/tests/test_dry_run.py",
         "tests/integration/test_dry_run_all.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 1589932,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 2033756,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -302,8 +302,8 @@
         "tests/trading",
         "tests/tools"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 241045,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 248159,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -315,8 +315,8 @@
         "run",
         "typecheck"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/apps/research-console",
-      "duration_ms": 10927,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/apps/research-console",
+      "duration_ms": 9986,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -328,8 +328,8 @@
         "run",
         "eslint"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/apps/research-console",
-      "duration_ms": 8313,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/apps/research-console",
+      "duration_ms": 8921,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -343,8 +343,8 @@
         "--maxWorkers=1",
         "--no-file-parallelism"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/apps/research-console",
-      "duration_ms": 108896,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/apps/research-console",
+      "duration_ms": 122660,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -356,8 +356,8 @@
         "run",
         "build"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/apps/research-console",
-      "duration_ms": 17196,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/apps/research-console",
+      "duration_ms": 16862,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -366,12 +366,12 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 3736,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 3430,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -380,13 +380,13 @@
     {
       "command": [
         "/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv/bin/python",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/scripts/generate_727_final_audit.py",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/scripts/generate_727_final_audit.py",
         "--repo-root",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
         "--check"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 4343,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 3427,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -398,10 +398,10 @@
         "-m",
         "pytest",
         "-q",
-        "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95/tests/governance/test_727_final_audit.py"
+        "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a/tests/governance/test_727_final_audit.py"
       ],
-      "cwd": "/home/kerstker/quantos-dev-output/real-public-restore-20260909/source-c59ff4c95",
-      "duration_ms": 23399,
+      "cwd": "/home/kerstker/quantos-dev-output/balder-roadmap-20260910/source-validation-fce9c6c7a",
+      "duration_ms": 22326,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -440,7 +440,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1788971499492,
+  "started_at_ms": 1789001367573,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -452,8 +452,8 @@
   "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
   "validation": {
     "current": true,
-    "generated_at": 1788973600012,
-    "run_id": "14da35da8068f5f9133356535601e6743184b9c8826a2c0fbf1721b4e47ed17c",
-    "source_commit": "c59ff4c9550a4694c5355af5d4b1adc87346dda0"
+    "generated_at": 1789003930174,
+    "run_id": "000351a4d467441d5566cca513d95934def52ec873ef862c84e6520198d73aa5",
+    "source_commit": "fce9c6c7a9b0527634d801cccd0279f31b8d76a0"
   }
 }
