@@ -106,3 +106,21 @@ it('shows distinct quantity filters, disabled price fields and honest legacy abs
  expect(screen.queryByRole('region',{name:'冻结价格与数量规则'})).not.toBeInTheDocument();
  expect(screen.getByText(/完整价格与数量规则尚未绑定/)).toBeInTheDocument();
 });
+
+it('shows liquidity fee assumptions without calling the zero fixed fallback a real fee',()=>{
+ const account:NonNullable<PassiveExecutionStudy['trials'][number]['account']>={
+  input_hash:'a'.repeat(64),result_hash:'b'.repeat(64),ledger_applied:true,actual_venue_fees:null,
+  simulated_fee_rate:null,history_count:0,equity_history:[],ending_state:{positions:{}},
+  reconciliation:{initial_equity:'1000',ending_equity:'1000',price_pnl:'0',fee:'0',spread:'0',impact:'0',
+   funding:'0',liquidation_fee:'0',insurance_adjustment:'0',adl_adjustment:'0',attributed_change:'0',residual:'0'},
+  fee_model:{scope:'EXPLICIT_SIMULATION_ASSUMPTION',actual_venue_fees:null,mode:'BY_FILL_LIQUIDITY_ROLE',
+   maker_fee_rate:'0',taker_fee_rate:'0.001',reservation_fee_rate:'0.001',role_source:'EXECUTION_MECHANISM_NOT_ORDER_TYPE'}};
+ render(<PassiveExecutionEvidence data={{...data,trials:[{...data.trials[0],account}]}}/>);
+ const fees=screen.getByRole('region',{name:'冻结成交费率'});
+ expect(fees).toHaveTextContent('被动成交（maker）');
+ expect(fees).toHaveTextContent('主动成交（taker）');
+ expect(fees).toHaveTextContent('0.001');
+ expect(fees).toHaveTextContent('预留费率');
+ expect(screen.getByText(/真实费用未知/)).toBeInTheDocument();
+ expect(screen.queryByText(/模拟费率 0，/)).not.toBeInTheDocument();
+});

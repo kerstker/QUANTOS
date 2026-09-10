@@ -12,12 +12,22 @@ const clock=(ms:number)=>iso(ms)==='未知'?'未知':iso(ms).slice(11,23);
 
 function AccountEvidence({account,quote}:{account:PassiveAccountEvidence;quote:string}) {
  const rows=account.equity_history.map(p=>({label:clock(p.timestamp),equity:Number(p.equity),drawdown:Number(p.drawdown)*100}));
+ const fees=account.fee_model;
+ const feeDescription=fees?.mode==='BY_FILL_LIQUIDITY_ROLE'?'按成交角色使用冻结模拟费率':account.simulated_fee_rate==null?'模拟费率材料缺失':`模拟费率 ${account.simulated_fee_rate}`;
  const fields:[keyof PassiveAccountEvidence['reconciliation'],string][]=[['initial_equity','初始权益'],['ending_equity','期末权益'],
   ['price_pnl','价格损益（含未平仓估值）'],['fee','模拟手续费（扣除）'],['spread','账本点差费用（扣除）'],
   ['impact','账本冲击费用（扣除）'],['funding','已结算资金费（有符号）'],['liquidation_fee','模拟强平费用（扣除）'],
   ['insurance_adjustment','保险调整'],['adl_adjustment','减仓调整'],['attributed_change','成本后权益变化'],['residual','对账差额']];
  return <>
- <p className="f-message">统一 Decimal 账本已核算本情景；模拟费率 {account.simulated_fee_rate}，真实费用未知，队列尚无真实回执校准。保证金采用保守模拟假设，不能据此认定实际盈利。</p>
+ <p className="f-message">统一 Decimal 账本已核算本情景；{feeDescription}，真实费用未知，队列尚无真实回执校准。保证金采用保守模拟假设，不能据此认定实际盈利。</p>
+ {fees&&<section role="region" aria-label="冻结成交费率">
+ <div className="s-table-wrap s-account-costs"><table className="s-table"><thead><tr><th>模拟成交角色</th><th>精确费率（比例）</th></tr></thead><tbody>
+ <tr><td>被动成交（maker）</td><td>{fees.maker_fee_rate}</td></tr>
+ <tr><td>主动成交（taker）</td><td>{fees.taker_fee_rate}</td></tr>
+ <tr><td>预留费率</td><td>{fees.reservation_fee_rate}</td></tr>
+ </tbody></table></div>
+ <p className="f-message">费率由实际模拟成交方式确定；限价单主动吃单也按 taker 计算。预留采用较高费率，成交后只按实际成交量扣费。零费率仍是输入假设。</p>
+ </section>}
  <div className="s-table-wrap s-account-costs" role="region" aria-label="唯一账本成本归因" tabIndex={0}><table className="s-table"><thead><tr><th>成本与权益</th><th>{quote} · 精确账本值</th></tr></thead><tbody>{fields.map(([key,label])=><tr key={key}><td>{label}</td><td>{account.reconciliation[key]}</td></tr>)}</tbody></table></div>
  <p>期末未平仓 {Object.entries(account.ending_state.positions).map(([symbol,p])=>`${symbol}：${p.quantity} BTC`).join('；')||'无'}。窗口结束保留持仓与排队状态；期末权益包含标记价估值。</p>
  <div className="s-analytics-grid"><Chart title="被动回放 · 模拟权益" rows={rows} series={[{key:'equity',label:'权益'}]} unit={quote} note={`最近 ${rows.length} 个账本检查点，共 ${account.history_count} 个；完整历史保存在研究材料中。`}/>

@@ -82,7 +82,7 @@ class _QueueLedger:
 
     def fill(self, order_id, now, price, quantity):
         before=self.account.pending[order_id]
-        used=self.account.fill_order(before,now,price,quantity)
+        used=self.account.fill_order(before,now,price,quantity,liquidity_role='MAKER')
         after=self.account.orders[order_id]
         return AccountingFill(used,after.status,after.reason)
 

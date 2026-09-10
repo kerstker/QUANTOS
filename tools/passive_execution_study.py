@@ -51,11 +51,11 @@ def study(source,output):
                 account_summary=None
                 if account is not None:
                     account_summary={k:result[k] for k in ('input_hash','result_hash','reconciliation',
-                        'ending_state','ending_reservation','actual_venue_fees')}
+                        'ending_state','ending_reservation','actual_venue_fees','fee_model')}
                     account_summary.update({'equity_history':result['equity_history'][-200:],
                         'history_count':len(result['equity_history']),
                         'history_projection':'LAST_200_FULL_HISTORY_IN_ARTIFACT',
-                        'simulated_fee_rate':data['account']['fee_rate'],'ledger_applied':True})
+                        'simulated_fee_rate':data['account'].get('fee_rate'),'ledger_applied':True})
                 trials.append({'profile_ms':profile,'status':'COMPLETED_DIAGNOSTIC',
                     'orders':queue['orders'],'fill_count':len(queue['fills']),
                     'censored_orders':sum(o['censored'] for o in queue['orders']),

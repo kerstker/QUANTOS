@@ -284,3 +284,15 @@ python -m pytest -q tests/governance/test_research_runner_boundary.py
 
 这里的 `python` 指本机核实的 Python 3.12 开发解释器；这是快速开发检查，
 不替代完整 `scripts/validate.py`，也不新增普通研究审批或交易权限。
+
+## 分角色模拟费率输入（开发增量）
+
+若需要不同模拟maker/taker费率，把P5输入的 `account.fee_rate` 替换为
+`account.liquidity_fee_rates: {"maker":"0.0002","taker":"0.001"}`，其余账户字段保持原格式。
+这是显式模拟参数，不是本账户真实费率；两种配置不能同时出现。费率必须为精确字符串，
+P5入口允许0至0.01。参数变化登记新的不可变输入版本，不覆盖已完成材料。
+
+Studio「冻结成交费率」显示被动、主动和预留费率。主动盘口中的限价单仍按taker处理；
+post-only队列在到达时会跨价则拒绝，不能伪造maker低费率成交。预留使用较高费率，
+实际模拟成交由唯一账本按成交量扣费一次。缺失新字段的旧结果仍显示原固定费率材料。
+实现与当前验收范围见[分角色计费](../engineering/specs/2026-09-10-liquidity-fee-accounting.md)。

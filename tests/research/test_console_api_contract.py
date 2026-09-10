@@ -2220,3 +2220,26 @@ def test_restore_profile_contract_requires_matching_history_and_sanitizes(tmp_pa
     evidence["restore_diagnostics"]["total_ms"] = True
     path.write_text(json.dumps(evidence))
     assert row().get("restore_diagnostics") is None
+
+
+def test_passive_liquidity_fee_contract_preserves_rates_and_unknown_actual_costs(tmp_path):
+    import json
+    from tests.research.test_passive_execution_study import account_source
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    data=account_source();del data['account']['fee_rate']
+    data['account']['liquidity_fee_rates']={'maker':'0.0002','taker':'0.001'}
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.parent.mkdir(parents=True)
+    source=tmp_path/'source.json';source.write_text(json.dumps(data))
+    study(source,directory)
+    result=profitability_payload(tmp_path,1)['p5_queue']
+    account=result['trials'][0]['account']
+    assert account['simulated_fee_rate'] is None
+    assert account['fee_model']=={'scope':'EXPLICIT_SIMULATION_ASSUMPTION','actual_venue_fees':None,
+        'mode':'BY_FILL_LIQUIDITY_ROLE','maker_fee_rate':'0.0002','taker_fee_rate':'0.001',
+        'reservation_fee_rate':'0.001','role_source':'EXECUTION_MECHANISM_NOT_ORDER_TYPE'}
+    assert account['actual_venue_fees'] is None
+    assert account['reconciliation']['fee']=='0.00198'
+    assert account['reconciliation']['ending_equity']=='1000.09802'
+    assert account['reconciliation']['residual']=='0'
+    assert result['trials_attempted']==3 and result['selected_profile'] is None

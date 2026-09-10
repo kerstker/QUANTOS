@@ -113,3 +113,18 @@ def test_rpi_volume_cannot_deplete_visible_queue_or_manufacture_passive_fills(tm
     assert result['ledger_applied'] is True
     assert all(t['fill_count']==0 for t in result['trials'])
     assert all(t['account']['reconciliation']['fee']=='0' for t in result['trials'])
+
+
+@pytest.mark.parametrize('rates',[{'maker':'0.001'},{'maker':'0.001','taker':.002},
+    {'maker':'0.001','taker':'-0.001'},{'maker':'0.011','taker':'0.001'},
+    {'maker':'0.001','taker':'0.002','rpi':'0'},None])
+def test_liquidity_rates_require_a_complete_bounded_exact_pair(rates):
+    from services.research.passive_execution_study import prepare_input
+    data=account_source();del data['account']['fee_rate'];data['account']['liquidity_fee_rates']=rates
+    with pytest.raises(ValueError):prepare_input(data)
+
+
+def test_liquidity_pair_cannot_be_combined_with_a_second_fixed_fee():
+    from services.research.passive_execution_study import prepare_input
+    data=account_source();data['account']['liquidity_fee_rates']={'maker':'0.001','taker':'0.002'}
+    with pytest.raises(ValueError):prepare_input(data)

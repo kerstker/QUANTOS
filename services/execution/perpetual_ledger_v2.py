@@ -781,12 +781,15 @@ class OrderFillEvent(TradeEvent):
     """
     order_id: str
     fee_rate: Decimal
+    liquidity_role: str | None = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
         if not isinstance(self.order_id, str) or not self.order_id.strip():
             raise ValueError("order_id must be non-empty")
         object.__setattr__(self, "fee_rate", _non_negative(self.fee_rate, "fee_rate"))
+        if self.liquidity_role is not None and self.liquidity_role not in ("MAKER", "TAKER"):
+            raise ValueError("order fill liquidity role must be MAKER or TAKER")
         if self.fee != ZERO or self.spread_cost != ZERO or self.impact_cost != ZERO:
             raise ValueError("order fill costs require fee_rate and embedded executable prices")
 
@@ -1807,7 +1810,8 @@ class LinearPerpetualLedger:
                 "instrument_id": event.instrument_id,
                 **({"order_id": event.order_id,
                     "quantity_basis": "ADMITTED_ORDER_FILL",
-                    "fee_rate": canonical_decimal(event.fee_rate)}
+                    "fee_rate": canonical_decimal(event.fee_rate),
+                    **({"liquidity_role": event.liquidity_role} if event.liquidity_role is not None else {})}
                    if isinstance(event, OrderFillEvent) else {}),
                 **result.as_canonical_dict(),
                 "execution_price": canonical_decimal(event.execution_price),

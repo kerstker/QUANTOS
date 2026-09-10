@@ -123,14 +123,44 @@ class SimulationFrame:
 
 @dataclass(frozen=True)
 class SimulationCostModel:
+    """Frozen cost assumptions; these rates do not certify private venue fees."""
     fee_rate: Decimal = ZERO
     adverse_slippage_rate: Decimal = ZERO
+    maker_fee_rate: Decimal | None = None
+    taker_fee_rate: Decimal | None = None
 
     def __post_init__(self) -> None:
         _decimal(self.fee_rate, "fee_rate")
         _decimal(self.adverse_slippage_rate, "adverse_slippage_rate")
         if self.adverse_slippage_rate >= ONE:
             raise ValueError("adverse_slippage_rate must be less than one")
+        if (self.maker_fee_rate is None) != (self.taker_fee_rate is None):
+            raise ValueError("maker and taker fee rates must be supplied together")
+        if self.maker_fee_rate is not None:
+            if self.fee_rate != ZERO:
+                raise ValueError("fixed and liquidity fee rates cannot be combined")
+            for name in ("maker_fee_rate", "taker_fee_rate"):
+                value = _decimal(getattr(self, name), name)
+                if value >= ONE:
+                    raise ValueError("liquidity fee rates must be less than one")
+
+    def rate_for(self, liquidity_role: str) -> Decimal:
+        if liquidity_role not in ("MAKER", "TAKER"):
+            raise ValueError("explicit modeled fill liquidity role required")
+        if self.maker_fee_rate is None:
+            return self.fee_rate
+        return self.maker_fee_rate if liquidity_role == "MAKER" else self.taker_fee_rate
+
+    @property
+    def reservation_fee_rate(self) -> Decimal:
+        return max(self.rate_for("MAKER"), self.rate_for("TAKER"))
+
+    def fee_manifest(self):
+        return {"scope": "EXPLICIT_SIMULATION_ASSUMPTION", "actual_venue_fees": None,
+            "mode": "FIXED" if self.maker_fee_rate is None else "BY_FILL_LIQUIDITY_ROLE",
+            "maker_fee_rate": self.rate_for("MAKER"), "taker_fee_rate": self.rate_for("TAKER"),
+            "reservation_fee_rate": self.reservation_fee_rate,
+            "role_source": "EXECUTION_MECHANISM_NOT_ORDER_TYPE"}
 
 @dataclass(frozen=True)
 class SimulationLimits:
@@ -471,7 +501,7 @@ class _SimulationAccount:
                     entry = min(entry, state.intent.limit_price) if buy else max(entry, state.intent.limit_price)
                 adverse = max(ZERO, entry-mark if buy else mark-entry)
                 buffer = abs(state.remaining_quantity)*adverse*spec.contract_multiplier
-                reserve[state.intent.order_id] = next_required-required + notional*self.costs.fee_rate + buffer
+                reserve[state.intent.order_id] = next_required-required + notional*self.costs.reservation_fee_rate + buffer
                 required = next_required
         total = sum(reserve.values(), ZERO)
         available = min(margin["equity"], executable_equity)-max(margin["required"], stressed_required)-total
@@ -702,11 +732,13 @@ class _SimulationAccount:
         self.checkpoint(now, "MARKET")
         return accepted_quotes
 
-    def fill_order(self, state, now, px, maximum_quantity):
+    def fill_order(self, state, now, px, maximum_quantity, *, liquidity_role):
         """Commit only the affordable, permitted part of one fill opportunity.
 
         Return the absolute committed quantity, so a matching model never spends
         shared liquidity on a rejected or capacity-truncated transaction.
+        The matching mechanism supplies the role; a limit intent alone is not
+        evidence of a maker fill.
         """
         _decimal(maximum_quantity, "maximum_quantity")
         _decimal(px, "execution_price")
@@ -752,7 +784,8 @@ class _SimulationAccount:
             quantity_delta=quantity, execution_price=px, capacity=cap.policy,
             margin_mode=intent.margin_mode,
             isolated_margin=intent.isolated_margin if current is None else None,
-            order_id=intent.order_id, fee_rate=self.costs.fee_rate)
+            order_id=intent.order_id, fee_rate=self.costs.rate_for(liquidity_role),
+            liquidity_role=liquidity_role)
         try:
             fill = self.ledger.apply_event(trade, trade_guard=lambda candidate:
                 self.check_projected_fill(before_fill, intent, candidate.filled_quantity, px,
@@ -782,6 +815,7 @@ class _SimulationAccount:
         if reconciliation.residual != ZERO:
             raise ValueError("perpetual cash-flow reconciliation failed")
         return {
+            "fee_model": self.costs.fee_manifest(),
             "ending_reservation": self.reservation_snapshot(),
             "ending_state":self.ledger.state_as_canonical_dict(),
             "reconciliation":reconciliation.as_canonical_dict(),
@@ -1006,7 +1040,8 @@ def run_linear_perpetual_simulation(
                 continue
             side = "BUY" if state.remaining_quantity > ZERO else "SELL"
             px = account.execution_price(q, state.remaining_quantity)
-            used = account.fill_order(state, now, px, depth[(intent.instrument_id, side)])
+            used = account.fill_order(state, now, px, depth[(intent.instrument_id, side)],
+                                      liquidity_role="TAKER")
             depth[(intent.instrument_id, side)] -= used
         ctx = account.context(now)
         actions = tuple(strategy(ctx))
