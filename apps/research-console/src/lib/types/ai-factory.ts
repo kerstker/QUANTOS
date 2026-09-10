@@ -45,7 +45,27 @@ export interface PassiveAccountEvidence {input_hash:string;result_hash:string;le
  reconciliation:Record<'initial_equity'|'ending_equity'|'price_pnl'|'fee'|'spread'|'impact'|'funding'|'liquidation_fee'|'insurance_adjustment'|'adl_adjustment'|'attributed_change'|'residual',string>;
  equity_history:{timestamp:number;equity:string;drawdown:string}[];history_count:number;
  ending_state:{positions:Record<string,{quantity:string}>}}
-export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:null;ledger_applied:boolean;
+export interface PassiveReceiptComparison {
+ start_ms:number;end_ms:number;paired_orders:number;submitted_orders:number;observed_events:number;simulated_events:number;
+ matched_events:number;unmatched_events:number;unmatched_orders:string[];unobserved_orders:string[];
+ coverage_gaps:{start_ms:number;end_ms:number}[];final_quantity_absolute_error:string;
+ matched_event_quantity_absolute_error:string;quantity_path_error_btc_ms:string;increment_quantity_absolute_error:string;
+ carry_quantity_absolute_error:string;venue_time_absolute_error_ms:number;receive_time_absolute_error_ms:number;
+ state_mismatch_duration_ms:number;order_rows_total:number;
+ rows:{order_id:string;side:string;quantity:string;observed_state:string;simulated_state:string;
+ observed_censored:boolean;simulated_censored:boolean;final_quantity_absolute_error:string;quantity_path_error_btc_ms:string;
+ venue_time_absolute_error_ms:number;receive_time_absolute_error_ms:number;path_points_total:number;
+ path:{received_ms:number;observed_filled:string;simulated_filled:string}[]}[];
+}
+export interface PassiveReceiptCalibration {
+ status:string;selected_profile_ms:number|null;equally_best_profiles_ms:number[];cutoff_ms:number;
+ window_start_ms:number;window_end_ms:number;partition_clock:'ACTUAL_CLIENT_RECEIPT_TIME';trials_attempted:number;
+ observed_provenance:{kind:string;declared_source_sha256:string};
+ trials:{profile_ms:number;status:string;reason?:string;fit?:PassiveReceiptComparison}[];
+ heldout:PassiveReceiptComparison|null;calibration_complete:false;venue_receipts_verified:false;queue_model_calibrated:false;
+}
+export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:number|null;ledger_applied:boolean;
+ calibration?:PassiveReceiptCalibration|null;simulations_attempted?:number;input_sha256?:string;full_window_trials_attempted?:number;
  account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[]}|null;
  quality:{counts:{depth_updates:number;aggregate_trades:number;mark_updates:number;duplicates:number};failures:{reason:string}[];book_samples:{available_at_ms:number;transaction_time_ms:number;bids:[string,string][];asks:[string,string][]}[]};
  trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[];account?:PassiveAccountEvidence|null}[]}

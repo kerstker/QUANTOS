@@ -59,3 +59,13 @@ it('can register a passive input using the same immutable version flow',async()=
  fireEvent.click(screen.getByRole('button',{name:'登记输入并运行'}));
  await waitFor(()=>expect(submit).toHaveBeenCalledWith('passive','{"tape":{},"actions":[]}'));
 });
+
+it('opens the frozen profile by default and resets inspection when a new input arrives',()=>{
+ const first={...data,input_sha256:'first',selected_profile:100};
+ const {rerender}=render(<PassiveExecutionEvidence data={first}/>);
+ expect(screen.getByLabelText('队列延迟情景')).toHaveValue('100');
+ fireEvent.change(screen.getByLabelText('队列延迟情景'),{target:{value:'0'}});
+ expect(screen.getByLabelText('队列延迟情景')).toHaveValue('0');
+ rerender(<PassiveExecutionEvidence data={{...first,input_sha256:'second'}}/>);
+ expect(screen.getByLabelText('队列延迟情景')).toHaveValue('100');
+});

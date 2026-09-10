@@ -10,6 +10,7 @@ from services.execution.passive_execution_input import analyze
 from services.research.passive_execution_study import PROFILES,prepare_input,prepare_account,run_profile
 from tools.perpetual_replay_research import source_identity
 from tools.profitability_study import write_new
+from tools.passive_receipt_study import fit_before_cutoff,finish_heldout
 
 
 def study(source,output):
@@ -24,14 +25,18 @@ def study(source,output):
         'profiles_ms':list(PROFILES),'queue_policy':'CANCEL_TAIL_SHARED_VOLUME_V1',
         'trade_volume_policy':'BINANCE_NORMAL_QUANTITY_NQ_EXCLUDES_RPI_V1',
         'action_origin':'IMPORTED_FIXED_ACTIONS_NOT_PRE_EVENT_ATTESTATION',
-        'selection':'NONE_WITHOUT_OBSERVED_ORDER_RECEIPTS','economic_eligible':False}
+        'selection':'PREFIX_RECEIPT_ERROR_ONLY_IF_IMPORTED_OTHERWISE_NONE',
+        'maximum_simulations_with_calibration':6,'economic_eligible':False}
     write_new(output/'preregistration.json',plan)
     try:
         data=load_json_without_duplicate_keys(raw);tape,actions=prepare_input(data)
         account=prepare_account(data,tape)
         if account is not None:
             write_new(output/'account-environment.json',account['manifest'])
-        trials=[]
+        calibration=None
+        if 'calibration' in data:
+            calibration=fit_before_cutoff(data['calibration'],tape,actions,account,plan['source'],output/'calibration')
+        trials=[];simulations={}
         for profile in PROFILES if actions else ():
             write_new(output/f'profile-{profile}.started.json',{'profile_ms':profile,
                 'input_sha256':identity,'action_hash':digest(data['actions']),'economic_eligible':False})
@@ -41,6 +46,7 @@ def study(source,output):
                 if account is not None:
                     artifact['engine_result_hash']=artifact.pop('result_hash')
                 write_new(output/f'profile-{profile}.json',artifact)
+                if calibration is not None:simulations[profile]=result
                 queue=result['queue'] if account is not None else result
                 account_summary=None
                 if account is not None:
@@ -59,14 +65,28 @@ def study(source,output):
             except Exception as exc:
                 failure={'profile_ms':profile,'status':'FAILED','reason':type(exc).__name__,'economic_eligible':False}
                 write_new(output/f'profile-{profile}.failure.json',failure);trials.append(failure)
+        if calibration is not None:
+            try:calibration=finish_heldout(calibration,data['calibration'],actions,simulations,output/'calibration')
+            except Exception as exc:
+                write_new(output/'calibration/heldout.failure.json',{'reason':type(exc).__name__,'economic_eligible':False})
+                calibration={**calibration,'status':'HELDOUT_COMPARISON_FAILED','heldout':None}
         quality=analyze(data['tape'])
         complete=all(t['status']=='COMPLETED_DIAGNOSTIC' for t in trials)
-        result={'stage':'P5_QUEUE','status':('PUBLIC_INPUT_READY_NO_FIXED_ACTIONS' if not actions else
-            ('QUEUE_ACCOUNT_REPLAYS_COMPLETED' if account is not None else 'QUEUE_DIAGNOSTICS_COMPLETED') if complete else 'QUEUE_DIAGNOSTICS_WITH_FAILURES'),
+        status=('PUBLIC_INPUT_READY_NO_FIXED_ACTIONS' if not actions else
+            ('QUEUE_ACCOUNT_REPLAYS_COMPLETED' if account is not None else 'QUEUE_DIAGNOSTICS_COMPLETED') if complete else 'QUEUE_DIAGNOSTICS_WITH_FAILURES')
+        if calibration:
+            if calibration['status'] in ('INCOMPLETE_PREFIX_FITS','HELDOUT_REPLAY_FAILED','HELDOUT_COMPARISON_FAILED') or not complete:
+                status='QUEUE_RECEIPT_DIAGNOSTICS_WITH_FAILURES'
+            elif calibration['status']=='HELDOUT_ERRORS_RECORDED_NOT_VENUE_ACCEPTANCE':status='QUEUE_RECEIPT_DIAGNOSTICS_COMPLETED'
+            else:status='QUEUE_RECEIPT_DIAGNOSTICS_INCONCLUSIVE'
+        attempts=len(trials)+(calibration['trials_attempted'] if calibration else 0)
+        result={'stage':'P5_QUEUE','status':status,
             'input_sha256':identity,'input_hash':tape.input_hash,'action_hash':digest(data['actions']),
             'symbol':tape.symbol,'quote':tape.symbol[3:],'start_ms':tape.start_ms,'end_ms':tape.end_ms,
-            'quality':quality,'trials':trials,'trials_attempted':len(trials),'source':plan['source'],
-            'preregistration_hash':digest(plan),'selected_profile':None,
+            'quality':quality,'trials':trials,'trials_attempted':attempts,
+            'full_window_trials_attempted':len(trials),'source':plan['source'],
+            'preregistration_hash':digest(plan),'selected_profile':calibration['selected_profile_ms'] if calibration else None,
+            'calibration':calibration,'simulations_attempted':attempts,
             'ledger_applied':bool(actions and account is not None and complete),
             'account_environment':account['manifest'] if account is not None else None,
             'queue_model_calibrated':False,'venue_receipts_verified':False,'economic_eligible':False,

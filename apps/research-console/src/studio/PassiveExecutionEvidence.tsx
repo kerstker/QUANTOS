@@ -2,6 +2,7 @@ import {useState} from 'react';
 import type {PassiveExecutionStudy,PassiveAccountEvidence} from '@/lib/types/ai-factory';
 import {Panel} from './components';
 import {Chart} from './Charts';
+import {PassiveCalibrationEvidence} from './PassiveCalibrationEvidence';
 import './passive-execution.css';
 
 const status:Record<string,string>={SENT:'已发送，等待到达',ACK:'场所确认',OPEN:'排队中',PARTIALLY_FILLED:'部分成交',FILLED:'全部成交',REJECTED:'拒绝',CANCEL_SENT:'已发送撤单',CANCELLED:'已撤单',CANCEL_REJECTED:'撤单拒绝',EXPIRED:'已到期'};
@@ -25,11 +26,14 @@ function AccountEvidence({account,quote}:{account:PassiveAccountEvidence;quote:s
 }
 
 export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|null}) {
- const [profile,setProfile]=useState(0);
+ const identity=data?.input_sha256??`${data?.symbol}:${data?.start_ms}:${data?.end_ms}`;
+ const [selection,setSelection]=useState<{identity:string;profile:number}|null>(null);
+ const profile=selection?.identity===identity?selection.profile:data?.selected_profile??0;
  const trial=data?.trials.find(t=>t.profile_ms===profile)??data?.trials[0];
  const books=data?.quality.book_samples??[];
  const rows=books.map(b=>({label:clock(b.available_at_ms),bid:Number(b.bids[0]?.[0]),ask:Number(b.asks[0]?.[0]),lag:b.available_at_ms-b.transaction_time_ms}));
  return <>
+ <PassiveCalibrationEvidence data={data?.calibration}/>
  <Panel title="被动成交 · 原始数据与队列回放" note="固定动作、共享成交量、按价格和到达顺序排队；撤单按到达场所的时间生效。">
  <div className="s-execution-body">
  {!data?<p className="f-message">尚未导入原始逐笔数据。选择下方「P5 原始盘口与队列」，登记采集文件和固定动作后检查。</p>:<>
@@ -38,8 +42,8 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  <p className="f-message">{data.account_environment?'已提供冻结的公开规则、容量与资金费日程；每个成功情景保留统一账本结果。实际队列位置和真实场所费用仍待回执验证。':'公开盘口无法证明实际队列位置；当前输入尚未接入成本账本，也未完成真实回执校准。这里显示模型成交诊断，净收益和真实费用仍未知。'}</p>
  {!!data.quality.failures.length&&<ul>{data.quality.failures.map((f,i)=><li key={i}>{f.reason}</li>)}</ul>}
  {data.trials.length===0?<p>已验证输入，尚无固定动作；没有生成订单或成交结论。</p>:<>
- <label>队列延迟情景 <select value={trial?.profile_ms??0} onChange={e=>setProfile(Number(e.target.value))}>{data.trials.map(t=><option key={t.profile_ms} value={t.profile_ms}>{t.profile_ms} ms · {t.status==='FAILED'?'失败':'模型对照'}</option>)}</select></label>
- <p className="f-message">订单、撤单及回执使用所选固定延迟。外部撤量先从队尾扣减，新增数量排在队尾；没有根据收益或成交数量挑选最佳情景。</p>
+ <label>队列延迟情景 <select value={trial?.profile_ms??0} onChange={e=>setSelection({identity,profile:Number(e.target.value)})}>{data.trials.map(t=><option key={t.profile_ms} value={t.profile_ms}>{t.profile_ms} ms · {t.status==='FAILED'?'失败':'模型对照'}{t.profile_ms===data.selected_profile?' · 校准段冻结':''}</option>)}</select></label>
+ <p className="f-message">订单、撤单及回执使用所选固定延迟。外部撤量先从队尾扣减，新增数量排在队尾；{data.calibration?'回执校准按截止点前的数量路径和时间误差选择，收益不参与选择。':'没有根据收益或成交数量挑选最佳情景。'}</p>
  {trial?.status==='FAILED'?<p role="status">本次情景失败：{trial.reason??'未知原因'}，原始记录已保留。</p>:trial&&<>
  <p>{trial.fill_count} 次成交 · {trial.censored_orders} 个窗口截尾订单（结束时仍未完成）</p>
  {trial.account&&<AccountEvidence account={trial.account} quote={data.quote}/>}

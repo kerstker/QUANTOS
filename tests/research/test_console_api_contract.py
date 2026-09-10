@@ -2018,6 +2018,23 @@ def test_passive_account_console_contract_keeps_canonical_strings_and_actual_fee
     assert len(account['equity_history'])<=200 and account['history_count']>0
 
 
+def test_passive_receipt_calibration_console_contract_has_distinct_clocks_and_no_authority(tmp_path):
+    import json
+    from tests.research.test_passive_calibration_study import source
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.parent.mkdir(parents=True)
+    path=tmp_path/'source.json';path.write_text(json.dumps(source()));study(path,directory)
+    view=profitability_payload(tmp_path,1)['p5_queue'];calibration=view['calibration']
+    assert view['simulations_attempted']==6 and calibration['selected_profile_ms']==25
+    assert calibration['partition_clock']=='ACTUAL_CLIENT_RECEIPT_TIME'
+    assert calibration['calibration_complete'] is False and calibration['venue_receipts_verified'] is False
+    assert calibration['heldout']['quantity_path_error_btc_ms']=='0'
+    assert calibration['heldout']['receive_time_absolute_error_ms']==0
+    assert calibration['heldout']['venue_time_absolute_error_ms']==0
+    assert len(calibration['heldout']['rows'])<=20
+
+
 def test_profitability_causal_information_preserves_separate_quotes_and_no_prediction_claim(tmp_path):
     from services.console.api.profitability_views import profitability_payload
     from tools.profitability_study import write_new

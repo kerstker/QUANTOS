@@ -8,6 +8,7 @@ from services.execution.passive_perpetual_simulation import run_passive_perpetua
 from services.execution.perpetual_simulation import (
     OrderIntent, CancelOrder, SimulationCostModel, SimulationLimits,
 )
+from services.research.passive_receipt_calibration import validate_calibration
 
 PROFILES = (0, 25, 100)
 
@@ -42,12 +43,17 @@ def decode_actions(rows, tape):
 
 
 def prepare_input(data):
-    if not isinstance(data,dict) or set(data) not in ({'tape','actions'},{'tape','actions','account'}):
+    if not isinstance(data,dict) or set(data) not in ({'tape','actions'},{'tape','actions','account'},
+            {'tape','actions','account','calibration'}):
         raise ValueError('raw tape and fixed actions required')
     tape=compile_tape(data['tape'])
     actions=decode_actions(data['actions'],tape)
     if 'account' in data:prepare_account(data,tape)
     elif any(r.get('reduce_only') for r in data['actions']):raise ValueError('reduce-only needs a canonical account')
+    if 'calibration' in data:
+        from services.research.ai_factory_store import digest
+        if not any(a.kind=='ORDER' for a in actions):raise ValueError('calibration requires fixed orders')
+        validate_calibration(data['calibration'],tape,actions,digest(data['actions']))
     return tape,actions
 
 

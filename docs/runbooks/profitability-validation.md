@@ -195,4 +195,44 @@ CANCEL 只含 timestamp、kind、order_id。时间使用 Unix 毫秒，价格和
 
 在包含本增量的 Studio「执行与数据」选择「P5 原始盘口与队列」登记同一输入即可进入既有队列。
 可查看 0/25/100 ms 三组诊断、盘口、接收延迟、订单剩余量和时间轨迹。
-当前没有真实费用、净收益、个别实际队列位置或真实回执校准结论，被动成交成本账本仍待接线。
+可选 `account` 已接通唯一模拟成本账本，见[统一账户合同](../engineering/specs/2026-09-10-passive-canonical-account.md)。
+当前仍没有真实费用、个别实际队列位置或真实回执校准结论。
+
+## 双时钟被动回执导入
+
+在同一被动输入上添加 `calibration`，必须同时包含 `account` 和至少一条固定 ORDER。
+使用相同的研究输入入口和离线命令，无须新增模型、代理或交易凭证。
+
+```json
+{
+  "schema": "PASSIVE_RECEIPT_CALIBRATION_V1",
+  "cutoff_ms": 1789000000100,
+  "observed": {
+    "action_hash": "与完整固定 actions 一致的 SHA256",
+    "symbol": "BTCUSDC",
+    "coverage": {"start_ms": 1789000000000, "end_ms": 1789000000200, "gaps": []},
+    "provenance": {"kind": "IMPORTED_PRIVATE_RECEIPTS", "declared_source_sha256": "原始来源声明 SHA256"},
+    "orders": [{
+      "order_id": "与 ORDER 相同的编号", "side": "BUY", "quantity": "0.001", "limit_price": "100000",
+      "events": [{"receipt_id": "唯一回执编号", "venue_ms": 1789000000020,
+        "received_ms": 1789000000030, "state": "ACK", "cumulative_filled": "0"}]
+    }]
+  }
+}
+```
+
+此片段是 `calibration` 结构说明，摘要占位文字不能直接运行。真实摘要为 64 位小写十六进制；
+动作摘要使用 `services.research.ai_factory_store.digest(actions)`。订单价格、数量、方向
+必须与动作完全对应，时间落在同一原始输入的共同可用窗口。数量是累计成交量，
+不要把逐笔新增量直接填入；不得根据场所时间推算不存在的实际接收时间。
+
+测试材料必须声明 `SYNTHETIC_TEST_FIXTURE`。来源摘要声明不会自动认证原始回执。
+对未观测区间列出有序、不重叠的 `gaps`，不要用空白区间表示零成交。
+ACK、PARTIALLY_FILLED、FILLED、REJECTED、CANCELLED、EXPIRED、CANCEL_REJECTED
+均支持；乱序、重复或缺时钟的原始材料应先按可验证依据规范化，无法确定时保持未知。
+
+系统先运行三组前缀，冻结选择后再运行三组完整窗口，共六次尝试。
+查看 `calibration/selection.json`、`fit-*.comparison.json` 和 `heldout-*.comparison.json`；
+界面摘要只显示前 20 个订单与最近路径点，完整文件保留全部记录。
+后段继续原账户与订单，不能称为新的自然 OOS。零误差、选出参数或界面绿色均不意味着
+真实场所校准验收。详见[方法、限制与验证](../engineering/specs/2026-09-10-passive-receipt-calibration.md)。
