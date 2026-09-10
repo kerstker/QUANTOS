@@ -56,3 +56,10 @@ P0摘要为 `6d72aebd89330cd7ef1742ca8e2eadda05d085a8bb325c43cdc60fb5926b3e23`�
 
 完整软件交付见[合并进度](../../reports/2026-09-11-merged-roadmap-status.md)，
 后续按[统一路线](../plans/2026-09-09-profitability-validation.md)评价实际增量。
+
+
+## 06:00 首批真实采集
+
+06:00首批真实预热采集已完成：12个官方公共请求、两种计价各一份观察，用时1.726秒，无失败或重试；原始摘要、接收截止时间、K线收盘、OI及资金费时钟独立核对通过。06:01只读状态为COLLECTING，各0/504行有效特征、无缺口、0新试验；07:00才到首行特征时点。本条是实际采集证据，尚无新盈利结论，固定源码和原预算不变。
+
+只读核对材料保存在 `/home/kerstker/quantos-dev-output/backup-contract-v16-20260911/warmup-verification.json`，其引用快照包含12份原始回执的摘要和实际接收时间。没有改变登记窗口或重写旧预测。

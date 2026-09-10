@@ -1,6 +1,6 @@
 # QUANTOS — Full Development Program Plan
 
-> **2026-09-11 当前进度入口**：下文是早期阶段分解与历史记录，不能把其中的 DONE、core done 或百分比当作当前运行与盈利准备度。最新工作按[统一后续路线](engineering/plans/2026-09-09-profitability-validation.md)与[项目状态](PROJECT_STATE.md)逐源码记录。运行源码 `f378cf554`、证据 `cf2c11a92` 已通过完整软件验收，本批未部署；离线账户与原始回执已接线，实际来源认证、真实场所校准、自然盈利、独立经济准入与正式运行验收仍未完成，异机恢复搁置。旧 V1 回放及纸面成交历史继续遵守现行失效/隔离声明。
+> **2026-09-11 当前进度入口**：下文是早期阶段分解与历史记录，不能把其中的 DONE、core done 或百分比当作当前运行与盈利准备度。最新工作按[统一后续路线](engineering/plans/2026-09-09-profitability-validation.md)与[项目状态](PROJECT_STATE.md)逐源码记录。运行源码 `e5cc570f9`、证据 `964394714` 已通过完整软件验收，本批未部署；第16版备份清单消费接线已修正，离线账户与原始回执沿用已验收实现，实际来源认证、真实场所校准、自然盈利、独立经济准入与正式运行验收仍未完成，异机恢复搁置。旧 V1 回放及纸面成交历史继续遵守现行失效/隔离声明。
 
 Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](../QUANTOS_MASTER_BLUEPRINT.md)
 (11 layers, phases 0–14, §1 safety, §8 rejection reasons, §9 quant validation,
