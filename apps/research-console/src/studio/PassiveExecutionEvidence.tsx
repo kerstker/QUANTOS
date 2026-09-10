@@ -21,6 +21,7 @@ function AccountEvidence({account,quote,hasTerms}:{account:PassiveAccountEvidenc
   ['insurance_adjustment','保险调整'],['adl_adjustment','减仓调整'],['attributed_change','成本后权益变化'],['residual','对账差额']];
  return <>
  <p className="f-message">统一 Decimal 账本已核算本情景；{feeDescription}，真实费用未知，队列尚无真实回执校准。{hasTerms?'保证金使用上方冻结条件与明确的研究估计政策':'保证金采用保守模拟假设'}，不能据此认定实际盈利。</p>
+ {account.ending_state.margin_admission_policy==='INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1'&&<p className="f-message">新增敞口检查初始保证金；减仓检查维持保证金与负权益，不要求先补足初始保证金。模拟费用和损失仍完整记账。</p>}
  {fees&&<section role="region" aria-label="冻结成交费率">
  <div className="s-table-wrap s-account-costs"><table className="s-table"><thead><tr><th>模拟成交角色</th><th>精确费率（比例）</th></tr></thead><tbody>
  <tr><td>被动成交（maker）</td><td>{fees.maker_fee_rate}</td></tr>

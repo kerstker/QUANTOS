@@ -49,6 +49,7 @@ LINEAR_USDT_PERPETUAL = "LINEAR_USDT_PERPETUAL"
 LINEAR_USDC_PERPETUAL = "LINEAR_USDC_PERPETUAL"
 DECIMAL_CONTEXT_VERSION = "quantos.linear-perpetual-decimal-context.v1"
 COST_BASIS_POLICY = "EXACT_ENTRY_NOTIONAL_PRORATA_TRUNCATE_RETAIN_REMAINDER_V1"
+MARGIN_ADMISSION_POLICY = "INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1"
 BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID = "BINANCE_USDM.UTC_DAY.v1"
 
 _DECIMAL_CONTEXT_PRECISION = 50
@@ -556,6 +557,7 @@ class ContractSpec:
     def as_canonical_dict(self) -> dict[str, object]:
         result = {
             "decimal_context": DECIMAL_CONTEXT_VERSION,
+            "margin_admission_policy": MARGIN_ADMISSION_POLICY,
             "instrument_id": self.instrument_id,
             "contract_type": self.contract_type,
             "margin_asset": self.margin_asset,
@@ -1721,9 +1723,10 @@ class LinearPerpetualLedger:
             spec.contract_multiplier,
         )
         exposure_opened = bool(
-            current_for_cost is None
-            or (new_quantity > ZERO) != (current_for_cost.quantity > ZERO)
-            or abs(new_quantity) > abs(current_for_cost.quantity)
+            new_quantity != ZERO and (
+                current_for_cost is None
+                or (new_quantity > ZERO) != (current_for_cost.quantity > ZERO)
+                or abs(new_quantity) > abs(current_for_cost.quantity))
         )
         if new_quantity != ZERO and exposure_opened and spec.new_risk_notional_cap is not None:
             reference = max(event.execution_price, self._mark_prices.get(event.instrument_id, event.execution_price))
@@ -1826,7 +1829,13 @@ class LinearPerpetualLedger:
                 isolated_wallet=isolated_wallet,
                 entry_notional=entry_notional,
             )
-        self._assert_initial_margin()
+        if exposure_opened:
+            self._assert_initial_margin()
+        elif self._liquidation_targets() or self._cross_equity() < ZERO:
+            # An exit need not replenish initial margin, but its modeled costs
+            # may not create insolvency or a maintenance shortfall. Observed
+            # venue fills are not submitted through this simulation admission.
+            raise InsufficientMargin("reduction cannot leave a maintenance deficit or negative equity")
         self._assert_cash_state()
 
         result = ExecutionResult(
@@ -1854,6 +1863,7 @@ class LinearPerpetualLedger:
                 "applied_spread_cost": canonical_decimal(applied_spread),
                 "applied_impact_cost": canonical_decimal(applied_impact),
                 "margin_mode": event.margin_mode.value,
+                "margin_admission": "INITIAL" if exposure_opened else "MAINTENANCE_REDUCTION",
                 "capacity": event.capacity.as_canonical_dict(),
                 "capacity_consumed_before": canonical_decimal(
                     capacity_consumed_before
@@ -2316,6 +2326,7 @@ class LinearPerpetualLedger:
             ),
             "initial_collateral": canonical_decimal(self._initial_collateral),
             "cost_basis_policy": COST_BASIS_POLICY,
+            "margin_admission_policy": MARGIN_ADMISSION_POLICY,
             "wallet_balance": canonical_decimal(self._wallet_balance),
             "account_equity": canonical_decimal(self.account_equity()),
             "positions": {
@@ -2349,6 +2360,7 @@ class LinearPerpetualLedger:
 
 __all__ = [
     "AccountNotionalLimit",
+    "MARGIN_ADMISSION_POLICY",
     "BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID",
     "DECIMAL_CONTEXT_VERSION",
     "CapacityAction",

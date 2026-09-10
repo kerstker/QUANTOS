@@ -2262,3 +2262,4 @@ def test_frozen_account_terms_contract_keeps_observations_separate_from_actual_f
     assert len(terms['observations']['before']['commission']['response_sha256'])==64
     assert 'raw_utf8' not in json.dumps(terms)
     assert result['trials'][0]['account']['reconciliation']['fee']=='0.00198'
+    assert result['trials'][0]['account']['ending_state']['margin_admission_policy']=='INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1'

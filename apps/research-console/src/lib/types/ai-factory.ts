@@ -48,7 +48,7 @@ export interface SimulatedLiquidityFeeModel {scope:'EXPLICIT_SIMULATION_ASSUMPTI
 export interface PassiveAccountEvidence {input_hash:string;result_hash:string;ledger_applied:true;actual_venue_fees:null;simulated_fee_rate:string|null;fee_model?:SimulatedLiquidityFeeModel;
  reconciliation:Record<'initial_equity'|'ending_equity'|'price_pnl'|'fee'|'spread'|'impact'|'funding'|'liquidation_fee'|'insurance_adjustment'|'adl_adjustment'|'attributed_change'|'residual',string>;
  equity_history:{timestamp:number;equity:string;drawdown:string}[];history_count:number;
- ending_state:{positions:Record<string,{quantity:string}>}}
+ ending_state:{positions:Record<string,{quantity:string}>;margin_admission_policy?:string}}
 export interface FrozenAccountTerms {
  schema:'BINANCE_USDM_ACCOUNT_TERMS_V1';input_hash:string;account_ref_sha256:string;
  provenance:'SYNTHETIC_TEST_FIXTURE'|'IMPORTED_UNVERIFIED';source_verified:false;actual_paid_fees:null;

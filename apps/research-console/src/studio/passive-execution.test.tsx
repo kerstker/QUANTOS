@@ -40,12 +40,16 @@ it('shows exact canonical reconciliation and changes account evidence with the d
   actual_venue_fees:null,simulated_fee_rate:'0.001',history_count:2,
   equity_history:[{timestamp:1000,equity:'1000',drawdown:'0'},{timestamp:1500,equity:'1000.0901',drawdown:'0'}],
   ending_state:{positions:{BTCUSDC:{quantity:'0.1'}}}};
- render(<PassiveExecutionEvidence data={{...data,ledger_applied:true,
+ const {rerender}=render(<PassiveExecutionEvidence data={{...data,ledger_applied:true,
   account_environment:{symbol:'BTCUSDC',quote:'USDC',venue_margin_tiers_verified:false,actual_venue_fees:null,limitations:[]},
   trials:[{...data.trials[0],account},data.trials[1]]}}/>);
  expect(screen.getByRole('region',{name:'唯一账本成本归因'})).toHaveTextContent('1000.0901');
  expect(screen.getByRole('region',{name:'唯一账本成本归因'})).toHaveTextContent('0.0099');
  expect(screen.getByText(/真实费用未知/)).toBeInTheDocument();
+ expect(screen.queryByText(/新增敞口检查初始保证金/)).not.toBeInTheDocument();
+ rerender(<PassiveExecutionEvidence data={{...data,trials:[{...data.trials[0],account:{...account,
+  ending_state:{...account.ending_state,margin_admission_policy:'INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1'}}},data.trials[1]]}}/>);
+ expect(screen.getByText(/新增敞口检查初始保证金/)).toHaveTextContent('减仓检查维持保证金与负权益');
  expect(screen.getByText(/期末未平仓 BTCUSDC/)).toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('队列延迟情景'),{target:{value:'100'}});
  expect(screen.queryByRole('region',{name:'唯一账本成本归因'})).not.toBeInTheDocument();
