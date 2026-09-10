@@ -20,6 +20,7 @@ from services.execution.perpetual_ledger_v2 import (
     ContractSpec, MarginBracket, MarkEvent, ledger_decimal_context,
 )
 from services.execution.perpetual_simulation import ExecutableQuote, OrderRuleProfile, SimulationFrame
+from services.execution.venue_order_filters import parse_filters
 from services.execution.public_order_constraints import parse_constraints, constraint_manifest
 
 DAY_MS=86_400_000
@@ -86,10 +87,9 @@ def prepare_public_replay(capture: Mapping) -> dict:
     filters={x['filterType']:x for x in symbol['filters']}
     if len(filters)!=len(symbol['filters']): raise ValueError('duplicate rule filter')
     try:
-        prices,lot,market,notional=(filters[k] for k in ('PRICE_FILTER','LOT_SIZE','MARKET_LOT_SIZE','MIN_NOTIONAL'))
-        if lot['stepSize']!=market['stepSize'] or lot['minQty']!=market['minQty']:
-            raise ValueError('distinct market/limit minimum grids unsupported')
-        step,minimum=_decimal(lot['stepSize']),_decimal(lot['minQty'])
+        notional=filters['MIN_NOTIONAL']
+        venue_filters=parse_filters(symbol)
+        step,minimum=venue_filters.quantity_atom,min(venue_filters.limit.minimum,venue_filters.market.minimum)
         minimum_notional=_decimal(notional['notional'])
     except KeyError as exc: raise ValueError('required order filter missing') from exc
     candles,adv_time=_record(bootstrap['candles'],'candles')
@@ -156,9 +156,9 @@ def prepare_public_replay(capture: Mapping) -> dict:
     types=tuple(t for t in ('MARKET','LIMIT') if t in symbol['orderTypes'])
     profile=OrderRuleProfile(rule_id,rule_id,'BTCUSDT','BINANCE_USDM',rule_time,end+1,
         bootstrap['exchange']['requested_at'],rule_time,rule_time,source,
-        _decimal(prices['tickSize']),_decimal(prices['minPrice']),_decimal(prices['maxPrice']),
-        _decimal(market['maxQty']),_decimal(lot['maxQty']),Decimal('1000'),'ORIGINAL_ORDER',types,
-        parse_constraints(symbol))
+        venue_filters.price.step,venue_filters.price.minimum,venue_filters.price.maximum,
+        venue_filters.market.maximum,venue_filters.limit.maximum,Decimal('1000'),'ORIGINAL_ORDER',types,
+        parse_constraints(symbol),venue_filters)
     interval=next_settlement-last_settlement
     schedule_available=max(funding_time,clock_records[0]['mark_available_time'])
     policy=FundingPolicySnapshot('BTCUSDT','BINANCE_USDM',source,start,next_settlement,
@@ -175,6 +175,7 @@ def prepare_public_replay(capture: Mapping) -> dict:
         'gap_policy_ms':max_gap,'rule_policy':'FIRST_OBSERVATION_WITH_UNCHANGED_FINAL_FILTERS',
         'mark_policy':'OBSERVATION_TIME_VALUATION_WITH_ORIGINAL_CLOCKS_RETAINED',
         'venue_order_constraints':constraint_manifest(profile.venue_constraints),
+        'venue_order_filters':venue_filters.manifest(),
         'limitations':['UNSIGNED_SOURCE_RECEIPTS','VENUE_MARGIN_TIERS_UNAVAILABLE_SIMULATION_IM_100_PERCENT_MM_50_PERCENT',
             'ACCOUNT_FEE_TIER_UNAVAILABLE_EXPLICIT_SIMULATION_COST','NO_FUNDING_SETTLEMENT_IN_SAMPLE',
             'REST_TOP_OF_BOOK_NOT_QUEUE_SIMULATION','DYNAMIC_VENUE_FILTERS_NOT_FULLY_MODELED',

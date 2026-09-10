@@ -84,3 +84,25 @@ it('shows declared dynamic bounds and keeps actual venue validation unknown',()=
  expect(screen.queryByRole('region',{name:'模拟场所订单边界'})).not.toBeInTheDocument();
  expect(screen.getByText(/动态订单边界尚未建模/)).toBeInTheDocument();
 });
+
+it('shows distinct quantity filters, disabled price fields and honest legacy absence',()=>{
+ const environment:NonNullable<PassiveExecutionStudy['account_environment']>={symbol:'BTCUSDC',quote:'USDC',
+  venue_margin_tiers_verified:false,actual_venue_fees:null,limitations:[],venue_order_filters:{
+   schema:'BINANCE_USDM_DECLARED_FILTERS_V1',price:{minimum:'0.05',maximum:'0',step:'0.1'},
+   lot_size:{minimum:'0.003',maximum:'0.010',step:'0.002'},
+   market_lot_size:{minimum:'0.002',maximum:'0.008',step:'0.003'},quantity_atom:'0.001',
+   grid_origin:'FILTER_MINIMUM',market_application:'LOT_SIZE_AND_MARKET_LOT_SIZE',
+   zero_price_fields:'DISABLE_INDIVIDUAL_CONSTRAINT',partial_fills:'ACCOUNTING_ATOM_NOT_PARENT_ORDER_GRID',
+   venue_behavior_verified:false}};
+ const {rerender}=render(<PassiveExecutionEvidence data={{...data,account_environment:environment}}/>);
+ const region=screen.getByRole('region',{name:'冻结价格与数量规则'});
+ expect(region).toHaveTextContent('最高价格：未限制');
+ expect(region).toHaveTextContent('0.05');
+ expect(screen.getByRole('row',{name:/普通订单数量/})).toHaveTextContent('0.010');
+ expect(screen.getByRole('row',{name:/市价附加数量/})).toHaveTextContent('0.008');
+ expect(region).toHaveTextContent('市价单同时检查两行数量规则');
+ expect(region).toHaveTextContent('真实场所仍未验证');
+ rerender(<PassiveExecutionEvidence data={{...data,input_sha256:'legacy',account_environment:{...environment,venue_order_filters:null}}}/>);
+ expect(screen.queryByRole('region',{name:'冻结价格与数量规则'})).not.toBeInTheDocument();
+ expect(screen.getByText(/完整价格与数量规则尚未绑定/)).toBeInTheDocument();
+});

@@ -52,7 +52,7 @@ def capture_fixture():
                     'depth':record('depth',START+i*1000+2,{'T':START+i*1000,'E':START+i*1000,
                        'lastUpdateId':i+1,'bids':[['99.9','1']],'asks':[['100.1','1']]})}
                    for i in range(4)],
-        'exchange_after':record('exchange',START+4000,{'symbols':[symbol]})}
+        'exchange_after':record('exchange',START+4000,{'symbols':[deepcopy(symbol)]})}
     return sealed(document)
 
 

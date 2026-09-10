@@ -6,7 +6,7 @@ import {PassiveCalibrationEvidence} from './PassiveCalibrationEvidence';
 import './passive-execution.css';
 
 const status:Record<string,string>={SENT:'已发送，等待到达',ACK:'场所确认',OPEN:'排队中',PARTIALLY_FILLED:'部分成交',FILLED:'全部成交',REJECTED:'拒绝',CANCEL_SENT:'已发送撤单',CANCELLED:'已撤单',CANCEL_REJECTED:'撤单拒绝',EXPIRED:'已到期'};
-const reasons:Record<string,string>={POST_ONLY_WOULD_CROSS:'到达时会立即成交',STALE_BOOK:'盘口已过时',OUTSIDE_KNOWN_BOOK_RANGE:'价格超出已知盘口',ORDER_NOT_OPEN:'订单尚未到达或已结束',TIME_IN_FORCE:'有效期结束',CLIENT_CANCEL_ARRIVED:'撤单已到达',UNKNOWN_TOUCH_AFTER_TRADES:'成交后最优盘口暂时未知',EXPIRED_BEFORE_ARRIVAL:'到达前已过期',PERCENT_PRICE:'挂单价格越过标记价边界',MAX_OPEN_ORDERS:'未完成订单数量已达上限',MARKET_TAKE_BOUND:'市价成交越过价格保护边界'};
+const reasons:Record<string,string>={POST_ONLY_WOULD_CROSS:'到达时会立即成交',STALE_BOOK:'盘口已过时',OUTSIDE_KNOWN_BOOK_RANGE:'价格超出已知盘口',ORDER_NOT_OPEN:'订单尚未到达或已结束',TIME_IN_FORCE:'有效期结束',CLIENT_CANCEL_ARRIVED:'撤单已到达',UNKNOWN_TOUCH_AFTER_TRADES:'成交后最优盘口暂时未知',EXPIRED_BEFORE_ARRIVAL:'到达前已过期',PERCENT_PRICE:'挂单价格越过标记价边界',MAX_OPEN_ORDERS:'未完成订单数量已达上限',MARKET_TAKE_BOUND:'市价成交越过价格保护边界',PRICE_RANGE:'价格超出允许区间',PRICE_TICK:'价格未落在规定步长上',MAX_ORDER_QUANTITY:'数量超过订单上限',MIN_ORDER_QUANTITY:'数量低于订单下限',QUANTITY_STEP:'数量未落在规定步长上'};
 const iso=(ms:number)=>Number.isFinite(new Date(ms).getTime())?new Date(ms).toISOString():'未知';
 const clock=(ms:number)=>iso(ms)==='未知'?'未知':iso(ms).slice(11,23);
 
@@ -32,6 +32,7 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  const trial=data?.trials.find(t=>t.profile_ms===profile)??data?.trials[0];
  const books=data?.quality.book_samples??[];
  const bounds=data?.account_environment?.venue_order_constraints;
+ const filters=data?.account_environment?.venue_order_filters;
  const rows=books.map(b=>({label:clock(b.available_at_ms),bid:Number(b.bids[0]?.[0]),ask:Number(b.asks[0]?.[0]),lag:b.available_at_ms-b.transaction_time_ms}));
  return <>
  <PassiveCalibrationEvidence data={data?.calibration}/>
@@ -47,6 +48,15 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  <p>市价单最小金额使用当时标记价；每次模拟成交检查不利价格偏离，幅度 {Number(bounds.market_take_bound)*100}%。越界余量保留拒绝记录。</p>
  <p className="f-message">仅计本次隔离账户声明的订单。真实场所行为仍未验证，外部挂单、其他过滤器及账户费率不由此确认。</p>
  </section>:data.account_environment&&<p className="f-message">动态订单边界尚未建模；当前材料只有已声明的基础规则，不能视为完整场所过滤器。</p>}
+ {filters?<section role="region" aria-label="冻结价格与数量规则">
+ <p><strong>冻结价格与数量规则</strong></p>
+ <p>最低价格：{filters.price.minimum==='0'?'未限制':filters.price.minimum}；最高价格：{filters.price.maximum==='0'?'未限制':filters.price.maximum}；价格步长：{filters.price.step==='0'?'未限制':filters.price.step}。</p>
+ <div className="s-table-wrap" tabIndex={0}><table className="s-table"><thead><tr><th>适用订单</th><th>最小数量 / 起点</th><th>最大数量</th><th>数量步长</th></tr></thead><tbody>
+ <tr><th scope="row">普通订单数量</th><td>{filters.lot_size.minimum}</td><td>{filters.lot_size.maximum}</td><td>{filters.lot_size.step}</td></tr>
+ <tr><th scope="row">市价附加数量</th><td>{filters.market_lot_size.minimum}</td><td>{filters.market_lot_size.maximum}</td><td>{filters.market_lot_size.step}</td></tr>
+ </tbody></table></div>
+ <p className="f-message">价格和数量从各自最小值起步、按步长递增。市价单同时检查两行数量规则；这是已声明的保守模拟政策，真实场所仍未验证。部分成交使用账本数量刻度 {filters.quantity_atom}，不重新套用整张订单的最小数量。</p>
+ </section>:data.account_environment&&<p className="f-message">完整价格与数量规则尚未绑定，旧材料不会自动取得新规则验证。</p>}
  {!!data.quality.failures.length&&<ul>{data.quality.failures.map((f,i)=><li key={i}>{f.reason}</li>)}</ul>}
  {data.trials.length===0?<p>已验证输入，尚无固定动作；没有生成订单或成交结论。</p>:<>
  <label>队列延迟情景 <select value={trial?.profile_ms??0} onChange={e=>setSelection({identity,profile:Number(e.target.value)})}>{data.trials.map(t=><option key={t.profile_ms} value={t.profile_ms}>{t.profile_ms} ms · {t.status==='FAILED'?'失败':'模型对照'}{t.profile_ms===data.selected_profile?' · 校准段冻结':''}</option>)}</select></label>

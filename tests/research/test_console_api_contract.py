@@ -2033,6 +2033,13 @@ def test_passive_public_dynamic_constraints_reach_console_without_venue_certific
     assert bounds['percent_price_up']=='1.1' and bounds['max_open_orders']==3
     assert bounds['scope']=='ISOLATED_DECLARED_ORDERS_ONLY'
     assert bounds['venue_behavior_verified'] is False
+    filters=result['account_environment']['venue_order_filters']
+    assert filters['schema']=='BINANCE_USDM_DECLARED_FILTERS_V1'
+    assert filters['lot_size']=={'minimum':'0.001','maximum':'100','step':'0.001'}
+    assert filters['market_lot_size']==filters['lot_size']
+    assert filters['quantity_atom']=='0.001'
+    assert filters['market_application']=='LOT_SIZE_AND_MARKET_LOT_SIZE'
+    assert filters['venue_behavior_verified'] is False
     assert result['account_environment']['actual_venue_fees'] is None
     assert result['trials'][0]['account']['reconciliation']['residual']=='0'
 

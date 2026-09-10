@@ -19,6 +19,7 @@ from services.execution.perpetual_ledger_v2 import (
 from services.execution.perpetual_simulation import OrderRuleProfile, SimulationFrame
 from services.execution.passive_execution_input import _mark
 from services.execution.public_order_constraints import parse_constraints, constraint_manifest
+from services.execution.venue_order_filters import parse_filters
 
 DAY_MS=86400000
 SCHEMA='PASSIVE_VENUE_ENVIRONMENT_V1'
@@ -96,9 +97,8 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
         raise ValueError('final contract rules changed or do not cover the replay')
     filters={r['filterType']:r for r in venue['filters']}
     if len(filters)!=len(venue['filters']):raise ValueError('duplicate order filter')
-    prices,lot,market,notional=(filters[k] for k in ('PRICE_FILTER','LOT_SIZE','MARKET_LOT_SIZE','MIN_NOTIONAL'))
-    if any(_positive(lot[k])!=_positive(market[k]) for k in ('stepSize','minQty')):
-        raise ValueError('distinct market/limit minimum grids unsupported')
+    notional=filters['MIN_NOTIONAL']
+    venue_filters=parse_filters(venue)
     premium,premium_time=records['premium'];funding,funding_time=records['funding']
     if (premium['symbol']!=symbol or _time(premium['time'])>premium_time
             or premium_time-premium['time']>30000 or not isinstance(funding,list)
@@ -136,7 +136,7 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
     identity=exact_identity_hash(environment,name='passive_public_environment')
     source='public-environment:'+identity;rule_time=records['exchange'][1];rule_id=source+':filters'
     spec=ContractSpec(symbol,'LINEAR_'+symbol[3:]+'_PERPETUAL',symbol[3:],Decimal('1'),
-        _positive(lot['stepSize']),_positive(lot['minQty']),_positive(notional['notional']),
+        venue_filters.quantity_atom,min(venue_filters.limit.minimum,venue_filters.market.minimum),_positive(notional['notional']),
         Decimal('.01'),Decimal('1e-24'),
         (MarginBracket(Decimal('0'),None,Decimal('1'),Decimal('.5'),Decimal('0')),))
     rule=HistoricalContractRule(rule_id,spec,rule_time,tape.end_ms+1,
@@ -145,9 +145,9 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
     if 'LIMIT' not in types:raise ValueError('limit orders unsupported by venue')
     profile=OrderRuleProfile(rule_id,rule_id,symbol,'BINANCE_USDM',rule_time,tape.end_ms+1,
         environment['before']['exchange']['requested_at'],rule_time,rule_time,source,
-        _positive(prices['tickSize']),_positive(prices['minPrice']),_positive(prices['maxPrice']),
-        _positive(market['maxQty']),_positive(lot['maxQty']),max_order_notional,'ORIGINAL_ORDER',types,
-        parse_constraints(venue))
+        venue_filters.price.step,venue_filters.price.minimum,venue_filters.price.maximum,
+        venue_filters.market.maximum,venue_filters.limit.maximum,max_order_notional,'ORIGINAL_ORDER',types,
+        parse_constraints(venue),venue_filters)
     schedule_time=max(premium_time,funding_time)
     policy=FundingPolicySnapshot(symbol,'BINANCE_USDM',source,start,next_time,next_time-last,
         (next_time,),last,schedule_time,schedule_time,source)
@@ -160,6 +160,7 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
         'mark_clocks':marks,'mark_policy':'VENUE_EVENT_TIME_FIXED_ACTIONS_ONLY',
         'actual_venue_fees':None,'venue_margin_tiers_verified':False,
         'venue_order_constraints':constraint_manifest(profile.venue_constraints),
+        'venue_order_filters':venue_filters.manifest(),
         'limitations':['UNSIGNED_PUBLIC_SOURCE_RECEIPTS','SIMULATED_IM_100_PERCENT_MM_50_PERCENT_LIQUIDATION_FEE_1_PERCENT',
             'EXPLICIT_SIMULATED_FEE_AND_ORDER_NOTIONAL_LIMIT','NO_FUNDING_SETTLEMENT_IN_WINDOW',
             'PUBLIC_FILTER_EQUALITY_NOT_PROOF_OF_NO_INTERMEDIATE_CHANGE','DYNAMIC_VENUE_FILTERS_NOT_FULLY_MODELED',

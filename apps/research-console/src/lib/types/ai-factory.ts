@@ -71,9 +71,17 @@ export interface VenueOrderBoundaryEvidence {
  limit_band_reference:'CURRENT_MARK_AT_ADMISSION';market_notional_reference:'CURRENT_MARK_AT_ADMISSION';
  market_protection:'CURRENT_MARK_AT_EACH_FILL_REJECT_REMAINDER_OUTSIDE_BOUND';venue_behavior_verified:false;
 }
+export interface VenueOrderFilterEvidence {
+ schema:'BINANCE_USDM_DECLARED_FILTERS_V1';
+ price:{minimum:string;maximum:string;step:string};lot_size:{minimum:string;maximum:string;step:string};
+ market_lot_size:{minimum:string;maximum:string;step:string};quantity_atom:string;
+ grid_origin:'FILTER_MINIMUM';market_application:'LOT_SIZE_AND_MARKET_LOT_SIZE';
+ zero_price_fields:'DISABLE_INDIVIDUAL_CONSTRAINT';partial_fills:'ACCOUNTING_ATOM_NOT_PARENT_ORDER_GRID';
+ venue_behavior_verified:false;
+}
 export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:number|null;ledger_applied:boolean;
  calibration?:PassiveReceiptCalibration|null;simulations_attempted?:number;input_sha256?:string;full_window_trials_attempted?:number;
- account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[];venue_order_constraints?:VenueOrderBoundaryEvidence|null}|null;
+ account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[];venue_order_constraints?:VenueOrderBoundaryEvidence|null;venue_order_filters?:VenueOrderFilterEvidence|null}|null;
  quality:{counts:{depth_updates:number;aggregate_trades:number;mark_updates:number;duplicates:number};failures:{reason:string}[];book_samples:{available_at_ms:number;transaction_time_ms:number;bids:[string,string][];asks:[string,string][]}[]};
  trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[];account?:PassiveAccountEvidence|null}[]}
 

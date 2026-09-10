@@ -25,6 +25,7 @@ from services.execution.authoritative_perpetual_backtest import (
     CapacitySnapshot, FundingPolicySnapshot, HistoricalContractRule,
 )
 from services.execution.backtest_authority import exact_identity_hash
+from services.execution.venue_order_filters import VenueOrderFilters
 from services.execution.perpetual_ledger_v2 import (
     FundingEvent, InsufficientMargin, LinearPerpetualLedger, MarginMode,
     MarkEvent, OrderFillEvent, PositionView, QuantityRuleViolation,
@@ -195,7 +196,8 @@ class OrderRuleProfile:
     """Caller-frozen order rules, distinct from position accounting rules.
 
     This profile is technical input, not a certification of venue provenance.
-    Quantity step and minimums come from its explicitly bound contract rule.
+    Legacy quantity rules come from its bound contract. A public filter set
+    separates original-order grids from the contract's accounting quantity atom.
     """
     rule_id: str
     contract_rule_id: str
@@ -216,6 +218,7 @@ class OrderRuleProfile:
     minimum_policy: str
     supported_order_types: tuple[str, ...] = ("MARKET", "LIMIT")
     venue_constraints: VenueOrderConstraints | None = None
+    venue_filters: VenueOrderFilters | None = None
 
     @ledger_decimal_context()
     def __post_init__(self) -> None:
@@ -227,12 +230,24 @@ class OrderRuleProfile:
             raise ValueError("order rule epoch is empty")
         if not self.observed_time <= self.available_time <= self.ingestion_time:
             raise ValueError("order rule provenance is not causal")
-        for name in ("price_tick", "min_price", "max_price", "market_max_quantity",
-                     "limit_max_quantity", "max_notional"):
+        for name in ("market_max_quantity", "limit_max_quantity", "max_notional"):
             _decimal(getattr(self, name), name, positive=True)
-        if (self.min_price > self.max_price or self.min_price % self.price_tick != ZERO
-                or self.max_price % self.price_tick != ZERO):
-            raise ValueError("order rule price bounds must lie on the tick grid")
+        if self.venue_filters is None:
+            for name in ("price_tick", "min_price", "max_price"):
+                _decimal(getattr(self, name), name, positive=True)
+            if (self.min_price > self.max_price or self.min_price % self.price_tick != ZERO
+                    or self.max_price % self.price_tick != ZERO):
+                raise ValueError("order rule price bounds must lie on the tick grid")
+        else:
+            f = self.venue_filters
+            for name in ("price_tick", "min_price", "max_price"):
+                _decimal(getattr(self, name), name)
+            if not isinstance(f, VenueOrderFilters) or (
+                    (self.price_tick, self.min_price, self.max_price, self.market_max_quantity, self.limit_max_quantity)
+                    != (f.price.step, f.price.minimum, f.price.maximum, f.market.maximum, f.limit.maximum)):
+                raise ValueError("public filter fields disagree with order profile")
+            if self.minimum_policy != "ORIGINAL_ORDER":
+                raise ValueError("public quantity filters require original order admission")
         if self.minimum_policy not in ("ORIGINAL_ORDER", "OPENED_POSITION"):
             raise ValueError("unknown order rule minimum policy")
         types = tuple(self.supported_order_types)
@@ -244,6 +259,8 @@ class OrderRuleProfile:
             raise ValueError("invalid venue order constraints")
 
     def price_reason(self, price: Decimal) -> str | None:
+        if self.venue_filters is not None:
+            return self.venue_filters.price.reason(price)
         if not self.min_price <= price <= self.max_price:
             return "PRICE_RANGE"
         if price % self.price_tick != ZERO:
@@ -392,9 +409,12 @@ class _SimulationAccount:
                  else quote.bid_price * (ONE-self.costs.adverse_slippage_rate))
         profile = self.profiles.get(quote.instrument_id)
         if profile is not None:
-            steps = (price/profile.price_tick).to_integral_value(
-                rounding=ROUND_CEILING if quantity > ZERO else ROUND_FLOOR)
-            price = steps*profile.price_tick
+            if profile.venue_filters is not None:
+                price = profile.venue_filters.price.adverse_price(price, buy=quantity > ZERO)
+            else:
+                steps = (price/profile.price_tick).to_integral_value(
+                    rounding=ROUND_CEILING if quantity > ZERO else ROUND_FLOOR)
+                price = steps*profile.price_tick
         return price
 
     def reservation_snapshot(self, *, extra: OrderState | None = None,
@@ -825,6 +845,9 @@ class _SimulationAccount:
                         reason = profile.price_reason(px)
                     elif abs(action.quantity_delta) > bound:
                         reason = "MAX_ORDER_QUANTITY"
+                    elif profile.venue_filters is not None and profile.venue_filters.quantity_reason(
+                            action.quantity_delta, market=order_type == "MARKET"):
+                        reason = profile.venue_filters.quantity_reason(action.quantity_delta, market=order_type == "MARKET")
                     elif self.rules[action.instrument_id].spec.notional(action.quantity_delta, px) > profile.max_notional:
                         reason = "MAX_ORDER_NOTIONAL"
                     if reason is None and profile.venue_constraints is not None:
@@ -834,7 +857,7 @@ class _SimulationAccount:
                 try:
                     if reason is None:
                         minimum_price = (self.mark_prices[action.instrument_id]
-                            if profile is not None and profile.venue_constraints is not None
+                            if profile is not None and (profile.venue_constraints is not None or profile.venue_filters is not None)
                             and action.limit_price is None else px)
                         if profile is not None and profile.minimum_policy == "ORIGINAL_ORDER":
                             reducing = (action.reduce_only and current is not None
@@ -900,10 +923,15 @@ def _validate_market_environment(rule_items, policy_items, profile_items, frame_
             if (p.contract_rule_id != rules[name].rule_id or p.venue_id != policies[name].venue_id
                     or p.ingestion_time > times[0]
                     or not p.effective_from <= times[0] <= times[-1] < p.effective_until
-                    or p.market_max_quantity % spec.quantity_step != ZERO
-                    or p.limit_max_quantity % spec.quantity_step != ZERO
-                    or min(p.market_max_quantity, p.limit_max_quantity) < spec.min_quantity
                     or p.max_notional < spec.min_notional):
+                raise ValueError("order rule binding, coverage or quantity bounds are invalid")
+            if p.venue_filters is not None:
+                if (spec.quantity_step != p.venue_filters.quantity_atom
+                        or spec.min_quantity != min(p.venue_filters.limit.minimum, p.venue_filters.market.minimum)):
+                    raise ValueError("public order filters do not bind the accounting quantity atom")
+            elif (p.market_max_quantity % spec.quantity_step != ZERO
+                    or p.limit_max_quantity % spec.quantity_step != ZERO
+                    or min(p.market_max_quantity, p.limit_max_quantity) < spec.min_quantity):
                 raise ValueError("order rule binding, coverage or quantity bounds are invalid")
     expected_funding = {(p.instrument_id, t) for p in policy_items
                         for t in p.settlement_times if times[0] <= t <= times[-1]}
