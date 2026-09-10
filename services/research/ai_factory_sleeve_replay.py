@@ -57,7 +57,10 @@ def replay_sleeves(market,specs,quarters,t,p,*,variance_by_slot=None,fee_bps=4,s
             desired=owned*mark/equity if choice['target'] is None else D(str(choice['target']))*budget
             cap=budget/4;bounded=min(cap,max(-cap,desired))
             if bounded!=desired:choice={**choice,'reason':'FROZEN_SLEEVE_BUDGET_REDUCTION'}
-            all_hold=all_hold and choice['target'] is None and bounded==desired
+            # A flat component choosing zero is also unchanged. It must not
+            # force a held position through weight -> float -> lot conversion.
+            unchanged=(choice['target'] is None and bounded==desired) or (bounded==0 and owned==0)
+            all_hold=all_hold and unchanged
             weights.append(bounded);choices.append({'component_id':spec['id'],**choice,'raw_prediction':float(raw)})
             reason_counts[choice['reason']]+=1
         target=book.propose(weights)

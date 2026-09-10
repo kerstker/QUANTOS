@@ -122,3 +122,36 @@ def test_rejected_sleeve_orders_cannot_become_cost_free_hold_state():
     assert result['fills']==0
     assert all(row['positions']=={'2':'0'} for row in result['sleeve_execution']['decisions'])
     assert any(row['status']=='REJECTED_CAPACITY' for row in result['sleeve_execution']['execution'])
+
+
+@pytest.mark.parametrize('price',[70000,80000,100000])
+@pytest.mark.parametrize('sign',[1,-1])
+def test_holding_one_sleeve_with_another_flat_does_not_generate_rounding_trades(price,sign):
+    import numpy as np
+    from services.research.ai_factory_sleeve_replay import replay_sleeves
+    from services.research.ai_factory import HOUR
+    data=market();data['prices'][:]=price;data['marks'][:]=price
+    data['funding']=[{'time':data['start']-i*8*HOUR,'rate':D(0),'mark':D(price)} for i in (3,2,1)]
+    t=np.arange(data['start']-300000,data['end']-300000,HOUR,dtype=np.int64)
+    predictions=np.zeros((2,len(t)));predictions[0,0]=sign*.02
+    result=replay_sleeves(data,[{'id':2,'threshold_bps':20},{'id':5,'threshold_bps':20}],
+        [2,2],t,predictions,variance_by_slot={int(at):0 for at in t})
+    assert len(result['fills'])==1
+    for decision in result['sleeve_execution']['decisions'][1:]:
+        assert decision['choices'][0]['reason']=='HOLD_COST_BAND'
+        assert decision['target'] is None
+    assert result['daily'][-1]['quantity']==result['fills'][0]['quantity']
+
+
+def test_flat_component_does_not_suppress_an_owned_sleeve_exit():
+    import numpy as np
+    from services.research.ai_factory_sleeve_replay import replay_sleeves
+    from services.research.ai_factory import HOUR
+    data=market();data['prices'][:]=70000;data['marks'][:]=70000
+    data['funding']=[{'time':data['start']-i*8*HOUR,'rate':D(0),'mark':D(70000)} for i in (3,2,1)]
+    t=np.arange(data['start']-300000,data['end']-300000,HOUR,dtype=np.int64)
+    p=np.zeros((2,len(t)));p[0,0]=.02;p[0,1]=-.0015
+    result=replay_sleeves(data,[{'id':2,'threshold_bps':20},{'id':5,'threshold_bps':20}],
+        [2,2],t,p,variance_by_slot={int(at):.0004 for at in t})
+    assert len(result['fills'])==2 and result['daily'][-1]['quantity']=='0'
+    assert result['fills'][1]['time']==data['start']+HOUR
