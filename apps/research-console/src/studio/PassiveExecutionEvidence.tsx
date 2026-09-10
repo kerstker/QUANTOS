@@ -51,9 +51,9 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  {filters?<section role="region" aria-label="冻结价格与数量规则">
  <p><strong>冻结价格与数量规则</strong></p>
  <p>最低价格：{filters.price.minimum==='0'?'未限制':filters.price.minimum}；最高价格：{filters.price.maximum==='0'?'未限制':filters.price.maximum}；价格步长：{filters.price.step==='0'?'未限制':filters.price.step}。</p>
- <div className="s-table-wrap" tabIndex={0}><table className="s-table"><thead><tr><th>适用订单</th><th>最小数量 / 起点</th><th>最大数量</th><th>数量步长</th></tr></thead><tbody>
- <tr><th scope="row">普通订单数量</th><td>{filters.lot_size.minimum}</td><td>{filters.lot_size.maximum}</td><td>{filters.lot_size.step}</td></tr>
- <tr><th scope="row">市价附加数量</th><td>{filters.market_lot_size.minimum}</td><td>{filters.market_lot_size.maximum}</td><td>{filters.market_lot_size.step}</td></tr>
+ <div className="s-table-wrap s-filter-quantities" tabIndex={0}><table className="s-table"><thead><tr><th>适用订单</th><th>最小数量 / 起点</th><th>最大数量</th><th>数量步长</th></tr></thead><tbody>
+ <tr><th scope="row">普通订单数量</th><td data-label="最小数量 / 起点">{filters.lot_size.minimum}</td><td data-label="最大数量">{filters.lot_size.maximum}</td><td data-label="数量步长">{filters.lot_size.step}</td></tr>
+ <tr><th scope="row">市价附加数量</th><td data-label="最小数量 / 起点">{filters.market_lot_size.minimum}</td><td data-label="最大数量">{filters.market_lot_size.maximum}</td><td data-label="数量步长">{filters.market_lot_size.step}</td></tr>
  </tbody></table></div>
  <p className="f-message">价格和数量从各自最小值起步、按步长递增。市价单同时检查两行数量规则；这是已声明的保守模拟政策，真实场所仍未验证。部分成交使用账本数量刻度 {filters.quantity_atom}，不重新套用整张订单的最小数量。</p>
  </section>:data.account_environment&&<p className="f-message">完整价格与数量规则尚未绑定，旧材料不会自动取得新规则验证。</p>}
