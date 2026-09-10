@@ -37,7 +37,10 @@ def study(source,output):
                 'input_sha256':identity,'action_hash':digest(data['actions']),'economic_eligible':False})
             try:
                 result=run_profile(tape,actions,profile,account=account,release_identity=plan['source'])
-                write_new(output/f'profile-{profile}.json',result)
+                artifact=dict(result)
+                if account is not None:
+                    artifact['engine_result_hash']=artifact.pop('result_hash')
+                write_new(output/f'profile-{profile}.json',artifact)
                 queue=result['queue'] if account is not None else result
                 account_summary=None
                 if account is not None:

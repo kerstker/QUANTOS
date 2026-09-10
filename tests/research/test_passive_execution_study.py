@@ -77,6 +77,14 @@ def test_account_profiles_publish_canonical_cost_and_equity_without_profit_selec
     assert result['trials'][2]['orders'][0]['status']=='SENT'
     assert result['trials'][2]['account']['reconciliation']['fee']=='0'
     assert result['account_environment']['venue_margin_tiers_verified'] is False
+    from tools.btc_factory_research import verified
+    from services.execution.backtest_authority import exact_identity_hash
+    for profile in (0,25,100):
+        artifact=verified(tmp_path/f'run/profile-{profile}.json')
+        artifact.pop('result_hash')
+        engine_hash=artifact.pop('engine_result_hash')
+        assert exact_identity_hash(artifact,name='passive_account_result')==engine_hash
+        assert next(t for t in result['trials'] if t['profile_ms']==profile)['account']['result_hash']==engine_hash
 
 
 def test_optional_account_reaches_versioned_workflow_and_missing_environment_is_rejected(tmp_path,monkeypatch):
