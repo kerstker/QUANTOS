@@ -111,6 +111,10 @@ class QuantityRuleViolation(PerpetualLedgerError):
     """A quantity violates the versioned exchange contract rules."""
 
 
+class AccountNotionalLimit(QuantityRuleViolation):
+    """A proposed new exposure exceeds frozen account admission coverage."""
+
+
 class MarginConfigurationError(PerpetualLedgerError):
     """Margin brackets or contract metadata are malformed."""
 
@@ -307,14 +311,18 @@ class MarginRequirement:
     notional: Decimal
     initial_margin: Decimal
     maintenance_margin: Decimal
+    outside_observed_brackets: bool = False
 
     def as_canonical_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "bracket": self.bracket.as_canonical_dict(),
             "notional": canonical_decimal(self.notional),
             "initial_margin": canonical_decimal(self.initial_margin),
             "maintenance_margin": canonical_decimal(self.maintenance_margin),
         }
+        if self.outside_observed_brackets:
+            result["outside_observed_brackets"] = True
+        return result
 
 
 @dataclass(frozen=True)
@@ -329,6 +337,8 @@ class ContractSpec:
     liquidation_fee_rate: Decimal
     settlement_quantum: Decimal
     margin_brackets: tuple[MarginBracket, ...]
+    new_risk_notional_cap: Decimal | None = None
+    margin_overflow_policy: str = "NONE"
 
     @_reviewed_decimal
     def __post_init__(self) -> None:
@@ -405,8 +415,17 @@ class ContractSpec:
                     raise MarginConfigurationError(
                         "maintenance margin must be continuous across brackets"
                     )
-        if brackets[-1].notional_cap is not None:
-            raise MarginConfigurationError("final margin bracket must be unbounded")
+        admission_cap = self.new_risk_notional_cap
+        if admission_cap is not None:
+            admission_cap = _positive(admission_cap, "new_risk_notional_cap")
+        finite_cap = brackets[-1].notional_cap
+        if finite_cap is not None:
+            if (admission_cap is None or admission_cap > finite_cap
+                    or self.margin_overflow_policy != "LAST_BRACKET_RISK_ESTIMATE_V1"):
+                raise MarginConfigurationError("finite margin table needs a bounded admission cap and risk estimate policy")
+        elif self.margin_overflow_policy != "NONE":
+            raise MarginConfigurationError("unbounded margin table cannot declare a finite overflow policy")
+        object.__setattr__(self, "new_risk_notional_cap", admission_cap)
         object.__setattr__(self, "contract_multiplier", multiplier)
         object.__setattr__(self, "quantity_step", step)
         object.__setattr__(self, "min_quantity", minimum)
@@ -520,17 +539,22 @@ class ContractSpec:
             None,
         )
         if bracket is None:
-            raise MarginConfigurationError("notional does not map to a margin bracket")
+            if self.margin_overflow_policy != "LAST_BRACKET_RISK_ESTIMATE_V1":
+                raise MarginConfigurationError("notional does not map to a margin bracket")
+            # A market move must not erase an existing liability. This is an
+            # explicitly named research estimate, never unlimited admission or
+            # a claim about the venue beyond the observed finite table.
+            bracket = self.margin_brackets[-1]
         initial = value * bracket.initial_margin_rate
         maintenance = max(
             ZERO,
             value * bracket.maintenance_margin_rate
             - bracket.maintenance_amount,
         )
-        return MarginRequirement(bracket, value, initial, maintenance)
+        return MarginRequirement(bracket, value, initial, maintenance, not bracket.contains(value))
 
     def as_canonical_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "decimal_context": DECIMAL_CONTEXT_VERSION,
             "instrument_id": self.instrument_id,
             "contract_type": self.contract_type,
@@ -547,6 +571,10 @@ class ContractSpec:
                 bracket.as_canonical_dict() for bracket in self.margin_brackets
             ],
         }
+        if self.new_risk_notional_cap is not None:
+            result.update(new_risk_notional_cap=canonical_decimal(self.new_risk_notional_cap),
+                          margin_overflow_policy=self.margin_overflow_policy)
+        return result
 
 
 @dataclass(frozen=True)
@@ -1697,6 +1725,10 @@ class LinearPerpetualLedger:
             or (new_quantity > ZERO) != (current_for_cost.quantity > ZERO)
             or abs(new_quantity) > abs(current_for_cost.quantity)
         )
+        if new_quantity != ZERO and exposure_opened and spec.new_risk_notional_cap is not None:
+            reference = max(event.execution_price, self._mark_prices.get(event.instrument_id, event.execution_price))
+            if spec.notional(new_quantity, reference) >= spec.new_risk_notional_cap:
+                raise AccountNotionalLimit("ACCOUNT_NOTIONAL_LIMIT")
         # TradeEvent costs describe the requested order.  A load-bearing
         # capacity partial fill realizes only the corresponding fraction.
         fill_ratio = abs(filled / event.quantity_delta)
@@ -2316,6 +2348,7 @@ class LinearPerpetualLedger:
 
 
 __all__ = [
+    "AccountNotionalLimit",
     "BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID",
     "DECIMAL_CONTEXT_VERSION",
     "CapacityAction",

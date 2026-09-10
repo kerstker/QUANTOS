@@ -28,7 +28,7 @@ from services.execution.backtest_authority import exact_identity_hash
 from services.execution.venue_order_filters import VenueOrderFilters
 from services.execution.perpetual_ledger_v2 import (
     FundingEvent, InsufficientMargin, LinearPerpetualLedger, MarginMode,
-    MarkEvent, OrderFillEvent, PositionView, QuantityRuleViolation,
+    MarkEvent, OrderFillEvent, PositionView, QuantityRuleViolation, AccountNotionalLimit,
     canonical_decimal, ledger_decimal_context,
 )
 
@@ -609,6 +609,15 @@ class _SimulationAccount:
                 p = max(q.bid_price, q.ask_price)
                 if instrument == name: p = max(p, price)
                 notionals[instrument] = self.rules[instrument].spec.notional(amount, p)
+                spec = self.rules[instrument].spec
+                cap_price = max(p, self.mark_prices.get(instrument, p))
+                if spec.new_risk_notional_cap is not None and not executing:
+                    cap_price = max(cap_price, *(state.intent.limit_price or ZERO
+                        for state in self.pending.values()
+                        if state.intent.instrument_id == instrument and not state.intent.reduce_only), ZERO)
+                if (spec.new_risk_notional_cap is not None
+                        and spec.notional(amount, cap_price) >= spec.new_risk_notional_cap):
+                    return "ACCOUNT_NOTIONAL_LIMIT"
             if any(n/risk_equity > self.limits.max_single_weight for n in notionals.values()):
                 return "SINGLE_NAME_LIMIT"
             if sum(notionals.values(), ZERO)/risk_equity > self.limits.max_gross_leverage:
@@ -795,6 +804,9 @@ class _SimulationAccount:
             return ZERO
         except InsufficientMargin:
             self.transition(state, now, "REJECTED", "INSUFFICIENT_MARGIN")
+            return ZERO
+        except AccountNotionalLimit:
+            self.transition(state, now, "REJECTED", "ACCOUNT_NOTIONAL_LIMIT")
             return ZERO
         except QuantityRuleViolation:
             self.transition(state, now, "REJECTED", "QUANTITY_RULE")

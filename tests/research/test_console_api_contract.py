@@ -2243,3 +2243,22 @@ def test_passive_liquidity_fee_contract_preserves_rates_and_unknown_actual_costs
     assert account['reconciliation']['ending_equity']=='1000.09802'
     assert account['reconciliation']['residual']=='0'
     assert result['trials_attempted']==3 and result['selected_profile'] is None
+
+
+def test_frozen_account_terms_contract_keeps_observations_separate_from_actual_fees(tmp_path):
+    from tests.execution.test_frozen_account_terms import terms_source
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.parent.mkdir(parents=True)
+    source=tmp_path/'source.json';source.write_text(json.dumps(terms_source()))
+    study(source,directory)
+    result=profitability_payload(tmp_path,1)['p5_queue']
+    terms=result['account_environment']['account_terms']
+    assert terms['selected_leverage']==3
+    assert terms['new_risk_notional_cap']=='180'
+    assert terms['margin_brackets'][-1]['notional_cap']=='200'
+    assert terms['margin_brackets'][0]['maximum_initial_leverage']==10
+    assert terms['source_verified'] is False and terms['actual_paid_fees'] is None
+    assert len(terms['observations']['before']['commission']['response_sha256'])==64
+    assert 'raw_utf8' not in json.dumps(terms)
+    assert result['trials'][0]['account']['reconciliation']['fee']=='0.00198'

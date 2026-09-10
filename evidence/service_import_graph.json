@@ -680,6 +680,11 @@
     {
       "references": [
         {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/execution/frozen_account_terms.py"
+        },
+        {
           "line": 10,
           "module": "services.governance.json_integrity",
           "path": "services/execution/passive_account_environment.py"
@@ -1337,11 +1342,16 @@
         },
         {
           "line": 7,
-          "module": "services.execution.passive_perpetual_simulation",
+          "module": "services.execution.frozen_account_terms",
           "path": "services/research/passive_execution_study.py"
         },
         {
           "line": 8,
+          "module": "services.execution.passive_perpetual_simulation",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 9,
           "module": "services.execution.perpetual_simulation",
           "path": "services/research/passive_execution_study.py"
         },
@@ -1762,7 +1772,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c611e9042391ce814fc3570753b2f3ac47ec51590b741503e772e97eac8d8dfc",
+  "graph_sha256": "38aa94ca0f922e94b98c8a207e1ad4cb09a12ea3f890279e797309e32de75ea7",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1800,7 +1810,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 556,
+  "source_file_count": 557,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

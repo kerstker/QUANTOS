@@ -49,6 +49,15 @@ export interface PassiveAccountEvidence {input_hash:string;result_hash:string;le
  reconciliation:Record<'initial_equity'|'ending_equity'|'price_pnl'|'fee'|'spread'|'impact'|'funding'|'liquidation_fee'|'insurance_adjustment'|'adl_adjustment'|'attributed_change'|'residual',string>;
  equity_history:{timestamp:number;equity:string;drawdown:string}[];history_count:number;
  ending_state:{positions:Record<string,{quantity:string}>}}
+export interface FrozenAccountTerms {
+ schema:'BINANCE_USDM_ACCOUNT_TERMS_V1';input_hash:string;account_ref_sha256:string;
+ provenance:'SYNTHETIC_TEST_FIXTURE'|'IMPORTED_UNVERIFIED';source_verified:false;actual_paid_fees:null;
+ symbol:string;quote:string;selected_leverage:number;symbol_config_notional_cap:string;new_risk_notional_cap:string;
+ cap_comparison:'STRICTLY_BELOW';initial_margin_rounding:'LEVERAGE_RECIPROCAL_CEILING_1E24_V1';overflow_policy:'LAST_BRACKET_RISK_ESTIMATE_V1';
+ maker_fee_rate:string;taker_fee_rate:string;rpi_fee_rate_not_applied:string|null;limitations:string[];
+ observations:Record<'before'|'after',Record<string,{requested_at_ms:number;received_at_ms:number;response_sha256:string}>>;
+ margin_brackets:{notional_floor:string;notional_cap:string;initial_margin_rate:string;maintenance_margin_rate:string;maintenance_amount:string;maximum_initial_leverage:number}[];
+}
 export interface PassiveReceiptComparison {
  start_ms:number;end_ms:number;paired_orders:number;submitted_orders:number;observed_events:number;simulated_events:number;
  matched_events:number;unmatched_events:number;unmatched_orders:string[];unobserved_orders:string[];
@@ -84,7 +93,7 @@ export interface VenueOrderFilterEvidence {
 }
 export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:number|null;ledger_applied:boolean;
  calibration?:PassiveReceiptCalibration|null;simulations_attempted?:number;input_sha256?:string;full_window_trials_attempted?:number;
- account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[];venue_order_constraints?:VenueOrderBoundaryEvidence|null;venue_order_filters?:VenueOrderFilterEvidence|null}|null;
+ account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[];venue_order_constraints?:VenueOrderBoundaryEvidence|null;venue_order_filters?:VenueOrderFilterEvidence|null;account_terms?:FrozenAccountTerms|null}|null;
  quality:{counts:{depth_updates:number;aggregate_trades:number;mark_updates:number;duplicates:number};failures:{reason:string}[];book_samples:{available_at_ms:number;transaction_time_ms:number;bids:[string,string][];asks:[string,string][]}[]};
  trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[];account?:PassiveAccountEvidence|null}[]}
 
