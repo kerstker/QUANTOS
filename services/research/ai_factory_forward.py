@@ -30,7 +30,7 @@ def forecast_document(*,slot,available,issued,activated,model_hash,input_hash,fe
         raise ValueError('forecast must precede execution and follow activation and input receipt')
     if len(features)!=5 or not np.isfinite(features).all() or not np.isfinite(prediction):
         raise ValueError('invalid forecast values')
-    if decision_policy not in ('FIXED_THRESHOLD_V1','DISCRETE_COST_RISK_V1'):raise ValueError('unknown forecast decision policy')
+    if decision_policy not in ('FIXED_THRESHOLD_V1','DISCRETE_COST_RISK_V1','INDEPENDENT_SLEEVE_COST_RISK_V1'):raise ValueError('unknown forecast decision policy')
     return {'slot_ms':slot,'available_at_ms':available,'issued_at_ms':issued,'entry_ms':slot+300000,
             'exit_ms':slot+300000+4*HOUR,'model_hash':model_hash,'input_hash':input_hash,
             'features':list(features),'prediction':float(prediction),

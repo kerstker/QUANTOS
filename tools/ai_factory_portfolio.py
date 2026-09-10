@@ -8,6 +8,7 @@ from quantos.runtime_paths import runtime_state_root
 from services.research.ai_factory import HOUR,fit_predict,partition
 from services.research.ai_factory_store import FactoryStore,digest
 from services.research.ai_factory_portfolio import SCHEMA,candidate_grid,combine_predictions,select_inner
+from services.research.ai_factory_sleeves import CONSTRUCTION as SLEEVE_CONSTRUCTION,SCHEMA as SLEEVE_SCHEMA
 from services.research.trial_ledger import TrialLedger
 from tools.btc_factory_research import verified,seal,_event,_trial
 from tools.profitability_study import write_new,frozen_inputs
@@ -24,7 +25,7 @@ COSTS=((4,5),(4,10),(8,5))
 def _case(output,plan,scope,spec,compute):
     case={'scope':scope,'spec':spec};identity=digest({'plan':plan,'case':case})
     path=output/'cases'/f'{identity}.json';path.parent.mkdir(exist_ok=True)
-    record={'trial_id':identity,'alpha_id':digest(spec),'family_id':digest([SCHEMA,scope]),
+    record={'trial_id':identity,'alpha_id':digest(spec),'family_id':digest([plan['schema'],scope]),
             'exact_definition_id':identity,'validation_policy_digest':digest(plan)}
     with TrialLedger(str(output/'trials.db')) as ledger:
         ledger.verify();previous=_trial(ledger,identity)
@@ -46,6 +47,11 @@ def _case(output,plan,scope,spec,compute):
                 metrics=compute()
                 # Validate selection metrics even on outer cases; no NaN success receipts.
                 select_inner([{'status':'PASSED','spec':{'quarters':[0],'id':0},'metrics':metrics}])
+                if 'sleeve_execution' in metrics:
+                    from services.research.ai_factory_sleeves import project_trace
+                    detail=output/'sleeve-traces'/f'{identity}.json';detail.parent.mkdir(exist_ok=True)
+                    write_new(detail,{'trial_id':identity,'plan_hash':digest(plan),'trace':metrics['sleeve_execution']})
+                    metrics={**metrics,'sleeve_execution':project_trace(metrics['sleeve_execution'],verified(detail)['result_hash'])}
                 value={'case':case,'trial_id':identity,'status':'PASSED','metrics':metrics}
             except Exception as exc:
                 value={'case':case,'trial_id':identity,'status':'FAILED','reason':type(exc).__name__}
@@ -54,7 +60,9 @@ def _case(output,plan,scope,spec,compute):
         write_new(path,value);return verified(path)
 
 
-def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=None):
+def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=None,construction=None,prediction_loader=None):
+    if construction not in (None,SLEEVE_CONSTRUCTION):raise ValueError('unregistered portfolio construction')
+    schema=SLEEVE_SCHEMA if construction else SCHEMA
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     t,x,y=panel;t=np.asarray(t);x=np.asarray(x);y=np.asarray(y)
     train,valid,test=partition(t,t+4*HOUR+300000) if split is None else split
@@ -67,12 +75,14 @@ def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=No
         raise ValueError('portfolio partition label leakage')
     train=train[-2048:]
     grid=candidate_grid([s['id'] for s in components])
-    plan={'schema':SCHEMA,'identity':identity,'components':components,'candidates':grid,
+    if construction:grid=[{**row,'construction':construction} for row in grid]
+    plan={'schema':schema,'identity':identity,'components':components,'candidates':grid,
           'panel_hash':digest([t.tolist(),x.tolist(),y.tolist()]),'costs':[list(c) for c in COSTS],
           'selection':'INNER_NET_PNL_MINUS_1500_DRAWDOWN_CASH_AND_SIMPLE_TIEBREAK',
           'inner_candidate_budget':len(grid),'outer_case_budget':6,'initial_equity':'1500',
           'scope':'USED_HISTORY_TECHNICAL_RESEARCH','outer_feedback_allowed':False,
           'partitions_hash':digest([train.tolist(),valid.tolist(),test.tolist()]),'economic_eligible':False}
+    if construction:plan['construction']=construction
     registration=output/'plan.json'
     if registration.exists():
         if verified(registration)!=seal(plan):raise ValueError('portfolio research identity changed')
@@ -81,7 +91,7 @@ def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=No
         verify_portfolio(output)
         return verified(output/'result.json')
     def progress(stage,count):
-        atomic_write_json(str(output/'status.json'),seal({'schema':SCHEMA,'status':'RUNNING','stage':stage,
+        atomic_write_json(str(output/'status.json'),seal({'schema':schema,'status':'RUNNING','stage':stage,
             'plan_hash':digest(plan),'inner_trials_attempted':count,'observed_at_ms':time.time_ns()//1000000,
             'authoritative':False,'economic_eligible':False}))
     progress('INNER_FIT',0)
@@ -93,18 +103,31 @@ def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=No
             if cached['plan_hash']!=digest(plan):raise ValueError('prediction cache identity changed')
             matrix=np.asarray(cached['predictions'])
         else:
-            matrix=np.asarray([fit(s,x[fit_rows],y[fit_rows],x[target_rows]) for s in components])
+            reuse={}
+            if prediction_loader is None:
+                matrix=np.asarray([fit(s,x[fit_rows],y[fit_rows],x[target_rows]) for s in components])
+            else:
+                loaded=prediction_loader(scope,components,fit_rows,target_rows)
+                if set(loaded)!={'predictions','source_plan_hash','source_prediction_hash'}:
+                    raise ValueError('invalid frozen prediction source')
+                reuse={k:v for k,v in loaded.items() if k!='predictions'}
+                if any(not isinstance(v,str) or len(v)!=64 or any(c not in '0123456789abcdef' for c in v) for v in reuse.values()):
+                    raise ValueError('invalid frozen prediction digest')
+                matrix=np.asarray(loaded['predictions'],dtype=float)
             if matrix.shape!=(len(components),len(target_rows)) or not np.isfinite(matrix).all():
                 raise ValueError('invalid component predictions')
-            write_new(path,{'plan_hash':digest(plan),'predictions':matrix.tolist()})
+            write_new(path,{'plan_hash':digest(plan),'predictions':matrix.tolist(),**({'reuse':reuse} if prediction_loader else {})})
         if matrix.shape!=(len(components),len(target_rows)) or not np.isfinite(matrix).all():
             raise ValueError('invalid cached component predictions')
         timings[scope+'_prediction_ms']=round((time.perf_counter()-started)*1000)
         return matrix
     inner_p=predictions('inner',train,valid)
+    def construct(matrix,quarters):
+        if construction:return {'components':components,'predictions':matrix,'quarters':quarters,'construction':construction}
+        return combine_predictions(components,matrix,quarters)
     trials=[]
     for spec in grid:
-        value=_case(output,plan,'INNER',spec,lambda s=spec:replay(t[valid],combine_predictions(components,inner_p,s['quarters']),4,5))
+        value=_case(output,plan,'INNER',spec,lambda s=spec:replay(t[valid],construct(inner_p,s['quarters']),4,5))
         trials.append({**value,'spec':spec})
         progress('INNER_SEARCH',len(trials))
     best=select_inner(trials)
@@ -121,19 +144,20 @@ def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=No
     # No outer fitting or replay occurs before the full selection has been frozen.
     progress('OUTER_COMPARISON',len(trials))
     fit_rows=np.r_[train,valid][-2048:];outer_p=predictions('outer',fit_rows,test)
-    artifact={'schema':SCHEMA,'plan_hash':digest(plan),'components':components,'quarters':best['spec']['quarters'],
+    artifact={'schema':schema,'plan_hash':digest(plan),'components':components,'quarters':best['spec']['quarters'],
               'baseline_quarters':baseline['spec']['quarters'],
               'training_x':x[fit_rows].tolist(),'training_y':y[fit_rows].tolist(),
               'training_last_label_ms':int((t[fit_rows]+4*HOUR+300000).max()),
               'decision_policy':'DISCRETE_COST_RISK_V1','replay_threshold_bps':0,
               'authoritative':False,'live_eligible':False,'economic_eligible':False}
+    if construction:artifact.update(construction=construction,decision_policy='INDEPENDENT_SLEEVE_COST_RISK_V1',replay_threshold_bps=None)
     model=output/'model.json'
     if model.exists():
         if verified(model)!=seal(artifact):raise ValueError('frozen portfolio model changed')
     else:write_new(model,artifact)
     outer=[]
     for name,spec in (('portfolio',best['spec']),('single_baseline',baseline['spec'])):
-        prediction=combine_predictions(components,outer_p,spec['quarters'])
+        prediction=construct(outer_p,spec['quarters'])
         for fee,slip in COSTS:
             case={'name':name,'candidate':spec,'fee_bps':fee,'slippage_bps':slip}
             value=_case(output,plan,'OUTER',case,lambda p=prediction,f=fee,s=slip:replay(t[test],p,f,s))
@@ -152,21 +176,31 @@ def run_study(output,identity,components,panel,replay,*,fit=fit_predict,split=No
         if not any(r['metrics']['fills'] for r in outer[:3]):decision='STOP_NO_ACTIVE_PORTFOLIO_EVIDENCE'
         elif all(c['portfolio_net_pnl']>0 and c['net_pnl_delta']>0 for c in comparisons):decision='NATURAL_FORWARD_REQUIRED'
         else:decision='STOP_NO_STABLE_NET_INCREMENT'
-    result={'schema':SCHEMA,'status':'COMPLETED_TECHNICAL_ONLY','decision':decision,'plan_hash':digest(plan),
+    result={'schema':schema,'status':'COMPLETED_TECHNICAL_ONLY','decision':decision,'plan_hash':digest(plan),
             'selected':best['spec'],'baseline':baseline['spec'],'components':components,
             'inner_trials':trials,'inner_trials_attempted':len(trials),'outer_cases':outer,'comparisons':comparisons,
             'model_hash':verified(model)['result_hash'],'timings':timings,'quote':'USDC',
             'authoritative':False,'economic_eligible':False,'live_eligible':False,
             'limitations':['USED_HISTORY_NOT_INDEPENDENT_OOS','FORECAST_BLEND_NOT_SEPARATE_TRADING_SLEEVES',
                 'NO_REAL_VENUE_COST_CALIBRATION','NATURAL_FORWARD_NOT_ESTABLISHED']}
+    if construction:
+        result['construction']=construction
+        result['limitations']=['USED_HISTORY_NOT_INDEPENDENT_OOS','ONE_WAY_NET_ACCOUNT_NOT_HEDGE_MODE',
+            'OWNERSHIP_NOT_SEPARATE_PNL_LEDGER','NO_REAL_VENUE_COST_CALIBRATION','NATURAL_FORWARD_NOT_ESTABLISHED']
     write_new(output/'result.json',result);verify_portfolio(output)
     return verified(output/'result.json')
 
 
 def run_portfolio(params):
+    return _run_portfolio(params)
+
+
+def _run_portfolio(params,*,construction=None):
+    if construction not in (None,SLEEVE_CONSTRUCTION):raise ValueError('unregistered portfolio construction')
     if set(params)!={'attempt'} or type(params['attempt']) is not int or not 1<=params['attempt']<=1000:
         raise ValueError('bounded portfolio experiment required')
-    root=runtime_state_root()/'data/cache';experiment=root/'ai_factory'/str(params['attempt']);output=experiment/'portfolio'
+    root=runtime_state_root()/'data/cache';experiment=root/'ai_factory'/str(params['attempt'])
+    output=experiment/('portfolio-sleeves-v1' if construction else 'portfolio')
     if output.is_symlink() or any(p.is_symlink() for p in output.parents):raise ValueError('unsafe portfolio path')
     output.mkdir(parents=True,exist_ok=True)
     with acquire_runtime_lock(output/'worker.lock',process_lock=_LOCK) as acquired:
@@ -180,11 +214,15 @@ def run_portfolio(params):
         identity={'source':source_identity(),'experiment_plan_hash':plan['result_hash'],
                   'component_trial_hashes':[digest(r) for r in trials],'scope':'INNER_COMPONENTS_ONLY'}
         def replay(times,prediction,fee,slip):
+            if construction:
+                from tools.ai_factory_sleeve_replay import evaluate_sleeves
+                return evaluate_sleeves(market,prediction['components'],prediction['quarters'],times,prediction['predictions'],
+                    variance_by_slot=variance,fee_bps=fee,slip_bps=slip)
             return evaluate_market(market,{'threshold_bps':0},times,prediction,cost_aware=True,
                 variance_by_slot=variance,fee_bps=fee,slip_bps=slip)
-        try:return run_study(output,identity,[r['spec'] for r in trials],(t,x,y),replay)
+        try:return run_study(output,identity,[r['spec'] for r in trials],(t,x,y),replay,construction=construction)
         except Exception as exc:
-            atomic_write_json(str(output/'status.json'),seal({'schema':SCHEMA,'status':'ERROR',
+            atomic_write_json(str(output/'status.json'),seal({'schema':SLEEVE_SCHEMA if construction else SCHEMA,'status':'ERROR',
                 'reason':type(exc).__name__,'observed_at_ms':time.time_ns()//1000000,
                 'authoritative':False,'economic_eligible':False}))
             raise

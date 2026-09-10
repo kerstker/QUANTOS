@@ -78,6 +78,24 @@ def factory_payload(root,attempt=None):
         try:portfolio=portfolio_payload(root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'portfolio')
         except (OSError,ValueError,KeyError,TypeError):errors.append('PORTFOLIO_RESEARCH_UNAVAILABLE')
     data['portfolio_research']=portfolio
+    data['sleeve_comparison']=None
+    if data['selected']:
+        directory=root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'process-sleeves-v1'
+        path=directory/'process-comparison.json'
+        if not path.exists():path=directory/'status.json'
+        if path.exists():
+            try:
+                value=_read(path)
+                if (value.get('schema')!='QUANTOS_SLEEVE_PROCESS_COMPARISON_V1'
+                        or any(value.get(k) is not False for k in ('authoritative','economic_eligible'))
+                        or value.get('outer_feedback_allowed',False) is not False):
+                    raise ValueError('invalid sleeve comparison boundary')
+                data['sleeve_comparison']=value
+            except (OSError,ValueError,KeyError,TypeError):errors.append('SLEEVE_COMPARISON_UNAVAILABLE')
+    data['portfolio_sleeves']=None
+    if data['selected']:
+        try:data['portfolio_sleeves']=portfolio_payload(root/'data/cache/ai_factory'/str(data['selected']['attempt'])/'portfolio-sleeves-v1')
+        except (OSError,ValueError,KeyError,TypeError):errors.append('SLEEVE_RESEARCH_UNAVAILABLE')
     data['research_notes']=None
     if data['selected']:
         try:data['research_notes']=research_notes(root/'data/cache/ai_factory'/str(data['selected']['attempt']))

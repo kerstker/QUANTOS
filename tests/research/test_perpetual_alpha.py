@@ -80,3 +80,12 @@ def test_context_decision_observes_real_fills_without_ledger_access():
     assert contexts[0]['quantity']=='0'
     assert D(contexts[1]['quantity'])>0
     assert len(result['fills'])==1
+
+
+def test_capacity_rejection_is_not_reported_as_a_fill_or_charged_a_fee():
+    data=market();data['daily_volume']={day:D(1) for day in data['daily_volume']}
+    result=replay(**data,decision=lambda *a:.25,slip_bps=5,stop=True)
+    assert result['reconciliation']['fee']=='0'
+    assert result['fills']==[]
+    assert {row['status'] for row in result['orders']}=={'REJECTED_CAPACITY'}
+    assert all(row['quantity']=='0' for row in result['daily'])

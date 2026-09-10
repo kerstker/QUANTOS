@@ -4,10 +4,13 @@ from quantos.runtime_paths import runtime_state_root
 from tools.ai_quant_factory import run_factory
 from tools.ai_factory_assessment import run_assessment
 from tools.ai_factory_portfolio import run_portfolio
+from tools.ai_factory_sleeve_study import run_sleeves
 from tools.ai_factory_process_comparison import run_comparison
+from tools.ai_factory_sleeve_process import run_comparison as run_sleeve_comparison
 from tools.ai_factory_verification import run_verification
 from tools.ai_factory_forward import run_observation
 from tools.ai_factory_portfolio_forward import run_observation as run_portfolio_observation
+from tools.ai_factory_sleeve_forward import run_observation as run_sleeve_observation
 from tools.ai_factory_verdict import run_verdict
 from tools.btc_factory_research import seal,verified
 from tools.ai_factory_checkpoint import create_checkpoint,publish_checkpoint
@@ -23,9 +26,12 @@ def run_pipeline(params):
     stages=[]
     for name,worker,request in (
         ('ASSESSMENT',run_assessment,params),('PORTFOLIO_RESEARCH',run_portfolio,params),
-        ('PROCESS_COMPARISON',run_comparison,params),('INDEPENDENT_PACKAGE',run_verification,params),
+        ('SLEEVE_RESEARCH',run_sleeves,params),
+        ('PROCESS_COMPARISON',run_comparison,params),('SLEEVE_COMPARISON',run_sleeve_comparison,params),
+        ('INDEPENDENT_PACKAGE',run_verification,params),
         ('NATURAL_OBSERVATION',run_observation,{'attempt':params['attempt'],'action':1}),
         ('PORTFOLIO_OBSERVATION',run_portfolio_observation,{'attempt':params['attempt'],'action':1}),
+        ('SLEEVE_OBSERVATION',run_sleeve_observation,{'attempt':params['attempt'],'action':1}),
         ('RESEARCH_EXPLANATION',run_verdict,params),
         ('CHECKPOINT',checkpoint,params)):
         atomic_write_json(str(dest/'pipeline.json'),seal({'status':'RUNNING','stage':name,'completed':stages,

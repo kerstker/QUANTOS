@@ -10,19 +10,25 @@ from services.research.perpetual_alpha import replay
 
 DAY=24*HOUR
 PORTFOLIO_POLICY='COST_AWARE_PORTFOLIO_AND_INNER_BASELINE'
+SLEEVE_POLICY='INDEPENDENT_SLEEVES_AND_INNER_BASELINE'
 
 
-def make_plan(*,now_ms,model_hash,policy='IMMUTABLE_FORECAST_TARGET_WEIGHT'):
+def make_plan(*,now_ms,model_hash,policy='IMMUTABLE_FORECAST_TARGET_WEIGHT',sleeves=None):
     if type(now_ms) is not int or now_ms<0 or not isinstance(model_hash,str) or not re.fullmatch('[0-9a-f]{64}',model_hash):
         raise ValueError('valid clock and frozen model required')
     start=(now_ms//DAY+1)*DAY+300000
-    if policy not in ('IMMUTABLE_FORECAST_TARGET_WEIGHT',PORTFOLIO_POLICY):raise ValueError('unknown forward account policy')
-    return {'schema':'QUANTOS_FORWARD_ACCOUNT_PLAN_V1','created_at_ms':now_ms,
+    if policy not in ('IMMUTABLE_FORECAST_TARGET_WEIGHT',PORTFOLIO_POLICY,SLEEVE_POLICY):raise ValueError('unknown forward account policy')
+    if policy!=SLEEVE_POLICY and sleeves is not None:raise ValueError('unexpected sleeve registration')
+    result={'schema':'QUANTOS_FORWARD_ACCOUNT_PLAN_V1','created_at_ms':now_ms,
             'start_ms':start,'end_ms':start+14*DAY,'model_hash':model_hash,
-            'policy':policy,'baseline':'INNER_SINGLE_AND_CASH_SAME_WINDOW' if policy==PORTFOLIO_POLICY else 'CASH_SAME_WINDOW',
+            'policy':policy,'baseline':'INNER_SINGLE_AND_CASH_SAME_WINDOW' if policy in (PORTFOLIO_POLICY,SLEEVE_POLICY) else 'CASH_SAME_WINDOW',
             'initial_equity':'1500','cost_cases':[[4,5],[4,10],[8,5]],
             'missing_prediction_policy':'BLOCK_ACCOUNT_REPLAY_NO_BACKFILL',
             'economic_eligible':False,'actual_venue_costs':None}
+    if policy==SLEEVE_POLICY:
+        from services.research.ai_factory_sleeves import validate_contract
+        result['sleeves']=validate_contract(sleeves)
+    return result
 
 
 def _verified(document):
@@ -34,7 +40,7 @@ def _verified(document):
 def validate_window(plan,forecasts,*,as_of_ms):
     plain={k:v for k,v in plan.items() if k!='result_hash'}
     if 'result_hash' in plan:_verified(plan)
-    if plain!=make_plan(now_ms=plain['created_at_ms'],model_hash=plain['model_hash'],policy=plain['policy']):
+    if plain!=make_plan(now_ms=plain['created_at_ms'],model_hash=plain['model_hash'],policy=plain['policy'],sleeves=plain.get('sleeves')):
         raise ValueError('forward registration was altered')
     if type(as_of_ms) is not int or as_of_ms<plan['created_at_ms'] or len(forecasts)>4096:
         raise ValueError('bounded forward window required')
@@ -46,11 +52,17 @@ def validate_window(plan,forecasts,*,as_of_ms):
         if slot not in expected:continue
         if slot in seen or row['model_hash']!=plan['model_hash']:raise ValueError('duplicate or changed forecast model')
         compatible=row['target_weight'] in (-.25,0,.25)
-        if plan['policy']==PORTFOLIO_POLICY:
-            compatible=(row['target_weight'] is None and row.get('decision_policy')=='DISCRETE_COST_RISK_V1'
+        if plan['policy'] in (PORTFOLIO_POLICY,SLEEVE_POLICY):
+            decision_policy='INDEPENDENT_SLEEVE_COST_RISK_V1' if plan['policy']==SLEEVE_POLICY else 'DISCRETE_COST_RISK_V1'
+            compatible=(row['target_weight'] is None and row.get('decision_policy')==decision_policy
                 and type(row.get('baseline_prediction')) in (float,int) and math.isfinite(row['baseline_prediction'])
                 and len(row.get('features',[]))==5
                 and all(type(v) in (float,int) and math.isfinite(v) for v in row['features']) and row['features'][3]>=0)
+            if plan['policy']==SLEEVE_POLICY:
+                vector=row.get('component_predictions')
+                compatible=(compatible and isinstance(vector,list) and len(vector)==len(plan['sleeves']['components'])
+                    and all(type(v) in (float,int) and math.isfinite(v) for v in vector)
+                    and row.get('sleeve_contract_hash')==digest(plan['sleeves']))
         if (row['entry_ms']!=slot+300000 or row['exit_ms']!=slot+300000+4*HOUR
                 or row['issued_at_ms']<plan['created_at_ms'] or not compatible
                 or not re.fullmatch('[0-9a-f]{64}',row['input_hash'])):
@@ -75,9 +87,21 @@ def replay_window(plan,forecasts,market,*,as_of_ms):
     if market['start']>plan['start_ms'] or market['end']<end:raise ValueError('market coverage missing')
     cases=[]
     by_time={r['entry_ms']:r for r in forecasts if r['entry_ms'] in weights}
-    names=('CASH','FROZEN_MODEL','SINGLE_BASELINE') if plan['policy']==PORTFOLIO_POLICY else ('CASH','FROZEN_MODEL')
+    names=('CASH','FROZEN_MODEL','SINGLE_BASELINE') if plan['policy'] in (PORTFOLIO_POLICY,SLEEVE_POLICY) else ('CASH','FROZEN_MODEL')
     for name in names:
         for fee,slip in plan['cost_cases']:
+            if plan['policy']==SLEEVE_POLICY:
+                from services.research.ai_factory_sleeve_replay import replay_sleeves
+                import numpy as np
+                contract=plan['sleeves'];rows=[by_time[at] for at in sorted(by_time)]
+                quarters=([0]*len(contract['components']) if name=='CASH' else
+                    contract['baseline_quarters'] if name=='SINGLE_BASELINE' else contract['quarters'])
+                receipt=replay_sleeves(market,contract['components'],quarters,
+                    np.asarray([r['slot_ms'] for r in rows]),np.asarray([r['component_predictions'] for r in rows]).T,
+                    variance_by_slot={r['slot_ms']:r['features'][3]**2*4 for r in rows},fee_bps=fee,slip_bps=slip,
+                    window=(plan['start_ms'],end))
+                cases.append({'model':name,'fee_bps':fee,'slippage_bps':slip,'attribution':attribute_replay(receipt),'receipt':receipt})
+                continue
             context_decision=None
             if plan['policy']==PORTFOLIO_POLICY:
                 context_decision=portfolio_decision(by_time,market,name,fee,slip)

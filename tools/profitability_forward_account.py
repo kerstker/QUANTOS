@@ -4,7 +4,7 @@ import time
 import threading
 import numpy as np
 from services.research.ai_factory_store import digest
-from services.research.profitability_forward_account import make_plan,validate_window,replay_window
+from services.research.profitability_forward_account import make_plan,validate_window,replay_window,SLEEVE_POLICY
 from tools.btc_factory_research import verified,seal
 from tools.profitability_study import write_new
 from tools.profitability_forward_market import capture_market
@@ -22,11 +22,12 @@ def _market_identity(market):
             str(v) if k=='maximum_quantity' else v for k,v in market.items()}
 
 
-def advance_cost_account(root,attempt,*,register=False,source_root=None,portfolio=False,
+def advance_cost_account(root,attempt,*,register=False,source_root=None,portfolio=False,sleeves=False,
                          clock=lambda:time.time_ns()//1000000,capture=capture_market):
     if type(attempt) is not int or not 1<=attempt<=1000:raise ValueError('invalid forward attempt')
+    if type(sleeves) is not bool or sleeves and portfolio:raise ValueError('one forward construction required')
     root=Path(root);source_root=root if source_root is None else Path(source_root)
-    output=root/'data/cache/profitability'/str(attempt)/('portfolio-forward' if portfolio else 'p6')
+    output=root/'data/cache/profitability'/str(attempt)/('portfolio-sleeves-forward' if sleeves else 'portfolio-forward' if portfolio else 'p6')
     if not register and not (output/'plan.json').exists():return None
     output.mkdir(parents=True,exist_ok=True)
     with acquire_runtime_lock(output/'worker.lock',process_lock=_LOCK) as acquired:
@@ -34,6 +35,7 @@ def advance_cost_account(root,attempt,*,register=False,source_root=None,portfoli
         try:
             now=clock();base=source_root/'data/cache/ai_factory'/str(attempt)
             if portfolio:base=base/'portfolio'
+            elif sleeves:base=base/'portfolio-sleeves-v1'
             model=verified(base/'model.json')
             if (model.get('authoritative') is not False or model.get('live_eligible') is not False
                     or model['training_last_label_ms']>=now):raise ValueError('frozen research model required')
@@ -41,7 +43,8 @@ def advance_cost_account(root,attempt,*,register=False,source_root=None,portfoli
                 if not (output/'source.json').exists():write_new(output/'source.json',{'source':source_identity(),'model_hash':model['result_hash']})
                 if verified(output/'source.json')['model_hash']!=model['result_hash']:raise ValueError('incomplete registration model changed')
                 write_new(output/'plan.json',make_plan(now_ms=now,model_hash=model['result_hash'],
-                    **({'policy':'COST_AWARE_PORTFOLIO_AND_INNER_BASELINE'} if portfolio else {})))
+                    **({'policy':SLEEVE_POLICY,'sleeves':{k:model[k] for k in ('components','quarters','baseline_quarters')}} if sleeves else
+                       {'policy':'COST_AWARE_PORTFOLIO_AND_INNER_BASELINE'} if portfolio else {})))
             frozen_source=verified(output/'source.json')['source'];current_source=source_identity()
             if any(current_source[k]!=frozen_source[k] for k in ('python_source_sha256','dependency_lock_sha256','python_version','architecture')):
                 raise ValueError('frozen forward runner source or environment changed')
@@ -90,8 +93,12 @@ def advance_cost_account(root,attempt,*,register=False,source_root=None,portfoli
                     cases=[]
                     for index,case in enumerate(result['cases']):
                         write_new(trial/f'case-{index}.json',case)
-                        cases.append({**{k:v for k,v in case.items() if k!='receipt'},
-                                      'equity':[{'time':r['time'],'equity':r['equity']} for r in case['receipt']['daily']]})
+                        item={**{k:v for k,v in case.items() if k!='receipt'},
+                              'equity':[{'time':r['time'],'equity':r['equity']} for r in case['receipt']['daily']]}
+                        if sleeves:
+                            from services.research.ai_factory_sleeves import project_trace
+                            item['sleeve_execution']=project_trace(case['receipt']['sleeve_execution'],verified(trial/f'case-{index}.json')['result_hash'])
+                        cases.append(item)
                     summary={'stage':'P6','status':result['status'],'window':result['window'],'cases':cases,
                              'observed_at_ms':clock(),'plan_hash':plan['result_hash'],'model_hash':plan['model_hash'],
                              'engine_source_hash':frozen_source['python_source_sha256'],'market_hash':digest(market_identity),

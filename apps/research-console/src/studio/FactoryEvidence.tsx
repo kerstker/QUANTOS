@@ -14,10 +14,11 @@ import {ForwardCostEvidence} from './ForwardCostEvidence';
 import {ProfitabilityReadiness} from './ProfitabilityReadiness';
 import {CausalInformationEvidence} from './CausalInformationEvidence';
 import {PortfolioResearch} from './PortfolioResearch';
+import {SleeveProcessComparison} from './SleeveProcessComparison';
 
 export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayload|null;busy:boolean;action:(name:string)=>void;importInput?:(kind:string,content:string)=>Promise<void>}) {
  const workflow=data?.workflow;
- const stages:Record<string,string>={RESEARCH:'主研究',POSTPROCESSING:'后续处理',PROCESS_COMPARISON:'完整过程对照',INDEPENDENT_PACKAGE:'验证包准备',NATURAL_OBSERVATION:'自然时间观察',PORTFOLIO_OBSERVATION:'组合前向观察',ASSESSMENT:'压力与组合诊断',PORTFOLIO_RESEARCH:'组合内层选择',COMPARISON:'完整过程对照',VERIFICATION:'验证包准备',FORWARD:'自然时间观察',CHECKPOINT:'保存检查点',RESEARCH_EXPLANATION:'证据结论',PORTFOLIO_FORWARD:'组合前向观察',COMPLETED:'处理结束',RESULT_REGISTRATION:'结果登记'};
+ const stages:Record<string,string>={RESEARCH:'主研究',POSTPROCESSING:'后续处理',PROCESS_COMPARISON:'完整过程对照',INDEPENDENT_PACKAGE:'验证包准备',NATURAL_OBSERVATION:'自然时间观察',PORTFOLIO_OBSERVATION:'组合前向观察',ASSESSMENT:'压力与组合诊断',PORTFOLIO_RESEARCH:'组合内层选择',SLEEVE_COMPARISON:'独立策略三折比较',SLEEVE_RESEARCH:'独立策略持仓组合',SLEEVE_OBSERVATION:'独立策略前向观察',COMPARISON:'完整过程对照',VERIFICATION:'验证包准备',FORWARD:'自然时间观察',CHECKPOINT:'保存检查点',RESEARCH_EXPLANATION:'证据结论',PORTFOLIO_FORWARD:'组合前向观察',COMPLETED:'处理结束',RESULT_REGISTRATION:'结果登记'};
  const reasons:Record<string,string>={RUNNER_FAILED:'执行器失败或中断，可恢复流程；已有实验记录保留。',WORKFLOW_INCOMPLETE:'执行器已结束，流程尚未完整完成，可继续恢复。',RUNNER_EVIDENCE_UNAVAILABLE:'尚无可核实的执行器记录，暂不能确认整条流程状态。'};
  const tabs=['运行与证据','前向观察','成本决策','压力与组合','过程对照','执行与数据','前向账户'];
  const [tab,setTab]=useState(0),id=useId();
@@ -63,6 +64,7 @@ export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayl
  </>}
  {tab===3&&<>
  <PortfolioResearch data={data?.portfolio_research} busy={busy} complete={complete} action={()=>action('portfolio')}/>
+ <PortfolioResearch sleeves data={data?.portfolio_sleeves} busy={busy} complete={complete} action={()=>action('sleeves')}/>
  <Panel title="压力测试与共享账户" note="固定模型的后选择诊断，不回传 AI，也不建立晋级证据" action={<button className="s-button" disabled={busy||!complete||!!assessment} onClick={()=>action('assess')}>运行诊断</button>}>
  {assessment?<><div className="s-table-wrap" role="region" aria-label="压力测试结果" tabIndex={0}><table className="s-table"><thead><tr><th>滑点 bp</th><th>费用 bp</th><th>额外延迟</th><th>净损益 USDC</th><th>最大回撤</th><th>成交数</th></tr></thead><tbody>{assessment.cases.map(c=><tr key={c.case}><td>{c.slippage_bps}</td><td>{c.fee_bps}</td><td>{c.delay_hours} 小时</td><td>{fmt(c.metrics.net_pnl)}</td><td>{fmt((c.metrics.drawdown??0)*100)}%</td><td>{c.metrics.fills}</td></tr>)}</tbody></table></div><div className="f-metrics"><div><small>组合加入净损益增量</small><strong>{fmt(assessment.portfolio.add_net_pnl_delta)}</strong></div><div><small>替换净损益增量</small><strong>{fmt(assessment.portfolio.replace_net_pnl_delta)}</strong></div><div><small>搜索重采样尾部比例</small><strong>{fmt(assessment.search_diagnostics.family_tail_fraction,3)}</strong></div><div><small>记录尝试次数</small><strong>{assessment.search_diagnostics.trials_attempted??'—'}</strong></div></div><p className="f-message">组合使用同一账户和真实账本，等权合并两模型预测；不是独立资金曲线相加。重采样保留七日块，但不能认证自适应搜索。</p></>:<Empty title="尚未进行压力与组合诊断">在同一输入上重放六种费用、滑点和延迟情景，并比较加入与替换模型后的共享账户结果。</Empty>}
  </Panel>
@@ -70,12 +72,13 @@ export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayl
  {assessment?.portfolio.add&&<Chart title="共享账户 · 加入与替换" rows={assessment.portfolio.add.equity.map((r,i)=>({label:stamp(r.time,true),time:r.time,add:Number(r.equity),replace:Number(assessment.portfolio.replace?.equity[i]?.equity)}))} series={[{key:'add',label:'等权预测组合'},{key:'replace',label:'替换模型'}]} unit="USDC" note="各情景初始资金均为 1,500 USDC；所有结果为后选择技术诊断。"/>}
  </>}
  {tab===4&&<>
+ <SleeveProcessComparison data={data?.sleeve_comparison} busy={busy} ready={complete&&data?.comparison?.schema==='QUANTOS_AI_FACTORY_PROCESS_COMPARISON_V3'} action={action}/>
  <Panel title="三折滚动 · 完整研究过程对照" note="每折重新训练、内层选择后再看该折外层；比较固定规格、随机、单次 AI 与三角色；相同候选、成本和风险预算" action={<button className="s-button" disabled={busy||!complete||data?.comparison?.schema==='QUANTOS_AI_FACTORY_PROCESS_COMPARISON_V3'} onClick={()=>action('compare')}>运行过程对照</button>}>
  <div className="s-table-wrap" role="region" aria-label="完整过程对照" tabIndex={0}><table className="s-table"><thead><tr><th>时间折</th><th>搜索组</th><th>尝试次数</th><th>模型调用 / 秒 / Token</th><th>所选模型</th><th>单模型外层净损益</th><th>组合尝试</th><th>组合外层净损益</th><th>状态</th></tr></thead><tbody>{data?.comparison?.rows.map(r=><tr key={`${r.fold}-${r.group}`}><td>{r.fold+1}</td><td>{({baseline:'固定顺序',random:'随机搜索',ai:'单次 AI',committee:'三角色'} as Record<string,string>)[r.group]??r.group}</td><td>{r.trials.length}</td><td>{r.model_calls??'—'} / {r.model_elapsed_ms==null?'—':fmt(r.model_elapsed_ms/1000,1)} / {r.model_total_tokens??'—'}</td><td>{r.selected?.model??'—'}</td><td>{fmt(r.outer?.net_pnl)}</td><td>{r.portfolio?.inner_trials_attempted??'旧版未运行'}</td><td>{fmt(r.portfolio?.comparisons?.[0]?.portfolio_net_pnl)}</td><td>{r.status}</td></tr>)}</tbody></table></div><p className="f-message">AI 组：{data?.comparison?.ai_group_status??'等待运行'}。历史过程对照不会恢复已使用样本的独立性。</p>
  </Panel>
  </>}
  {tab===5&&<><CausalInformationEvidence data={data?.profitability?.causal} busy={busy} complete={complete&&data?.profitability?.p0?.decision==='P1_BOUNDED_INNER_COMPARISON_ALLOWED'} action={()=>action('information')}/><ExecutionCalibrationEvidence data={data?.profitability?.p5_calibration}/><PassiveExecutionEvidence data={data?.profitability?.p5_queue}/>{importInput&&<ProfitabilityInputUpload busy={busy} complete={complete} versions={data?.profitability?.inputs} onImport={importInput}/>}</>}
- {tab===6&&<><PortfolioForward data={data?.portfolio_research} busy={busy} action={action}/><div className="f-toolbar"><button className="s-button" disabled={busy||!complete} onClick={()=>action('forward_cost')}>登记 / 更新前向账户</button><span>已登记的策略、窗口和成本规则保持冻结。</span></div><ForwardCostEvidence data={data?.profitability?.p6}/></>}
+ {tab===6&&<><PortfolioForward data={data?.portfolio_research} busy={busy} action={action}/><PortfolioForward sleeves data={data?.portfolio_sleeves} busy={busy} action={action}/><div className="f-toolbar"><button className="s-button" disabled={busy||!complete} onClick={()=>action('forward_cost')}>登记 / 更新前向账户</button><span>已登记的策略、窗口和成本规则保持冻结。</span></div><ForwardCostEvidence data={data?.profitability?.p6}/></>}
  </div>
  </>;
 }

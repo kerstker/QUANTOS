@@ -23,11 +23,29 @@ def verify_portfolio(directory):
                 if ledger.load(identity).status!=row['status']:
                     raise ValueError('portfolio trial status conflict')
                 receipts[identity]=row
+    from services.research.ai_factory_sleeves import project_trace,SCHEMA as SLEEVE_SCHEMA,CONSTRUCTION
+    traces=list((directory/'sleeve-traces').glob('*.json'))
+    if len(traces)>22:raise ValueError('sleeve trace budget exceeded')
+    for path in traces:
+        trace=verified(path);receipt=receipts.get(path.stem)
+        if (plan['schema']!=SLEEVE_SCHEMA or receipt is None or trace['trial_id']!=path.stem
+                or trace['plan_hash']!=plan_hash or trace['trace']['construction']!=CONSTRUCTION
+                or any(trace['trace'].get(k) is not False for k in ('authoritative','economic_eligible'))):
+            raise ValueError('sleeve trace identity conflict')
+        if receipt['status']=='PASSED' and receipt['metrics'].get('sleeve_execution')!=project_trace(trace['trace'],trace['result_hash']):
+            raise ValueError('sleeve trace projection conflict')
+    for receipt in receipts.values():
+        if 'sleeve_execution' in receipt.get('metrics',{}) and not (directory/'sleeve-traces'/f"{receipt['trial_id']}.json").exists():
+            raise ValueError('sleeve trace missing')
     selection_path=directory/'selection.json';model_path=directory/'model.json';result_path=directory/'result.json'
     selection=verified(selection_path) if selection_path.exists() else None
     if selection and (selection['plan_hash']!=plan_hash or selection['scope']!='INNER_ONLY'):
         raise ValueError('portfolio selection identity conflict')
     model=verified(model_path) if model_path.exists() else None
+    if model and plan['schema']==SLEEVE_SCHEMA and (model.get('construction')!=CONSTRUCTION
+            or plan.get('construction')!=CONSTRUCTION or model['decision_policy']!='INDEPENDENT_SLEEVE_COST_RISK_V1'
+            or model['replay_threshold_bps'] is not None):
+        raise ValueError('sleeve model policy conflict')
     if model and (not selection or model['plan_hash']!=plan_hash
                   or model['quarters']!=selection['selected']['quarters']
                   or model['baseline_quarters']!=selection['baseline']['quarters']

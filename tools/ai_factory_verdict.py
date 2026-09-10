@@ -28,7 +28,13 @@ def run_verdict(params):
         portfolio=None
         if (dest/'portfolio/result.json').exists():
             verify_portfolio(dest/'portfolio');portfolio=verified(dest/'portfolio/result.json')
-        document=research_verdict(primary,portfolio)
+        sleeves=None;process=None
+        if (dest/'portfolio-sleeves-v1/result.json').exists():
+            verify_portfolio(dest/'portfolio-sleeves-v1');sleeves=verified(dest/'portfolio-sleeves-v1/result.json')
+        if (dest/'process-sleeves-v1/process-comparison.json').exists():
+            from tools.ai_factory_sleeve_process import verify_comparison
+            process=verify_comparison(dest/'process-sleeves-v1')
+        document=research_verdict(primary,portfolio,sleeves=sleeves,sleeve_process=process)
         identity=digest({'schema':SCHEMA,'sources':document['source_hashes']})
         path=dest/'verdicts'/f'{identity}.json';path.parent.mkdir(exist_ok=True)
         if path.exists():

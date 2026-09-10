@@ -27,6 +27,27 @@ def test_missing_portfolio_is_not_inferred_from_single_model_profit():
     assert value['profitability_established'] is False
 
 
+def test_sleeve_and_process_facts_keep_separate_decisions_and_exact_sources():
+    from services.research.ai_factory_verdict import research_verdict
+    original=seal({'model_hash':'a'*64,'outer':{'net_pnl':100},'authoritative':False})
+    sleeves=seal({'model_hash':'b'*64,'authoritative':False,'economic_eligible':False,
+        'decision':'STOP_NO_STABLE_NET_INCREMENT','comparisons':[{'fee_bps':4,'slippage_bps':5,
+            'portfolio_net_pnl':-2,'baseline_net_pnl':-1,'net_pnl_delta':-1,'portfolio_fills':4}]})
+    process=seal({'schema':'QUANTOS_SLEEVE_PROCESS_COMPARISON_V1','authoritative':False,'economic_eligible':False,
+        'new_model_calls':0,'refitted_models':0,'rows':[{'fold':0,'group':'baseline','status':'FAILED',
+            'portfolio':None,'inner_trials_attempted':0,'outer_cases_attempted':0,'failed_cases':0}],'failed_groups':1})
+    value=research_verdict(original,None,sleeves=sleeves,sleeve_process=process)
+    f=next(f for f in value['facts'] if f['id']=='sleeves.0.net_pnl_delta')
+    assert f['value']==-1 and f['evidence_hash']==sleeves['result_hash']
+    assert '4 / 5 bp' in f['label']
+    assert value['scope_decisions']['sleeves']=='STOP_NO_STABLE_NET_INCREMENT'
+    assert value['scope_decisions']['sleeve_process']=='STOP_UNRESOLVED_COMPARISON'
+    assert process['result_hash'] in value['source_hashes']
+    assert value['search_feedback_allowed'] is False and value['profitability_established'] is False
+    with pytest.raises(ValueError,match='evidence'):
+        research_verdict(original,None,sleeve_process={**process,'failed_groups':0})
+
+
 def test_verdict_publication_and_episode_recover_without_overwriting(tmp_path,monkeypatch):
     import numpy as np
     from services.research.ai_factory import HOUR

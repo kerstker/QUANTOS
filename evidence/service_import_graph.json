@@ -1311,6 +1311,11 @@
     {
       "references": [
         {
+          "line": 8,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/ai_factory_sleeves.py"
+        },
+        {
           "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
@@ -1694,12 +1699,17 @@
           "path": "services/research_runner/run_kinds.py"
         },
         {
-          "line": 569,
+          "line": 555,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/run_kinds.py"
         },
         {
-          "line": 581,
+          "line": 582,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 594,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/run_kinds.py"
         },
@@ -1752,7 +1762,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "a5682075dc3d6707047cae7003cc3efcc4a7e0f94cdd95fbc851c904be458003",
+  "graph_sha256": "bfaf7a123b563fd4e6c398ff10f1d62292385c3e423834fb89e0ef016563424d",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1790,7 +1800,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 552,
+  "source_file_count": 554,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

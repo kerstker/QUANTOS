@@ -130,5 +130,6 @@ def advance_factory(root,*,now_ms):
         except Exception as exc:results.append({'attempt':attempt,'status':'ERROR','reason':type(exc).__name__})
     from tools.ai_factory_portfolio_forward import advance_portfolios
     results.extend(advance_portfolios(root))
+    results.extend(advance_portfolios(root,sleeves=True))
     results.extend(advance_registered_information(root))
     return results

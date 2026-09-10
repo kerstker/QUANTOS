@@ -2078,6 +2078,52 @@ def test_portfolio_research_contract_keeps_account_curves_and_hides_training_dat
     assert report['outer_cases'][0]['metrics']['equity'][0]['equity']=='1500'
 
 
+def test_sleeve_console_keeps_owned_positions_and_does_not_inherit_old_forward_costs(tmp_path):
+    from services.research.ai_factory_store import FactoryStore
+    from services.console.api.ai_factory import factory_payload
+    from tools.btc_factory_research import seal
+    from tools.cache_io import atomic_write_json
+    base=tmp_path/'data/cache/ai_factory'
+    with FactoryStore(base/'factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'});store.update(1,'COMPLETED',{})
+    trace={'construction':'INDEPENDENT_DECISIONS_ONE_WAY_NET_ACCOUNT_V1','ending':{'actual_quantity':'0.007'},
+        'decisions':[],'execution':[],'decision_count':100,'execution_count':150,'trace_hash':'a'*64}
+    (base/'1/portfolio-sleeves-v1').mkdir(parents=True)
+    (tmp_path/'data/cache/profitability/1/portfolio-forward').mkdir(parents=True)
+    atomic_write_json(str(base/'1/portfolio-sleeves-v1/result.json'),seal({
+        'schema':'QUANTOS_FACTORY_SLEEVE_PORTFOLIO_V1','status':'COMPLETED_TECHNICAL_ONLY',
+        'construction':trace['construction'],'authoritative':False,'economic_eligible':False,
+        'outer_cases':[{'name':'portfolio','status':'PASSED','fee_bps':4,'slippage_bps':5,
+            'metrics':{'net_pnl':-1.,'sleeve_execution':trace,'training_x':[[999]]}}]}))
+    atomic_write_json(str(tmp_path/'data/cache/profitability/1/portfolio-forward/status.json'),
+        seal({'status':'LEGACY_WINDOW','authoritative':False}))
+    payload=factory_payload(tmp_path,1);report=payload['portfolio_sleeves']
+    assert report['outer_cases'][0]['metrics']['sleeve_execution']==trace
+    assert 'training_x' not in report['outer_cases'][0]['metrics']
+    assert report['forward_cost'] is None and report['forward'] is None
+
+
+def test_sleeve_process_is_independent_and_rejects_authority_claims(tmp_path):
+    from services.console.api.ai_factory import factory_payload
+    from services.research.ai_factory_store import FactoryStore
+    from tools.profitability_study import write_new
+    from tools.btc_factory_research import seal
+    import json
+    base=tmp_path/'data/cache/ai_factory'
+    with FactoryStore(base/'factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','objective':'BTC','budget':3})
+    path=base/'1/process-sleeves-v1/process-comparison.json';path.parent.mkdir(parents=True)
+    data={'schema':'QUANTOS_SLEEVE_PROCESS_COMPARISON_V1','status':'COMPLETED_TECHNICAL_ONLY',
+        'rows':[],'new_model_calls':0,'refitted_models':0,'authoritative':False,'economic_eligible':False,
+        'live_eligible':False,'outer_feedback_allowed':False}
+    write_new(path,data)
+    payload=factory_payload(tmp_path,1)
+    assert payload['sleeve_comparison']['schema']==data['schema'] and payload['comparison'] is None
+    path.write_text(json.dumps(seal({**data,'economic_eligible':True})))
+    payload=factory_payload(tmp_path,1)
+    assert payload['sleeve_comparison'] is None and 'SLEEVE_COMPARISON_UNAVAILABLE' in payload['errors']
+
+
 def test_portfolio_projects_large_trial_evidence_without_exposing_raw_details(tmp_path):
     import pytest
     from services.console.api.factory_portfolio import portfolio_payload

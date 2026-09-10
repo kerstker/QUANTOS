@@ -123,7 +123,10 @@ def _verify_state(base):
         obj.verify_campaigns()
     finally:obj.c.close()
     from tools.ai_factory_portfolio_verify import verify_portfolio
-    for directory in list(base.glob('*/portfolio'))+list(base.glob('*/process-v2/portfolios/*'))+list(base.glob('*/process-v3/portfolios/*')):
+    from tools.ai_factory_sleeve_process import verify_comparison
+    for directory in base.glob('*/process-sleeves-v1'):
+        if (directory/'comparison-plan.json').exists():verify_comparison(directory)
+    for directory in list(base.glob('*/portfolio'))+list(base.glob('*/portfolio-sleeves-v1'))+list(base.glob('*/process-v2/portfolios/*'))+list(base.glob('*/process-v3/portfolios/*')):
         verify_portfolio(directory)
     from services.research.trial_ledger import TrialLedger
     for path in list(base.glob('*/process-v2/comparison-trials.db'))+list(base.glob('*/process-v3/comparison-trials.db')):

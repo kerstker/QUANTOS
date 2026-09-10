@@ -42,8 +42,13 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
            maximum_quantity=D('50'),taker_fee_bps=D('4'),decision_interval_ms=DAY,
            target_weight=D('.25'),max_position_weight=D('.30'),initial_margin=D(1),
            maintenance_margin=D('.5'),price_stop=None,trade_lows=None,trade_highs=None,
-           max_holding_ms=None,context_decision=None,quote='USDC'):
+           max_holding_ms=None,context_decision=None,quote='USDC',
+           target_policy='DISCRETE_V1',execution_observer=None):
     if quote not in ('USDC','USDT'):raise ValueError('unsupported research settlement currency')
+    if target_policy not in ('DISCRETE_V1','SLEEVE_NET_V1'):raise ValueError('unregistered target policy')
+    if target_policy=='SLEEVE_NET_V1' and (not stop or target_weight!=D('.25') or max_position_weight!=D('.30')):
+        raise ValueError('fixed sleeve risk budget required')
+    if execution_observer is not None and not callable(execution_observer):raise ValueError('invalid execution observer')
     symbol='BTC'+quote
     times=np.asarray(times,dtype=np.int64)
     prices=np.asarray(prices,dtype=float);marks=np.asarray(marks,dtype=float)
@@ -101,6 +106,13 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         position=ledger.position(symbol)
         return D(0) if position is None else position.quantity
 
+    def notify_execution(at,status,reason):
+        if execution_observer is not None:
+            from types import MappingProxyType
+            execution_observer(at,MappingProxyType({'status':status,'reason':reason,
+                'quantity':canonical_decimal(qty()),'equity':canonical_decimal(ledger.account_equity()),
+                'halted':halted is not None}))
+
     def latch(at):
         nonlocal halted,pending_exit
         if stop and halted is None and ledger.account_equity()<=D(1350):
@@ -130,13 +142,16 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
         desired=(D(str(abs(weight)))*equity/reference/spec.quantity_step).to_integral_value(rounding=ROUND_FLOOR)*spec.quantity_step
         if weight<0:desired=-desired
         delta=desired-current
-        if delta==0:return
+        if delta==0:
+            notify_execution(at,'NO_NET_CHANGE',reason);return
         if abs(delta)>maximum_quantity:
-            orders.append({'time':at,'status':'REJECTED_MAX_QUANTITY','quantity':str(delta)});return
+            orders.append({'time':at,'status':'REJECTED_MAX_QUANTITY','quantity':str(delta)})
+            notify_execution(at,'REJECTED_MAX_QUANTITY',reason);return
         price=reference*(1+D(slip_bps)/10000 if delta>0 else 1-D(slip_bps)/10000)
         price=(price/D('.1')).to_integral_value(rounding=ROUND_CEILING if delta>0 else ROUND_FLOOR)*D('.1')
         if abs(delta)*price<spec.min_notional:
-            orders.append({'time':at,'status':'SKIPPED_MIN_NOTIONAL','quantity':str(delta)});return
+            orders.append({'time':at,'status':'SKIPPED_MIN_NOTIONAL','quantity':str(delta)})
+            notify_execution(at,'SKIPPED_MIN_NOTIONAL',reason);return
         volume=daily_volume.get(at//DAY)
         if not isinstance(volume,D) or not volume.is_finite() or volume<=0:raise ValueError('completed volume unavailable')
         capacity=CapacityPolicy('BINANCE_USDM',str(at//DAY),BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID,
@@ -152,12 +167,22 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
             if increased and (after<D(1350) and stop or after<=0 or abs(qty())*D(str(marks[index]))>max_position_weight*after):
                 raise _TradeRejected('POST_FILL_RISK')
         try:
-            ledger.apply_event(TradeEvent(at,symbol,delta,price,MarginMode.CROSS,capacity,fee=fee),trade_guard=guard)
+            outcome=ledger.apply_event(TradeEvent(at,symbol,delta,price,MarginMode.CROSS,capacity,fee=fee),trade_guard=guard)
         except _TradeRejected as exc:
-            orders.append({'time':at,'status':'REJECTED_'+str(exc),'equity_before':str(before)});return
+            orders.append({'time':at,'status':'REJECTED_'+str(exc),'equity_before':str(before)})
+            notify_execution(at,'REJECTED_'+str(exc),reason);return
+        # A capacity rejection returns a zero-fill receipt and deliberately does
+        # not call the post-fill guard. Only committed fills belong in this list.
+        if outcome.filled_quantity==0:
+            orders.append({'time':at,'status':'REJECTED_CAPACITY','quantity':canonical_decimal(delta),
+                'reason':outcome.reason,'equity_before':canonical_decimal(before)})
+            notify_execution(at,'REJECTED_CAPACITY',reason);return
+        if outcome.status!='FILLED' or outcome.filled_quantity!=delta:
+            raise ValueError('unexpected canonical execution outcome')
         fills.append({'time':at,'quantity':canonical_decimal(delta),'price':canonical_decimal(price),
                       'fee':canonical_decimal(fee),'reference':canonical_decimal(reference),'reason':reason})
         orders.append({'time':at,'status':'FILLED','quantity':canonical_decimal(delta)})
+        notify_execution(at,'FILLED',reason)
         if current==0 and qty()!=0:
             episode+=1
             if price_stop is not None:
@@ -216,6 +241,7 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
             observations.append({'time':at,'equity':canonical_decimal(ledger.account_equity())})
             latch(at)
         elif kind in ('decision','end'):
+            notify_execution(at,'LEDGER_STATE',kind)
             if (at-start)%DAY==0 or kind=='end':
                 daily.append({'time':at,'equity':canonical_decimal(ledger.account_equity()),
                               'quantity':canonical_decimal(qty()),'mark':str(marks[int(np.searchsorted(times,at))])})
@@ -229,7 +255,9 @@ def replay(*,times,prices,marks,funding,start,end,daily_volume,decision,slip_bps
                     'mark':str(marks[int(np.searchsorted(times,at))]),'halted':halted is not None,
                     'pending_exit_ms':pending_exit})
                 weight=context_decision(at,context)
-            if weight is not None and (not np.isfinite(weight) or D(str(weight)) not in (-target_weight,D(0),target_weight)):
+            if weight is not None and (not np.isfinite(weight) or
+                    (D(str(weight)) not in (-target_weight,D(0),target_weight) if target_policy=='DISCRETE_V1'
+                     else abs(D(str(weight)))>target_weight)):
                 raise ValueError('invalid bounded target')
             decisions.append({'time':at,'target':weight,'actual_quantity':canonical_decimal(qty()),'halted':halted is not None})
             if halted is not None:

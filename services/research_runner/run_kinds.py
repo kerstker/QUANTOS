@@ -551,6 +551,19 @@ def _adapt_ai_factory_comparison(result):
             'provenance':'tools/ai_factory_process_comparison.py'}
 
 
+def _adapt_ai_factory_sleeve_comparison(result):
+    from services.research.ai_factory_store import digest
+    if (result.get('schema')!='QUANTOS_SLEEVE_PROCESS_COMPARISON_V1'
+            or any(result.get(k) is not False for k in ('authoritative','economic_eligible','live_eligible','outer_feedback_allowed'))
+            or result.get('new_model_calls')!=0 or result.get('refitted_models')!=0
+            or result.get('result_hash')!=digest({k:v for k,v in result.items() if k!='result_hash'})):
+        raise ValueError('invalid sleeve comparison result')
+    return {'title':'独立策略三折持仓比较','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+        'metrics':{'factory_attempt':result['attempt'],'comparison_json':json.dumps(result,sort_keys=True)},
+        'caveats':['复用冻结组件预测，内层选择先于外层；历史已使用，不构成新盈利证据。'],
+        'provenance':'tools/ai_factory_sleeve_process.py'}
+
+
 def _adapt_ai_factory_verification(result):
     return {'title':'独立研究验证包','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'factory_attempt':result['attempt'],'verification_json':json.dumps(result,sort_keys=True)},
@@ -565,16 +578,16 @@ def _adapt_ai_factory_assessment(result):
             'provenance':'tools/ai_factory_assessment.py'}
 
 
-def _adapt_ai_factory_portfolio(result):
+def _adapt_ai_factory_portfolio(result,*,sleeves=False):
     from services.research.ai_factory_store import digest
-    if (result.get('schema')!='QUANTOS_FACTORY_PORTFOLIO_V1'
+    if (result.get('schema')!=('QUANTOS_FACTORY_SLEEVE_PORTFOLIO_V1' if sleeves else 'QUANTOS_FACTORY_PORTFOLIO_V1')
             or result.get('authoritative') is not False or result.get('economic_eligible') is not False
             or result.get('result_hash')!=digest({k:v for k,v in result.items() if k!='result_hash'})):
         raise ValueError('invalid portfolio research result')
-    return {'title':'内层组合研究与整体回放','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
+    return {'title':'独立策略持仓与整体回放' if sleeves else '内层组合研究与整体回放','verdict':'TECHNICAL_VALIDATION_ONLY','series':{},
             'metrics':{'result_hash':result['result_hash'],'portfolio_json':json.dumps(result,sort_keys=True)},
             'caveats':['固定权重搜索与同账户成本比较；已使用历史，不建立经济准入。'],
-            'provenance':'tools/ai_factory_portfolio.py'}
+            'provenance':'tools/ai_factory_sleeve_study.py' if sleeves else 'tools/ai_factory_portfolio.py'}
 
 
 def _adapt_ai_factory_verdict(result):
@@ -618,6 +631,11 @@ RUN_KINDS: dict = {
         _adapt_ai_factory_verdict,'可追溯研究结论',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_portfolio': RunSpec('tools.ai_factory_portfolio:run_portfolio',{'attempt':int},
         _adapt_ai_factory_portfolio,'内层组合研究与整体回放',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_sleeves': RunSpec('tools.ai_factory_sleeve_study:run_sleeves',{'attempt':int},
+        lambda result:_adapt_ai_factory_portfolio(result,sleeves=True),'独立策略持仓与整体回放',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_sleeves_forward': RunSpec('tools.ai_factory_sleeve_forward:run_observation',{'attempt':int,'action':int},
+        lambda result:_adapt_ai_factory_forward(result,source='tools/ai_factory_sleeve_forward.py'),
+        '独立策略原始预测与前向账户',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'action':(0,2)}),
     'ai_factory_portfolio_forward': RunSpec('tools.ai_factory_portfolio_forward:run_observation',{'attempt':int,'action':int},
         lambda result:_adapt_ai_factory_forward(result,source='tools/ai_factory_portfolio_forward.py'),
         '组合与单模型配对前向观察',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'action':(0,2)}),
@@ -631,6 +649,8 @@ RUN_KINDS: dict = {
         _adapt_profitability,'盈利能力验证 P0–P5',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_comparison': RunSpec('tools.ai_factory_process_comparison:run_comparison', {'attempt':int},
         _adapt_ai_factory_comparison,'三折研究过程对照',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
+    'ai_factory_sleeves_comparison': RunSpec('tools.ai_factory_sleeve_process:run_comparison', {'attempt':int},
+        _adapt_ai_factory_sleeve_comparison,'独立策略三折持仓比较',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_pipeline': RunSpec('tools.ai_factory_pipeline:run_pipeline', {'attempt':int},
         partial(_adapt_ai_factory,source='tools/ai_factory_pipeline.py'),'自动化 AI 研究工厂全流程',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_verification': RunSpec('tools.ai_factory_verification:run_verification', {'attempt':int},
