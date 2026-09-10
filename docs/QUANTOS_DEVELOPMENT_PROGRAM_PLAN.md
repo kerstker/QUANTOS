@@ -1,10 +1,12 @@
 # QUANTOS — Full Development Program Plan
 
+> **2026-09-11 当前进度入口**：下文是早期阶段分解与历史记录，不能把其中的 DONE、core done 或百分比当作当前运行与盈利准备度。最新工作按[统一后续路线](engineering/plans/2026-09-09-profitability-validation.md)与[项目状态](PROJECT_STATE.md)逐源码记录。运行源码 `134ff89d7`、证据 `28996756c` 已通过完整软件验收，本批未部署；实际账户条件、真实场所校准、自然盈利、独立经济准入与正式运行验收仍未完成，异机恢复搁置。旧 V1 回放及纸面成交历史继续遵守现行失效/隔离声明。
+
 Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](../QUANTOS_MASTER_BLUEPRINT.md)
 (11 layers, phases 0–14, §1 safety, §8 rejection reasons, §9 quant validation,
 §15 Definition of Done).
 
-**Current state (Phase 0 audit, verified):** ~10% built; safety posture strong
+**Historical Phase 0 audit snapshot (not current progress):** ~10% built; safety posture strong
 and code-enforced. See [`README.md`](../README.md) and [`CLAUDE.md`](../CLAUDE.md).
 
 **Operating principle:** tests-first, smallest safe change, research/paper/live
