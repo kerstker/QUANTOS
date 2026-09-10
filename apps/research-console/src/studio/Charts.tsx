@@ -8,6 +8,15 @@ function save(name:string,body:string,type:string) {
  const url=URL.createObjectURL(new Blob([body],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 const csv=(value:unknown)=>'"'+String(typeof value==='number'?value:/^[=+@-]/.test(String(value))?"'"+value:value??'').replace(/"/g,'""')+'"';
+function axisLabel(value:number,step:number) {
+ const digits=Math.max(0,1-Math.floor(Math.log10(step)));
+ if(digits>6) {
+  const significant=Math.min(15,Math.max(2,Math.floor(Math.log10(Math.abs(value)))-Math.floor(Math.log10(step))+1));
+  return value===0?'0':value.toExponential(significant);
+ }
+ const rounded=Number(value.toFixed(digits));
+ return fmt(rounded===0?0:rounded,digits);
+}
 
 /** Shared inspectable SVG plot: no synthetic values, keyboard cursor and raw table. */
 export function Chart({title,rows,series,kind='line',unit='',note='',xAxis='index'}:{title:string;rows:ChartRow[];series:ChartSeries[];kind?:'line'|'step'|'bar'|'scatter'|'candle';unit?:string;note?:string;xAxis?:'index'|'time'}) {
@@ -32,7 +41,7 @@ export function Chart({title,rows,series,kind='line',unit='',note='',xAxis='inde
  {table?<div className="s-table-wrap" tabIndex={0} role="region" aria-label={title+'数据表'}><table className="s-table"><thead><tr><th>时点 / 项目</th>{series.map(s=><th key={s.key}>{s.label}</th>)}</tr></thead><tbody>{data.map((r,i)=><tr key={i}><td>{r.label}</td>{series.map(s=><td key={s.key}>{fmt(r[s.key],4)}</td>)}</tr>)}</tbody></table></div>:<div className="s-plot">
  <svg ref={svg} viewBox="0 0 800 278" role="img" aria-labelledby={id} onMouseMove={e=>{const box=e.currentTarget.getBoundingClientRect();setCursor(inspectAt((e.clientX-box.left)*800/box.width));}} onMouseLeave={()=>setCursor(null)}>
  <title id={id}>{title}，{data.length}个样本，{unit}。可用下方滑块检查每个样本。</title><rect width="800" height="278" fill="var(--s-panel, #ffffff)"/>
- {[0,1,2,3,4].map(i=>{const value=lo+(hi-lo)*i/4;return <g key={i}><line x1="58" x2="778" y1={y(value)} y2={y(value)} stroke="var(--s-line, #dce4e9)" strokeDasharray="3 4"/><text x="50" y={y(value)+4} textAnchor="end" fill="var(--s-muted, #566875)" fontSize="10">{fmt(value,Math.abs(value)>100?0:2)}</text></g>;})}
+ {[0,1,2,3,4].map(i=>{const value=lo+(hi-lo)*i/4;return <g key={i}><line x1="58" x2="778" y1={y(value)} y2={y(value)} stroke="var(--s-line, #dce4e9)" strokeDasharray="3 4"/><text x="50" y={y(value)+4} textAnchor="end" fill="var(--s-muted, #566875)" fontSize="10">{axisLabel(value,(hi-lo)/4)}</text></g>;})}
  {kind==='candle'?data.map((r,i)=>{const up=Number(r.close)>=Number(r.open),color=up?'var(--s-accent, #28755f)':'var(--s-danger, #c34b55)';return <g key={i}><line x1={x(i)} x2={x(i)} y1={y(Number(r.high))} y2={y(Number(r.low))} stroke={color}/><rect x={x(i)-Math.max(1,260/data.length)} width={Math.max(2,520/data.length)} y={y(Math.max(Number(r.open),Number(r.close)))} height={Math.max(1,Math.abs(y(Number(r.open))-y(Number(r.close))))} fill={color}/></g>;}) : active.map(s=>{const color=s.color??COLORS[series.indexOf(s)%COLORS.length];return <g key={s.key}>{kind==='line'||kind==='step'?<path d={linePath(s)} fill="none" stroke={color} strokeWidth="2"/>:data.map((r,i)=>typeof r[s.key]==='number'&&Number.isFinite(r[s.key])?kind==='scatter'?<circle key={i} cx={x(i)} cy={y(r[s.key] as number)} r="3" fill={color}/>:<rect key={i} x={x(i)-250/data.length+active.indexOf(s)*500/data.length/active.length} width={Math.max(1,500/data.length/active.length)} y={y(Math.max(0,r[s.key] as number))} height={Math.max(1,Math.abs(y(r[s.key] as number)-y(0)))} fill={color}/>:null)}</g>;})}
  {cursor!==null&&<line x1={x(Math.min(cursor,data.length-1))} x2={x(Math.min(cursor,data.length-1))} y1="30" y2="240" stroke="#73818b" strokeDasharray="4 3"/>}
  {[0,Math.floor((data.length-1)/2),data.length-1].filter((v,i,a)=>a.indexOf(v)===i).map(i=><text key={i} x={x(i)} y="264" textAnchor={i===0?'start':i===data.length-1?'end':'middle'} fill="var(--s-muted, #566875)" fontSize="10">{data[i].label}</text>)}
