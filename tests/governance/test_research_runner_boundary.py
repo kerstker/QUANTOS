@@ -161,6 +161,9 @@ def test_runner_selection_authority_is_explicit_and_diagnostics_are_ineligible()
         "ai_factory_pipeline",
         "ai_factory_portfolio",
         "ai_factory_portfolio_forward",
+        "ai_factory_sleeves",
+        "ai_factory_sleeves_forward",
+        "ai_factory_sleeves_comparison",
         "ai_factory_comparison",
         "profitability_study", "profitability_input", "profitability_forward", "profitability_information",
     }
