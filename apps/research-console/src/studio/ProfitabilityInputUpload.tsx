@@ -12,6 +12,7 @@ export function ProfitabilityInputUpload({busy,complete,versions,onImport}:{busy
  <div className="f-form"><div className="f-import-fields"><label>输入类型 <select value={kind} disabled={busy} onChange={e=>setKind(e.target.value)}>{Object.entries(NAMES).map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></label>
  <label>选择 JSON 文件 <input type="file" accept=".json,application/json" disabled={busy} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;setError('');if(file.size>4000000){setError('文件不能超过 4 MB');return;}try{setContent(await file.text());setFileName(file.name);}catch{setError('无法读取文件');}}}/></label></div>
  <p className="f-message">{FIELDS[kind]} {fileName&&`已选择：${fileName}`}</p>
+ {kind==='passive'&&<details><summary>导入币安原始订单回执</summary><p>将公开盘口、固定动作与离线订单消息放入同一输入。calibration 使用 PASSIVE_BINANCE_ORDER_RECEIPTS_V1，提供 cutoff_ms 和 raw_observed。原始消息按本机接收顺序保存 raw_utf8、response_sha256、received_at_ms；bindings 中 venue_order_id 使用字符串，避免大整数编号失真。</p><p>只接收普通 LIMIT / GTX、单向持仓的固定订单。覆盖范围、缺口、匿名账户摘要与动作摘要必须明确。输入不包含 API 密钥、listenKey、请求头或签名地址；没有原始回执时，继续使用已有规范化轨迹。</p></details>}
  <label>研究 JSON 内容<textarea spellCheck={false} rows={5} value={content} disabled={busy} onChange={e=>setContent(e.target.value)} placeholder="选择文件，或粘贴规范化研究数据"/></label>
  <div className="f-toolbar"><button className="s-button" disabled={busy||!complete||!content.trim()} onClick={()=>void submit()}>登记输入并运行</button><span>仅针对当前已完成的冻结实验；不会改变模型或风险预算。</span></div>
  {error&&<p role="alert">{error}</p>}

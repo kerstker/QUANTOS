@@ -2061,6 +2061,24 @@ def test_passive_receipt_calibration_console_contract_has_distinct_clocks_and_no
     assert len(calibration['heldout']['rows'])<=20
 
 
+def test_native_order_receipts_console_contract_keeps_fee_assets_and_exact_ids(tmp_path):
+    import json
+    from tests.research.test_binance_order_receipts import native_workflow_source
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.parent.mkdir(parents=True)
+    path=tmp_path/'source.json';path.write_text(json.dumps(native_workflow_source()));study(path,directory)
+    view=profitability_payload(tmp_path,1)['p5_queue'];native=view['calibration']['native_observations']
+    assert native['reported_commission_by_asset']=={'USDC':'0.00198'}
+    assert native['reported_quote_commission']=='0.00198'
+    assert native['trade_rows'][0]['venue_order_id']=='123'
+    assert isinstance(native['trade_rows'][0]['trade_id'],str)
+    assert native['actual_paid_fees'] is None and native['source_verified'] is False
+    assert len(native['trade_rows'])<=50
+    assert native['fee_comparisons'][1]['reported_minus_simulated_fee']=='-0.00792'
+    assert view['calibration']['venue_receipts_verified'] is False
+
+
 def test_profitability_causal_information_preserves_separate_quotes_and_no_prediction_claim(tmp_path):
     from services.console.api.profitability_views import profitability_payload
     from tools.profitability_study import write_new

@@ -33,3 +33,6 @@
  .s-filter-quantities td{border:0;padding:10px 8px;text-align:left}
  .s-filter-quantities td::before{content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;line-height:1.5;color:var(--s-muted)}
 }
+.s-native-receipts {min-width:0; padding-block:1rem; border-block:1px solid var(--s-line,#dce4e8);}
+.s-native-identity {overflow-wrap:anywhere;}
+.s-native-identity code {word-break:break-all;}

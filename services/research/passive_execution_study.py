@@ -54,7 +54,9 @@ def prepare_input(data):
     if 'calibration' in data:
         from services.research.ai_factory_store import digest
         if not any(a.kind=='ORDER' for a in actions):raise ValueError('calibration requires fixed orders')
-        validate_calibration(data['calibration'],tape,actions,digest(data['actions']))
+        validate_calibration(data['calibration'],tape,actions,digest(data['actions']),
+            reduce_only_ids=frozenset(r['order_id'] for r in data['actions'] if r.get('reduce_only')),
+            account_ref_sha256=data['account'].get('account_terms',{}).get('account_ref_sha256'))
     return tape,actions
 
 

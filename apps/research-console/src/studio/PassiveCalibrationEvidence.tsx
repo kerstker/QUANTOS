@@ -2,6 +2,7 @@ import {useState} from 'react';
 import type {PassiveReceiptCalibration} from '@/lib/types/ai-factory';
 import {Panel} from './components';
 import {Chart} from './Charts';
+import {NativeOrderReceiptsEvidence} from './NativeOrderReceiptsEvidence';
 import './passive-execution.css';
 
 const labels:Record<string,string>={INCOMPLETE_PREFIX_FITS:'校准段计算未完整完成',
@@ -25,6 +26,7 @@ export function PassiveCalibrationEvidence({data}:{data?:PassiveReceiptCalibrati
  <p className="f-message">{data.observed_provenance.kind==='SYNTHETIC_TEST_FIXTURE'?'合成测试轨迹，仅用于验证软件。':'导入订单回执，来源声明尚未独立验证。'} 真实场所校准尚未验收，不能据此采用低费率或宣称盈利。</p>
  <p>校准段 {time(data.window_start_ms)} — {time(data.cutoff_ms)}；留出段至 {time(data.window_end_ms)}。截止点之后才收到的回执只进入后段，较早的场所时间不会把它移回校准段。</p>
  <p className="f-message">{data.trials_attempted} 次校准尝试。订单、撤单与回执使用同一组固定延迟，无法据此识别三个独立延迟分布。多组同分时保持未选择。</p>
+ {data.native_observations&&<NativeOrderReceiptsEvidence data={data.native_observations}/>}
  <div className="s-table-wrap" role="region" aria-label="被动校准段参数比较" tabIndex={0}><table className="s-table"><thead><tr><th>延迟</th><th>状态</th><th>末端数量差 BTC</th><th>数量路径差 BTC·ms</th><th>配对事件数量差 BTC</th><th>场所时间差 ms</th><th>接收时间差 ms</th><th>未配对事件</th></tr></thead><tbody>{data.trials.map(t=><tr key={t.profile_ms}>
  <td>{t.profile_ms} ms{t.profile_ms===data.selected_profile_ms?' · 冻结':''}</td><td>{t.status==='COMPLETED'?'计算完成':`失败 · ${t.reason??'未知'}`}</td>
  <td>{t.fit?.final_quantity_absolute_error??'未知'}</td><td>{t.fit?.quantity_path_error_btc_ms??'未知'}</td><td>{t.fit?.matched_event_quantity_absolute_error??'未知'}</td>

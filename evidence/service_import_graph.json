@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 52,
+  "edge_count": 53,
   "edges": [
     {
       "references": [
@@ -1322,6 +1322,11 @@
         },
         {
           "line": 14,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/binance_order_receipts.py"
+        },
+        {
+          "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
         },
@@ -1434,6 +1439,17 @@
       ],
       "source": "research",
       "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 13,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/binance_order_receipts.py"
+        }
+      ],
+      "source": "research",
+      "target": "governance"
     },
     {
       "references": [
@@ -1772,7 +1788,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "38aa94ca0f922e94b98c8a207e1ad4cb09a12ea3f890279e797309e32de75ea7",
+  "graph_sha256": "49b3d1d66ee412f509c7609d4bc2f8617ca5e3535d2613951ef9e1ac58a0394b",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1810,7 +1826,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 557,
+  "source_file_count": 558,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -10,6 +10,7 @@ import json
 import re
 
 from services.execution.perpetual_ledger_v2 import canonical_decimal, ledger_decimal_context
+from services.research.binance_order_receipts import CALIBRATION_SCHEMA, normalize_order_receipts
 
 SCHEMA='PASSIVE_RECEIPT_CALIBRATION_V1'
 STATES={'ACK','PARTIALLY_FILLED','FILLED','REJECTED','CANCELLED','EXPIRED','CANCEL_REJECTED'}
@@ -85,8 +86,17 @@ def _trace(document,actions,symbol,action_hash):
     return result
 
 
-def validate_calibration(spec,tape,actions,action_hash):
+def validate_calibration(spec,tape,actions,action_hash,*,reduce_only_ids=frozenset(),account_ref_sha256=None):
     try:
+        native=None
+        if isinstance(spec,dict) and spec.get('schema')==CALIBRATION_SCHEMA:
+            if set(spec)!={'schema','cutoff_ms','raw_observed'}:
+                raise ValueError('versioned native passive calibration contract required')
+            observed,native=normalize_order_receipts(spec['raw_observed'],actions,tape.symbol,action_hash,
+                reduce_only_ids=reduce_only_ids)
+            if account_ref_sha256 is not None and native['account_ref_sha256']!=account_ref_sha256:
+                raise ValueError('receipt account differs from frozen account conditions')
+            spec={'schema':SCHEMA,'cutoff_ms':spec['cutoff_ms'],'observed':observed}
         if not isinstance(spec,dict) or set(spec)!={'schema','cutoff_ms','observed'} or spec['schema']!=SCHEMA:
             raise ValueError('versioned passive calibration contract required')
         cutoff=_time(spec['cutoff_ms']);observed=spec['observed']
@@ -95,7 +105,7 @@ def validate_calibration(spec,tape,actions,action_hash):
         if not tape.start_ms==coverage['start_ms']<cutoff<coverage['end_ms']<=tape.end_ms:
             raise ValueError('calibration and held-out receipt windows must lie inside frozen tape')
         if observed['provenance']['kind']=='MODEL_DIAGNOSTIC':raise ValueError('model output is not an imported observation')
-        return deepcopy(spec)
+        return {**deepcopy(spec),**({'native_observations':native} if native is not None else {})}
     except (KeyError,TypeError,AttributeError,ArithmeticError) as exc:
         raise ValueError('malformed passive receipt calibration input') from exc
 

@@ -8,6 +8,8 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.ai_factory_store import digest
 from services.execution.passive_execution_input import analyze
 from services.research.passive_execution_study import PROFILES,prepare_input,prepare_account,run_profile
+from services.research.passive_receipt_calibration import validate_calibration
+from services.research.binance_order_receipts import native_fee_comparisons,native_summary
 from tools.perpetual_replay_research import source_identity
 from tools.profitability_study import write_new
 from tools.passive_receipt_study import fit_before_cutoff,finish_heldout
@@ -33,9 +35,12 @@ def study(source,output):
         account=prepare_account(data,tape)
         if account is not None:
             write_new(output/'account-environment.json',account['manifest'])
-        calibration=None
+        calibration=None;calibration_spec=None
         if 'calibration' in data:
-            calibration=fit_before_cutoff(data['calibration'],tape,actions,account,plan['source'],output/'calibration')
+            calibration_spec=validate_calibration(data['calibration'],tape,actions,digest(data['actions']),
+                reduce_only_ids=account['reduce_only_ids'],
+                account_ref_sha256=data['account'].get('account_terms',{}).get('account_ref_sha256'))
+            calibration=fit_before_cutoff(calibration_spec,tape,actions,account,plan['source'],output/'calibration')
         trials=[];simulations={}
         for profile in PROFILES if actions else ():
             write_new(output/f'profile-{profile}.started.json',{'profile_ms':profile,
@@ -66,10 +71,15 @@ def study(source,output):
                 failure={'profile_ms':profile,'status':'FAILED','reason':type(exc).__name__,'economic_eligible':False}
                 write_new(output/f'profile-{profile}.failure.json',failure);trials.append(failure)
         if calibration is not None:
-            try:calibration=finish_heldout(calibration,data['calibration'],actions,simulations,output/'calibration')
+            try:calibration=finish_heldout(calibration,calibration_spec,actions,simulations,output/'calibration')
             except Exception as exc:
                 write_new(output/'calibration/heldout.failure.json',{'reason':type(exc).__name__,'economic_eligible':False})
                 calibration={**calibration,'status':'HELDOUT_COMPARISON_FAILED','heldout':None}
+            if 'native_observations' in calibration_spec:
+                native=calibration_spec['native_observations']
+                native={**native,'fee_comparisons':native_fee_comparisons(native,simulations,tape,PROFILES)}
+                write_new(output/'native-observations.json',native)
+                calibration['native_observations']=native_summary(native)
         quality=analyze(data['tape'])
         complete=all(t['status']=='COMPLETED_DIAGNOSTIC' for t in trials)
         status=('PUBLIC_INPUT_READY_NO_FIXED_ACTIONS' if not actions else

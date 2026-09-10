@@ -70,10 +70,23 @@ export interface PassiveReceiptComparison {
  venue_time_absolute_error_ms:number;receive_time_absolute_error_ms:number;path_points_total:number;
  path:{received_ms:number;observed_filled:string;simulated_filled:string}[]}[];
 }
+export interface NativeOrderReceiptEvidence {
+ schema:'BINANCE_USDM_ORDER_RECEIPTS_V1';input_hash:string;account_ref_sha256:string;symbol:string;quote:string;
+ provenance:'SYNTHETIC_TEST_FIXTURE'|'IMPORTED_UNVERIFIED';source_verified:false;actual_paid_fees:null;
+ messages_count:number;unique_messages:number;duplicate_messages:number;trades_count:number;missing_commission_trades:number;
+ all_commissions_in_quote:boolean;reported_commission_by_asset:Record<string,string>;reported_quote_commission:string|null;
+ reported_filled_quantity:string;unobserved_order_ids:string[];coverage:{start_ms:number;end_ms:number;gaps:{start_ms:number;end_ms:number}[]};
+ trade_rows_total:number;artifact:string;projection:string;economic_eligible:false;limitations:string[];
+ fee_comparisons:{profile_ms:number;simulated_fee:string|null;reported_minus_simulated_fee:string|null;
+ comparison_available:boolean;comparison_scope:string;source_verified:false;actual_paid_fees:null}[];
+ trade_rows:{order_id:string;venue_order_id:string;trade_id:string;event_ms:number;transaction_ms:number;venue_trade_ms:number;
+ received_at_ms:number;quantity:string;price:string;liquidity_role:'MAKER'|'TAKER';reported_commission:string|null;commission_asset:string|null;response_sha256:string}[];
+}
 export interface PassiveReceiptCalibration {
  status:string;selected_profile_ms:number|null;equally_best_profiles_ms:number[];cutoff_ms:number;
  window_start_ms:number;window_end_ms:number;partition_clock:'ACTUAL_CLIENT_RECEIPT_TIME';trials_attempted:number;
  observed_provenance:{kind:string;declared_source_sha256:string};
+ native_observations?:NativeOrderReceiptEvidence;
  trials:{profile_ms:number;status:string;reason?:string;fit?:PassiveReceiptComparison}[];
  heldout:PassiveReceiptComparison|null;calibration_complete:false;venue_receipts_verified:false;queue_model_calibrated:false;
 }
