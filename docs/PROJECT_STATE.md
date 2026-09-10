@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-10 独立策略与 P5 合并源码完整验收（未部署）**：运行源码 `35062eb67`、证据 `d1055d75f`，完整 28/28 PASS；两次 ARM64 冷构建、扫描、断网只读启动及干净检出绑定通过。后端 7,731 通过/19 跳过、执行栈 3,442 通过/2 跳过、前端 350 通过，类型/ESLint/构建通过。前一源码 27/28 的 Runner 诊断任务清单遗漏已修正，全部失败保留。独立策略 286 次实测仍无稳定净增量，停止扩搜；两种计价六次真实公共材料 P5 操作与十八份封存文件核验通过，均零成交。19:12 只读状态为 P6 12 预测/0 成熟日，信息面板各 20/504 行、各两处旧缺口。真实场所校准、自然盈利与实际交易准入仍未完成，异机恢复搁置。详见[交付记录](engineering/specs/2026-09-10-public-order-constraints.md)、[实际组合结果](reports/2026-09-10-independent-sleeves-comparison.md)和[统一路线](engineering/plans/2026-09-09-profitability-validation.md)。
+
 > **2026-09-10 冻结实测与订单边界收尾（未部署）**：修正源码 `e9ca09b51` 的 286 次独立策略比较完成，独立 Fraction 复核 768,956 个账户状态、63,119 次成交精确一致；1,330 文件恢复及真实桌面/手机操作通过。没有稳定成本后增量，停止扩大同类搜索。两次 ARM64 冷构建镜像一致，但后续基础镜像拉取返回 401，完整原生材料和 canonical 未完成，旧 `fce9c6c7a` 仍是最近完整验收版本。已补公开动态订单边界、前后端及固定基础镜像预检，相关后端 513 通过/1 跳过、前端 9 项与类型/lint/构建通过、采集器 58 项通过；合并源码重新验收。15:17 既有 P6 为 8 预测/0 成熟日，信息面板每计价 16 行/2 缺口。见[实测报告](reports/2026-09-10-independent-sleeves-comparison.md)与[订单边界](engineering/specs/2026-09-10-public-order-constraints.md)。
 
 > **2026-09-10 独立持仓语义修正（验收暂停后修复）**：源码 `40379cd5d` 的真实回放中进一步发现“一个组件持仓延续、另一个空仓”仍换算浮点目标，可能误减一手。六个多空/价格回归复现，已修正空仓无变化的合并规则；真实退出不被抑制。该源比较与 ARM64 验收已停止并保留全部材料，账本对账通过不消除策略意图错误。修正源码另行重跑和验收，见[记录](engineering/specs/2026-09-10-independent-strategy-sleeves.md)。
@@ -1011,7 +1013,7 @@
 > candidate；全部仍为 1/8 前向周期，三本既有实时标记账户继续明确隔离为
 > `LEGACY_DIAGNOSTIC_PAPER`。因此 WP1 接线完成并没有伪造 Alpha 通过，下一承重目标仍是 WP2：让
 > 候选通用九引擎、preview/fill 和逐周期对账在真实新候选上变绿。设计见
-> [`docs/engineering/specs/2026-08-02-alpha-production-workflow.md`](docs/engineering/specs/2026-08-02-alpha-production-workflow.md)。
+> [Alpha 生产工作流实施记录](engineering/specs/2026-08-02-alpha-production-workflow.md)。
 
 > **2026-08-02 固定开发路线：** 从研究到生产的工序排序已冻结为
 > [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
