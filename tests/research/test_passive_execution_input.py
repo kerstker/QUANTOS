@@ -76,6 +76,13 @@ def test_capture_window_cannot_expand_a_bounded_packet_tape_into_unbounded_ui_hi
     with pytest.raises(ValueError):compile_tape(source)
 
 
+def test_missing_normal_quantity_is_not_replaced_with_total_rpi_volume():
+    source=tape();packet=json.loads(source['messages'][1]['raw_utf8'])
+    del packet['data']['nq'];source['messages'][1]['raw_utf8']=json.dumps(packet)
+    assert analyze(source)['status']=='PUBLIC_EXECUTION_INPUT_VALIDATED'
+    with pytest.raises(ValueError,match='NORMAL_TRADE_QUANTITY_UNAVAILABLE'):compile_tape(source)
+
+
 @pytest.mark.parametrize('symbol',[[],{}])
 def test_malformed_contract_is_an_unusable_report_instead_of_a_parser_crash(symbol):
     source=tape();source['symbol']=symbol

@@ -41,6 +41,11 @@ export interface FactoryResearchNotes {
 
 export interface PassiveQueueOrder {order_id:string;side:string;price:string;quantity:string;filled_quantity:string;remaining_quantity:string;status:string;reason:string|null;censored:boolean;queue_ahead_at_arrival:string|null}
 export interface PassiveQueueEvent {order_id:string;status:string;venue_time_ms:number|null;client_receive_ms:number|null;client_time_ms:number|null;quantity:string|null;price:string|null;reason:string|null}
-export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:null;ledger_applied:false;
+export interface PassiveAccountEvidence {input_hash:string;result_hash:string;ledger_applied:true;actual_venue_fees:null;simulated_fee_rate:string;
+ reconciliation:Record<'initial_equity'|'ending_equity'|'price_pnl'|'fee'|'spread'|'impact'|'funding'|'liquidation_fee'|'insurance_adjustment'|'adl_adjustment'|'attributed_change'|'residual',string>;
+ equity_history:{timestamp:number;equity:string;drawdown:string}[];history_count:number;
+ ending_state:{positions:Record<string,{quantity:string}>}}
+export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:null;ledger_applied:boolean;
+ account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[]}|null;
  quality:{counts:{depth_updates:number;aggregate_trades:number;mark_updates:number;duplicates:number};failures:{reason:string}[];book_samples:{available_at_ms:number;transaction_time_ms:number;bids:[string,string][];asks:[string,string][]}[]};
- trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[]}[]}
+ trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[];account?:PassiveAccountEvidence|null}[]}

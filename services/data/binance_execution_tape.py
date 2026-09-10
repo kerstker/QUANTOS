@@ -222,6 +222,7 @@ class PublicTrade:
     event_time_ms: int
     received_at_ms: int
     source_hash: str
+    normal_quantity: Decimal | None = None
 
 
 class PublicTradeCursor:
@@ -254,6 +255,8 @@ class PublicTradeCursor:
         if first > last:
             raise ExecutionTapeError('INVALID_TRADE_RANGE')
         price, size = _amount(payload['p'], positive=True), _amount(payload['q'], positive=True)
+        normal = _amount(payload['nq'], positive=False) if 'nq' in payload else None
+        if normal is not None and normal>size:raise ExecutionTapeError('NORMAL_QUANTITY_EXCEEDS_TOTAL')
         if type(payload['m']) is not bool:
             raise ExecutionTapeError('INVALID_MAKER_FLAG')
         identity = payload_hash(payload)
@@ -273,7 +276,7 @@ class PublicTradeCursor:
             raise ExecutionTapeError('TRADE_EVENT_BUDGET_EXHAUSTED')
         result = PublicTrade(self.symbol, aggregate, first, last, price, size,
                              'SELL' if payload['m'] else 'BUY', transaction, event, received_at_ms,
-                             payload_hash({'event_hash': identity, 'received_at_ms': received_at_ms}))
+                             payload_hash({'event_hash': identity, 'received_at_ms': received_at_ms}),normal)
         self._seen[aggregate] = identity
         self._previous = result
         return result

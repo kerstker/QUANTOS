@@ -682,6 +682,11 @@
         {
           "line": 10,
           "module": "services.governance.json_integrity",
+          "path": "services/execution/passive_account_environment.py"
+        },
+        {
+          "line": 10,
+          "module": "services.governance.json_integrity",
           "path": "services/execution/passive_execution_input.py"
         }
       ],
@@ -1321,6 +1326,21 @@
           "path": "services/research/passive_execution_study.py"
         },
         {
+          "line": 6,
+          "module": "services.execution.passive_account_environment",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.passive_perpetual_simulation",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
           "line": 13,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/perpetual_alpha.py"
@@ -1727,7 +1747,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "d13a4df24e1f35c421c6394aa7b6c28135052a1f4dd7bca1227d681665a974c9",
+  "graph_sha256": "e01a1c749aba7af20b1a21cefea787ff6a88d89c224f310a74fbe05a04f31e14",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1765,7 +1785,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 549,
+  "source_file_count": 551,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -256,6 +256,8 @@ def compile_tape(document) -> ExecutionTape:
         elif payload['e'] == 'aggTrade':
             value = cursor.apply(payload, received_at_ms=received)
             if value is not None:
+                if value.normal_quantity is None:
+                    raise ExecutionTapeError('NORMAL_TRADE_QUANTITY_UNAVAILABLE')
                 trades.append(value)
         else:
             marks.append(_mark(payload, document['symbol'], received))

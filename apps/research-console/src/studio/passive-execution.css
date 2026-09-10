@@ -6,5 +6,9 @@
 .s-execution-body details>p{margin-bottom:12px;color:var(--s-muted)}
 .s-execution-body .s-table-wrap{max-height:460px;overflow:auto}
 .s-execution-body .s-table td,.s-execution-body .s-table th{white-space:nowrap}
+.s-execution-body .s-account-costs{max-height:none}
+.s-execution-body .s-account-costs .s-table{min-width:0;width:100%;table-layout:fixed}
+.s-execution-body .s-account-costs td,.s-execution-body .s-account-costs th{white-space:normal;overflow-wrap:anywhere}
+.s-execution-body .s-account-costs td:last-child,.s-execution-body .s-account-costs th:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .s-execution-body :focus-visible{outline:2px solid var(--s-accent);outline-offset:3px}
 @media(max-width:600px){.s-execution-body{padding:0 16px 16px}.s-execution-body>label{align-items:stretch;flex-direction:column}}

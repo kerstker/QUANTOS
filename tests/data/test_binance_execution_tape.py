@@ -22,7 +22,7 @@ def depth(*, first=99, last=101, previous=98, at=1025, bids=None, asks=None):
 
 def trade(*, aggregate=200, first=400, last=402, at=1050, maker=True, quantity='0.012345678901234567'):
     return {'e': 'aggTrade', 'E': at+1, 'T': at, 's': 'BTCUSDC', 'a': aggregate,
-            'p': '99', 'q': quantity, 'f': first, 'l': last, 'm': maker}
+            'p': '99', 'q': quantity, 'nq': quantity, 'f': first, 'l': last, 'm': maker}
 
 
 def book():
@@ -154,3 +154,11 @@ def test_usdt_and_usdc_tapes_keep_separate_contract_identity():
     result=BtcDepthBook('BTCUSDT',snapshot(),received_at_ms=1040)
     result.apply(payload,received_at_ms=1030)
     assert result.view(as_of_ms=1040).symbol=='BTCUSDT'
+
+
+def test_normal_trade_quantity_is_separate_from_total_including_rpi():
+    payload=trade(quantity='2');payload['nq']='0.5'
+    event=PublicTradeCursor('BTCUSDC').apply(payload,received_at_ms=1070)
+    assert event.quantity==D('2') and event.normal_quantity==D('.5')
+    payload['nq']='3'
+    with pytest.raises(ExecutionTapeError):PublicTradeCursor('BTCUSDC').apply(payload,received_at_ms=1070)

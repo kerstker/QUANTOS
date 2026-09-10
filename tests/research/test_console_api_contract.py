@@ -1998,6 +1998,26 @@ def test_passive_queue_console_contract_preserves_censored_orders_and_unknown_pr
     assert 'net_pnl' not in result['p5_queue']
 
 
+def test_passive_account_console_contract_keeps_canonical_strings_and_actual_fee_unknown(tmp_path):
+    import json
+    from tests.research.test_passive_execution_study import account_source
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    directory=tmp_path/'data/cache/profitability/1/p5_queue'
+    directory.parent.mkdir(parents=True)
+    source=tmp_path/'source.json';source.write_text(json.dumps(account_source()))
+    study(source,directory)
+    result=profitability_payload(tmp_path,1)['p5_queue']
+    assert result['ledger_applied'] is True
+    assert result['account_environment']['venue_margin_tiers_verified'] is False
+    account=result['trials'][0]['account']
+    assert account['actual_venue_fees'] is None
+    assert account['reconciliation']['fee']=='0.0099'
+    assert account['reconciliation']['ending_equity']=='1000.0901'
+    assert account['reconciliation']['residual']=='0'
+    assert len(account['equity_history'])<=200 and account['history_count']>0
+
+
 def test_profitability_causal_information_preserves_separate_quotes_and_no_prediction_claim(tmp_path):
     from services.console.api.profitability_views import profitability_payload
     from tools.profitability_study import write_new

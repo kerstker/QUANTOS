@@ -10,9 +10,11 @@ from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 
 MAX_RESPONSE_BYTES = 262144
+EXCHANGE_INFO_URL = 'https://fapi.binance.com/fapi/v1/exchangeInfo'
+MAX_EXCHANGE_INFO_BYTES = 2_000_000
 PREFIXES = ('https://api.binance.com/api/v3/klines?', *(
     'https://fapi.binance.com/fapi/v1/' + endpoint + '?'
-    for endpoint in ('klines', 'markPriceKlines', 'fundingRate', 'openInterest', 'indexPriceKlines', 'depth')))
+    for endpoint in ('klines', 'markPriceKlines', 'fundingRate', 'openInterest', 'indexPriceKlines', 'depth', 'premiumIndex')))
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -34,16 +36,17 @@ def retry_after(value):
 
 
 def request_once(url, timeout, *, include_raw=False):
-    if not isinstance(url, str) or not url.startswith(PREFIXES):
+    if not isinstance(url, str) or not (url.startswith(PREFIXES) or url==EXCHANGE_INFO_URL):
         raise ValueError('unregistered public source')
     if type(include_raw) is not bool:
         raise ValueError('raw response selection must be boolean')
+    maximum=MAX_EXCHANGE_INFO_BYTES if url==EXCHANGE_INFO_URL else MAX_RESPONSE_BYTES
     request = urllib.request.Request(url, headers={
         'User-Agent': 'quantos-public-research', 'Accept': 'application/json'}, method='GET')
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=timeout) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-        if len(raw) > MAX_RESPONSE_BYTES:
+            raw = response.read(maximum + 1)
+        if len(raw) > maximum:
             return {'ok': False, 'category': 'RESPONSE_TOO_LARGE'}
         result = {'ok': True, 'payload': json.loads(raw)}
         if include_raw:

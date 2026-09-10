@@ -2,6 +2,33 @@
 
 本流程不部署、不下单、不改变经济准入。先读[统一路线](../engineering/plans/2026-09-09-profitability-validation.md)。
 
+## P5 被动账户输入
+
+在经过核实的开发 Python 3.12 环境中，从仓库根目录执行一次有限公开采集，例如：
+
+```bash
+python -m tools.passive_account_capture --symbol BTCUSDC --duration 15 \
+  --initial-collateral 1000 --fee-rate 0.0002 --max-order-notional 100 \
+  --output /home/kerstker/quantos-dev-output/my-passive-capture-001
+```
+
+输出目录必须不存在。示例费率和抵押是显式模拟假设，不是账户真实费率；按实际研究规格
+预先冻结参数。先取得规则、已完成三十日容量及资金费日程，再开启深度/聚合成交/标记价
+原始窗口；前后规则、接收时间和完整原文保留。失败和断流不自动重写为成功。
+
+`input.json` 初始 `actions: []`，只证明输入可读，不创建订单或实验。固定动作需来自
+预注册研究或实际轨迹，保留发送时间；复制到一个新的输入文件后，在工作台选择
+「P5 原始盘口与队列」登记该文件，或使用 `python -m tools.passive_execution_study`
+的 `--input` / `--output` 离线入口。不要回写原采集文件。
+
+可选账户结构为 `account: {environment, initial_collateral, fee_rate, max_order_notional}`；
+金额为字符串，订单可加布尔 `reduce_only`。普通成交量必须有 `nq`，旧文件缺失时不能
+把 `q` 总量当作普通队列量。公开环境与动作共同受 4 MB、200 动作预算限制。
+三个延迟情景全部保留，成本表和权益/回撤来自同一账本，未提供账户的输入仍显示未知。
+跨资金费结算、跨日或缺少因果规则证据时需新规格和对应证据，不能静默补成本。
+
+详见[时间合同、模拟假设与实测](../engineering/specs/2026-09-10-passive-canonical-account.md)。
+
 ## 工作台
 
 新代码验收并另行部署后，在 AI 研究工厂选择已完成的冻结实验，打开「成本决策」→「运行盈利验证」。

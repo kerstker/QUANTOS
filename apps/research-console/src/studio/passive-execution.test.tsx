@@ -33,6 +33,24 @@ it('shows absent tape as missing, not zero fill success',()=>{
  expect(screen.queryByText('0 次成交')).not.toBeInTheDocument();
 });
 
+it('shows exact canonical reconciliation and changes account evidence with the delay profile',()=>{
+ const account={input_hash:'a'.repeat(64),result_hash:'b'.repeat(64),ledger_applied:true as const,
+  reconciliation:{initial_equity:'1000',ending_equity:'1000.0901',price_pnl:'0.1',fee:'0.0099',
+   spread:'0',impact:'0',funding:'0',liquidation_fee:'0',insurance_adjustment:'0',adl_adjustment:'0',attributed_change:'0.0901',residual:'0'},
+  actual_venue_fees:null,simulated_fee_rate:'0.001',history_count:2,
+  equity_history:[{timestamp:1000,equity:'1000',drawdown:'0'},{timestamp:1500,equity:'1000.0901',drawdown:'0'}],
+  ending_state:{positions:{BTCUSDC:{quantity:'0.1'}}}};
+ render(<PassiveExecutionEvidence data={{...data,ledger_applied:true,
+  account_environment:{symbol:'BTCUSDC',quote:'USDC',venue_margin_tiers_verified:false,actual_venue_fees:null,limitations:[]},
+  trials:[{...data.trials[0],account},data.trials[1]]}}/>);
+ expect(screen.getByRole('region',{name:'唯一账本成本归因'})).toHaveTextContent('1000.0901');
+ expect(screen.getByRole('region',{name:'唯一账本成本归因'})).toHaveTextContent('0.0099');
+ expect(screen.getByText(/真实费用未知/)).toBeInTheDocument();
+ expect(screen.getByText(/期末未平仓 BTCUSDC/)).toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('队列延迟情景'),{target:{value:'100'}});
+ expect(screen.queryByRole('region',{name:'唯一账本成本归因'})).not.toBeInTheDocument();
+});
+
 it('can register a passive input using the same immutable version flow',async()=>{
  const submit=vi.fn().mockResolvedValue(undefined);
  render(<ProfitabilityInputUpload complete busy={false} onImport={submit}/>);

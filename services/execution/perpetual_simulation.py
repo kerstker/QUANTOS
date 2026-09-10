@@ -19,7 +19,7 @@ import copy
 from dataclasses import asdict, dataclass, replace
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from types import MappingProxyType
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from services.execution.authoritative_perpetual_backtest import (
     CapacitySnapshot, FundingPolicySnapshot, HistoricalContractRule,
@@ -278,12 +278,22 @@ class OrderState:
     filled_at: int | None = None
     minimum_exemption_requires_reduction: bool = False
 
+class _RiskQuote(Protocol):
+    """Price view consumed by the shared risk core, independent of feed clocks."""
+    instrument_id: str
+    venue_id: str
+    event_time: int
+    bid_price: Decimal
+    ask_price: Decimal
+    bid_quantity: Decimal
+    ask_quantity: Decimal
+
 @dataclass(frozen=True)
 class SimulationContext:
     timestamp: int
     equity: Decimal
     positions: Mapping[str, PositionView]
-    quotes: Mapping[str, ExecutableQuote]
+    quotes: Mapping[str, _RiskQuote]
     open_orders: Mapping[str, OrderState]
     history: Sequence[EquityPoint]
     reserved_collateral: Mapping[str, Decimal]
@@ -302,6 +312,552 @@ class RiskVerdict:
 
 Strategy = Callable[[SimulationContext], Sequence[OrderIntent | CancelOrder]]
 RiskPolicy = Callable[[SimulationContext, OrderIntent], RiskVerdict]
+
+class _SimulationAccount:
+    """Internal shared order/risk/ledger core; not an agent or broker API."""
+    def __init__(self, *, rule_items, rules, policies, profiles, initial_collateral, costs, limits, risk_policy):
+        self.rules, self.policies, self.profiles = rules, policies, profiles
+        self.initial_collateral, self.costs, self.limits = initial_collateral, costs, limits
+        self.risk_policy = risk_policy
+        self.ledger = LinearPerpetualLedger(tuple(r.spec for r in rule_items), initial_collateral=self.initial_collateral)
+        self.universe = tuple(sorted(self.rules))
+        self.quotes: dict[str, _RiskQuote] = {}
+        self.capacities: dict[str, CapacitySnapshot] = {}
+        self.mark_times: dict[str, int] = {}
+        self.mark_prices: dict[str, Decimal] = {}
+        self.pending: dict[str, OrderState] = {}
+        self.orders: dict[str, OrderState] = {}
+        self.history: list[EquityPoint] = []
+        self.order_events: list[dict[str, Any]] = []
+        self.decisions: list[dict[str, Any]] = []
+        self.risk_events: list[dict[str, Any]] = []
+        self.peak = self.initial_collateral
+
+
+    def checkpoint(self, timestamp: int, phase: str) -> None:
+        equity = self.ledger.account_equity()
+        previous = self.history[-1].equity if self.history else None
+        self.peak = max(self.peak, equity)
+        self.history.append(EquityPoint(timestamp, len(self.history), equity,
+            None if previous is None or previous <= ZERO else equity / previous - ONE,
+            (self.peak-equity)/self.peak, phase))
+
+    def execution_price(self, quote: _RiskQuote, quantity: Decimal) -> Decimal:
+        price = (quote.ask_price * (ONE+self.costs.adverse_slippage_rate) if quantity > ZERO
+                 else quote.bid_price * (ONE-self.costs.adverse_slippage_rate))
+        profile = self.profiles.get(quote.instrument_id)
+        if profile is not None:
+            steps = (price/profile.price_tick).to_integral_value(
+                rounding=ROUND_CEILING if quantity > ZERO else ROUND_FLOOR)
+            price = steps*profile.price_tick
+        return price
+
+    def reservation_snapshot(self, *, extra: OrderState | None = None,
+                             filling: str | None = None, filled: Decimal = ZERO) -> dict[str, Any]:
+        """Conservative cross-only order commitments; never debit ledger cash.
+
+        Opposing orders do not net. Tier increments use the canonical margin
+        function, on gross pending quantity plus existing absolute inventory.
+        Filled quantities disappear from commitments only in the projected ledger
+        or after commit. No hypothetical PnL is credited to available collateral.
+        """
+        margin = self.ledger.initial_margin_snapshot()["cross"]
+        if not self.profiles:
+            return {"policy": "UNRESERVED_LEGACY_DIAGNOSTIC", "by_order": {},
+                    "total_reserved": ZERO, "available": margin["available"]}
+        states = []
+        for state in self.pending.values():
+            if state.intent.order_id == filling:
+                state = replace(state, remaining_quantity=state.remaining_quantity-filled)
+            if state.remaining_quantity != ZERO:
+                states.append(state)
+        if extra is not None:
+            states.append(extra)
+        reserve: dict[str, Decimal] = {}
+        stressed_required = ZERO
+        executable_equity = self.ledger.account_equity()
+        for name in self.universe:
+            position = self.ledger.position(name)
+            group = [s for s in states if s.intent.instrument_id == name]
+            q = self.quotes.get(name)
+            if q is None or name not in self.mark_prices:
+                continue  # Admission rejects missing quotes before reaching here.
+            high, low = self.execution_price(q, ONE), self.execution_price(q, -ONE)
+            mark = self.mark_prices[name]
+            price = max(mark, high, *(s.intent.limit_price or ZERO for s in group))
+            spec = self.rules[name].spec
+            quantity = ZERO if position is None else abs(position.quantity)
+            required = spec.margin_requirement(spec.notional(quantity, price)).initial_margin
+            stressed_required += required
+            if position is not None:
+                valuation = q.bid_price if position.quantity > ZERO else q.ask_price
+                executable_equity += (position.quantity * (valuation-position.mark_price)
+                                      * spec.contract_multiplier)
+            for state in group:
+                if state.intent.reduce_only:
+                    reserve[state.intent.order_id] = ZERO
+                    continue  # Exits remain available; actual costs still enter the ledger.
+                quantity += abs(state.remaining_quantity)
+                next_required = spec.margin_requirement(spec.notional(quantity, price)).initial_margin
+                notional = spec.notional(state.remaining_quantity, price)
+                buy = state.remaining_quantity > ZERO
+                entry = high if buy else low
+                if state.intent.limit_price is not None:
+                    entry = min(entry, state.intent.limit_price) if buy else max(entry, state.intent.limit_price)
+                adverse = max(ZERO, entry-mark if buy else mark-entry)
+                buffer = abs(state.remaining_quantity)*adverse*spec.contract_multiplier
+                reserve[state.intent.order_id] = next_required-required + notional*self.costs.fee_rate + buffer
+                required = next_required
+        total = sum(reserve.values(), ZERO)
+        available = min(margin["equity"], executable_equity)-max(margin["required"], stressed_required)-total
+        return {"policy": RESERVATION_POLICY, "by_order": reserve,
+                "total_reserved": total, "available": available}
+
+    def context(self, timestamp: int) -> SimulationContext:
+        positions = {name: self.ledger.position(name) for name in self.universe}
+        reservation = self.reservation_snapshot()
+        return SimulationContext(timestamp, self.ledger.account_equity(),
+            MappingProxyType({n:p for n,p in positions.items() if p is not None}),
+            MappingProxyType(dict(self.quotes)), MappingProxyType(dict(self.pending)), _Prefix(self.history),
+            MappingProxyType(reservation["by_order"]), reservation["available"])
+
+    def transition(self, state: OrderState, timestamp: int, status: str,
+                   reason: str | None = None, filled: Decimal = ZERO,
+                   price: Decimal | None = None) -> OrderState:
+        existing = self.orders.get(state.intent.order_id)
+        if existing is None:
+            if status not in ("OPEN", "REJECTED") or filled != ZERO:
+                raise ValueError("invalid initial order state")
+        elif existing != state or status not in _ORDER_TRANSITIONS.get(state.status, ()):
+            raise ValueError("invalid or stale order transition")
+        if filled != ZERO and (
+            (filled > ZERO) != (state.remaining_quantity > ZERO)
+            or abs(filled) > abs(state.remaining_quantity)
+            or status not in ("PARTIALLY_FILLED", "FILLED")
+        ):
+            raise ValueError("fill violates order quantity conservation")
+        remaining = state.remaining_quantity-filled
+        if status == "FILLED" and (filled == ZERO or remaining != ZERO):
+            raise ValueError("FILLED requires exact completion")
+        if status == "PARTIALLY_FILLED" and (filled == ZERO or remaining == ZERO):
+            raise ValueError("PARTIALLY_FILLED requires a nonzero remainder")
+        updated = replace(state, status=status, reason=reason,
+            remaining_quantity=remaining,
+            filled_quantity=state.filled_quantity+filled,
+            filled_at=timestamp if filled != ZERO else state.filled_at)
+        self.orders[state.intent.order_id] = updated
+        if status in ("OPEN", "PARTIALLY_FILLED"):
+            self.pending[state.intent.order_id] = updated
+        else:
+            self.pending.pop(state.intent.order_id, None)
+        self.order_events.append({
+            "order_id": state.intent.order_id, "timestamp": timestamp, "status": status,
+            "reason": reason, "filled_quantity": canonical_decimal(filled),
+            "remaining_quantity": canonical_decimal(updated.remaining_quantity),
+            "cumulative_filled_quantity": canonical_decimal(updated.filled_quantity),
+            "fill_price": None if price is None else canonical_decimal(price),
+            "reservation": _canonical(self.reservation_snapshot()),
+        })
+        return updated
+
+    def risk_reason(self, ctx: SimulationContext, intent: OrderIntent, quantity: Decimal,
+                    price: Decimal, *, executing: bool = False) -> str | None:
+        name = intent.instrument_id
+        old = ctx.positions[name].quantity if name in ctx.positions else ZERO
+        reducing = old != ZERO and (old > ZERO) != (quantity > ZERO) and abs(quantity) <= abs(old)
+        if intent.reduce_only and not reducing:
+            return "REDUCE_ONLY_NO_POSITION" if old == ZERO else "REDUCE_ONLY_WOULD_INCREASE"
+        if ctx.equity <= ZERO:
+            return "NONPOSITIVE_EQUITY"
+        if not reducing:
+            if self.history[-1].drawdown > self.limits.max_drawdown:
+                return "DRAWDOWN_LIMIT"
+            # A low mark overstates a short's equity. Value existing inventory
+            # at the currently executable side as well, and use the lower
+            # equity so inconsistent marks cannot manufacture a risk budget.
+            executable_equity = ctx.equity
+            for instrument, position in ctx.positions.items():
+                q = ctx.quotes.get(instrument)
+                if q is None or ctx.timestamp-q.event_time > self.limits.quote_max_age_ms:
+                    return "STALE_OR_MISSING_QUOTE"
+                valuation = q.bid_price if position.quantity > ZERO else q.ask_price
+                if instrument == name and executing:
+                    valuation = (min(valuation, price) if position.quantity > ZERO
+                                 else max(valuation, price))
+                executable_equity += position.quantity * (valuation-position.mark_price) * self.rules[instrument].spec.contract_multiplier
+            risk_equity = min(ctx.equity, executable_equity)
+            if risk_equity <= ZERO:
+                return "NONPOSITIVE_EXECUTABLE_EQUITY"
+            amounts = {n:p.quantity for n,p in ctx.positions.items()}
+            amounts[name] = old + quantity
+            # Each side is reserved independently: pending buys and sells must
+            # not cancel each other's potential exposure before either fills.
+            worst = {}
+            for instrument in set(amounts) | {s.intent.instrument_id for s in self.pending.values()}:
+                base = amounts.get(instrument, ZERO)
+                buys = sells = ZERO
+                if not executing:
+                    for state in self.pending.values():
+                        if state.intent.order_id == intent.order_id or state.intent.reduce_only:
+                            continue
+                        if state.intent.instrument_id == instrument:
+                            if state.remaining_quantity > ZERO: buys += state.remaining_quantity
+                            else: sells += state.remaining_quantity
+                worst[instrument] = max(abs(base+buys), abs(base+sells))
+            notionals = {}
+            for instrument, amount in worst.items():
+                if amount == ZERO:
+                    continue
+                q = ctx.quotes.get(instrument)
+                if q is None or ctx.timestamp-q.event_time > self.limits.quote_max_age_ms:
+                    return "STALE_OR_MISSING_QUOTE"
+                p = max(q.bid_price, q.ask_price)
+                if instrument == name: p = max(p, price)
+                notionals[instrument] = self.rules[instrument].spec.notional(amount, p)
+            if any(n/risk_equity > self.limits.max_single_weight for n in notionals.values()):
+                return "SINGLE_NAME_LIMIT"
+            if sum(notionals.values(), ZERO)/risk_equity > self.limits.max_gross_leverage:
+                return "GROSS_EXPOSURE_LIMIT"
+        if self.risk_policy is not None:
+            try:
+                verdict = self.risk_policy(ctx, replace(intent, quantity_delta=quantity))
+            except Exception:
+                return "RISK_POLICY_FAILED"
+            if not isinstance(verdict, RiskVerdict):
+                return "INVALID_RISK_VERDICT"
+            if not verdict.approved:
+                return verdict.reason
+        return None
+
+    def capacity_for(self, name: str, timestamp: int) -> CapacitySnapshot | None:
+        value = self.capacities.get(name)
+        if value is None or not value.policy.contains_timestamp(timestamp):
+            return None
+        return value
+
+    def check_projected_fill(self, before: SimulationContext, intent: OrderIntent,
+                             filled: Decimal, price: Decimal, *,
+                             minimum_exemption_requires_reduction: bool) -> None:
+        # This context comes from the tentative canonical ledger transition;
+        # fee, funding, realized PnL and margin are not recomputed here.
+        projected = self.context(before.timestamp)
+        old = before.positions.get(intent.instrument_id)
+        reducing = (old is not None and (old.quantity > ZERO) != (filled > ZERO)
+                    and abs(filled) <= abs(old.quantity))
+        reason = self.risk_reason(before, intent, filled, price, executing=True)
+        if minimum_exemption_requires_reduction and not reducing:
+            reason = "QUANTITY_RULE"
+        executable_equity = projected.equity
+        notionals = {}
+        for name, position in projected.positions.items():
+            quote = projected.quotes.get(name)
+            if quote is None or projected.timestamp-quote.event_time > self.limits.quote_max_age_ms:
+                if not reducing:
+                    reason = reason or "STALE_OR_MISSING_QUOTE"
+                continue
+            valuation = quote.bid_price if position.quantity > ZERO else quote.ask_price
+            if name == intent.instrument_id:
+                valuation = (min(valuation, price) if position.quantity > ZERO
+                             else max(valuation, price))
+            executable_equity += (position.quantity * (valuation-position.mark_price)
+                                  * self.rules[name].spec.contract_multiplier)
+            notional_price = max(quote.bid_price, quote.ask_price, position.mark_price)
+            if name == intent.instrument_id:
+                notional_price = max(notional_price, price)
+            notionals[name] = self.rules[name].spec.notional(position.quantity, notional_price)
+        risk_equity = min(projected.equity, executable_equity)
+        drawdown = max(ZERO, (self.peak-risk_equity)/self.peak)
+        gross = sum(notionals.values(), ZERO)
+        checks = {
+            "positive_equity": risk_equity > ZERO,
+            "drawdown": drawdown <= self.limits.max_drawdown,
+            "single_name": all(n <= risk_equity*self.limits.max_single_weight for n in notionals.values()),
+            "gross_exposure": gross <= risk_equity*self.limits.max_gross_leverage,
+        }
+        if not reducing:
+            for check, code in (
+                ("positive_equity", "NONPOSITIVE_EXECUTABLE_EQUITY"),
+                ("drawdown", "DRAWDOWN_LIMIT"),
+                ("single_name", "SINGLE_NAME_LIMIT"),
+                ("gross_exposure", "GROSS_EXPOSURE_LIMIT"),
+            ):
+                if not checks[check]:
+                    reason = reason or code
+        reservation = self.reservation_snapshot(filling=intent.order_id, filled=filled)
+        if self.profiles and not reducing and reservation["available"] < ZERO:
+            reason = reason or "INSUFFICIENT_RESERVED_COLLATERAL"
+        self.risk_events.append({
+            "order_id": intent.order_id, "timestamp": before.timestamp,
+            "phase": "PROJECTED_FILL", "filled_quantity": filled,
+            "marked_equity": projected.equity, "executable_equity": executable_equity,
+            "risk_equity": risk_equity, "gross_notional": gross,
+            "instrument_notionals": notionals, "drawdown": drawdown,
+            "limits": asdict(self.limits), "checks": checks,
+            "margin": self.ledger.initial_margin_snapshot(),
+            "reservation": reservation,
+            "reducing": reducing, "approved": reason is None, "reason": reason,
+        })
+        if reason is not None:
+            raise _ProjectedRiskRejected(reason)
+
+    def apply_market(self, frame):
+        now = frame.timestamp
+        if not self.history: self.checkpoint(now, "INITIAL")
+        if any(e.instrument_id not in self.rules for e in frame.market_events):
+            raise ValueError("market event outside the declared universe")
+        self.ledger.process_events(frame.market_events)
+        for event in frame.market_events:
+            self.mark_times[event.instrument_id] = now
+            self.mark_prices[event.instrument_id] = event.mark_price
+        accepted_quotes: dict[str, ExecutableQuote] = {}
+        for q in frame.quotes:
+            if q.instrument_id not in self.rules:
+                raise ValueError("quote outside the declared universe")
+            if q.venue_id != self.policies[q.instrument_id].venue_id:
+                raise ValueError("quote and funding venues differ")
+            profile = self.profiles.get(q.instrument_id)
+            if profile is not None and (profile.price_reason(q.bid_price) or profile.price_reason(q.ask_price)):
+                raise ValueError("executable quote violates order rule price grid or bounds")
+            prior = self.quotes.get(q.instrument_id)
+            if prior is not None and q.event_time <= prior.event_time:
+                # A late observation is retained in the input identity but
+                # cannot roll time backwards or replenish consumed liquidity.
+                if q.event_time == prior.event_time and q != prior:
+                    raise ValueError("conflicting quote at the same venue timestamp")
+                continue
+            self.quotes[q.instrument_id] = q
+            accepted_quotes[q.instrument_id] = q
+        for cap in frame.capacity_snapshots:
+            if cap.instrument_id not in self.rules or cap.policy.venue_id != self.policies[cap.instrument_id].venue_id:
+                raise ValueError("capacity outside the declared venue/universe")
+            previous = self.capacities.get(cap.instrument_id)
+            if previous is not None and cap.ingestion_time < previous.ingestion_time:
+                raise ValueError("capacity knowledge time moved backwards")
+            self.capacities[cap.instrument_id] = cap
+        self.checkpoint(now, "MARKET")
+        return accepted_quotes
+
+    def fill_order(self, state, now, px, maximum_quantity):
+        """Commit only the affordable, permitted part of one fill opportunity.
+
+        Return the absolute committed quantity, so a matching model never spends
+        shared liquidity on a rejected or capacity-truncated transaction.
+        """
+        _decimal(maximum_quantity, "maximum_quantity")
+        _decimal(px, "execution_price")
+        if self.pending.get(state.intent.order_id) != state:
+            raise ValueError("fill requires the current open order")
+        intent = state.intent
+        if intent.instrument_id not in self.mark_times or now-self.mark_times[intent.instrument_id] > self.limits.quote_max_age_ms:
+            self.transition(state, now, "REJECTED", "STALE_OR_MISSING_MARK")
+            return ZERO
+        spec = self.rules[intent.instrument_id].spec
+        remaining = state.remaining_quantity
+        current = self.ledger.position(intent.instrument_id)
+        if intent.reduce_only:
+            if current is None or (current.quantity > ZERO) == (remaining > ZERO):
+                self.transition(state, now, "REJECTED", "REDUCE_ONLY_NO_POSITION")
+                return ZERO
+            remaining = min(abs(remaining), abs(current.quantity)) * (ONE if remaining > ZERO else -ONE)
+        profile = self.profiles.get(intent.instrument_id)
+        if profile is not None:
+            reason = profile.price_reason(px)
+            if reason is None and spec.notional(intent.quantity_delta, px) > profile.max_notional:
+                reason = reason or "MAX_ORDER_NOTIONAL"
+            if reason:
+                self.transition(state, now, "REJECTED", reason)
+                return ZERO
+        if intent.limit_price is not None and (
+            (remaining > ZERO and px > intent.limit_price)
+            or (remaining < ZERO and px < intent.limit_price)):
+            return ZERO
+        cap = self.capacity_for(intent.instrument_id, now)
+        if cap is None:
+            self.transition(state, now, "REJECTED", "MISSING_CURRENT_CAPACITY")
+            return ZERO
+        quantity = spec.floor_quantity(min(abs(remaining), maximum_quantity))
+        quantity *= ONE if remaining > ZERO else -ONE
+        if quantity == ZERO:
+            return ZERO
+        before_fill = self.context(now)
+        trade = OrderFillEvent(timestamp=now, instrument_id=intent.instrument_id,
+            quantity_delta=quantity, execution_price=px, capacity=cap.policy,
+            margin_mode=intent.margin_mode,
+            isolated_margin=intent.isolated_margin if current is None else None,
+            order_id=intent.order_id, fee_rate=self.costs.fee_rate)
+        try:
+            fill = self.ledger.apply_event(trade, trade_guard=lambda candidate:
+                self.check_projected_fill(before_fill, intent, candidate.filled_quantity, px,
+                    minimum_exemption_requires_reduction=state.minimum_exemption_requires_reduction))
+        except _ProjectedRiskRejected as exc:
+            self.transition(state, now, "REJECTED", str(exc))
+            return ZERO
+        except InsufficientMargin:
+            self.transition(state, now, "REJECTED", "INSUFFICIENT_MARGIN")
+            return ZERO
+        except QuantityRuleViolation:
+            self.transition(state, now, "REJECTED", "QUANTITY_RULE")
+            return ZERO
+        if fill.filled_quantity == ZERO:
+            self.transition(state, now, "REJECTED", fill.reason or "CAPACITY_REJECTED")
+            return ZERO
+        done = fill.filled_quantity == state.remaining_quantity
+        updated = self.transition(state, now, "FILLED" if done else "PARTIALLY_FILLED",
+            filled=fill.filled_quantity, price=px)
+        if intent.reduce_only and self.ledger.position(intent.instrument_id) is None and not done:
+            self.transition(updated, now, "CANCELLED", "REDUCE_ONLY_REMAINDER")
+        self.checkpoint(now, "FILL")
+        return abs(fill.filled_quantity)
+
+    def snapshot(self):
+        reconciliation = self.ledger.reconciliation_snapshot()
+        if reconciliation.residual != ZERO:
+            raise ValueError("perpetual cash-flow reconciliation failed")
+        return {
+            "ending_reservation": self.reservation_snapshot(),
+            "ending_state":self.ledger.state_as_canonical_dict(),
+            "reconciliation":reconciliation.as_canonical_dict(),
+            "ledger_events":[dict(e) for e in self.ledger.event_records],
+            "orders":[{"order_id":s.intent.order_id, "instrument_id":s.intent.instrument_id,
+                "status":s.status, "reason":s.reason, "created_at":s.created_at, "filled_at":s.filled_at,
+                "filled_quantity":canonical_decimal(s.filled_quantity),
+                "minimum_exemption_requires_reduction":s.minimum_exemption_requires_reduction,
+                "remaining_quantity":canonical_decimal(s.remaining_quantity)} for s in self.orders.values()],
+            "order_events":self.order_events, "decision_events":self.decisions, "risk_events":self.risk_events,
+            "equity_history":[{"timestamp":p.timestamp,"sequence":p.sequence,"phase":p.phase,
+                "equity":canonical_decimal(p.equity),"drawdown":canonical_decimal(p.drawdown),
+                "return_since_previous":None if p.return_since_previous is None
+                else canonical_decimal(p.return_since_previous)} for p in self.history],
+        }
+
+    def apply_actions(self, now, actions, *, ctx=None):
+        ctx = self.context(now) if ctx is None else ctx
+        action_records = []
+        for action in actions:
+            if not isinstance(action, (OrderIntent, CancelOrder)):
+                raise ValueError("strategy must return only order intents or cancellations")
+            action_records.append(asdict(action))
+            if isinstance(action, CancelOrder):
+                state = self.pending.get(action.order_id)
+                if state is not None:
+                    self.transition(state, now, "CANCELLED", "STRATEGY_CANCEL")
+                else:
+                    self.order_events.append({"order_id":action.order_id, "timestamp":now,
+                        "status":"CANCEL_REJECTED", "reason":"ORDER_NOT_OPEN",
+                        "filled_quantity":"0", "fill_price":None})
+                continue
+            if action.order_id in self.orders:
+                raise ValueError("duplicate order_id")
+            state = OrderState(action, now, action.quantity_delta)
+            reason = None
+            q = self.quotes.get(action.instrument_id)
+            if action.instrument_id not in self.rules:
+                reason = "UNKNOWN_INSTRUMENT"
+            elif action.expires_at is not None and action.expires_at <= now:
+                reason = "INVALID_EXPIRY"
+            elif q is None or now-q.event_time > self.limits.quote_max_age_ms:
+                reason = "STALE_OR_MISSING_QUOTE"
+            elif action.instrument_id not in self.mark_times or now-self.mark_times[action.instrument_id] > self.limits.quote_max_age_ms:
+                reason = "STALE_OR_MISSING_MARK"
+            elif self.capacity_for(action.instrument_id, now) is None:
+                reason = "MISSING_CURRENT_CAPACITY"
+            else:
+                current = self.ledger.position(action.instrument_id)
+                px = q.ask_price if action.quantity_delta > ZERO else q.bid_price
+                profile = self.profiles.get(action.instrument_id)
+                if profile is not None:
+                    order_type = "MARKET" if action.limit_price is None else "LIMIT"
+                    bound = profile.market_max_quantity if order_type == "MARKET" else profile.limit_max_quantity
+                    px = action.limit_price or self.execution_price(q, action.quantity_delta)
+                    if action.margin_mode != MarginMode.CROSS:
+                        reason = "UNSUPPORTED_ORDER_MARGIN_MODE"
+                    elif order_type not in profile.supported_order_types:
+                        reason = "UNSUPPORTED_ORDER_TYPE"
+                    elif profile.price_reason(px):
+                        reason = profile.price_reason(px)
+                    elif abs(action.quantity_delta) > bound:
+                        reason = "MAX_ORDER_QUANTITY"
+                    elif self.rules[action.instrument_id].spec.notional(action.quantity_delta, px) > profile.max_notional:
+                        reason = "MAX_ORDER_NOTIONAL"
+                try:
+                    if reason is None:
+                        if profile is not None and profile.minimum_policy == "ORIGINAL_ORDER":
+                            reducing = (action.reduce_only and current is not None
+                                and (current.quantity > ZERO) != (action.quantity_delta > ZERO)
+                                and abs(action.quantity_delta) <= abs(current.quantity))
+                            self.rules[action.instrument_id].spec.validate_quantity(
+                                action.quantity_delta, px, reducing=reducing)
+                        else:
+                            self.rules[action.instrument_id].spec.validate_trade_quantity(
+                                action.quantity_delta, px,
+                                current_quantity=ZERO if current is None else current.quantity)
+                except QuantityRuleViolation:
+                    reason = "QUANTITY_RULE"
+                if reason is None:
+                    try:
+                        self.rules[action.instrument_id].spec.validate_quantity(action.quantity_delta, px)
+                    except QuantityRuleViolation:
+                        # An original closing order admitted only by a minimum
+                        # exemption must never use it to open inventory later.
+                        state = replace(state, minimum_exemption_requires_reduction=True)
+                    reason = self.risk_reason(self.context(now), action, action.quantity_delta, px)
+                    if reason is None and profile is not None and not action.reduce_only:
+                        if self.reservation_snapshot(extra=state)["available"] < ZERO:
+                            reason = "INSUFFICIENT_RESERVED_COLLATERAL"
+            self.transition(state, now, "OPEN" if reason is None else "REJECTED", reason)
+        self.decisions.append({
+            "timestamp":now, "equity":canonical_decimal(ctx.equity),
+            "positions":{n:p.as_canonical_dict() for n,p in ctx.positions.items()},
+            "quotes":{n:asdict(q) for n,q in ctx.quotes.items()},
+            "history_length":len(ctx.history), "actions":action_records,
+            "reserved_collateral": dict(ctx.reserved_collateral),
+            "available_collateral": ctx.available_collateral,
+        })
+
+
+def _validate_market_environment(rule_items, policy_items, profile_items, frame_items):
+    times = tuple(f.timestamp for f in frame_items)
+    if not rule_items or any(not isinstance(r, HistoricalContractRule) for r in rule_items):
+        raise ValueError("historical contract rules are required")
+    rules = {r.spec.instrument_id: r for r in rule_items}
+    if len(rules) != len(rule_items):
+        raise ValueError("one immutable rule epoch per instrument is supported")
+    if any(r.ingestion_time > times[0] or not r.covers(times[0])
+           or not r.covers(times[-1]) for r in rule_items):
+        raise ValueError("historical rules must be known and cover the full simulation")
+    if any(not isinstance(p, FundingPolicySnapshot) for p in policy_items):
+        raise ValueError("invalid funding policy")
+    policies = {p.instrument_id: p for p in policy_items}
+    if len(policies) != len(policy_items) or set(policies) != set(rules):
+        raise ValueError("funding policies must exactly cover the universe")
+    for p in policy_items:
+        if p.ingestion_time > times[0] or not p.coverage_start <= times[0] <= times[-1] <= p.coverage_end:
+            raise ValueError("funding policy must be known and cover the simulation")
+    profiles = {}
+    if profile_items is not None:
+        if any(not isinstance(p, OrderRuleProfile) for p in profile_items):
+            raise ValueError("invalid order rule profile")
+        profiles = {p.instrument_id: p for p in profile_items}
+        if len(profiles) != len(profile_items) or set(profiles) != set(rules):
+            raise ValueError("order rules must exactly cover the universe")
+        for name, p in profiles.items():
+            spec = rules[name].spec
+            if (p.contract_rule_id != rules[name].rule_id or p.venue_id != policies[name].venue_id
+                    or p.ingestion_time > times[0]
+                    or not p.effective_from <= times[0] <= times[-1] < p.effective_until
+                    or p.market_max_quantity % spec.quantity_step != ZERO
+                    or p.limit_max_quantity % spec.quantity_step != ZERO
+                    or min(p.market_max_quantity, p.limit_max_quantity) < spec.min_quantity
+                    or p.max_notional < spec.min_notional):
+                raise ValueError("order rule binding, coverage or quantity bounds are invalid")
+    expected_funding = {(p.instrument_id, t) for p in policy_items
+                        for t in p.settlement_times if times[0] <= t <= times[-1]}
+    actual_funding = [(e.instrument_id, e.timestamp) for f in frame_items
+                      for e in f.market_events if isinstance(e, FundingEvent)]
+    if set(actual_funding) != expected_funding or len(actual_funding) != len(expected_funding):
+        raise ValueError("funding schedule does not match settlement events")
+    return rules, policies, profiles
+
 
 @ledger_decimal_context()
 def run_linear_perpetual_simulation(
@@ -342,537 +898,51 @@ def run_linear_perpetual_simulation(
     times = tuple(f.timestamp for f in frame_items)
     if times != tuple(sorted(set(times))):
         raise ValueError("frame timestamps must be strictly increasing")
-    if not rule_items or any(not isinstance(r, HistoricalContractRule) for r in rule_items):
-        raise ValueError("historical contract rules are required")
-    rules = {r.spec.instrument_id: r for r in rule_items}
-    if len(rules) != len(rule_items):
-        raise ValueError("one immutable rule epoch per instrument is supported")
-    if any(r.ingestion_time > times[0] or not r.covers(times[0])
-           or not r.covers(times[-1]) for r in rule_items):
-        raise ValueError("historical rules must be known and cover the full simulation")
-    if any(not isinstance(p, FundingPolicySnapshot) for p in policy_items):
-        raise ValueError("invalid funding policy")
-    policies = {p.instrument_id: p for p in policy_items}
-    if len(policies) != len(policy_items) or set(policies) != set(rules):
-        raise ValueError("funding policies must exactly cover the universe")
-    for p in policy_items:
-        if p.ingestion_time > times[0] or not p.coverage_start <= times[0] <= times[-1] <= p.coverage_end:
-            raise ValueError("funding policy must be known and cover the simulation")
     profile_items = None if order_rule_profiles is None else tuple(order_rule_profiles)
-    profiles = {}
-    if profile_items is not None:
-        if any(not isinstance(p, OrderRuleProfile) for p in profile_items):
-            raise ValueError("invalid order rule profile")
-        profiles = {p.instrument_id: p for p in profile_items}
-        if len(profiles) != len(profile_items) or set(profiles) != set(rules):
-            raise ValueError("order rules must exactly cover the universe")
-        for name, p in profiles.items():
-            spec = rules[name].spec
-            if (p.contract_rule_id != rules[name].rule_id or p.venue_id != policies[name].venue_id
-                    or p.ingestion_time > times[0]
-                    or not p.effective_from <= times[0] <= times[-1] < p.effective_until
-                    or p.market_max_quantity % spec.quantity_step != ZERO
-                    or p.limit_max_quantity % spec.quantity_step != ZERO
-                    or min(p.market_max_quantity, p.limit_max_quantity) < spec.min_quantity
-                    or p.max_notional < spec.min_notional):
-                raise ValueError("order rule binding, coverage or quantity bounds are invalid")
-    expected_funding = {(p.instrument_id, t) for p in policy_items
-                        for t in p.settlement_times if times[0] <= t <= times[-1]}
-    actual_funding = [(e.instrument_id, e.timestamp) for f in frame_items
-                      for e in f.market_events if isinstance(e, FundingEvent)]
-    if set(actual_funding) != expected_funding or len(actual_funding) != len(expected_funding):
-        raise ValueError("funding schedule does not match settlement events")
-    ledger = LinearPerpetualLedger(tuple(r.spec for r in rule_items), initial_collateral=initial_collateral)
-    universe = tuple(sorted(rules))
-    quotes: dict[str, ExecutableQuote] = {}
-    capacities: dict[str, CapacitySnapshot] = {}
-    mark_times: dict[str, int] = {}
-    mark_prices: dict[str, Decimal] = {}
-    pending: dict[str, OrderState] = {}
-    orders: dict[str, OrderState] = {}
-    history: list[EquityPoint] = []
-    order_events: list[dict[str, Any]] = []
-    decisions: list[dict[str, Any]] = []
-    risk_events: list[dict[str, Any]] = []
-    peak = initial_collateral
-
-    def checkpoint(timestamp: int, phase: str) -> None:
-        nonlocal peak
-        equity = ledger.account_equity()
-        previous = history[-1].equity if history else None
-        peak = max(peak, equity)
-        history.append(EquityPoint(timestamp, len(history), equity,
-            None if previous is None or previous <= ZERO else equity / previous - ONE,
-            (peak-equity)/peak, phase))
-
-    def execution_price(quote: ExecutableQuote, quantity: Decimal) -> Decimal:
-        price = (quote.ask_price * (ONE+costs.adverse_slippage_rate) if quantity > ZERO
-                 else quote.bid_price * (ONE-costs.adverse_slippage_rate))
-        profile = profiles.get(quote.instrument_id)
-        if profile is not None:
-            steps = (price/profile.price_tick).to_integral_value(
-                rounding=ROUND_CEILING if quantity > ZERO else ROUND_FLOOR)
-            price = steps*profile.price_tick
-        return price
-
-    def reservation_snapshot(*, extra: OrderState | None = None,
-                             filling: str | None = None, filled: Decimal = ZERO) -> dict[str, Any]:
-        """Conservative cross-only order commitments; never debit ledger cash.
-
-        Opposing orders do not net. Tier increments use the canonical margin
-        function, on gross pending quantity plus existing absolute inventory.
-        Filled quantities disappear from commitments only in the projected ledger
-        or after commit. No hypothetical PnL is credited to available collateral.
-        """
-        margin = ledger.initial_margin_snapshot()["cross"]
-        if not profiles:
-            return {"policy": "UNRESERVED_LEGACY_DIAGNOSTIC", "by_order": {},
-                    "total_reserved": ZERO, "available": margin["available"]}
-        states = []
-        for state in pending.values():
-            if state.intent.order_id == filling:
-                state = replace(state, remaining_quantity=state.remaining_quantity-filled)
-            if state.remaining_quantity != ZERO:
-                states.append(state)
-        if extra is not None:
-            states.append(extra)
-        reserve: dict[str, Decimal] = {}
-        stressed_required = ZERO
-        executable_equity = ledger.account_equity()
-        for name in universe:
-            position = ledger.position(name)
-            group = [s for s in states if s.intent.instrument_id == name]
-            q = quotes.get(name)
-            if q is None or name not in mark_prices:
-                continue  # Admission rejects missing quotes before reaching here.
-            high, low = execution_price(q, ONE), execution_price(q, -ONE)
-            mark = mark_prices[name]
-            price = max(mark, high, *(s.intent.limit_price or ZERO for s in group))
-            spec = rules[name].spec
-            quantity = ZERO if position is None else abs(position.quantity)
-            required = spec.margin_requirement(spec.notional(quantity, price)).initial_margin
-            stressed_required += required
-            if position is not None:
-                valuation = q.bid_price if position.quantity > ZERO else q.ask_price
-                executable_equity += (position.quantity * (valuation-position.mark_price)
-                                      * spec.contract_multiplier)
-            for state in group:
-                if state.intent.reduce_only:
-                    reserve[state.intent.order_id] = ZERO
-                    continue  # Exits remain available; actual costs still enter the ledger.
-                quantity += abs(state.remaining_quantity)
-                next_required = spec.margin_requirement(spec.notional(quantity, price)).initial_margin
-                notional = spec.notional(state.remaining_quantity, price)
-                buy = state.remaining_quantity > ZERO
-                entry = high if buy else low
-                if state.intent.limit_price is not None:
-                    entry = min(entry, state.intent.limit_price) if buy else max(entry, state.intent.limit_price)
-                adverse = max(ZERO, entry-mark if buy else mark-entry)
-                buffer = abs(state.remaining_quantity)*adverse*spec.contract_multiplier
-                reserve[state.intent.order_id] = next_required-required + notional*costs.fee_rate + buffer
-                required = next_required
-        total = sum(reserve.values(), ZERO)
-        available = min(margin["equity"], executable_equity)-max(margin["required"], stressed_required)-total
-        return {"policy": RESERVATION_POLICY, "by_order": reserve,
-                "total_reserved": total, "available": available}
-
-    def context(timestamp: int) -> SimulationContext:
-        positions = {name: ledger.position(name) for name in universe}
-        reservation = reservation_snapshot()
-        return SimulationContext(timestamp, ledger.account_equity(),
-            MappingProxyType({n:p for n,p in positions.items() if p is not None}),
-            MappingProxyType(dict(quotes)), MappingProxyType(dict(pending)), _Prefix(history),
-            MappingProxyType(reservation["by_order"]), reservation["available"])
-
-    def transition(state: OrderState, timestamp: int, status: str,
-                   reason: str | None = None, filled: Decimal = ZERO,
-                   price: Decimal | None = None) -> OrderState:
-        existing = orders.get(state.intent.order_id)
-        if existing is None:
-            if status not in ("OPEN", "REJECTED") or filled != ZERO:
-                raise ValueError("invalid initial order state")
-        elif existing != state or status not in _ORDER_TRANSITIONS.get(state.status, ()):
-            raise ValueError("invalid or stale order transition")
-        if filled != ZERO and (
-            (filled > ZERO) != (state.remaining_quantity > ZERO)
-            or abs(filled) > abs(state.remaining_quantity)
-            or status not in ("PARTIALLY_FILLED", "FILLED")
-        ):
-            raise ValueError("fill violates order quantity conservation")
-        remaining = state.remaining_quantity-filled
-        if status == "FILLED" and (filled == ZERO or remaining != ZERO):
-            raise ValueError("FILLED requires exact completion")
-        if status == "PARTIALLY_FILLED" and (filled == ZERO or remaining == ZERO):
-            raise ValueError("PARTIALLY_FILLED requires a nonzero remainder")
-        updated = replace(state, status=status, reason=reason,
-            remaining_quantity=remaining,
-            filled_quantity=state.filled_quantity+filled,
-            filled_at=timestamp if filled != ZERO else state.filled_at)
-        orders[state.intent.order_id] = updated
-        if status in ("OPEN", "PARTIALLY_FILLED"):
-            pending[state.intent.order_id] = updated
-        else:
-            pending.pop(state.intent.order_id, None)
-        order_events.append({
-            "order_id": state.intent.order_id, "timestamp": timestamp, "status": status,
-            "reason": reason, "filled_quantity": canonical_decimal(filled),
-            "remaining_quantity": canonical_decimal(updated.remaining_quantity),
-            "cumulative_filled_quantity": canonical_decimal(updated.filled_quantity),
-            "fill_price": None if price is None else canonical_decimal(price),
-            "reservation": _canonical(reservation_snapshot()),
-        })
-        return updated
-
-    def risk_reason(ctx: SimulationContext, intent: OrderIntent, quantity: Decimal,
-                    price: Decimal, *, executing: bool = False) -> str | None:
-        name = intent.instrument_id
-        old = ctx.positions[name].quantity if name in ctx.positions else ZERO
-        reducing = old != ZERO and (old > ZERO) != (quantity > ZERO) and abs(quantity) <= abs(old)
-        if intent.reduce_only and not reducing:
-            return "REDUCE_ONLY_NO_POSITION" if old == ZERO else "REDUCE_ONLY_WOULD_INCREASE"
-        if ctx.equity <= ZERO:
-            return "NONPOSITIVE_EQUITY"
-        if not reducing:
-            if history[-1].drawdown > limits.max_drawdown:
-                return "DRAWDOWN_LIMIT"
-            # A low mark overstates a short's equity. Value existing inventory
-            # at the currently executable side as well, and use the lower
-            # equity so inconsistent marks cannot manufacture a risk budget.
-            executable_equity = ctx.equity
-            for instrument, position in ctx.positions.items():
-                q = ctx.quotes.get(instrument)
-                if q is None or ctx.timestamp-q.event_time > limits.quote_max_age_ms:
-                    return "STALE_OR_MISSING_QUOTE"
-                valuation = q.bid_price if position.quantity > ZERO else q.ask_price
-                if instrument == name and executing:
-                    valuation = (min(valuation, price) if position.quantity > ZERO
-                                 else max(valuation, price))
-                executable_equity += position.quantity * (valuation-position.mark_price) * rules[instrument].spec.contract_multiplier
-            risk_equity = min(ctx.equity, executable_equity)
-            if risk_equity <= ZERO:
-                return "NONPOSITIVE_EXECUTABLE_EQUITY"
-            amounts = {n:p.quantity for n,p in ctx.positions.items()}
-            amounts[name] = old + quantity
-            # Each side is reserved independently: pending buys and sells must
-            # not cancel each other's potential exposure before either fills.
-            worst = {}
-            for instrument in set(amounts) | {s.intent.instrument_id for s in pending.values()}:
-                base = amounts.get(instrument, ZERO)
-                buys = sells = ZERO
-                if not executing:
-                    for state in pending.values():
-                        if state.intent.order_id == intent.order_id or state.intent.reduce_only:
-                            continue
-                        if state.intent.instrument_id == instrument:
-                            if state.remaining_quantity > ZERO: buys += state.remaining_quantity
-                            else: sells += state.remaining_quantity
-                worst[instrument] = max(abs(base+buys), abs(base+sells))
-            notionals = {}
-            for instrument, amount in worst.items():
-                if amount == ZERO:
-                    continue
-                q = ctx.quotes.get(instrument)
-                if q is None or ctx.timestamp-q.event_time > limits.quote_max_age_ms:
-                    return "STALE_OR_MISSING_QUOTE"
-                p = max(q.bid_price, q.ask_price)
-                if instrument == name: p = max(p, price)
-                notionals[instrument] = rules[instrument].spec.notional(amount, p)
-            if any(n/risk_equity > limits.max_single_weight for n in notionals.values()):
-                return "SINGLE_NAME_LIMIT"
-            if sum(notionals.values(), ZERO)/risk_equity > limits.max_gross_leverage:
-                return "GROSS_EXPOSURE_LIMIT"
-        if risk_policy is not None:
-            try:
-                verdict = risk_policy(ctx, replace(intent, quantity_delta=quantity))
-            except Exception:
-                return "RISK_POLICY_FAILED"
-            if not isinstance(verdict, RiskVerdict):
-                return "INVALID_RISK_VERDICT"
-            if not verdict.approved:
-                return verdict.reason
-        return None
-
-    def capacity_for(name: str, timestamp: int) -> CapacitySnapshot | None:
-        value = capacities.get(name)
-        if value is None or not value.policy.contains_timestamp(timestamp):
-            return None
-        return value
-
-    def check_projected_fill(before: SimulationContext, intent: OrderIntent,
-                             filled: Decimal, price: Decimal, *,
-                             minimum_exemption_requires_reduction: bool) -> None:
-        # This context comes from the tentative canonical ledger transition;
-        # fee, funding, realized PnL and margin are not recomputed here.
-        projected = context(before.timestamp)
-        old = before.positions.get(intent.instrument_id)
-        reducing = (old is not None and (old.quantity > ZERO) != (filled > ZERO)
-                    and abs(filled) <= abs(old.quantity))
-        reason = risk_reason(before, intent, filled, price, executing=True)
-        if minimum_exemption_requires_reduction and not reducing:
-            reason = "QUANTITY_RULE"
-        executable_equity = projected.equity
-        notionals = {}
-        for name, position in projected.positions.items():
-            quote = projected.quotes.get(name)
-            if quote is None or projected.timestamp-quote.event_time > limits.quote_max_age_ms:
-                if not reducing:
-                    reason = reason or "STALE_OR_MISSING_QUOTE"
-                continue
-            valuation = quote.bid_price if position.quantity > ZERO else quote.ask_price
-            if name == intent.instrument_id:
-                valuation = (min(valuation, price) if position.quantity > ZERO
-                             else max(valuation, price))
-            executable_equity += (position.quantity * (valuation-position.mark_price)
-                                  * rules[name].spec.contract_multiplier)
-            notional_price = max(quote.bid_price, quote.ask_price, position.mark_price)
-            if name == intent.instrument_id:
-                notional_price = max(notional_price, price)
-            notionals[name] = rules[name].spec.notional(position.quantity, notional_price)
-        risk_equity = min(projected.equity, executable_equity)
-        drawdown = max(ZERO, (peak-risk_equity)/peak)
-        gross = sum(notionals.values(), ZERO)
-        checks = {
-            "positive_equity": risk_equity > ZERO,
-            "drawdown": drawdown <= limits.max_drawdown,
-            "single_name": all(n <= risk_equity*limits.max_single_weight for n in notionals.values()),
-            "gross_exposure": gross <= risk_equity*limits.max_gross_leverage,
-        }
-        if not reducing:
-            for check, code in (
-                ("positive_equity", "NONPOSITIVE_EXECUTABLE_EQUITY"),
-                ("drawdown", "DRAWDOWN_LIMIT"),
-                ("single_name", "SINGLE_NAME_LIMIT"),
-                ("gross_exposure", "GROSS_EXPOSURE_LIMIT"),
-            ):
-                if not checks[check]:
-                    reason = reason or code
-        reservation = reservation_snapshot(filling=intent.order_id, filled=filled)
-        if profiles and not reducing and reservation["available"] < ZERO:
-            reason = reason or "INSUFFICIENT_RESERVED_COLLATERAL"
-        risk_events.append({
-            "order_id": intent.order_id, "timestamp": before.timestamp,
-            "phase": "PROJECTED_FILL", "filled_quantity": filled,
-            "marked_equity": projected.equity, "executable_equity": executable_equity,
-            "risk_equity": risk_equity, "gross_notional": gross,
-            "instrument_notionals": notionals, "drawdown": drawdown,
-            "limits": asdict(limits), "checks": checks,
-            "margin": ledger.initial_margin_snapshot(),
-            "reservation": reservation,
-            "reducing": reducing, "approved": reason is None, "reason": reason,
-        })
-        if reason is not None:
-            raise _ProjectedRiskRejected(reason)
+    rules, policies, profiles = _validate_market_environment(rule_items, policy_items, profile_items, frame_items)
+    account = _SimulationAccount(rule_items=rule_items, rules=rules, policies=policies,
+        profiles=profiles, initial_collateral=initial_collateral, costs=costs, limits=limits, risk_policy=risk_policy)
 
     for frame in frame_items:
         now = frame.timestamp
-        if not history: checkpoint(now, "INITIAL")
-        if any(e.instrument_id not in rules for e in frame.market_events):
-            raise ValueError("market event outside the declared universe")
-        ledger.process_events(frame.market_events)
-        for event in frame.market_events:
-            mark_times[event.instrument_id] = now
-            mark_prices[event.instrument_id] = event.mark_price
-        accepted_quotes: dict[str, ExecutableQuote] = {}
-        for q in frame.quotes:
-            if q.instrument_id not in rules:
-                raise ValueError("quote outside the declared universe")
-            if q.venue_id != policies[q.instrument_id].venue_id:
-                raise ValueError("quote and funding venues differ")
-            profile = profiles.get(q.instrument_id)
-            if profile is not None and (profile.price_reason(q.bid_price) or profile.price_reason(q.ask_price)):
-                raise ValueError("executable quote violates order rule price grid or bounds")
-            prior = quotes.get(q.instrument_id)
-            if prior is not None and q.event_time <= prior.event_time:
-                # A late observation is retained in the input identity but
-                # cannot roll time backwards or replenish consumed liquidity.
-                if q.event_time == prior.event_time and q != prior:
-                    raise ValueError("conflicting quote at the same venue timestamp")
-                continue
-            quotes[q.instrument_id] = q
-            accepted_quotes[q.instrument_id] = q
-        for cap in frame.capacity_snapshots:
-            if cap.instrument_id not in rules or cap.policy.venue_id != policies[cap.instrument_id].venue_id:
-                raise ValueError("capacity outside the declared venue/universe")
-            previous = capacities.get(cap.instrument_id)
-            if previous is not None and cap.ingestion_time < previous.ingestion_time:
-                raise ValueError("capacity knowledge time moved backwards")
-            capacities[cap.instrument_id] = cap
-        checkpoint(now, "MARKET")
+        accepted_quotes = account.apply_market(frame)
         depth = {(q.instrument_id, side): size for q in accepted_quotes.values()
                  for side, size in (("BUY", q.ask_quantity), ("SELL", q.bid_quantity))}
         fresh = accepted_quotes
-        for state in tuple(pending.values()):
+        for state in tuple(account.pending.values()):
             intent = state.intent
             if intent.expires_at is not None and now >= intent.expires_at:
-                transition(state, now, "EXPIRED", "TIME_IN_FORCE")
+                account.transition(state, now, "EXPIRED", "TIME_IN_FORCE")
                 continue
             q = fresh.get(intent.instrument_id)
-            if q is None or quotes.get(intent.instrument_id) != q:
+            if q is None or account.quotes.get(intent.instrument_id) != q:
                 continue
-            if q.event_time <= state.created_at + limits.order_latency_ms:
+            if q.event_time <= state.created_at + account.limits.order_latency_ms:
                 continue
-            if now-q.event_time > limits.quote_max_age_ms:
+            if now-q.event_time > account.limits.quote_max_age_ms:
                 continue
-            if intent.instrument_id not in mark_times or now-mark_times[intent.instrument_id] > limits.quote_max_age_ms:
-                transition(state, now, "REJECTED", "STALE_OR_MISSING_MARK")
-                continue
-            spec = rules[intent.instrument_id].spec
-            remaining = state.remaining_quantity
-            current = ledger.position(intent.instrument_id)
-            if intent.reduce_only:
-                if current is None or (current.quantity > ZERO) == (remaining > ZERO):
-                    transition(state, now, "REJECTED", "REDUCE_ONLY_NO_POSITION")
-                    continue
-                remaining = min(abs(remaining), abs(current.quantity)) * (ONE if remaining > ZERO else -ONE)
-            side = "BUY" if remaining > ZERO else "SELL"
-            px = execution_price(q, remaining)
-            profile = profiles.get(intent.instrument_id)
-            if profile is not None:
-                reason = profile.price_reason(px)
-                if reason is None and spec.notional(intent.quantity_delta, px) > profile.max_notional:
-                    reason = reason or "MAX_ORDER_NOTIONAL"
-                if reason:
-                    transition(state, now, "REJECTED", reason)
-                    continue
-            if intent.limit_price is not None and (
-                (remaining > ZERO and px > intent.limit_price)
-                or (remaining < ZERO and px < intent.limit_price)):
-                continue
-            cap = capacity_for(intent.instrument_id, now)
-            if cap is None:
-                transition(state, now, "REJECTED", "MISSING_CURRENT_CAPACITY")
-                continue
-            quantity = spec.floor_quantity(min(abs(remaining), depth[(intent.instrument_id, side)]))
-            quantity *= ONE if remaining > ZERO else -ONE
-            if quantity == ZERO:
-                continue
-            before_fill = context(now)
-            trade = OrderFillEvent(timestamp=now, instrument_id=intent.instrument_id,
-                quantity_delta=quantity, execution_price=px, capacity=cap.policy,
-                margin_mode=intent.margin_mode,
-                isolated_margin=intent.isolated_margin if current is None else None,
-                order_id=intent.order_id, fee_rate=costs.fee_rate)
-            try:
-                fill = ledger.apply_event(trade, trade_guard=lambda candidate:
-                    check_projected_fill(before_fill, intent, candidate.filled_quantity, px,
-                        minimum_exemption_requires_reduction=state.minimum_exemption_requires_reduction))
-            except _ProjectedRiskRejected as exc:
-                transition(state, now, "REJECTED", str(exc))
-                continue
-            except InsufficientMargin:
-                transition(state, now, "REJECTED", "INSUFFICIENT_MARGIN")
-                continue
-            except QuantityRuleViolation:
-                transition(state, now, "REJECTED", "QUANTITY_RULE")
-                continue
-            if fill.filled_quantity == ZERO:
-                transition(state, now, "REJECTED", fill.reason or "CAPACITY_REJECTED")
-                continue
-            depth[(intent.instrument_id, side)] -= abs(fill.filled_quantity)
-            done = fill.filled_quantity == state.remaining_quantity
-            updated = transition(state, now, "FILLED" if done else "PARTIALLY_FILLED",
-                filled=fill.filled_quantity, price=px)
-            if intent.reduce_only and ledger.position(intent.instrument_id) is None and not done:
-                transition(updated, now, "CANCELLED", "REDUCE_ONLY_REMAINDER")
-            checkpoint(now, "FILL")
-        ctx = context(now)
+            side = "BUY" if state.remaining_quantity > ZERO else "SELL"
+            px = account.execution_price(q, state.remaining_quantity)
+            used = account.fill_order(state, now, px, depth[(intent.instrument_id, side)])
+            depth[(intent.instrument_id, side)] -= used
+        ctx = account.context(now)
         actions = tuple(strategy(ctx))
-        action_records = []
-        for action in actions:
-            if not isinstance(action, (OrderIntent, CancelOrder)):
-                raise ValueError("strategy must return only order intents or cancellations")
-            action_records.append(asdict(action))
-            if isinstance(action, CancelOrder):
-                state = pending.get(action.order_id)
-                if state is not None:
-                    transition(state, now, "CANCELLED", "STRATEGY_CANCEL")
-                else:
-                    order_events.append({"order_id":action.order_id, "timestamp":now,
-                        "status":"CANCEL_REJECTED", "reason":"ORDER_NOT_OPEN",
-                        "filled_quantity":"0", "fill_price":None})
-                continue
-            if action.order_id in orders:
-                raise ValueError("duplicate order_id")
-            state = OrderState(action, now, action.quantity_delta)
-            reason = None
-            q = quotes.get(action.instrument_id)
-            if action.instrument_id not in rules:
-                reason = "UNKNOWN_INSTRUMENT"
-            elif action.expires_at is not None and action.expires_at <= now:
-                reason = "INVALID_EXPIRY"
-            elif q is None or now-q.event_time > limits.quote_max_age_ms:
-                reason = "STALE_OR_MISSING_QUOTE"
-            elif action.instrument_id not in mark_times or now-mark_times[action.instrument_id] > limits.quote_max_age_ms:
-                reason = "STALE_OR_MISSING_MARK"
-            elif capacity_for(action.instrument_id, now) is None:
-                reason = "MISSING_CURRENT_CAPACITY"
-            else:
-                current = ledger.position(action.instrument_id)
-                px = q.ask_price if action.quantity_delta > ZERO else q.bid_price
-                profile = profiles.get(action.instrument_id)
-                if profile is not None:
-                    order_type = "MARKET" if action.limit_price is None else "LIMIT"
-                    bound = profile.market_max_quantity if order_type == "MARKET" else profile.limit_max_quantity
-                    px = action.limit_price or execution_price(q, action.quantity_delta)
-                    if action.margin_mode != MarginMode.CROSS:
-                        reason = "UNSUPPORTED_ORDER_MARGIN_MODE"
-                    elif order_type not in profile.supported_order_types:
-                        reason = "UNSUPPORTED_ORDER_TYPE"
-                    elif profile.price_reason(px):
-                        reason = profile.price_reason(px)
-                    elif abs(action.quantity_delta) > bound:
-                        reason = "MAX_ORDER_QUANTITY"
-                    elif rules[action.instrument_id].spec.notional(action.quantity_delta, px) > profile.max_notional:
-                        reason = "MAX_ORDER_NOTIONAL"
-                try:
-                    if reason is None:
-                        if profile is not None and profile.minimum_policy == "ORIGINAL_ORDER":
-                            reducing = (action.reduce_only and current is not None
-                                and (current.quantity > ZERO) != (action.quantity_delta > ZERO)
-                                and abs(action.quantity_delta) <= abs(current.quantity))
-                            rules[action.instrument_id].spec.validate_quantity(
-                                action.quantity_delta, px, reducing=reducing)
-                        else:
-                            rules[action.instrument_id].spec.validate_trade_quantity(
-                                action.quantity_delta, px,
-                                current_quantity=ZERO if current is None else current.quantity)
-                except QuantityRuleViolation:
-                    reason = "QUANTITY_RULE"
-                if reason is None:
-                    try:
-                        rules[action.instrument_id].spec.validate_quantity(action.quantity_delta, px)
-                    except QuantityRuleViolation:
-                        # An original closing order admitted only by a minimum
-                        # exemption must never use it to open inventory later.
-                        state = replace(state, minimum_exemption_requires_reduction=True)
-                    reason = risk_reason(context(now), action, action.quantity_delta, px)
-                    if reason is None and profile is not None and not action.reduce_only:
-                        if reservation_snapshot(extra=state)["available"] < ZERO:
-                            reason = "INSUFFICIENT_RESERVED_COLLATERAL"
-            transition(state, now, "OPEN" if reason is None else "REJECTED", reason)
-        decisions.append({
-            "timestamp":now, "equity":canonical_decimal(ctx.equity),
-            "positions":{n:p.as_canonical_dict() for n,p in ctx.positions.items()},
-            "quotes":{n:asdict(q) for n,q in ctx.quotes.items()},
-            "history_length":len(ctx.history), "actions":action_records,
-            "reserved_collateral": dict(ctx.reserved_collateral),
-            "available_collateral": ctx.available_collateral,
-        })
-    reconciliation = ledger.reconciliation_snapshot()
+        account.apply_actions(now, actions, ctx=ctx)
+    reconciliation = account.ledger.reconciliation_snapshot()
     if reconciliation.residual != ZERO:
         raise ValueError("perpetual cash-flow reconciliation failed")
     inputs = {
         "schema":SCHEMA, "release":release_identity, "dataset":dataset_identity,
-        "strategy":strategy_identity, "initial_collateral":initial_collateral,
+        "strategy":strategy_identity, "initial_collateral":account.initial_collateral,
         "rules":[r.as_canonical_dict() for r in rule_items],
         "funding_policies":[p.as_canonical_dict() for p in policy_items],
         "frames":[{"timestamp":f.timestamp, "quotes":[asdict(q) for q in f.quotes],
             "market_events":[asdict(e) for e in f.market_events],
             "capacity":[c.as_canonical_dict() for c in f.capacity_snapshots]} for f in frame_items],
-        "limits":asdict(limits), "costs":asdict(costs),
+        "limits":asdict(account.limits), "costs":asdict(account.costs),
         "risk_policy":risk_policy_identity,
         "order_rules": None if profile_items is None else [asdict(p) for p in profile_items],
-        "reservation_policy": RESERVATION_POLICY if profiles else "UNRESERVED_LEGACY_DIAGNOSTIC",
+        "reservation_policy": RESERVATION_POLICY if account.profiles else "UNRESERVED_LEGACY_DIAGNOSTIC",
     }
     result = {
         "schema_version":SCHEMA, "authoritative":False, "evidence_status":"TECHNICAL_VALIDATION_ONLY",
@@ -882,22 +952,9 @@ def run_linear_perpetual_simulation(
         "full_research_risk_9_of_9":False,
         "authority_blockers":["EXTERNAL_SIGNED_RAW_ARCHIVE_AUTHORITY_MISSING",
                               "INDEPENDENT_ECONOMIC_VALIDATION_REQUIRED"]
-                             + ([] if profiles else ["ORDER_RULE_PROFILE_MISSING"]),
+                             + ([] if account.profiles else ["ORDER_RULE_PROFILE_MISSING"]),
         "order_rule_profiles": None if profile_items is None else [asdict(p) for p in profile_items],
-        "ending_reservation": reservation_snapshot(),
-        "ending_state":ledger.state_as_canonical_dict(),
-        "reconciliation":reconciliation.as_canonical_dict(),
-        "ledger_events":[dict(e) for e in ledger.event_records],
-        "orders":[{"order_id":s.intent.order_id, "instrument_id":s.intent.instrument_id,
-            "status":s.status, "reason":s.reason, "created_at":s.created_at, "filled_at":s.filled_at,
-            "filled_quantity":canonical_decimal(s.filled_quantity),
-            "minimum_exemption_requires_reduction":s.minimum_exemption_requires_reduction,
-            "remaining_quantity":canonical_decimal(s.remaining_quantity)} for s in orders.values()],
-        "order_events":order_events, "decision_events":decisions, "risk_events":risk_events,
-        "equity_history":[{"timestamp":p.timestamp,"sequence":p.sequence,"phase":p.phase,
-            "equity":canonical_decimal(p.equity),"drawdown":canonical_decimal(p.drawdown),
-            "return_since_previous":None if p.return_since_previous is None
-            else canonical_decimal(p.return_since_previous)} for p in history],
+        **account.snapshot(),
     }
     result = _canonical(result)
     result["result_hash"] = exact_identity_hash(result, name="perpetual_simulation_result")

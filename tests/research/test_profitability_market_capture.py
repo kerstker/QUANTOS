@@ -104,3 +104,19 @@ def test_public_raw_capture_still_rejects_unregistered_order_route():
     from tools import profitability_public_http as module
     with pytest.raises(ValueError,match='unregistered'):
         module.request_once('https://fapi.binance.com/fapi/v1/order?symbol=BTCUSDC',1,include_raw=True)
+
+
+def test_exchange_rule_metadata_has_a_separate_finite_response_budget(monkeypatch):
+    import io
+    import pytest
+    from tools import profitability_public_http as module
+    raw=b'{"symbols": [], "padding":"'+b'x'*300000+b'"}'
+    class Opener:
+        def open(self,*args,**kwargs):return io.BytesIO(raw)
+    monkeypatch.setattr(module.urllib.request,'build_opener',lambda *a:Opener())
+    assert module.request_once('https://fapi.binance.com/fapi/v1/exchangeInfo',1,include_raw=True)['raw_utf8'].encode()==raw
+    assert module.request_once('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT',1)['category']=='RESPONSE_TOO_LARGE'
+    for url in ('https://fapi.binance.com/fapi/v1/exchangeInfo/private','https://fapi.binance.com/fapi/v2/account'):
+        with pytest.raises(ValueError):module.request_once(url,1)
+    raw=b' '*2000001
+    assert module.request_once('https://fapi.binance.com/fapi/v1/exchangeInfo',1)['category']=='RESPONSE_TOO_LARGE'
