@@ -107,7 +107,10 @@ export default function Studio() {
       <p className="s-nav-caption">WORKSPACE</p>
       <nav aria-label="主导航">{NAV.map(([to, title, icon]) => {
         const active = to === '/' ? path === '/' : path.startsWith(to);
-        return <Link key={to} to={to} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
+        const workspace = new URLSearchParams(location.search).get('workspace');
+        const target = workspace && ['/studio/factory', '/studio/lifecycle'].includes(to)
+          ? `${to}?${new URLSearchParams({workspace})}` : to;
+        return <Link key={to} to={target} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
           <Icon name={icon} />
           <span>{title}</span>{active && <span className="s-nav-dot" />}</Link>;
       })}</nav>

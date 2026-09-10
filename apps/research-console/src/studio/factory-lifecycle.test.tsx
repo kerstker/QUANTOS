@@ -5,7 +5,7 @@ import {FactoryLifecycle} from './FactoryLifecycle';
 import {fetchLifecycle,controlCampaign} from '@/lib/api/ai-factory-lifecycle-api';
 vi.mock('@/lib/api/ai-factory-lifecycle-api',()=>({fetchLifecycle:vi.fn(),controlCampaign:vi.fn()}));
 vi.mock('@/lib/api/research-runner-api',()=>({getOperator:()=> 'operator',getRunnerToken:()=> 'test',setOperator:vi.fn(),setRunnerToken:vi.fn()}));
-const data={campaigns:[],rounds:[],models:[],comparisons:[],sources:[{id:'aqr',name:'AQR',category:'国际机构',url:'https://www.aqr.com/',adopt:'成本后评价',limitation:'研究方法'}],capabilities:[{id:'R4',title:'执行与实际反馈',status:'BLOCKED',detail:'等待真实证据'}],scheduler_enabled:true,errors:[],as_of_ms:1,read_only:true,authoritative:false} as const;
+const data={workspace:{id:'current',label:'当前研究',writable:true},workspaces:[{id:'current',label:'当前研究',writable:true}],campaigns:[],rounds:[],models:[],comparisons:[],sources:[{id:'aqr',name:'AQR',category:'国际机构',url:'https://www.aqr.com/',adopt:'成本后评价',limitation:'研究方法'}],capabilities:[{id:'R4',title:'执行与实际反馈',status:'BLOCKED',detail:'等待真实证据'}],scheduler_enabled:true,errors:[],as_of_ms:1,read_only:true,authoritative:false} as const;
 it('starts a bounded campaign and does not invent an active model',async()=>{
  vi.mocked(fetchLifecycle).mockResolvedValue(structuredClone(data) as never);vi.mocked(controlCampaign).mockResolvedValue({});
  render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);

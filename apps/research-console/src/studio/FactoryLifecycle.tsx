@@ -8,9 +8,13 @@ import {ModelCalibration} from './ModelCalibration';
 import {useResource,fmt,stamp,download,statusLabel} from './data';
 import './factory.css';
 import './factory-lifecycle.css';
+import {ResearchWorkspaceSelector,useResearchWorkspace} from './ResearchWorkspace';
 
 export function FactoryLifecycle(){
- const resource=useResource('factory-lifecycle',fetchLifecycle,15000),data=resource.data;
+ const view=useResearchWorkspace(),{workspace}=view;
+ const resource=useResource(`factory-lifecycle:${workspace}`,signal=>fetchLifecycle(signal,workspace),15000),data=resource.data;
+ const canWrite=workspace==='current'&&data?.workspace?.id===workspace&&data.workspace.writable&&!resource.error;
+ const activeWorkspace=useRef(workspace);activeWorkspace.current=workspace;
  const [tab,setTab]=useState(0),id=useId(),[query,setQuery]=useState('');
  const [sourceQuery,setSourceQuery]=useState('');
  const [protocol,setProtocol]=useState('SINGLE_V1');
@@ -25,17 +29,19 @@ export function FactoryLifecycle(){
  const model=data?.models.find(m=>m.attempt===chosenModel)??data?.models[0];
  const multiplier=mode==='ai'?13:7;
  const act=async(action:string,campaign_id?:number)=>{
+  if(!canWrite||busy)return;
   setBusy(true);setMessage('');setOperator(operator.trim());setRunnerToken(token.trim());
   const intent=JSON.stringify({objective,mode,budget,cycles,interval,sourceIds,trigger,champion,protocol});
   if(action==='create'&&pendingCreate.current?.intent!==intent)pendingCreate.current={intent,campaign_id:Math.max(0,...(data?.campaigns.map(c=>c.campaign_id)??[]))+1};
   const next=campaign_id??pendingCreate.current!.campaign_id;
-  try {await controlCampaign(action==='create'?{action,campaign_id:next,objective,mode,budget,...(mode==='ai'?{research_protocol:protocol}:{}),max_cycles:cycles,interval_hours:interval,source_ids:sourceIds,trigger,champion_attempt:trigger==='drift'?champion:null}:{action,campaign_id:next});if(action==='create')pendingCreate.current=null;setMessage(action==='stop'?'计划已停止，正在执行的轮次会保留并完成；如需立即暂停，请进入对应任务。':'计划已保存，调度状态将在下一次刷新显示。');resource.refresh();}
+  try {await controlCampaign(action==='create'?{action,workspace,campaign_id:next,objective,mode,budget,...(mode==='ai'?{research_protocol:protocol}:{}),max_cycles:cycles,interval_hours:interval,source_ids:sourceIds,trigger,champion_attempt:trigger==='drift'?champion:null}:{action,workspace,campaign_id:next});if(activeWorkspace.current!==workspace)return;if(action==='create')pendingCreate.current=null;setMessage(action==='stop'?'计划已停止，正在执行的轮次会保留并完成；如需立即暂停，请进入对应任务。':'计划已保存，调度状态将在下一次刷新显示。');resource.refresh();}
   catch(e){setMessage(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}
  };
  const tabs=['生命周期','持续研究','模型演进','来源对标'];
  return <>
- <Header eyebrow="ALPHA FACTORY / LIFECYCLE" title="让研究持续推进，让每一步可追溯" action={<Link className="s-button primary" to="/studio/factory">打开实验工厂 →</Link>}>从公开方法到研究计划，再到冻结模型与前向观察。执行、组合和经济证据按各自实际状态呈现。</Header>
+ <Header eyebrow="ALPHA FACTORY / LIFECYCLE" title="让研究持续推进，让每一步可追溯" action={<Link className="s-button primary" to={view.href('/studio/factory')}>打开实验工厂 →</Link>}>从公开方法到研究计划，再到冻结模型与前向观察。执行、组合和经济证据按各自实际状态呈现。</Header>
  <ErrorNote error={resource.error} retry={resource.refresh}/>
+ <ResearchWorkspaceSelector context={data} selected={workspace} change={id=>{pendingCreate.current=null;setMessage('');setChosenModel(null);view.select(id);}} disabled={busy}/>
  {!!data?.errors.length&&<p className="f-message" role="alert">部分证据不可用：{data.errors.join(' · ')}</p>}
  <div className="lf-summary" aria-label="工厂概况">
  <div><small>对标来源</small><strong>{data?.sources.length??'—'}<em> / 36</em></strong><span>机构与系统分别标明</span></div>
@@ -47,7 +53,7 @@ export function FactoryLifecycle(){
  <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`} className="lf-body" tabIndex={0}>
  {tab===0&&<>
  <div className="lf-stages">{data?.capabilities.map(c=><article key={c.id}><div><span className="lf-number">{c.id}</span><Badge value={c.status}/></div><h2>{c.title}</h2><p>{c.detail}</p></article>)}</div>
- <Panel title="三个持续循环" note="研究任务完成、模型可观察、实际交易合格是三个不同状态"><div className="lf-loops"><div><h3>研究发现</h3><p>来源 → 假设 → 特征与模型 → 内层比较 → 下一实验</p><Link to="/studio/factory">查看实际实验与失败记录 →</Link></div><div><h3>模型演进</h3><p>冻结 → 预测 → 成熟标签 → 基线比较 → 新挑战者</p><button className="s-button" onClick={()=>setTab(2)}>查看模型诊断</button></div><div><h3>执行反馈</h3><p>目标持仓 → 订单与对账 → 成本归因 → 校准</p><Link to="/studio/modules/mft-execution">查看执行证据与缺口 →</Link></div></div></Panel>
+ <Panel title="三个持续循环" note="研究任务完成、模型可观察、实际交易合格是三个不同状态"><div className="lf-loops"><div><h3>研究发现</h3><p>来源 → 假设 → 特征与模型 → 内层比较 → 下一实验</p><Link to={view.href('/studio/factory')}>查看实际实验与失败记录 →</Link></div><div><h3>模型演进</h3><p>冻结 → 预测 → 成熟标签 → 基线比较 → 新挑战者</p><button className="s-button" onClick={()=>setTab(2)}>查看模型诊断</button></div><div><h3>执行反馈</h3><p>目标持仓 → 订单与对账 → 成本归因 → 校准</p><Link to="/studio/modules/mft-execution">查看执行证据与缺口 →</Link></div></div></Panel>
  </>}
  {tab===1&&<div className="lf-split"><Panel title="创建持续研究计划" note="配置一次范围，预算内分轮推进；暂停与停止不删除历史">
  <form className="f-form" onSubmit={e=>{e.preventDefault();void act('create');}}>
@@ -61,15 +67,15 @@ export function FactoryLifecycle(){
  <fieldset><legend>方法来源（最多 8 项）</legend><label>筛选可选来源<input type="search" value={sourceQuery} onChange={e=>setSourceQuery(e.target.value)} placeholder="名称、类别或研究方法"/></label><p className="lf-source-limit">已选择 {sourceIds.length} / 8 · 可从全部 {data?.sources.length??0} 个来源中选择</p><div className="lf-source-choices">{data?.sources.filter(s=>`${s.name} ${s.category} ${s.adopt}`.toLowerCase().includes(sourceQuery.toLowerCase())).map(s=><label key={s.id}><input type="checkbox" disabled={!sourceIds.includes(s.id)&&sourceIds.length>=8} checked={sourceIds.includes(s.id)} onChange={e=>setSourceIds(e.target.checked?[...sourceIds,s.id].slice(0,8):sourceIds.filter(i=>i!==s.id))}/>{s.name}</label>)}</div></fieldset>
  <details><summary>研究执行连接</summary><label>操作记录名称<input value={operator} onChange={e=>editOperator(e.target.value)} autoComplete="off"/></label><label>研究令牌<input type="password" value={token} onChange={e=>editToken(e.target.value)} autoComplete="off"/></label></details>
  <p className="lf-budget">最多 <strong>{cycles*budget}</strong> 次主实验，连同三折过程对照最多 <strong>{cycles*budget*multiplier}</strong> 次候选评估。失败消耗尝试，固定压力诊断另计。主实验不重复已尝试规格；历史窗口复用不建立独立证据。</p>
- <button className="s-button primary" disabled={busy||!data?.scheduler_enabled||!token.trim()||!operator.trim()||!sourceIds.length||cycles*budget>72||(trigger==='drift'&&!champion)}>启动持续研究计划</button>
+ <button className="s-button primary" disabled={!canWrite||busy||!data?.scheduler_enabled||!token.trim()||!operator.trim()||!sourceIds.length||cycles*budget>72||(trigger==='drift'&&!champion)}>启动持续研究计划</button>
  {(!operator.trim()||!token.trim())&&<p className="f-muted">请在“研究执行连接”中填写操作记录名称与研究令牌。</p>}
  {!data?.scheduler_enabled&&<p>研究服务尚未启用持续调度。</p>}
  </form></Panel><div className="lf-stack"><Panel title="计划与预算" note="冷却时间从上一轮结束计算；停止计划不撤销正在执行的研究">
- {data?.campaigns.length?data.campaigns.map(c=>{const rounds=data.rounds.filter(r=>r.campaign_id===c.campaign_id),last=rounds[0];return <article className="lf-campaign" key={c.campaign_id}><div className="lf-row"><h3>计划 #{c.campaign_id}</h3><span className="f-muted">{({RUNNING:'计划进行中',PAUSED:'计划已暂停',STOPPED:'计划已停止',COMPLETED:'计划已完成'} as Record<string,string>)[c.state]??statusLabel(c.state)}</span></div><p>{c.config.objective}</p><progress aria-label={`计划 ${c.campaign_id} 预算预留`} value={rounds.length} max={c.config.max_cycles}/><p>{rounds.length} / {c.config.max_cycles} 轮已预留 · 每轮 {c.config.budget} 次主实验</p><p>调度条件：{({ROUND_IN_PROGRESS:'当前轮次处理中',COOLDOWN:'等待冷却',WAITING_MATURE_DIAGNOSTIC:'等待成熟诊断',WAITING_OBSERVATION:'等待观察',STALE_OBSERVATION:'观察已过期',SCHEDULE:'等待队列',BUDGET_EXHAUSTED:'预算已用完',MODEL_UNDERPERFORMS_ZERO_BASELINE:'模型落后基线，准备研究挑战者'} as Record<string,string>)[c.wait_reason]??statusLabel(c.wait_reason)}</p><p>最早下一轮：{c.state!=='RUNNING'?'计划未运行':last?.state==='RESERVED'?'当前轮次处理中':c.next_due_ms!==null?stamp(c.next_due_ms,true):'等待调度'}</p><div className="lf-row"><button className="s-button" disabled={busy||c.state!=='RUNNING'} onClick={()=>void act('pause',c.campaign_id)}>暂停计划</button><button className="s-button" disabled={busy||c.state!=='PAUSED'} onClick={()=>void act('resume',c.campaign_id)}>恢复计划</button><button className="s-button" disabled={busy||!['RUNNING','PAUSED'].includes(c.state)} onClick={()=>void act('stop',c.campaign_id)}>停止计划</button></div></article>}):<Empty title="尚无持续研究计划">先固定目标、来源和预算。系统会保留每轮研究身份及失败记录。</Empty>}
- </Panel><Panel title="轮次轨迹"><div className="s-table-wrap" role="region" aria-label="计划轮次" tabIndex={0}><table className="s-table"><thead><tr><th>计划 / 轮次</th><th>任务</th><th>状态</th><th>创建时间</th></tr></thead><tbody>{data?.rounds.map(r=><tr key={`${r.campaign_id}-${r.ordinal}`}><td>#{r.campaign_id} / {r.ordinal+1}</td><td><Link to={`/studio/factory?attempt=${r.attempt}`}>研究 #{r.attempt} →</Link></td><td><Badge value={r.state}/></td><td>{stamp(r.created_ms,true)}</td></tr>)}</tbody></table></div></Panel></div></div>}
+ {data?.campaigns.length?data.campaigns.map(c=>{const rounds=data.rounds.filter(r=>r.campaign_id===c.campaign_id),last=rounds[0];return <article className="lf-campaign" key={c.campaign_id}><div className="lf-row"><h3>计划 #{c.campaign_id}</h3><span className="f-muted">{({RUNNING:'计划进行中',PAUSED:'计划已暂停',STOPPED:'计划已停止',COMPLETED:'计划已完成'} as Record<string,string>)[c.state]??statusLabel(c.state)}</span></div><p>{c.config.objective}</p><progress aria-label={`计划 ${c.campaign_id} 预算预留`} value={rounds.length} max={c.config.max_cycles}/><p>{rounds.length} / {c.config.max_cycles} 轮已预留 · 每轮 {c.config.budget} 次主实验</p><p>调度条件：{({ROUND_IN_PROGRESS:'当前轮次处理中',COOLDOWN:'等待冷却',WAITING_MATURE_DIAGNOSTIC:'等待成熟诊断',WAITING_OBSERVATION:'等待观察',STALE_OBSERVATION:'观察已过期',SCHEDULE:'等待队列',BUDGET_EXHAUSTED:'预算已用完',MODEL_UNDERPERFORMS_ZERO_BASELINE:'模型落后基线，准备研究挑战者'} as Record<string,string>)[c.wait_reason]??statusLabel(c.wait_reason)}</p><p>最早下一轮：{c.state!=='RUNNING'?'计划未运行':last?.state==='RESERVED'?'当前轮次处理中':c.next_due_ms!==null?stamp(c.next_due_ms,true):'等待调度'}</p><div className="lf-row"><button className="s-button" disabled={!canWrite||busy||c.state!=='RUNNING'} onClick={()=>void act('pause',c.campaign_id)}>暂停计划</button><button className="s-button" disabled={!canWrite||busy||c.state!=='PAUSED'} onClick={()=>void act('resume',c.campaign_id)}>恢复计划</button><button className="s-button" disabled={!canWrite||busy||!['RUNNING','PAUSED'].includes(c.state)} onClick={()=>void act('stop',c.campaign_id)}>停止计划</button></div></article>}):<Empty title="尚无持续研究计划">先固定目标、来源和预算。系统会保留每轮研究身份及失败记录。</Empty>}
+ </Panel><Panel title="轮次轨迹"><div className="s-table-wrap" role="region" aria-label="计划轮次" tabIndex={0}><table className="s-table"><thead><tr><th>计划 / 轮次</th><th>任务</th><th>状态</th><th>创建时间</th></tr></thead><tbody>{data?.rounds.map(r=><tr key={`${r.campaign_id}-${r.ordinal}`}><td>#{r.campaign_id} / {r.ordinal+1}</td><td><Link to={view.href('/studio/factory',r.attempt)}>研究 #{r.attempt} →</Link></td><td><Badge value={r.state}/></td><td>{stamp(r.created_ms,true)}</td></tr>)}</tbody></table></div></Panel></div></div>}
  {tab===2&&<>
  <Panel title="冻结模型与挑战者" note="先比较自然预测与零收益预测基线；168 条成熟标签只是诊断起点，重叠标签不是独立样本">
- <div className="s-table-wrap" role="region" aria-label="模型生命周期" tabIndex={0}><table className="s-table"><thead><tr><th>模型</th><th>观察状态</th><th>预测 / 标签</th><th>RMSE / 零基线</th><th>下一步</th></tr></thead><tbody>{data?.models.map(m=><tr key={m.attempt}><td><button className="s-button" onClick={()=>setChosenModel(m.attempt)}>#{m.attempt} {m.spec?.model}</button><small>{m.spec?.transform??'原始特征'}</small></td><td><Badge value={m.state}/></td><td>{m.predictions} / {m.labels}</td><td>{fmt(m.diagnostics.rmse,5)} / {fmt(m.diagnostics.zero_baseline_rmse,5)}</td><td>{m.diagnostics.recommendation==='RESEARCH_CHALLENGER'?'建议研究新挑战者':'继续观察'} · <Link to={`/studio/factory?attempt=${m.attempt}`}>观察控制 →</Link></td></tr>)}</tbody></table></div>
+ <div className="s-table-wrap" role="region" aria-label="模型生命周期" tabIndex={0}><table className="s-table"><thead><tr><th>模型</th><th>观察状态</th><th>预测 / 标签</th><th>RMSE / 零基线</th><th>下一步</th></tr></thead><tbody>{data?.models.map(m=><tr key={m.attempt}><td><button className="s-button" onClick={()=>setChosenModel(m.attempt)}>#{m.attempt} {m.spec?.model}</button><small>{m.spec?.transform??'原始特征'}</small></td><td><Badge value={m.state}/></td><td>{m.predictions} / {m.labels}</td><td>{fmt(m.diagnostics.rmse,5)} / {fmt(m.diagnostics.zero_baseline_rmse,5)}</td><td>{m.diagnostics.recommendation==='RESEARCH_CHALLENGER'?'建议研究新挑战者':'继续观察'} · <Link to={view.href('/studio/factory',m.attempt)}>观察控制 →</Link></td></tr>)}</tbody></table></div>
  {!data?.models.length&&<Empty title="尚无冻结模型">完成真实研究后，模型与观察状态会显示在这里。</Empty>}
  </Panel>
  <Chart title={`模型 #${model?.attempt??'—'} · 自然预测误差`} rows={(model?.diagnostics.daily??[]).map(r=>({...r,label:stamp(r.time,true),rmse:r.rmse*10000,baseline_rmse:r.baseline_rmse*10000}))} series={[{key:'rmse',label:'模型 RMSE'},{key:'baseline_rmse',label:'零预测基线'}]} unit="bp" note="按实际成熟标签分日汇总，低预测误差不等于可交易盈利。"/>

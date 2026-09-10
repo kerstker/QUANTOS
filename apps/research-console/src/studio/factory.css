@@ -11,3 +11,9 @@
 .f-trials td:nth-child(n+4){white-space:nowrap;overflow-wrap:normal}
 
 .f-import-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.f-import-fields>label{min-width:0}.f-import-fields input{max-width:100%}@media(max-width:600px){.f-import-fields{grid-template-columns:1fr}}
+.f-workspace{display:flex;align-items:center;gap:24px;margin:0 0 24px;padding:16px 20px;border:1px solid var(--s-line);border-radius:12px;background:var(--s-panel,#fff)}
+.f-workspace label{display:grid;gap:6px;min-width:220px;font-size:13px;font-weight:600}
+.f-workspace select{max-width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--s-line);border-radius:6px;background:transparent;color:inherit;font:inherit}
+.f-workspace p{margin:0;font-size:13px;line-height:1.6;color:var(--s-muted,#5d6b78)}
+@media(max-width:640px){.f-workspace{align-items:stretch;flex-direction:column;gap:12px}.f-workspace label{min-width:0}}
+@media(max-width:1050px){.f-readonly>div:first-child{order:2}.f-readonly>div:last-child{order:1}}

@@ -63,6 +63,45 @@ npm run dev -- --host 127.0.0.1 --port 3100
 
 The research runner may require a machine-local token. Keep it in the ignored local key store and enter it only through the UI/runtime mechanism; never print or commit it.
 
+## Separately frozen research workspaces
+
+The factory and lifecycle pages can display separately frozen research without
+moving their state or changing the source version used by an existing worker.
+Configure only the **console** process with an absolute
+`QUANTOS_RESEARCH_WORKSPACES_PATH` pointing to an operator-owned JSON file:
+
+```json
+{
+  "version": 1,
+  "workspaces": [
+    {"id": "frozen-study", "label": "Frozen observation", "root": "/absolute/research/state"}
+  ]
+}
+```
+
+Each root must contain `data/cache/ai_factory/factory.db` and be readable by the
+console service account. At most 16 entries are accepted. IDs must be unique;
+`current` is reserved for `QUANTOS_STATE_ROOT`. Filesystem paths are never accepted
+from HTTP query parameters or returned in the workspace catalogue. Invalid
+configuration and unavailable registered roots remain explicit errors.
+
+Open `/studio/factory?workspace=frozen-study&attempt=4` or select the research
+space on the factory/lifecycle page. All additional spaces are read-only. The
+selector clears task IDs when changing spaces, links retain the selected space,
+and the Runner rejects mutations carrying any workspace other than `current`.
+The existing token and research action checks still apply to current-space writes.
+Old servers that ignore workspace selection are rejected by the new frontend;
+deploy the console, Runner and frontend as a compatible set.
+
+A read-only view does not prove that a worker is alive: use the source record's
+observation time and reported progress. Viewing does not schedule, resume, copy,
+promote or rewrite the original study. Keep frozen workers on their original
+source. In particular, upgrading an interface is not permission to resume an old
+experiment with a different engine. A system service with `ProtectHome=true`
+cannot read developer studies under `/home`; this setting does not change that
+isolation. On DGX, the existing separate research interface is the appropriate
+place to configure these views after release acceptance.
+
 ## Health checks
 
 ```bash

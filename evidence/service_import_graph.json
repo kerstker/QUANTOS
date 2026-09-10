@@ -330,6 +330,11 @@
           "path": "services/console/api/mexc_views.py"
         },
         {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/research_workspaces.py"
+        },
+        {
           "line": 10,
           "module": "services.governance.json_integrity",
           "path": "services/console/api/state_artifact.py"
@@ -1648,7 +1653,7 @@
     {
       "references": [
         {
-          "line": 302,
+          "line": 304,
           "module": "services.governance.json_integrity",
           "path": "services/research_runner/main.py"
         }
@@ -1695,27 +1700,27 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 301,
+          "line": 303,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 308,
+          "line": 310,
           "module": "services.research.profitability_inputs",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 319,
+          "line": 321,
           "module": "services.research.ai_factory",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 320,
+          "line": 322,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 366,
+          "line": 369,
           "module": "services.research.ai_factory_store",
           "path": "services/research_runner/main.py"
         },
@@ -1788,7 +1793,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "49b3d1d66ee412f509c7609d4bc2f8617ca5e3535d2613951ef9e1ac58a0394b",
+  "graph_sha256": "42663ac97c4850ea0f65ef4a85851385e95186c858f0bcee2121fd0ce126fe49",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1826,7 +1831,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 558,
+  "source_file_count": 559,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

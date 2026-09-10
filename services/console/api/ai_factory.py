@@ -13,6 +13,7 @@ from services.console.api.profitability_views import profitability_payload
 from services.research.profitability_forward import forward_summary
 from services.console.api.factory_portfolio import portfolio_payload
 from services.console.api.factory_research_notes import research_notes
+from services.console.api.research_workspaces import resolve_workspace
 
 router=APIRouter()
 
@@ -126,11 +127,16 @@ def factory_payload(root,attempt=None):
             'provider':{key:provider[key] for key in ('status','model','connected')}}
 
 @router.get('/api/v1/console/ai-factory')
-def factory(attempt: int|None=Query(default=None,ge=1,le=1000)):
-    return factory_payload(runtime_state_root(),attempt)
+def factory(attempt: int|None=Query(default=None,ge=1,le=1000), workspace: str=Query(default='current',max_length=128)):
+    root, selected, choices = resolve_workspace(runtime_state_root(), workspace)
+    return {**factory_payload(root,attempt), 'workspace': selected, 'workspaces': choices}
 
 
 @router.get('/api/v1/console/ai-factory-lifecycle')
-def lifecycle():
+def lifecycle(workspace: str=Query(default='current',max_length=128)):
     from services.console.api.ai_factory_lifecycle import lifecycle_payload
-    return lifecycle_payload(runtime_state_root())
+    root, selected, choices = resolve_workspace(runtime_state_root(), workspace)
+    data = lifecycle_payload(root)
+    if not selected['writable']:
+        data['scheduler_enabled'] = False
+    return {**data, 'workspace': selected, 'workspaces': choices}

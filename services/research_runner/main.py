@@ -21,7 +21,7 @@ import logging
 import os
 import secrets
 import time
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -279,6 +279,7 @@ async def cancel(req: CancelRequest, operator: str = Depends(require_operator)) 
 
 class FactoryRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
+    workspace: Literal['current'] = 'current'
     action: str
     attempt: int
     mode: str = 'baseline'
@@ -290,6 +291,7 @@ class FactoryRequest(BaseModel):
 
 class ProfitabilityInputRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra='forbid')
+    workspace: Literal['current'] = 'current'
     attempt: int = Field(ge=1,le=1000)
     kind: str
     content: str = Field(max_length=4000000)
@@ -348,6 +350,7 @@ async def factory_control(req: FactoryRequest, operator: str = Depends(require_o
 
 class FactoryCampaignRequest(BaseModel):
     model_config=ConfigDict(strict=True,extra='forbid')
+    workspace: Literal['current'] = 'current'
     action:str
     campaign_id:int
     objective:str='BTC 小时级成本后机制研究'
@@ -368,7 +371,7 @@ async def factory_campaign_control(req:FactoryCampaignRequest,operator:str=Depen
     try:
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
             if req.action=='create':
-                config=req.model_dump(exclude={'action'})
+                config=req.model_dump(exclude={'action','workspace'})
                 if config['research_protocol'] is None:config.pop('research_protocol')
                 store.create_campaign(config,operator=operator,now=time.time_ns()//1000000)
             elif req.action in ('pause','resume','stop'):store.control_campaign(req.campaign_id,req.action,operator=operator)
