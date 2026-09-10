@@ -2188,12 +2188,13 @@ def _l2_source_contract_error(contract: Any) -> str | None:
     # entry and v13 pinned both high-churn Bybit authorities. v14 adds the
     # migrated A-share market database, reproducibility copy, and read-only
     # snapshot bundle. v15 adds the newly ingested TDX A-share daily-price
-    # authority and its derived panel cache. Keep both the accepted version set
+    # authority and its derived panel cache. v16 adds the verified AI factory
+    # checkpoint without changing the entry schema. Keep the accepted version set
     # and each version's entry schema finite so a future contract revision still
     # requires explicit review.
     version = contract.get("version")
-    if type(version) is not int or version not in range(2, 16):
-        return "source contract version must be an integer from 2 through 15"
+    if type(version) is not int or version not in range(2, 17):
+        return "source contract version must be an integer from 2 through 16"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"

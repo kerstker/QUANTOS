@@ -4,6 +4,9 @@ import ast
 import json
 from pathlib import Path
 
+import pytest
+
+from services.governance.top_tier_assessment import assess_repository
 from tools.l2_backup import DEFAULT_SOURCES, SOURCE_CONTRACT_VERSION
 
 
@@ -238,6 +241,41 @@ def test_top_tier_backup_and_restore_require_the_exact_l2_source_contract():
     assert trust_registry == {"schema_version": 1, "keys": []}
     restore_tool = (ROOT / "tools" / "restore_drill.py").read_text(encoding="utf-8")
     assert "generic_restore_drill_latest.json" in restore_tool
+
+
+@pytest.mark.parametrize(
+    ("requirement_id", "missing_evidence_detail"),
+    [
+        ("OPS.BACKUP.ENCRYPTED", "no operational external-destination evidence exists"),
+        ("OPS.RESTORE.DRILL", "restore-history authority is not provisioned"),
+    ],
+)
+def test_current_backup_contract_reaches_operational_evidence_checks(
+    tmp_path, requirement_id, missing_evidence_detail
+):
+    """Exercise the shipped producer/registry/consumer, without inventing evidence."""
+    registry = json.loads((ROOT / "config/top_tier_requirements.json").read_text())
+    requirement = next(row for row in registry["requirements"] if row["id"] == requirement_id)
+    contract = requirement["checker_args"]["expected_source_contract"]
+    assert contract["version"] == SOURCE_CONTRACT_VERSION
+    assert any(
+        row["relative_path"] == "data/cache/ai_factory_checkpoint.zip"
+        and row["role"] == "ai_factory_verified_checkpoint"
+        for row in contract["sources"]
+    )
+    # The checker verifies these implementation files exist; it never executes them.
+    for relative in requirement["checker_args"]["implementation_paths"]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((ROOT / relative).read_bytes())
+    isolated_registry = tmp_path / "requirements.json"
+    isolated_registry.write_text(json.dumps({"schema_version": 1, "requirements": [requirement]}))
+    report = assess_repository(tmp_path, isolated_registry)
+    result = report["requirements"][0]
+    assert result["status"] == "PARTIAL"
+    assert missing_evidence_detail in result["detail"]
+    assert result["meets_target"] is False
+    assert report["verdict"] in {"IN_PROGRESS", "NOT_TOP_TIER"}
 
 
 def test_l2_backup_and_scheduler_watchdog_have_no_broker_or_network_dependency():
