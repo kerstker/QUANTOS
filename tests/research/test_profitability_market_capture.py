@@ -83,3 +83,24 @@ def test_existing_forward_fetch_retains_bounded_transport_retry(monkeypatch):
     monkeypatch.setattr(module.time,'sleep',lambda _:None)
     assert module.bounded_public_json('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDC')=={'symbol':'BTCUSDC'}
     assert len(calls)==2 and 0<calls[1]<=calls[0]<=45
+
+
+def test_public_depth_capture_can_preserve_exact_response_bytes_without_changing_default(monkeypatch):
+    import io
+    from tools import profitability_public_http as module
+    raw=b'{"lastUpdateId": 3, "bids": [["99.000000000000000001", "2"]], "asks": [["101", "3"]]}\n'
+    class Opener:
+        def open(self,*args,**kwargs):return io.BytesIO(raw)
+    monkeypatch.setattr(module.urllib.request,'build_opener',lambda *a:Opener())
+    url='https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDC&limit=1000'
+    detailed=module.request_once(url,1,include_raw=True)
+    assert detailed['raw_utf8'].encode()==raw
+    assert detailed['payload']['bids'][0][0]=='99.000000000000000001'
+    assert set(module.request_once(url,1))=={'ok','payload'}
+
+
+def test_public_raw_capture_still_rejects_unregistered_order_route():
+    import pytest
+    from tools import profitability_public_http as module
+    with pytest.raises(ValueError,match='unregistered'):
+        module.request_once('https://fapi.binance.com/fapi/v1/order?symbol=BTCUSDC',1,include_raw=True)

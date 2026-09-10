@@ -626,7 +626,7 @@ RUN_KINDS: dict = {
     'profitability_forward': RunSpec('tools.profitability_forward_account:run_forward_cost',{'attempt':int},
         _adapt_profitability,'冻结预测前向成本账户',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'profitability_input': RunSpec('tools.profitability_input_workflow:run_input_version', {'attempt':int,'input_kind':int,'revision':int},
-        _adapt_profitability,'冻结输入版本研究',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'input_kind':(0,3),'revision':(1,3)}),
+        _adapt_profitability,'冻结输入版本研究',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000),'input_kind':(0,4),'revision':(1,3)}),
     'profitability_study': RunSpec('tools.profitability_workflow:run_profitability', {'attempt':int},
         _adapt_profitability,'盈利能力验证 P0–P5',DIAGNOSTIC_ONLY,param_bounds={'attempt':(1,1000)}),
     'ai_factory_comparison': RunSpec('tools.ai_factory_process_comparison:run_comparison', {'attempt':int},

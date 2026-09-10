@@ -100,7 +100,7 @@ USDT 数据可以单独检查，但不能借用 USDC 账本给出成本后结果
 
 ## 新版输入与账户操作
 
-「执行与数据」支持 basis、information、trajectory、calibration 四种 JSON。使用既有操作名和研究令牌，内容上限 4 MB，每类最多三个版本；相同内容重复请求不占新版本。旧失败不会被覆盖，队列固定到提交时版本。basis/information 等待 P0，trajectory/calibration 可独立执行。只允许研究资料，不上传凭证。
+「执行与数据」支持 basis、information、trajectory、calibration、passive 五种 JSON。使用既有操作名和研究令牌，内容上限 4 MB，每类最多三个版本；相同内容重复请求不占新版本。旧失败不会被覆盖，队列固定到提交时版本。basis/information 等待 P0，trajectory/calibration/passive 可独立执行。只允许研究资料，不上传凭证。
 calibration 根字段为 observed、capture、actions、calibration_cutoff_ms。capture 沿用公开 V2 回放格式（BTCUSDT、3–60 个真实接收的快照），actions 为有序的 ORDER/CANCEL 客户端动作；金额使用十进制字符串。三组延迟固定，不提供无限参数编辑器。规范化轨迹导入不构成来源认证。
 
 「前向账户」→「登记 / 更新前向账户」使用下一 UTC 自然日 00:05 至第十四天的固定窗口。先确保对应冻结模型已有自然时间预测观察；登记账户不会启动或补造预测。首个完整日度前缀需再等待最后预测的四小时标签成熟，最早在起点之后 27 小时具备技术回放条件。断档、失败与未成熟均可见，后续修改源码需另立研究，不让旧窗口静默换引擎。
@@ -145,3 +145,27 @@ python -m tools.profitability_forward_account --state-root <同一隔离研究�
 本轮实际三折四组结果见[QWEN 对照报告](../reports/2026-09-10-qwen-research-protocol-comparison.md)。
 当前三角色方向未证明稳定成本后增量，已停止扩搜；零交易的现金结果不作为主动盈利证据。
 下一轮只有在新的信息与预注册规格准备好后开展，不根据已看过的外层结果扩大旧搜索。
+
+## 原始逐笔采集与队列诊断
+
+使用 DGX 手册中的隔离 Python。以下是一次性公开采集，不安装或切换常驻服务：
+
+```bash
+python -m tools.passive_market_capture --symbol BTCUSDC --duration-seconds 30 --output <全新采集目录>
+python -m tools.passive_market_capture --symbol BTCUSDT --duration-seconds 30 --output <另一全新采集目录>
+python -m tools.passive_execution_study --input <固定队列输入.json> --output <全新研究目录>
+```
+
+采集为 0.01–120 秒、最多 20,000 消息/4 MB 原始文本；超出预算、断号或连接失败会留存失败。
+目录不可重复。中断日志在 `raw-events.jsonl`，正常原始材料为 `raw-tape.json`，输入质量为 `result.json`。
+不要用五秒聚合快照替代原始材料。
+
+队列输入是 `{"tape": <raw-tape.json 的内容>, "actions": [...]}`。
+空动作只校验输入。非空动作最多 200 条，按客户端发送时间排序：
+ORDER 包含 timestamp、kind、order_id、side（BUY/SELL）、quantity、price，可选 expires_ms；
+CANCEL 只含 timestamp、kind、order_id。时间使用 Unix 毫秒，价格和数量使用正十进制字符串。
+所有动作必须处于共同可用窗口，不把离线准备的动作声称为发生结果之前的预测。
+
+在包含本增量的 Studio「执行与数据」选择「P5 原始盘口与队列」登记同一输入即可进入既有队列。
+可查看 0/25/100 ms 三组诊断、盘口、接收延迟、订单剩余量和时间轨迹。
+当前没有真实费用、净收益、个别实际队列位置或真实回执校准结论，被动成交成本账本仍待接线。

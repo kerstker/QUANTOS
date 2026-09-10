@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 MAX_RESPONSE_BYTES = 262144
 PREFIXES = ('https://api.binance.com/api/v3/klines?', *(
     'https://fapi.binance.com/fapi/v1/' + endpoint + '?'
-    for endpoint in ('klines', 'markPriceKlines', 'fundingRate', 'openInterest', 'indexPriceKlines')))
+    for endpoint in ('klines', 'markPriceKlines', 'fundingRate', 'openInterest', 'indexPriceKlines', 'depth')))
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -33,9 +33,11 @@ def retry_after(value):
     return max(0, math.ceil(seconds)) if math.isfinite(seconds) else None
 
 
-def request_once(url, timeout):
+def request_once(url, timeout, *, include_raw=False):
     if not isinstance(url, str) or not url.startswith(PREFIXES):
         raise ValueError('unregistered public source')
+    if type(include_raw) is not bool:
+        raise ValueError('raw response selection must be boolean')
     request = urllib.request.Request(url, headers={
         'User-Agent': 'quantos-public-research', 'Accept': 'application/json'}, method='GET')
     try:
@@ -43,7 +45,10 @@ def request_once(url, timeout):
             raw = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
             return {'ok': False, 'category': 'RESPONSE_TOO_LARGE'}
-        return {'ok': True, 'payload': json.loads(raw)}
+        result = {'ok': True, 'payload': json.loads(raw)}
+        if include_raw:
+            result['raw_utf8'] = raw.decode('utf-8')
+        return result
     except urllib.error.HTTPError as exc:
         return {'ok': False, 'category': 'HTTP_ERROR', 'http_status': exc.code,
                 'retry_after_seconds': retry_after(exc.headers.get('Retry-After')) if exc.headers else None}
@@ -61,4 +66,7 @@ def request_once(url, timeout):
 
 
 if __name__ == '__main__':
-    print(json.dumps(request_once(sys.argv[1], float(sys.argv[2])), allow_nan=False))
+    if len(sys.argv) not in (3, 4) or len(sys.argv) == 4 and sys.argv[3] != '--include-raw':
+        raise ValueError('public URL, timeout and optional --include-raw required')
+    print(json.dumps(request_once(sys.argv[1], float(sys.argv[2]),
+                                  include_raw=len(sys.argv) == 4), allow_nan=False))

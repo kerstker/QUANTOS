@@ -1982,6 +1982,22 @@ def test_profitability_forward_cost_status_preserves_unknown_costs(tmp_path):
     assert result['inputs']==[] and result['p5_calibration'] is None
 
 
+def test_passive_queue_console_contract_preserves_censored_orders_and_unknown_profit(tmp_path):
+    from services.console.api.profitability_views import profitability_payload
+    from tools.profitability_study import write_new
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.mkdir(parents=True)
+    write_new(directory/'result.json',{'stage':'P5_QUEUE','status':'QUEUE_DIAGNOSTICS_COMPLETED',
+        'economic_eligible':False,'ledger_applied':False,'selected_profile':None,
+        'trials_attempted':3,'quality':{'counts':{'depth_updates':123}},
+        'trials':[{'profile_ms':100,'status':'COMPLETED_DIAGNOSTIC','orders':[{
+            'order_id':'a','status':'PARTIALLY_FILLED','censored':True,'remaining_quantity':'0.01'}]}]})
+    result=profitability_payload(tmp_path,1)
+    assert result['p5_queue']['ledger_applied'] is False
+    assert result['p5_queue']['selected_profile'] is None
+    assert result['p5_queue']['trials'][0]['orders'][0]['censored'] is True
+    assert 'net_pnl' not in result['p5_queue']
+
+
 def test_profitability_causal_information_preserves_separate_quotes_and_no_prediction_claim(tmp_path):
     from services.console.api.profitability_views import profitability_payload
     from tools.profitability_study import write_new

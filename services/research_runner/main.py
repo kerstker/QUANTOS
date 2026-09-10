@@ -305,7 +305,8 @@ async def profitability_input(req: ProfitabilityInputRequest,operator: str=Depen
         data=load_json_without_duplicate_keys(req.content.encode('utf-8'))
         with FactoryStore(_STATE_ROOT/'data/cache/ai_factory/factory.db') as store:
             receipt=store.add_profitability_input(req.attempt,req.kind,data,operator)
-        run_id=_queue.submit('profitability_input',{'attempt':req.attempt,'input_kind':('basis','information','trajectory','calibration').index(req.kind),'revision':receipt['revision']},now=int(time.time()),operator=operator,
+        from services.research.profitability_inputs import KINDS
+        run_id=_queue.submit('profitability_input',{'attempt':req.attempt,'input_kind':KINDS.index(req.kind),'revision':receipt['revision']},now=int(time.time()),operator=operator,
                              invocation_id=idempotency_key or f"profitability-input:{req.attempt}:{req.kind}:{receipt['input_hash']}")
         return {'input':receipt,'run_id':run_id,'economic_eligible':False}
     except (ValueError,TypeError,KeyError,ArithmeticError) as exc:

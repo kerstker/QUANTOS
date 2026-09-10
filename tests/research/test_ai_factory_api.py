@@ -58,6 +58,23 @@ def test_profitability_import_requires_auth_and_preserves_registered_revision(mo
     assert client.post('/profitability-input',json={**body,'content':'{"quote":"USDC","quote":"USDT"}'},headers=headers).status_code==400
 
 
+def test_passive_input_api_binds_the_new_kind_to_its_registered_revision(monkeypatch,tmp_path):
+    import json
+    from services.research_runner import main
+    from tests.research.test_passive_execution_study import source
+    monkeypatch.setattr(main,'_STATE_ROOT',tmp_path)
+    with FactoryStore(tmp_path/'data/cache/ai_factory/factory.db') as store:
+        store.create({'attempt':1,'mode':'baseline','budget':3,'objective':'BTC'});store.update(1,'COMPLETED',{})
+    calls=[]
+    monkeypatch.setattr(main._queue,'submit',lambda *args,**kwargs:calls.append(args) or 'passive-input-run')
+    body={'attempt':1,'kind':'passive','content':json.dumps(source())}
+    client=TestClient(main.app)
+    assert client.post('/profitability-input',json=body).status_code==401
+    response=client.post('/profitability-input',json=body,headers={'X-Runner-Token':main._RUNNER_TOKEN,'X-Operator':'test'})
+    assert response.status_code==200
+    assert calls==[('profitability_input',{'attempt':1,'input_kind':4,'revision':1})]
+
+
 @pytest.mark.parametrize(("action","kind"),[("profitability","profitability_study"),("forward_cost","profitability_forward"),("information","profitability_information")])
 def test_profitability_action_uses_only_frozen_attempt_and_whitelisted_job(monkeypatch,tmp_path,action,kind):
     from services.research_runner import main

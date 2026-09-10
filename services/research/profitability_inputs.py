@@ -6,7 +6,7 @@ from services.research.profitability_trajectory import compare_trajectories,_ord
 from services.research.profitability_calibration import decode_actions
 from services.execution.perpetual_public_replay import prepare_public_replay
 
-KINDS=('basis','information','trajectory','calibration')
+KINDS=('basis','information','trajectory','calibration','passive')
 
 
 def validate_input(kind,data):
@@ -21,6 +21,9 @@ def validate_input(kind,data):
     elif kind=='trajectory':
         if set(data)!={'observed','simulated'}:raise ValueError('observed/simulated pair required')
         compare_trajectories(data['observed'],data['simulated'])
+    elif kind=='passive':
+        from services.research.passive_execution_study import prepare_input
+        prepare_input(data)
     else:
         if set(data)!={'observed','capture','actions','calibration_cutoff_ms'}:raise ValueError('fixed-action calibration input required')
         prepared=prepare_public_replay(data['capture']);_orders(data['observed']);decode_actions(data['actions'])

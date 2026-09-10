@@ -6,6 +6,7 @@ import {fmt,stamp,statusLabel} from './data';
 import {ProfitabilityAttribution} from './ProfitabilityAttribution';
 import {ProfitabilityStudy} from './ProfitabilityStudy';
 import {ProfitabilityInputUpload} from './ProfitabilityInputUpload';
+import {PassiveExecutionEvidence} from './PassiveExecutionEvidence';
 import {ExecutionCalibrationEvidence} from './ExecutionCalibrationEvidence';
 import {ResearchNotes} from './ResearchNotes';
 import {PortfolioForward} from './PortfolioForward';
@@ -73,7 +74,7 @@ export function FactoryEvidence({data,busy,action,importInput}:{data:FactoryPayl
  <div className="s-table-wrap" role="region" aria-label="完整过程对照" tabIndex={0}><table className="s-table"><thead><tr><th>时间折</th><th>搜索组</th><th>尝试次数</th><th>模型调用 / 秒 / Token</th><th>所选模型</th><th>单模型外层净损益</th><th>组合尝试</th><th>组合外层净损益</th><th>状态</th></tr></thead><tbody>{data?.comparison?.rows.map(r=><tr key={`${r.fold}-${r.group}`}><td>{r.fold+1}</td><td>{({baseline:'固定顺序',random:'随机搜索',ai:'单次 AI',committee:'三角色'} as Record<string,string>)[r.group]??r.group}</td><td>{r.trials.length}</td><td>{r.model_calls??'—'} / {r.model_elapsed_ms==null?'—':fmt(r.model_elapsed_ms/1000,1)} / {r.model_total_tokens??'—'}</td><td>{r.selected?.model??'—'}</td><td>{fmt(r.outer?.net_pnl)}</td><td>{r.portfolio?.inner_trials_attempted??'旧版未运行'}</td><td>{fmt(r.portfolio?.comparisons?.[0]?.portfolio_net_pnl)}</td><td>{r.status}</td></tr>)}</tbody></table></div><p className="f-message">AI 组：{data?.comparison?.ai_group_status??'等待运行'}。历史过程对照不会恢复已使用样本的独立性。</p>
  </Panel>
  </>}
- {tab===5&&<><CausalInformationEvidence data={data?.profitability?.causal} busy={busy} complete={complete&&data?.profitability?.p0?.decision==='P1_BOUNDED_INNER_COMPARISON_ALLOWED'} action={()=>action('information')}/><ExecutionCalibrationEvidence data={data?.profitability?.p5_calibration}/>{importInput&&<ProfitabilityInputUpload busy={busy} complete={complete} versions={data?.profitability?.inputs} onImport={importInput}/>}</>}
+ {tab===5&&<><CausalInformationEvidence data={data?.profitability?.causal} busy={busy} complete={complete&&data?.profitability?.p0?.decision==='P1_BOUNDED_INNER_COMPARISON_ALLOWED'} action={()=>action('information')}/><ExecutionCalibrationEvidence data={data?.profitability?.p5_calibration}/><PassiveExecutionEvidence data={data?.profitability?.p5_queue}/>{importInput&&<ProfitabilityInputUpload busy={busy} complete={complete} versions={data?.profitability?.inputs} onImport={importInput}/>}</>}
  {tab===6&&<><PortfolioForward data={data?.portfolio_research} busy={busy} action={action}/><div className="f-toolbar"><button className="s-button" disabled={busy||!complete} onClick={()=>action('forward_cost')}>登记 / 更新前向账户</button><span>已登记的策略、窗口和成本规则保持冻结。</span></div><ForwardCostEvidence data={data?.profitability?.p6}/></>}
  </div>
  </>;
