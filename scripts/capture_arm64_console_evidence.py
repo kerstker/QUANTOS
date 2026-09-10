@@ -204,6 +204,41 @@ def _recipe(root: Path) -> tuple[int, str]:
     return int(epochs[0]), bases[0]
 
 
+def _assert_base_image_identity(raw: bytes, reference: str) -> None:
+    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", reference):
+        raise CaptureError("base image reference must use an exact digest")
+    image = _inspect_object(raw, "pinned base image")
+    descriptor = image.get("Descriptor")
+    if (image.get("Architecture") != "arm64" or image.get("Os") != "linux"
+            or not isinstance(image.get("RepoDigests"), list)
+            or reference not in image["RepoDigests"] or not isinstance(descriptor, Mapping)):
+        raise CaptureError("pinned base image platform or repository identity is invalid")
+    _loaded_image_identity(raw, "pinned base image",
+        expected_manifest_digest=reference.rsplit("@", 1)[1],
+        expected_manifest_size=descriptor.get("size"))
+
+
+def _ensure_base_image(executor: Runner, root: Path, reference: str) -> None:
+    """Verify immutable local bytes first; resolve a missing base before builds.
+
+    The later archive save, offline scan and inspect binding still run. A
+    registry round trip adds no freshness to an already verified digest pin.
+    """
+    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", reference):
+        raise CaptureError("base image reference must use an exact digest")
+    argv = ("docker", "image", "inspect", reference)
+    result = executor.run(argv, cwd=root)
+    if result.argv != argv:
+        raise CaptureError("runner changed base image check argv")
+    if result.exit_code != 0:
+        message = result.stderr.decode("utf-8", errors="replace").lower()
+        if result.exit_code != 1 or not any(s in message for s in ("no such image", "image not found")):
+            raise CaptureError("cannot determine pinned base image availability")
+        _run(executor, ["docker", "pull", "--platform", TARGET_PLATFORM, reference], root)
+        result = _run(executor, argv, root)
+    _assert_base_image_identity(result.stdout, reference)
+
+
 def _build_argv(
     root: Path, builder: str, archive: Path, epoch: int
 ) -> list[str]:
@@ -726,6 +761,10 @@ def capture(
         )
         report("SCANNER_PREFLIGHT_PASS")
 
+        report("BASE_IMAGE_PREFLIGHT_START platform=linux/arm64")
+        _ensure_base_image(executor, root, base_image)
+        report("BASE_IMAGE_PREFLIGHT_PASS platform=linux/arm64")
+
         report("NATIVE_BUILDERS_START platform=linux/arm64")
         for builder in (BUILDER_A, BUILDER_B):
             _run(
@@ -791,13 +830,12 @@ def capture(
             expected_manifest_digest=reproducibility["image"]["manifest_digest"],
             expected_manifest_size=reproducibility["image"]["manifest_size"],
         )
-        _run(executor, ["docker", "pull", "--platform", TARGET_PLATFORM, base_image], root)
-
         base_archive = session / "base.docker.tar"
         runtime_scan_archive = session / "runtime-scan.docker.tar"
         base_image_inspect = _run(
             executor, ["docker", "image", "inspect", base_image], root
         )
+        _assert_base_image_identity(base_image_inspect.stdout, base_image)
         runtime_image_inspect = _run(
             executor, ["docker", "image", "inspect", ARM64_RUNTIME_IMAGE_REF], root
         )

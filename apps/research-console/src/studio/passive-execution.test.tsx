@@ -69,3 +69,18 @@ it('opens the frozen profile by default and resets inspection when a new input a
  rerender(<PassiveExecutionEvidence data={{...first,input_sha256:'second'}}/>);
  expect(screen.getByLabelText('队列延迟情景')).toHaveValue('100');
 });
+
+it('shows declared dynamic bounds and keeps actual venue validation unknown',()=>{
+ const environment={symbol:'BTCUSDC',quote:'USDC',venue_margin_tiers_verified:false as const,
+  actual_venue_fees:null,limitations:[],venue_order_constraints:{scope:'ISOLATED_DECLARED_ORDERS_ONLY' as const,
+   percent_price_up:'1.1',percent_price_down:'0.9',max_open_orders:3,market_take_bound:'0.05',
+   limit_band_reference:'CURRENT_MARK_AT_ADMISSION' as const,market_notional_reference:'CURRENT_MARK_AT_ADMISSION' as const,
+   market_protection:'CURRENT_MARK_AT_EACH_FILL_REJECT_REMAINDER_OUTSIDE_BOUND' as const,venue_behavior_verified:false as const}};
+ const {rerender}=render(<PassiveExecutionEvidence data={{...data,account_environment:environment}}/>);
+ expect(screen.getByRole('region',{name:'模拟场所订单边界'})).toHaveTextContent('1.1');
+ expect(screen.getByRole('region',{name:'模拟场所订单边界'})).toHaveTextContent('最多 3 个未完成订单');
+ expect(screen.getByRole('region',{name:'模拟场所订单边界'})).toHaveTextContent('真实场所行为仍未验证');
+ rerender(<PassiveExecutionEvidence data={{...data,input_sha256:'legacy',account_environment:{...environment,venue_order_constraints:null}}}/>);
+ expect(screen.queryByRole('region',{name:'模拟场所订单边界'})).not.toBeInTheDocument();
+ expect(screen.getByText(/动态订单边界尚未建模/)).toBeInTheDocument();
+});

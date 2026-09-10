@@ -65,9 +65,15 @@ export interface PassiveReceiptCalibration {
  trials:{profile_ms:number;status:string;reason?:string;fit?:PassiveReceiptComparison}[];
  heldout:PassiveReceiptComparison|null;calibration_complete:false;venue_receipts_verified:false;queue_model_calibrated:false;
 }
+export interface VenueOrderBoundaryEvidence {
+ scope:'ISOLATED_DECLARED_ORDERS_ONLY';percent_price_up:string;percent_price_down:string;
+ max_open_orders:number;market_take_bound:string;
+ limit_band_reference:'CURRENT_MARK_AT_ADMISSION';market_notional_reference:'CURRENT_MARK_AT_ADMISSION';
+ market_protection:'CURRENT_MARK_AT_EACH_FILL_REJECT_REMAINDER_OUTSIDE_BOUND';venue_behavior_verified:false;
+}
 export interface PassiveExecutionStudy {status:string;symbol:string;quote:string;start_ms:number;end_ms:number;trials_attempted:number;selected_profile:number|null;ledger_applied:boolean;
  calibration?:PassiveReceiptCalibration|null;simulations_attempted?:number;input_sha256?:string;full_window_trials_attempted?:number;
- account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[]}|null;
+ account_environment?:{symbol:string;quote:string;venue_margin_tiers_verified:false;actual_venue_fees:null;limitations:string[];venue_order_constraints?:VenueOrderBoundaryEvidence|null}|null;
  quality:{counts:{depth_updates:number;aggregate_trades:number;mark_updates:number;duplicates:number};failures:{reason:string}[];book_samples:{available_at_ms:number;transaction_time_ms:number;bids:[string,string][];asks:[string,string][]}[]};
  trials:{profile_ms:number;status:string;reason?:string;fill_count?:number;censored_orders?:number;event_count?:number;orders?:PassiveQueueOrder[];events?:PassiveQueueEvent[];account?:PassiveAccountEvidence|null}[]}
 

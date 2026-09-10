@@ -2018,6 +2018,25 @@ def test_passive_account_console_contract_keeps_canonical_strings_and_actual_fee
     assert len(account['equity_history'])<=200 and account['history_count']>0
 
 
+def test_passive_public_dynamic_constraints_reach_console_without_venue_certification(tmp_path):
+    import json
+    from tests.research.test_passive_execution_study import account_source
+    from tests.execution.test_public_venue_constraint_binding import environment
+    from tools.passive_execution_study import study
+    from services.console.api.profitability_views import profitability_payload
+    source=account_source();source['tape'],source['account']['environment']=environment()
+    directory=tmp_path/'data/cache/profitability/1/p5_queue';directory.parent.mkdir(parents=True)
+    path=tmp_path/'source.json';path.write_text(json.dumps(source))
+    study(path,directory)
+    result=profitability_payload(tmp_path,1)['p5_queue']
+    bounds=result['account_environment']['venue_order_constraints']
+    assert bounds['percent_price_up']=='1.1' and bounds['max_open_orders']==3
+    assert bounds['scope']=='ISOLATED_DECLARED_ORDERS_ONLY'
+    assert bounds['venue_behavior_verified'] is False
+    assert result['account_environment']['actual_venue_fees'] is None
+    assert result['trials'][0]['account']['reconciliation']['residual']=='0'
+
+
 def test_passive_receipt_calibration_console_contract_has_distinct_clocks_and_no_authority(tmp_path):
     import json
     from tests.research.test_passive_calibration_study import source

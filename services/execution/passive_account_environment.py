@@ -18,6 +18,7 @@ from services.execution.perpetual_ledger_v2 import (
 )
 from services.execution.perpetual_simulation import OrderRuleProfile, SimulationFrame
 from services.execution.passive_execution_input import _mark
+from services.execution.public_order_constraints import parse_constraints, constraint_manifest
 
 DAY_MS=86400000
 SCHEMA='PASSIVE_VENUE_ENVIRONMENT_V1'
@@ -145,7 +146,8 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
     profile=OrderRuleProfile(rule_id,rule_id,symbol,'BINANCE_USDM',rule_time,tape.end_ms+1,
         environment['before']['exchange']['requested_at'],rule_time,rule_time,source,
         _positive(prices['tickSize']),_positive(prices['minPrice']),_positive(prices['maxPrice']),
-        _positive(market['maxQty']),_positive(lot['maxQty']),max_order_notional,'ORIGINAL_ORDER',types)
+        _positive(market['maxQty']),_positive(lot['maxQty']),max_order_notional,'ORIGINAL_ORDER',types,
+        parse_constraints(venue))
     schedule_time=max(premium_time,funding_time)
     policy=FundingPolicySnapshot(symbol,'BINANCE_USDM',source,start,next_time,next_time-last,
         (next_time,),last,schedule_time,schedule_time,source)
@@ -157,6 +159,7 @@ def _prepare_environment(environment,raw_tape,tape,*,max_order_notional):
     manifest={'environment_hash':identity,'symbol':symbol,'quote':symbol[3:],
         'mark_clocks':marks,'mark_policy':'VENUE_EVENT_TIME_FIXED_ACTIONS_ONLY',
         'actual_venue_fees':None,'venue_margin_tiers_verified':False,
+        'venue_order_constraints':constraint_manifest(profile.venue_constraints),
         'limitations':['UNSIGNED_PUBLIC_SOURCE_RECEIPTS','SIMULATED_IM_100_PERCENT_MM_50_PERCENT_LIQUIDATION_FEE_1_PERCENT',
             'EXPLICIT_SIMULATED_FEE_AND_ORDER_NOTIONAL_LIMIT','NO_FUNDING_SETTLEMENT_IN_WINDOW',
             'PUBLIC_FILTER_EQUALITY_NOT_PROOF_OF_NO_INTERMEDIATE_CHANGE','DYNAMIC_VENUE_FILTERS_NOT_FULLY_MODELED',

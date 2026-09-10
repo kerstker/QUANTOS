@@ -20,6 +20,7 @@ from services.execution.perpetual_ledger_v2 import (
     ContractSpec, MarginBracket, MarkEvent, ledger_decimal_context,
 )
 from services.execution.perpetual_simulation import ExecutableQuote, OrderRuleProfile, SimulationFrame
+from services.execution.public_order_constraints import parse_constraints, constraint_manifest
 
 DAY_MS=86_400_000
 
@@ -156,7 +157,8 @@ def prepare_public_replay(capture: Mapping) -> dict:
     profile=OrderRuleProfile(rule_id,rule_id,'BTCUSDT','BINANCE_USDM',rule_time,end+1,
         bootstrap['exchange']['requested_at'],rule_time,rule_time,source,
         _decimal(prices['tickSize']),_decimal(prices['minPrice']),_decimal(prices['maxPrice']),
-        _decimal(market['maxQty']),_decimal(lot['maxQty']),Decimal('1000'),'ORIGINAL_ORDER',types)
+        _decimal(market['maxQty']),_decimal(lot['maxQty']),Decimal('1000'),'ORIGINAL_ORDER',types,
+        parse_constraints(symbol))
     interval=next_settlement-last_settlement
     schedule_available=max(funding_time,clock_records[0]['mark_available_time'])
     policy=FundingPolicySnapshot('BTCUSDT','BINANCE_USDM',source,start,next_settlement,
@@ -172,6 +174,7 @@ def prepare_public_replay(capture: Mapping) -> dict:
         'observation_clocks':clock_records,'units':{'price':'USDT','quantity':'BASE','volume':'QUOTE_USDT'},
         'gap_policy_ms':max_gap,'rule_policy':'FIRST_OBSERVATION_WITH_UNCHANGED_FINAL_FILTERS',
         'mark_policy':'OBSERVATION_TIME_VALUATION_WITH_ORIGINAL_CLOCKS_RETAINED',
+        'venue_order_constraints':constraint_manifest(profile.venue_constraints),
         'limitations':['UNSIGNED_SOURCE_RECEIPTS','VENUE_MARGIN_TIERS_UNAVAILABLE_SIMULATION_IM_100_PERCENT_MM_50_PERCENT',
             'ACCOUNT_FEE_TIER_UNAVAILABLE_EXPLICIT_SIMULATION_COST','NO_FUNDING_SETTLEMENT_IN_SAMPLE',
             'REST_TOP_OF_BOOK_NOT_QUEUE_SIMULATION','DYNAMIC_VENUE_FILTERS_NOT_FULLY_MODELED',

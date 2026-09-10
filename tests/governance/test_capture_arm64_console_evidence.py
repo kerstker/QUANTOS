@@ -61,6 +61,69 @@ def test_subprocess_runner_is_permanently_shell_free() -> None:
     assert "Popen" not in source
 
 
+def _pinned_base_inspect(reference):
+    digest=reference.rsplit('@',1)[1]
+    return {'Id':digest,'Architecture':'arm64','Os':'linux','RepoDigests':[reference],
+            'Descriptor':{'digest':digest,'mediaType':'application/vnd.oci.image.manifest.v1+json','size':1737}}
+
+
+def test_verified_pinned_local_base_needs_no_registry_roundtrip(tmp_path):
+    reference='public.ecr.aws/docker/library/python@sha256:'+'a'*64
+    argv=['docker','image','inspect',reference]
+    raw=json.dumps([_pinned_base_inspect(reference)]).encode()
+    runner=FakeRunner([_result(argv,stdout=raw)])
+    capture_module._ensure_base_image(runner,tmp_path,reference)
+    assert [a for a,_cwd in runner.calls]==[tuple(argv)]
+
+
+def test_missing_pinned_base_is_pulled_then_verified(tmp_path):
+    reference='public.ecr.aws/docker/library/python@sha256:'+'a'*64
+    inspect_argv=['docker','image','inspect',reference]
+    pull=['docker','pull','--platform','linux/arm64',reference]
+    raw=json.dumps([_pinned_base_inspect(reference)]).encode()
+    runner=FakeRunner([_result(inspect_argv,code=1,stderr=b'No such image'),
+                       _result(pull),_result(inspect_argv,stdout=raw)])
+    capture_module._ensure_base_image(runner,tmp_path,reference)
+    assert not runner.results
+
+
+@pytest.mark.parametrize('field',['architecture','os','digest','descriptor','reference'])
+def test_cached_base_with_wrong_identity_cannot_skip_checks(tmp_path,field):
+    reference='public.ecr.aws/docker/library/python@sha256:'+'a'*64
+    image=_pinned_base_inspect(reference)
+    if field=='architecture':image['Architecture']='amd64'
+    elif field=='os':image['Os']='windows'
+    elif field=='digest':image['Id']='sha256:'+'b'*64
+    elif field=='descriptor':image['Descriptor']['digest']='sha256:'+'b'*64
+    else:image['RepoDigests']=[]
+    runner=FakeRunner([_result(['docker','image','inspect',reference],stdout=json.dumps([image]).encode())])
+    with pytest.raises(CaptureError):capture_module._ensure_base_image(runner,tmp_path,reference)
+
+
+def test_base_image_access_failure_stops_before_any_cold_build(tmp_path,monkeypatch):
+    root=tmp_path/'repo';root.mkdir();commit=_capture_repo(root)
+    class AccessFailure:
+        def __init__(self):self.calls=[]
+        def run(self,argv,*,cwd):
+            self.calls.append(tuple(argv))
+            if tuple(argv) in [tuple(r.argv) for r in _source_results(commit)]:
+                return next(r for r in _source_results(commit) if r.argv==tuple(argv))
+            if tuple(argv[:3])==('docker','buildx','inspect'):
+                return _result(list(argv),code=1,stderr=b'no builder found')
+            if tuple(argv[:3])==('docker','container','inspect'):
+                return _result(list(argv),code=1,stderr=b'No such container')
+            if tuple(argv[:3])==('docker','image','inspect'):
+                return _result(list(argv),code=1,stderr=b'No such image')
+            if tuple(argv[:2])==('docker','pull'):
+                return _result(list(argv),code=1,stderr=b'401 Unauthorized')
+            raise AssertionError('expensive stage started before base availability: '+str(argv))
+    monkeypatch.setattr(capture_module,'_prepare_scanner_database',lambda *_args,**_kwargs:object())
+    runner=AccessFailure()
+    with pytest.raises(CaptureError,match=hashlib.sha256(b'401 Unauthorized').hexdigest()):
+        capture(root,tmp_path/'out',runner=runner,source_resolver=lambda _:commit)
+    assert not any(a[:3]==('docker','buildx','create') for a in runner.calls)
+
+
 def test_source_capture_requires_exact_clean_canonical_aarch64_checkout(tmp_path: Path) -> None:
     commit = "a" * 40
     commands = [
@@ -729,6 +792,7 @@ def test_failure_cleanup_is_owned_exact_and_does_not_mask_original(
     )
 
     expected_stderr_hash = hashlib.sha256(b"injected create failure").hexdigest()
+    monkeypatch.setattr(capture_module, "_ensure_base_image", lambda *_args: None)
     with pytest.raises(CaptureError, match=expected_stderr_hash):
         capture(
             root,

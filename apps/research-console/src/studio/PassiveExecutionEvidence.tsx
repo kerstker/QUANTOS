@@ -6,7 +6,7 @@ import {PassiveCalibrationEvidence} from './PassiveCalibrationEvidence';
 import './passive-execution.css';
 
 const status:Record<string,string>={SENT:'已发送，等待到达',ACK:'场所确认',OPEN:'排队中',PARTIALLY_FILLED:'部分成交',FILLED:'全部成交',REJECTED:'拒绝',CANCEL_SENT:'已发送撤单',CANCELLED:'已撤单',CANCEL_REJECTED:'撤单拒绝',EXPIRED:'已到期'};
-const reasons:Record<string,string>={POST_ONLY_WOULD_CROSS:'到达时会立即成交',STALE_BOOK:'盘口已过时',OUTSIDE_KNOWN_BOOK_RANGE:'价格超出已知盘口',ORDER_NOT_OPEN:'订单尚未到达或已结束',TIME_IN_FORCE:'有效期结束',CLIENT_CANCEL_ARRIVED:'撤单已到达',UNKNOWN_TOUCH_AFTER_TRADES:'成交后最优盘口暂时未知',EXPIRED_BEFORE_ARRIVAL:'到达前已过期'};
+const reasons:Record<string,string>={POST_ONLY_WOULD_CROSS:'到达时会立即成交',STALE_BOOK:'盘口已过时',OUTSIDE_KNOWN_BOOK_RANGE:'价格超出已知盘口',ORDER_NOT_OPEN:'订单尚未到达或已结束',TIME_IN_FORCE:'有效期结束',CLIENT_CANCEL_ARRIVED:'撤单已到达',UNKNOWN_TOUCH_AFTER_TRADES:'成交后最优盘口暂时未知',EXPIRED_BEFORE_ARRIVAL:'到达前已过期',PERCENT_PRICE:'挂单价格越过标记价边界',MAX_OPEN_ORDERS:'未完成订单数量已达上限',MARKET_TAKE_BOUND:'市价成交越过价格保护边界'};
 const iso=(ms:number)=>Number.isFinite(new Date(ms).getTime())?new Date(ms).toISOString():'未知';
 const clock=(ms:number)=>iso(ms)==='未知'?'未知':iso(ms).slice(11,23);
 
@@ -31,6 +31,7 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  const profile=selection?.identity===identity?selection.profile:data?.selected_profile??0;
  const trial=data?.trials.find(t=>t.profile_ms===profile)??data?.trials[0];
  const books=data?.quality.book_samples??[];
+ const bounds=data?.account_environment?.venue_order_constraints;
  const rows=books.map(b=>({label:clock(b.available_at_ms),bid:Number(b.bids[0]?.[0]),ask:Number(b.asks[0]?.[0]),lag:b.available_at_ms-b.transaction_time_ms}));
  return <>
  <PassiveCalibrationEvidence data={data?.calibration}/>
@@ -40,6 +41,12 @@ export function PassiveExecutionEvidence({data}:{data?:PassiveExecutionStudy|nul
  <p><strong>{data.symbol}</strong> · {iso(data.start_ms).slice(0,10)} UTC · 共同可用窗口 {clock(data.start_ms)} — {clock(data.end_ms)} · {data.trials_attempted} 次尝试</p>
  <p className="f-message">深度增量 {data.quality.counts.depth_updates} · 聚合成交 {data.quality.counts.aggregate_trades} · 标记价 {data.quality.counts.mark_updates} · 重复包 {data.quality.counts.duplicates}</p>
  <p className="f-message">{data.account_environment?'已提供冻结的公开规则、容量与资金费日程；每个成功情景保留统一账本结果。实际队列位置和真实场所费用仍待回执验证。':'公开盘口无法证明实际队列位置；当前输入尚未接入成本账本，也未完成真实回执校准。这里显示模型成交诊断，净收益和真实费用仍未知。'}</p>
+ {bounds?<section role="region" aria-label="模拟场所订单边界">
+ <p><strong>冻结的订单边界</strong> · 同一合约最多 {bounds.max_open_orders} 个未完成订单</p>
+ <p>买单挂价 ≤ 标记价 × {bounds.percent_price_up}；卖单挂价 ≥ 标记价 × {bounds.percent_price_down}。限价边界在订单到达时检查。</p>
+ <p>市价单最小金额使用当时标记价；每次模拟成交检查不利价格偏离，幅度 {Number(bounds.market_take_bound)*100}%。越界余量保留拒绝记录。</p>
+ <p className="f-message">仅计本次隔离账户声明的订单。真实场所行为仍未验证，外部挂单、其他过滤器及账户费率不由此确认。</p>
+ </section>:data.account_environment&&<p className="f-message">动态订单边界尚未建模；当前材料只有已声明的基础规则，不能视为完整场所过滤器。</p>}
  {!!data.quality.failures.length&&<ul>{data.quality.failures.map((f,i)=><li key={i}>{f.reason}</li>)}</ul>}
  {data.trials.length===0?<p>已验证输入，尚无固定动作；没有生成订单或成交结论。</p>:<>
  <label>队列延迟情景 <select value={trial?.profile_ms??0} onChange={e=>setSelection({identity,profile:Number(e.target.value)})}>{data.trials.map(t=><option key={t.profile_ms} value={t.profile_ms}>{t.profile_ms} ms · {t.status==='FAILED'?'失败':'模型对照'}{t.profile_ms===data.selected_profile?' · 校准段冻结':''}</option>)}</select></label>

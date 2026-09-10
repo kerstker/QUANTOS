@@ -149,6 +149,48 @@ class SimulationLimits:
         _time(self.order_latency_ms, "order_latency_ms")
 
 @dataclass(frozen=True)
+class VenueOrderConstraints:
+    """Frozen USD-M public order bounds, not account/venue certification.
+
+    The limit-price band is an admission check. Market protection is checked
+    against each executable slice; existing limit orders are not re-priced or
+    retrospectively rejected when the mark moves. Pending counts cover only
+    this isolated simulation's declared orders.
+    """
+    percent_price_up: Decimal
+    percent_price_down: Decimal
+    max_open_orders: int
+    market_take_bound: Decimal
+
+    @ledger_decimal_context()
+    def __post_init__(self) -> None:
+        _decimal(self.percent_price_up, "percent_price_up", positive=True)
+        _decimal(self.percent_price_down, "percent_price_down", positive=True)
+        _decimal(self.market_take_bound, "market_take_bound")
+        if not self.percent_price_down <= ONE <= self.percent_price_up:
+            raise ValueError("percent price bounds must include the mark")
+        if type(self.max_open_orders) is not int or self.max_open_orders < 1:
+            raise ValueError("max_open_orders must be a positive integer")
+
+    def admission_reason(self, quantity: Decimal, limit: Decimal | None,
+                         mark: Decimal, pending_count: int) -> str | None:
+        if pending_count >= self.max_open_orders:
+            return "MAX_OPEN_ORDERS"
+        if limit is not None and (
+                (quantity > ZERO and limit > mark*self.percent_price_up)
+                or (quantity < ZERO and limit < mark*self.percent_price_down)):
+            return "PERCENT_PRICE"
+        return None
+
+    def market_fill_reason(self, quantity: Decimal, price: Decimal,
+                           mark: Decimal) -> str | None:
+        if ((quantity > ZERO and price > mark*(ONE+self.market_take_bound))
+                or (quantity < ZERO and price < mark*(ONE-self.market_take_bound))):
+            return "MARKET_TAKE_BOUND"
+        return None
+
+
+@dataclass(frozen=True)
 class OrderRuleProfile:
     """Caller-frozen order rules, distinct from position accounting rules.
 
@@ -173,6 +215,7 @@ class OrderRuleProfile:
     max_notional: Decimal
     minimum_policy: str
     supported_order_types: tuple[str, ...] = ("MARKET", "LIMIT")
+    venue_constraints: VenueOrderConstraints | None = None
 
     @ledger_decimal_context()
     def __post_init__(self) -> None:
@@ -197,6 +240,8 @@ class OrderRuleProfile:
                 or any(t not in ("MARKET", "LIMIT") for t in types)):
             raise ValueError("unsupported order rule types")
         object.__setattr__(self, "supported_order_types", types)
+        if self.venue_constraints is not None and not isinstance(self.venue_constraints, VenueOrderConstraints):
+            raise ValueError("invalid venue order constraints")
 
     def price_reason(self, price: Decimal) -> str | None:
         if not self.min_price <= price <= self.max_price:
@@ -662,6 +707,9 @@ class _SimulationAccount:
         profile = self.profiles.get(intent.instrument_id)
         if profile is not None:
             reason = profile.price_reason(px)
+            if reason is None and profile.venue_constraints is not None and intent.limit_price is None:
+                reason = profile.venue_constraints.market_fill_reason(
+                    remaining, px, self.mark_prices[intent.instrument_id])
             if reason is None and spec.notional(intent.quantity_delta, px) > profile.max_notional:
                 reason = reason or "MAX_ORDER_NOTIONAL"
             if reason:
@@ -779,23 +827,30 @@ class _SimulationAccount:
                         reason = "MAX_ORDER_QUANTITY"
                     elif self.rules[action.instrument_id].spec.notional(action.quantity_delta, px) > profile.max_notional:
                         reason = "MAX_ORDER_NOTIONAL"
+                    if reason is None and profile.venue_constraints is not None:
+                        reason = profile.venue_constraints.admission_reason(
+                            action.quantity_delta, action.limit_price, self.mark_prices[action.instrument_id],
+                            sum(s.intent.instrument_id == action.instrument_id for s in self.pending.values()))
                 try:
                     if reason is None:
+                        minimum_price = (self.mark_prices[action.instrument_id]
+                            if profile is not None and profile.venue_constraints is not None
+                            and action.limit_price is None else px)
                         if profile is not None and profile.minimum_policy == "ORIGINAL_ORDER":
                             reducing = (action.reduce_only and current is not None
                                 and (current.quantity > ZERO) != (action.quantity_delta > ZERO)
                                 and abs(action.quantity_delta) <= abs(current.quantity))
                             self.rules[action.instrument_id].spec.validate_quantity(
-                                action.quantity_delta, px, reducing=reducing)
+                                action.quantity_delta, minimum_price, reducing=reducing)
                         else:
                             self.rules[action.instrument_id].spec.validate_trade_quantity(
-                                action.quantity_delta, px,
+                                action.quantity_delta, minimum_price,
                                 current_quantity=ZERO if current is None else current.quantity)
                 except QuantityRuleViolation:
                     reason = "QUANTITY_RULE"
                 if reason is None:
                     try:
-                        self.rules[action.instrument_id].spec.validate_quantity(action.quantity_delta, px)
+                        self.rules[action.instrument_id].spec.validate_quantity(action.quantity_delta, minimum_price)
                     except QuantityRuleViolation:
                         # An original closing order admitted only by a minimum
                         # exemption must never use it to open inventory later.
