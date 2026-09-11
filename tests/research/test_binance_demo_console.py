@@ -3,6 +3,25 @@ import json
 import pytest
 
 
+def test_user_stream_snapshot_is_read_only_and_does_not_claim_order_delivery(tmp_path,monkeypatch):
+    from services.research.demo_user_stream import UserStreamJournal
+    path=tmp_path/'stream.db'
+    at=1789160000000
+    with UserStreamJournal(path,account_ref_sha256='a'*64) as journal:
+        journal.start_session(source_sha256='b'*64,at_ms=at)
+        journal.record('CONNECTED',at_ms=at)
+        journal.record('HEARTBEAT',at_ms=at)
+    before=path.read_bytes()
+    monkeypatch.setattr(views,'_user_stream_path',lambda:path)
+    monkeypatch.setattr(views.time,'time_ns',lambda:at*1_000_000)
+    report=TestClient(app).get('/api/v1/console/binance-demo').json()['user_stream']['report']
+    assert report['state']=='CONNECTED' and report['messages']==0
+    assert report['cash_reconciliation']=='UNKNOWN' and report['coverage_verified'] is False
+    assert views.build_user_stream_snapshot(path=path,as_of_ms=at+120001)['report']['state']=='STALE'
+    assert views.build_user_stream_snapshot(path=path,as_of_ms=at-1)=={'status':'DATA_BLOCKED','report':None}
+    assert path.read_bytes()==before
+
+
 def test_statement_projection_is_read_only_and_preserves_missing_cash_evidence(tmp_path):
     from services.console.api.binance_demo_views import build_statement_snapshot
     from tools.binance_demo_statement import collect, save_statement

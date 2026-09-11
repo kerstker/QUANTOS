@@ -1,4 +1,5 @@
 import type {DemoStatementSnapshot} from './demo-statement';
+import type {DemoUserStreamSnapshot} from './demo-user-stream';
 export interface DemoSymbol {
   symbol: string; quote_asset: string; margin_asset: string; contract_type: 'PERPETUAL';
   status: 'TRADING'; tick_size: string; step_size: string; min_qty: string; min_notional: string;
@@ -62,6 +63,7 @@ export interface BinanceDemoPayload {
   private_checks: DemoPrivateCheckSnapshot;
   account_baseline: DemoAccountBaselineSnapshot;
   statement: DemoStatementSnapshot;
+  user_stream: DemoUserStreamSnapshot;
 }
 
 export interface DemoPrivateCheckReport {

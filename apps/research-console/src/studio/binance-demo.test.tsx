@@ -24,6 +24,7 @@ function payload(): BinanceDemoPayload {
     execution: {status: 'NO_JOURNAL', report: null},
     order_recovery: {status: 'NO_SNAPSHOT', report: null},
     private_checks: {status: 'NO_SNAPSHOT', report: null},
+    user_stream: {status: 'NO_JOURNAL', report: null},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }

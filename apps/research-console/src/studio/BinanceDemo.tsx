@@ -8,6 +8,7 @@ import {DemoExecutionEvidence} from './DemoExecutionEvidence';
 import {DemoOrderRecovery} from './DemoOrderRecovery';
 import {DemoPrivateChecks} from './DemoPrivateChecks';
 import {DemoAccountBaseline} from './DemoAccountBaseline';
+import {DemoUserStream} from './DemoUserStream';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -67,6 +68,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       <Metric label="交易执行" value="未启用" note="公共检查不授予下单权限"/>
     </div>
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
+    <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
     <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
     <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>
     <Panel title="合约与计价" note={`${historical ? '历史观察 · ' : ''}BTCUSDT 与 BTCUSDC 分别保留数量、价格与保证金币种`}>

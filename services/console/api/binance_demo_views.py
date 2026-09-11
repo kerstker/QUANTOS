@@ -13,8 +13,24 @@ from services.research.demo_order_recovery import load_capture, compare_orders
 from services.research.demo_private_checks import load_report
 from services.research.demo_account_baseline import load_capture as load_account_capture, build_baseline
 from services.research.demo_statement import load_statement, assess as assess_statement
+from services.research.demo_user_stream import UserStreamJournal
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _user_stream_path():
+    return runtime_state_root() / 'data/cache/binance_demo_user_stream.db'
+
+
+def build_user_stream_snapshot(*, path: Path, as_of_ms=None):
+    if not path.exists():return {'status':'NO_JOURNAL','report':None}
+    try:
+        with UserStreamJournal(path,read_only=True) as journal:
+            report=journal.snapshot(as_of_ms=as_of_ms)
+        return {'status':'AVAILABLE','report':report}
+    except ValueError as exc:
+        return {'status':'DATA_BLOCKED' if str(exc)=='STREAM_FUTURE_OBSERVATION' else 'CORRUPT_OR_UNREADABLE','report':None}
+    except Exception:return {'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
 def build_statement_snapshot(*, directory: Path, as_of_ms: int):
@@ -141,9 +157,12 @@ def build_snapshot(*, path: Path, as_of_ms: int):
 
 @router.get("/api/v1/console/binance-demo")
 def binance_demo_snapshot():
+    # Read the continuous journal before sampling the enclosing response clock.
+    user_stream=build_user_stream_snapshot(path=_user_stream_path())
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'user_stream':user_stream,
         'statement': build_statement_snapshot(directory=runtime_state_root() / 'data/cache/binance_demo_statements', as_of_ms=as_of_ms),
         'account_baseline': build_account_baseline_snapshot(directory=_account_capture_directory(), as_of_ms=as_of_ms),
         'private_checks': build_private_check_snapshot(directory=_private_check_directory(), as_of_ms=as_of_ms),
