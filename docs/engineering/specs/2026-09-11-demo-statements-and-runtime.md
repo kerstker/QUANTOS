@@ -22,6 +22,12 @@
 现金闭合仍UNKNOWN，新系统提交仍0。浏览器实际15911入口在桌面/390px手机/暗色下通过：
 18行合约规则、无页面错误、无页面横向溢出、WCAG 2A/AA扫描无违规、无写请求；工厂、行情、运维入口可达。
 
+04:46:53的定时账户查询返回`REQUEST_FAILED`，失败原文规范化记录以摘要
+`2e3105d639367f50f285747d443a14c27e7fa51f6833acd96e86584cab616786`保留，页面如实显示采集失败。
+原定时器在04:48:01开始的下一周期自动重新采集，04:48:05完成，恢复为`STABLE_OBSERVATIONS`。
+未手动重启或清除失败；`actual-recurring-account-recovery.json`记录整个连续观察及恢复。
+因此本轮证明了实际周期恢复，不宣称外部网络全程无失败；早先收尾快照也保留原失败状态。
+
 入口：`http://192.168.5.68:15911/studio/demo`。五个组件为
 `quantos-next-{console,runner,web,observer,public-market}.service`；
 观察定时器为`quantos-demo-{account,connection,statement}.timer`。
