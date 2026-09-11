@@ -24,6 +24,17 @@ from tools.binance_realtime_stream import (
 _NOW = 10_000
 
 
+def _controlled_stream_clock(monkeypatch):
+    """Control stream semantics without replacing asyncio's scheduling clock."""
+    started = realtime.time.time()
+    elapsed = {"seconds": 0.0}
+    monkeypatch.setattr(realtime, "time", SimpleNamespace(
+        time=lambda: started + elapsed["seconds"],
+        monotonic=lambda: elapsed["seconds"],
+    ))
+    return elapsed
+
+
 def _frame(stream, data):
     return {"stream": stream, "data": data}
 
@@ -440,6 +451,7 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     tmp_path,
     monkeypatch,
 ):
+    stream_clock = _controlled_stream_clock(monkeypatch)
     batch_path = tmp_path / "batches.db"
     now_ms = int(realtime.time.time() * 1_000)
     batch_store = RealtimeFeatureBatchStore(str(batch_path), create=True)
@@ -460,6 +472,9 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     batch_store.close()
     cursor_calls = []
     local_checkpoint_calls = []
+    full_audit_started = asyncio.Event()
+    concurrent_flushes = asyncio.Event()
+    flushes_during_full_audit = []
 
     async def consume(endpoint, _url, *, state, stop, deadline):
         del deadline
@@ -472,7 +487,13 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
             # Keep the scheduled full audit in flight across several flushes.
             # The resident publisher must continue from its incremental head;
             # it must never inherit the audit worker's genesis checkpoint.
-            await asyncio.sleep(0.08)
+            full_audit_started.set()
+            await concurrent_flushes.wait()
+            stream_clock["seconds"] = 2.0
+        else:
+            # Cross the scheduled renewal boundary after bootstrap, regardless
+            # of filesystem or event-loop startup latency.
+            stream_clock["seconds"] = 0.15
         return {
             "valid": True,
             "anchor_seq": checkpoint_seq,
@@ -488,6 +509,10 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
         checkpoint_row_hash,
     ):
         local_checkpoint_calls.append((checkpoint_seq, checkpoint_row_hash))
+        if full_audit_started.is_set():
+            flushes_during_full_audit.append((checkpoint_seq, checkpoint_row_hash))
+            if len(flushes_during_full_audit) >= 3:
+                concurrent_flushes.set()
         return {
             "valid": True,
             "anchor_seq": checkpoint_seq,
@@ -524,18 +549,22 @@ async def test_resident_stream_runs_periodic_full_cursor_audit_before_expiry(
     monkeypatch.setattr(realtime, "CURSOR_FULL_CHAIN_AUDIT_INTERVAL_MS", 1_000)
     monkeypatch.setattr(realtime, "CURSOR_FULL_AUDIT_LEAD_MS", 900)
 
-    await realtime.run_stream(
-        tickers=("BTC",),
-        duration_seconds=0.25,
-        flush_seconds=0.01,
-        store_path=str(tmp_path / "stream.db"),
-        status_path=str(tmp_path / "status.json"),
-        batch_store_path=str(batch_path),
+    await asyncio.wait_for(
+        realtime.run_stream(
+            tickers=("BTC",),
+            duration_seconds=1.0,
+            flush_seconds=0.01,
+            store_path=str(tmp_path / "stream.db"),
+            status_path=str(tmp_path / "status.json"),
+            batch_store_path=str(batch_path),
+        ),
+        timeout=10,
     )
 
     assert cursor_calls[0] == (77, "d" * 64)
     assert any(seq == 0 and row_hash == "" for seq, row_hash in cursor_calls[1:])
     assert local_checkpoint_calls
+    assert len(flushes_during_full_audit) >= 3
     assert all(
         seq == 77 and row_hash == "d" * 64
         for seq, row_hash in local_checkpoint_calls
@@ -547,6 +576,7 @@ async def test_resident_stream_renews_full_source_audit_before_expiry(
     tmp_path,
     monkeypatch,
 ):
+    stream_clock = _controlled_stream_clock(monkeypatch)
     batch_path = tmp_path / "batches.db"
     now_ms = int(realtime.time.time() * 1_000)
     batch_store = RealtimeFeatureBatchStore(str(batch_path), create=True)
@@ -581,7 +611,9 @@ async def test_resident_stream_renews_full_source_audit_before_expiry(
     async def verify_source(_path, *, checkpoint_seq, checkpoint_row_hash):
         source_calls.append((checkpoint_seq, checkpoint_row_hash))
         if checkpoint_seq == 0:
-            await asyncio.sleep(0.08)
+            stream_clock["seconds"] = 2.0
+        else:
+            stream_clock["seconds"] = 0.15
         return {
             "valid": True,
             "anchor_seq": checkpoint_seq,
@@ -613,13 +645,16 @@ async def test_resident_stream_renews_full_source_audit_before_expiry(
     monkeypatch.setattr(realtime, "FULL_CHAIN_AUDIT_INTERVAL_MS", 1_000)
     monkeypatch.setattr(realtime, "SOURCE_FULL_AUDIT_LEAD_MS", 900)
 
-    status = await realtime.run_stream(
-        tickers=("BTC",),
-        duration_seconds=0.25,
-        flush_seconds=0.01,
-        store_path=str(tmp_path / "stream.db"),
-        status_path=str(tmp_path / "status.json"),
-        batch_store_path=str(batch_path),
+    status = await asyncio.wait_for(
+        realtime.run_stream(
+            tickers=("BTC",),
+            duration_seconds=1.0,
+            flush_seconds=0.01,
+            store_path=str(tmp_path / "stream.db"),
+            status_path=str(tmp_path / "status.json"),
+            batch_store_path=str(batch_path),
+        ),
+        timeout=10,
     )
 
     assert source_calls[0] == (123, "b" * 64)
@@ -1253,17 +1288,32 @@ async def test_run_stream_resumes_persisted_recovering_cursor(tmp_path, monkeypa
         verify_cursor,
     )
 
-    await realtime.run_stream(
-        tickers=("BTC",),
-        duration_seconds=0.08,
-        flush_seconds=0.01,
-        store_path=store_path,
-        status_path=str(tmp_path / "status.json"),
-        batch_store_path=str(tmp_path / "batches.db"),
-        rest_depth_fetch=lambda *_args, **_kwargs: {
-            "last_update_id": 21,
-            "event_time_ms": 9_902,
-        },
+    # SQLite/bootstrap scheduling can consume an 80 ms wall-clock budget before
+    # the first flush. End the stream after its real recovery flush instead;
+    # keep asyncio's own clock real so an actual hang still fails promptly.
+    stream_clock = _controlled_stream_clock(monkeypatch)
+    recover_cursors = realtime._recover_depth_cursors_async
+
+    async def recover_then_finish(*args, **kwargs):
+        result = await recover_cursors(*args, **kwargs)
+        stream_clock["seconds"] = 2.0
+        return result
+
+    monkeypatch.setattr(realtime, "_recover_depth_cursors_async", recover_then_finish)
+    await asyncio.wait_for(
+        realtime.run_stream(
+            tickers=("BTC",),
+            duration_seconds=1.0,
+            flush_seconds=0.01,
+            store_path=store_path,
+            status_path=str(tmp_path / "status.json"),
+            batch_store_path=str(tmp_path / "batches.db"),
+            rest_depth_fetch=lambda *_args, **_kwargs: {
+                "last_update_id": 21,
+                "event_time_ms": 9_902,
+            },
+        ),
+        timeout=10,
     )
 
     reopened = StreamCursorStore(store_path)
