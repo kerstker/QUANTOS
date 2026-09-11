@@ -1,6 +1,6 @@
 """Binance 期货测试网真实联调烟测(手动运行,一次性验证 live/exchange/binance_futures.py 对真实
 测试网响应的假设——`binance_futures.py` 的单元测试全部注入假 transport,这是本仓库第一次真正
-打到 testnet.binancefuture.com)。
+打到 demo-fapi.binance.com)。
 
 凭证:env `BINANCE_TESTNET_API_KEY`/`BINANCE_TESTNET_API_SECRET`,或 gitignored
 `key/binance_test_key.json`({"api_key": "...", "api_secret": "..."})——绝不打印密钥内容,

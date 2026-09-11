@@ -56,6 +56,11 @@ from services.risk.pre_trade.context import (
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.risk.pre_trade.kill_switch_runtime import arm_and_record
+from services.validation.live_submission_authority import (
+    LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE,
+    LiveSubmissionAuthorityBlocked,
+    require_live_submission_authority,
+)
 
 
 _AUTHORITY_SCHEMA = "mft-testnet-authority.v1"
@@ -465,6 +470,8 @@ def build_runner(
     now_ms: int,
     environ: Mapping[str, str],
 ) -> ManagedRunner:
+    if args.testnet_submit:
+        require_live_submission_authority("testnet-execution-service startup")
     resources: list[object] = []
     try:
         commands = SqliteExecutionCommandStore(args.command_db, create=True)
@@ -544,7 +551,7 @@ def main(
             raise _fail("CLOCK_INVALID")
         intent = _load_intent(args.intent)
         factory = runner_factory or build_runner
-        runner = factory(args, intent, now_ms, environ or os.environ)
+        runner = factory(args, intent, now_ms, os.environ if environ is None else environ)
         runner.service.enqueue(intent, recorded_at_ms=now_ms)
         run = runner.service.run_once(
             now_ms=now_ms,
@@ -553,6 +560,10 @@ def main(
         )
         print(json.dumps(_output(run, submit=args.testnet_submit), sort_keys=True))
         return 0 if run.status in {"PREVIEW_READY", "COMPLETED", "NO_WORK"} else 2
+    except LiveSubmissionAuthorityBlocked:
+        print(json.dumps({"status": "BLOCKED", "submission_mode": mode,
+                          "reason_codes": [LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE]}, sort_keys=True))
+        return 2
     except CliConfigurationError as exc:
         print(
             json.dumps(

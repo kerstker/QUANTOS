@@ -320,29 +320,37 @@ def test_production_preview_revalidates_authority_without_credentials(tmp_path, 
     assert output["submission_mode"] == "PREVIEW"
 
 
-def test_production_submit_runner_constructs_testnet_only_without_network(tmp_path) -> None:
+def test_production_submit_blocks_before_opening_stores_or_credentials(tmp_path) -> None:
+    from services.validation.live_submission_authority import LiveSubmissionAuthorityBlocked
+
     _write_authority_files(tmp_path)
     _write_runtime(tmp_path)
     args = cli.build_parser().parse_args(_submit_args(tmp_path))
     cli.validate_args(args)
+    before = set(tmp_path.iterdir())
 
-    runner = cli.build_runner(
-        args,
-        _intent(),
-        NOW,
-        {
-            "BINANCE_TESTNET_API_KEY": "test-key",
-            "BINANCE_TESTNET_API_SECRET": "test-secret",
-        },
-    )
-    try:
-        assert runner.service._venue.venue_mode == "testnet"
-        assert runner.service._venue.venue_name == "binance"
-    finally:
-        runner.close()
+    class NoCredentials(dict):
+        def get(self, *args):
+            pytest.fail("blocked startup must not inspect credentials")
+
+    with pytest.raises(LiveSubmissionAuthorityBlocked):
+        cli.build_runner(args, _intent(), NOW, NoCredentials())
+    assert set(tmp_path.iterdir()) == before
 
 
-def test_submit_rejects_mandate_above_runtime_policy_before_credentials(tmp_path) -> None:
+def test_cli_reports_submission_block_as_actionable_status(tmp_path, capsys):
+    code = cli.main(_submit_args(tmp_path), clock_ms=lambda: NOW, environ={})
+    assert code == 2
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "BLOCKED", "submission_mode": "BINANCE_FUTURES_TESTNET",
+        "reason_codes": ["LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE"],
+    }
+
+
+def test_submit_rejects_mandate_above_runtime_policy_before_credentials(tmp_path, monkeypatch) -> None:
+    # Offline downstream-policy regression: no transport or valid credentials.
+    # The production entry preflight itself is covered above with no test seam.
+    monkeypatch.setattr(cli, "require_live_submission_authority", lambda _: None)
     _write_authority_files(tmp_path)
     _write_runtime(tmp_path)
     mandate_path = tmp_path / "mandate.json"

@@ -92,6 +92,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),
@@ -262,6 +263,7 @@ BACKEND_ONLY_ROUTES = {
 # marker. They still must be read-only snapshots; only the honesty label differs.
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
+    "/api/v1/console/binance-demo": "DEMO_CONNECTIVITY_DIAGNOSTIC",
     "/api/v1/console/ai-factory": "REAL_AI_FACTORY_DIAGNOSTIC",
     "/api/v1/console/ai-factory-lifecycle": "REAL_AI_FACTORY_DIAGNOSTIC",
     "/api/v1/console/market-dashboard": "REAL_PUBLIC_MARKET_DIAGNOSTIC",

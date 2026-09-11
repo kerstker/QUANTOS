@@ -38,6 +38,7 @@ from live.contracts import (ExchangeFilters, FundingRateSnapshot, LiveOrderReque
 from live.exchange.depth import clamp_depth_limit, extract_as_of_ms, parse_depth_levels
 from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
+from quantos.contracts.binance_demo import DEMO_REST_BASE
 
 _ORDER_NOT_FOUND_CODE = -2013     # Binance: "Order does not exist."
 _CANCEL_REJECTED_CODE = -2011     # Binance: "Unknown order sent."(不存在或已终态,无法撤)
@@ -70,7 +71,7 @@ def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None
 
 
 class BinanceFuturesAdapter:
-    TESTNET_BASE = "https://testnet.binancefuture.com"
+    TESTNET_BASE = DEMO_REST_BASE
     MAINNET_BASE = "https://fapi.binance.com"
     venue_name = "binance"     # mandate 交易所域匹配(mandate.exchange 必须等于它,2026-07-05)
 
@@ -137,7 +138,7 @@ class BinanceFuturesAdapter:
 
     def _get(self, path: str, params: Optional[dict] = None, *, signed: bool = True):
         params = params or {}
-        headers = {"X-MBX-APIKEY": self._api_key}
+        headers = {"X-MBX-APIKEY": self._api_key} if signed else {}
 
         def _do():
             # 签名串(含 timestamp)每次重试都重新算——退避可能跨越数秒,复用旧 timestamp 有落在

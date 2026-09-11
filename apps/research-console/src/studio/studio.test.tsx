@@ -15,13 +15,14 @@ vi.mock('@/lib/api/research-runner-api', () => ({
   getOperator: () => 'researcher', getRunnerToken: () => '', setOperator: vi.fn(), setRunnerToken: vi.fn(), triggerRun: vi.fn(), cancelRun: vi.fn(),
 }));
 describe('Research Studio', () => {
-  it('opens a research workspace with explicit empty records and eleven connected destinations', async () => {
+  it('opens a research workspace with explicit empty records and twelve connected destinations', async () => {
     render(<MemoryRouter>
       <Studio />
     </MemoryRouter>);
     expect(screen.getByRole('heading', { name: '研究工作台' })).toBeInTheDocument();
     expect(await screen.findByText('还没有研究运行')).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: '主导航' }).querySelectorAll('a')).toHaveLength(11)
+    expect(screen.getByRole('navigation', { name: '主导航' }).querySelectorAll('a')).toHaveLength(12);
+    expect(screen.getByRole('link', {name: '模拟盘接入'})).toHaveAttribute('href', '/studio/demo');
     expect(screen.getByRole('link', { name: /Alpha 生命周期/ })).toHaveAttribute('href', '/studio/lifecycle');
     expect(screen.getByText('研究模式')).toHaveAttribute('title', 'L2_DRY_RUN_ONLY');
   });

@@ -11,6 +11,7 @@ import { Compare } from './Compare';
 import {Market,Analysis,Models,Operations} from './Analysis';
 import {Factory} from './Factory';
 import {FactoryLifecycle} from './FactoryLifecycle';
+import {BinanceDemo} from './BinanceDemo';
 import { NAV, LEGACY } from './routes';
 export default function Studio() {
   const location = useLocation(), nav = useNavigate();
@@ -76,6 +77,8 @@ export default function Studio() {
     page = <Models runs={runs}/>;
   else if (path === '/studio/operations')
     page = <Operations runs={runs}/>;
+  else if (path === '/studio/demo')
+    page = <BinanceDemo/>;
   else if (path === '/studio/compare')
     page = <Compare runs={runs}/>;
   else if (path === '/studio/forward')

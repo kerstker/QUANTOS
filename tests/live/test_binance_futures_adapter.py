@@ -78,6 +78,13 @@ def test_unknown_base_url_rejected():
 def test_testnet_construction_succeeds_and_sets_venue_mode():
     c, _ = _client()
     assert c.venue_mode == "testnet"
+    assert c.TESTNET_BASE == "https://demo-fapi.binance.com"
+
+
+def test_retired_testnet_host_is_not_silently_used():
+    with pytest.raises(ValueError):
+        BinanceFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                              base_url="https://testnet.binancefuture.com")
 
 
 def test_exchange_info_is_unsigned_public_call():
@@ -94,6 +101,7 @@ def test_exchange_info_is_unsigned_public_call():
     c, t = _client({"/fapi/v1/exchangeInfo": (200, filters_resp)})
     filters = c.exchange_filters()
     assert "signature" not in t.calls[0]["url"]              # 公开端点不签名
+    assert "X-MBX-APIKEY" not in t.calls[0]["headers"]
     assert filters["BTC"].step_size == pytest.approx(0.001)
     assert filters["BTC"].min_qty == pytest.approx(0.001)
     assert filters["BTC"].min_notional == pytest.approx(5.0)
