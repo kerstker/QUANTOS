@@ -24,7 +24,7 @@ function payload(): BinanceDemoPayload {
     execution: {status: 'NO_JOURNAL', report: null},
     order_recovery: {status: 'NO_SNAPSHOT', report: null},
     private_checks: {status: 'NO_SNAPSHOT', report: null},
-    account_baseline: {status: 'NO_SNAPSHOT', report: null},
+    statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }
 
@@ -260,7 +260,7 @@ it('rejects incomplete or falsely authoritative account baselines, and retains c
     {completed_at_ms: data.as_of_ms + 1}, {read_intervals: []}, {nonzero_positions: 0}, {flat_account: true},
     {assets: [{...report.assets[0], observed_wallet: 1000}]}, {positions: report.positions.concat(report.positions)},
     {inventory_status: 'STALE'}, {comparisons: report.comparisons.slice(0, 1)}]) {
-    expect(() => parseDemoPayload({...data, account_baseline: {status: 'AVAILABLE', report: {...report, ...patch}}})).toThrow();
+    expect(() => parseDemoPayload({...data, statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'AVAILABLE', report: {...report, ...patch}}})).toThrow();
   }
   report.inventory_status = 'CHANGED_DURING_CAPTURE'; report.flat_account = null;
   report.comparisons[0].status = 'DIFFERENT'; report.issues.push('ACCOUNT_CHANGED_DURING_CAPTURE');

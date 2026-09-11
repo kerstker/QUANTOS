@@ -519,6 +519,11 @@
           "path": "services/console/api/binance_demo_views.py"
         },
         {
+          "line": 15,
+          "module": "services.research.demo_statement",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1376,6 +1381,11 @@
           "path": "services/research/demo_order_recovery.py"
         },
         {
+          "line": 13,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_statement.py"
+        },
+        {
           "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
@@ -1506,6 +1516,11 @@
           "line": 12,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_order_recovery.py"
+        },
+        {
+          "line": 14,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_statement.py"
         }
       ],
       "source": "research",
@@ -1848,7 +1863,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "0e20fff13d997d29da20583e10863c397df622a54442be0fb926050d649204b5",
+  "graph_sha256": "accae460a7dd984f56ce421c3d9ed36969c91f22daf46eb86946e98bf8fa594b",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1886,7 +1901,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 565,
+  "source_file_count": 566,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

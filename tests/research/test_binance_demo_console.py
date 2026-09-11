@@ -1,6 +1,23 @@
 import json
 
 import pytest
+
+
+def test_statement_projection_is_read_only_and_preserves_missing_cash_evidence(tmp_path):
+    from services.console.api.binance_demo_views import build_statement_snapshot
+    from tools.binance_demo_statement import collect, save_statement
+    from tests.tools.test_binance_demo_statement import transport, NOW
+    from tests.tools.test_binance_demo_private_check import credentials
+    report=collect(credential_file=credentials(tmp_path),symbols=['BTCUSDT'],start_ms=NOW-1000,
+        end_ms=NOW,operator_read=True,get=transport([]),clock=lambda:NOW)
+    directory=tmp_path/'statements';save_statement(directory,report)
+    before={p.name:p.read_bytes() for p in directory.iterdir()}
+    r=build_statement_snapshot(directory=directory,as_of_ms=NOW)
+    assert r['report']['trade_count']==1 and r['report']['income_count']==1
+    assert r['report']['venue_cash_reconciliation']=='UNKNOWN' and r['report']['strategy_pnl'] is None
+    assert build_statement_snapshot(directory=directory,as_of_ms=NOW-1)['status']=='DATA_BLOCKED'
+    assert build_statement_snapshot(directory=directory,as_of_ms=NOW+120001)['status']=='STALE'
+    assert before=={p.name:p.read_bytes() for p in directory.iterdir()}
 from fastapi.testclient import TestClient
 
 from services.console.main import app

@@ -12,8 +12,21 @@ from services.research.demo_execution_journal import DemoExecutionJournal, repla
 from services.research.demo_order_recovery import load_capture, compare_orders
 from services.research.demo_private_checks import load_report
 from services.research.demo_account_baseline import load_capture as load_account_capture, build_baseline
+from services.research.demo_statement import load_statement, assess as assess_statement
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def build_statement_snapshot(*, directory: Path, as_of_ms: int):
+    if not (directory / 'latest.json').exists():
+        return {'status': 'NO_SNAPSHOT', 'report': None}
+    try:
+        report = assess_statement(load_statement(directory))
+        if report['completed_at_ms'] > as_of_ms:
+            return {'status': 'DATA_BLOCKED', 'report': None}
+        return {'status': 'STALE' if as_of_ms-report['observed_at_ms'] > MAX_AGE_MS else 'AVAILABLE', 'report': report}
+    except Exception:
+        return {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
 
 
 def _receipt_path():
@@ -131,6 +144,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'statement': build_statement_snapshot(directory=runtime_state_root() / 'data/cache/binance_demo_statements', as_of_ms=as_of_ms),
         'account_baseline': build_account_baseline_snapshot(directory=_account_capture_directory(), as_of_ms=as_of_ms),
         'private_checks': build_private_check_snapshot(directory=_private_check_directory(), as_of_ms=as_of_ms),
         "execution": execution,

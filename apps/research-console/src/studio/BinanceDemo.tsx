@@ -1,3 +1,4 @@
+import {DemoStatement} from './DemoStatement';
 import {fetchBinanceDemo} from '@/lib/api/binance-demo-api';
 import type {BinanceDemoPayload} from '@/lib/types/binance-demo';
 import {Empty, ErrorNote, Header, Loading, Metric, Panel} from './components';
@@ -66,6 +67,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       <Metric label="交易执行" value="未启用" note="公共检查不授予下单权限"/>
     </div>
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
+    <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
     <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>
     <Panel title="合约与计价" note={`${historical ? '历史观察 · ' : ''}BTCUSDT 与 BTCUSDC 分别保留数量、价格与保证金币种`}>
       {data?.public?.symbols.length ? <div className="s-table-wrap s-demo-table" role="region" aria-label="合约规则表" tabIndex={0}><table className="s-table"><thead><tr>
