@@ -374,7 +374,9 @@ class BinanceFuturesAdapter:
                 filled_qty=float(data.get("executedQty", 0) or 0),
                 avg_price=float(data.get("avgPrice", 0) or 0), raw=data)
         if isinstance(data, dict) and data.get("code") == _ORDER_NOT_FOUND_CODE:
-            return None                                      # 语义化"订单不存在" -> None,非异常
+            # Binance Query Order can omit expired history. A successful lookup
+            # that returns -2013 therefore cannot authorize an absence/retry.
+            raise RuntimeError("ORDER_NOT_FOUND_UNCONFIRMED")
         raise RuntimeError(f"get_order failed: {status} {data}")
 
     def cancel_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]:

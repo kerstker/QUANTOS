@@ -50,8 +50,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from quantos.contracts.order import (ALLOWED_TRANSITIONS, InvalidOrderTransition,
-                                     OrderState)
+from quantos.contracts.order import OrderState, assert_snapshot_transition
 
 _VENUE_STATUS_TO_CANONICAL = {
     "PENDING_NEW": OrderState.RISK_APPROVED,
@@ -73,32 +72,6 @@ def canonical_for_venue_status(status: str) -> OrderState:
         return _VENUE_STATUS_TO_CANONICAL[status]
     except KeyError:
         raise ValueError(f"unknown venue order status: {status!r}") from None
-
-
-def _reachable(src: OrderState, dst: OrderState) -> bool:
-    """dst 能否从 src 经 ALLOWED_TRANSITIONS 一跳或多跳到达(广度优先,终态天然无出边)。"""
-    seen, frontier = {src}, [src]
-    while frontier:
-        nxt = []
-        for state in frontier:
-            for target in ALLOWED_TRANSITIONS.get(state, ()):
-                if target == dst:
-                    return True
-                if target not in seen:
-                    seen.add(target)
-                    nxt.append(target)
-        frontier = nxt
-    return False
-
-
-def assert_snapshot_transition(prev: OrderState, new: OrderState) -> None:
-    """账本快照转换校验:同状态重写(幂等重放)是 no-op;否则要求 new 从 prev **可达**
-    (快照可以跳过中间态——venue 是权威,账本只是粗粒度记录——但绝不许倒退或改写终态)。
-    不可达 -> raise `InvalidOrderTransition`。"""
-    if prev == new:
-        return
-    if not _reachable(prev, new):
-        raise InvalidOrderTransition(prev, new)
 
 
 class ReconciliationStatus(str, Enum):

@@ -12,6 +12,8 @@ import re
 import sqlite3
 from types import SimpleNamespace
 
+from quantos.contracts.binance_demo_orders import fixed_order_bindings, query_binding_hash
+
 from services.execution.passive_queue import Action
 from services.execution.perpetual_ledger_v2 import (
     BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, CapacityPolicy, CapacityAction,
@@ -31,6 +33,7 @@ REPLAY_SOURCE_SHA256 = hashlib.sha256(b"\n".join(
     for name in ("execution/perpetual_ledger_v2.py", "execution/passive_queue.py",
                  "governance/json_integrity.py", "research/ai_factory_store.py",
                  "research/binance_order_receipts.py", "research/passive_receipt_calibration.py",
+                 "../quantos/contracts/binance_demo_orders.py",
                  "research/demo_execution_journal.py"))).hexdigest()
 
 
@@ -264,6 +267,7 @@ def replay_report(journal):
     return {"schema": SCHEMA, "environment": "BINANCE_USDM_DEMO", "scope": "TECHNICAL_VALIDATION_ONLY",
         "source_verified": False, "authoritative": False, "submission_enabled": False,
         "manifest_hash": journal.manifest_hash, "declared_source_commit": manifest["source_commit"],
+        "query_binding_hash": query_binding_hash(fixed_order_bindings(manifest['actions'], manifest['native']['bindings']), manifest['native']['account_ref_sha256']),
         "replay_source_sha256": REPLAY_SOURCE_SHA256,
         "symbol": spec.instrument_id, "quote_asset": spec.margin_asset, "provenance": manifest["native"]["provenance"],
         "journal_tail": tail, "journal_records": len(records), "rejected_batches": rejected,
@@ -278,6 +282,7 @@ def replay_report(journal):
         "reported_commission_by_asset": evidence["reported_commission_by_asset"],
         "orders": [{"order_id": o["order_id"], "side": o["side"], "quantity": o["quantity"],
                     "state": o["events"][-1]["state"] if o["events"] else "UNKNOWN",
+                    "last_event_at_ms": o["events"][-1]["venue_ms"] if o["events"] else None,
                     "filled_quantity": o["events"][-1]["cumulative_filled"] if o["events"] else "0"} for o in orders],
         "recent_trades": evidence["trade_rows"][-50:],
         "limitations": ["INITIAL_FLAT_ACCOUNT_DECLARED_ONLY", "NO_MARK_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION",

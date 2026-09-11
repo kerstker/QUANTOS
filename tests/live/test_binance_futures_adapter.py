@@ -232,9 +232,23 @@ def test_get_order_found():
     assert t.calls[0]["method"] == "GET"
 
 
-def test_get_order_not_found_returns_none():
+def test_get_order_not_found_remains_unconfirmed_because_history_can_expire():
     c, _ = _client({"/fapi/v1/order": (400, {"code": -2013, "msg": "Order does not exist."})})
-    assert c.get_order("BTC", "ghost") is None
+    with pytest.raises(RuntimeError, match='^ORDER_NOT_FOUND_UNCONFIRMED$'):
+        c.get_order("BTC", "ghost")
+
+
+def test_binance_not_found_cannot_confirm_absence_in_existing_recovery(tmp_path):
+    from live.execution.order_recovery import SqliteOrderRecoveryStore, resolve_unknown_orders, RecoveryState
+    client, _ = _client({"/fapi/v1/order": (400, {"code": -2013, "msg": "Order does not exist."})})
+    store = SqliteOrderRecoveryStore(str(tmp_path/'recovery.db'), create=True)
+    try:
+        store.register_unknown(client_order_id='ghost', deployment_id='demo', instrument_id='BTC', side='BUY', quantity=1.0, now_ms=100)
+        resolve_unknown_orders(store, client, now_ms=200)
+        assert store.latest('ghost').state == RecoveryState.INDETERMINATE
+        assert store.client_submission_permitted(deployment_id='demo', client_order_id='ghost') is False
+    finally:
+        store.close()
 
 
 def test_get_order_other_error_raises():

@@ -67,3 +67,21 @@ def assert_transition(src: OrderState, dst: OrderState) -> None:
 
 def is_terminal(state: OrderState) -> bool:
     return state in TERMINAL_STATES
+
+
+def assert_snapshot_transition(prev: OrderState, new: OrderState) -> None:
+    """A snapshot may skip intermediate states, but cannot rewrite a terminal."""
+    if prev == new:
+        return
+    seen, frontier = {prev}, [prev]
+    while frontier:
+        nxt = []
+        for state in frontier:
+            for target in ALLOWED_TRANSITIONS.get(state, ()):
+                if target == new:
+                    return
+                if target not in seen:
+                    seen.add(target)
+                    nxt.append(target)
+        frontier = nxt
+    raise InvalidOrderTransition(prev, new)

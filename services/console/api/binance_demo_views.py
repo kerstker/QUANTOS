@@ -9,6 +9,7 @@ from quantos.contracts.binance_demo import DEMO_REST_BASE, DemoReceipt, MAX_AGE_
 from quantos.runtime_paths import runtime_state_root
 from services.validation.live_submission_authority import LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE
 from services.research.demo_execution_journal import DemoExecutionJournal, replay_report
+from services.research.demo_order_recovery import load_capture, compare_orders
 
 router = APIRouter(tags=["binance-demo"])
 
@@ -19,6 +20,20 @@ def _receipt_path():
 
 def _execution_journal_path():
     return runtime_state_root() / "data/cache/binance_demo_execution.db"
+
+
+def _order_query_directory():
+    return runtime_state_root() / "data/cache/binance_demo_order_queries"
+
+
+def build_order_recovery_snapshot(*, directory: Path, receipts, as_of_ms: int):
+    if not (directory / 'latest.json').exists():
+        return {'status':'NO_SNAPSHOT', 'report':None}
+    try:
+        report = compare_orders(receipts, load_capture(directory), as_of_ms=as_of_ms)
+        return {'status':'AVAILABLE', 'report':report}
+    except Exception:
+        return {'status':'CORRUPT_OR_UNREADABLE', 'report':None}
 
 
 def build_execution_snapshot(*, path: Path, as_of_ms: int):
@@ -79,6 +94,8 @@ def build_snapshot(*, path: Path, as_of_ms: int):
 @router.get("/api/v1/console/binance-demo")
 def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
+    execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
-        "execution": build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms),
+        "execution": execution,
+        "order_recovery": build_order_recovery_snapshot(directory=_order_query_directory(), receipts=execution['report'], as_of_ms=as_of_ms),
     }

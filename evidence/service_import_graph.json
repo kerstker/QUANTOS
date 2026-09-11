@@ -504,6 +504,11 @@
           "path": "services/console/api/binance_demo_views.py"
         },
         {
+          "line": 12,
+          "module": "services.research.demo_order_recovery",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1341,14 +1346,19 @@
           "path": "services/research/binance_order_receipts.py"
         },
         {
-          "line": 15,
+          "line": 17,
           "module": "services.execution.passive_queue",
           "path": "services/research/demo_execution_journal.py"
         },
         {
-          "line": 16,
+          "line": 18,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 11,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_order_recovery.py"
         },
         {
           "line": 14,
@@ -1473,9 +1483,14 @@
           "path": "services/research/binance_order_receipts.py"
         },
         {
-          "line": 21,
+          "line": 23,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_order_recovery.py"
         }
       ],
       "source": "research",
@@ -1818,7 +1833,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "69fccbc746364a17251a324a38174b29db91276d7ad47991ab26a98d7fe0ff05",
+  "graph_sha256": "1d7e72ebb2131d0c55ba3929940ae80a89c0162f2af44ec05049c943863e02c4",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1856,7 +1871,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 561,
+  "source_file_count": 562,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

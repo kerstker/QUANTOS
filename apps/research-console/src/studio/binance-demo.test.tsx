@@ -2,7 +2,7 @@ import {afterEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen} from '@testing-library/react';
 import {DemoReadinessView} from './BinanceDemo';
 import {parseDemoPayload} from '@/lib/api/binance-demo-api';
-import type {BinanceDemoPayload, DemoReplayReport} from '@/lib/types/binance-demo';
+import type {BinanceDemoPayload, DemoReplayReport, DemoOrderRecoveryReport} from '@/lib/types/binance-demo';
 
 afterEach(cleanup);
 function payload(): BinanceDemoPayload {
@@ -22,6 +22,7 @@ function payload(): BinanceDemoPayload {
     submission_enabled: false, authoritative: false, execution_reason: 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE',
     order_stream_status: 'NOT_CHECKED', ledger_reconciliation_status: 'NOT_CHECKED',
     execution: {status: 'NO_JOURNAL', report: null},
+    order_recovery: {status: 'NO_SNAPSHOT', report: null},
   };
 }
 
@@ -93,14 +94,14 @@ function replay(): DemoReplayReport {
   return {
     schema: 'DEMO_EXECUTION_REPLAY_V1', environment: 'BINANCE_USDM_DEMO', scope: 'TECHNICAL_VALIDATION_ONLY',
     source_verified: false, authoritative: false, submission_enabled: false, provenance: 'SYNTHETIC_TEST_FIXTURE',
-    manifest_hash: 'b'.repeat(64), journal_tail: 'c'.repeat(64), replay_source_sha256: 'd'.repeat(64), declared_source_commit: 'a'.repeat(40),
+    manifest_hash: 'b'.repeat(64), journal_tail: 'c'.repeat(64), replay_source_sha256: 'd'.repeat(64), query_binding_hash: 'a'.repeat(64), declared_source_commit: 'a'.repeat(40),
     journal_records: 2, rejected_batches: 0, observed_at_ms: 131, symbol: 'BTCUSDC', quote_asset: 'USDC',
     projection_status: 'REPLAYED_TECHNICAL_ONLY', projection_reason: null, filled_quantity: '0.4', position_quantity: '0.4',
     expected_end_position: '1', position_comparison: 'WAITING_TERMINAL_ORDERS', venue_cash_reconciliation: 'UNKNOWN', actual_paid_fees: null,
     reconciliation: {initial_equity: '1000', ending_equity: '999.99208', price_pnl: '0', fee: '0.00792', spread: '0', impact: '0',
       funding: '0', liquidation_fee: '0', insurance_adjustment: '0', adl_adjustment: '0', attributed_change: '-0.00792', residual: '0'},
     ledger_state_hash: 'e'.repeat(64), trades_count: 1, duplicate_messages: 0, reported_commission_by_asset: {USDC: '0.00792'},
-    orders: [{order_id: 'fixed-buy', side: 'BUY', quantity: '1', state: 'PARTIALLY_FILLED', filled_quantity: '0.4'}],
+    orders: [{order_id: 'fixed-buy', side: 'BUY', quantity: '1', state: 'PARTIALLY_FILLED', filled_quantity: '0.4', last_event_at_ms: 121}],
     recent_trades: [{order_id: 'fixed-buy', venue_order_id: '9007199254740993', trade_id: '9007199254740995', quantity: '0.4', price: '99',
       event_ms: 121, transaction_ms: 121, venue_trade_ms: 121, received_at_ms: 131, liquidity_role: 'MAKER',
       reported_commission: '0.00792', commission_asset: 'USDC', response_sha256: 'f'.repeat(64)}],
@@ -143,5 +144,50 @@ it('rejects rounded trade IDs, cash authority and unsupported projection claims'
     {position_quantity: 0.4}, {observed_at_ms: 1900000000000}, {journal_tail: 'unbound'},
     {recent_trades: [{...replay().recent_trades[0], trade_id: 9007199254740996}]}]) {
     expect(() => parseDemoPayload({...payload(), execution: {status: 'AVAILABLE', report: {...replay(), ...patch}}})).toThrow();
+  }
+});
+
+it('shows missing query observations separately from receipt recovery', () => {
+  render(<DemoReadinessView data={payload()} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('尚无订单查询快照')).toBeInTheDocument();
+});
+
+function recovery(): DemoOrderRecoveryReport {
+  return {schema: 'DEMO_ORDER_RECOVERY_V1', scope: 'TECHNICAL_VALIDATION_ONLY', source_verified: false, new_command_allowed: false,
+    status: 'ACTION_REQUIRED', capture_hash: 'a'.repeat(64), manifest_hash: 'b'.repeat(64), journal_tail: 'c'.repeat(64),
+    observed_at_ms: 200, provenance: 'SYNTHETIC_TEST_FIXTURE', orders: [{order_id: 'fixed-buy', venue_order_id: '9007199254740993',
+      receipt_state: 'PARTIALLY_FILLED', query_state: 'FILLED', receipt_quantity: '0.4', query_quantity: '1', quantity_gap: '0.6',
+      status: 'BACKFILL_REQUIRED', reason: 'ORDER_QUERY_SUCCEEDED', received_at_ms: 200}]};
+}
+
+it('displays missing fills without changing receipt accounting or enabling a retry', () => {
+  const data: BinanceDemoPayload = {...payload(), execution: {status: 'AVAILABLE', report: replay()},
+    order_recovery: {status: 'AVAILABLE', report: recovery()}};
+  parseDemoPayload(data);
+  render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('缺少逐笔成交回执')).toBeInTheDocument();
+  expect(screen.getByText('0.6')).toBeInTheDocument();
+  expect(screen.getByText('0.00792 USDC')).toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: /重试订单|重新下单/})).not.toBeInTheDocument();
+});
+
+it('hides stale comparisons and never turns an unknown query into a zero fill', () => {
+  const report = recovery();
+  Object.assign(report.orders[0], {status: 'QUERY_UNRESOLVED', reason: 'ORDER_NOT_FOUND_UNCONFIRMED', query_state: null, query_quantity: null, quantity_gap: null});
+  const data: BinanceDemoPayload = {...payload(), order_recovery: {status: 'AVAILABLE', report}};
+  parseDemoPayload(data);
+  const view = render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText(/不能据此确认订单不存在/)).toBeInTheDocument();
+  data.order_recovery = {status: 'AVAILABLE', report: {...report, status: 'STALE', orders: []}};
+  parseDemoPayload(data);
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('查询快照已过期')).toBeInTheDocument();
+  expect(screen.queryByRole('region', {name: '订单恢复比较表'})).not.toBeInTheDocument();
+});
+
+it('rejects recovery authority, rounded quantities and false matching claims on the wire', () => {
+  for (const patch of [{new_command_allowed: true}, {source_verified: true}, {status: 'MATCHED_OBSERVATIONS'},
+    {orders: [{...recovery().orders[0], query_quantity: 1}]}, {status: 'STALE'}]) {
+    expect(() => parseDemoPayload({...payload(), order_recovery: {status: 'AVAILABLE', report: {...recovery(), ...patch}}})).toThrow();
   }
 });

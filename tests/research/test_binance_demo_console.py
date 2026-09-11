@@ -35,6 +35,22 @@ def test_corrupt_execution_journal_is_not_silently_omitted(tmp_path):
     assert path.read_bytes() == b"not sqlite"
 
 
+def test_saved_query_comparison_is_read_only_and_separate_from_execution_ready(tmp_path,monkeypatch):
+    from tests.research.test_demo_order_recovery import fixture, capture
+    from services.research.demo_order_recovery import build_query_plan, save_capture
+    with fixture(tmp_path,partial=True) as journal:
+        save_capture(tmp_path/'queries',capture(build_query_plan(journal)))
+    monkeypatch.setattr(views,'_execution_journal_path',lambda:tmp_path/'journal.db')
+    monkeypatch.setattr(views,'_order_query_directory',lambda:tmp_path/'queries')
+    monkeypatch.setattr(views.time,'time_ns',lambda:200_000_000)
+    before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    body=TestClient(app).get('/api/v1/console/binance-demo').json()
+    assert body['order_recovery']['report']['orders'][0]['status']=='BACKFILL_REQUIRED'
+    assert body['order_recovery']['report']['new_command_allowed'] is False
+    assert body['order_stream_status']=='NOT_CHECKED'
+    assert {str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}==before
+
+
 def test_missing_receipt_is_unknown_and_get_creates_no_files(tmp_path, monkeypatch):
     path = tmp_path / "absent.json"
     monkeypatch.setattr(views, "_receipt_path", lambda: path)
