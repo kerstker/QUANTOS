@@ -4,12 +4,12 @@
     "PAPER_EVIDENCE_MALFORMED",
     "INVALIDATED_PERP_LEDGER_V1"
   ],
-  "commit": "3f65322c527cbb693e1af477ef69f90029c4c0da",
+  "commit": "ed97775ca71556593259a35d33449ecc1815a5dc",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1789086967043,
+  "generated_at_ms": 1789158986756,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Shadow readiness is not fill or paper proof. Legacy paper-cycle, three-alpha, continuous-paper, and health artifacts remain hash-audited diagnostic history and cannot become paper evidence through retention.",
-  "input_hash": "6916489dba8d478a9463e70f7344033388fd65a1dc4e18f74950c2b60beb1a42",
+  "input_hash": "21c243162bb78fffdd8b84ecb21dd12bb2880a3610459aa2b7e7c516e1c950c5",
   "inputs": {
     "data/cache/binance_usdt_continuous_paper.json": {
       "exists": false,
@@ -56,13 +56,13 @@
     "tests/live": {
       "exists": true,
       "file_count": 69,
-      "files_sha256": "6f4a92e08ec84390b0304e3c5d02b3b4ae25a85895add2d3b7c41d8660c8d62f",
+      "files_sha256": "71bd1bff853a9c132315107c0d089ebe3b7bdbc50bc0aead2568abeea780fe4a",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
-      "file_count": 266,
-      "files_sha256": "ece2c6cc5a330458a16b1d49fd2ea550b1b8ae047ac9eac7605fa4aa6917c9ec",
+      "file_count": 271,
+      "files_sha256": "4263eea85cef49dc15dde43948dc0b3dd549597c6e5f90480f3e9294f658a802",
       "kind": "python_directory"
     }
   },
@@ -111,9 +111,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "3f65322c527cbb693e1af477ef69f90029c4c0da",
+    "head_commit": "ed97775ca71556593259a35d33449ecc1815a5dc",
     "overall_status": "PASS",
-    "reported_commit": "3f65322c527cbb693e1af477ef69f90029c4c0da",
+    "reported_commit": "ed97775ca71556593259a35d33449ecc1815a5dc",
     "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
     "selection_scope": "ALL",
     "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
