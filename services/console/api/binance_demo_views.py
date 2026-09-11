@@ -10,6 +10,7 @@ from quantos.runtime_paths import runtime_state_root
 from services.validation.live_submission_authority import LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE
 from services.research.demo_execution_journal import DemoExecutionJournal, replay_report
 from services.research.demo_order_recovery import load_capture, compare_orders
+from services.research.demo_private_checks import load_report
 
 router = APIRouter(tags=["binance-demo"])
 
@@ -24,6 +25,23 @@ def _execution_journal_path():
 
 def _order_query_directory():
     return runtime_state_root() / "data/cache/binance_demo_order_queries"
+
+
+def _private_check_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_private_checks'
+
+
+def build_private_check_snapshot(*, directory: Path, as_of_ms: int):
+    if not (directory/'latest.json').exists():
+        return {'status': 'NO_SNAPSHOT', 'report': None}
+    try:
+        report = load_report(directory)
+        if report.completed_at_ms > as_of_ms:
+            return {'status': 'DATA_BLOCKED', 'report': None}
+        return {'status': 'STALE' if as_of_ms-report.observed_at_ms > MAX_AGE_MS else 'AVAILABLE',
+                'report': report.model_dump()}
+    except Exception:
+        return {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
 
 
 def build_order_recovery_snapshot(*, directory: Path, receipts, as_of_ms: int):
@@ -96,6 +114,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'private_checks': build_private_check_snapshot(directory=_private_check_directory(), as_of_ms=as_of_ms),
         "execution": execution,
         "order_recovery": build_order_recovery_snapshot(directory=_order_query_directory(), receipts=execution['report'], as_of_ms=as_of_ms),
     }

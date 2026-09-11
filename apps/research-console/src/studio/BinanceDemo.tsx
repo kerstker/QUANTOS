@@ -5,6 +5,7 @@ import {stamp, useResource} from './data';
 import './binance-demo.css';
 import {DemoExecutionEvidence} from './DemoExecutionEvidence';
 import {DemoOrderRecovery} from './DemoOrderRecovery';
+import {DemoPrivateChecks} from './DemoPrivateChecks';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -63,6 +64,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       <Metric label="快照年龄" value={data?.age_ms == null ? '—' : `${Math.floor(data.age_ms / 1000)} 秒`} note="有效期 120 秒"/>
       <Metric label="交易执行" value="未启用" note="公共检查不授予下单权限"/>
     </div>
+    <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
     <Panel title="合约与计价" note={`${historical ? '历史观察 · ' : ''}BTCUSDT 与 BTCUSDC 分别保留数量、价格与保证金币种`}>
       {data?.public?.symbols.length ? <div className="s-table-wrap s-demo-table" role="region" aria-label="合约规则表" tabIndex={0}><table className="s-table"><thead><tr>
         <th>合约</th><th>报价 / 保证金</th><th>价格步长</th><th>数量步长</th><th>最小数量</th><th>最小名义金额</th>

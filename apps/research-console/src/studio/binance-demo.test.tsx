@@ -23,8 +23,34 @@ function payload(): BinanceDemoPayload {
     order_stream_status: 'NOT_CHECKED', ledger_reconciliation_status: 'NOT_CHECKED',
     execution: {status: 'NO_JOURNAL', report: null},
     order_recovery: {status: 'NO_SNAPSHOT', report: null},
+    private_checks: {status: 'NO_SNAPSHOT', report: null},
   };
 }
+
+it('shows connection tests separately from missing actual fills, and rejects false submission evidence', () => {
+  const data = payload();
+  data.private_checks = {status: 'AVAILABLE', report: {
+    schema_version: 'binance-demo-private-check.v1', environment: 'BINANCE_USDM_DEMO',
+    observed_at_ms: 1800000000000, completed_at_ms: 1800000000001,
+    connectivity_status: 'CHECKS_PASSED', steps: ['credentials', 'public', 'account', 'BTCUSDT_orders',
+      'BTCUSDT_trades', 'BTCUSDC_orders', 'BTCUSDC_trades', 'listen_key', 'websocket'].map(name => ({
+      name, status: 'PASSED', reason: 'CHECK_SUCCEEDED', rows: null,
+    })), websocket_connections: 2, websocket_pongs: 2, websocket_events: 0,
+    event_delivery_status: 'UNKNOWN', submission_status: 'BLOCKED',
+    submission_reason: 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE', ledger_status: 'UNKNOWN',
+    authoritative: false, source_sha256: 'a'.repeat(64),
+  }};
+  expect(parseDemoPayload(data).private_checks.status).toBe('AVAILABLE');
+  const view = render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('账户与私有连接检查通过')).toBeInTheDocument();
+  expect(screen.getByText(/未观察到私有事件/)).toBeInTheDocument();
+  data.private_checks.status = 'STALE';
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('历史检查结果')).toBeInTheDocument();
+  expect(screen.queryByText('账户与私有连接检查通过')).not.toBeInTheDocument();
+  const bad = {...data, private_checks: {status: 'AVAILABLE', report: {...data.private_checks.report, submission_status: 'PASSED'}}};
+  expect(() => parseDemoPayload(bad)).toThrow();
+});
 
 it('separates public connectivity from account and order readiness without fake account totals', () => {
   const refresh = vi.fn();

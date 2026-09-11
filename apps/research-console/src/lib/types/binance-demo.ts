@@ -57,4 +57,18 @@ export interface BinanceDemoPayload {
   order_stream_status: 'NOT_CHECKED'; ledger_reconciliation_status: 'NOT_CHECKED';
   execution: DemoExecutionSnapshot;
   order_recovery: DemoOrderRecoverySnapshot;
+  private_checks: DemoPrivateCheckSnapshot;
 }
+
+export interface DemoPrivateCheckReport {
+  schema_version: 'binance-demo-private-check.v1'; environment: 'BINANCE_USDM_DEMO';
+  observed_at_ms: number; completed_at_ms: number; source_sha256: string;
+  connectivity_status: 'NOT_REQUESTED' | 'CHECKS_PASSED' | 'FAILED';
+  steps: Array<{name: string; status: 'PASSED' | 'FAILED'; reason: string; rows: number | null}>;
+  websocket_connections: number; websocket_pongs: number; websocket_events: number;
+  event_delivery_status: 'UNKNOWN' | 'EVENTS_OBSERVED';
+  submission_status: 'BLOCKED'; submission_reason: 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE';
+  ledger_status: 'UNKNOWN'; authoritative: false;
+}
+export type DemoPrivateCheckSnapshot = {status: 'AVAILABLE' | 'STALE'; report: DemoPrivateCheckReport} |
+  {status: 'NO_SNAPSHOT' | 'DATA_BLOCKED' | 'CORRUPT_OR_UNREADABLE'; report: null};

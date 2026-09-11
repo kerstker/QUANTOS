@@ -11,6 +11,10 @@
 .s-demo-metrics .s-metric>strong {font-size:24px;}
 .s-demo-cell-note {display:block;color:var(--s-muted);font-size:11px;margin-top:5px;}
 .s-demo-table:focus-visible {outline:2px solid var(--s-accent);outline-offset:2px;}
+.s-demo-private-table .s-table {min-width:0;width:100%;table-layout:fixed;}
+.s-demo-private-table .s-table th,.s-demo-private-table .s-table td {white-space:normal;overflow-wrap:anywhere;padding:12px 8px;}
+.s-demo-private-table .s-table th:first-child {width:52%;}
+.s-demo-private-table .s-table th:nth-child(2) {width:27%;}
 .s-demo-next {padding:0 24px 24px;font-size:13px;max-width:1000px;}
 .s-demo-next p {color:var(--s-muted);line-height:1.9;}
 .s-demo-next .s-button {margin-top:8px;}

@@ -9,6 +9,24 @@ from tests.tools.test_binance_demo_readiness import NOW, transport
 from tools.binance_demo_readiness import collect
 
 
+def test_private_connection_report_is_independent_read_only_and_expires(tmp_path, monkeypatch):
+    from tools.binance_demo_private_check import collect as private_collect
+    from services.research.demo_private_checks import save_report
+    directory = tmp_path/'checks'
+    save_report(directory, private_collect(credential_file=tmp_path/'absent', clock_ms=lambda: NOW))
+    before = {p.name: p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(views, '_private_check_directory', lambda: directory)
+    monkeypatch.setattr(views.time, 'time_ns', lambda: (NOW+1)*1_000_000)
+    body = TestClient(app).get('/api/v1/console/binance-demo').json()
+    assert body['private_checks']['status'] == 'AVAILABLE'
+    assert body['private_checks']['report']['submission_status'] == 'BLOCKED'
+    assert body['ledger_reconciliation_status'] == 'NOT_CHECKED'
+    assert views.build_private_check_snapshot(directory=directory, as_of_ms=NOW+120001)['status'] == 'STALE'
+    future = views.build_private_check_snapshot(directory=directory, as_of_ms=NOW-1)
+    assert future == {'status': 'DATA_BLOCKED', 'report': None}
+    assert before == {p.name: p.read_bytes() for p in directory.iterdir()}
+
+
 def test_demo_console_rebuilds_saved_receipts_without_public_probe_or_writes(tmp_path, monkeypatch):
     from services.research.demo_execution_journal import DemoExecutionJournal
     from tests.research.test_demo_execution_journal import manifest
