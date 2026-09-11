@@ -50,6 +50,7 @@ LINEAR_USDC_PERPETUAL = "LINEAR_USDC_PERPETUAL"
 DECIMAL_CONTEXT_VERSION = "quantos.linear-perpetual-decimal-context.v1"
 COST_BASIS_POLICY = "EXACT_ENTRY_NOTIONAL_PRORATA_TRUNCATE_RETAIN_REMAINDER_V1"
 MARGIN_ADMISSION_POLICY = "INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1"
+OPENING_STATE_POLICY = "IMPORTED_BALANCES_EXCLUDE_OPENING_UNREALIZED_V1"
 BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID = "BINANCE_USDM.UTC_DAY.v1"
 
 _DECIMAL_CONTEXT_PRECISION = 50
@@ -934,6 +935,64 @@ class PositionView:
 
 
 @dataclass(frozen=True)
+class OpeningPosition:
+    """Exact inherited basis supplied by a separately identified observation."""
+    instrument_id: str
+    quantity: Decimal
+    entry_notional: Decimal
+    mark_price: Decimal
+    margin_mode: MarginMode = MarginMode.CROSS
+    isolated_wallet: Decimal = ZERO
+
+    @_reviewed_decimal
+    def __post_init__(self):
+        if not isinstance(self.instrument_id, str) or not self.instrument_id.strip():
+            raise ValueError('opening instrument required')
+        quantity = _decimal(self.quantity, 'opening quantity')
+        if quantity == ZERO: raise ValueError('opening position must be nonzero')
+        basis = _positive(self.entry_notional, 'opening entry_notional')
+        mark = _positive(self.mark_price, 'opening mark_price')
+        isolated = _non_negative(self.isolated_wallet, 'opening isolated_wallet')
+        if not isinstance(self.margin_mode, MarginMode): raise ValueError('opening margin mode required')
+        if self.margin_mode == MarginMode.CROSS and isolated != ZERO:
+            raise ValueError('cross position cannot allocate isolated wallet')
+        for name, value in (('quantity', quantity), ('entry_notional', basis),
+                            ('mark_price', mark), ('isolated_wallet', isolated)):
+            object.__setattr__(self, name, value)
+
+    def as_canonical_dict(self):
+        return {'instrument_id': self.instrument_id, 'quantity': canonical_decimal(self.quantity),
+                'entry_notional': canonical_decimal(self.entry_notional), 'mark_price': canonical_decimal(self.mark_price),
+                'margin_mode': self.margin_mode.value, 'isolated_wallet': canonical_decimal(self.isolated_wallet)}
+
+
+@dataclass(frozen=True)
+class OpeningLedgerState:
+    """A technical opening balance, not source attestation or execution authority.
+
+    The observation is inclusive through timestamp; only later events may enter.
+    initial_collateral remains TOTAL wallet cash, including isolated allocations.
+    """
+    timestamp: int
+    source_sha256: str
+    positions: tuple[OpeningPosition, ...]
+
+    def __post_init__(self):
+        _timestamp(self.timestamp)
+        if (not isinstance(self.source_sha256, str) or len(self.source_sha256) != 64
+                or any(c not in '0123456789abcdef' for c in self.source_sha256)):
+            raise ValueError('opening source digest required')
+        if (not isinstance(self.positions, tuple) or len(self.positions) > 2000
+                or any(not isinstance(p, OpeningPosition) for p in self.positions)
+                or len({p.instrument_id for p in self.positions}) != len(self.positions)):
+            raise ValueError('unique immutable opening positions required')
+
+    def as_canonical_dict(self):
+        return {'policy': OPENING_STATE_POLICY, 'timestamp': self.timestamp, 'source_sha256': self.source_sha256,
+                'positions': [p.as_canonical_dict() for p in sorted(self.positions, key=lambda p: p.instrument_id)]}
+
+
+@dataclass(frozen=True)
 class ExecutionResult:
     status: str
     requested_quantity: Decimal
@@ -1043,7 +1102,8 @@ class LinearPerpetualLedger:
                  ReportedFillReplayEvent: 30}
 
     def __init__(
-        self, specs: Sequence[ContractSpec], *, initial_collateral: Decimal
+        self, specs: Sequence[ContractSpec], *, initial_collateral: Decimal,
+        opening_state: OpeningLedgerState | None = None,
     ) -> None:
         items = tuple(specs)
         if not items:
@@ -1096,6 +1156,42 @@ class LinearPerpetualLedger:
         self._capacity_windows: dict[
             tuple[str, str], set[tuple[int, int]]
         ] = {}
+        self._opening_state: OpeningLedgerState | None = None
+        self._opening_unrealized = ZERO
+        if opening_state is not None:
+            self._initialize_opening_state(opening_state)
+
+    @_reviewed_decimal
+    def _initialize_opening_state(self, opening: OpeningLedgerState):
+        if (not isinstance(opening, OpeningLedgerState) or self._opening_state is not None
+                or self._events or self._positions or self._last_event_key is not None):
+            raise ValueError('opening state requires a pristine ledger')
+        positions = {}
+        for row in opening.positions:
+            spec = self._spec(row.instrument_id)
+            # An inherited position may be below the current minimum new order;
+            # exact quantity grid and cost-basis cash quantum still apply.
+            spec.validate_quantity(row.quantity, row.mark_price, reducing=True)
+            basis = self._cash(row.entry_notional, 'opening entry_notional')
+            isolated = self._cash(row.isolated_wallet, 'opening isolated_wallet')
+            positions[row.instrument_id] = _Position(row.instrument_id, row.quantity,
+                basis / (abs(row.quantity) * spec.contract_multiplier), row.mark_price,
+                row.margin_mode, isolated, basis)
+        allocation = self._cash_add(*(p.isolated_wallet for p in positions.values()), field='opening isolated allocation')
+        if allocation > self._initial_collateral:
+            raise MarginConfigurationError('opening isolated allocation exceeds total wallet')
+        unrealized = self._cash_add(*(self._unrealized(p) for p in positions.values()), field='opening unrealized')
+        self._cash_add(self._initial_collateral, unrealized, field='opening equity')
+        self._positions = positions
+        self._mark_prices = {p.instrument_id: p.mark_price for p in opening.positions}
+        self._wallet_balance = self._cash_add(self._initial_collateral, -allocation, field='opening cross wallet')
+        self._opening_unrealized = unrealized
+        self._opening_state = opening
+        self._assert_cash_state()
+
+    def _require_after_opening(self, timestamp: int):
+        if self._opening_state is not None and timestamp <= self._opening_state.timestamp:
+            raise EventOrderViolation('event is not after the inclusive opening cutoff')
 
     @property
     def liquidations(self) -> tuple[LiquidationRecord, ...]:
@@ -1457,6 +1553,7 @@ class LinearPerpetualLedger:
         """
         if type(event) not in self._PRIORITY:
             raise TypeError("unsupported ledger event")
+        self._require_after_opening(event.timestamp)
         if trade_guard is not None and (
             not isinstance(event, TradeEvent) or isinstance(event, ReportedFillReplayEvent)
             or not callable(trade_guard)
@@ -1524,6 +1621,7 @@ class LinearPerpetualLedger:
             ),
         ):
             group = tuple(item[1] for item in group_iter)
+            self._require_after_opening(key[0])
             if isinstance(group[0], TradeEvent):
                 results.extend(self.apply_event(event) for event in group)
                 continue
@@ -2336,10 +2434,11 @@ class LinearPerpetualLedger:
         price_pnl = self._cash_add(
             self._realized_price_pnl,
             unrealized,
+            -self._opening_unrealized,
             field="price_pnl",
         )
         return ReconciliationSnapshot(
-            initial_equity=self._initial_collateral,
+            initial_equity=self._cash_add(self._initial_collateral, self._opening_unrealized, field='opening equity'),
             ending_equity=self.account_equity(),
             price_pnl=price_pnl,
             fee=self._fee,
@@ -2354,6 +2453,8 @@ class LinearPerpetualLedger:
     @_reviewed_decimal
     def state_as_canonical_dict(self) -> dict[str, object]:
         return {
+            **({'opening_state': self._opening_state.as_canonical_dict(),
+                'opening_unrealized': canonical_decimal(self._opening_unrealized)} if self._opening_state is not None else {}),
             "schema": f"quantos.linear-{self._cash_spec.margin_asset.lower()}-perpetual-ledger.v2",
             "decimal_context": DECIMAL_CONTEXT_VERSION,
             "settlement_quantum": canonical_decimal(
@@ -2394,6 +2495,9 @@ class LinearPerpetualLedger:
 
 
 __all__ = [
+    "OpeningPosition",
+    "OpeningLedgerState",
+    "OPENING_STATE_POLICY",
     "AccountNotionalLimit",
     "MARGIN_ADMISSION_POLICY",
     "BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID",

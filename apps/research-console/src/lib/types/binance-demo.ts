@@ -58,6 +58,7 @@ export interface BinanceDemoPayload {
   execution: DemoExecutionSnapshot;
   order_recovery: DemoOrderRecoverySnapshot;
   private_checks: DemoPrivateCheckSnapshot;
+  account_baseline: DemoAccountBaselineSnapshot;
 }
 
 export interface DemoPrivateCheckReport {
@@ -71,4 +72,25 @@ export interface DemoPrivateCheckReport {
   ledger_status: 'UNKNOWN'; authoritative: false;
 }
 export type DemoPrivateCheckSnapshot = {status: 'AVAILABLE' | 'STALE'; report: DemoPrivateCheckReport} |
+  {status: 'NO_SNAPSHOT' | 'DATA_BLOCKED' | 'CORRUPT_OR_UNREADABLE'; report: null};
+
+export interface DemoAccountBaselineReport {
+  schema: 'DEMO_ACCOUNT_BASELINE_V1'; environment: 'BINANCE_USDM_DEMO'; capture_hash: string; source_sha256: string;
+  observed_at_ms: number; completed_at_ms: number;
+  inventory_status: 'STABLE_OBSERVATIONS' | 'CHANGED_DURING_CAPTURE' | 'CAPTURE_FAILED' | 'NOT_REQUESTED' | 'STALE';
+  capture_reason: string; issues: string[]; nonzero_positions: number | null; flat_account: boolean | null;
+  account_config: {canTrade: boolean; dualSidePosition: boolean; multiAssetsMargin: boolean} | null;
+  assets: Array<{asset: string; observed_wallet: string; observed_cross_wallet: string; observed_unrealized: string;
+    observed_margin_balance: string; observed_available: string; account_identity_residual: string}>;
+  positions: Array<{symbol: string; position_side: 'BOTH' | 'LONG' | 'SHORT'; margin_asset: string; quantity: string;
+    observed_entry_price: string; observed_mark_price: string; observed_unrealized: string; estimated_entry_notional: string;
+    basis_pnl_residual: string; isolated_wallet: string; margin_mode: 'CROSSED' | 'ISOLATED' | null; leverage: number | null;
+    ownership: 'PREEXISTING_ACCOUNT_POSITION'}>;
+  open_orders: Array<{symbol: string; orderId: string; clientOrderId: string; positionSide: 'BOTH' | 'LONG' | 'SHORT';
+    side: 'BUY' | 'SELL'; status: 'NEW' | 'PARTIALLY_FILLED' | 'PENDING_CANCEL'; origQty: string; executedQty: string}>;
+  comparisons: Array<{kind: string; status: 'MATCHED_OBSERVATIONS' | 'DIFFERENT'}>;
+  atomic_snapshot_verified: false; new_strategy_pnl: null; ledger_reconciliation: 'UNKNOWN'; submission_enabled: false; authoritative: false;
+  read_intervals: Array<{kind: string; started_at_ms: number; received_at_ms: number; response_sha256: string}>;
+}
+export type DemoAccountBaselineSnapshot = {status: 'AVAILABLE'; report: DemoAccountBaselineReport} |
   {status: 'NO_SNAPSHOT' | 'DATA_BLOCKED' | 'CORRUPT_OR_UNREADABLE'; report: null};

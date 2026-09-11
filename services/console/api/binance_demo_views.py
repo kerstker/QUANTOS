@@ -11,6 +11,7 @@ from services.validation.live_submission_authority import LIVE_SUBMISSION_AUTHOR
 from services.research.demo_execution_journal import DemoExecutionJournal, replay_report
 from services.research.demo_order_recovery import load_capture, compare_orders
 from services.research.demo_private_checks import load_report
+from services.research.demo_account_baseline import load_capture as load_account_capture, build_baseline
 
 router = APIRouter(tags=["binance-demo"])
 
@@ -29,6 +30,22 @@ def _order_query_directory():
 
 def _private_check_directory():
     return runtime_state_root() / 'data/cache/binance_demo_private_checks'
+
+
+def _account_capture_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_account_captures'
+
+
+def build_account_baseline_snapshot(*, directory: Path, as_of_ms: int):
+    if not (directory / 'latest.json').exists():
+        return {'status': 'NO_SNAPSHOT', 'report': None}
+    try:
+        report = build_baseline(load_account_capture(directory), as_of_ms=as_of_ms)
+        if report['inventory_status'] == 'DATA_BLOCKED':
+            return {'status': 'DATA_BLOCKED', 'report': None}
+        return {'status': 'AVAILABLE', 'report': report}
+    except Exception:
+        return {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
 
 
 def build_private_check_snapshot(*, directory: Path, as_of_ms: int):
@@ -114,6 +131,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'account_baseline': build_account_baseline_snapshot(directory=_account_capture_directory(), as_of_ms=as_of_ms),
         'private_checks': build_private_check_snapshot(directory=_private_check_directory(), as_of_ms=as_of_ms),
         "execution": execution,
         "order_recovery": build_order_recovery_snapshot(directory=_order_query_directory(), receipts=execution['report'], as_of_ms=as_of_ms),

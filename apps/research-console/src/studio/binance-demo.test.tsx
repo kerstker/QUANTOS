@@ -24,6 +24,7 @@ function payload(): BinanceDemoPayload {
     execution: {status: 'NO_JOURNAL', report: null},
     order_recovery: {status: 'NO_SNAPSHOT', report: null},
     private_checks: {status: 'NO_SNAPSHOT', report: null},
+    account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }
 
@@ -216,4 +217,53 @@ it('rejects recovery authority, rounded quantities and false matching claims on 
     {orders: [{...recovery().orders[0], query_quantity: 1}]}, {status: 'STALE'}]) {
     expect(() => parseDemoPayload({...payload(), order_recovery: {status: 'AVAILABLE', report: {...recovery(), ...patch}}})).toThrow();
   }
+});
+
+function baseline(): import('@/lib/types/binance-demo').DemoAccountBaselineReport {
+  return {
+    schema: 'DEMO_ACCOUNT_BASELINE_V1', environment: 'BINANCE_USDM_DEMO', capture_hash: 'b'.repeat(64), source_sha256: 'c'.repeat(64),
+    observed_at_ms: 1800000000000, completed_at_ms: 1800000000100, inventory_status: 'STABLE_OBSERVATIONS', capture_reason: 'CAPTURE_COMPLETE',
+    issues: ['ENTRY_BASIS_UNVERIFIED', 'REST_OBSERVATIONS_NOT_ATOMIC'], nonzero_positions: 1, flat_account: false,
+    account_config: {canTrade: true, dualSidePosition: false, multiAssetsMargin: false},
+    assets: [{asset: 'USDT', observed_wallet: '1000', observed_cross_wallet: '1000', observed_unrealized: '20',
+      observed_margin_balance: '1020', observed_available: '990', account_identity_residual: '0'}],
+    positions: [{symbol: 'BTCUSDT', position_side: 'BOTH', margin_asset: 'USDT', quantity: '2', observed_entry_price: '100.001',
+      observed_mark_price: '110', observed_unrealized: '20', estimated_entry_notional: '200.002', basis_pnl_residual: '-0.002',
+      isolated_wallet: '0', margin_mode: 'CROSSED', leverage: 20, ownership: 'PREEXISTING_ACCOUNT_POSITION'}], open_orders: [],
+    comparisons: ['wallet', 'positions', 'account_config', 'symbol_config'].map(kind => ({kind, status: 'MATCHED_OBSERVATIONS'})),
+    atomic_snapshot_verified: false, new_strategy_pnl: null, ledger_reconciliation: 'UNKNOWN', submission_enabled: false, authoritative: false,
+    read_intervals: ['config_before', 'account_before', 'symbols_before', 'positions', 'orders', 'symbols_after', 'account_after', 'config_after']
+      .map((kind, i) => ({kind, started_at_ms: 1800000000000 + i * 10, received_at_ms: 1800000000001 + i * 10, response_sha256: 'd'.repeat(64)})),
+  };
+}
+
+it('shows inherited basis and its residual without treating opening unrealized PnL as new returns', () => {
+  const data = payload(); data.account_baseline = {status: 'AVAILABLE', report: baseline()};
+  expect(parseDemoPayload(data).account_baseline.report?.nonzero_positions).toBe(1);
+  const view = render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('账户起点')).toBeInTheDocument();
+  expect(screen.getByText('采集前后数值一致')).toBeInTheDocument();
+  expect(screen.getByText('100.001')).toBeInTheDocument();
+  expect(screen.getByText('-0.002')).toBeInTheDocument();
+  expect(screen.getByText(/不计入本次策略收益/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: /下单|确认持仓|接管/})).not.toBeInTheDocument();
+  data.account_baseline.report!.inventory_status = 'STALE';
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('历史账户起点')).toBeInTheDocument();
+  expect(screen.queryByText('采集前后数值一致')).not.toBeInTheDocument();
+});
+
+it('rejects incomplete or falsely authoritative account baselines, and retains changed observations', () => {
+  const data = payload(); data.account_baseline = {status: 'AVAILABLE', report: baseline()};
+  const report = baseline();
+  for (const patch of [{new_strategy_pnl: '20'}, {atomic_snapshot_verified: true}, {ledger_reconciliation: 'PASSED'},
+    {completed_at_ms: data.as_of_ms + 1}, {read_intervals: []}, {nonzero_positions: 0}, {flat_account: true},
+    {assets: [{...report.assets[0], observed_wallet: 1000}]}, {positions: report.positions.concat(report.positions)},
+    {inventory_status: 'STALE'}, {comparisons: report.comparisons.slice(0, 1)}]) {
+    expect(() => parseDemoPayload({...data, account_baseline: {status: 'AVAILABLE', report: {...report, ...patch}}})).toThrow();
+  }
+  report.inventory_status = 'CHANGED_DURING_CAPTURE'; report.flat_account = null;
+  report.comparisons[0].status = 'DIFFERENT'; report.issues.push('ACCOUNT_CHANGED_DURING_CAPTURE');
+  data.account_baseline.report = report;
+  expect(parseDemoPayload(data).account_baseline.report?.inventory_status).toBe('CHANGED_DURING_CAPTURE');
 });

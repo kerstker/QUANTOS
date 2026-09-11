@@ -9,6 +9,26 @@ from tests.tools.test_binance_demo_readiness import NOW, transport
 from tools.binance_demo_readiness import collect
 
 
+def test_account_opening_capture_is_read_only_and_never_cash_reconciliation(tmp_path, monkeypatch):
+    from services.research.demo_account_baseline import save_capture
+    from tests.research.test_demo_account_baseline import captured, NOW as at
+    directory = tmp_path / 'baseline'
+    save_capture(directory, captured())
+    before = {p.name: p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(views, '_account_capture_directory', lambda: directory)
+    monkeypatch.setattr(views.time, 'time_ns', lambda: (at + 200) * 1_000_000)
+    result = TestClient(app).get('/api/v1/console/binance-demo').json()['account_baseline']
+    assert result['status'] == 'AVAILABLE'
+    assert result['report']['positions'][0]['observed_entry_price'] == '100'
+    assert result['report']['new_strategy_pnl'] is None
+    assert result['report']['ledger_reconciliation'] == 'UNKNOWN'
+    assert before == {p.name: p.read_bytes() for p in directory.iterdir()}
+    assert views.build_account_baseline_snapshot(directory=directory, as_of_ms=at + 120001)['report']['inventory_status'] == 'STALE'
+    assert views.build_account_baseline_snapshot(directory=directory, as_of_ms=at - 1) == {'status': 'DATA_BLOCKED', 'report': None}
+    (directory / 'latest.json').write_text('{}')
+    assert views.build_account_baseline_snapshot(directory=directory, as_of_ms=at + 200) == {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
+
+
 def test_private_connection_report_is_independent_read_only_and_expires(tmp_path, monkeypatch):
     from tools.binance_demo_private_check import collect as private_collect
     from services.research.demo_private_checks import save_report
