@@ -40,13 +40,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/demo-roadmap-20260911/arm64-capture-ed97775ca-attempt2/.arm64-console-capture-duk1dtj_/console-a.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/arm64-capture-5e1c8fb47-attempt3/.arm64-console-capture-f717gk6z/console-a.oci.tar,rewrite-timestamp=true",
         "-f",
-        "/home/kerstker/quantos-dev-output/demo-roadmap-20260911/source-validation-ed97775ca/deploy/console.Dockerfile",
-        "/home/kerstker/quantos-dev-output/demo-roadmap-20260911/source-validation-ed97775ca"
+        "/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/source-validation-5e1c8fb47/deploy/console.Dockerfile",
+        "/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/source-validation-5e1c8fb47"
       ],
       "exit_code": 0,
-      "stderr_sha256": "28e386a46d39f321b2a2611a5879f2a2bae5a5c1cbdc3b60fc0515f1439a163d",
+      "stderr_sha256": "d6a7a90062c81315af0d262d54b70fdbdaf8f72ba800b507eafe4996fd7bff22",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -87,13 +87,13 @@
         "--tag",
         "quantos-console:l2-arm64",
         "--output",
-        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/demo-roadmap-20260911/arm64-capture-ed97775ca-attempt2/.arm64-console-capture-duk1dtj_/console-b.oci.tar,rewrite-timestamp=true",
+        "type=oci,name=quantos-console:l2-arm64,dest=/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/arm64-capture-5e1c8fb47-attempt3/.arm64-console-capture-f717gk6z/console-b.oci.tar,rewrite-timestamp=true",
         "-f",
-        "/home/kerstker/quantos-dev-output/demo-roadmap-20260911/source-validation-ed97775ca/deploy/console.Dockerfile",
-        "/home/kerstker/quantos-dev-output/demo-roadmap-20260911/source-validation-ed97775ca"
+        "/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/source-validation-5e1c8fb47/deploy/console.Dockerfile",
+        "/home/kerstker/quantos-dev-output/demo-user-stream-20260912/partial-account-5e1c8fb47/source-validation-5e1c8fb47"
       ],
       "exit_code": 0,
-      "stderr_sha256": "76b76f77d0dd6246e9a309fb6610071e6e2deca84740662cc65b7fbf035c7436",
+      "stderr_sha256": "1939afa6b1c88631a9948fd0f6d28233e4e1fb8ebe0c8e37aa941cb2de7c7103",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
@@ -112,19 +112,19 @@
   "builds": [
     {
       "archive_name": "console-a.oci.tar",
-      "archive_sha256": "c6f4f885a4a8e3138cd28105e2029994079a542da6a5c73f7bebce0b34fb5e47",
-      "archive_size": 134578176,
-      "config_digest": "sha256:efe04eea00ac4f402de274141be6fb1095365525833a9827c683a3da8c95ba43",
+      "archive_sha256": "4723c4c43185a945e763e02b7fbafd7d96f671ada5f1af2b265adfb1abe66c0b",
+      "archive_size": 134583808,
+      "config_digest": "sha256:419f8a2c87e59a37b465f7bb170f79f3641e0beba4ce2780ded3acfa08d77e1f",
       "label": "A",
-      "manifest_digest": "sha256:bb85933343b46fdc19c109fa9452505fd8c1ef8e9e5d98aad80bc05fbbd99b8f"
+      "manifest_digest": "sha256:5c554e54b0414f0fe5d68c958b0a242edf4b8135d37a9d0ea5dfc64670166ee9"
     },
     {
       "archive_name": "console-b.oci.tar",
-      "archive_sha256": "c6f4f885a4a8e3138cd28105e2029994079a542da6a5c73f7bebce0b34fb5e47",
-      "archive_size": 134578176,
-      "config_digest": "sha256:efe04eea00ac4f402de274141be6fb1095365525833a9827c683a3da8c95ba43",
+      "archive_sha256": "4723c4c43185a945e763e02b7fbafd7d96f671ada5f1af2b265adfb1abe66c0b",
+      "archive_size": 134583808,
+      "config_digest": "sha256:419f8a2c87e59a37b465f7bb170f79f3641e0beba4ce2780ded3acfa08d77e1f",
       "label": "B",
-      "manifest_digest": "sha256:bb85933343b46fdc19c109fa9452505fd8c1ef8e9e5d98aad80bc05fbbd99b8f"
+      "manifest_digest": "sha256:5c554e54b0414f0fe5d68c958b0a242edf4b8135d37a9d0ea5dfc64670166ee9"
     }
   ],
   "dockerfile": {
@@ -140,7 +140,7 @@
   "exporter": "oci",
   "image": {
     "architecture": "arm64",
-    "config_digest": "sha256:efe04eea00ac4f402de274141be6fb1095365525833a9827c683a3da8c95ba43",
+    "config_digest": "sha256:419f8a2c87e59a37b465f7bb170f79f3641e0beba4ce2780ded3acfa08d77e1f",
     "config_size": 8599,
     "created": "2026-06-16T00:20:04Z",
     "diff_ids": [
@@ -153,7 +153,7 @@
       "sha256:e3a57921130d1ba9f455a710d83317043d2ae6726e0dd3a48ccc9e6a9c5382bf",
       "sha256:4fd1e6a3c095d8b5520a5d9974ebe61ae0ed8e0c73e852705b7307f064d2e995",
       "sha256:2336e4125b788964f456d75295e48d9cda4372a0ae7cda0b59108b76f5f86727",
-      "sha256:ca9ed495326dd7797592fdd220ead50bd87fe5c96a0d06887746a6efd8cca3ac",
+      "sha256:498a6d804205e08b05b39fda064fb81f6f5a655496f3b85b00959df25ef2c1a0",
       "sha256:0c882c4a5a14ab57dad7f7238920587ace21e87e27559db7344d2b5a368c719f",
       "sha256:9cca195d390eb71cdece9733e3903cfe508c03e8ae9c6137199b2eb2d80a889e"
     ],
@@ -204,9 +204,9 @@
         "size": 1725116
       },
       {
-        "digest": "sha256:e2196b8910154443a65402c639b2d760544f869b735061f5bec89f053b3128c0",
+        "digest": "sha256:6bd4612392d91a2359ced4b3381b05870c9c4153b8cfe9c12979de6f63ced831",
         "rewritten_timestamp": true,
-        "size": 1750467
+        "size": 1756075
       },
       {
         "digest": "sha256:757baf1a974f646374b5c3d247df8f2f836a82111387b1ea371681650ea2882e",
@@ -219,7 +219,7 @@
         "size": 908
       }
     ],
-    "manifest_digest": "sha256:bb85933343b46fdc19c109fa9452505fd8c1ef8e9e5d98aad80bc05fbbd99b8f",
+    "manifest_digest": "sha256:5c554e54b0414f0fe5d68c958b0a242edf4b8135d37a9d0ea5dfc64670166ee9",
     "manifest_size": 3255,
     "os": "linux",
     "rewritten_timestamp_layer_count": 8
@@ -233,7 +233,7 @@
   ],
   "mode": "LOCAL_NATIVE_ARM64_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1789156044,
+  "observed_at": 1789165585,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
@@ -253,7 +253,7 @@
         ],
         "exit_code": 0,
         "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "stdout_sha256": "c66b636d0fae63cc78d507c7fea560087fa7a8c4c7165604e0023d015838195c"
+        "stdout_sha256": "dbf76ef0b17e2c661ed246813e15e2e684afe31fc1a42127246760f02681ad16"
       },
       {
         "argv": [
@@ -276,7 +276,7 @@
         "stdout_sha256": "d0a54a8a564c4fe0c6302263a77cfa01dbcb50f9318e67c0831ce7aa382588f7"
       }
     ],
-    "commit": "ed97775ca71556593259a35d33449ecc1815a5dc",
+    "commit": "5e1c8fb473414ed65d71f067f64eefa0bedb47c9",
     "host_uname": "Linux edgexpert-1062 6.17.0-1031-nvidia #31-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 24 22:03:06 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
   },
   "source_date_epoch": 1781569204,
