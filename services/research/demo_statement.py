@@ -12,7 +12,6 @@ from pathlib import Path
 from quantos.contracts.binance_demo_account import _decimal, _symbol, _text, _int, _bool, _side
 from services.execution.perpetual_ledger_v2 import ledger_decimal_context, canonical_decimal
 from services.governance.json_integrity import load_json_without_duplicate_keys
-from tools.cache_io import atomic_write_json
 
 SCHEMA = 'BINANCE_DEMO_STATEMENT_V1'
 MAX_BYTES = 32_000_000
@@ -204,6 +203,11 @@ def assess(report):
 
 
 def save_statement(directory,report):
+    # Only the explicit operator collector publishes statements. The read-only
+    # console image excludes tools/ and must not require it while importing or
+    # projecting an already retained statement.
+    from tools.cache_io import atomic_write_json
+
     validate(report)
     directory=Path(directory);directory.mkdir(parents=True,exist_ok=True,mode=0o700)
     raw=json.dumps(report,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()

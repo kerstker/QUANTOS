@@ -11,6 +11,8 @@
 """
 import os
 import re
+import subprocess
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _DOCKERFILE = os.path.join(_ROOT, "deploy", "console.Dockerfile")
@@ -21,6 +23,37 @@ _BROKER_SDK = ("ccxt", "python-binance", "binance-connector", "coinbase", "cbpro
 _L2_FLAGS = ("LIVE_TRADING_ENABLED=false", "REAL_BROKER_ENABLED=false",
              "ALLOW_ORDER_SUBMISSION=false", "ALLOW_AI_DIRECT_TRADING=false",
              "REQUIRE_HUMAN_APPROVAL=true")
+
+
+def test_console_import_and_demo_read_without_operator_tools(tmp_path):
+    """The shipped services/quantos tree must boot without excluded operator code."""
+    script = """
+import importlib.abc
+import os
+import sys
+class ExcludedImageTree(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'tools', 'live', 'trading'}:
+            raise ModuleNotFoundError('excluded console image tree: ' + fullname)
+sys.meta_path.insert(0, ExcludedImageTree())
+sys.path.insert(0, sys.argv[1])
+for name in tuple(os.environ):
+    if name.startswith('QUANTOS_'):
+        os.environ.pop(name)
+os.environ['QUANTOS_STATE_ROOT'] = sys.argv[2]
+from services.console.main import app
+from fastapi.testclient import TestClient
+response = TestClient(app).get('/api/v1/console/binance-demo')
+assert response.status_code == 200, response.status_code
+body = response.json()
+assert body['statement']['status'] == 'NO_SNAPSHOT'
+assert body['submission_enabled'] is False
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, _ROOT, str(tmp_path / "state")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def _dockerfile_text():
