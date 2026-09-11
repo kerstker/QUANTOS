@@ -2,7 +2,7 @@ import {afterEach, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen} from '@testing-library/react';
 import {DemoReadinessView} from './BinanceDemo';
 import {parseDemoPayload} from '@/lib/api/binance-demo-api';
-import type {BinanceDemoPayload} from '@/lib/types/binance-demo';
+import type {BinanceDemoPayload, DemoReplayReport} from '@/lib/types/binance-demo';
 
 afterEach(cleanup);
 function payload(): BinanceDemoPayload {
@@ -21,6 +21,7 @@ function payload(): BinanceDemoPayload {
     account: {status: 'NOT_CHECKED', reason: 'ACCOUNT_NOT_REQUESTED', observed_at_ms: null, assets: [], positions: []},
     submission_enabled: false, authoritative: false, execution_reason: 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE',
     order_stream_status: 'NOT_CHECKED', ledger_reconciliation_status: 'NOT_CHECKED',
+    execution: {status: 'NO_JOURNAL', report: null},
   };
 }
 
@@ -35,6 +36,23 @@ it('separates public connectivity from account and order readiness without fake 
   fireEvent.click(screen.getByRole('button', {name: '刷新快照'}));
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/不代表测试网订单已接通/)).toBeInTheDocument();
+});
+
+it('shows missing and corrupt execution journals without declaring the ledger reconciled', () => {
+  const data = payload();
+  const view = render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('尚无成交回执日志')).toBeInTheDocument();
+  data.execution = {status: 'CORRUPT_OR_UNREADABLE', report: null};
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('回执日志无法验证')).toBeInTheDocument();
+  expect(screen.getByText('账本对账待验证')).toBeInTheDocument();
+});
+
+it('rejects unverified execution payloads that claim success without a report', () => {
+  for (const execution of [{status: 'AVAILABLE', report: null}, {status: 'NO_JOURNAL', report: {}},
+    {status: 'AVAILABLE', report: {source_verified: true}}]) {
+    expect(() => parseDemoPayload({...payload(), execution})).toThrow('模拟盘数据契约不匹配');
+  }
 });
 
 it('does not show old public success as current readiness after expiry or failed refresh', () => {
@@ -68,5 +86,62 @@ it('rejects broken safety markers, timestamps and nested account contracts on th
   for (const patch of [{submission_enabled: true}, {rest_base: 'https://fapi.binance.com'},
     {age_ms: -1}, {public: {status: 'READY'}}, {account: {status: 'READY', assets: []}}]) {
     expect(() => parseDemoPayload({...payload(), ...patch})).toThrow('模拟盘数据契约不匹配');
+  }
+});
+
+function replay(): DemoReplayReport {
+  return {
+    schema: 'DEMO_EXECUTION_REPLAY_V1', environment: 'BINANCE_USDM_DEMO', scope: 'TECHNICAL_VALIDATION_ONLY',
+    source_verified: false, authoritative: false, submission_enabled: false, provenance: 'SYNTHETIC_TEST_FIXTURE',
+    manifest_hash: 'b'.repeat(64), journal_tail: 'c'.repeat(64), replay_source_sha256: 'd'.repeat(64), declared_source_commit: 'a'.repeat(40),
+    journal_records: 2, rejected_batches: 0, observed_at_ms: 131, symbol: 'BTCUSDC', quote_asset: 'USDC',
+    projection_status: 'REPLAYED_TECHNICAL_ONLY', projection_reason: null, filled_quantity: '0.4', position_quantity: '0.4',
+    expected_end_position: '1', position_comparison: 'WAITING_TERMINAL_ORDERS', venue_cash_reconciliation: 'UNKNOWN', actual_paid_fees: null,
+    reconciliation: {initial_equity: '1000', ending_equity: '999.99208', price_pnl: '0', fee: '0.00792', spread: '0', impact: '0',
+      funding: '0', liquidation_fee: '0', insurance_adjustment: '0', adl_adjustment: '0', attributed_change: '-0.00792', residual: '0'},
+    ledger_state_hash: 'e'.repeat(64), trades_count: 1, duplicate_messages: 0, reported_commission_by_asset: {USDC: '0.00792'},
+    orders: [{order_id: 'fixed-buy', side: 'BUY', quantity: '1', state: 'PARTIALLY_FILLED', filled_quantity: '0.4'}],
+    recent_trades: [{order_id: 'fixed-buy', venue_order_id: '9007199254740993', trade_id: '9007199254740995', quantity: '0.4', price: '99',
+      event_ms: 121, transaction_ms: 121, venue_trade_ms: 121, received_at_ms: 131, liquidity_role: 'MAKER',
+      reported_commission: '0.00792', commission_asset: 'USDC', response_sha256: 'f'.repeat(64)}],
+    limitations: ['INITIAL_FLAT_ACCOUNT_DECLARED_ONLY', 'IMPORTED_SOURCE_UNVERIFIED'],
+  };
+}
+
+it('preserves exact receipt IDs and amounts and labels partial imported fills as technical evidence', () => {
+  const data = {...payload(), execution: {status: 'AVAILABLE' as const, report: replay()}};
+  parseDemoPayload(data);
+  const view = render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('合成测试数据')).toBeInTheDocument();
+  expect(screen.getByText('等待订单终态')).toBeInTheDocument();
+  expect(screen.getByText('部分成交')).toBeInTheDocument();
+  expect(screen.getByText('9007199254740993')).toBeInTheDocument();
+  expect(screen.getByText('9007199254740995')).toBeInTheDocument();
+  expect(screen.getByText('0.00792 USDC')).toBeInTheDocument();
+  expect(screen.queryByText('与声明持仓一致')).not.toBeInTheDocument();
+  view.rerender(<DemoReadinessView data={data} loading={false} error="接口超时" refresh={vi.fn()}/>);
+  expect(screen.getByText(/上次读取的历史回放/)).toBeInTheDocument();
+});
+
+it('retains raw fills but hides ledger quantities when commission is missing', () => {
+  const report = replay();
+  Object.assign(report, {projection_status: 'UNRESOLVED', projection_reason: 'COMMISSION_NOT_SUPPORTED', reconciliation: null,
+    position_quantity: null, ledger_state_hash: null, position_comparison: 'UNKNOWN'});
+  report.recent_trades[0].reported_commission = null;
+  report.recent_trades[0].commission_asset = null;
+  const data = {...payload(), execution: {status: 'AVAILABLE' as const, report}};
+  parseDemoPayload(data);
+  render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('回放未解决')).toBeInTheDocument();
+  expect(screen.getByText('回放持仓 未知 BTC')).toBeInTheDocument();
+  expect(screen.getByText('9007199254740995')).toBeInTheDocument();
+  expect(screen.queryByText('0.00792 USDC')).not.toBeInTheDocument();
+});
+
+it('rejects rounded trade IDs, cash authority and unsupported projection claims', () => {
+  for (const patch of [{source_verified: true}, {venue_cash_reconciliation: 'MATCH'}, {reconciliation: {}},
+    {position_quantity: 0.4}, {observed_at_ms: 1900000000000}, {journal_tail: 'unbound'},
+    {recent_trades: [{...replay().recent_trades[0], trade_id: 9007199254740996}]}]) {
+    expect(() => parseDemoPayload({...payload(), execution: {status: 'AVAILABLE', report: {...replay(), ...patch}}})).toThrow();
   }
 });

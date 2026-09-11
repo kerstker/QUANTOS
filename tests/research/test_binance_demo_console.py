@@ -9,6 +9,32 @@ from tests.tools.test_binance_demo_readiness import NOW, transport
 from tools.binance_demo_readiness import collect
 
 
+def test_demo_console_rebuilds_saved_receipts_without_public_probe_or_writes(tmp_path, monkeypatch):
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    from tests.research.test_demo_execution_journal import manifest
+    from tests.research.test_binance_order_receipts import native_spec
+    path = tmp_path / "journal.db"
+    with DemoExecutionJournal(path, manifest=manifest()) as journal:
+        journal.append(native_spec()["raw_observed"]["messages"])
+    monkeypatch.setattr(views, "_execution_journal_path", lambda: path)
+    monkeypatch.setattr(views, "_receipt_path", lambda: tmp_path / "absent.json")
+    before = path.read_bytes()
+    result = TestClient(app).get("/api/v1/console/binance-demo").json()
+    assert result["snapshot_status"] == "NO_SNAPSHOT"
+    assert result["execution"]["status"] == "AVAILABLE"
+    assert result["execution"]["report"]["reconciliation"]["fee"] == "0.0198"
+    assert result["ledger_reconciliation_status"] == "NOT_CHECKED"
+    assert path.read_bytes() == before
+
+
+def test_corrupt_execution_journal_is_not_silently_omitted(tmp_path):
+    path = tmp_path / "journal.db"
+    path.write_bytes(b"not sqlite")
+    result = views.build_execution_snapshot(path=path, as_of_ms=1000)
+    assert result == {"status":"CORRUPT_OR_UNREADABLE", "report":None}
+    assert path.read_bytes() == b"not sqlite"
+
+
 def test_missing_receipt_is_unknown_and_get_creates_no_files(tmp_path, monkeypatch):
     path = tmp_path / "absent.json"
     monkeypatch.setattr(views, "_receipt_path", lambda: path)

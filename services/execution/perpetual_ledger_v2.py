@@ -824,6 +824,33 @@ class OrderFillEvent(TradeEvent):
             raise ValueError("order fill costs require fee_rate and embedded executable prices")
 
 
+class ReportedFillReplayError(PerpetualLedgerError):
+    """The model cannot reproduce a recorded fill exactly; observation remains."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReportedFillReplayEvent(TradeEvent):
+    """Technical replay of a bound receipt, not venue-fill persistence/admission.
+
+    The caller keeps the original receipt durably before attempting projection,
+    validates its parent order and deduplicates trade IDs. A failed model check
+    leaves projection unresolved; it never rejects or resizes the venue fact.
+    Only exact nonnegative quote-currency commissions are supported here.
+    """
+    order_id: str
+    receipt_sha256: str
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.order_id, str) or not self.order_id.strip():
+            raise ValueError("bound parent order required")
+        if (not isinstance(self.receipt_sha256, str) or len(self.receipt_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in self.receipt_sha256)):
+            raise ValueError("receipt digest required")
+        if self.spread_cost != ZERO or self.impact_cost != ZERO:
+            raise ValueError("reported execution prices already contain execution costs")
+
+
 @dataclass(frozen=True)
 class FundingEvent:
     timestamp: int
@@ -1012,7 +1039,8 @@ class ReconciliationSnapshot:
 class LinearPerpetualLedger:
     """Single-account deterministic event engine for reviewed v2 contracts."""
 
-    _PRIORITY = {FundingEvent: 10, MarkEvent: 20, TradeEvent: 30, OrderFillEvent: 30}
+    _PRIORITY = {FundingEvent: 10, MarkEvent: 20, TradeEvent: 30, OrderFillEvent: 30,
+                 ReportedFillReplayEvent: 30}
 
     def __init__(
         self, specs: Sequence[ContractSpec], *, initial_collateral: Decimal
@@ -1430,7 +1458,8 @@ class LinearPerpetualLedger:
         if type(event) not in self._PRIORITY:
             raise TypeError("unsupported ledger event")
         if trade_guard is not None and (
-            not isinstance(event, TradeEvent) or not callable(trade_guard)
+            not isinstance(event, TradeEvent) or isinstance(event, ReportedFillReplayEvent)
+            or not callable(trade_guard)
         ):
             raise TypeError("trade_guard requires a trade and a callable")
         with self._transaction(event if isinstance(event, TradeEvent) else None):
@@ -1611,7 +1640,7 @@ class LinearPerpetualLedger:
     def _validate_execution_quantity(
         self, event: TradeEvent, spec: ContractSpec, quantity: Decimal,
     ) -> None:
-        if isinstance(event, OrderFillEvent):
+        if isinstance(event, (OrderFillEvent, ReportedFillReplayEvent)):
             spec.validate_quantity(quantity, event.execution_price, reducing=True)
         else:
             current = self._positions.get(event.instrument_id)
@@ -1632,6 +1661,8 @@ class LinearPerpetualLedger:
         filled, status, reason, capacity_consumed_before = self._capacity_quantity(
             event, spec
         )
+        if isinstance(event, ReportedFillReplayEvent) and filled != event.quantity_delta:
+            raise ReportedFillReplayError("REPORTED_FILL_CAPACITY_MODEL_MISMATCH")
         budget_key = (
             event.capacity.venue_id,
             event.instrument_id,
@@ -1849,6 +1880,10 @@ class LinearPerpetualLedger:
                 "event_type": "TRADE",
                 "timestamp": event.timestamp,
                 "instrument_id": event.instrument_id,
+                **({"order_id": event.order_id,
+                    "quantity_basis": "REPORTED_FILL_TECHNICAL_REPLAY_V1",
+                    "receipt_sha256": event.receipt_sha256}
+                   if isinstance(event, ReportedFillReplayEvent) else {}),
                 **({"order_id": event.order_id,
                     "quantity_basis": "ADMITTED_ORDER_FILL",
                     "fee_rate": canonical_decimal(event.fee_rate),
@@ -2383,6 +2418,8 @@ __all__ = [
     "MarginRequirement",
     "MarkEvent",
     "OrderFillEvent",
+    "ReportedFillReplayEvent",
+    "ReportedFillReplayError",
     "MissingLiquidationBackstop",
     "PerpetualLedgerError",
     "PositionView",

@@ -3,6 +3,7 @@ import type {BinanceDemoPayload} from '@/lib/types/binance-demo';
 import {Empty, ErrorNote, Header, Loading, Metric, Panel} from './components';
 import {stamp, useResource} from './data';
 import './binance-demo.css';
+import {DemoExecutionEvidence} from './DemoExecutionEvidence';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -49,6 +50,8 @@ export function DemoReadinessView({data, loading, error, refresh}: {
         <h2>{title}</h2><p>{description}</p>
       </li>)}
     </ol>
+    {data?.execution.report && <div className="s-demo-receipt-jump"><span>已导入 {data.execution.report.journal_records} 条回执</span>
+      <a className="s-button" href="#demo-execution-evidence">查看成交回执与恢复 ↓</a></div>}
     {data?.snapshot_status === 'STALE' && <div className="s-demo-notice" role="status"><strong>快照已过期</strong><p>以下数值来自上次采集，不能表示当前连接或账户状态。刷新按钮只读取已有快照；需要采集端重新检查。</p></div>}
     {data && ['CORRUPT_OR_UNREADABLE', 'DATA_BLOCKED'].includes(data.snapshot_status) && <div className="s-demo-notice" role="status">{explain(data.data_quality.reason)}</div>}
     {(!data || data.snapshot_status === 'NO_SNAPSHOT') && !loading && <Empty title="尚无接入检查快照">运行公共接入检查后，这里会显示场所时钟和合约规则。账户信息保持未知。</Empty>}
@@ -81,6 +84,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
           : <Empty title="持仓数据未知">账户查询成功后显示原始数量与持仓侧。</Empty>}
       </Panel>
     </div>
+    <div id="demo-execution-evidence" tabIndex={-1}><DemoExecutionEvidence snapshot={data?.execution} refreshFailed={!!error}/></div>
     <Panel title="下一步：核实执行链路" note="执行条件未满足">
       <div className="s-demo-next"><p>公共接口可用、账户可读，不代表测试网订单已接通。当前提交入口仍缺少独立执行权威集成；下一阶段需完成订单回执、恢复与账本对账的联调。</p>
         <p>Demo 用于验证连接和执行工程。真实费用、真实场所成交校准和成本后盈利仍需各自的证据。</p>

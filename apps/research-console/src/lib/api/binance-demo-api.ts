@@ -1,5 +1,6 @@
 import {RESEARCH_CONSOLE_API_BASE} from './research-console-api';
 import type {BinanceDemoPayload} from '../types/binance-demo';
+import {executionSnapshotValid} from './demo-execution-contract';
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const integer = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
@@ -41,7 +42,7 @@ export function parseDemoPayload(v: unknown): BinanceDemoPayload {
       !object(v.data_quality) || v.data_quality.status !== v.snapshot_status || v.data_quality.provenance !== v.data_provenance ||
       !reason(v.data_quality.reason) || !time(v.as_of_ms) || !nullableTime(v.observed_at_ms) ||
       !(v.age_ms === null || integer(v.age_ms) && v.age_ms >= 0) || v.max_age_ms !== 120000 ||
-      !publicValid(v.public) || !accountValid(v.account) ||
+      !publicValid(v.public) || !accountValid(v.account) || !executionSnapshotValid(v.execution, v.as_of_ms as number) ||
       v.execution_reason !== 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE' ||
       v.order_stream_status !== 'NOT_CHECKED' || v.ledger_reconciliation_status !== 'NOT_CHECKED') {
     throw new Error('模拟盘数据契约不匹配');

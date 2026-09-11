@@ -8,12 +8,32 @@ from fastapi import APIRouter
 from quantos.contracts.binance_demo import DEMO_REST_BASE, DemoReceipt, MAX_AGE_MS, MAX_RESPONSE_BYTES
 from quantos.runtime_paths import runtime_state_root
 from services.validation.live_submission_authority import LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE
+from services.research.demo_execution_journal import DemoExecutionJournal, replay_report
 
 router = APIRouter(tags=["binance-demo"])
 
 
 def _receipt_path():
     return runtime_state_root() / "data/cache/binance_demo_readiness.json"
+
+
+def _execution_journal_path():
+    return runtime_state_root() / "data/cache/binance_demo_execution.db"
+
+
+def build_execution_snapshot(*, path: Path, as_of_ms: int):
+    if not path.exists():
+        return {"status": "NO_JOURNAL", "report": None}
+    try:
+        with DemoExecutionJournal(path, read_only=True) as journal:
+            report = replay_report(journal)
+        if report["observed_at_ms"] is not None and report["observed_at_ms"] > as_of_ms:
+            return {"status": "DATA_BLOCKED", "report": None}
+        return {"status": "AVAILABLE", "report": report}
+    except Exception:
+        # A malformed imported diagnostic must not expose raw receipt contents or
+        # make the independent connectivity snapshot unavailable.
+        return {"status": "CORRUPT_OR_UNREADABLE", "report": None}
 
 
 def build_snapshot(*, path: Path, as_of_ms: int):
@@ -58,4 +78,7 @@ def build_snapshot(*, path: Path, as_of_ms: int):
 
 @router.get("/api/v1/console/binance-demo")
 def binance_demo_snapshot():
-    return build_snapshot(path=_receipt_path(), as_of_ms=time.time_ns() // 1_000_000)
+    as_of_ms = time.time_ns() // 1_000_000
+    return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        "execution": build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms),
+    }

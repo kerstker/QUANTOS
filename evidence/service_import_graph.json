@@ -499,6 +499,11 @@
           "path": "services/console/api/backtest_views.py"
         },
         {
+          "line": 11,
+          "module": "services.research.demo_execution_journal",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1336,6 +1341,16 @@
           "path": "services/research/binance_order_receipts.py"
         },
         {
+          "line": 15,
+          "module": "services.execution.passive_queue",
+          "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 16,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_execution_journal.py"
+        },
+        {
           "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
@@ -1456,6 +1471,11 @@
           "line": 13,
           "module": "services.governance.json_integrity",
           "path": "services/research/binance_order_receipts.py"
+        },
+        {
+          "line": 21,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_execution_journal.py"
         }
       ],
       "source": "research",
@@ -1798,7 +1818,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "bbb4b6edd0388c59576f700bccca5bce5f26e176e399f1346cfca70edf93c056",
+  "graph_sha256": "69fccbc746364a17251a324a38174b29db91276d7ad47991ab26a98d7fe0ff05",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1836,7 +1856,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 560,
+  "source_file_count": 561,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -11,6 +11,27 @@ export interface DemoAccount {
   assets: Array<{asset: string; wallet_balance: string; available_balance: string; unrealized_profit: string}>;
   positions: Array<{symbol: string; position_side: 'BOTH' | 'LONG' | 'SHORT'; quantity: string; unrealized_profit: string}>;
 }
+export interface DemoReplayReport {
+  schema: 'DEMO_EXECUTION_REPLAY_V1'; environment: 'BINANCE_USDM_DEMO'; scope: 'TECHNICAL_VALIDATION_ONLY';
+  source_verified: false; authoritative: false; submission_enabled: false;
+  provenance: 'SYNTHETIC_TEST_FIXTURE' | 'IMPORTED_UNVERIFIED';
+  manifest_hash: string; declared_source_commit: string; replay_source_sha256: string;
+  journal_tail: string; journal_records: number; rejected_batches: number; observed_at_ms: number | null;
+  symbol: 'BTCUSDT' | 'BTCUSDC'; quote_asset: 'USDT' | 'USDC';
+  projection_status: 'REPLAYED_TECHNICAL_ONLY' | 'UNRESOLVED'; projection_reason: string | null;
+  filled_quantity: string; position_quantity: string | null; expected_end_position: string | null;
+  position_comparison: 'UNKNOWN' | 'WAITING_TERMINAL_ORDERS' | 'DECLARED_POSITION_MATCH' | 'DECLARED_POSITION_MISMATCH';
+  venue_cash_reconciliation: 'UNKNOWN'; actual_paid_fees: null;
+  reconciliation: Record<string, string> | null; ledger_state_hash: string | null;
+  trades_count: number; duplicate_messages: number; reported_commission_by_asset: Record<string, string>;
+  orders: Array<{order_id: string; side: 'BUY' | 'SELL'; quantity: string; state: string; filled_quantity: string}>;
+  recent_trades: Array<{order_id: string; venue_order_id: string; trade_id: string; quantity: string; price: string;
+    event_ms: number; transaction_ms: number; venue_trade_ms: number; received_at_ms: number;
+    liquidity_role: 'MAKER' | 'TAKER'; reported_commission: string | null; commission_asset: string | null; response_sha256: string}>;
+  limitations: string[];
+}
+export type DemoExecutionSnapshot = {status: 'AVAILABLE'; report: DemoReplayReport} |
+  {status: 'NO_JOURNAL' | 'CORRUPT_OR_UNREADABLE' | 'DATA_BLOCKED'; report: null};
 export interface BinanceDemoPayload {
   source: string; read_only: true; api_version: string; data_provenance: 'DEMO_CONNECTIVITY_DIAGNOSTIC';
   snapshot_id: string | null; snapshot_ids: string[];
@@ -21,4 +42,5 @@ export interface BinanceDemoPayload {
   public: DemoPublic | null; account: DemoAccount | null;
   submission_enabled: false; authoritative: false; execution_reason: 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE';
   order_stream_status: 'NOT_CHECKED'; ledger_reconciliation_status: 'NOT_CHECKED';
+  execution: DemoExecutionSnapshot;
 }
