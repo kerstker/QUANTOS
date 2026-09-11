@@ -11,6 +11,36 @@ const comparisons = ['UNKNOWN', 'WAITING_TERMINAL_ORDERS', 'DECLARED_POSITION_MA
 const reconciliationKeys = ['initial_equity', 'ending_equity', 'price_pnl', 'fee', 'spread', 'impact', 'funding',
   'liquidation_fee', 'insurance_adjustment', 'adl_adjustment', 'attributed_change', 'residual'];
 
+function openingValid(v: unknown, report: Record<string, unknown>, asOf: number): boolean {
+  if (v === null) return true;
+  const symbol = (s: unknown): s is string => typeof s === 'string' && /^[A-Z0-9_\u3400-\u9fff]{1,32}$/.test(s);
+  if (!object(v) || v.schema !== 'DEMO_OPENING_ASSESSMENT_V1' || v.scope !== 'SINGLE_QUOTE_ACCOUNT_BOOK_TECHNICAL_PROJECTION' ||
+      !['INPUTS_INCOMPLETE', 'DECLARED_INPUTS_READY'].includes(String(v.status)) || !hash(v.capture_hash) || !hash(v.account_ref_sha256) ||
+      !count(v.opening_at_ms) || v.opening_at_ms > asOf || !count(report.observed_at_ms) || v.opening_at_ms > report.observed_at_ms ||
+      v.quote_asset !== report.quote_asset || !decimal(v.initial_collateral) || !decimal(v.initial_position) ||
+      !count(v.positions_count) || !count(v.other_quote_positions_count) || v.positions_count + v.other_quote_positions_count > 2000 ||
+      v.basis_policy !== 'CALLER_DECLARED_EXACT_ENTRY_NOTIONAL' || v.source_verified !== false || v.atomic_snapshot_verified !== false ||
+      v.submission_enabled !== false || v.venue_cash_reconciliation !== 'UNKNOWN' ||
+      !Array.isArray(v.issues) || v.issues.length > 30 || !v.issues.every(code) ||
+      !Array.isArray(v.missing_basis_symbols) || v.missing_basis_symbols.length > 2000 || !v.missing_basis_symbols.every(symbol) ||
+      !Array.isArray(v.missing_contract_symbols) || v.missing_contract_symbols.length > 2001 || !v.missing_contract_symbols.every(symbol) ||
+      new Set(v.missing_basis_symbols).size !== v.missing_basis_symbols.length || new Set(v.missing_contract_symbols).size !== v.missing_contract_symbols.length ||
+      !Array.isArray(v.positions) || v.positions.length !== v.positions_count || !v.positions.every(p => object(p) && symbol(p.symbol) &&
+        ['BOTH', 'LONG', 'SHORT'].includes(String(p.position_side)) && decimal(p.quantity) && Number(p.quantity) !== 0 &&
+        (p.margin_mode === null || ['CROSSED', 'ISOLATED'].includes(String(p.margin_mode))) &&
+        (p.entry_notional === null ? p.basis_source_sha256 === null : decimal(p.entry_notional) && Number(p.entry_notional) > 0 && hash(p.basis_source_sha256)) &&
+        typeof p.contract_available === 'boolean')) return false;
+  const basis = [...new Set(v.positions.filter(p => p.entry_notional === null).map(p => p.symbol))].sort();
+  const contracts = v.positions.filter(p => !p.contract_available).map(p => p.symbol);
+  const positionSymbols = v.positions.map(p => p.symbol);
+  if (new Set(v.positions.map(p => `${p.symbol}:${p.position_side}`)).size !== v.positions_count ||
+      JSON.stringify(basis) !== JSON.stringify([...v.missing_basis_symbols].sort()) ||
+      contracts.some(s => !(v.missing_contract_symbols as string[]).includes(s)) ||
+      v.missing_contract_symbols.some(s => !contracts.includes(s) && (s !== report.symbol || positionSymbols.includes(s)))) return false;
+  if (v.status === 'INPUTS_INCOMPLETE') return v.issues.length > 0 && report.projection_status === 'UNRESOLVED' && report.projection_reason === 'OPENING_INPUTS_INCOMPLETE';
+  return !v.issues.length && !v.missing_basis_symbols.length && !v.missing_contract_symbols.length;
+}
+
 export function executionSnapshotValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (v.status !== 'AVAILABLE') return ['NO_JOURNAL', 'CORRUPT_OR_UNREADABLE', 'DATA_BLOCKED'].includes(String(v.status)) && v.report === null;
@@ -26,7 +56,7 @@ export function executionSnapshotValid(v: unknown, asOf: number): boolean {
       !decimal(r.filled_quantity) || !nullableDecimal(r.position_quantity) || !nullableDecimal(r.expected_end_position) ||
       !comparisons.includes(String(r.position_comparison)) || r.venue_cash_reconciliation !== 'UNKNOWN' || r.actual_paid_fees !== null ||
       !object(r.reported_commission_by_asset) || !Object.entries(r.reported_commission_by_asset).every(([k, n]) => /^[A-Z0-9]{1,20}$/.test(k) && decimal(n)) ||
-      !Array.isArray(r.limitations) || !r.limitations.every(code) ||
+      !Array.isArray(r.limitations) || !r.limitations.every(code) || !openingValid(r.opening, r, asOf) ||
       !Array.isArray(r.orders) || r.orders.length > 200 || !r.orders.every(o => object(o) && orderId(o.order_id) &&
         ['BUY', 'SELL'].includes(String(o.side)) && states.includes(String(o.state)) && decimal(o.quantity) && decimal(o.filled_quantity) &&
         (o.last_event_at_ms === null || count(o.last_event_at_ms) && o.last_event_at_ms <= asOf)) ||

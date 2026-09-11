@@ -2283,3 +2283,21 @@ def test_frozen_account_terms_contract_keeps_observations_separate_from_actual_f
     assert 'raw_utf8' not in json.dumps(terms)
     assert result['trials'][0]['account']['reconciliation']['fee']=='0.00198'
     assert result['trials'][0]['account']['ending_state']['margin_admission_policy']=='INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1'
+
+
+def test_demo_console_opening_assessment_preserves_incomplete_inventory_and_readonly_state(tmp_path, monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    from tests.research.test_demo_opening_journal import opening_manifest
+    path = tmp_path/'journal.db'
+    with DemoExecutionJournal(path, manifest=opening_manifest(basis=False)): pass
+    before = path.read_bytes()
+    monkeypatch.setattr(views, '_execution_journal_path', lambda: path)
+    body = views.binance_demo_snapshot()
+    report = body['execution']['report']
+    assert report['opening']['status'] == 'INPUTS_INCOMPLETE'
+    assert report['opening']['missing_basis_symbols'] == ['BTCUSDC']
+    assert report['opening']['source_verified'] is False
+    assert report['reconciliation'] is None and report['position_quantity'] is None
+    assert path.read_bytes() == before
+    assert views.build_execution_snapshot(path=path, as_of_ms=89)['status'] == 'DATA_BLOCKED'

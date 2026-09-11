@@ -1,9 +1,11 @@
 import type {DemoExecutionSnapshot} from '@/lib/types/binance-demo';
 import {Empty, Metric, Panel} from './components';
+import {DemoOpeningEvidence} from './DemoOpeningEvidence';
 
 const stateNames: Record<string, string> = {UNKNOWN: '未知', ACK: '已确认', PARTIALLY_FILLED: '部分成交', FILLED: '全部成交', CANCELLED: '已撤单', EXPIRED: '已失效'};
 const comparisons: Record<string, string> = {UNKNOWN: '尚无法比较', WAITING_TERMINAL_ORDERS: '等待订单终态', DECLARED_POSITION_MATCH: '与声明持仓一致', DECLARED_POSITION_MISMATCH: '与声明持仓不一致'};
 const reasons: Record<string, string> = {NO_RECEIPTS: '尚未导入回执', DECLARED_STREAM_GAPS: '声明窗口存在数据缺口',
+  OPENING_INPUTS_INCOMPLETE: '账户起点仍有缺项',
   COMMISSION_NOT_SUPPORTED: '费用缺失、币种不符或返佣尚不支持'};
 const timestamp = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace('Z', ' UTC');
 
@@ -15,9 +17,10 @@ export function DemoExecutionEvidence({snapshot, refreshFailed}: {snapshot?: Dem
     </Empty> : <div className="s-demo-replay">
       <div className="s-demo-replay-heading"><div><span className="s-eyebrow">{report.symbol} / RECEIPT REPLAY</span>
         <h3>{report.projection_status === 'UNRESOLVED' ? '回放未解决' : '已重建技术账本'}</h3></div>
-        <span className="s-demo-source">{report.provenance === 'SYNTHETIC_TEST_FIXTURE' ? '合成测试数据' : '导入回执 · 来源未独立验证'}</span></div>
+        <span className="s-demo-source">{report.provenance === 'SYNTHETIC_TEST_FIXTURE' ? '合成测试数据' : report.journal_records === 0 && report.opening ? '账户起点 · 尚无订单回执' : '导入回执 · 来源未独立验证'}</span></div>
       {refreshFailed && <p role="status" className="s-demo-notice">刷新失败，以下是上次读取的历史回放，不能表示当前日志状态。</p>}
-      <p className="s-demo-description">从固定订单与原始回执重新计算；初始空仓、抵押金和期末目标均来自声明。真实账户现金、资金费及外部流水尚未核对。</p>
+      <p className="s-demo-description">{report.opening ? '从绑定的账户起点与固定订单回执重新计算。' : '从固定订单与原始回执重新计算；初始空仓、抵押金和期末目标均来自声明。'}真实账户现金、资金费及外部流水尚未核对。</p>
+      {report.opening && <DemoOpeningEvidence opening={report.opening}/>}
       {report.projection_status === 'UNRESOLVED' && <div className="s-demo-notice" role="status"><strong>{reasons[report.projection_reason ?? ''] ?? '成交事实无法按当前模型完整回放'}</strong>
         <p>原始回执仍保留；账本数值保持未知。原因：{report.projection_reason}</p></div>}
       <div className="s-metrics s-demo-metrics">

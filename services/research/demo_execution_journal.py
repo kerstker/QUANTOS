@@ -17,12 +17,13 @@ from quantos.contracts.binance_demo_orders import fixed_order_bindings, query_bi
 from services.execution.passive_queue import Action
 from services.execution.perpetual_ledger_v2 import (
     BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, CapacityPolicy, CapacityAction,
-    ContractSpec, MarginBracket, MarginMode, LinearPerpetualLedger,
+    ContractSpec, MarginMode, LinearPerpetualLedger,
     ReportedFillReplayEvent, canonical_decimal, ledger_decimal_context,
 )
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.ai_factory_store import digest
 from services.research.passive_receipt_calibration import validate_calibration
+from services.research.demo_opening_projection import contract_spec, prepare_opening, OPENING_MANIFEST_SCHEMA
 
 SCHEMA = "DEMO_EXECUTION_REPLAY_V1"
 ZERO_HASH = "0" * 64
@@ -34,7 +35,8 @@ REPLAY_SOURCE_SHA256 = hashlib.sha256(b"\n".join(
                  "governance/json_integrity.py", "research/ai_factory_store.py",
                  "research/binance_order_receipts.py", "research/passive_receipt_calibration.py",
                  "../quantos/contracts/binance_demo_orders.py",
-                 "research/demo_execution_journal.py"))).hexdigest()
+                 "research/demo_execution_journal.py", "research/demo_opening_projection.py",
+                 "research/demo_account_baseline.py", "../quantos/contracts/binance_demo_account.py"))).hexdigest()
 
 
 def _fields(body, keys):
@@ -53,28 +55,24 @@ def _decimal(value):
 
 @ledger_decimal_context()
 def prepare(manifest):
-    _fields(manifest, "schema environment source_commit initial_collateral initial_position contract adv_notional participation_rate actions native expected_end_position")
-    if (manifest["schema"] != SCHEMA or manifest["environment"] != "BINANCE_USDM_DEMO"
+    _fields(manifest, "schema environment source_commit initial_collateral initial_position contract adv_notional participation_rate actions native expected_end_position"
+            + (" opening" if isinstance(manifest, dict) and manifest.get("schema") == OPENING_MANIFEST_SCHEMA else ""))
+    if (manifest["schema"] not in (SCHEMA, OPENING_MANIFEST_SCHEMA) or manifest["environment"] != "BINANCE_USDM_DEMO"
         or not isinstance(manifest["source_commit"], str) or not re.fullmatch("[0-9a-f]{40}", manifest["source_commit"])
-        or manifest["initial_position"] != "0"):
+        or manifest["schema"] == SCHEMA and manifest["initial_position"] != "0"):
         raise ValueError("FROZEN_FLAT_DEMO_REPLAY_REQUIRED")
-    raw = manifest["contract"]
-    _fields(raw, "decimal_context margin_admission_policy instrument_id contract_type margin_asset contract_multiplier quantity_step min_quantity min_notional liquidation_fee_rate settlement_quantum margin_brackets")
-    if raw["instrument_id"] not in ("BTCUSDT", "BTCUSDC"):
-        raise ValueError("UNSUPPORTED_DEMO_SYMBOL")
-    brackets = []
-    if not isinstance(raw["margin_brackets"], list) or not 1 <= len(raw["margin_brackets"]) <= 20:
-        raise ValueError("BOUNDED_MARGIN_BRACKETS_REQUIRED")
-    for row in raw["margin_brackets"]:
-        _fields(row, "notional_floor notional_cap initial_margin_rate maintenance_margin_rate maintenance_amount")
-        brackets.append(MarginBracket(**{k: None if v is None else _decimal(v) for k, v in row.items()}))
-    spec = ContractSpec(**{k: raw[k] for k in ("instrument_id", "contract_type", "margin_asset")},
-        **{k: _decimal(raw[k]) for k in ("contract_multiplier", "quantity_step", "min_quantity", "min_notional", "liquidation_fee_rate", "settlement_quantum")},
-        margin_brackets=tuple(brackets))
-    if spec.as_canonical_dict() != raw or spec.instrument_id != "BTC" + spec.margin_asset:
-        raise ValueError("CONTRACT_VERSION_OR_QUOTE_MISMATCH")
+    if manifest['schema'] == OPENING_MANIFEST_SCHEMA and manifest['contract'] is None:
+        symbol = manifest['native']['symbol']
+        if symbol not in ('BTCUSDT', 'BTCUSDC'):
+            raise ValueError('UNSUPPORTED_DEMO_SYMBOL')
+        spec = SimpleNamespace(instrument_id=symbol, margin_asset=symbol[3:])
+    else:
+        spec = contract_spec(manifest['contract'])
+    if spec.instrument_id not in ('BTCUSDT', 'BTCUSDC') or spec.instrument_id != 'BTC' + spec.margin_asset:
+        raise ValueError('UNSUPPORTED_DEMO_SYMBOL')
     collateral = _decimal(manifest["initial_collateral"])
-    LinearPerpetualLedger([spec], initial_collateral=collateral)
+    if isinstance(spec, ContractSpec):
+        LinearPerpetualLedger([spec], initial_collateral=collateral)
     if manifest["expected_end_position"] is not None:
         _decimal(manifest["expected_end_position"])
     actions = []
@@ -85,7 +83,8 @@ def prepare(manifest):
         if row["kind"] != "ORDER" or not isinstance(row["order_id"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", row["order_id"]):
             raise ValueError("FIXED_ORDINARY_ORDER_REQUIRED")
         action = Action(**(row | {"quantity": _decimal(row["quantity"]), "price": _decimal(row["price"])}))
-        spec.validate_quantity(action.quantity, action.price)
+        if isinstance(spec, ContractSpec):
+            spec.validate_quantity(action.quantity, action.price)
         actions.append(action)
     if len({a.order_id for a in actions}) != len(actions):
         raise ValueError("DUPLICATE_FIXED_ORDER")
@@ -104,6 +103,7 @@ def prepare(manifest):
         period_rule_id=BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, period_index=start // 86_400_000,
         adv_notional=_decimal(manifest["adv_notional"]), max_participation_rate=_decimal(manifest["participation_rate"]),
         action=CapacityAction.REJECT)
+    prepare_opening(manifest, spec)
     parsed = (spec, collateral, tuple(actions), capacity)
     observations(manifest, [], parsed)
     return parsed
@@ -235,9 +235,12 @@ def replay_report(journal):
     validated = observations(manifest, records, journal.parsed)
     evidence = validated["native_observations"]
     orders = validated["observed"]["orders"]
-    ledger = LinearPerpetualLedger([spec], initial_collateral=collateral)
+    specs, seed, opening = prepare_opening(manifest, spec)
+    ledger = None
     reason = None
-    if not records:
+    if opening is not None and opening["status"] != "DECLARED_INPUTS_READY":
+        reason = "OPENING_INPUTS_INCOMPLETE"
+    elif not records:
         reason = "NO_RECEIPTS"
     elif evidence["coverage"]["gaps"]:
         reason = "DECLARED_STREAM_GAPS"
@@ -247,6 +250,7 @@ def replay_report(journal):
     by_id = {a.order_id: a for a in actions}
     if reason is None:
         try:
+            ledger = LinearPerpetualLedger(specs, initial_collateral=collateral, opening_state=seed)
             for trade in evidence["trade_rows"]:
                 side = 1 if by_id[trade["order_id"]].side == "BUY" else -1
                 ledger.apply_event(ReportedFillReplayEvent(timestamp=trade["venue_trade_ms"], instrument_id=spec.instrument_id,
@@ -267,11 +271,12 @@ def replay_report(journal):
     return {"schema": SCHEMA, "environment": "BINANCE_USDM_DEMO", "scope": "TECHNICAL_VALIDATION_ONLY",
         "source_verified": False, "authoritative": False, "submission_enabled": False,
         "manifest_hash": journal.manifest_hash, "declared_source_commit": manifest["source_commit"],
+        "opening": opening,
         "query_binding_hash": query_binding_hash(fixed_order_bindings(manifest['actions'], manifest['native']['bindings']), manifest['native']['account_ref_sha256']),
         "replay_source_sha256": REPLAY_SOURCE_SHA256,
         "symbol": spec.instrument_id, "quote_asset": spec.margin_asset, "provenance": manifest["native"]["provenance"],
         "journal_tail": tail, "journal_records": len(records), "rejected_batches": rejected,
-        "observed_at_ms": max((r["received_at_ms"] for r in records), default=None),
+        "observed_at_ms": max((r["received_at_ms"] for r in records), default=opening["opening_at_ms"] if opening is not None else None),
         "projection_status": "REPLAYED_TECHNICAL_ONLY" if resolved else "UNRESOLVED", "projection_reason": reason,
         "filled_quantity": evidence["reported_filled_quantity"], "position_quantity": quantity,
         "expected_end_position": manifest["expected_end_position"], "position_comparison": comparison,
@@ -285,5 +290,6 @@ def replay_report(journal):
                     "last_event_at_ms": o["events"][-1]["venue_ms"] if o["events"] else None,
                     "filled_quantity": o["events"][-1]["cumulative_filled"] if o["events"] else "0"} for o in orders],
         "recent_trades": evidence["trade_rows"][-50:],
-        "limitations": ["INITIAL_FLAT_ACCOUNT_DECLARED_ONLY", "NO_MARK_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION",
+        "limitations": ["OPENING_ACCOUNT_INPUTS_DECLARED_ONLY" if opening is not None else "INITIAL_FLAT_ACCOUNT_DECLARED_ONLY",
+                        "OTHER_POSITIONS_MARKS_FROZEN_NO_OTHER_ORDER_CASHFLOWS", "NO_MARK_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION",
                         "FIXED_LIMIT_GTX_ONE_WAY_CROSS_ONLY", "IMPORTED_SOURCE_UNVERIFIED"]}

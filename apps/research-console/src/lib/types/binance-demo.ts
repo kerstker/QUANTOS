@@ -12,6 +12,7 @@ export interface DemoAccount {
   positions: Array<{symbol: string; position_side: 'BOTH' | 'LONG' | 'SHORT'; quantity: string; unrealized_profit: string}>;
 }
 export interface DemoReplayReport {
+  opening: DemoOpeningAssessment | null;
   schema: 'DEMO_EXECUTION_REPLAY_V1'; environment: 'BINANCE_USDM_DEMO'; scope: 'TECHNICAL_VALIDATION_ONLY';
   source_verified: false; authoritative: false; submission_enabled: false;
   provenance: 'SYNTHETIC_TEST_FIXTURE' | 'IMPORTED_UNVERIFIED';
@@ -94,3 +95,15 @@ export interface DemoAccountBaselineReport {
 }
 export type DemoAccountBaselineSnapshot = {status: 'AVAILABLE'; report: DemoAccountBaselineReport} |
   {status: 'NO_SNAPSHOT' | 'DATA_BLOCKED' | 'CORRUPT_OR_UNREADABLE'; report: null};
+
+export interface DemoOpeningAssessment {
+  schema: 'DEMO_OPENING_ASSESSMENT_V1'; scope: 'SINGLE_QUOTE_ACCOUNT_BOOK_TECHNICAL_PROJECTION';
+  status: 'INPUTS_INCOMPLETE' | 'DECLARED_INPUTS_READY'; capture_hash: string; account_ref_sha256: string;
+  opening_at_ms: number; quote_asset: 'USDT' | 'USDC'; initial_collateral: string; initial_position: string;
+  positions_count: number; other_quote_positions_count: number;
+  missing_basis_symbols: string[]; missing_contract_symbols: string[]; issues: string[];
+  basis_policy: 'CALLER_DECLARED_EXACT_ENTRY_NOTIONAL'; source_verified: false;
+  atomic_snapshot_verified: false; submission_enabled: false; venue_cash_reconciliation: 'UNKNOWN';
+  positions: Array<{symbol: string; position_side: 'BOTH' | 'LONG' | 'SHORT'; quantity: string; margin_mode: 'CROSSED' | 'ISOLATED' | null;
+    entry_notional: string | null; basis_source_sha256: string | null; contract_available: boolean}>;
+}

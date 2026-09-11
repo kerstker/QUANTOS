@@ -1366,6 +1366,11 @@
           "path": "services/research/demo_execution_journal.py"
         },
         {
+          "line": 14,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_opening_projection.py"
+        },
+        {
           "line": 11,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_order_recovery.py"
@@ -1843,7 +1848,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "f8fd0f4cba7350163ef492c466ffd89240d1cf1d3b484bc2db145c98ac8e4b12",
+  "graph_sha256": "0e20fff13d997d29da20583e10863c397df622a54442be0fb926050d649204b5",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1881,7 +1886,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 564,
+  "source_file_count": 565,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

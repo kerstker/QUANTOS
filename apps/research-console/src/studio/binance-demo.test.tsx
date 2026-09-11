@@ -119,7 +119,7 @@ it('rejects broken safety markers, timestamps and nested account contracts on th
 
 function replay(): DemoReplayReport {
   return {
-    schema: 'DEMO_EXECUTION_REPLAY_V1', environment: 'BINANCE_USDM_DEMO', scope: 'TECHNICAL_VALIDATION_ONLY',
+    opening: null, schema: 'DEMO_EXECUTION_REPLAY_V1', environment: 'BINANCE_USDM_DEMO', scope: 'TECHNICAL_VALIDATION_ONLY',
     source_verified: false, authoritative: false, submission_enabled: false, provenance: 'SYNTHETIC_TEST_FIXTURE',
     manifest_hash: 'b'.repeat(64), journal_tail: 'c'.repeat(64), replay_source_sha256: 'd'.repeat(64), query_binding_hash: 'a'.repeat(64), declared_source_commit: 'a'.repeat(40),
     journal_records: 2, rejected_batches: 0, observed_at_ms: 131, symbol: 'BTCUSDC', quote_asset: 'USDC',
@@ -266,4 +266,29 @@ it('rejects incomplete or falsely authoritative account baselines, and retains c
   report.comparisons[0].status = 'DIFFERENT'; report.issues.push('ACCOUNT_CHANGED_DURING_CAPTURE');
   data.account_baseline.report = report;
   expect(parseDemoPayload(data).account_baseline.report?.inventory_status).toBe('CHANGED_DURING_CAPTURE');
+});
+
+it('shows inherited opening inputs and missing exact basis without claiming a flat account or profit', () => {
+  const r = replay();
+  r.opening = {schema: 'DEMO_OPENING_ASSESSMENT_V1', scope: 'SINGLE_QUOTE_ACCOUNT_BOOK_TECHNICAL_PROJECTION',
+    status: 'INPUTS_INCOMPLETE', capture_hash: 'e'.repeat(64), account_ref_sha256: 'f'.repeat(64),
+    opening_at_ms: 90, quote_asset: 'USDC', initial_collateral: '1000', initial_position: '2',
+    positions_count: 1, other_quote_positions_count: 0, missing_basis_symbols: ['BTCUSDC'], missing_contract_symbols: [],
+    issues: ['EXACT_ENTRY_BASIS_MISSING'], basis_policy: 'CALLER_DECLARED_EXACT_ENTRY_NOTIONAL', source_verified: false,
+    atomic_snapshot_verified: false, submission_enabled: false, venue_cash_reconciliation: 'UNKNOWN',
+    positions: [{symbol: 'BTCUSDC', position_side: 'BOTH', quantity: '2', margin_mode: 'CROSSED', entry_notional: null, basis_source_sha256: null, contract_available: true}],
+  };
+  r.projection_status = 'UNRESOLVED'; r.projection_reason = 'OPENING_INPUTS_INCOMPLETE'; r.reconciliation = null;
+  r.position_quantity = null; r.ledger_state_hash = null; r.position_comparison = 'UNKNOWN';
+  const data = {...payload(), execution: {status: 'AVAILABLE' as const, report: r}};
+  expect(parseDemoPayload(data).execution.report?.opening?.initial_position).toBe('2');
+  render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByRole('heading', {name: '回放起点与缺项'})).toBeInTheDocument();
+  expect(screen.getByText(/精确成本尚缺 1 个合约/)).toBeInTheDocument();
+  expect(screen.queryByText(/初始空仓、抵押金/)).not.toBeInTheDocument();
+  for (const patch of [{source_verified: true}, {quote_asset: 'USDT'}, {opening_at_ms: data.as_of_ms + 1},
+    {positions_count: 0}, {missing_basis_symbols: []}, {status: 'DECLARED_INPUTS_READY'},
+    {positions: [{...r.opening.positions[0], entry_notional: '200'}]}]) {
+    expect(() => parseDemoPayload({...data, execution: {status: 'AVAILABLE', report: {...r, opening: {...r.opening, ...patch}}}})).toThrow();
+  }
 });

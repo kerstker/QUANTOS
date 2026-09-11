@@ -37,3 +37,27 @@ def test_cli_cannot_overwrite_its_journal_with_report(tmp_path):
     with pytest.raises(SystemExit):
         main(["--journal", str(path), "--report", str(path)])
     assert not path.exists()
+
+
+def test_cli_freezes_capture_without_guessing_missing_contract_or_entry_basis(tmp_path):
+    from tests.research.test_demo_opening_journal import opening_manifest
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    m = opening_manifest(); cap = m.pop('opening')['capture']; m['schema'] = 'DEMO_EXECUTION_REPLAY_V1'; m['contract'] = None
+    paths = {k:tmp_path/(k+'.json') for k in ('manifest','capture','report')}
+    paths['manifest'].write_text(json.dumps(m)); paths['capture'].write_text(json.dumps(cap))
+    before = paths['capture'].read_bytes()
+    journal = tmp_path/'journal.db'
+    base = ['--journal',str(journal),'--report',str(paths['report'])]
+    assert main(base + ['--manifest',str(paths['manifest']),'--opening-capture',str(paths['capture'])]) == 2
+    result = json.loads(paths['report'].read_text())
+    assert result['opening']['missing_basis_symbols'] == ['BTCUSDC']
+    assert result['opening']['missing_contract_symbols'] == ['BTCUSDC']
+    assert result['projection_reason'] == 'OPENING_INPUTS_INCOMPLETE'
+    assert result['reconciliation'] is None and result['observed_at_ms'] == 90
+    with DemoExecutionJournal(journal,read_only=True) as store:
+        assert store.manifest['initial_position'] == '2'
+    assert main(base) == 2
+    assert paths['capture'].read_bytes() == before
+    with pytest.raises(SystemExit): main(['--journal',str(journal),'--report',str(paths['capture']),
+        '--manifest',str(paths['manifest']),'--opening-capture',str(paths['capture'])])
+    assert paths['capture'].read_bytes() == before
