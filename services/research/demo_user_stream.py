@@ -69,16 +69,19 @@ def _validate_payload(p):
     if not isinstance(p,dict):raise ValueError('STREAM_OBJECT_REQUIRED')
     kind=p.get('e')
     if kind=='ACCOUNT_UPDATE':
-        _fields(p,{'e','E','T','a'});a=p['a'];_fields(a,{'m','B','P'},{'S'})
+        _fields(p,{'e','E','T','a'});a=p['a'];_fields(a,{'m','B'},{'P','S'})
         _enum(a['m'],{'DEPOSIT','WITHDRAW','ORDER','FUNDING_FEE','WITHDRAW_REJECT','ADJUSTMENT',
               'INSURANCE_CLEAR','ADMIN_DEPOSIT','ADMIN_WITHDRAW','MARGIN_TRANSFER','MARGIN_TYPE_CHANGE',
               'ASSET_TRANSFER','OPTIONS_PREMIUM_FEE','OPTIONS_SETTLE_PROFIT','AUTO_EXCHANGE',
               'COIN_SWAP_DEPOSIT','COIN_SWAP_WITHDRAW'})
         if 'S' in a:_symbol(a['S'])
         _rows(a['B'],{'a','wb','cw','bc'},set(),('a',),{'a':_text,'wb':_decimal,'cw':_decimal,'bc':_decimal})
-        _rows(a['P'],{'s','pa','ep','cr','up','mt','iw','ps'},{'bep'},('s','ps'),
-              {'s':_symbol,'ps':_side,'mt':lambda v:_enum(v,{'isolated','cross'}),
-               **dict.fromkeys(('pa','ep','bep','cr','up','iw'),_decimal)})
+        # Crossed funding updates can omit P entirely. Preserve absence: it is
+        # a partial observation, not a statement that the account has no positions.
+        if 'P' in a:
+            _rows(a['P'],{'s','pa','ep','cr','up','mt','iw','ps'},{'bep'},('s','ps'),
+                  {'s':_symbol,'ps':_side,'mt':lambda v:_enum(v,{'isolated','cross'}),
+                   **dict.fromkeys(('pa','ep','bep','cr','up','iw'),_decimal)})
     elif kind=='ORDER_TRADE_UPDATE':
         _fields(p,{'e','E','T','o'});o=p['o'];_fields(o,REQUIRED_ORDER,OPTIONAL_ORDER|{'er'})
         parsers={'s':_symbol,'c':lambda v:_text(v,r'[.A-Z:/a-z0-9_-]{1,36}'),'S':lambda v:_enum(v,{'BUY','SELL'}),

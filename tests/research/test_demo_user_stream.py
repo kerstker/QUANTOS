@@ -25,12 +25,25 @@ def test_partial_funding_update_preserves_exact_facts_without_inventing_flat_pos
     assert event['response_sha256']==hashlib.sha256(raw.encode()).hexdigest()
 
 
-@pytest.mark.parametrize('change',['secret_field','float_amount','duplicate_asset','duplicate_key'])
+def test_balance_only_funding_update_preserves_omitted_position_field(tmp_path):
+    body=account_event();body['a'].pop('P')
+    raw=json.dumps(body);event=normalize_message(raw)
+    assert 'P' not in event['payload']['a']
+    with UserStreamJournal(tmp_path/'stream.db',account_ref_sha256='a'*64) as store:
+        store.start_session(source_sha256='b'*64,at_ms=NOW)
+        store.record('MESSAGE',at_ms=NOW,message=event)
+        assert store.snapshot(as_of_ms=NOW)['event_counts']=={'ACCOUNT_UPDATE':1}
+        assert store.verify()['records']==2
+
+
+@pytest.mark.parametrize('change',['secret_field','float_amount','duplicate_asset','duplicate_key','null_positions','object_positions'])
 def test_unsafe_or_ambiguous_payload_is_rejected(change):
     body=account_event()
     if change=='secret_field':body['apiKey']='a'*64
     elif change=='float_amount':body['a']['B'][0]['wb']=100.0
     elif change=='duplicate_asset':body['a']['B']*=2
+    elif change=='null_positions':body['a']['P']=None
+    elif change=='object_positions':body['a']['P']={}
     raw=json.dumps(body)
     if change=='duplicate_key':raw=raw.replace('"e": "ACCOUNT_UPDATE"','"e": "ACCOUNT_UPDATE", "e": "ORDER_TRADE_UPDATE"')
     with pytest.raises(ValueError):normalize_message(raw)
