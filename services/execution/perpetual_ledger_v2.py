@@ -22,6 +22,9 @@ must be added as separately reviewed contract versions before use.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import (
@@ -51,6 +54,7 @@ DECIMAL_CONTEXT_VERSION = "quantos.linear-perpetual-decimal-context.v1"
 COST_BASIS_POLICY = "EXACT_ENTRY_NOTIONAL_PRORATA_TRUNCATE_RETAIN_REMAINDER_V1"
 MARGIN_ADMISSION_POLICY = "INITIAL_FOR_NEW_EXPOSURE_MAINTENANCE_FOR_REDUCTION_V1"
 OPENING_STATE_POLICY = "IMPORTED_BALANCES_EXCLUDE_OPENING_UNREALIZED_V1"
+REPORTED_CASH_POLICY = "REPORTED_QUOTE_CASH_AFTER_FILLS_V1"
 BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID = "BINANCE_USDM.UTC_DAY.v1"
 
 _DECIMAL_CONTEXT_PRECISION = 50
@@ -874,6 +878,66 @@ class FundingEvent:
         )
 
 
+class ReportedCashReplayError(PerpetualLedgerError):
+    """Retain the external observation; this model cannot admit its projection."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReportedCashReplayPolicy:
+    """Explicit opt-in; default simulation identity and semantics stay unchanged."""
+    account_ref_sha256: str
+    asset: str
+
+    def __post_init__(self):
+        if (type(self.account_ref_sha256) is not str or re.fullmatch('[a-f0-9]{64}',self.account_ref_sha256) is None
+            or self.asset not in ('USDT','USDC')):
+            raise ValueError('reported cash requires one account namespace and quote')
+
+    def as_canonical_dict(self):
+        return {'policy':REPORTED_CASH_POLICY,'account_ref_sha256':self.account_ref_sha256,
+                'asset':self.asset,'source_verified':False,'scope':'TECHNICAL_VALIDATION_ONLY'}
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReportedCashFlowEvent:
+    """Observed funding or external cash only; never a transfer execution API.
+
+    Commissions and realized price PnL belong to reported fills and cannot be
+    posted again from income history. The input journal owns source provenance;
+    this ledger deduplicates monetary identity, not transport envelopes.
+    """
+    timestamp: int
+    account_ref_sha256: str
+    asset: str
+    income_type: str
+    transaction_id: str
+    amount: Decimal
+    instrument_id: str | None
+    source_sha256: str
+
+    @_reviewed_decimal
+    def __post_init__(self):
+        object.__setattr__(self,'timestamp',_timestamp(self.timestamp))
+        ReportedCashReplayPolicy(account_ref_sha256=self.account_ref_sha256,asset=self.asset)
+        if (self.income_type not in ('FUNDING_FEE','TRANSFER') or type(self.transaction_id) is not str or
+            re.fullmatch('[1-9][0-9]{0,18}',self.transaction_id) is None or int(self.transaction_id)>2**63-1 or
+            type(self.source_sha256) is not str or re.fullmatch('[a-f0-9]{64}',self.source_sha256) is None):
+            raise ValueError('unsupported reported cash identity or category')
+        if (self.income_type=='TRANSFER' and self.instrument_id is not None or
+            self.income_type=='FUNDING_FEE' and (type(self.instrument_id) is not str or not self.instrument_id)):
+            raise ValueError('reported cash instrument scope')
+        object.__setattr__(self,'amount',_decimal(self.amount,'reported_cash.amount'))
+
+    def monetary_identity(self):
+        return self.income_type+':'+self.transaction_id
+
+    def monetary_sha256(self):
+        body={'timestamp':self.timestamp,'account_ref_sha256':self.account_ref_sha256,'asset':self.asset,
+            'income_type':self.income_type,'transaction_id':self.transaction_id,'amount':canonical_decimal(self.amount),
+            'instrument_id':self.instrument_id}
+        return hashlib.sha256(json.dumps(body,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class MarkEvent:
     timestamp: int
@@ -898,7 +962,7 @@ class MarkEvent:
         object.__setattr__(self, "observed_trade_price", observed)
 
 
-LedgerEvent = TradeEvent | FundingEvent | MarkEvent
+LedgerEvent = TradeEvent | FundingEvent | MarkEvent | ReportedCashFlowEvent
 
 
 @dataclass
@@ -1095,15 +1159,31 @@ class ReconciliationSnapshot:
         }
 
 
+@dataclass(frozen=True)
+class ReportedCashReconciliationSnapshot(ReconciliationSnapshot):
+    external_cash_flow: Decimal
+
+    @property
+    @_reviewed_decimal
+    def attributed_change(self):
+        return super().attributed_change+self.external_cash_flow
+
+    def as_canonical_dict(self):
+        return {**super().as_canonical_dict(),'reported_cash_policy':REPORTED_CASH_POLICY,
+            'external_cash_flow':canonical_decimal(self.external_cash_flow),
+            'trading_and_funding_change':canonical_decimal(super().attributed_change)}
+
+
 class LinearPerpetualLedger:
     """Single-account deterministic event engine for reviewed v2 contracts."""
 
     _PRIORITY = {FundingEvent: 10, MarkEvent: 20, TradeEvent: 30, OrderFillEvent: 30,
-                 ReportedFillReplayEvent: 30}
+                 ReportedFillReplayEvent: 30, ReportedCashFlowEvent: 40}
 
     def __init__(
         self, specs: Sequence[ContractSpec], *, initial_collateral: Decimal,
         opening_state: OpeningLedgerState | None = None,
+        reported_cash_policy: ReportedCashReplayPolicy | None = None,
     ) -> None:
         items = tuple(specs)
         if not items:
@@ -1120,6 +1200,13 @@ class LinearPerpetualLedger:
             )
         self._specs = by_id
         self._cash_spec = items[0]
+        if reported_cash_policy is not None and (
+            type(reported_cash_policy) is not ReportedCashReplayPolicy or reported_cash_policy.asset!=items[0].margin_asset):
+            raise ReportedCashReplayError('reported cash policy quote mismatch')
+        self._reported_cash_policy=reported_cash_policy
+        self._reported_cash_seen: dict[str,str]={}
+        self._reported_fill_times: dict[str,int]={}
+        self._external_cash_flow=ZERO
         self._initial_collateral = self._cash_spec.validate_cash(
             _positive(initial_collateral, "initial_collateral"),
             "initial_collateral",
@@ -1160,6 +1247,8 @@ class LinearPerpetualLedger:
         self._opening_unrealized = ZERO
         if opening_state is not None:
             self._initialize_opening_state(opening_state)
+            if reported_cash_policy is not None and any(p.margin_mode!=MarginMode.CROSS for p in self._positions.values()):
+                raise ReportedCashReplayError('reported cash replay currently requires cross margin')
 
     @_reviewed_decimal
     def _initialize_opening_state(self, opening: OpeningLedgerState):
@@ -1248,6 +1337,7 @@ class LinearPerpetualLedger:
             "_spread",
             "_impact",
             "_funding",
+            "_external_cash_flow",
             "_liquidation_fee",
             "_insurance_adjustment",
             "_adl_adjustment",
@@ -1553,6 +1643,9 @@ class LinearPerpetualLedger:
         """
         if type(event) not in self._PRIORITY:
             raise TypeError("unsupported ledger event")
+        self._check_reported_event(event)
+        if isinstance(event,ReportedCashFlowEvent) and self._reported_cash_duplicate(event):
+            return None
         self._require_after_opening(event.timestamp)
         if trade_guard is not None and (
             not isinstance(event, TradeEvent) or isinstance(event, ReportedFillReplayEvent)
@@ -1564,15 +1657,22 @@ class LinearPerpetualLedger:
             if self._last_event_key is not None and key < self._last_event_key:
                 raise EventOrderViolation("event clock or priority moved backwards")
             if (
-                isinstance(event, (FundingEvent, MarkEvent))
+                isinstance(event, (FundingEvent, MarkEvent, ReportedCashFlowEvent))
                 and key in self._closed_market_phases
             ):
                 raise EventOrderViolation(
                     "market/settlement phase is already closed for this timestamp"
                 )
             self._last_event_key = key
+            if isinstance(event,ReportedCashFlowEvent):
+                self._apply_reported_cash(event)
+                self._check_reported_cash_margin()
+                self._closed_market_phases={key}
+                return None
             if isinstance(event, TradeEvent):
                 result = self._apply_trade(event)
+                if self._reported_cash_policy is not None and result.filled_quantity!=ZERO:
+                    self._reported_fill_times[event.instrument_id]=event.timestamp
                 if trade_guard is not None and result.filled_quantity != ZERO:
                     trade_guard(result)
                 return result
@@ -1599,6 +1699,8 @@ class LinearPerpetualLedger:
         call.  ``apply_event`` remains a convenience for genuinely isolated
         events and intentionally cannot infer observations that were omitted.
         """
+        events=tuple(events)
+        for event in events:self._check_reported_event(event)
         ordered = sorted(
             enumerate(events),
             key=lambda item: (
@@ -1621,6 +1723,20 @@ class LinearPerpetualLedger:
             ),
         ):
             group = tuple(item[1] for item in group_iter)
+            if isinstance(group[0],ReportedCashFlowEvent):
+                with self._transaction():
+                    unseen=[event for event in group if not self._reported_cash_duplicate(event)]
+                    if unseen:
+                        self._require_after_opening(key[0])
+                        if self._last_event_key is not None and key<self._last_event_key or key in self._closed_market_phases:
+                            raise EventOrderViolation('reported cash phase moved backwards or is closed')
+                        self._last_event_key=key
+                        for event in unseen:
+                            if not self._reported_cash_duplicate(event):self._apply_reported_cash(event)
+                        self._check_reported_cash_margin()
+                        self._closed_market_phases={key}
+                    results.extend(None for _event in group)
+                continue
             self._require_after_opening(key[0])
             if isinstance(group[0], TradeEvent):
                 results.extend(self.apply_event(event) for event in group)
@@ -1662,6 +1778,50 @@ class LinearPerpetualLedger:
                 self._closed_market_phases = {key}
                 results.extend(None for _event in group)
         return tuple(results)
+
+    def _check_reported_event(self,event):
+        if isinstance(event,ReportedCashFlowEvent):
+            if (self._reported_cash_policy is None or event.account_ref_sha256!=self._reported_cash_policy.account_ref_sha256 or
+                event.asset!=self._reported_cash_policy.asset):
+                raise ReportedCashReplayError('reported cash requires the matching explicit policy')
+        if self._reported_cash_policy is not None:
+            if isinstance(event,FundingEvent) or isinstance(event,TradeEvent) and type(event) is not ReportedFillReplayEvent:
+                raise ReportedCashReplayError('simulated flows cannot enter observed cash replay')
+            if isinstance(event,ReportedFillReplayEvent) and event.margin_mode!=MarginMode.CROSS:
+                raise ReportedCashReplayError('reported cash replay currently requires cross margin')
+            if isinstance(event,MarkEvent) and event.liquidation_backstop is not None:
+                raise ReportedCashReplayError('simulated liquidation cash cannot enter observed cash replay')
+
+    def _reported_cash_duplicate(self,event):
+        old=self._reported_cash_seen.get(event.monetary_identity())
+        if old is not None and old!=event.monetary_sha256():
+            raise ReportedCashReplayError('conflicting monetary identity')
+        return old is not None
+
+    def _apply_reported_cash(self,event):
+        if len(self._reported_cash_seen)>=10000:raise ReportedCashReplayError('reported cash replay budget')
+        amount=self._cash(event.amount,'reported_cash.amount')
+        if event.income_type=='FUNDING_FEE':
+            self._spec(event.instrument_id)
+            if self._reported_fill_times.get(event.instrument_id)==event.timestamp:
+                raise ReportedCashReplayError('same-millisecond fill and funding order is unresolved')
+            position=self._positions.get(event.instrument_id)
+            if position is None or position.quantity==ZERO or position.margin_mode!=MarginMode.CROSS:
+                raise ReportedCashReplayError('funding lacks a bound cross position; retain raw input')
+            self._funding=self._cash_add(self._funding,amount,field='funding')
+        else:
+            self._external_cash_flow=self._cash_add(self._external_cash_flow,amount,field='external_cash_flow')
+        self._wallet_balance=self._cash_add(self._wallet_balance,amount,field='wallet_balance')
+        self._reported_cash_seen[event.monetary_identity()]=event.monetary_sha256()
+        self._assert_cash_state()
+        self._events.append({'event_type':'REPORTED_CASH_FLOW','timestamp':event.timestamp,'policy':REPORTED_CASH_POLICY,
+            'income_type':event.income_type,'transaction_id':event.transaction_id,'asset':event.asset,
+            'account_ref_sha256':event.account_ref_sha256,'instrument_id':event.instrument_id,
+            'amount':canonical_decimal(amount),'source_sha256':event.source_sha256,'monetary_sha256':event.monetary_sha256()})
+
+    def _check_reported_cash_margin(self):
+        if self._wallet_balance<ZERO or self._liquidation_targets():
+            raise ReportedCashReplayError('reported cash needs unsupported balance or liquidation evidence')
 
     def _capacity_quantity(
         self, event: TradeEvent, spec: ContractSpec
@@ -2437,7 +2597,8 @@ class LinearPerpetualLedger:
             -self._opening_unrealized,
             field="price_pnl",
         )
-        return ReconciliationSnapshot(
+        cls=ReconciliationSnapshot if self._reported_cash_policy is None else ReportedCashReconciliationSnapshot
+        return cls(
             initial_equity=self._cash_add(self._initial_collateral, self._opening_unrealized, field='opening equity'),
             ending_equity=self.account_equity(),
             price_pnl=price_pnl,
@@ -2448,11 +2609,15 @@ class LinearPerpetualLedger:
             liquidation_fee=self._liquidation_fee,
             insurance_adjustment=self._insurance_adjustment,
             adl_adjustment=self._adl_adjustment,
+            **({'external_cash_flow':self._external_cash_flow} if self._reported_cash_policy is not None else {}),
         )
 
     @_reviewed_decimal
     def state_as_canonical_dict(self) -> dict[str, object]:
         return {
+            **({'reported_cash_policy':self._reported_cash_policy.as_canonical_dict(),
+                'reported_cash_identities':dict(sorted(self._reported_cash_seen.items())),
+                'reported_fill_times':dict(sorted(self._reported_fill_times.items()))} if self._reported_cash_policy is not None else {}),
             **({'opening_state': self._opening_state.as_canonical_dict(),
                 'opening_unrealized': canonical_decimal(self._opening_unrealized)} if self._opening_state is not None else {}),
             "schema": f"quantos.linear-{self._cash_spec.margin_asset.lower()}-perpetual-ledger.v2",
@@ -2495,6 +2660,11 @@ class LinearPerpetualLedger:
 
 
 __all__ = [
+    "ReportedCashReplayPolicy",
+    "ReportedCashFlowEvent",
+    "ReportedCashReplayError",
+    "ReportedCashReconciliationSnapshot",
+    "REPORTED_CASH_POLICY",
     "OpeningPosition",
     "OpeningLedgerState",
     "OPENING_STATE_POLICY",
