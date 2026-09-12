@@ -209,29 +209,37 @@ def _preparation_lease(dispatch):
         os.close(fd)
 
 
-def prepare(envelope_bytes, *,evidence_directory,**kwargs):
+def prepare(envelope_bytes, *,evidence_directory,verification_now_ms=None,**kwargs):
     """Persist every possible client ID before returning; never sends or refunds."""
     try:
         with _preparation_lease(kwargs['dispatch']):
-            return _prepare_locked(envelope_bytes,evidence_directory=evidence_directory,**kwargs)
+            return _prepare_locked(envelope_bytes,evidence_directory=evidence_directory,
+                verification_now_ms=verification_now_ms,**kwargs)
     except DemoPreparationRejected:
         raise
     except Exception:
         raise DemoPreparationRejected('DEMO_PREPARATION_STOPPED_QUERY_ORIGINAL_IDS') from None
 
 
-def _prepare_locked(envelope_bytes, *,evidence_directory,**kwargs):
+def _prepare_locked(envelope_bytes, *,evidence_directory,verification_now_ms=None,**kwargs):
     try:
+        decision_at=kwargs['now_ms']
+        verified_at=decision_at if verification_now_ms is None else verification_now_ms
+        if type(verified_at) is not int or not 0<=verified_at-decision_at<=30000:
+            raise DemoPreparationRejected('DEMO_PREPARATION_VERIFICATION_TIME')
         frozen=proposal(**kwargs)
-        demo_authority.verify_for_executor(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=kwargs['now_ms'])
+        require_current_kill(kwargs['risk_inputs']['kill_switch'].state,now_ms=verified_at)
+        if assess_origin(frozen['origin'],as_of_ms=verified_at)['status']!='OBSERVED_FLAT_QUOTE':
+            raise DemoPreparationRejected('DEMO_PREPARATION_ORIGIN_STALE')
+        demo_authority.verify_for_executor(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=verified_at)
         path=_retain(evidence_directory,frozen)
-        reservation=kwargs['dispatch'].reserve(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=kwargs['now_ms'])
+        reservation=kwargs['dispatch'].reserve(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=verified_at)
         for order in frozen['orders']:
             kwargs['recovery'].register_unknown(client_order_id=order['newClientOrderId'],
                 deployment_id=frozen['context']['deployment_sha256'],instrument_id=order['symbol'],side=order['side'],
-                quantity=float(Decimal(order['quantity'])),now_ms=kwargs['now_ms'],reason='DEMO_INTENT_PERSISTED_BEFORE_NETWORK')
+                quantity=float(Decimal(order['quantity'])),now_ms=verified_at,reason='DEMO_INTENT_PERSISTED_BEFORE_NETWORK')
             kwargs['oms'].record_submission(order['newClientOrderId'],order['symbol'],OrderSide(order['side']),float(Decimal(order['quantity'])),
-                strategy_id=frozen['strategy_id'],submitted_at=kwargs['now_ms'],status='PENDING_NEW',
+                strategy_id=frozen['strategy_id'],submitted_at=verified_at,status='PENDING_NEW',
                 order_type='LIMIT',limit_price=float(Decimal(order['price'])))
         return {'schema':'DEMO_PREPARED_BATCH_V1','status':'INTENTS_PERSISTED','reservation_sha256':reservation['record_hash'],
                 'proposal_sha256':_digest(frozen),'proposal_path':str(path),'orders':frozen['orders'],
