@@ -3,6 +3,25 @@ import json
 import pytest
 
 
+def test_cash_window_console_keeps_fixed_window_and_readonly_scope(tmp_path,monkeypatch):
+    from services.research.demo_cash_window import save_capture
+    from tests.research.test_demo_cash_window import fixture, NOW as at
+    directory=tmp_path/'cash-window';save_capture(directory,fixture())
+    before={p.name:p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(views,'_cash_window_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(at+120000)*1_000_000)
+    result=TestClient(app).get('/api/v1/console/binance-demo').json()['cash_window']
+    assert result['status']=='AVAILABLE'
+    assert result['report']['status']=='MATCHED_REPORTED_WINDOW'
+    assert result['report']['assets'][0]['residual']=='0'
+    assert result['report']['ledger_reconciliation']=='NOT_EVALUATED'
+    assert result['report']['source_verified'] is False
+    assert views.build_cash_window_snapshot(directory=directory,as_of_ms=at)['status']=='DATA_BLOCKED'
+    assert before=={p.name:p.read_bytes() for p in directory.iterdir()}
+    (directory/'latest.json').write_text('{}')
+    assert views.build_cash_window_snapshot(directory=directory,as_of_ms=at+120000)['status']=='CORRUPT_OR_UNREADABLE'
+
+
 def test_user_stream_snapshot_is_read_only_and_does_not_claim_order_delivery(tmp_path,monkeypatch):
     from services.research.demo_user_stream import UserStreamJournal
     path=tmp_path/'stream.db'

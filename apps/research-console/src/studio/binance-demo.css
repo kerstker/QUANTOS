@@ -51,3 +51,13 @@
 .s-demo-stream-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 20px 0 12px; }
 .s-demo-stream-filter select { width: auto; min-width: 170px; }
 .s-demo-stream-filter span { color: var(--s-muted); font-size: 12px; }
+.s-demo-cash-wallet td {font-variant-numeric:tabular-nums;}
+@media(max-width:600px) {
+  .s-demo-cash-wallet .s-table,.s-demo-cash-wallet tbody {display:block;min-width:0;width:100%;}
+  .s-demo-cash-wallet thead {position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);}
+  .s-demo-cash-wallet tbody {display:grid;gap:12px;padding:12px;}
+  .s-demo-cash-wallet tr {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--s-line);border-radius:8px;}
+  .s-demo-cash-wallet td {padding:12px 10px;white-space:normal;overflow-wrap:anywhere;border:0;}
+  .s-demo-cash-wallet td::before {content:attr(data-label);display:block;margin-bottom:7px;color:var(--s-muted);font-size:11px;}
+  .s-demo-cash-wallet td:nth-child(-n+2) {font-weight:600;border-bottom:1px solid var(--s-line);}
+}

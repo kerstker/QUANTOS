@@ -14,8 +14,25 @@ from services.research.demo_private_checks import load_report
 from services.research.demo_account_baseline import load_capture as load_account_capture, build_baseline
 from services.research.demo_statement import load_statement, assess as assess_statement
 from services.research.demo_user_stream import UserStreamJournal
+from services.research.demo_cash_window import load_capture as load_cash_window, assess as assess_cash_window
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _cash_window_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_cash_windows'
+
+
+def build_cash_window_snapshot(*, directory: Path, as_of_ms: int):
+    if not (directory/'latest.json').exists():
+        return {'status': 'NO_SNAPSHOT', 'report': None}
+    try:
+        raw = load_cash_window(directory)
+        if raw['completed_at_ms'] > as_of_ms:
+            return {'status': 'DATA_BLOCKED', 'report': None}
+        return {'status': 'AVAILABLE', 'report': assess_cash_window(raw, as_of_ms=as_of_ms)}
+    except Exception:
+        return {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
 
 
 def _user_stream_path():
@@ -162,6 +179,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'cash_window': build_cash_window_snapshot(directory=_cash_window_directory(), as_of_ms=as_of_ms),
         'user_stream':user_stream,
         'statement': build_statement_snapshot(directory=runtime_state_root() / 'data/cache/binance_demo_statements', as_of_ms=as_of_ms),
         'account_baseline': build_account_baseline_snapshot(directory=_account_capture_directory(), as_of_ms=as_of_ms),

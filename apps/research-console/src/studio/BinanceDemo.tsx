@@ -1,4 +1,5 @@
 import {DemoStatement} from './DemoStatement';
+import {DemoCashWindow} from './DemoCashWindow';
 import {fetchBinanceDemo} from '@/lib/api/binance-demo-api';
 import type {BinanceDemoPayload} from '@/lib/types/binance-demo';
 import {Empty, ErrorNote, Header, Loading, Metric, Panel} from './components';
@@ -69,6 +70,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     </div>
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
     <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
+    <DemoCashWindow snapshot={data?.cash_window} refreshFailed={!!error}/>
     <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
     <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>
     <Panel title="合约与计价" note={`${historical ? '历史观察 · ' : ''}BTCUSDT 与 BTCUSDC 分别保留数量、价格与保证金币种`}>
