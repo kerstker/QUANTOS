@@ -12,7 +12,8 @@ import re
 from live.execution.demo_prepared_execution import _load_proof
 from live.execution.demo_pre_submit import _digest, _retain
 from services.execution.passive_queue import Action
-from services.research.binance_order_receipts import OPTIONS_SCHEMA, normalize_order_receipts
+from services.research.binance_order_receipts import OPTIONS_SCHEMA,CLOCK_SCHEMA,normalize_order_receipts
+from quantos.contracts.binance_demo_clock import SCHEMA as BRACKET_SCHEMA,bracket_bounds,validate_query_clock
 from services.research.ai_factory_store import digest
 from services.research.demo_execution_origin import assess as assess_origin
 from services.research.demo_execution_origin import account_capture
@@ -26,11 +27,34 @@ SCHEMA = 'DEMO_RESERVED_RECEIPT_BINDING_V1'
 BINDING_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
+def _retained_clock_bracket(proof,wire,clients,*,start_ms,end_ms):
+    """Derive clock inputs only from the original proposal and query journal.
+
+    All selected latest query rows must share the same retained clock read.
+    A partly refreshed batch never falls back to the legacy common-clock path.
+    """
+    latest={r['client_order_id']:r for r in wire if r['kind']=='QUERY_RESULT'}
+    if not any('clock' in r['payload'] for r in latest.values()):return None,[]
+    if set(latest)!=set(clients) or any('clock' not in r['payload'] for r in latest.values()):
+        raise ValueError('QUERY_CLOCK_BATCH_INCOMPLETE')
+    clocks=[validate_query_clock(r['payload']['clock'],query_requested_at_ms=r['payload']['requested_at_ms'])
+        for r in latest.values()]
+    if len({_digest(c) for c in clocks})!=1:raise ValueError('QUERY_CLOCK_BATCH_MIXED')
+    source=proof['origin'];before=source['reads'][0]
+    if before['kind']!='clock_before':raise ValueError('ORIGIN_CLOCK_BEFORE_MISSING')
+    bracket={'schema':BRACKET_SCHEMA,'provenance':'IMPORTED_UNVERIFIED',
+        'before':{'requested_at_ms':before['requested_at_ms'],'received_at_ms':before['received_at_ms'],
+            'server_time_ms':before['data']['serverTime'],'response_sha256':before['response_sha256'],
+            'source_sha256':_digest(source)},'after':clocks[0]}
+    bracket_bounds(bracket,start_ms=start_ms,end_ms=end_ms)
+    return bracket,[latest[c]['record_hash'] for c in clients]
+
+
 def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
     """Read-only, bounded binding; all monetary numbers remain exact strings.
 
-    Local claim time and raw venue time must currently fit the existing common
-    millisecond clock contract. No offset/latency is fabricated to make it pass.
+    New original-ID query clocks select V3 automatically. Legacy query rows keep
+    their explicit common-clock contract; no history is rewritten or certified.
     """
     if (type(start_ms) is not int or type(end_ms) is not int or not 0 <= start_ms < end_ms
             or not 2 <= end_ms-start_ms <= 150000 or start_ms//86400000 != end_ms//86400000):
@@ -128,10 +152,21 @@ def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
     if len({b['venue_order_id'] for b in bindings}) != len(bindings):
         issues.append('VENUE_ORDER_ID_REUSED')
     result['bound_messages_count'] = len(selected)
+    clock=None
+    try:
+        clock,clock_queries=_retained_clock_bracket(proof,wire,by_client,start_ms=start_ms,end_ms=end_ms)
+        if clock is not None:
+            result['clock_policy']=bracket_bounds(clock,start_ms=start_ms,end_ms=end_ms)['policy']
+            result['clock_query_record_sha256']=clock_queries
+            result['limitations'].remove('NO_CLOCK_OFFSET_OR_LATENCY_INFERRED')
+            result['limitations']+=['CLOCK_BRACKET_RETROSPECTIVE_ONLY','INTERIOR_CLOCK_DRIFT_ASSUMED_NOT_VERIFIED']
+    except ValueError:
+        issues.append('QUERY_CLOCK_BRACKET_UNRESOLVED')
     if not issues:
-        native = {'schema': OPTIONS_SCHEMA, 'symbol':origin['symbol'], 'account_ref_sha256':context['account_ref_sha256'],
+        native = {'schema':CLOCK_SCHEMA if clock is not None else OPTIONS_SCHEMA, 'symbol':origin['symbol'], 'account_ref_sha256':context['account_ref_sha256'],
             'action_hash':digest(result['actions']), 'provenance':'IMPORTED_UNVERIFIED',
-            'coverage':{'start_ms':start_ms,'end_ms':end_ms,'gaps':[]},'bindings':bindings,'messages':selected}
+            'coverage':{'start_ms':start_ms,'end_ms':end_ms,'gaps':[]},'bindings':bindings,'messages':selected,
+            **({'clock_bracket':clock} if clock is not None else {})}
         try:
             actions = tuple(Action(**(a | {'quantity':Decimal(a['quantity']),'price':Decimal(a['price'])})) for a in result['actions'])
             reduce_only = frozenset(b['order_id'] for b in bindings if b['reduce_only'])

@@ -18,6 +18,7 @@ import threading
 from live.execution.demo_authority import verify_for_executor
 from services.validation.demo_submission import batch_sha256, parse_envelope, validate_context
 from live.execution.demo_wire_protocol import validate_outcome
+from quantos.contracts.binance_demo_clock import validate_query_clock
 
 _MAX_BATCHES=1000
 _SCHEMA='''
@@ -201,9 +202,11 @@ class DemoDispatchStore:
                 if payload['outcome']['status'] not in ('ACKNOWLEDGED','UNKNOWN'):raise DemoDispatchConflict('DEMO_WIRE_RESULT')
                 results.add(identity)
             elif record['kind']=='QUERY_RESULT':
-                if (set(payload)!=set(('requested_at_ms','outcome')) or type(payload['requested_at_ms']) is not int or
+                if (set(payload)!=set(('requested_at_ms','outcome'))|({'clock'} if 'clock' in payload else set()) or type(payload['requested_at_ms']) is not int or
                     not reservation['payload']['reserved_at_ms']<=payload['requested_at_ms']<=record['at_ms']):
                     raise DemoDispatchConflict('DEMO_WIRE_QUERY')
+                if 'clock' in payload:
+                    validate_query_clock(payload['clock'],query_requested_at_ms=payload['requested_at_ms'])
                 validate_outcome(payload['outcome'],planned[0])
                 if payload['outcome']['status'] not in ('FOUND','UNKNOWN'):raise DemoDispatchConflict('DEMO_WIRE_QUERY')
             else:raise DemoDispatchConflict('DEMO_WIRE_KIND')
@@ -269,9 +272,10 @@ class DemoDispatchStore:
         return self._append_wire(kind='SEND_RESULT',reservation_sha256=claim['reservation_sha256'],client_order_id=claim['client_order_id'],
             at_ms=now_ms,payload={'claim_sha256':claim_sha256,'outcome':outcome})
 
-    def record_query_result(self, *,reservation_sha256,client_order_id,requested_at_ms,outcome,now_ms):
+    def record_query_result(self, *,reservation_sha256,client_order_id,requested_at_ms,outcome,now_ms,clock=None):
+        if clock is not None:validate_query_clock(clock,query_requested_at_ms=requested_at_ms)
         return self._append_wire(kind='QUERY_RESULT',reservation_sha256=reservation_sha256,client_order_id=client_order_id,
-            at_ms=now_ms,payload={'requested_at_ms':requested_at_ms,'outcome':outcome})
+            at_ms=now_ms,payload={'requested_at_ms':requested_at_ms,'outcome':outcome,**({'clock':clock} if clock is not None else {})})
 
     def __enter__(self):return self
 

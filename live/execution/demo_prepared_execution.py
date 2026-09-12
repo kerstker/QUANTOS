@@ -7,6 +7,7 @@ separate and may never infer fills from these acknowledgements.
 """
 from dataclasses import asdict
 from decimal import Decimal
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,8 +26,10 @@ from live.governance.validation_attestation import require_validation_attestatio
 from quantos.contracts.trading import OrderSide
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_execution_origin import assess
+from quantos.contracts.binance_demo_clock import QUERY_SCHEMA,validate_query_clock
 
 _STATE_ROOT=Path('/var/lib/quantos-demo-executor')
+QUERY_CLOCK_SOURCE_SHA256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 class DemoExecutionStopped(RuntimeError):
@@ -190,7 +193,7 @@ def query_reserved(prepared, *,dispatch,recovery,oms):
             # reached its initial intent after a crash during preparation.
             dispatch.wire_snapshot();recovery.latest_records();oms.orders()
             start=now_ms();deadline=time.monotonic()+60
-            report={'schema':'DEMO_RESERVED_QUERY_BATCH_V1','status':'QUERY_RECOVERY_REQUIRED',
+            report={'schema':'DEMO_RESERVED_QUERY_BATCH_V2','status':'QUERY_RECOVERY_REQUIRED',
                 'reservation_sha256':prepared['reservation_sha256'],'started_at_ms':start,'completed_at_ms':start,
                 'clock':None,'orders':[],'reason':None,'economic_authority':False,'strategy_pnl':None}
             try:
@@ -200,8 +203,11 @@ def query_reserved(prepared, *,dispatch,recovery,oms):
                 clock=load_json_without_duplicate_keys(raw);server=clock['serverTime']
                 if type(server) is not int:raise ValueError()
                 offset=server-(start+received)//2
-                report['clock']={'requested_at_ms':start,'received_at_ms':received,'server_time_ms':server,'accepted':False}
-                if not 0<=received-start<=5000 or abs(offset)>2000:raise ValueError()
+                probe={'schema':QUERY_SCHEMA,'requested_at_ms':start,'received_at_ms':received,'server_time_ms':server,
+                    'response_sha256':hashlib.sha256(raw).hexdigest(),'source_sha256':QUERY_CLOCK_SOURCE_SHA256,
+                    'raw_utf8':raw.decode('utf-8')}
+                report['clock']={k:v for k,v in probe.items() if k!='raw_utf8'}|{'accepted':False}
+                validate_query_clock(probe,query_requested_at_ms=received)
                 report['clock']['accepted']=True
             except Exception:
                 report['reason']='QUERY_CLOCK_UNRELIABLE'
@@ -226,7 +232,7 @@ def query_reserved(prepared, *,dispatch,recovery,oms):
                             observed['updateTime']>received+offset+current_uncertainty):
                             outcome.update(status='UNKNOWN',order=None,reason='QUERY_CLOCK_INCONSISTENT')
                     record=dispatch.record_query_result(reservation_sha256=prepared['reservation_sha256'],client_order_id=order['newClientOrderId'],
-                        requested_at_ms=requested,outcome=outcome,now_ms=received)
+                        requested_at_ms=requested,outcome=outcome,now_ms=received,clock=probe)
                     report['orders'].append({'client_order_id':order['newClientOrderId'],'outcome':outcome,'record_sha256':record['record_hash']})
                     if outcome['status']!='FOUND':
                         report['reason']='QUERY_UNRESOLVED';break

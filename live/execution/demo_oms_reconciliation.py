@@ -18,6 +18,7 @@ from live.execution.order_recovery import RecoveryState
 from services.execution.perpetual_ledger_v2 import canonical_decimal, ledger_decimal_context
 from services.research.demo_execution_journal import DemoExecutionJournal, observations
 from quantos.contracts.trading import OrderSide
+from quantos.contracts.binance_demo_clock import validate_query_clock,INTERIOR_DRIFT_MS,QUANTIZATION_MS
 
 SCHEMA='DEMO_OMS_RECEIPT_RESOLUTION_V1'
 TERMINAL={'FILLED':'FILLED','CANCELLED':'CANCELED','EXPIRED':'EXPIRED'}
@@ -67,8 +68,17 @@ def prepare_resolution(prepared,*,dispatch,stream,start_ms,end_ms,source_commit,
             if (q['orderId']!=binding['venue_order_id'] or query_state!=TERMINAL[state] or
                 Decimal(q['executedQty'])!=Decimal(last['cumulative_filled'])):
                 issues.append('PRIVATE_QUERY_STATE_OR_QUANTITY_DIFFERENCE');continue
+            query_venue_upper=query['at_ms']
+            if 'clock' in native:
+                try:
+                    clock=validate_query_clock(query['payload'].get('clock'),
+                        query_requested_at_ms=query['payload']['requested_at_ms'])
+                    query_venue_upper+=clock['server_time_ms']-clock['requested_at_ms']+QUANTIZATION_MS+INTERIOR_DRIFT_MS
+                except ValueError:
+                    issues.append('PRIVATE_QUERY_CLOCK_UNRESOLVED');continue
             if (query['payload']['requested_at_ms']<last['received_ms'] or query['at_ms']>as_of_ms or
-                q['updateTime']<last['venue_ms'] or q['updateTime']>query['at_ms']):
+                q['updateTime']<last['venue_ms'] or q['updateTime']>query_venue_upper or
+                native.get('clock',{}).get('available_at_ms',0)>as_of_ms):
                 issues.append('PRIVATE_QUERY_CLOCK_UNRESOLVED');continue
             trades={t['response_sha256']:t for t in native['trade_rows'] if t['order_id']==observed['order_id']}
             quantity=Decimal(0);notional=Decimal(0);project=[]

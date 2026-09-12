@@ -10,6 +10,7 @@ import json
 import re
 
 SCHEMA = 'BINANCE_USDM_CLOCK_BRACKET_V1'
+QUERY_SCHEMA = 'DEMO_ORIGINAL_QUERY_CLOCK_V1'
 POLICY = 'ENDPOINT_ENVELOPE_WITH_DECLARED_500MS_INTERIOR_DRIFT_V1'
 MAX_TIME = 8640000000000000
 MAX_RTT_MS = 5000
@@ -83,3 +84,35 @@ def compatible_event(venue_ms, *, claimed_at_ms, received_at_ms, bounds):
         raise ValueError('DEMO_CLOCK_LOCAL_ORDER_OR_WINDOW')
     lower,upper=event_local_interval(venue_ms,bounds)
     return lower<=received and upper>=claimed
+
+
+def validate_query_clock(document, *, query_requested_at_ms):
+    """Verify retained public clock bytes before their associated private query.
+
+    The source digest is provenance, not a self-issued source certification. The
+    protected caller obtains these bytes from its fixed public transport.
+    """
+    _fields(document,'schema requested_at_ms received_at_ms server_time_ms response_sha256 source_sha256 raw_utf8')
+    if document['schema']!=QUERY_SCHEMA or type(document['raw_utf8']) is not str:
+        raise ValueError('DEMO_QUERY_CLOCK_SCHEMA')
+    encoded=document['raw_utf8'].encode()
+    if len(encoded)>512 or hashlib.sha256(encoded).hexdigest()!=document['response_sha256']:
+        raise ValueError('DEMO_QUERY_CLOCK_RESPONSE_DIGEST')
+    def pairs(items):
+        value={}
+        for key,item in items:
+            if key in value:raise ValueError('DEMO_QUERY_CLOCK_DUPLICATE_JSON')
+            value[key]=item
+        return value
+    try:
+        body=json.loads(document['raw_utf8'],object_pairs_hook=pairs)
+    except (TypeError,UnicodeError,RecursionError) as exc:
+        raise ValueError('DEMO_QUERY_CLOCK_JSON') from exc
+    _fields(body,'serverTime')
+    if type(body['serverTime']) is not int or body['serverTime']!=document['server_time_ms']:
+        raise ValueError('DEMO_QUERY_CLOCK_SERVER_TIME')
+    probe={k:document[k] for k in ('requested_at_ms','received_at_ms','server_time_ms','response_sha256','source_sha256')}
+    value=_probe(probe)
+    if not 0<=_time(query_requested_at_ms)-value[1]<=60000:
+        raise ValueError('DEMO_QUERY_CLOCK_FUTURE_OR_STALE_PROBE')
+    return probe
