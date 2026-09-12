@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 53,
+  "edge_count": 54,
   "edges": [
     {
       "references": [
@@ -1885,10 +1885,21 @@
       ],
       "source": "risk",
       "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 19,
+          "module": "services.governance.json_integrity",
+          "path": "services/validation/demo_submission.py"
+        }
+      ],
+      "source": "validation",
+      "target": "governance"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "59b87a7ef0c518b45e23365e1de0f8614eb6709aa5b76ecc86d7427a3aa3bbec",
+  "graph_sha256": "ba4a967e10601bf97408462e48183d8fd1ad51a8fd1f40e69201e7193744c551",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1926,7 +1937,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 568,
+  "source_file_count": 569,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

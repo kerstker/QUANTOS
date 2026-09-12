@@ -385,7 +385,11 @@ class SqliteOrderRecoveryStore:
             "recorded_at_ms": recorded_at_ms,
         }
         payload_sha256 = _sha256(_canonical_json(payload))
-        previous_hash = previous.record_hash
+        # The chain covers all orders, not only this order's state transitions.
+        # Another order may have appended since ``previous`` was recorded.
+        previous_hash = self._conn.execute(
+            "SELECT record_hash FROM order_recovery_events ORDER BY seq DESC LIMIT 1"
+        ).fetchone()[0]
         seq = int(self._conn.execute(
             "SELECT COALESCE(MAX(seq),0)+1 FROM order_recovery_events"
         ).fetchone()[0])

@@ -59,6 +59,24 @@ def test_unknown_is_durable_and_blocks_deployment_until_resolved(tmp_path):
     reopened.close()
 
 
+def test_interleaved_orders_extend_the_global_recovery_chain(tmp_path):
+    path=str(tmp_path/'interleaved.db')
+    store=SqliteOrderRecoveryStore(path,create=True)
+    _register(store,cid='first');_register(store,cid='second')
+    store.mark_indeterminate('first',now_ms=200)
+    assert store.chain_valid() is True
+    store.mark_absent('second',now_ms=201)
+    store.mark_found('first',VenueOrderResult(venue_order_id='v1',client_order_id='first',
+        instrument_id='BTC',status='FILLED',filled_qty=.01,avg_price=60000),now_ms=202)
+    store.close()
+    reopened=SqliteOrderRecoveryStore(path)
+    assert reopened.chain_valid() is True
+    assert reopened.latest('first').state is RecoveryState.FOUND
+    assert reopened.latest('second').state is RecoveryState.CONFIRMED_ABSENT
+    assert reopened.deployment_blocked('alpha-a') is True
+    reopened.close()
+
+
 def test_found_terminal_order_is_taken_over_and_not_retried(tmp_path):
     store = SqliteOrderRecoveryStore(str(tmp_path / "recovery.db"), create=True)
     _register(store)
