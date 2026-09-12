@@ -13,6 +13,14 @@ function report(): DemoExecutionOriginReport {
     source_sha256:'b'.repeat(64),read_count:16,issues:[],failures:[],settlement_rounding:'UNVERIFIED',source_verified:false,
     atomic_snapshot_verified:false,submission_enabled:false,strategy_pnl:null};
 }
+it('keeps all three origin versions readable without upgrading their evidence',()=>{
+  for (const schema of ['DEMO_EXECUTION_ORIGIN_V1','DEMO_EXECUTION_ORIGIN_V2','DEMO_EXECUTION_ORIGIN_V3'] as const) {
+    const r={...report(),schema};
+    expect(executionOriginValid({status:'AVAILABLE',report:r},now+20000)).toBe(true);
+    expect(r.source_verified).toBe(false);
+    expect(executionOriginValid({status:'AVAILABLE',report:{...r,source_verified:true}},now+20000)).toBe(false);
+  }
+});
 it('shows the quote scope and preserves external positions without declaring execution ready',()=>{
   const r=report();
   r.wallet='5000.00000000';

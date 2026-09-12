@@ -16,7 +16,7 @@ import urllib.request
 from quantos.contracts.binance_demo import DEMO_REST_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_execution_origin import (
-    ACCOUNT_KINDS, KINDS, MAX_BYTES, PUBLIC, REASONS, SCHEMA, assess, normalize, save, validate,
+    ACCOUNT_KINDS, KINDS, MAX_BYTES, PUBLIC, REASONS, FULL_TERMS_SCHEMA, assess, normalize, save, validate,
 )
 from tools.binance_demo_private_check import load_credentials
 from tools.binance_demo_readiness import NoRedirect, ProbeFailure
@@ -81,7 +81,7 @@ def get_response(path, *, params, headers):
 def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=None):
     get, clock_ms = get or get_response, clock_ms or now_ms
     started = clock_ms()
-    report = {'schema': SCHEMA, 'status': 'NOT_REQUESTED', 'symbol': symbol,
+    report = {'schema': FULL_TERMS_SCHEMA, 'status': 'NOT_REQUESTED', 'symbol': symbol,
               'observed_at_ms': started, 'completed_at_ms': started,
               'account_ref_sha256': None, 'source_sha256': source_hash(), 'reads': [], 'failures': []}
     validate(report)

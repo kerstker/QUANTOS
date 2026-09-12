@@ -10,12 +10,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import threading
 
 from live.execution.demo_authority import verify_for_executor
 from services.validation.demo_submission import batch_sha256, parse_envelope, validate_context
+from live.execution.demo_wire_protocol import validate_outcome
 
 _MAX_BATCHES=1000
 _SCHEMA='''
@@ -41,6 +43,21 @@ CREATE TRIGGER demo_dispatch_reservations_no_delete BEFORE DELETE ON demo_dispat
 CREATE TRIGGER demo_dispatch_reserved_orders_no_update BEFORE UPDATE ON demo_dispatch_reserved_orders
  BEGIN SELECT RAISE(ABORT,'append-only'); END;
 CREATE TRIGGER demo_dispatch_reserved_orders_no_delete BEFORE DELETE ON demo_dispatch_reserved_orders
+ BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TABLE demo_wire_events (
+ seq INTEGER PRIMARY KEY,
+ kind TEXT NOT NULL CHECK(kind IN ('SEND_CLAIM','SEND_RESULT','QUERY_RESULT')),
+ reservation_sha256 TEXT NOT NULL REFERENCES demo_dispatch_reservations(record_hash),
+ client_order_id TEXT NOT NULL,
+ at_ms INTEGER NOT NULL,
+ payload TEXT NOT NULL,
+ prev_hash TEXT NOT NULL,
+ record_hash TEXT NOT NULL UNIQUE
+);
+CREATE UNIQUE INDEX demo_wire_once ON demo_wire_events(reservation_sha256,client_order_id,kind) WHERE kind IN ('SEND_CLAIM','SEND_RESULT');
+CREATE TRIGGER demo_wire_events_no_update BEFORE UPDATE ON demo_wire_events
+ BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER demo_wire_events_no_delete BEFORE DELETE ON demo_wire_events
  BEGIN SELECT RAISE(ABORT,'append-only'); END;
 '''
 
@@ -148,6 +165,98 @@ class DemoDispatchStore:
 
     def close(self):
         with self._lock:self._conn.close()
+
+    def _wire_rows(self,reservations):
+        by_hash={r['record_hash']:r for r in reservations}
+        rows=self._conn.execute('SELECT * FROM demo_wire_events ORDER BY seq LIMIT 40001').fetchall()
+        if len(rows)>40000:raise DemoDispatchConflict('DEMO_WIRE_BUDGET')
+        previous='';records=[];claims={};results=set()
+        for seq,row in enumerate(rows,1):
+            record=dict(row);digest=record.pop('record_hash');body=record['payload']
+            if len(body)>65536:raise DemoDispatchConflict('DEMO_WIRE_BUDGET')
+            record['payload']=json.loads(body);payload=record['payload']
+            if (record['seq']!=seq or record['prev_hash']!=previous or _hash(record)!=digest
+                or _canonical(payload)!=body):raise DemoDispatchConflict('DEMO_WIRE_CHAIN')
+            reservation=by_hash.get(record['reservation_sha256'])
+            if reservation is None:raise DemoDispatchConflict('DEMO_WIRE_RESERVATION')
+            planned=[o for o in reservation['payload']['orders'] if o['newClientOrderId']==record['client_order_id']]
+            if len(planned)!=1 or type(record['at_ms']) is not int or not reservation['payload']['reserved_at_ms']<=record['at_ms']<=9007199254740991:
+                raise DemoDispatchConflict('DEMO_WIRE_IDENTITY')
+            identity=(record['reservation_sha256'],record['client_order_id'])
+            if record['kind']=='SEND_CLAIM':
+                if (identity in claims or set(payload)!=set(('request_sha256','preflight_sha256')) or
+                    any(type(v) is not str or re.fullmatch('[a-f0-9]{64}',v) is None for v in payload.values())):
+                    raise DemoDispatchConflict('DEMO_WIRE_CLAIM')
+                if not record['at_ms']<reservation['payload']['envelope']['payload']['expires_at_ms']:
+                    raise DemoDispatchConflict('DEMO_WIRE_EXPIRED')
+                claims[identity]={**record,'record_hash':digest}
+            elif record['kind']=='SEND_RESULT':
+                claim=claims.get(identity)
+                if (claim is None or identity in results or set(payload)!=set(('claim_sha256','outcome')) or
+                    payload['claim_sha256']!=claim['record_hash'] or record['at_ms']<claim['at_ms']):
+                    raise DemoDispatchConflict('DEMO_WIRE_RESULT')
+                validate_outcome(payload['outcome'],planned[0])
+                if payload['outcome']['status'] not in ('ACKNOWLEDGED','UNKNOWN'):raise DemoDispatchConflict('DEMO_WIRE_RESULT')
+                results.add(identity)
+            elif record['kind']=='QUERY_RESULT':
+                if (set(payload)!=set(('requested_at_ms','outcome')) or type(payload['requested_at_ms']) is not int or
+                    not reservation['payload']['reserved_at_ms']<=payload['requested_at_ms']<=record['at_ms']):
+                    raise DemoDispatchConflict('DEMO_WIRE_QUERY')
+                validate_outcome(payload['outcome'],planned[0])
+                if payload['outcome']['status'] not in ('FOUND','UNKNOWN'):raise DemoDispatchConflict('DEMO_WIRE_QUERY')
+            else:raise DemoDispatchConflict('DEMO_WIRE_KIND')
+            records.append({**record,'record_hash':digest});previous=digest
+        return records
+
+    def wire_snapshot(self):
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                return self._wire_rows(self._verified_rows())
+            except (sqlite3.Error,ValueError,TypeError,KeyError):
+                raise DemoDispatchConflict('DEMO_WIRE_STATE_INVALID') from None
+            finally:self._conn.rollback()
+
+    def _append_wire(self, *,kind,reservation_sha256,client_order_id,at_ms,payload):
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                reservations=self._verified_rows();rows=self._wire_rows(reservations)
+                record={'seq':len(rows)+1,'kind':kind,'reservation_sha256':reservation_sha256,
+                        'client_order_id':client_order_id,'at_ms':at_ms,'payload':json.loads(_canonical(payload)),
+                        'prev_hash':rows[-1]['record_hash'] if rows else ''}
+                for prior in rows:
+                    if (prior['kind'],prior['reservation_sha256'],prior['client_order_id'])==(kind,reservation_sha256,client_order_id):
+                        if kind in ('SEND_RESULT','QUERY_RESULT') and prior['payload']==record['payload'] and prior['at_ms']==at_ms:
+                            self._conn.rollback();return prior
+                        if kind=='QUERY_RESULT':continue
+                        raise DemoDispatchConflict('DEMO_WIRE_ALREADY_CLAIMED_OR_RECORDED')
+                digest=_hash(record)
+                self._conn.execute('INSERT INTO demo_wire_events VALUES(?,?,?,?,?,?,?,?)',
+                    (record['seq'],kind,reservation_sha256,client_order_id,at_ms,_canonical(record['payload']),record['prev_hash'],digest))
+                self._wire_rows(reservations)
+                self._conn.commit()
+                return {**record,'record_hash':digest}
+            except (sqlite3.Error,ValueError,TypeError,KeyError):
+                self._conn.rollback();raise DemoDispatchConflict('DEMO_WIRE_WRITE_REJECTED') from None
+            except BaseException:
+                self._conn.rollback();raise
+
+    def claim_send(self, *,reservation_sha256,client_order_id,request_sha256,preflight_sha256,now_ms):
+        """Commit before calling transport. A crash consumes this ID forever."""
+        return self._append_wire(kind='SEND_CLAIM',reservation_sha256=reservation_sha256,client_order_id=client_order_id,
+            at_ms=now_ms,payload={'request_sha256':request_sha256,'preflight_sha256':preflight_sha256})
+
+    def record_wire_result(self, *,claim_sha256,outcome,now_ms):
+        claims=[r for r in self.wire_snapshot() if r['kind']=='SEND_CLAIM' and r['record_hash']==claim_sha256]
+        if len(claims)!=1:raise DemoDispatchConflict('DEMO_WIRE_UNKNOWN_CLAIM')
+        claim=claims[0]
+        return self._append_wire(kind='SEND_RESULT',reservation_sha256=claim['reservation_sha256'],client_order_id=claim['client_order_id'],
+            at_ms=now_ms,payload={'claim_sha256':claim_sha256,'outcome':outcome})
+
+    def record_query_result(self, *,reservation_sha256,client_order_id,requested_at_ms,outcome,now_ms):
+        return self._append_wire(kind='QUERY_RESULT',reservation_sha256=reservation_sha256,client_order_id=client_order_id,
+            at_ms=now_ms,payload={'requested_at_ms':requested_at_ms,'outcome':outcome})
 
     def __enter__(self):return self
 

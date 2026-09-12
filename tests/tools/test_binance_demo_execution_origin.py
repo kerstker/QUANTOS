@@ -165,3 +165,50 @@ def test_negative_free_wallet_cannot_be_used_as_a_funded_origin(tmp_path):
             for name in ('walletBalance','crossWalletBalance','availableBalance','marginBalance'):asset[name]='-1'
     report=tool.assess(raw,as_of_ms=NOW)
     assert report['status']=='UNRESOLVED' and 'QUOTE_WALLET_NOT_FREE_AND_FLAT' in report['issues']
+
+
+def test_v2_retains_order_count_limits_and_v1_evidence_remains_readable(tmp_path):
+    get,_=transport()
+    def limits(path,**kwargs):
+        raw=get(path,**kwargs)
+        if path=='/fapi/v1/exchangeInfo':
+            data=json.loads(raw);data['symbols'][0]['filters'].append({'filterType':'MAX_NUM_ORDERS','limit':200})
+            return json.dumps(data).encode()
+        return raw
+    raw=tool.collect(credential_file=credentials(tmp_path),symbol='BTCUSDC',operator_read=True,get=limits,clock_ms=lambda:NOW)
+    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V3'
+    rules=next(r for r in raw['reads'] if r['kind']=='rules')['data']
+    assert rules['order_count_limits']=={'MAX_NUM_ORDERS':200}
+    legacy=deepcopy(raw);legacy['schema']='DEMO_EXECUTION_ORIGIN_V1'
+    del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['venue_filters']
+    del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['order_count_limits']
+    assert tool.validate(legacy)==legacy
+    del rules['order_count_limits']
+    with pytest.raises(ValueError):tool.validate(raw)
+
+
+def test_new_origin_retains_all_filter_fields_and_rejects_projection_conflicts(tmp_path):
+    raw,_=collect(tmp_path)
+    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V3'
+    rules=next(r for r in raw['reads'] if r['kind']=='rules')['data']
+    assert {f['filterType'] for f in rules['venue_filters']}==set(rules['filter_types'])
+    legacy=deepcopy(raw);legacy['schema']='DEMO_EXECUTION_ORIGIN_V2'
+    del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['venue_filters']
+    assert tool.validate(legacy)==legacy
+    lot=next(f for f in rules['venue_filters'] if f['filterType']=='LOT_SIZE')
+    lot['stepSize']='1'
+    with pytest.raises(ValueError):tool.validate(raw)
+
+
+def test_control_filter_fields_are_retained_with_no_semantic_upgrade(tmp_path):
+    get,_=transport()
+    def control(path,**kwargs):
+        raw=get(path,**kwargs)
+        if path=='/fapi/v1/exchangeInfo':
+            data=json.loads(raw);data['symbols'][0]['filters'].append({'filterType':'POSITION_RISK_CONTROL','positionControlSide':'NONE'})
+            return json.dumps(data).encode()
+        return raw
+    raw=tool.collect(credential_file=credentials(tmp_path),symbol='BTCUSDC',operator_read=True,get=control,clock_ms=lambda:NOW)
+    rules=next(r for r in raw['reads'] if r['kind']=='rules')['data']
+    assert rules['venue_filters'][-1]=={'filterType':'POSITION_RISK_CONTROL','positionControlSide':'NONE'}
+    assert tool.assess(raw,as_of_ms=NOW)['source_verified'] is False

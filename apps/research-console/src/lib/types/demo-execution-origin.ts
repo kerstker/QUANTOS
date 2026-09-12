@@ -1,5 +1,5 @@
 export interface DemoExecutionOriginReport {
-  schema: 'DEMO_EXECUTION_ORIGIN_V1'; environment: 'BINANCE_USDM_DEMO';
+  schema: 'DEMO_EXECUTION_ORIGIN_V1' | 'DEMO_EXECUTION_ORIGIN_V2' | 'DEMO_EXECUTION_ORIGIN_V3'; environment: 'BINANCE_USDM_DEMO';
   status: 'OBSERVED_FLAT_QUOTE' | 'UNRESOLVED'; symbol: 'BTCUSDT' | 'BTCUSDC'; quote_asset: 'USDT' | 'USDC';
   wallet: string | null; other_quote_positions: number | null; quote_positions: number | null;
   ordinary_orders: number | null; algo_orders: number | null; account_ref_sha256: string | null;

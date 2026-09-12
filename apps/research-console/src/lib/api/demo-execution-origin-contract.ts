@@ -6,7 +6,7 @@ export function executionOriginValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (['NO_SNAPSHOT','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status))) return v.report === null;
   const r=v.report;
-  if (v.status !== 'AVAILABLE' || !object(r) || r.schema !== 'DEMO_EXECUTION_ORIGIN_V1' || r.environment !== 'BINANCE_USDM_DEMO' ||
+  if (v.status !== 'AVAILABLE' || !object(r) || !['DEMO_EXECUTION_ORIGIN_V1','DEMO_EXECUTION_ORIGIN_V2','DEMO_EXECUTION_ORIGIN_V3'].includes(String(r.schema)) || r.environment !== 'BINANCE_USDM_DEMO' ||
     !['OBSERVED_FLAT_QUOTE','UNRESOLVED'].includes(String(r.status)) || !['BTCUSDT','BTCUSDC'].includes(String(r.symbol)) ||
     r.symbol !== `BTC${r.quote_asset}` || !integer(r.observed_at_ms) || !r.observed_at_ms || !integer(r.completed_at_ms) ||
     r.completed_at_ms < r.observed_at_ms || r.completed_at_ms > asOf || r.completed_at_ms-r.observed_at_ms > 120000 ||

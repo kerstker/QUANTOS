@@ -117,3 +117,29 @@ V2 实际开发读取：独立目录内固定观察 60 秒，总计 93.035 秒�
 来源文件在采集前后摘要一致。记录为 `retry-live-development-verification.json`。
 重试合成状态三种视图均通过，无浏览器错误、写请求、横向溢出或 A/AA 扫描违规；
 浏览器准备首轮误用回环地址，修正为已配置地址后通过，失败材料保留。
+
+## V2 完整验收与实际常驻（11:50 补充）
+
+源码 `2e1d8b9d11b2ed64cdb45645d981bf62ac5b81b3` 完整 **28/28 PASS**：
+后端 8050 通过/19 跳过，执行栈 3543 通过/2 跳过，前端 391 通过。
+ARM64 两次冷构建 673.761/598.103 秒、产物一致，扫描及断网只读启动通过。
+证据与实际运行版本 `95238a31d5186bf0327e79f7a458c485935b0e14`；接受检出清单
+SHA256 `7af493aad3a928cd30830725f1913b815e3f5e7f1324ab629663225119fdfec5`。
+接受检出的应用静态资源与完整验收一致，仅版本合同按最终证据提交绑定。
+
+11:30:48–11:30:57 切换既有研究栈；现金定时器和正在进行的窗口未重启。
+两轮新 V2 自然窗口分别耗时 334.709/332.701 秒，均 CAPTURED /
+MATCHED_REPORTED_WINDOW，每轮 6 次读取/6 次尝试、0 流水、0 失败尝试。
+没有真实重试发生；ledger_reconciliation 仍 NOT_EVALUATED，strategy_pnl 仍为空。
+旧 V1 失败、13 条账户事件和发布重启产生的明确缺口保留；没有发送普通订单。
+两份独立运行核验通过，冻结 P3/P4/P6 工作进程和计划身份不变。
+
+部署页面桌面/手机/暗色检查通过。前两次测试浏览器因局域网请求进入本机代理而
+ERR_EMPTY_RESPONSE，服务直接请求正常；仅为该测试设置局域网代理绕过后通过。
+保留原失败和 Chromium 网络诊断，没有改全局代理或常驻服务配置来掩盖结果。
+
+材料位于 `/home/kerstker/quantos-dev-output/demo-cash-retry-20260912/`：
+`canonical-fresh-2e1d8b9d1.json`、`accepted-checkout-2e1d8b9d1-binding.json`、
+`runtime-review/installation-result.json`、`runtime-review/natural-v2-two-cycle-result.json`、
+`runtime-review/verification-first.json`、`runtime-review/verification-continuous.json`、
+`runtime-review/browser-deployed.json`。这些证据只覆盖现金重试源码，不覆盖后续 D0/D2。

@@ -20,6 +20,8 @@ from services.research.demo_statement import normalize as normalize_terms, ident
 from services.governance.json_integrity import load_json_without_duplicate_keys
 
 SCHEMA='DEMO_EXECUTION_ORIGIN_V1'
+TERMS_SCHEMA='DEMO_EXECUTION_ORIGIN_V2'
+FULL_TERMS_SCHEMA='DEMO_EXECUTION_ORIGIN_V3'
 KINDS=('clock_before',*ACCOUNT_KINDS[:5],'algo_orders','rules','fees','brackets','mark','book',*ACCOUNT_KINDS[5:],'clock_after')
 PUBLIC=frozenset(('clock_before','clock_after','rules','mark','book'))
 MAX_BYTES=8_000_000
@@ -33,6 +35,23 @@ def fields(value,names):
 
 def sha(value):
     if not isinstance(value,str) or re.fullmatch('[a-f0-9]{64}',value) is None:raise ValueError('ORIGIN_HASH')
+
+
+def venue_filters(value):
+    """Retain bounded public filter scalars, including unknown future filters."""
+    if type(value) is not list or not 1<=len(value)<=32:raise ValueError('ORIGIN_FILTERS')
+    seen=set()
+    for row in value:
+        if type(row) is not dict or not 1<=len(row)<=32:raise ValueError('ORIGIN_FILTERS')
+        kind=_text(row['filterType'])
+        if kind in seen:raise ValueError('ORIGIN_FILTERS')
+        seen.add(kind)
+        for key,v in row.items():
+            _text(key,r'[A-Za-z][A-Za-z0-9_]{0,63}')
+            if type(v) is int:_int(v)
+            elif type(v) is str:_text(v,r'[A-Za-z0-9_.+-]{1,128}')
+            elif type(v) is not bool:raise ValueError('ORIGIN_FILTER_SCALAR')
+    return json.loads(json.dumps(value,allow_nan=False))
 
 
 def normalize(kind,raw,symbol):
@@ -53,7 +72,10 @@ def normalize(kind,raw,symbol):
         return {'terms':normalize_terms('exchange',{'symbols':chosen},[symbol])[0],
                 'precision':{k:_int(r[k]) for k in ('pricePrecision','quantityPrecision','baseAssetPrecision','quotePrecision')},
                 'order_types':[_text(v) for v in r['orderTypes']], 'time_in_forces':[_text(v) for v in r['timeInForce']],
-                'filter_types':[_text(f['filterType']) for f in r['filters']]}
+                'filter_types':[_text(f['filterType']) for f in r['filters']],
+                'venue_filters':venue_filters(r['filters']),
+                'order_count_limits':{f['filterType']:_int(f['limit']) for f in r['filters']
+                                      if f['filterType'] in ('MAX_NUM_ORDERS','MAX_NUM_ALGO_ORDERS')}}
     if kind=='fees':
         result=normalize_terms('commission',raw,[symbol])
         if not -1<=Decimal(result['makerCommissionRate'])<=1 or not 0<=Decimal(result['takerCommissionRate'])<=1:
@@ -71,26 +93,37 @@ def normalize(kind,raw,symbol):
     raise ValueError('ORIGIN_KIND')
 
 
-def _check_data(read,symbol):
+def _check_data(read,symbol,schema):
     kind,data=read['kind'],read['data']
     if kind in ACCOUNT_KINDS:
         AccountRead(kind=kind,started_at_ms=read['requested_at_ms'],received_at_ms=read['received_at_ms'],
                     response_sha256=read['response_sha256'],data=data)
     elif kind=='rules':
-        fields(data,'terms precision order_types time_in_forces filter_types')
+        fields(data,'terms precision order_types time_in_forces filter_types'+(' order_count_limits' if schema in (TERMS_SCHEMA,FULL_TERMS_SCHEMA) else '')+(' venue_filters' if schema==FULL_TERMS_SCHEMA else ''))
         fields(data['precision'],'pricePrecision quantityPrecision baseAssetPrecision quotePrecision')
         if any(_int(v)>24 for v in data['precision'].values()):raise ValueError('ORIGIN_PRECISION')
         for name in ('order_types','time_in_forces','filter_types'):
             values=data[name]
             if type(values) is not list or not 1<=len(values)<=32 or len(set(values))!=len(values):raise ValueError('ORIGIN_RULE_LIST')
             for v in values:_text(v)
+        if schema in (TERMS_SCHEMA,FULL_TERMS_SCHEMA):
+            caps=data['order_count_limits']
+            if type(caps) is not dict or set(caps)!=set(data['filter_types']) & {'MAX_NUM_ORDERS','MAX_NUM_ALGO_ORDERS'}:
+                raise ValueError('ORIGIN_ORDER_COUNT_LIMITS')
+            for value in caps.values():_int(value)
+        if schema==FULL_TERMS_SCHEMA:
+            complete=venue_filters(data['venue_filters'])
+            if ([r['filterType'] for r in complete]!=data['filter_types'] or
+                {r['filterType']:_int(r['limit']) for r in complete if r['filterType'] in ('MAX_NUM_ORDERS','MAX_NUM_ALGO_ORDERS')}!=data['order_count_limits'] or
+                normalize_terms('exchange',{'symbols':[dict(data['terms'],filters=complete)]},[symbol])!=[data['terms']]):
+                raise ValueError('ORIGIN_FILTER_PROJECTION')
         if normalize_terms('exchange',{'symbols':[data['terms']]},[symbol])!=[data['terms']]:raise ValueError('ORIGIN_RULE_SHAPE')
     elif normalize(kind,data,symbol)!=data:raise ValueError('ORIGIN_NONCANONICAL_DATA')
 
 
 def validate(raw):
     fields(raw,'schema status symbol observed_at_ms completed_at_ms account_ref_sha256 source_sha256 reads failures')
-    if raw['schema']!=SCHEMA or raw['symbol'] not in ('BTCUSDT','BTCUSDC') or raw['status'] not in ('NOT_REQUESTED','CAPTURED','FAILED'):
+    if raw['schema'] not in (SCHEMA,TERMS_SCHEMA,FULL_TERMS_SCHEMA) or raw['symbol'] not in ('BTCUSDT','BTCUSDC') or raw['status'] not in ('NOT_REQUESTED','CAPTURED','FAILED'):
         raise ValueError('ORIGIN_SCHEMA')
     start,end=_int(raw['observed_at_ms']),_int(raw['completed_at_ms'])
     if not 0<start<=end<=start+120000:raise ValueError('ORIGIN_WINDOW')
@@ -107,7 +140,7 @@ def validate(raw):
         previous=received;sha(read['response_sha256'])
         expected=None if read['kind'] in PUBLIC else raw['account_ref_sha256']
         if read['account_ref_sha256']!=expected or read['kind'] not in PUBLIC and expected is None:raise ValueError('ORIGIN_ACCOUNT_IDENTITY')
-        _check_data(read,raw['symbol'])
+        _check_data(read,raw['symbol'],raw['schema'])
         if read['kind'].startswith('clock'):
             offset=read['data']['serverTime']-(sent+received)//2
             if received-sent>5000 or abs(offset)>2000:raise ValueError('ORIGIN_CLOCK_UNRELIABLE')
@@ -172,7 +205,7 @@ def assess(raw, *, as_of_ms):
     mark=data.get('mark',{})
     if mark and (Decimal(mark['markPrice'])<=0 or Decimal(mark['indexPrice'])<=0 or mark['nextFundingTime']<=as_of_ms):issues.append('MARK_UNAVAILABLE')
     inventory_known=baseline['inventory_status'] not in ('CAPTURE_FAILED','NOT_REQUESTED','DATA_BLOCKED')
-    return {'schema':SCHEMA,'environment':'BINANCE_USDM_DEMO','status':'UNRESOLVED' if issues else 'OBSERVED_FLAT_QUOTE',
+    return {'schema':raw['schema'],'environment':'BINANCE_USDM_DEMO','status':'UNRESOLVED' if issues else 'OBSERVED_FLAT_QUOTE',
         'symbol':raw['symbol'],'quote_asset':quote,'wallet':asset['observed_wallet'] if asset else None,
         'other_quote_positions':len(baseline['positions'])-len(positions) if inventory_known else None,
         'quote_positions':len(positions) if inventory_known else None,
