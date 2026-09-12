@@ -4,6 +4,9 @@
 没有新订单或撤单入口，不替代独立签发、持仓后续批次、实际 D4 或现金闭合。
 实现记录见[驻留恢复增量](../engineering/specs/2026-09-12-demo-resident-recovery.md)。
 
+执行侧原始私有输入可由[受保护采集入口](../engineering/specs/2026-09-13-demo-executor-stream.md)
+持续追加，复用本文固定目录和原账户命名空间；该入口和独立身份安装尚未实际运行。
+
 ## 输入与运行
 
 入口为 `python -P -m tools.demo_resident_recovery --source-commit <完整40位源码> --serve`。
