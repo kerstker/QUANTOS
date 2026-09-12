@@ -193,6 +193,16 @@ Get-ScheduledTask -TaskName "QUANTOS_*" | Enable-ScheduledTask
 - **Historical target**: 300 seconds; unchanged in old receipts and generic library defaults.
 - **Measured evidence**: the earlier full-scale artifact restore exceeded its 300-second target at 932.389 seconds; full SQLite verification remained incomplete. A fresh complete result under the new target is pending. The old ~319ms small-fixture measurement is not full-scale recovery evidence.
 
+For a release containing the scheduled-target configuration, render the backup worker with
+`--backup-rto-ms 7200000` alongside its existing `--module l2_backup` and `--backup-mount`
+options. This writes `Environment=QUANTOS_BACKUP_RTO_MS=7200000` only to that worker.
+The scheduler clears worker command-line arguments, so appending a worker RTO argument
+to the scheduler command does not configure the backup. Update the unit only after the
+corresponding code release is validated; an older release ignores the new environment value.
+
+An explicit backup CLI `--rto-ms` takes precedence. Invalid environment values fail before
+credential access and return exit code 1. RPO and all integrity checks remain separate.
+
 RTO includes:
 - Identifying backup batch
 - Decrypting manifest

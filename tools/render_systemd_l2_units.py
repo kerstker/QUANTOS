@@ -15,6 +15,7 @@ import re
 import secrets
 from typing import Iterable, Sequence
 
+from quantos.contracts.l2_backup_rto import RTO_ENV, validate_rto_ms
 from quantos.contracts.l2_schedule_policy import (
     MVP_CONDITIONAL_MODULES,
     MVP_EXPECTED_TASKS,
@@ -162,6 +163,7 @@ def render_units(
     release_commit: str,
     modules: Iterable[str],
     backup_mount: str | None = None,
+    backup_rto_ms: int | None = None,
     event_seal_mount: str | None = None,
     heartbeat_url: str | None = None,
 ) -> tuple[Path, ...]:
@@ -190,6 +192,13 @@ def render_units(
         raise SystemdRenderError("backup mount was provided without the backup worker")
     else:
         normalized_backup_mount = None
+    if backup_rto_ms is not None:
+        if "l2_backup" not in requested:
+            raise SystemdRenderError("backup restore target requires the backup worker")
+        try:
+            validate_rto_ms(backup_rto_ms)
+        except ValueError as exc:
+            raise SystemdRenderError(str(exc)) from None
     if _EVENT_SEAL_MODULES.intersection(requested):
         if event_seal_mount is None:
             raise SystemdRenderError("event seal mount is required and must be a safe POSIX path")
@@ -222,6 +231,12 @@ def render_units(
             .replace(" (%i)", f" ({module})")
         )
         timeout = _timeout_for(module)
+        if module == "l2_backup" and backup_rto_ms is not None:
+            # Keep the existing 6h worker limit for the 2h DGX restore target;
+            # larger explicit targets retain four hours for backup creation.
+            worker_seconds = (backup_rto_ms + 999) // 1000 + 4 * 3600
+            if worker_seconds > 6 * 3600:
+                timeout = f"{worker_seconds}s"
         service = service.replace("Type=oneshot", f"Type=oneshot\nTimeoutStartSec={timeout}")
         if module == "wikimedia_attention_forward_refresh":
             service = service.replace("SuccessExitStatus=2", "SuccessExitStatus=1 2")
@@ -251,6 +266,13 @@ def render_units(
                 ),
                 1,
             )
+            if backup_rto_ms is not None:
+                service = service.replace(
+                    f"Environment=QUANTOS_BACKUP_DEST={normalized_backup_mount}\n",
+                    f"Environment=QUANTOS_BACKUP_DEST={normalized_backup_mount}\n"
+                    f"Environment={RTO_ENV}={backup_rto_ms}\n",
+                    1,
+                )
         if module in _EVENT_SEAL_MODULES:
             assert normalized_event_mount is not None
             service = service.replace(
@@ -379,6 +401,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--release-commit", required=True)
     parser.add_argument("--module", action="append")
     parser.add_argument("--backup-mount")
+    parser.add_argument("--backup-rto-ms", type=int)
     parser.add_argument("--event-seal-mount")
     parser.add_argument("--heartbeat-url")
     parser.add_argument("--attention-release-commit")
@@ -389,7 +412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.special_units and args.research_runner_unit:
             raise SystemdRenderError("unit rendering modes are mutually exclusive")
         if args.special_units:
-            if args.module or args.backup_mount or args.event_seal_mount or args.heartbeat_url:
+            if args.module or args.backup_mount or args.backup_rto_ms is not None or args.event_seal_mount or args.heartbeat_url:
                 raise SystemdRenderError(
                     "special-unit rendering cannot include worker options"
                 )
@@ -402,6 +425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if (
                 args.module
                 or args.backup_mount
+                or args.backup_rto_ms is not None
                 or args.event_seal_mount
                 or args.heartbeat_url
                 or args.attention_release_commit
@@ -425,6 +449,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release_commit=args.release_commit,
                 modules=args.module,
                 backup_mount=args.backup_mount,
+                backup_rto_ms=args.backup_rto_ms,
                 event_seal_mount=args.event_seal_mount,
                 heartbeat_url=args.heartbeat_url,
             )

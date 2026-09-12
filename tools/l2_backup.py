@@ -25,6 +25,7 @@ import tempfile
 import time
 from typing import Iterable
 
+from quantos.contracts.l2_backup_rto import DEFAULT_RTO_MS, RTO_ENV, parse_rto_ms
 from services.governance import l2_backup_boundary as _backup_boundary
 from services.governance.l2_restore_history import (
     L2RestoreHistoryStore,
@@ -61,7 +62,6 @@ PASSPHRASE_FILE_ENV = _backup_boundary.PASSPHRASE_FILE_ENV
 CREDENTIALS_DIRECTORY_ENV = _backup_boundary.CREDENTIALS_DIRECTORY_ENV
 SYSTEMD_PASSPHRASE_CREDENTIAL = _backup_boundary.SYSTEMD_PASSPHRASE_CREDENTIAL
 DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
-DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
 SOURCE_CONTRACT_VERSION = 16
@@ -1727,7 +1727,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the encrypted QUANTOS L2 state backup")
     parser.add_argument("--dest", default=os.environ.get(DESTINATION_ENV))
     parser.add_argument("--repo-root", default=os.getcwd())
-    parser.add_argument("--rto-ms", type=int, default=DEFAULT_RTO_MS)
+    # Scheduled entrypoints intentionally clear worker argv. A reviewed unit
+    # can retain its target through this narrowly scoped environment value.
+    parser.add_argument("--rto-ms", type=parse_rto_ms, default=None)
     parser.add_argument("--max-rpo-ms", type=int, default=DEFAULT_MAX_RPO_MS)
     parser.add_argument("--allow-local-destination", action="store_true")
     parser.add_argument(
@@ -1748,6 +1750,13 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
+        try:
+            configured_rto_ms = (args.rto_ms if args.rto_ms is not None else
+                                 parse_rto_ms(os.environ.get(RTO_ENV, str(DEFAULT_RTO_MS))))
+        except ValueError:
+            # systemd permits exit 2 for selected L2 worker outcomes. Reject
+            # bad scheduled configuration through the normal failure code 1.
+            raise L2BackupError("BACKUP_RTO_CONFIGURATION_INVALID") from None
         passphrase = resolve_backup_passphrase(
             environment_passphrase=os.environ.get(PASSPHRASE_ENV),
             passphrase_file=args.passphrase_file,
@@ -1765,7 +1774,7 @@ def main() -> int:
                 destination_root=args.dest,
                 passphrase=passphrase,
                 allow_local_destination=args.allow_local_destination,
-                rto_ms=args.rto_ms,
+                rto_ms=configured_rto_ms,
                 max_rpo_ms=args.max_rpo_ms,
             )
     except L2BackupError as exc:
