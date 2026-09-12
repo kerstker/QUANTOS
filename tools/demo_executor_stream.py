@@ -36,7 +36,7 @@ def source_hash():
         Path(transport.__file__).read_bytes()+Path(transport.demo_authority.__file__).read_bytes()).hexdigest()
 
 
-def _budget(store):
+def _budget(store, *, for_write=True):
     size = 0
     for suffix in ('', '-wal', '-shm', '-journal'):
         path = Path(str(store.path)+suffix)
@@ -44,10 +44,10 @@ def _budget(store):
             _check_path(path, store.path.parent.stat().st_uid, directory=False)
             size += path.stat().st_size
     # Reserve space for the next bounded message and SQLite page bookkeeping.
-    if size > MAX_BYTES-1024*1024:
+    if size > MAX_BYTES-(1024*1024 if for_write else 0):
         raise ValueError('PROTECTED_STREAM_BYTE_BUDGET')
     count = store.db.execute('SELECT COUNT(*) FROM stream_records').fetchone()[0]
-    if count >= MAX_RECORDS:
+    if count >= MAX_RECORDS if for_write else count > MAX_RECORDS:
         raise ValueError('PROTECTED_STREAM_RECORD_BUDGET')
 
 

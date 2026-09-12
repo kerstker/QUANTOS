@@ -238,9 +238,10 @@ class UserStreamJournal:
         if row:self.record('GAP',at_ms=at_ms,reason='RESTART_WINDOW' if row[0]=='STOPPED' else 'UNCLEAN_RESTART')
         self.record('SESSION_START',at_ms=at_ms,source_sha256=source_sha256)
 
-    def snapshot(self,*,as_of_ms=None):
+    def snapshot(self,*,as_of_ms=None,verify_full=False):
         if as_of_ms is not None:_time(as_of_ms)
         with self._snapshot():
+            if verify_full:self._verify_visible()
             raw=self.db.execute('SELECT * FROM stream_records ORDER BY sequence DESC LIMIT 100').fetchall()[::-1]
             if not raw:raise ValueError('STREAM_SESSION_MISSING')
             anchor=self.genesis if raw[0][0]==1 else self.db.execute('SELECT record_hash FROM stream_records WHERE sequence=?',(raw[0][0]-1,)).fetchone()[0]
@@ -276,7 +277,7 @@ class UserStreamJournal:
                 'messages':counts.get('MESSAGE',0),'unique_messages':unique,'gaps':counts.get('GAP',0),
                 'event_counts':events,
                 'last_gap':({'at_ms':json.loads(last_gap[0])['at_ms'],**json.loads(last_gap[0])['data']}) if last_gap else None,
-                'recent':recent[-50:],'integrity_scope':'RECENT_100_RECORDS_AND_MANIFEST',
+                'recent':recent[-50:],'integrity_scope':'FULL_LOCAL_HASH_CHAIN' if verify_full else 'RECENT_100_RECORDS_AND_MANIFEST',
                 'coverage_verified':False,'cash_reconciliation':'UNKNOWN','submission_enabled':False,'authoritative':False}
 
     def export_order_messages(self,*,start_ms,end_ms):

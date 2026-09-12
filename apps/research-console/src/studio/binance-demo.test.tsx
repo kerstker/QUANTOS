@@ -32,6 +32,7 @@ function payload(): BinanceDemoPayload {
     oms_status: {status: 'NO_SNAPSHOT', report: null},
     cancellation_status: {status: 'NO_SNAPSHOT', report: null},
     resident_status: {status: 'NO_SNAPSHOT', report: null, last_result: null},
+    executor_observation: {status:'NO_SNAPSHOT',report:null},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }

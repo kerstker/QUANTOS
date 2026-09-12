@@ -21,8 +21,23 @@ from services.research.demo_oms_status import load_latest as load_oms_status
 from services.research.demo_cancel_status import load_latest as load_cancel_status
 from services.research.demo_resident_status import load_latest as load_resident_status
 from services.research.demo_cash_chain_status import load_latest as load_cash_chain
+from services.research.demo_executor_observation import load_latest as load_executor_observation
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _executor_observation_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_executor_observation'
+
+
+def build_executor_observation_snapshot(*,directory:Path,as_of_ms:int):
+    if not (directory/'latest.json').exists() and not (directory/'latest.json').is_symlink():
+        return {'status':'NO_SNAPSHOT','report':None}
+    try:
+        raw=load_executor_observation(directory)
+        if raw['observed_at_ms']>as_of_ms:return {'status':'DATA_BLOCKED','report':None}
+        return {'status':'STALE' if as_of_ms-raw['observed_at_ms']>120000 else 'AVAILABLE','report':raw}
+    except Exception:return {'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
 def _cash_chain_directory():
@@ -277,6 +292,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'executor_observation':build_executor_observation_snapshot(directory=_executor_observation_directory(),as_of_ms=as_of_ms),
         'execution_origin': build_execution_origin_snapshot(directory=_execution_origin_directory(), as_of_ms=as_of_ms),
         'oms_status': build_oms_status_snapshot(directory=_oms_status_directory(),as_of_ms=as_of_ms),
         'cancellation_status': build_cancel_status_snapshot(directory=_cancel_status_directory(),as_of_ms=as_of_ms),

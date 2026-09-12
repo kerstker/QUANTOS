@@ -89,3 +89,11 @@
 .s-demo-chain-batches>li {padding:12px 0;border-bottom:1px solid var(--s-line);}
 .s-demo-chain-batches p {font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
 @media(max-width:600px) {.s-demo-cash-chain>h3 {margin-left:16px;margin-right:16px;}}
+.s-demo-executor-observations {list-style:none;padding:0;margin:18px 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.s-demo-executor-observations li {border:1px solid var(--s-line);border-radius:10px;padding:14px;display:flex;gap:12px;justify-content:space-between;align-items:start;min-width:0;}
+.s-demo-executor-observations li > div {min-width:0;}
+.s-demo-executor-time {text-align:right;font-size:12px;font-variant-numeric:tabular-nums;}
+.s-demo-executor-time small {display:block;margin-top:5px;}
+.s-demo-executor-observations + .s-demo-identities p {overflow-wrap:anywhere;}
+@media(max-width:1000px) {.s-demo-executor-observations {grid-template-columns:minmax(0,1fr);}}
+@media(max-width:540px) {.s-demo-executor-observations li {flex-direction:column;}.s-demo-executor-time {text-align:left;}}

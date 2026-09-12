@@ -30,6 +30,26 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_executor_inventory_preserves_missing_stale_invalid_and_read_only_state(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_executor_observation as model
+    from tests.tools.test_demo_executor_observation import populated,tool,NOW
+    root=populated(tmp_path,monkeypatch);raw=tool.run(source_commit='c'*40)
+    directory=tmp_path/'display'
+    monkeypatch.setattr(views,'_executor_observation_directory',lambda:directory)
+    assert client.get('/api/v1/console/binance-demo').json()['executor_observation']=={'status':'NO_SNAPSHOT','report':None}
+    path=model.save(directory,raw);before=path.read_bytes()
+    result=client.get('/api/v1/console/binance-demo').json()
+    assert result['executor_observation']=={'status':'AVAILABLE','report':raw}
+    assert path.read_bytes()==before and result['read_only'] is True and result['submission_enabled'] is False
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+120011)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['executor_observation']['status']=='STALE'
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+9)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['executor_observation']=={'status':'DATA_BLOCKED','report':None}
+    path.write_text('{"unexpected":"PRIVATE_DATA"}')
+    assert client.get('/api/v1/console/binance-demo').json()['executor_observation']=={'status':'CORRUPT_OR_UNREADABLE','report':None}
+
+
 def test_demo_cash_chain_snapshot_retains_exact_prefix_and_cannot_become_future_or_authority(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_cash_chain_status import save
@@ -283,7 +303,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),
