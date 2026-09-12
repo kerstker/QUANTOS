@@ -1,6 +1,7 @@
 import {statementValid} from './demo-statement-contract';
 import {userStreamValid} from './demo-user-stream-contract';
 import {cashWindowValid} from './demo-cash-window-contract';
+import {executionOriginValid} from './demo-execution-origin-contract';
 import {RESEARCH_CONSOLE_API_BASE} from './research-console-api';
 import type {BinanceDemoPayload} from '../types/binance-demo';
 import {executionSnapshotValid, orderRecoveryValid} from './demo-execution-contract';
@@ -78,7 +79,7 @@ export function parseDemoPayload(v: unknown): BinanceDemoPayload {
       !reason(v.data_quality.reason) || !time(v.as_of_ms) || !nullableTime(v.observed_at_ms) ||
       !(v.age_ms === null || integer(v.age_ms) && v.age_ms >= 0) || v.max_age_ms !== 120000 ||
       !publicValid(v.public) || !accountValid(v.account) || !executionSnapshotValid(v.execution, v.as_of_ms as number) || !orderRecoveryValid(v.order_recovery) ||
-      !cashWindowValid(v.cash_window, v.as_of_ms as number) || !userStreamValid(v.user_stream, v.as_of_ms as number) || !statementValid(v.statement, v.as_of_ms as number) || !privateChecksValid(v.private_checks, v.as_of_ms as number) || !accountBaselineValid(v.account_baseline, v.as_of_ms as number) ||
+      !executionOriginValid(v.execution_origin, v.as_of_ms as number) || !cashWindowValid(v.cash_window, v.as_of_ms as number) || !userStreamValid(v.user_stream, v.as_of_ms as number) || !statementValid(v.statement, v.as_of_ms as number) || !privateChecksValid(v.private_checks, v.as_of_ms as number) || !accountBaselineValid(v.account_baseline, v.as_of_ms as number) ||
       v.execution_reason !== 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE' ||
       v.order_stream_status !== 'NOT_CHECKED' || v.ledger_reconciliation_status !== 'NOT_CHECKED') {
     throw new Error('模拟盘数据契约不匹配');

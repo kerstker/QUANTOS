@@ -26,6 +26,7 @@ function payload(): BinanceDemoPayload {
     private_checks: {status: 'NO_SNAPSHOT', report: null},
     user_stream: {status: 'NO_JOURNAL', report: null},
     cash_window: {status: 'NO_SNAPSHOT', report: null},
+    execution_origin: {status: 'NO_SNAPSHOT', report: null},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }

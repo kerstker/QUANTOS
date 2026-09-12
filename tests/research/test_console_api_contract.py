@@ -30,6 +30,25 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_execution_origin_contract_is_read_only_and_keeps_conditions(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_execution_origin import save
+    from tests.tools.test_binance_demo_execution_origin import collect,NOW
+    raw,_=collect(tmp_path,conditional=True)
+    directory=tmp_path/'origin';save(directory,raw)
+    before={p.name:p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(views,'_execution_origin_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1_000_000)
+    payload=client.get('/api/v1/console/binance-demo').json()
+    report=payload['execution_origin']['report']
+    assert report['status']=='UNRESOLVED' and report['algo_orders']==1
+    assert 'PREEXISTING_ALGO_ORDERS' in report['issues']
+    assert report['other_quote_positions']==1 and report['read_count']==16
+    assert report['source_verified'] is False and report['strategy_pnl'] is None
+    assert payload['submission_enabled'] is False
+    assert before=={p.name:p.read_bytes() for p in directory.iterdir()}
+
+
 def test_demo_cash_retry_contract_preserves_recovered_failures(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_cash_window import save_capture
