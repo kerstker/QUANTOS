@@ -20,7 +20,7 @@
     "services/monitoring/domain_event_runtime.py": "1e105f3a22c4cf31dd8e7202e72fb2b06a5823e37cfbd3869c2b61ba3f354f06",
     "services/monitoring/event_health.py": "7848de9e1ecc49248a5ba2b6a0e2fcbd8107e212a40be35b006b9e80d051a954",
     "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
-    "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
+    "services/risk/pre_trade/kill_switch_store.py": "13ef51c0c7bc3d448cd3343157192bf648ea3b87759246d11ae2167fbd0661f5",
     "services/risk/research_risk/events.py": "2dc8cb40160254a07d38817c1f5bb9c4410ad45520c475fe6a32e454809f82b1",
     "tools/data_quality_admission.py": "38ef162d65d7c80624c12dab5d96e15d2871a4fb1366b9bf89ee11b528040061"
   },

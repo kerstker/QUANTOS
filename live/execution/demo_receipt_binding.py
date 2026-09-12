@@ -10,12 +10,11 @@ from pathlib import Path
 import re
 
 from live.execution.demo_prepared_execution import _load_proof
-from live.execution.demo_pre_submit import _digest, _retain
+from live.execution.demo_pre_submit import _digest, _retain, _require_origin
 from services.execution.passive_queue import Action
 from services.research.binance_order_receipts import OPTIONS_SCHEMA,CLOCK_SCHEMA,normalize_order_receipts
 from quantos.contracts.binance_demo_clock import SCHEMA as BRACKET_SCHEMA,bracket_bounds,validate_query_clock
 from services.research.ai_factory_store import digest
-from services.research.demo_execution_origin import assess as assess_origin
 from services.research.demo_execution_origin import account_capture
 from services.research.demo_origin_contract import contract_from_origin
 from services.research.demo_opening_projection import bind_opening
@@ -69,8 +68,9 @@ def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
     if (reservation['payload']['orders'] != planned or reservation['payload']['context'] != context or
             context['origin_sha256'] != _digest(proof['origin'])):
         raise ValueError('DEMO_BINDING_FROZEN_INPUT_MISMATCH')
-    origin = assess_origin(proof['origin'], as_of_ms=reservation['payload']['reserved_at_ms'])
-    if origin['status'] != 'OBSERVED_FLAT_QUOTE' or origin['account_ref_sha256'] != context['account_ref_sha256']:
+    origin = _require_origin(proof['origin'], now_ms=reservation['payload']['reserved_at_ms'],
+                             position_context=proof['state'].get('position_context'))
+    if origin['account_ref_sha256'] != context['account_ref_sha256']:
         raise ValueError('DEMO_BINDING_ORIGIN_UNRESOLVED')
     exported = stream.export_order_messages(start_ms=start_ms, end_ms=end_ms)
     wire = [r for r in snapshot['wire'] if r['reservation_sha256'] == reservation['record_hash']]
@@ -203,7 +203,10 @@ def import_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, so
         return result
     try:
         proof = _load_proof(prepared)
-        raw_spec, contract_facts = contract_from_origin(proof['origin'])
+        position_context = proof['state'].get('position_context')
+        raw_spec, contract_facts = contract_from_origin(proof['origin'], allow_observed_position=position_context is not None)
+        if position_context is not None and raw_spec != position_context['contract']:
+            raise ValueError('DEMO_RECEIPT_CONTINUATION_CONTRACT')
         result['contract_projection'] = contract_facts
         risk = proof['risk']['input_snapshot']
         if (_digest(risk) != proof['context']['risk_sha256'] or risk['orders'] != proof['orders'] or
@@ -219,12 +222,26 @@ def import_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, so
             'risk_sha256':proof['context']['risk_sha256'],'daily_volume_base':canonical_decimal(volume),
             'reference_price':canonical_decimal(reference),'adv_notional':adv_notional,
             'participation_rate':canonical_decimal(participation),'actual_quote_volume_verified':False}
+        basis = None
+        if position_context is not None:
+            # Continue the original ledger capacity contract. Fresh risk inputs
+            # remain bound above, but do not reset the consumed daily budget.
+            adv_notional = position_context['adv_notional']
+            participation = Decimal(position_context['participation_rate'])
+            result['capacity_projection'].update(policy='CANONICAL_PREFIX_CAPACITY_CONTINUATION_V1',
+                current_risk_adv_notional=result['capacity_projection']['adv_notional'],
+                current_risk_participation_rate=result['capacity_projection']['participation_rate'],
+                adv_notional=adv_notional, participation_rate=canonical_decimal(participation),
+                prefix_ledger_state_sha256=position_context['ledger_state_hash'])
+            basis = [] if Decimal(position_context['quantity']) == 0 else [
+                {'symbol': binding['symbol'], 'entry_notional': position_context['entry_notional'],
+                 'source_sha256': position_context['ledger_state_hash']}]
         native = deepcopy(binding['native']); messages = native.pop('messages')
         manifest = {'schema':'DEMO_EXECUTION_REPLAY_V1','environment':'BINANCE_USDM_DEMO','source_commit':source_commit,
             'initial_collateral':origin_wallet(proof['origin']),'initial_position':'0','contract':raw_spec,
             'adv_notional':adv_notional,'participation_rate':canonical_decimal(participation),
             'actions':deepcopy(binding['actions']),'native':native,'expected_end_position':None}
-        manifest = bind_opening(manifest,account_capture(proof['origin']))
+        manifest = bind_opening(manifest,account_capture(proof['origin']),basis=basis)
         manifest_hash = digest(manifest)
         path = directory/'journals'/(manifest_hash+'.sqlite3')
         with DemoExecutionJournal(path,manifest=manifest) as journal:

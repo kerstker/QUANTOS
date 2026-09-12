@@ -87,6 +87,29 @@ def test_ioc_reduce_only_uses_preceding_canonical_inventory(tmp_path, flat):
         assert replay_report(journal) == report
 
 
+@pytest.mark.parametrize('reduce_only,min_quantity,accepted', [(True,'1',True),(False,'1',False),(True,'2',False)])
+def test_reduction_notional_exception_preserves_submitted_lot_minimum(tmp_path, reduce_only, min_quantity, accepted):
+    from tests.research.test_binance_order_receipts import v2_spec, edit_message
+    from services.research.ai_factory_store import digest
+    m = opening_manifest(); m['contract'].update(min_notional='200',min_quantity=min_quantity)
+    m['actions'][0]['side'] = 'SELL'; m['expected_end_position'] = '1'
+    source = v2_spec(reduce_only=reduce_only)
+    for i in range(len(source['raw_observed']['messages'])):
+        edit_message(source,i,lambda p:p['o'].update(S='SELL'))
+    native = source['raw_observed']; messages = native.pop('messages')
+    native['action_hash'] = digest(m['actions']); m['native'] = native
+    path = tmp_path/'notional.db'
+    if not accepted:
+        from services.execution.perpetual_ledger_v2 import QuantityRuleViolation
+        with pytest.raises(QuantityRuleViolation): DemoExecutionJournal(path,manifest=m)
+        assert not path.exists()
+    else:
+        with DemoExecutionJournal(path,manifest=m) as journal:
+            journal.append(messages)
+            report = replay_report(journal)
+            assert report['position_quantity'] == '1' and report['reconciliation']['residual'] == '0'
+
+
 def test_missing_exact_basis_keeps_receipts_without_estimated_cash_projection(tmp_path):
     with DemoExecutionJournal(tmp_path/'journal.db', manifest=opening_manifest(basis=False)) as journal:
         journal.append(native_spec()['raw_observed']['messages'])

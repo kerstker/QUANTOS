@@ -16,6 +16,7 @@ from pathlib import Path
 from live.contracts import LiveOrderRequest
 from live.execution import demo_authority
 from live.execution.demo_current_kill import require_expected as require_current_kill
+from live.execution import demo_position_context
 from live.execution.demo_batch_risk import screen, _digest, _json_value, _units, UNIT_SCALE
 from live.governance.mandate import Mandate, AUTO, evaluate_mandate
 from live.governance.validation_attestation import require_validation_attestation
@@ -32,23 +33,34 @@ class DemoPreparationRejected(ValueError):
 
 
 @ledger_decimal_context()
-def _venue_account_cap(orders,origin):
+def _venue_account_cap(orders,origin,position_context=None):
     if origin['schema']!=ACCOUNT_TERMS_SCHEMA:
         raise DemoPreparationRejected('DEMO_VENUE_ACCOUNT_TERMS_REQUIRED')
     data={r['kind']:r['data'] for r in origin['reads']}
     try:
         # Reuse the same checked finite bracket table as the receipt ledger;
         # a plausible last cap alone does not validate gaps or rate continuity.
-        spec,_=contract_from_origin(origin)
+        spec,_=contract_from_origin(origin,allow_observed_position=position_context is not None)
+        if position_context is not None and spec!=position_context['contract']:
+            raise ValueError('DEMO_CONTINUATION_CONTRACT_CHANGED')
         cap=Decimal(spec['new_risk_notional_cap'])
     except (ValueError,KeyError,TypeError,ArithmeticError):
         raise DemoPreparationRejected('DEMO_VENUE_ACCOUNT_TERMS_UNSUPPORTED') from None
-    # Flat initial book; either side can fill alone. Opposite pending orders
-    # cannot offset the possible exposure. Use the higher frozen valuation.
+    # Either side can fill alone; opposing pending orders cannot offset risk.
     mark=Decimal(data['mark']['markPrice'])
     exposure={side:sum((Decimal(o['quantity'])*max(Decimal(o['price']),mark)
         for o in orders if o['side']==side),Decimal(0)) for side in ('BUY','SELL')}
     if max(exposure.values())>cap:raise DemoPreparationRejected('DEMO_VENUE_NOTIONAL_CAP')
+    if position_context is not None:
+        consumed=sum((Decimal(v) for v in position_context['capacity_consumed'].values()),Decimal(0))
+        budget=Decimal(position_context['adv_notional'])*Decimal(position_context['participation_rate'])
+        # A sell can fill above its limit. Use the observed hard venue price
+        # ceiling, not a favorable mark-price assumption, for this bounded run.
+        ceiling=Decimal(next(f['maxPrice'] for f in data['rules']['terms']['filters'] if f['filterType']=='PRICE_FILTER'))
+        if ceiling<=0:raise DemoPreparationRejected('DEMO_CONTINUATION_CAPACITY_PRICE_UNKNOWN')
+        requested=sum((Decimal(o['quantity'])*(Decimal(o['price']) if o['side']=='BUY' else max(ceiling,Decimal(o['price'])))
+            for o in orders),Decimal(0))
+        if consumed+requested>budget:raise DemoPreparationRejected('DEMO_CONTINUATION_CAPACITY')
 
 
 @ledger_decimal_context()
@@ -85,13 +97,22 @@ def _venue_rules(orders,origin):
         lot,tick=filters['LOT_SIZE'],filters['PRICE_FILTER']
         if (not Decimal(lot['minQty'])<=quantity<=Decimal(lot['maxQty']) or (quantity-Decimal(lot['minQty']))%Decimal(lot['stepSize']) or
             not Decimal(tick['minPrice'])<=price<=Decimal(tick['maxPrice']) or (price-Decimal(tick['minPrice']))%Decimal(tick['tickSize']) or
-            quantity*price<Decimal(filters['MIN_NOTIONAL']['notional'])):
+            (not order['reduceOnly'] and quantity*price<Decimal(filters['MIN_NOTIONAL']['notional']))):
             raise DemoPreparationRejected('DEMO_VENUE_ORDER_FILTER')
         band=filters.get('PERCENT_PRICE')
         if band:
             mark=Decimal(data['mark']['markPrice'])
             if not mark*Decimal(band['multiplierDown'])<=price<=mark*Decimal(band['multiplierUp']):
                 raise DemoPreparationRejected('DEMO_VENUE_PRICE_BAND')
+
+
+def _require_origin(origin, *, now_ms, position_context=None):
+    report=assess_origin(origin,as_of_ms=now_ms)
+    if position_context is None:
+        if report['status']!='OBSERVED_FLAT_QUOTE':raise DemoPreparationRejected('DEMO_ORIGIN_NOT_READY')
+    else:
+        demo_position_context.validate_origin(origin,position_context,as_of_ms=now_ms)
+    return report
 
 
 def _state(dispatch,recovery,oms):
@@ -128,23 +149,39 @@ def proposal(*,orders,origin,risk_inputs,mandate,attestations,dispatch,recovery,
         orders=json.loads(json.dumps(validate_orders(orders),allow_nan=False))
         origin=json.loads(json.dumps(origin,allow_nan=False))
         origin_report=assess_origin(origin,as_of_ms=now_ms)
-        if origin_report['status']!='OBSERVED_FLAT_QUOTE':raise DemoPreparationRejected('DEMO_ORIGIN_NOT_READY')
+        state=_state(dispatch,recovery,oms)
+        position_context=None
+        if state['reservations'] or origin_report['status']!='OBSERVED_FLAT_QUOTE':
+            position_context=demo_position_context.load_context(state,symbol=origin['symbol'],
+                account_ref=origin['account_ref_sha256'],as_of_ms=now_ms)
+            if Decimal(position_context['quantity'])!=0 and not all(o['reduceOnly'] for o in orders):
+                raise DemoPreparationRejected('DEMO_CONTINUATION_REDUCTION_ONLY')
+            state['position_context']=position_context
+        _require_origin(origin,now_ms=now_ms,position_context=position_context)
         if orders[0]['symbol']!=origin['symbol']:raise DemoPreparationRejected('DEMO_ORIGIN_ORDER_SCOPE')
-        _venue_account_cap(orders,origin)
+        _venue_account_cap(orders,origin,position_context)
         _venue_rules(orders,origin)
         source={r['kind']:r['data'] for r in origin['reads']}
         account=risk_inputs['account'];market=risk_inputs['market']
         wallet=next(a for a in source['account_after']['assets'] if a['asset']==origin_report['quote_asset'])
         if (risk_inputs['now_ms']!=now_ms or account['account_ref_sha256']!=origin['account_ref_sha256'] or
-            account['quote_asset']!=origin_report['quote_asset'] or account['positions'] or
+            account['quote_asset']!=origin_report['quote_asset'] or (position_context is None and account['positions']) or
             Decimal(account['cash'])!=Decimal(wallet['availableBalance']) or
             Decimal(account['equity'])!=Decimal(wallet['marginBalance'])):
             raise DemoPreparationRejected('DEMO_ORIGIN_RISK_ACCOUNT_BINDING')
+        current_positions={}
+        if position_context is not None:
+            expected=demo_position_context.validate_origin(origin,position_context,as_of_ms=now_ms)
+            if account['positions']!=expected['positions'] or Decimal(account['day_pnl'])!=Decimal(expected['day_pnl']):
+                raise DemoPreparationRejected('DEMO_CONTINUATION_RISK_ACCOUNT')
+            if Decimal(account['peak_equity'])<max(Decimal(position_context['initial_equity']),Decimal(account['equity']),
+                    Decimal(position_context['peak_equity_floor'])):
+                raise DemoPreparationRejected('DEMO_CONTINUATION_PEAK_EQUITY')
+            current_positions={origin['symbol']:float(Decimal(position_context['quantity']))}
         if (market['symbol']!=origin['symbol'] or Decimal(market['reference_price'])!=Decimal(source['mark']['markPrice']) or
             market['observed_at_ms']!=min(source['mark']['time'],source['book']['time'])):
             raise DemoPreparationRejected('DEMO_ORIGIN_RISK_MARKET_BINDING')
-        state=_state(dispatch,recovery,oms)
-        actual_risk_inputs=_risk_with_history(risk_inputs,state['oms'],now_ms)
+        actual_risk_inputs=_risk_with_history(demo_position_context.continuation_risk(risk_inputs,position_context),state['oms'],now_ms)
         risk=screen(orders,**actual_risk_inputs)
         if risk['status']!='RISK_CHECKS_PASSED':raise DemoPreparationRejected('DEMO_BATCH_RISK_REJECTED')
         sid=risk_inputs['strategy'].strategy_id
@@ -157,7 +194,7 @@ def proposal(*,orders,origin,risk_inputs,mandate,attestations,dispatch,recovery,
         requests=[LiveOrderRequest(instrument_id=o['symbol'],side=OrderSide(o['side']),quantity=float(Decimal(o['quantity'])),
             client_order_id=o['newClientOrderId'],order_type='LIMIT',limit_price=float(Decimal(o['price']))) for o in orders]
         decision=evaluate_mandate(requests,{origin['symbol']:float(Decimal(market['reference_price']))},mandate,
-                                  venue='testnet',exchange='binance',now=now_ms,current_positions={})
+                                  venue='testnet',exchange='binance',now=now_ms,current_positions=current_positions)
         if decision.tier!=AUTO:raise DemoPreparationRejected('DEMO_MANDATE_LIMIT')
         old_ids={o['newClientOrderId'] for r in state['reservations'] for o in r['payload']['orders']}
         if any(o['newClientOrderId'] in old_ids for o in orders):raise DemoPreparationRejected('DEMO_CLIENT_ID_SPENT')
@@ -229,8 +266,7 @@ def _prepare_locked(envelope_bytes, *,evidence_directory,verification_now_ms=Non
             raise DemoPreparationRejected('DEMO_PREPARATION_VERIFICATION_TIME')
         frozen=proposal(**kwargs)
         require_current_kill(kwargs['risk_inputs']['kill_switch'].state,now_ms=verified_at)
-        if assess_origin(frozen['origin'],as_of_ms=verified_at)['status']!='OBSERVED_FLAT_QUOTE':
-            raise DemoPreparationRejected('DEMO_PREPARATION_ORIGIN_STALE')
+        _require_origin(frozen['origin'],now_ms=verified_at,position_context=frozen['state'].get('position_context'))
         demo_authority.verify_for_executor(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=verified_at)
         path=_retain(evidence_directory,frozen)
         reservation=kwargs['dispatch'].reserve(envelope_bytes,expected_context=frozen['context'],orders=frozen['orders'],now_ms=verified_at)

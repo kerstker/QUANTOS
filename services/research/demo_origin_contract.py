@@ -14,10 +14,12 @@ SETTLEMENT_POLICY = 'EXPLICIT_DEMO_QUOTE_QUANTUM_1E8_V1'
 
 
 @ledger_decimal_context()
-def contract_from_origin(origin):
+def contract_from_origin(origin, *, allow_observed_position=False):
     try:
         observed = assess(origin, as_of_ms=origin['completed_at_ms'])
-        if observed['status'] != 'OBSERVED_FLAT_QUOTE':
+        held = (allow_observed_position is True and observed['quote_positions'] == 1 and
+                set(observed['issues']) <= {'QUOTE_BOOK_NOT_FLAT', 'QUOTE_WALLET_NOT_FREE_AND_FLAT'})
+        if observed['status'] != 'OBSERVED_FLAT_QUOTE' and not held:
             raise ValueError('DEMO_CONTRACT_ORIGIN_UNRESOLVED')
         symbol = origin['symbol']; quote = symbol[3:]
         data = {r['kind']:r['data'] for r in origin['reads']}

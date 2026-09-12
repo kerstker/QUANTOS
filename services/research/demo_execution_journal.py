@@ -19,7 +19,7 @@ from services.execution.passive_queue import Action
 from services.execution.perpetual_ledger_v2 import (
     BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, CapacityPolicy, CapacityAction,
     ContractSpec, MarginMode, LinearPerpetualLedger,
-    ReportedFillReplayEvent, ReportedCashReplayPolicy, canonical_decimal, ledger_decimal_context,
+    ReportedFillReplayEvent, ReportedCashReplayPolicy, canonical_decimal, ledger_decimal_context, QuantityRuleViolation,
 )
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.ai_factory_store import digest
@@ -88,8 +88,6 @@ def prepare(manifest):
         if row["kind"] != "ORDER" or not isinstance(row["order_id"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", row["order_id"]):
             raise ValueError("FIXED_ORDINARY_ORDER_REQUIRED")
         action = Action(**(row | {"quantity": _decimal(row["quantity"]), "price": _decimal(row["price"])}))
-        if isinstance(spec, ContractSpec):
-            spec.validate_quantity(action.quantity, action.price)
         actions.append(action)
     if len({a.order_id for a in actions}) != len(actions):
         raise ValueError("DUPLICATE_FIXED_ORDER")
@@ -119,6 +117,15 @@ def prepare(manifest):
     prepare_opening(manifest, spec)
     parsed = (spec, collateral, tuple(actions), capacity)
     observations(manifest, [], parsed)
+    # Only validated native options can exempt a reducing order from the
+    # minimum notional. Lot size and step still apply to the submitted action;
+    # actual reported fills separately enforce direction and remaining holding.
+    reductions = {b['order_id'] for b in native['bindings'] if b.get('reduce_only') is True}
+    if isinstance(spec, ContractSpec):
+        for action in actions:
+            if action.quantity < spec.min_quantity:
+                raise QuantityRuleViolation('order quantity is below min_quantity')
+            spec.validate_quantity(action.quantity, action.price, reducing=action.order_id in reductions)
     return parsed
 
 

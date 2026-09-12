@@ -19,14 +19,14 @@ from live.contracts import LiveOrderRequest
 from live.execution import demo_authority
 from live.execution.demo_current_kill import require_expected as require_current_kill
 from live.execution.demo_batch_risk import _digest,_json_value,screen
-from live.execution.demo_pre_submit import _preparation_lease,_risk_with_history,_venue_rules,_venue_account_cap,_retain
+from live.execution.demo_pre_submit import _preparation_lease,_risk_with_history,_venue_rules,_venue_account_cap,_retain,_require_origin
+from live.execution import demo_position_context
 from live.execution.demo_wire_protocol import outcome_for_response,outcome_for_query
 from live.exchange import binance_demo_exact
 from live.governance.mandate import AUTO,Mandate,evaluate_mandate
 from live.governance.validation_attestation import require_validation_attestation
 from quantos.contracts.trading import OrderSide
 from services.governance.json_integrity import load_json_without_duplicate_keys
-from services.research.demo_execution_origin import assess
 from quantos.contracts.binance_demo_clock import QUERY_SCHEMA,validate_query_clock
 
 _STATE_ROOT=Path('/var/lib/quantos-demo-executor')
@@ -118,10 +118,17 @@ def _preflight(proof,reservation, *,dispatch,recovery,oms,risk_inputs,mandate,at
         _digest(asdict(mandate))!=context['mandate_sha256'] or _digest({sid:asdict(attestations[sid])})!=context['validation_sha256']):
         raise DemoExecutionStopped('DEMO_EXECUTOR_CONTEXT_CHANGED')
     demo_authority.verify_for_executor(json.dumps(reservation['payload']['envelope']).encode(),expected_context=context,orders=orders,now_ms=at)
-    if assess(proof['origin'],as_of_ms=at)['status']!='OBSERVED_FLAT_QUOTE':raise DemoExecutionStopped('DEMO_EXECUTOR_ORIGIN_STALE')
-    _venue_account_cap(orders,proof['origin'])
-    _venue_rules(orders,proof['origin']);_check_intents(proof,reservation,dispatch,recovery,oms)
-    original=_risk_with_history(risk_inputs,proof['state']['oms'],risk_inputs['now_ms'])
+    _check_intents(proof,reservation,dispatch,recovery,oms)
+    position_context=proof['state'].get('position_context')
+    if position_context is not None:
+        current_position=demo_position_context.load_context(proof['state'],symbol=orders[0]['symbol'],
+            account_ref=context['account_ref_sha256'],as_of_ms=at)
+        if current_position!=position_context:raise DemoExecutionStopped('DEMO_EXECUTOR_POSITION_SOURCE_CHANGED')
+    _require_origin(proof['origin'],now_ms=at,position_context=position_context)
+    _venue_account_cap(orders,proof['origin'],position_context)
+    _venue_rules(orders,proof['origin'])
+    original=_risk_with_history(demo_position_context.continuation_risk(risk_inputs,position_context),
+        proof['state']['oms'],risk_inputs['now_ms'])
     checked=screen(orders,**original)
     if checked['status']!='RISK_CHECKS_PASSED' or checked['risk_sha256']!=context['risk_sha256']:
         raise DemoExecutionStopped('DEMO_EXECUTOR_RISK_CHANGED')
@@ -133,7 +140,8 @@ def _preflight(proof,reservation, *,dispatch,recovery,oms,risk_inputs,mandate,at
     requests=[LiveOrderRequest(instrument_id=o['symbol'],side=OrderSide(o['side']),quantity=float(Decimal(o['quantity'])),
         client_order_id=o['newClientOrderId'],order_type='LIMIT',limit_price=float(Decimal(o['price']))) for o in orders]
     decision=evaluate_mandate(requests,{orders[0]['symbol']:float(Decimal(risk_inputs['market']['reference_price']))},mandate,
-        venue='testnet',exchange='binance',now=at,current_positions={})
+        venue='testnet',exchange='binance',now=at,
+        current_positions={} if position_context is None else {orders[0]['symbol']:float(Decimal(position_context['quantity']))})
     if decision.tier!=AUTO:raise DemoExecutionStopped('DEMO_EXECUTOR_MANDATE_REJECTED')
     return {'at_ms':at,'context':context,'current_risk':current,'current_kill':current_kill}
 
