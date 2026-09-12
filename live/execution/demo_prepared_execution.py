@@ -261,6 +261,7 @@ def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start
     Actual private data collection and independent deployment remain required.
     """
     from live.execution.demo_oms_reconciliation import prepare_resolution,_project_resolution
+    from services.research.demo_oms_status import build_status,save as save_status
     try:
         _require_state_custody(prepared,dispatch,recovery,oms)
         _require_receipt_store_custody(event_store,stream)
@@ -268,10 +269,16 @@ def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start
             output=_STATE_ROOT/'receipt-reconciliation'
             plan=prepare_resolution(prepared,dispatch=dispatch,stream=stream,start_ms=start_ms,end_ms=end_ms,
                 source_commit=source_commit,output_directory=output,as_of_ms=now_ms())
+            save_status(output/'views',build_status(prepared,plan,observed_at_ms=now_ms()))
             if plan['status']!='READY_FOR_OMS_PROJECTION':return plan
-            result=_project_resolution(plan,prepared=prepared,dispatch=dispatch,recovery=recovery,oms=oms,
-                                       event_store=event_store,now_ms=now_ms())
-            _retain(output/'outcomes',result)
+            try:
+                result=_project_resolution(plan,prepared=prepared,dispatch=dispatch,recovery=recovery,oms=oms,
+                                           event_store=event_store,now_ms=now_ms())
+                _retain(output/'outcomes',result)
+                save_status(output/'views',build_status(prepared,plan,observed_at_ms=now_ms(),result=result))
+            except Exception:
+                save_status(output/'views',build_status(prepared,plan,observed_at_ms=now_ms(),interrupted=True))
+                raise
             return result
     except DemoExecutionStopped:
         raise

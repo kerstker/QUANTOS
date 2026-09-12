@@ -134,6 +134,7 @@ def test_partial_fill_then_expiry_keeps_one_partial_fill_and_exact_cash_inputs(t
 
 def test_protected_internal_entry_rejects_unowned_stream_before_any_projection(tmp_path,monkeypatch):
     from live.execution import demo_prepared_execution as executor
+    from services.research.demo_oms_status import load_latest
     batch,args,stream,p=fixture(tmp_path,monkeypatch)
     events=SqliteOrderEventStore(str(tmp_path/'events.sqlite3'),create=True)
     try:
@@ -149,6 +150,40 @@ def test_protected_internal_entry_rejects_unowned_stream_before_any_projection(t
         result=executor.reconcile_reserved(batch,dispatch=args['dispatch'],recovery=args['recovery'],oms=args['oms'],
             event_store=events,stream=stream,start_ms=NOW+1,end_ms=NOW+1000,source_commit='a'*40)
         assert result['status']=='OMS_TERMINAL_PROJECTED' and result['cash_reconciled'] is False
+        status=load_latest(tmp_path/'receipt-reconciliation/views')
+        assert status['phase']=='OMS_TERMINAL_PROJECTED' and status['projected_orders']==1
+        assert status['plan_sha256']==result['plan_sha256'] and status['cash_reconciled'] is False
+    finally:events.close();close(args,stream)
+
+
+def test_protected_recovery_exports_interrupted_then_recovered_status_without_duplicate_fill(tmp_path,monkeypatch):
+    from live.execution import demo_prepared_execution as executor
+    from services.research.demo_oms_status import load_latest
+    batch,args,stream,p=fixture(tmp_path,monkeypatch);events=SqliteOrderEventStore(str(tmp_path/'events.sqlite3'),create=True)
+    try:
+        monkeypatch.setattr(executor,'now_ms',lambda:NOW+1001)
+        monkeypatch.setattr(executor,'_STATE_ROOT',tmp_path)
+        monkeypatch.setattr(executor,'_require_receipt_store_custody',lambda *a:None)
+        def run():return executor.reconcile_reserved(batch,dispatch=args['dispatch'],recovery=args['recovery'],oms=args['oms'],
+            event_store=events,stream=stream,start_ms=NOW+1,end_ms=NOW+1000,source_commit='a'*40)
+        directory=tmp_path/'receipt-reconciliation/views'
+        assert run()['status']=='UNRESOLVED'
+        assert load_latest(directory)['phase']=='INPUTS_UNRESOLVED'
+        stream.record('MESSAGE',at_ms=NOW+12,message=normalize_message(json.dumps(p)));add_query(batch,args)
+        original=args['oms'].apply_oms_projection
+        def crash(record,**kw):
+            if record.event.venue_status=='FILLED':raise OSError('simulated interruption')
+            return original(record,**kw)
+        monkeypatch.setattr(args['oms'],'apply_oms_projection',crash)
+        with pytest.raises(executor.DemoExecutionStopped):run()
+        interrupted=load_latest(directory)
+        assert interrupted['phase']=='PROJECTION_INTERRUPTED' and interrupted['projected_orders'] is None
+        before={p.name:p.read_bytes() for p in directory.iterdir() if p.name!='latest.json'}
+        monkeypatch.setattr(args['oms'],'apply_oms_projection',original)
+        assert run()['status']=='OMS_TERMINAL_PROJECTED'
+        assert load_latest(directory)['projected_orders']==1
+        assert len(args['oms'].fills())==1 and not args['recovery'].pending()
+        assert all((directory/name).read_bytes()==body for name,body in before.items())
     finally:events.close();close(args,stream)
 
 

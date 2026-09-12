@@ -544,6 +544,11 @@
           "path": "services/console/api/binance_demo_views.py"
         },
         {
+          "line": 20,
+          "module": "services.research.demo_oms_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1563,6 +1568,11 @@
           "path": "services/research/demo_execution_origin.py"
         },
         {
+          "line": 10,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_oms_status.py"
+        },
+        {
           "line": 12,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_order_recovery.py"
@@ -1918,7 +1928,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "97072efefd09d9b1fb21e8e8a349f91a142f0503422a8a92919570b680f43a7e",
+  "graph_sha256": "144b6cbd67ac73adfcffcf6cebd73139abc1cba5a91c5612227798bfa276d84c",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1956,7 +1966,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 572,
+  "source_file_count": 573,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
