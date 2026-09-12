@@ -239,3 +239,41 @@ def query_reserved(prepared, *,dispatch,recovery,oms):
         raise
     except Exception:
         raise DemoExecutionStopped('DEMO_QUERY_STOPPED_ORIGINAL_IDS_RETAINED') from None
+
+
+def _require_receipt_store_custody(event_store,stream):
+    registry=demo_authority.load_registry_for_executor()
+    for store,attribute,name in ((event_store,'_conn','order-events.sqlite3'),(stream,'db','user-stream.sqlite3')):
+        db=getattr(store,attribute,None)
+        opened=db.execute('PRAGMA database_list').fetchone()[2]
+        path=_STATE_ROOT/name
+        if Path(opened)!=path:raise DemoExecutionStopped('DEMO_RECEIPT_STATE_PATH')
+        info=path.lstat()
+        if info.st_uid!=registry['executor_uid'] or info.st_mode & 0o022 or not stat.S_ISREG(info.st_mode) or info.st_nlink!=1:
+            raise DemoExecutionStopped('DEMO_RECEIPT_STATE_CUSTODY')
+
+
+def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start_ms,end_ms,source_commit):
+    """Protected internal receipt->OMS recovery step, with no network or cash.
+
+    The resident executor must own both input journals; a user-writable research
+    import cannot resolve this state. No caller-supplied resolution plan is used.
+    Actual private data collection and independent deployment remain required.
+    """
+    from live.execution.demo_oms_reconciliation import prepare_resolution,_project_resolution
+    try:
+        _require_state_custody(prepared,dispatch,recovery,oms)
+        _require_receipt_store_custody(event_store,stream)
+        with _preparation_lease(dispatch):
+            output=_STATE_ROOT/'receipt-reconciliation'
+            plan=prepare_resolution(prepared,dispatch=dispatch,stream=stream,start_ms=start_ms,end_ms=end_ms,
+                source_commit=source_commit,output_directory=output,as_of_ms=now_ms())
+            if plan['status']!='READY_FOR_OMS_PROJECTION':return plan
+            result=_project_resolution(plan,prepared=prepared,dispatch=dispatch,recovery=recovery,oms=oms,
+                                       event_store=event_store,now_ms=now_ms())
+            _retain(output/'outcomes',result)
+            return result
+    except DemoExecutionStopped:
+        raise
+    except Exception:
+        raise DemoExecutionStopped('DEMO_RECEIPT_RESOLUTION_STOPPED') from None

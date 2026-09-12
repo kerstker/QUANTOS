@@ -70,6 +70,44 @@ def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None
         return exc.code, exc.read()
 
 
+class _DemoNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        return None
+
+
+def _demo_exact_encode_params(params):
+    return urllib.parse.urlencode(sorted(params.items())).encode('ascii')
+
+
+def _demo_exact_post_once(body,headers):
+    """Fixed Demo seam for a preclaimed exact request, with zero POST retry.
+
+    The protected prepared executor owns independent verification, credentials
+    and its immediately-before-send check. This private seam changes neither
+    that custody nor the legacy adapter's separate construction/mainnet gates.
+    """
+    req=urllib.request.Request(DEMO_REST_BASE+'/fapi/v1/order',data=body,headers=headers,method='POST')
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect())
+    try:
+        with opener.open(req,timeout=10) as response:
+            return response.status,response.read(65537)
+    except urllib.error.HTTPError as exc:
+        try:return exc.code,exc.read(65537)
+        finally:exc.close()
+
+
+def _demo_exact_get_once(path,query,headers):
+    if path not in ('/fapi/v1/time','/fapi/v1/order') or path=='/fapi/v1/time' and (query or headers):
+        raise ValueError('DEMO_QUERY_PATH')
+    req=urllib.request.Request(DEMO_REST_BASE+path+('?' + query.decode('ascii') if query else ''),headers=headers,method='GET')
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect()).open(req,timeout=10) as response:
+            return response.status,response.read(65537)
+    except urllib.error.HTTPError as exc:
+        try:return exc.code,exc.read(65537)
+        finally:exc.close()
+
+
 class BinanceFuturesAdapter:
     TESTNET_BASE = DEMO_REST_BASE
     MAINNET_BASE = "https://fapi.binance.com"

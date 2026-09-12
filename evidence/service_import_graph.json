@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 54,
+  "edge_count": 53,
   "edges": [
     {
       "references": [
@@ -1915,21 +1915,10 @@
       ],
       "source": "risk",
       "target": "validation"
-    },
-    {
-      "references": [
-        {
-          "line": 19,
-          "module": "services.governance.json_integrity",
-          "path": "services/validation/demo_submission.py"
-        }
-      ],
-      "source": "validation",
-      "target": "governance"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "ee46e72985545171d1c75d689cedffb9a7138af7bc8383c0448028eb7782f6f3",
+  "graph_sha256": "97072efefd09d9b1fb21e8e8a349f91a142f0503422a8a92919570b680f43a7e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

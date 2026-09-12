@@ -16,8 +16,6 @@ import re
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from services.governance.json_integrity import load_json_without_duplicate_keys
-
 CONTEXT_HASHES = ('deployment_sha256','executor_boot_sha256','account_ref_sha256','origin_sha256',
                   'market_sha256','risk_sha256','recovery_sha256','batch_sha256','mandate_sha256',
                   'validation_sha256','registry_sha256')
@@ -166,7 +164,20 @@ def parse_envelope(raw):
     if not isinstance(raw,bytes) or len(raw)>_MAX_BYTES:
         raise DemoSubmissionRejected('DEMO_AUTHORITY_SIZE')
     try:
-        return _validate_envelope(load_json_without_duplicate_keys(raw))
+        def unique_members(pairs):
+            result={}
+            for key,value in pairs:
+                if key in result:raise DemoSubmissionRejected('DEMO_AUTHORITY_JSON')
+                result[key]=value
+            return result
+        def reject_inexact(_):
+            raise DemoSubmissionRejected('DEMO_AUTHORITY_JSON')
+        # This grant's wire schema has only exact integers and ASCII strings.
+        # Keep parsing inside the domain-neutral verifier, without depending
+        # on governance services or relaxing duplicate/number validation.
+        value=json.loads(raw.decode('utf-8'),object_pairs_hook=unique_members,
+                         parse_float=reject_inexact,parse_constant=reject_inexact)
+        return _validate_envelope(value)
     except DemoSubmissionRejected:
         raise
     except Exception:
