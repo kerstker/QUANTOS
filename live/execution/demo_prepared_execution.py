@@ -17,7 +17,7 @@ import time
 from live.contracts import LiveOrderRequest
 from live.execution import demo_authority
 from live.execution.demo_batch_risk import _digest,_json_value,screen
-from live.execution.demo_pre_submit import _preparation_lease,_risk_with_history,_venue_rules,_retain
+from live.execution.demo_pre_submit import _preparation_lease,_risk_with_history,_venue_rules,_venue_account_cap,_retain
 from live.execution.demo_wire_protocol import outcome_for_response,outcome_for_query
 from live.exchange import binance_demo_exact
 from live.governance.mandate import AUTO,Mandate,evaluate_mandate
@@ -114,6 +114,7 @@ def _preflight(proof,reservation, *,dispatch,recovery,oms,risk_inputs,mandate,at
         raise DemoExecutionStopped('DEMO_EXECUTOR_CONTEXT_CHANGED')
     demo_authority.verify_for_executor(json.dumps(reservation['payload']['envelope']).encode(),expected_context=context,orders=orders,now_ms=at)
     if assess(proof['origin'],as_of_ms=at)['status']!='OBSERVED_FLAT_QUOTE':raise DemoExecutionStopped('DEMO_EXECUTOR_ORIGIN_STALE')
+    _venue_account_cap(orders,proof['origin'])
     _venue_rules(orders,proof['origin']);_check_intents(proof,reservation,dispatch,recovery,oms)
     original=_risk_with_history(risk_inputs,proof['state']['oms'],risk_inputs['now_ms'])
     checked=screen(orders,**original)

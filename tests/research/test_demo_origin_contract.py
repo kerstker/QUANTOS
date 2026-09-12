@@ -14,6 +14,7 @@ def test_technical_contract_keeps_finite_table_and_selected_leverage(tmp_path):
     for r in origin['reads']:
         if r['kind'] in ('symbols_before','symbols_after'):
             next(s for s in r['data'] if s['symbol']=='BTCUSDC')['leverage']=3
+            r['target_config']['leverage']=3
     before=deepcopy(origin)
     with localcontext() as c:
         c.prec=4
@@ -33,10 +34,14 @@ def test_unproven_or_unrepresentable_terms_are_not_replaced_by_default_brackets(
     if failure=='coefficient':next(r for r in origin['reads'] if r['kind']=='brackets')['data'][0]['notionalCoef']='2'
     elif failure=='leverage':
         for r in origin['reads']:
-            if r['kind'] in ('symbols_before','symbols_after'):next(s for s in r['data'] if s['symbol']=='BTCUSDC')['leverage']=100
+            if r['kind'] in ('symbols_before','symbols_after'):
+                next(s for s in r['data'] if s['symbol']=='BTCUSDC')['leverage']=100
+                r['target_config']['leverage']=100
     elif failure=='unknown_mode':
         for r in origin['reads']:
-            if r['kind'] in ('symbols_before','symbols_after'):next(s for s in r['data'] if s['symbol']=='BTCUSDC')['marginType']='ISOLATED'
+            if r['kind'] in ('symbols_before','symbols_after'):
+                next(s for s in r['data'] if s['symbol']=='BTCUSDC')['marginType']='ISOLATED'
+                r['target_config']['marginType']='ISOLATED'
     elif failure=='bracket_gap':next(r for r in origin['reads'] if r['kind']=='brackets')['data'][0]['brackets'][0]['notionalFloor']='1'
     else:
         rules=next(r for r in origin['reads'] if r['kind']=='rules')['data']

@@ -66,7 +66,10 @@ def test_demo_execution_origin_contract_is_read_only_and_keeps_conditions(tmp_pa
     monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1_000_000)
     payload=client.get('/api/v1/console/binance-demo').json()
     report=payload['execution_origin']['report']
-    assert report['schema']=='DEMO_EXECUTION_ORIGIN_V3'
+    assert report['schema']=='DEMO_EXECUTION_ORIGIN_V4'
+    assert report['target_configuration']['status']=='MATCHED_OBSERVATIONS'
+    assert report['target_configuration']['after']['maxNotionalValue']=='10000'
+    assert report['target_configuration']['after']['isAutoAddMargin'] is False
     assert report['status']=='UNRESOLVED' and report['algo_orders']==1
     assert 'PREEXISTING_ALGO_ORDERS' in report['issues']
     assert report['other_quote_positions']==1 and report['read_count']==16

@@ -1,8 +1,10 @@
 """Bounded operator GET capture of Demo execution inputs; never submits orders."""
 import argparse
 from decimal import Decimal
+import gzip
 import hashlib
 import hmac
+import io
 import json
 import os
 from pathlib import Path
@@ -16,7 +18,8 @@ import urllib.request
 from quantos.contracts.binance_demo import DEMO_REST_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_execution_origin import (
-    ACCOUNT_KINDS, KINDS, MAX_BYTES, PUBLIC, REASONS, FULL_TERMS_SCHEMA, assess, normalize, save, validate,
+    ACCOUNT_KINDS, KINDS, MAX_BYTES, PUBLIC, REASONS, ACCOUNT_TERMS_SCHEMA, assess, normalize, save, validate,
+    target_configuration,
 )
 from tools.binance_demo_private_check import load_credentials
 from tools.binance_demo_readiness import NoRedirect, ProbeFailure
@@ -57,12 +60,15 @@ def get_response(path, *, params, headers):
         expected = ('symbol=BTCUSDT', 'symbol=BTCUSDC') if path in (PATHS['mark'], PATHS['book']) else ('',)
         if params not in expected:
             raise ProbeFailure('REQUEST_FAILED')
-    request = urllib.request.Request(DEMO_REST_BASE+path+('?' + params if params else ''), headers=headers, method='GET')
+    request_headers=dict(headers)
+    if path in (PATHS['rules'],PATHS['symbols_before']):request_headers['Accept-Encoding']='gzip'
+    request = urllib.request.Request(DEMO_REST_BASE+path+('?' + params if params else ''), headers=request_headers, method='GET')
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
             if not 200 <= response.status < 300:
                 raise ProbeFailure('RESPONSE_INVALID')
             raw = response.read(2_000_001)
+            encoding=response.headers.get('Content-Encoding','identity').strip().lower()
     except urllib.error.HTTPError as exc:
         status = exc.code
         exc.close()
@@ -75,13 +81,22 @@ def get_response(path, *, params, headers):
         raise ProbeFailure('REQUEST_FAILED') from None
     if len(raw) > 2_000_000:
         raise ProbeFailure('RESPONSE_TOO_LARGE')
+    if encoding=='gzip':
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as body:raw=body.read(2_000_001)
+        except Exception:
+            raise ProbeFailure('RESPONSE_INVALID') from None
+        if len(raw)>2_000_000:raise ProbeFailure('RESPONSE_TOO_LARGE')
+    elif encoding!='identity':raise ProbeFailure('RESPONSE_INVALID')
+    # The retained response digest is of the bounded decoded JSON entity,
+    # independent of the optional HTTP compression transport representation.
     return raw
 
 
 def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=None):
     get, clock_ms = get or get_response, clock_ms or now_ms
     started = clock_ms()
-    report = {'schema': FULL_TERMS_SCHEMA, 'status': 'NOT_REQUESTED', 'symbol': symbol,
+    report = {'schema': ACCOUNT_TERMS_SCHEMA, 'status': 'NOT_REQUESTED', 'symbol': symbol,
               'observed_at_ms': started, 'completed_at_ms': started,
               'account_ref_sha256': None, 'source_sha256': source_hash(), 'reads': [], 'failures': []}
     validate(report)
@@ -114,7 +129,9 @@ def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=
             response_hash = hashlib.sha256(raw).hexdigest()
             try:
                 load_json_without_duplicate_keys(raw)
-                data = normalize(kind, json.loads(raw, parse_float=Decimal), symbol)
+                native = json.loads(raw, parse_float=Decimal)
+                data = normalize(kind, native, symbol)
+                config = target_configuration(native,symbol) if kind.startswith('symbols') else None
             except Exception:
                 raise ProbeFailure('RESPONSE_INVALID') from None
             if not 0 <= received-sent <= 10000:
@@ -127,7 +144,8 @@ def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=
                 offset = candidate
             read = {'kind': kind, 'requested_at_ms': sent, 'received_at_ms': received,
                     'account_ref_sha256': None if kind in PUBLIC else report['account_ref_sha256'],
-                    'response_sha256': response_hash, 'data': data}
+                    'response_sha256': response_hash, 'data': data,
+                    **({'target_config':config} if kind.startswith('symbols') else {})}
             # Validate the retained prefix before accepting it as an observation.
             candidate_report = dict(report, status='FAILED', reads=[*report['reads'], read], completed_at_ms=received,
                                     failures=[{'kind': 'worker', 'requested_at_ms': received,

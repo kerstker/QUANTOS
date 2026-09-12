@@ -20,13 +20,34 @@ from live.governance.mandate import Mandate, AUTO, evaluate_mandate
 from live.governance.validation_attestation import require_validation_attestation
 from quantos.contracts.trading import OrderSide
 from services.execution.perpetual_ledger_v2 import ledger_decimal_context
-from services.research.demo_execution_origin import assess as assess_origin
+from services.research.demo_execution_origin import assess as assess_origin, ACCOUNT_TERMS_SCHEMA
+from services.research.demo_origin_contract import contract_from_origin
 from services.validation.demo_submission import batch_sha256, registry_sha256, validate_orders
 from services.risk.pre_trade.context import order_fingerprint
 
 
 class DemoPreparationRejected(ValueError):
     pass
+
+
+@ledger_decimal_context()
+def _venue_account_cap(orders,origin):
+    if origin['schema']!=ACCOUNT_TERMS_SCHEMA:
+        raise DemoPreparationRejected('DEMO_VENUE_ACCOUNT_TERMS_REQUIRED')
+    data={r['kind']:r['data'] for r in origin['reads']}
+    try:
+        # Reuse the same checked finite bracket table as the receipt ledger;
+        # a plausible last cap alone does not validate gaps or rate continuity.
+        spec,_=contract_from_origin(origin)
+        cap=Decimal(spec['new_risk_notional_cap'])
+    except (ValueError,KeyError,TypeError,ArithmeticError):
+        raise DemoPreparationRejected('DEMO_VENUE_ACCOUNT_TERMS_UNSUPPORTED') from None
+    # Flat initial book; either side can fill alone. Opposite pending orders
+    # cannot offset the possible exposure. Use the higher frozen valuation.
+    mark=Decimal(data['mark']['markPrice'])
+    exposure={side:sum((Decimal(o['quantity'])*max(Decimal(o['price']),mark)
+        for o in orders if o['side']==side),Decimal(0)) for side in ('BUY','SELL')}
+    if max(exposure.values())>cap:raise DemoPreparationRejected('DEMO_VENUE_NOTIONAL_CAP')
 
 
 @ledger_decimal_context()
@@ -107,6 +128,7 @@ def proposal(*,orders,origin,risk_inputs,mandate,attestations,dispatch,recovery,
         origin_report=assess_origin(origin,as_of_ms=now_ms)
         if origin_report['status']!='OBSERVED_FLAT_QUOTE':raise DemoPreparationRejected('DEMO_ORIGIN_NOT_READY')
         if orders[0]['symbol']!=origin['symbol']:raise DemoPreparationRejected('DEMO_ORIGIN_ORDER_SCOPE')
+        _venue_account_cap(orders,origin)
         _venue_rules(orders,origin)
         source={r['kind']:r['data'] for r in origin['reads']}
         account=risk_inputs['account'];market=risk_inputs['market']

@@ -56,3 +56,27 @@ it('explains absent and corrupt input without claiming a completed check',()=>{
   expect(screen.getByText('起点记录无法验证')).toBeInTheDocument();
   expect(screen.queryByText('观察到目标币种空仓')).not.toBeInTheDocument();
 });
+it('shows matched or changed observed account limits and rejects invented V4 success',()=>{
+  const config={symbol:'BTCUSDC' as const,marginType:'CROSSED' as const,leverage:20,isAutoAddMargin:false,maxNotionalValue:'120.000000000000000001'};
+  const r: DemoExecutionOriginReport={...report(),schema:'DEMO_EXECUTION_ORIGIN_V4',
+    target_configuration:{status:'MATCHED_OBSERVATIONS',before:{...config},after:{...config}}};
+  expect(executionOriginValid({status:'AVAILABLE',report:r},now+20000)).toBe(true);
+  const view=render(<DemoExecutionOrigin snapshot={{status:'AVAILABLE',report:r}} refreshFailed={false}/>);
+  expect(screen.getByText('合约账户配置前后相符')).toBeInTheDocument();
+  expect(screen.getByText(/后次观察名义额度：120.000000000000000001 USDC/)).toBeInTheDocument();
+  for (const change of [undefined,{...r.target_configuration,after:null},
+    {...r.target_configuration,after:{...config,maxNotionalValue:120}},
+    {...r.target_configuration,after:{...config,maxNotionalValue:'1000000000000000.000000000000000001'}},
+    {...r.target_configuration,after:{...config,maxNotionalValue:'0'}},
+    {...r.target_configuration,after:{...config,isAutoAddMargin:true}},
+    {...r.target_configuration,after:{...config,maxNotionalValue:'119'}}]) {
+    expect(executionOriginValid({status:'AVAILABLE',report:{...r,target_configuration:change}},now+20000)).toBe(false);
+  }
+  const changed: DemoExecutionOriginReport={...r,status:'UNRESOLVED',issues:['TARGET_CONFIG_CHANGED'],
+    target_configuration:{status:'DIFFERENT_OBSERVATIONS',before:config,after:{...config,maxNotionalValue:'119'}}};
+  expect(executionOriginValid({status:'AVAILABLE',report:changed},now+20000)).toBe(true);
+  view.rerender(<DemoExecutionOrigin snapshot={{status:'AVAILABLE',report:changed}} refreshFailed={false}/>);
+  expect(screen.getByText('合约账户配置前后不同')).toBeInTheDocument();
+  expect(screen.getByText(/采集期间合约账户配置发生变化/)).toBeInTheDocument();
+  expect(executionOriginValid({status:'AVAILABLE',report:{...r,schema:'DEMO_EXECUTION_ORIGIN_V3'}},now+20000)).toBe(false);
+});

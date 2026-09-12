@@ -22,7 +22,8 @@ def transport(*, conditional=False, isolated=False):
                 data['assets'].append({'asset':'USDC','walletBalance':'5000','crossWalletBalance':'5000',
                     'availableBalance':'5000','unrealizedProfit':'0','marginBalance':'5000'})
             if kind.startswith('symbols'):
-                data.append({'symbol':'BTCUSDC','marginType':'ISOLATED' if isolated else 'CROSSED','leverage':20})
+                data.append({'symbol':'BTCUSDC','marginType':'ISOLATED' if isolated else 'CROSSED','leverage':20,
+                             'isAutoAddMargin':False,'maxNotionalValue':'10000'})
         elif kind=='algo_orders':
             data=[{'algoId':9007199254740993,'clientAlgoId':'existing-stop','algoType':'CONDITIONAL',
                 'orderType':'STOP_MARKET','symbol':'BTCUSDC','side':'SELL','positionSide':'BOTH',
@@ -176,10 +177,11 @@ def test_v2_retains_order_count_limits_and_v1_evidence_remains_readable(tmp_path
             return json.dumps(data).encode()
         return raw
     raw=tool.collect(credential_file=credentials(tmp_path),symbol='BTCUSDC',operator_read=True,get=limits,clock_ms=lambda:NOW)
-    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V3'
+    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V4'
     rules=next(r for r in raw['reads'] if r['kind']=='rules')['data']
     assert rules['order_count_limits']=={'MAX_NUM_ORDERS':200}
     legacy=deepcopy(raw);legacy['schema']='DEMO_EXECUTION_ORIGIN_V1'
+    for r in legacy['reads']:r.pop('target_config',None)
     del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['venue_filters']
     del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['order_count_limits']
     assert tool.validate(legacy)==legacy
@@ -189,10 +191,11 @@ def test_v2_retains_order_count_limits_and_v1_evidence_remains_readable(tmp_path
 
 def test_new_origin_retains_all_filter_fields_and_rejects_projection_conflicts(tmp_path):
     raw,_=collect(tmp_path)
-    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V3'
+    assert raw['schema']=='DEMO_EXECUTION_ORIGIN_V4'
     rules=next(r for r in raw['reads'] if r['kind']=='rules')['data']
     assert {f['filterType'] for f in rules['venue_filters']}==set(rules['filter_types'])
     legacy=deepcopy(raw);legacy['schema']='DEMO_EXECUTION_ORIGIN_V2'
+    for r in legacy['reads']:r.pop('target_config',None)
     del next(r for r in legacy['reads'] if r['kind']=='rules')['data']['venue_filters']
     assert tool.validate(legacy)==legacy
     lot=next(f for f in rules['venue_filters'] if f['filterType']=='LOT_SIZE')

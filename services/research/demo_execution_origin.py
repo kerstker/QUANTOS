@@ -22,6 +22,7 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 SCHEMA='DEMO_EXECUTION_ORIGIN_V1'
 TERMS_SCHEMA='DEMO_EXECUTION_ORIGIN_V2'
 FULL_TERMS_SCHEMA='DEMO_EXECUTION_ORIGIN_V3'
+ACCOUNT_TERMS_SCHEMA='DEMO_EXECUTION_ORIGIN_V4'
 KINDS=('clock_before',*ACCOUNT_KINDS[:5],'algo_orders','rules','fees','brackets','mark','book',*ACCOUNT_KINDS[5:],'clock_after')
 PUBLIC=frozenset(('clock_before','clock_after','rules','mark','book'))
 MAX_BYTES=8_000_000
@@ -52,6 +53,20 @@ def venue_filters(value):
             elif type(v) is str:_text(v,r'[A-Za-z0-9_.+-]{1,128}')
             elif type(v) is not bool:raise ValueError('ORIGIN_FILTER_SCALAR')
     return json.loads(json.dumps(value,allow_nan=False))
+
+
+def target_configuration(raw,symbol):
+    """Retain target account limits from the existing all-symbol response."""
+    if type(raw) is not list or len(raw)>2000:raise ValueError('ORIGIN_SYMBOL_CONFIG')
+    chosen=[r for r in raw if type(r) is dict and r.get('symbol')==symbol]
+    if not chosen:return None
+    if len(chosen)!=1:raise ValueError('ORIGIN_SYMBOL_CONFIG')
+    row=chosen[0]
+    result={**normalize_account_read('symbols_before',[row])[0],
+        'isAutoAddMargin':_bool(row['isAutoAddMargin']),
+        'maxNotionalValue':_decimal(row['maxNotionalValue'])}
+    if result['maxNotionalValue'].startswith('-'):raise ValueError('ORIGIN_SYMBOL_CAP')
+    return result
 
 
 def normalize(kind,raw,symbol):
@@ -98,20 +113,29 @@ def _check_data(read,symbol,schema):
     if kind in ACCOUNT_KINDS:
         AccountRead(kind=kind,started_at_ms=read['requested_at_ms'],received_at_ms=read['received_at_ms'],
                     response_sha256=read['response_sha256'],data=data)
+        if schema==ACCOUNT_TERMS_SCHEMA and kind.startswith('symbols'):
+            target=read['target_config']
+            selected=next((r for r in data if r['symbol']==symbol),None)
+            if target is None:
+                if selected is not None:raise ValueError('ORIGIN_SYMBOL_CONFIG_MISSING')
+            else:
+                fields(target,'symbol marginType leverage isAutoAddMargin maxNotionalValue')
+                if target_configuration([target],symbol)!=target or selected!={k:target[k] for k in ('symbol','marginType','leverage')}:
+                    raise ValueError('ORIGIN_SYMBOL_CONFIG_BINDING')
     elif kind=='rules':
-        fields(data,'terms precision order_types time_in_forces filter_types'+(' order_count_limits' if schema in (TERMS_SCHEMA,FULL_TERMS_SCHEMA) else '')+(' venue_filters' if schema==FULL_TERMS_SCHEMA else ''))
+        fields(data,'terms precision order_types time_in_forces filter_types'+(' order_count_limits' if schema!=SCHEMA else '')+(' venue_filters' if schema in (FULL_TERMS_SCHEMA,ACCOUNT_TERMS_SCHEMA) else ''))
         fields(data['precision'],'pricePrecision quantityPrecision baseAssetPrecision quotePrecision')
         if any(_int(v)>24 for v in data['precision'].values()):raise ValueError('ORIGIN_PRECISION')
         for name in ('order_types','time_in_forces','filter_types'):
             values=data[name]
             if type(values) is not list or not 1<=len(values)<=32 or len(set(values))!=len(values):raise ValueError('ORIGIN_RULE_LIST')
             for v in values:_text(v)
-        if schema in (TERMS_SCHEMA,FULL_TERMS_SCHEMA):
+        if schema!=SCHEMA:
             caps=data['order_count_limits']
             if type(caps) is not dict or set(caps)!=set(data['filter_types']) & {'MAX_NUM_ORDERS','MAX_NUM_ALGO_ORDERS'}:
                 raise ValueError('ORIGIN_ORDER_COUNT_LIMITS')
             for value in caps.values():_int(value)
-        if schema==FULL_TERMS_SCHEMA:
+        if schema in (FULL_TERMS_SCHEMA,ACCOUNT_TERMS_SCHEMA):
             complete=venue_filters(data['venue_filters'])
             if ([r['filterType'] for r in complete]!=data['filter_types'] or
                 {r['filterType']:_int(r['limit']) for r in complete if r['filterType'] in ('MAX_NUM_ORDERS','MAX_NUM_ALGO_ORDERS')}!=data['order_count_limits'] or
@@ -123,7 +147,7 @@ def _check_data(read,symbol,schema):
 
 def validate(raw):
     fields(raw,'schema status symbol observed_at_ms completed_at_ms account_ref_sha256 source_sha256 reads failures')
-    if raw['schema'] not in (SCHEMA,TERMS_SCHEMA,FULL_TERMS_SCHEMA) or raw['symbol'] not in ('BTCUSDT','BTCUSDC') or raw['status'] not in ('NOT_REQUESTED','CAPTURED','FAILED'):
+    if raw['schema'] not in (SCHEMA,TERMS_SCHEMA,FULL_TERMS_SCHEMA,ACCOUNT_TERMS_SCHEMA) or raw['symbol'] not in ('BTCUSDT','BTCUSDC') or raw['status'] not in ('NOT_REQUESTED','CAPTURED','FAILED'):
         raise ValueError('ORIGIN_SCHEMA')
     start,end=_int(raw['observed_at_ms']),_int(raw['completed_at_ms'])
     if not 0<start<=end<=start+120000:raise ValueError('ORIGIN_WINDOW')
@@ -133,7 +157,8 @@ def validate(raw):
     if type(reads) is not list or len(reads)>len(KINDS) or type(failures) is not list or len(failures)>1:raise ValueError('ORIGIN_BOUNDS')
     previous=start;offsets=[]
     for i,read in enumerate(reads):
-        fields(read,'kind requested_at_ms received_at_ms account_ref_sha256 response_sha256 data')
+        fields(read,'kind requested_at_ms received_at_ms account_ref_sha256 response_sha256 data'+
+               (' target_config' if raw['schema']==ACCOUNT_TERMS_SCHEMA and read.get('kind','').startswith('symbols') else ''))
         if read['kind']!=KINDS[i]:raise ValueError('ORIGIN_READ_ORDER')
         sent,received=_int(read['requested_at_ms']),_int(read['received_at_ms'])
         if not previous<=sent<=received<=min(end,sent+10000):raise ValueError('ORIGIN_READ_CLOCK')
@@ -165,7 +190,7 @@ def validate(raw):
 def account_capture(raw):
     """Reuse the unchanged V1 account model, with this capture's source identity."""
     validate(raw)
-    reads=[AccountRead(**{k:v for k,v in r.items() if k not in ('account_ref_sha256','requested_at_ms')},
+    reads=[AccountRead(**{k:v for k,v in r.items() if k not in ('account_ref_sha256','requested_at_ms','target_config')},
                        started_at_ms=r['requested_at_ms']) for r in raw['reads'] if r['kind'] in ACCOUNT_KINDS]
     complete=len(reads)==len(ACCOUNT_KINDS)
     return DemoAccountCapture(observed_at_ms=raw['observed_at_ms'],completed_at_ms=raw['completed_at_ms'],
@@ -188,6 +213,17 @@ def assess(raw, *, as_of_ms):
     if config.get('multiAssetsMargin') is not False:issues.append('MULTI_ASSET_MARGIN_UNSUPPORTED')
     target=next((s for s in data.get('symbols_after',[]) if s['symbol']==raw['symbol']),None)
     if not target or target['marginType']!='CROSSED':issues.append('TARGET_CROSS_MARGIN_REQUIRED')
+    configuration={}
+    if raw['schema']==ACCOUNT_TERMS_SCHEMA:
+        values={r['kind']:r.get('target_config') for r in raw['reads'] if r['kind'].startswith('symbols')}
+        before,after=values.get('symbols_before'),values.get('symbols_after')
+        state='INCOMPLETE' if before is None or after is None else 'MATCHED_OBSERVATIONS' if before==after else 'DIFFERENT_OBSERVATIONS'
+        if state=='INCOMPLETE':issues.append('TARGET_CONFIG_MISSING')
+        elif state=='DIFFERENT_OBSERVATIONS':issues.append('TARGET_CONFIG_CHANGED')
+        if after:
+            if after['isAutoAddMargin']:issues.append('TARGET_AUTO_MARGIN_UNSUPPORTED')
+            if Decimal(after['maxNotionalValue'])<=0:issues.append('TARGET_NOTIONAL_CAP_UNAVAILABLE')
+        configuration={'target_configuration':{'status':state,'before':before,'after':after}}
     if data.get('orders'):issues.append('PREEXISTING_ORDINARY_ORDERS')
     if data.get('algo_orders'):issues.append('PREEXISTING_ALGO_ORDERS')
     positions=[p for p in baseline['positions'] if p['margin_asset']==quote]
@@ -213,7 +249,7 @@ def assess(raw, *, as_of_ms):
         'algo_orders':len(data.get('algo_orders',[])) if 'algo_orders' in data else None,
         'account_ref_sha256':raw['account_ref_sha256'],'observed_at_ms':raw['observed_at_ms'],'completed_at_ms':raw['completed_at_ms'],
         'source_sha256':raw['source_sha256'],'read_count':len(raw['reads']),'failures':raw['failures'],
-        'issues':sorted(set(issues)),'settlement_rounding':'UNVERIFIED','source_verified':False,
+        'issues':sorted(set(issues)),**configuration,'settlement_rounding':'UNVERIFIED','source_verified':False,
         'atomic_snapshot_verified':False,'submission_enabled':False,'strategy_pnl':None}
 
 

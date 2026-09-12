@@ -2,11 +2,21 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const integer = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const code = (v: unknown) => typeof v === 'string' && /^[A-Z_]{1,80}$/.test(v);
+const configFields=['symbol','marginType','leverage','isAutoAddMargin','maxNotionalValue'];
+const capText=(v: unknown) => {
+  if (typeof v !== 'string' || !/^\d{1,30}(\.\d{1,24})?$/.test(v)) return false;
+  const [whole,fraction='']=v.split('.');
+  return BigInt(whole+fraction.padEnd(24,'0')) <= 10n**39n;
+};
+const configValid=(v: unknown, symbol: unknown) => v === null || object(v) && Object.keys(v).length === 5 &&
+  configFields.every(k=>k in v) && v.symbol === symbol && ['CROSSED','ISOLATED'].includes(String(v.marginType)) &&
+  integer(v.leverage) && v.leverage >= 1 && v.leverage <= 1000 && typeof v.isAutoAddMargin === 'boolean' &&
+  capText(v.maxNotionalValue);
 export function executionOriginValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (['NO_SNAPSHOT','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status))) return v.report === null;
   const r=v.report;
-  if (v.status !== 'AVAILABLE' || !object(r) || !['DEMO_EXECUTION_ORIGIN_V1','DEMO_EXECUTION_ORIGIN_V2','DEMO_EXECUTION_ORIGIN_V3'].includes(String(r.schema)) || r.environment !== 'BINANCE_USDM_DEMO' ||
+  if (v.status !== 'AVAILABLE' || !object(r) || !['DEMO_EXECUTION_ORIGIN_V1','DEMO_EXECUTION_ORIGIN_V2','DEMO_EXECUTION_ORIGIN_V3','DEMO_EXECUTION_ORIGIN_V4'].includes(String(r.schema)) || r.environment !== 'BINANCE_USDM_DEMO' ||
     !['OBSERVED_FLAT_QUOTE','UNRESOLVED'].includes(String(r.status)) || !['BTCUSDT','BTCUSDC'].includes(String(r.symbol)) ||
     r.symbol !== `BTC${r.quote_asset}` || !integer(r.observed_at_ms) || !r.observed_at_ms || !integer(r.completed_at_ms) ||
     r.completed_at_ms < r.observed_at_ms || r.completed_at_ms > asOf || r.completed_at_ms-r.observed_at_ms > 120000 ||
@@ -23,6 +33,17 @@ export function executionOriginValid(v: unknown, asOf: number): boolean {
     (f.response_sha256 === null || hash(f.response_sha256)) && (f.server_time_ms === null || integer(f.server_time_ms) &&
       f.kind.startsWith('clock') && hash(f.response_sha256)))) return false;
   if ((r.status === 'UNRESOLVED') !== (r.issues.length > 0)) return false;
+  const cfg=r.target_configuration;
+  if (r.schema === 'DEMO_EXECUTION_ORIGIN_V4') {
+    if (!object(cfg) || !configValid(cfg.before,r.symbol) || !configValid(cfg.after,r.symbol)) return false;
+    const a=cfg.before, b=cfg.after;
+    const expected=a === null || b === null ? 'INCOMPLETE' : object(a) && object(b) && configFields.every(k=>a[k] === b[k]) ? 'MATCHED_OBSERVATIONS' : 'DIFFERENT_OBSERVATIONS';
+    if (cfg.status !== expected || expected === 'INCOMPLETE' && !r.issues.includes('TARGET_CONFIG_MISSING') ||
+      expected === 'DIFFERENT_OBSERVATIONS' && !r.issues.includes('TARGET_CONFIG_CHANGED')) return false;
+    if (object(b) && (b.isAutoAddMargin && !r.issues.includes('TARGET_AUTO_MARGIN_UNSUPPORTED') ||
+      !/[1-9]/.test(String(b.maxNotionalValue)) && !r.issues.includes('TARGET_NOTIONAL_CAP_UNAVAILABLE') ||
+      b.marginType !== 'CROSSED' && !r.issues.includes('TARGET_CROSS_MARGIN_REQUIRED'))) return false;
+  } else if (cfg !== undefined) return false;
   if (asOf-r.observed_at_ms > 30000 && !r.issues.includes('ORIGIN_STALE')) return false;
   return r.status !== 'OBSERVED_FLAT_QUOTE' || r.read_count === 16 && r.failures.length === 0 &&
     hash(r.account_ref_sha256) && r.wallet !== null && r.quote_positions === 0 && r.ordinary_orders === 0 && r.algo_orders === 0;
