@@ -15,6 +15,7 @@ from pathlib import Path
 
 from live.contracts import LiveOrderRequest
 from live.execution import demo_authority
+from live.execution.demo_current_kill import require_expected as require_current_kill
 from live.execution.demo_batch_risk import screen, _digest, _json_value, _units, UNIT_SCALE
 from live.governance.mandate import Mandate, AUTO, evaluate_mandate
 from live.governance.validation_attestation import require_validation_attestation
@@ -123,6 +124,7 @@ def proposal(*,orders,origin,risk_inputs,mandate,attestations,dispatch,recovery,
     """Build exact content for the independently controlled issuer to review."""
     try:
         registry=demo_authority.load_registry_for_executor()
+        require_current_kill(risk_inputs['kill_switch'].state, now_ms=now_ms)
         orders=json.loads(json.dumps(validate_orders(orders),allow_nan=False))
         origin=json.loads(json.dumps(origin,allow_nan=False))
         origin_report=assess_origin(origin,as_of_ms=now_ms)

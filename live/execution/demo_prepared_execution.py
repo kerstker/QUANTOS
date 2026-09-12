@@ -17,6 +17,7 @@ import time
 
 from live.contracts import LiveOrderRequest
 from live.execution import demo_authority
+from live.execution.demo_current_kill import require_expected as require_current_kill
 from live.execution.demo_batch_risk import _digest,_json_value,screen
 from live.execution.demo_pre_submit import _preparation_lease,_risk_with_history,_venue_rules,_venue_account_cap,_retain
 from live.execution.demo_wire_protocol import outcome_for_response,outcome_for_query
@@ -111,6 +112,7 @@ def _check_intents(proof,reservation,dispatch,recovery,oms):
 def _preflight(proof,reservation, *,dispatch,recovery,oms,risk_inputs,mandate,attestations):
     at=now_ms();context=proof['context'];orders=proof['orders'];sid=proof['strategy_id']
     if not risk_inputs['now_ms']<=at:raise DemoExecutionStopped('DEMO_EXECUTOR_CLOCK')
+    current_kill=require_current_kill(risk_inputs['kill_switch'].state,now_ms=at)
     if (reservation['payload']['context']!=context or reservation['payload']['orders']!=orders or
         _digest(proof['origin'])!=context['origin_sha256'] or _digest(proof['state'])!=context['recovery_sha256'] or
         _digest(asdict(mandate))!=context['mandate_sha256'] or _digest({sid:asdict(attestations[sid])})!=context['validation_sha256']):
@@ -133,7 +135,7 @@ def _preflight(proof,reservation, *,dispatch,recovery,oms,risk_inputs,mandate,at
     decision=evaluate_mandate(requests,{orders[0]['symbol']:float(Decimal(risk_inputs['market']['reference_price']))},mandate,
         venue='testnet',exchange='binance',now=at,current_positions={})
     if decision.tier!=AUTO:raise DemoExecutionStopped('DEMO_EXECUTOR_MANDATE_REJECTED')
-    return {'at_ms':at,'context':context,'current_risk':current}
+    return {'at_ms':at,'context':context,'current_risk':current,'current_kill':current_kill}
 
 
 def execute(prepared, *,dispatch,recovery,oms,risk_inputs,mandate,attestations):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 import sqlite3
 import threading
 
@@ -156,7 +157,9 @@ def _dispatch_hash(
 class KillSwitchStateStore:
     """Single-node CAS state machine whose event outbox shares each state commit."""
 
-    def __init__(self, path: str, *, create: bool = False) -> None:
+    def __init__(self, path: str, *, create: bool = False, read_only: bool = False) -> None:
+        if type(read_only) is not bool or read_only and create:
+            raise ValueError("read-only state cannot create or bootstrap a store")
         if not create and (path == ":memory:" or not os.path.isfile(path)):
             raise KillSwitchStateStoreError(
                 f"kill-switch state store unavailable: {path}"
@@ -165,12 +168,23 @@ class KillSwitchStateStore:
             parent = os.path.dirname(path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._read_only = read_only
+        self._conn = sqlite3.connect(
+            Path(path).absolute().as_uri()+"?mode=ro" if read_only else path,
+            uri=read_only, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         try:
             with self._lock:
                 self._conn.execute("PRAGMA busy_timeout=5000")
+                if read_only:
+                    self._conn.execute("PRAGMA query_only=ON")
+                    # A reader is one pinned snapshot. Send checks open a new
+                    # reader each time so a committed trip cannot stay cached.
+                    self._conn.execute("BEGIN")
+                    for table in ("kill_switch_transitions", "kill_switch_event_dispatch"):
+                        if self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] > 10000:
+                            raise KillSwitchStateStoreError("read-only state history exceeds bounded replay")
                 if create:
                     try:
                         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -501,6 +515,20 @@ class KillSwitchStateStore:
     def load_state(self) -> KillSwitchState:
         with self._lock:
             return self._verify_locked()[1]
+
+    def verified_snapshot(self) -> dict:
+        """Read a nonempty original history; never infer bootstrap from absence."""
+        if not self._read_only:
+            raise KillSwitchStateStoreError("verified snapshot requires a read-only transaction")
+        with self._lock:
+            head, state, _, _ = self._verify_locked()
+            count, recorded = self._conn.execute(
+                "SELECT COUNT(*),MAX(recorded_at) FROM kill_switch_transitions"
+            ).fetchone()
+            if not count:
+                raise KillSwitchStateStoreError("read-only state history is empty")
+            return {"state": state, "transition_count": count,
+                    "record_hash": head, "recorded_at": recorded}
 
     def transition_count(self) -> int:
         with self._lock:

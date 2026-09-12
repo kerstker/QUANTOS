@@ -346,3 +346,42 @@ def test_corrupt_store_constructor_releases_its_file_handle(tmp_path):
 
     path.unlink()
     assert not path.exists()
+
+
+def test_read_only_snapshot_retains_exact_history_and_refreshes_on_new_open(tmp_path):
+    from quantos.contracts.killswitch import KillSwitchState
+    path=tmp_path/'protected.db'
+    writer=KillSwitchStateStore(str(path),create=True)
+    writer.bootstrap(KillSwitchState(),recorded_at=0)
+    reader=KillSwitchStateStore(str(path),read_only=True)
+    before=reader.verified_snapshot()
+    assert before['transition_count']==1 and before['recorded_at']==0 and before['state']==KillSwitchState()
+    arm_and_record(writer,SYSTEM,'isolated test stop',at=200,incident_id='readonly-test')
+    assert reader.verified_snapshot()==before  # One pinned read transaction.
+    with pytest.raises(sqlite3.OperationalError):reader._conn.execute('CREATE TABLE forbidden(x)')
+    reader.close()
+    refreshed=KillSwitchStateStore(str(path),read_only=True)
+    after=refreshed.verified_snapshot();refreshed.close();writer.close()
+    assert after['transition_count']==2 and after['recorded_at']==200 and after['state'].tripped
+    assert after['record_hash']!=before['record_hash']
+
+
+def test_read_only_snapshot_does_not_create_bootstrap_or_accept_empty_history(tmp_path):
+    path=tmp_path/'missing.db'
+    with pytest.raises(KillSwitchStateStoreError):KillSwitchStateStore(str(path),read_only=True)
+    assert not path.exists()
+    writer=KillSwitchStateStore(str(path),create=True);writer.close()
+    reader=KillSwitchStateStore(str(path),read_only=True)
+    with pytest.raises(KillSwitchStateStoreError,match='empty'):reader.verified_snapshot()
+    reader.close()
+    with pytest.raises(ValueError):KillSwitchStateStore(str(path),create=True,read_only=True)
+
+
+def test_read_only_history_budget_rejects_before_parsing_unbounded_rows(tmp_path):
+    path=tmp_path/'oversized-history.db'
+    with sqlite3.connect(path) as conn:
+        conn.execute('CREATE TABLE kill_switch_transitions (n INTEGER)')
+        conn.execute('CREATE TABLE kill_switch_event_dispatch (n INTEGER)')
+        conn.execute('WITH RECURSIVE count(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM count WHERE n<10001) INSERT INTO kill_switch_transitions SELECT n FROM count')
+    with pytest.raises(KillSwitchStateStoreError,match='bounded replay'):
+        KillSwitchStateStore(str(path),read_only=True)

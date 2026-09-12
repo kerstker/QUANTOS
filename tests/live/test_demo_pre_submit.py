@@ -25,6 +25,17 @@ def setup(tmp_path,monkeypatch):
     monkeypatch.setattr(boundary,'_read_root_owned_json',lambda path:json.dumps(registry).encode())
     monkeypatch.setattr(boundary.os,'geteuid',lambda:2001)
     origin,_=collect(tmp_path);risk=inputs();ref=origin['account_ref_sha256']
+    # Explicit isolated stop history. Production fixed-path custody is covered
+    # separately; no default state is synthesized by the execution boundary.
+    from live.execution import demo_current_kill
+    from services.risk.pre_trade.kill_switch_store import KillSwitchStateStore
+    stop_path=tmp_path/'kill-switch.sqlite3'
+    if not stop_path.exists():
+        stop_store=KillSwitchStateStore(str(stop_path),create=True)
+        try:stop_store.bootstrap(risk['kill_switch'].state,recorded_at=0)
+        finally:stop_store.close()
+    monkeypatch.setattr(demo_current_kill,'_PATH',stop_path)
+    monkeypatch.setattr(demo_current_kill,'_custody',lambda:None)
     risk.update(now_ms=NOW);risk['account']['account_ref_sha256']=ref;risk['market']['observed_at_ms']=NOW
     risk['native_limits']=replace(risk['native_limits'],allowed_accounts=frozenset({ref}))
     sid=risk['strategy'].strategy_id
