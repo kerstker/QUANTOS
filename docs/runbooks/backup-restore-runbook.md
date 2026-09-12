@@ -1,7 +1,9 @@
 # QUANTOS L2 Backup and Restore Runbook
 
 Date: 2026-07-16  
-Status: OPERATIONAL
+Status: Historical operating procedure; see current DGX acceptance below
+
+> **2026-09-13 DGX update:** The user relaxed the full-scale restore target to **7,200 seconds (2 hours)**. Use the explicit `--rto-ms 7200000` override for this scope. Full verification and the 24-hour RPO remain required; prior 300-second failures remain unchanged. See [scope and current attempts](../engineering/specs/2026-09-13-full-restore-target.md). The older measurements below are historical and do not establish current full-scale readiness.
 
 ## Overview
 
@@ -187,8 +189,9 @@ Get-ScheduledTask -TaskName "QUANTOS_*" | Enable-ScheduledTask
 
 ### Recovery Time Objective (RTO)
 
-- **Target RTO**: 300 seconds (5 minutes)
-- **Measured RTO**: ~319ms for typical restore (well under target)
+- **Current DGX full-scale target**: 7,200 seconds (2 hours), set explicitly with `--rto-ms 7200000`.
+- **Historical target**: 300 seconds; unchanged in old receipts and generic library defaults.
+- **Measured evidence**: the earlier full-scale artifact restore exceeded its 300-second target at 932.389 seconds; full SQLite verification remained incomplete. A fresh complete result under the new target is pending. The old ~319ms small-fixture measurement is not full-scale recovery evidence.
 
 RTO includes:
 - Identifying backup batch
@@ -325,7 +328,7 @@ $env:QUANTOS_BACKUP_PASSPHRASE = [Environment]::GetEnvironmentVariable("QUANTOS_
 **OPS.RESTORE.DRILL** (M2→M3):
 - ✅ Restore drill procedure documented
 - ⏳ Periodic restore drill schedule (recommend: monthly)
-- ✅ RTO documented (300s target, ~319ms measured)
+- RTO documented: current DGX full-scale target 7,200s; fresh full-scale acceptance pending. Historical small-fixture timing is not a production readiness measurement.
 - ⏳ RPO documented (24h target, verified in practice)
 
 ### Monthly Restore Drill Checklist
@@ -335,7 +338,7 @@ Schedule a monthly restore drill to verify recovery capability:
 1. [ ] Run `python -m tools.restore_drill`
 2. [ ] Verify output shows `"verdict": "PASS"`
 3. [ ] Check `l2_restore_history.db` for recorded attempt
-4. [ ] Confirm RTO is within 300 seconds
+4. [ ] Confirm the complete restore meets the target recorded for that attempt (current DGX full-scale target: 7,200 seconds), including full SQLite and history checks
 5. [ ] Document result in operations log
 
 ## Change History
