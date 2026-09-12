@@ -12,15 +12,28 @@ import re
 from live.execution import demo_authority
 from live.exchange.binance_futures import (
     _DemoNoRedirect as _NoRedirect, _demo_exact_encode_params,
-    _demo_exact_post_once as _http_once, _demo_exact_get_once as _http_get_once,
-    _demo_exact_delete_once as _http_delete_once,
+    _demo_exact_post_once as _raw_post_once, _demo_exact_get_once as _raw_get_once,
+    _demo_exact_delete_once as _raw_delete_once,
 )
+from live.exchange import demo_network
 from quantos.contracts.binance_demo import DEMO_REST_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.validation.demo_submission import validate_orders
 from services.validation.demo_cancellation import validate_commands
 
 _CREDENTIAL_FILE=Path('/etc/quantos/demo-submission/credentials.json')
+
+
+def _http_once(body,headers):
+    return _raw_post_once(body,headers,opener=demo_network.opener())
+
+
+def _http_get_once(path,query,headers):
+    return _raw_get_once(path,query,headers,opener=demo_network.opener())
+
+
+def _http_delete_once(query,headers):
+    return _raw_delete_once(query,headers,opener=demo_network.opener())
 
 
 def request_payload(order,timestamp_ms):

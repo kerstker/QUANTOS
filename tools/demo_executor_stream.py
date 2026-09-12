@@ -17,6 +17,7 @@ import signal
 import sys
 
 from live.exchange import binance_demo_exact as transport
+from live.exchange import demo_network
 from live.execution.demo_pre_submit import _retain
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_user_stream import UserStreamJournal, MAX_MESSAGE_BYTES
@@ -33,7 +34,8 @@ MAX_BYTES = 128*1024*1024
 
 def source_hash():
     return hashlib.sha256(Path(__file__).read_bytes()+original_source_hash().encode()+
-        Path(transport.__file__).read_bytes()+Path(transport.demo_authority.__file__).read_bytes()).hexdigest()
+        Path(transport.__file__).read_bytes()+Path(transport.demo_authority.__file__).read_bytes()+
+        demo_network.source_bytes()).hexdigest()
 
 
 def _budget(store, *, for_write=True):
@@ -69,9 +71,10 @@ def lease_worker(method):
     if method not in ('POST','PUT'):
         raise ValueError('PROTECTED_STREAM_LEASE_METHOD')
     _, account = fixed_account()
+    opener=demo_network.opener()
     key, secret = transport._credentials(account)
     del secret
-    return lease_request(method, key)
+    return lease_request(method, key, opener=opener)
 
 
 async def lease_child(method):
@@ -109,7 +112,7 @@ def connect_socket(token):
     from websockets.asyncio.client import connect
     logger = logging.Logger('quantos.demo.executor.stream',level=logging.CRITICAL)
     logger.addHandler(logging.NullHandler()); logger.propagate=False
-    return connect(DEMO_WEBSOCKET_BASE+'/private/ws/'+_token(token),proxy=None,
+    return connect(DEMO_WEBSOCKET_BASE+'/private/ws/'+_token(token),proxy=demo_network.proxy_url(),ssl=demo_network.tls_context(),
         open_timeout=10,close_timeout=2,ping_interval=None,max_size=MAX_MESSAGE_BYTES,max_queue=128,logger=logger)
 
 

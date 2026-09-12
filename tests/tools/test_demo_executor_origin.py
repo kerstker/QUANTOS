@@ -18,7 +18,12 @@ def test_protected_capture_uses_original_reads_and_only_bound_fixed_credentials(
     seen=[]
     monkeypatch.setattr(worker.transport,'_credentials',lambda account:seen.append(account) or (key,secret))
     get,calls=transport()
-    monkeypatch.setattr(worker.original,'get_response',get)
+    opener=object()
+    monkeypatch.setattr(worker.demo_network,'opener',lambda:opener)
+    def fixed_get(path,**kwargs):
+        assert kwargs.pop('opener') is opener
+        return get(path,**kwargs)
+    monkeypatch.setattr(worker.original,'get_response',fixed_get)
     monkeypatch.setattr(worker,'now_ms',lambda:NOW)
     monkeypatch.setattr(worker.original,'load_credentials',lambda *_:pytest.fail('research key file'))
     result=worker.capture_worker('BTCUSDC')

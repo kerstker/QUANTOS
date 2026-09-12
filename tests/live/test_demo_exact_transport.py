@@ -11,6 +11,7 @@ from live.execution import demo_authority
 
 
 def test_post_transport_has_one_attempt_and_fixed_tls_endpoint_without_environment_proxy(monkeypatch):
+    monkeypatch.setattr(transport.demo_network,'proxy_url',lambda:None)
     calls=[]
     class Opener:
         def open(self,request,timeout):
@@ -49,6 +50,7 @@ def test_uninstalled_executor_does_not_read_any_credential_file(monkeypatch):
 
 
 def test_cancel_transport_has_one_delete_to_fixed_demo_host_and_bounded_response(monkeypatch):
+    monkeypatch.setattr(transport.demo_network,'proxy_url',lambda:None)
     calls=[]
     class Response:
         status=200

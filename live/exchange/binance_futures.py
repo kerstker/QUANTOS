@@ -24,6 +24,8 @@ raise——`live/exchange/retry.py::call_with_backoff` 指数退避重试,耗尽
 from __future__ import annotations
 
 import hashlib
+import ssl
+import re
 import hmac
 import json
 import time
@@ -75,11 +77,50 @@ class _DemoNoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _demo_tls_context():
+    defaults=ssl.get_default_verify_paths()
+    # Explicit OS trust paths ignore inherited SSL_CERT_FILE/SSL_CERT_DIR.
+    return ssl.create_default_context(cafile=defaults.openssl_cafile,capath=defaults.openssl_capath)
+
+
+class _LocalConnect(urllib.request.ProxyHandler):
+    def __init__(self,url):
+        self.address=urllib.parse.urlsplit(url).netloc
+        super().__init__({'https':url})
+
+    def proxy_open(self,request,proxy,type):
+        if request.type!='https' or request.host!=urllib.parse.urlsplit(DEMO_REST_BASE).netloc:
+            raise ValueError('DEMO_NETWORK_ENDPOINT')
+        # HTTPSHandler retains _tunnel_host for CONNECT and TLS SNI. Do not use
+        # ProxyHandler's environment-controlled proxy_bypass(NO_PROXY) behavior.
+        request.set_proxy(self.address,'http')
+        return None
+
+
+class _FixedVenue:
+    def __init__(self,inner):self.inner=inner
+
+    def open(self,request,*,timeout):
+        parsed=urllib.parse.urlsplit(request.full_url)
+        if parsed.scheme!='https' or parsed.netloc!=urllib.parse.urlsplit(DEMO_REST_BASE).netloc or parsed.fragment:
+            raise ValueError('DEMO_NETWORK_ENDPOINT')
+        return self.inner.open(request,timeout=timeout)
+
+
+def _demo_network_opener(proxy):
+    if proxy is not None and (type(proxy) is not str or
+        re.fullmatch(r'http://127\.0\.0\.1:([1-9][0-9]{0,4})',proxy) is None or
+        int(proxy.rsplit(':',1)[1])>65535):raise ValueError('DEMO_NETWORK_CONFIG')
+    handler=urllib.request.ProxyHandler({}) if proxy is None else _LocalConnect(proxy)
+    return _FixedVenue(urllib.request.build_opener(handler,_DemoNoRedirect(),
+        urllib.request.HTTPSHandler(context=_demo_tls_context())))
+
+
 def _demo_exact_encode_params(params):
     return urllib.parse.urlencode(sorted(params.items())).encode('ascii')
 
 
-def _demo_exact_post_once(body,headers):
+def _demo_exact_post_once(body,headers,*,opener=None):
     """Fixed Demo seam for a preclaimed exact request, with zero POST retry.
 
     The protected prepared executor owns independent verification, credentials
@@ -87,7 +128,7 @@ def _demo_exact_post_once(body,headers):
     that custody nor the legacy adapter's separate construction/mainnet gates.
     """
     req=urllib.request.Request(DEMO_REST_BASE+'/fapi/v1/order',data=body,headers=headers,method='POST')
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect())
+    if opener is None:opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect())
     try:
         with opener.open(req,timeout=10) as response:
             return response.status,response.read(65537)
@@ -96,23 +137,25 @@ def _demo_exact_post_once(body,headers):
         finally:exc.close()
 
 
-def _demo_exact_get_once(path,query,headers):
+def _demo_exact_get_once(path,query,headers,*,opener=None):
     if path not in ('/fapi/v1/time','/fapi/v1/order') or path=='/fapi/v1/time' and (query or headers):
         raise ValueError('DEMO_QUERY_PATH')
     req=urllib.request.Request(DEMO_REST_BASE+path+('?' + query.decode('ascii') if query else ''),headers=headers,method='GET')
+    if opener is None:opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect())
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect()).open(req,timeout=10) as response:
+        with opener.open(req,timeout=10) as response:
             return response.status,response.read(65537)
     except urllib.error.HTTPError as exc:
         try:return exc.code,exc.read(65537)
         finally:exc.close()
 
 
-def _demo_exact_delete_once(query,headers):
+def _demo_exact_delete_once(query,headers,*,opener=None):
     """One original-ID Demo cancellation, with the same bounded transport."""
     req=urllib.request.Request(DEMO_REST_BASE+'/fapi/v1/order?'+query.decode('ascii'),headers=headers,method='DELETE')
+    if opener is None:opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect())
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect()).open(req,timeout=10) as response:
+        with opener.open(req,timeout=10) as response:
             return response.status,response.read(65537)
     except urllib.error.HTTPError as exc:
         try:return exc.code,exc.read(65537)

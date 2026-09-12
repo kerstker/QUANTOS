@@ -48,8 +48,13 @@ def test_fixed_worker_loads_only_bound_account_and_lease_method(tmp_path, monkey
     with UserStreamJournal(path,account_ref_sha256='a'*64):pass
     monkeypatch.setattr(worker,'require_custody',lambda:tmp_path)
     seen=[]
+    opener=object()
+    monkeypatch.setattr(worker.demo_network,'opener',lambda:opener)
     monkeypatch.setattr(worker.transport,'_credentials',lambda ref:seen.append(ref) or ('fixture-key','fixture-secret'))
-    monkeypatch.setattr(worker,'lease_request',lambda method,key:seen.append((method,key)) or 'x'*64)
+    def lease(method,key,**kwargs):
+        assert kwargs=={'opener':opener}
+        seen.append((method,key));return 'x'*64
+    monkeypatch.setattr(worker,'lease_request',lease)
     assert worker.lease_worker('POST')=='x'*64
     assert seen==['a'*64,('POST','fixture-key')]
     with pytest.raises(ValueError):worker.lease_worker('DELETE')
@@ -105,9 +110,23 @@ def test_lease_child_has_clean_environment_and_bounded_private_output(monkeypatc
 def test_protected_socket_uses_fixed_demo_url_without_proxy_or_secret_logs(monkeypatch):
     import websockets.asyncio.client
     captured={}
+    monkeypatch.setattr(worker.demo_network,'proxy_url',lambda:None)
     def connect(url,**kwargs):captured.update(url=url,**kwargs);return object()
     monkeypatch.setattr(websockets.asyncio.client,'connect',connect)
     worker.connect_socket('x'*64)
     assert captured['url']==worker.DEMO_WEBSOCKET_BASE+'/private/ws/'+'x'*64
     assert captured['proxy'] is None and captured['logger'].propagate is False
     with pytest.raises(worker.ProbeFailure):worker.connect_socket('http://different.invalid')
+
+
+def test_socket_uses_only_deployment_route_and_verified_tls(monkeypatch):
+    import ssl
+    import websockets.asyncio.client
+    captured={}
+    monkeypatch.setenv('HTTPS_PROXY','http://untrusted.invalid')
+    monkeypatch.setenv('SSL_CERT_FILE','/untrusted/cert')
+    monkeypatch.setattr(worker.demo_network,'proxy_url',lambda:'http://127.0.0.1:7890')
+    monkeypatch.setattr(websockets.asyncio.client,'connect',lambda url,**kwargs:captured.update(url=url,**kwargs))
+    worker.connect_socket('x'*64)
+    assert captured['proxy']=='http://127.0.0.1:7890'
+    assert captured['ssl'].check_hostname and captured['ssl'].verify_mode==ssl.CERT_REQUIRED

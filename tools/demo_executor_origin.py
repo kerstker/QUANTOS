@@ -17,6 +17,7 @@ from tools.demo_executor_stream import fixed_account, source_hash as stream_sour
 from tools.demo_resident_recovery import _check_path
 from tools.binance_demo_user_stream import writer_lock
 from live.exchange import binance_demo_exact as transport
+from live.exchange import demo_network
 from services.governance.json_integrity import load_json_without_duplicate_keys
 
 now_ms=original.now_ms
@@ -30,8 +31,10 @@ def capture_worker(symbol):
     if symbol not in ('BTCUSDT','BTCUSDC'):
         raise ValueError('PROTECTED_ORIGIN_SYMBOL')
     _, account = fixed_account()
+    opener=demo_network.opener()
     report=original.collect(credential_file=None,symbol=symbol,operator_read=True,clock_ms=now_ms,
-        credential_reader=lambda _:transport._credentials(account))
+        credential_reader=lambda _:transport._credentials(account),
+        get=lambda path,**kwargs:original.get_response(path,opener=opener,**kwargs))
     if report['account_ref_sha256'] is not None and report['account_ref_sha256']!=account:
         raise ValueError('PROTECTED_ORIGIN_ACCOUNT')
     report['source_sha256']=source_hash()

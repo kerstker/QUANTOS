@@ -53,7 +53,7 @@ def source_hash():
     return hashlib.sha256(b'\0'.join((root/name).read_bytes() for name in names)).hexdigest()
 
 
-def get_response(path, *, params, headers):
+def get_response(path, *, params, headers, opener=None):
     if path not in PATHS.values() or path in PUBLIC_PATHS and headers:
         raise ProbeFailure('REQUEST_FAILED')
     if path in PUBLIC_PATHS:
@@ -64,7 +64,7 @@ def get_response(path, *, params, headers):
     if path in (PATHS['rules'],PATHS['symbols_before']):request_headers['Accept-Encoding']='gzip'
     request = urllib.request.Request(DEMO_REST_BASE+path+('?' + params if params else ''), headers=request_headers, method='GET')
     try:
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
+        with (opener if opener is not None else urllib.request.build_opener(NoRedirect())).open(request, timeout=10) as response:
             if not 200 <= response.status < 300:
                 raise ProbeFailure('RESPONSE_INVALID')
             raw = response.read(2_000_001)

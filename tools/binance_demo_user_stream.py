@@ -48,11 +48,11 @@ def _token(value):
     return value
 
 
-def lease_request(method,key):
+def lease_request(method,key,*,opener=None):
     if method not in ('POST','PUT'):raise ValueError('STREAM_ENDPOINT_NOT_ALLOWED')
     request=urllib.request.Request(DEMO_REST_BASE+'/fapi/v1/listenKey',method=method,headers={'X-MBX-APIKEY':key})
     try:
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=10) as response:
+        with (opener if opener is not None else urllib.request.build_opener(NoRedirect())).open(request,timeout=10) as response:
             if not 200<=response.status<300:raise ProbeFailure('REQUEST_FAILED')
             raw=response.read(4097)
         if len(raw)>4096:raise ProbeFailure('RESPONSE_INVALID')
