@@ -1,6 +1,8 @@
 import type {DemoOmsStatusSnapshot} from '@/lib/types/demo-oms-status';
 import {Empty,Metric,Panel} from './components';
 import {stamp} from './data';
+import {DemoResidentStatus} from './DemoResidentStatus';
+import type {DemoResidentStatusSnapshot} from '@/lib/types/demo-resident-status';
 
 const titles={INPUTS_UNRESOLVED:'输入未齐',AWAITING_PROJECTION:'输入已配对，等待订单状态投影',
   PROJECTION_INTERRUPTED:'订单状态投影中断，等待恢复',OMS_TERMINAL_PROJECTED:'订单状态恢复已完成'};
@@ -14,9 +16,11 @@ const reasons:Record<string,string>={
   PRIVATE_QUERY_CLOCK_UNRESOLVED:'查询与私有回执的时间关系尚未满足核验条件。',
   BATCH_RESOLUTION_INCOMPLETE:'固定批次中仍有订单未完成配对。',
 };
-export function DemoOmsStatus({snapshot,refreshFailed}:{snapshot?:DemoOmsStatusSnapshot;refreshFailed:boolean}) {
+export function DemoOmsStatus({snapshot,refreshFailed,resident,asOf}:{snapshot?:DemoOmsStatusSnapshot;refreshFailed:boolean;
+  resident?:DemoResidentStatusSnapshot;asOf?:number}) {
   const r=snapshot?.report;
   return <Panel title="订单恢复进度" note="原订单查询与私有回执配对 · 原订单系统幂等恢复">
+    <DemoResidentStatus snapshot={resident} asOf={asOf??0} refreshFailed={refreshFailed}/>
     {!r ? <Empty title={snapshot?.status==='CORRUPT_OR_UNREADABLE'?'订单恢复记录无法验证':snapshot?.status==='DATA_BLOCKED'?'订单恢复记录时间待核查':'等待订单恢复记录'}>
       取得固定批次的原订单查询、私有终态回执及持久化结果后，展示实际恢复进度。
     </Empty> : <div className="s-demo-replay">

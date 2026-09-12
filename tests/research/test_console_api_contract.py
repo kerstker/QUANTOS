@@ -30,6 +30,28 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_resident_current_and_last_result_remain_read_only_and_time_bound(tmp_path, monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_resident_status import save
+    from tests.research.test_demo_resident_status import report, NOW
+    directory = tmp_path/'resident'
+    monkeypatch.setattr(views, '_resident_status_directory', lambda: directory)
+    monkeypatch.setattr(views.time, 'time_ns', lambda: NOW*1_000_000)
+    empty = {'status':'NO_SNAPSHOT', 'report':None, 'last_result':None}
+    assert client.get('/api/v1/console/binance-demo').json()['resident_status'] == empty
+    value = report(); path = save(directory/'views', value)
+    save(directory/'outcomes', value)
+    before = {str(p.relative_to(directory)):p.read_bytes() for p in directory.rglob('*.json')}
+    payload = client.get('/api/v1/console/binance-demo').json()
+    assert payload['resident_status'] == {'status':'AVAILABLE','report':value,'last_result':value}
+    assert payload['read_only'] is True and payload['submission_enabled'] is False
+    assert before == {str(p.relative_to(directory)):p.read_bytes() for p in directory.rglob('*.json')}
+    monkeypatch.setattr(views.time, 'time_ns', lambda: (NOW-1)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['resident_status']['status'] == 'DATA_BLOCKED'
+    path.write_text('{}')
+    assert client.get('/api/v1/console/binance-demo').json()['resident_status']['status'] == 'CORRUPT_OR_UNREADABLE'
+
+
 def test_demo_cancellation_contract_keeps_unknown_and_success_responses_pending_recovery(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_cancel_status import build_status,save
@@ -242,7 +264,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

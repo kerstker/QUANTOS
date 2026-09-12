@@ -19,8 +19,29 @@ from services.research.demo_execution_origin import load_latest as load_origin, 
 from services.research.demo_cash_projection import project_cash_window
 from services.research.demo_oms_status import load_latest as load_oms_status
 from services.research.demo_cancel_status import load_latest as load_cancel_status
+from services.research.demo_resident_status import load_latest as load_resident_status
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _resident_status_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_resident_status'
+
+
+def build_resident_status_snapshot(*, directory: Path, as_of_ms: int):
+    empty = {'report': None, 'last_result': None}
+    if not (directory/'views/latest.json').exists() and not (directory/'views/latest.json').is_symlink():
+        return {'status': 'NO_SNAPSHOT', **empty}
+    try:
+        report = load_resident_status(directory/'views')
+        last = None
+        if (directory/'outcomes/latest.json').exists() or (directory/'outcomes/latest.json').is_symlink():
+            last = load_resident_status(directory/'outcomes')
+        if report['observed_at_ms'] > as_of_ms or last is not None and last['observed_at_ms'] > as_of_ms:
+            return {'status': 'DATA_BLOCKED', **empty}
+        return {'status': 'AVAILABLE', 'report': report, 'last_result': last}
+    except Exception:
+        return {'status': 'CORRUPT_OR_UNREADABLE', **empty}
 
 
 def _oms_status_directory():
@@ -243,6 +264,7 @@ def binance_demo_snapshot():
         'execution_origin': build_execution_origin_snapshot(directory=_execution_origin_directory(), as_of_ms=as_of_ms),
         'oms_status': build_oms_status_snapshot(directory=_oms_status_directory(),as_of_ms=as_of_ms),
         'cancellation_status': build_cancel_status_snapshot(directory=_cancel_status_directory(),as_of_ms=as_of_ms),
+        'resident_status': build_resident_status_snapshot(directory=_resident_status_directory(),as_of_ms=as_of_ms),
         'cash_window': build_cash_window_snapshot(directory=_cash_window_directory(), as_of_ms=as_of_ms),
         'canonical_cash': build_canonical_cash_snapshot(path=_execution_journal_path(), directory=_cash_window_directory(), as_of_ms=as_of_ms),
         'user_stream':user_stream,

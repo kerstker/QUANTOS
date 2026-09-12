@@ -30,6 +30,7 @@ function payload(): BinanceDemoPayload {
     canonical_cash: {status: 'INPUTS_MISSING', report: null},
     oms_status: {status: 'NO_SNAPSHOT', report: null},
     cancellation_status: {status: 'NO_SNAPSHOT', report: null},
+    resident_status: {status: 'NO_SNAPSHOT', report: null, last_result: null},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }

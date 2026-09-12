@@ -12,6 +12,12 @@
 .s-demo-cell-note {display:block;color:var(--s-muted);font-size:11px;margin-top:5px;}
 .s-demo-table:focus-visible {outline:2px solid var(--s-accent);outline-offset:2px;}
 .s-demo-oms-orders td {overflow-wrap:anywhere;}
+.s-demo-resident {padding:0 24px 24px;margin-bottom:24px;border-bottom:1px solid var(--s-line);}
+.s-demo-resident .s-metric strong {font-size:14px;overflow-wrap:anywhere;}
+@media(max-width:600px) {
+  .s-demo-resident {padding:0 16px 20px;}
+  .s-demo-resident .s-metrics {grid-template-columns:minmax(0,1fr);}
+}
 @media(max-width:600px) {
   .s-demo-oms-orders table,.s-demo-oms-orders tbody,.s-demo-oms-orders tr,.s-demo-oms-orders td {display:block;width:100%;min-width:0;}
   .s-demo-oms-orders thead {position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);}

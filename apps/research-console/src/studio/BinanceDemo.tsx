@@ -75,7 +75,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
     <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
     <DemoExecutionOrigin snapshot={data?.execution_origin} refreshFailed={!!error}/>
-    <DemoOmsStatus snapshot={data?.oms_status} refreshFailed={!!error}/>
+    <DemoOmsStatus snapshot={data?.oms_status} resident={data?.resident_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
     <DemoCancellation snapshot={data?.cancellation_status} refreshFailed={!!error}/>
     <DemoCanonicalCash snapshot={data?.canonical_cash} refreshFailed={!!error}/>
     <DemoCashWindow snapshot={data?.cash_window} refreshFailed={!!error}/>
