@@ -30,6 +30,25 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_cash_chain_snapshot_retains_exact_prefix_and_cannot_become_future_or_authority(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_cash_chain_status import save
+    from tests.research.test_demo_cash_chain_status import status
+    raw=status(tmp_path);directory=tmp_path/'chain-views'
+    monkeypatch.setattr(views,'_cash_chain_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:raw['observed_at_ms']*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['cash_chain']=={'status':'NO_SNAPSHOT','report':None}
+    path=save(directory,raw);before={p.name:p.read_bytes() for p in directory.iterdir()}
+    payload=client.get('/api/v1/console/binance-demo').json()
+    assert payload['cash_chain']=={'status':'AVAILABLE','report':raw}
+    assert payload['read_only'] is True and payload['submission_enabled'] is False
+    assert {p.name:p.read_bytes() for p in directory.iterdir()}==before
+    monkeypatch.setattr(views.time,'time_ns',lambda:(raw['observed_at_ms']-1)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['cash_chain']['status']=='DATA_BLOCKED'
+    path.write_text('{}')
+    assert client.get('/api/v1/console/binance-demo').json()['cash_chain']['status']=='CORRUPT_OR_UNREADABLE'
+
+
 def test_demo_resident_current_and_last_result_remain_read_only_and_time_bound(tmp_path, monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_resident_status import save
@@ -264,7 +283,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

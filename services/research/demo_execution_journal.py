@@ -264,6 +264,17 @@ def replay_ledger(manifest, parsed, evidence, *, cash_events=None):
         account_ref_sha256=manifest['native']['account_ref_sha256'], asset=spec.margin_asset)
     ledger = LinearPerpetualLedger(specs, initial_collateral=collateral, opening_state=seed,
                                   reported_cash_policy=policy)
+    events, reduce_only = reported_fill_events(manifest, parsed, evidence)
+    events.extend(cash_events or ())
+    ordered = events if cash_events is None else sorted(events, key=lambda e: e.timestamp)
+    apply_reported_events(ledger, ordered, reduce_only)
+    return ledger
+
+
+@ledger_decimal_context()
+def reported_fill_events(manifest, parsed, evidence):
+    """Convert validated receipts; no new account or cash calculation here."""
+    spec, _, actions, capacity = parsed
     by_id = {a.order_id: a for a in actions}
     options = {b['order_id']: b for b in manifest['native']['bindings']}
     events = []
@@ -273,24 +284,31 @@ def replay_ledger(manifest, parsed, evidence, *, cash_events=None):
             quantity_delta=side*Decimal(trade['quantity']), execution_price=Decimal(trade['price']),
             margin_mode=MarginMode.CROSS, capacity=capacity, fee=Decimal(trade['reported_commission']),
             order_id=trade['order_id'], receipt_sha256=trade['response_sha256']))
-    events.extend(cash_events or ())
+    return events, frozenset(b['order_id'] for b in options.values() if b.get('reduce_only'))
+
+
+@ledger_decimal_context()
+def apply_reported_events(ledger, ordered, reduce_only):
+    """Continue the same ledger, including its cash identities and capacity use.
+
+    The caller supplies validated chronological observations. This is a pure
+    replay primitive, not a persistence or execution permission boundary.
+    """
     # Stable fill order is the validated stream order; cash batches retain the
     # ledger's atomic group checks and reject ambiguous same-ms funding/fills.
-    ordered = events if cash_events is None else sorted(events, key=lambda e: e.timestamp)
     for _, group in groupby(ordered, key=lambda e: e.timestamp):
         cash = []
         for event in group:
             if not isinstance(event, ReportedFillReplayEvent):
                 cash.append(event)
                 continue
-            if options[event.order_id].get('reduce_only'):
-                held = ledger.position(spec.instrument_id)
+            if event.order_id in reduce_only:
+                held = ledger.position(event.instrument_id)
                 if held is None or held.quantity*event.quantity_delta >= 0 or abs(event.quantity_delta) > abs(held.quantity):
                     raise ValueError('reported reduce-only fill conflicts with preceding position')
             ledger.apply_event(event)
         if cash:
             ledger.process_events(cash)
-    return ledger
 
 
 @ledger_decimal_context()

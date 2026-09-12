@@ -1,3 +1,5 @@
+import {DemoCashChain} from './DemoCashChain';
+import type {DemoCashChainSnapshot} from '@/lib/types/demo-cash-chain';
 import type {DemoCanonicalCashSnapshot} from '@/lib/types/demo-canonical-cash';
 import {Empty, Metric, Panel} from './components';
 import {stamp} from './data';
@@ -30,7 +32,7 @@ const issues: Record<string,string> = {
 };
 const titles = {MATCHED_REPORTED_INPUTS:'报告输入与唯一账本相符',DIFFERENCE_FOUND:'唯一账本核对存在差额',UNRESOLVED:'唯一账本核对待补齐'};
 
-export function DemoCanonicalCash({snapshot, refreshFailed}: {snapshot?: DemoCanonicalCashSnapshot; refreshFailed: boolean}) {
+export function DemoCanonicalCash({snapshot, chain, refreshFailed}: {snapshot?: DemoCanonicalCashSnapshot; chain?: DemoCashChainSnapshot; refreshFailed: boolean}) {
   const r=snapshot?.report;
   return <Panel title="唯一账本现金核对" note="逐笔佣金匹配 · 资金费一次记账 · 同币种钱包比较">
     {!r ? <Empty title={snapshot?.status==='CORRUPT_OR_UNREADABLE' ? '配套账本输入无法验证' : snapshot?.status==='DATA_BLOCKED' ? '配套记录时间待核查' : '等待配套成交与现金窗口'}>
@@ -72,5 +74,6 @@ export function DemoCanonicalCash({snapshot, refreshFailed}: {snapshot?: DemoCan
         <p>输入来源、私有流完整覆盖与钱包原子快照尚未经独立证明；已有匹配不会改变交易准入。</p>
       </details>
     </div>}
+    <DemoCashChain snapshot={chain} refreshFailed={refreshFailed}/>
   </Panel>;
 }

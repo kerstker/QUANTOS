@@ -1,3 +1,4 @@
+import type {DemoCashChainSnapshot} from './demo-cash-chain';
 import type {DemoStatementSnapshot} from './demo-statement';
 import type {DemoUserStreamSnapshot} from './demo-user-stream';
 import type {DemoCashWindowSnapshot} from './demo-cash-window';
@@ -74,6 +75,7 @@ export interface BinanceDemoPayload {
   cash_window: DemoCashWindowSnapshot;
   execution_origin: DemoExecutionOriginSnapshot;
   canonical_cash: DemoCanonicalCashSnapshot;
+  cash_chain: DemoCashChainSnapshot;
   oms_status: DemoOmsStatusSnapshot;
   cancellation_status: DemoCancelStatusSnapshot;
   resident_status: DemoResidentStatusSnapshot;

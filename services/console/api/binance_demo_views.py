@@ -20,8 +20,24 @@ from services.research.demo_cash_projection import project_cash_window
 from services.research.demo_oms_status import load_latest as load_oms_status
 from services.research.demo_cancel_status import load_latest as load_cancel_status
 from services.research.demo_resident_status import load_latest as load_resident_status
+from services.research.demo_cash_chain_status import load_latest as load_cash_chain
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _cash_chain_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_cash_chain'
+
+
+def build_cash_chain_snapshot(*, directory: Path, as_of_ms: int):
+    if not (directory/'latest.json').exists() and not (directory/'latest.json').is_symlink():
+        return {'status':'NO_SNAPSHOT','report':None}
+    try:
+        raw=load_cash_chain(directory)
+        if raw['observed_at_ms']>as_of_ms:return {'status':'DATA_BLOCKED','report':None}
+        return {'status':'AVAILABLE','report':raw}
+    except Exception:
+        return {'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
 def _resident_status_directory():
@@ -266,6 +282,7 @@ def binance_demo_snapshot():
         'cancellation_status': build_cancel_status_snapshot(directory=_cancel_status_directory(),as_of_ms=as_of_ms),
         'resident_status': build_resident_status_snapshot(directory=_resident_status_directory(),as_of_ms=as_of_ms),
         'cash_window': build_cash_window_snapshot(directory=_cash_window_directory(), as_of_ms=as_of_ms),
+        'cash_chain': build_cash_chain_snapshot(directory=_cash_chain_directory(),as_of_ms=as_of_ms),
         'canonical_cash': build_canonical_cash_snapshot(path=_execution_journal_path(), directory=_cash_window_directory(), as_of_ms=as_of_ms),
         'user_stream':user_stream,
         'statement': build_statement_snapshot(directory=runtime_state_root() / 'data/cache/binance_demo_statements', as_of_ms=as_of_ms),

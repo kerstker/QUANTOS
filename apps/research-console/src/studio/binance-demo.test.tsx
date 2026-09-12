@@ -28,6 +28,7 @@ function payload(): BinanceDemoPayload {
     cash_window: {status: 'NO_SNAPSHOT', report: null},
     execution_origin: {status: 'NO_SNAPSHOT', report: null},
     canonical_cash: {status: 'INPUTS_MISSING', report: null},
+    cash_chain: {status:'NO_SNAPSHOT',report:null},
     oms_status: {status: 'NO_SNAPSHOT', report: null},
     cancellation_status: {status: 'NO_SNAPSHOT', report: null},
     resident_status: {status: 'NO_SNAPSHOT', report: null, last_result: null},
