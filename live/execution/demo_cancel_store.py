@@ -67,7 +67,7 @@ class DemoCancelStore:
     def _rows(self):
         rows=self._conn.execute('SELECT * FROM demo_cancel_events ORDER BY seq LIMIT 41001').fetchall()
         if len(rows)>41000:raise DemoCancelConflict('DEMO_CANCEL_JOURNAL_BUDGET')
-        records=[];tail='0'*64;grants={};claims={};seen=set();previous=0
+        records=[];tail='0'*64;grants={};claims={};seen=set();claimed_originals=set();previous=0
         for row in rows:
             if len(row['payload'])>65536:raise DemoCancelConflict('DEMO_CANCEL_RECORD_BUDGET')
             r=dict(row);r['payload']=load_json_without_duplicate_keys(r['payload'])
@@ -89,6 +89,10 @@ class DemoCancelStore:
                 if (grant is None or r['identity']!=p['grant_sha256']+':'+p['client_order_id'] or
                     p['client_order_id'] not in {c['origClientOrderId'] for c in grant['payload']['commands']} or
                     r['at_ms']>=grant['payload']['envelope']['payload']['expires_at_ms']):raise DemoCancelConflict('DEMO_CANCEL_CLAIM_BINDING')
+                command=next(c for c in grant['payload']['commands'] if c['origClientOrderId']==p['client_order_id'])
+                original=(grant['payload']['context']['account_ref_sha256'],command['symbol'],command['origClientOrderId'])
+                if original in claimed_originals:raise DemoCancelConflict('DEMO_CANCEL_ORIGINAL_ALREADY_CLAIMED')
+                claimed_originals.add(original)
                 claims[r['record_hash']]=r
             elif r['kind']=='RESULT':
                 _fields(p,'claim_sha256 outcome');validate_outcome(p['outcome'])
@@ -114,6 +118,17 @@ class DemoCancelStore:
                     if kind=='RESULT' and previous['payload']==payload and previous['at_ms']==at_ms:
                         self._conn.commit();return previous
                     raise DemoCancelConflict('DEMO_CANCEL_ALREADY_CONSUMED')
+                if kind=='GRANT':
+                    # Reject a replacement grant before it can hide an older
+                    # unknown claim in the latest display or reach transport.
+                    wanted={(payload['context']['account_ref_sha256'],c['symbol'],c['origClientOrderId']) for c in payload['commands']}
+                    original_grants={r['record_hash']:r['payload'] for r in rows if r['kind']=='GRANT'}
+                    for row in rows:
+                        if row['kind']!='CLAIM':continue
+                        old=original_grants[row['payload']['grant_sha256']]
+                        command=next(c for c in old['commands'] if c['origClientOrderId']==row['payload']['client_order_id'])
+                        identity_key=(old['context']['account_ref_sha256'],command['symbol'],command['origClientOrderId'])
+                        if identity_key in wanted:raise DemoCancelConflict('DEMO_CANCEL_ORIGINAL_ALREADY_CLAIMED')
                 record={'seq':len(rows)+1,'kind':kind,'identity':identity,'at_ms':at_ms,'payload':payload,
                     'prev_hash':rows[-1]['record_hash'] if rows else '0'*64}
                 record['record_hash']=_hash(record)

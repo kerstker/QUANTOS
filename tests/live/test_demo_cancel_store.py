@@ -68,3 +68,27 @@ def test_cancel_chain_corruption_is_not_treated_as_an_empty_journal(tmp_path,mon
     with sqlite3.connect(path) as conn:
         conn.execute('DROP TRIGGER demo_cancel_no_update');conn.execute("UPDATE demo_cancel_events SET payload='{}'")
     with pytest.raises(DemoCancelConflict):DemoCancelStore(path)
+
+
+@pytest.mark.parametrize('grant_after_claim',[False,True])
+def test_new_independent_grant_cannot_repeat_original_cancel_after_unknown_send(tmp_path,monkeypatch,grant_after_claim):
+    from services.validation.demo_cancellation import signing_payload
+    from tests.live.test_demo_submission_verification import encoded
+    private,registry,commands,context,envelope,_=cancellation_material()
+    context['executor_boot_sha256']=demo_authority.executor_boot_sha256()
+    monkeypatch.setattr(demo_authority,'load_registry_for_executor',lambda:registry)
+    def signed(approval):
+        envelope['payload']['approval_id']=approval
+        envelope['signature_base64url']=encoded(private.sign(signing_payload(envelope)))
+        return json.dumps(envelope).encode()
+    path=tmp_path/'cancel.db'
+    with DemoCancelStore(path,create=True) as store:
+        original=store.reserve(signed('a'*64),context=context,commands=commands,now_ms=NOW)
+        if not grant_after_claim:fresh=store.reserve(signed('c'*64),context=context,commands=commands,now_ms=NOW+1)
+        store.claim(original['record_hash'],commands[0]['origClientOrderId'],request_sha256='b'*64,now_ms=NOW+2)
+    with DemoCancelStore(path) as store:
+        before=store.snapshot()
+        with pytest.raises(DemoCancelConflict):
+            if grant_after_claim:store.reserve(signed('c'*64),context=context,commands=commands,now_ms=NOW+3)
+            else:store.claim(fresh['record_hash'],commands[0]['origClientOrderId'],request_sha256='d'*64,now_ms=NOW+3)
+        assert store.snapshot()==before

@@ -54,3 +54,22 @@ EOF/错误/不明阶段保存安全的摘要而不回显原异常或敏感输入
 来源未齐、未解释现金变化和跨日仍停止。见[连续持仓实现及范围](../engineering/specs/2026-09-13-demo-position-continuation.md)。
 独立签发与受保护执行侧安装仍在继续。
 回执、取消与现金不能因命令可运行就提前标为实际验收完成。
+
+## 有限撤单会话
+
+同一入口可使用 `--purpose cancellation`。必须已有原预留/发送/新鲜原编号查询，
+以及原受保护 `cancellations.sqlite3`；不从用户输入创建或复制原订单。
+
+首帧严格为 `schema="DEMO_CANCELLATION_SESSION_INPUT_V1"`、
+`reservation_sha256`、`client_order_ids` 三项。原编号列表须明确提供、1–20 个；
+只允许同一原批次的 ID，不接受路径或场所参数。执行器返回
+`DEMO_CANCELLATION_SESSION_PROPOSAL_V1`，等待独立签发方检查确切范围。
+
+第二帧严格为 `schema="DEMO_CANCELLATION_SESSION_GRANT_V1"`、
+`proposal_sha256`、`envelope`。信封必须是原撤单用途签名，不能使用提交用途批准。
+返回 `DEMO_CANCELLATION_SESSION_RESULT_V1` 后继续按原编号查询；超时/失败则保存
+`DEMO_CANCELLATION_SESSION_STOP_V1`，不能重发或自动更换批准编号。
+
+原查询的 5 秒新鲜度和批准期限持续检查，不因帧允许等待 30 秒而延长。
+已经建立撤单发送标记的原订单拒绝新的批准或第二次发送标记；重启后同样生效。
+详见[实现与回归证据](../engineering/specs/2026-09-13-demo-cancellation-session.md)。
