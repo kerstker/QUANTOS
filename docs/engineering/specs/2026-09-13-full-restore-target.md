@@ -39,8 +39,8 @@ SQLite 通过原 `mode=ro` / `query_only=ON` 连接处理正常日志辅助文�
 
 03:41 已启动第二次完整演练 `quantos-full-restore-2h-v2-20260913.service`。
 它复用原备份/恢复实现和加密格式，在独立输出目录运行；完整结果尚待产出。
-该后台进程最多允许 4 小时完成备份生成和恢复，**其中恢复仍必须在 2 小时内完成**，
-进程上限不放宽恢复验收；超时或失败保持失败。
+该后台进程启动时允许 4 小时完成备份生成和恢复，07:16 的进程预算调整见下文。
+**其中恢复仍必须在 2 小时内完成**；进程上限不放宽恢复验收，超时或失败保持失败。
 
 实际材料：`/home/kerstker/quantos-dev-output/demo-full-restore-2h-20260913`。
 `policy.json`、`preflight.json`、首次 `result.json`、单文件隔离复现及打开文件的诊断均保留；
@@ -50,6 +50,25 @@ SQLite 通过原 `mode=ro` / `query_only=ON` 连接处理正常日志辅助文�
 
 这次调整不改变 [Demo D0–D4](../plans/2026-09-12-demo-execution-completion.md) 的
 实际订单/回执/现金核对条件，也不改变 P3/P4/P6 的冻结窗口和盈利验收。
+
+## 07:16 完整核验进程预算
+
+完整检查尚未结束。为取得同一批数据的最终完整性结果，将本次工作进程的最长运行
+时间从 4 小时延长至 6 小时，恢复验收仍使用原 `rto_ms=7200000`。源码、输入、
+CPU/IO 权重、内存上限和交换空间配置保持原值，进程 PID 682779、启动时钟、
+命令摘要及解释器在变更前后相同。没有重新启动、生成第二批备份或改写历史结果。
+
+直接设置运行属性被本机 systemd 拒绝，原失败及变更前后相同的状态已保留。
+随后在独立的短进程上验证临时配置加 daemon-reload：原 8 秒上限改为 30 秒，
+经过 12 秒后原 PID 仍在运行。该方法与
+[systemd v255 的重载定时逻辑](https://github.com/systemd/systemd/blob/v255/src/core/service.c#L1194)
+相符。仅在该验证通过后，才对真实恢复进程应用临时配置；原进程仍在运行，
+`RuntimeMaxUSec=6h`，最后结果尚未产出。
+
+材料位于 `attempt2`：`worker-deadline-extension-review.json` 和对应失败结果、
+`worker-deadline-dropin-probe.json`、`worker-deadline-dropin-review.json` 与
+`worker-deadline-dropin-result.json`。后续报告须同时注明此次进程预算调整及原
+两小时 RTO；允许检查继续运行本身不能当作恢复已达标。
 
 ## 定时任务配置接线
 
