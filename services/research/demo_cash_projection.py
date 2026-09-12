@@ -13,6 +13,7 @@ from services.execution.perpetual_ledger_v2 import (
 from services.research.ai_factory_store import digest
 from services.research.demo_cash_window import assess, _sweep
 from services.research.demo_execution_journal import observations, replay_ledger, replay_report
+from quantos.contracts.binance_demo_clock import event_local_interval
 
 SCHEMA = 'DEMO_CANONICAL_CASH_COMPARISON_V1'
 PROJECTION_SOURCE_SHA256 = hashlib.sha256(b'\n'.join(
@@ -27,6 +28,7 @@ def project_cash_window(journal, capture):
     manifest = journal.manifest
     spec = journal.parsed[0]
     quote = spec.margin_asset
+    clock=base.get('clock')
     result = {'schema': SCHEMA, 'environment': 'BINANCE_USDM_DEMO', 'scope': 'TECHNICAL_VALIDATION_ONLY',
         'status': 'UNRESOLVED', 'account_ref_sha256': manifest['native']['account_ref_sha256'],
         'symbol': spec.instrument_id, 'quote_asset': quote, 'manifest_hash': journal.manifest_hash,
@@ -34,7 +36,8 @@ def project_cash_window(journal, capture):
         'replay_source_sha256': base['replay_source_sha256'],
         'projection_source_sha256': PROJECTION_SOURCE_SHA256,
         'cash_input_status': cash['status'], 'cash_input_duplicates': cash['duplicate_rows'],
-        'observed_at_ms': capture['completed_at_ms'], 'issues': [],
+        'observed_at_ms': max(capture['completed_at_ms'],clock['available_at_ms']) if clock else capture['completed_at_ms'], 'issues': [],
+        **({'clock':clock} if clock else {}),
         'canonical_wallet': None, 'reported_wallet': None, 'wallet_residual': None,
         'fee_comparison': 'UNKNOWN', 'realized_pnl_comparison': 'UNKNOWN', 'reconciliation': None,
         'ledger_state_hash': None, 'source_verified': False, 'coverage_verified': False,
@@ -81,15 +84,22 @@ def project_cash_window(journal, capture):
         issues.append('RECEIPT_SNAPSHOT_CHANGED')
     evidence = observations(manifest, records, journal.parsed)['native_observations']
     trades = evidence['trade_rows']
-    if bounds and any(not bounds['inner_start_ms'] < t['venue_trade_ms'] < bounds['inner_end_ms'] for t in trades):
+    def inside_cash(venue_ms):
+        lower,upper=event_local_interval(venue_ms,clock) if clock else (venue_ms,venue_ms)
+        return bounds is not None and bounds['inner_start_ms']<lower<=upper<bounds['inner_end_ms']
+    if bounds and any(not inside_cash(t['venue_trade_ms']) for t in trades):
         issues.append('TRADE_OUTSIDE_CASH_INTERIOR')
     rows, _, _ = _sweep([r for r in capture['reads'] if r['kind']=='income' and r['sweep']==2])
     flows = [r for r in rows.values() if r['asset']==quote]
+    if clock and any(not inside_cash(r['time']) for r in flows):
+        issues.append('CASH_CLOCK_INTERIOR_UNRESOLVED')
     if any(r['incomeType'] not in ('COMMISSION','REALIZED_PNL','FUNDING_FEE','TRANSFER') for r in flows):
         issues.append('UNSUPPORTED_INCOME_TYPE')
     if any(r['incomeType'] != 'TRANSFER' and r['symbol'] != spec.instrument_id for r in flows):
         issues.append('UNBOUND_SAME_QUOTE_SYMBOL')
-    if opening is not None and any(r['time'] <= opening['opening_at_ms'] for r in flows):
+    opening_cutoff=(opening.get('clock_boundary',{}).get('venue_not_before_ms',opening['opening_at_ms'])
+        if opening is not None else None)
+    if opening is not None and any(r['time'] <= opening_cutoff for r in flows):
         issues.append('CASH_BEFORE_BOUND_OPENING')
     by_trade = {t['trade_id']: t for t in trades}
     if len(by_trade) != len(trades):

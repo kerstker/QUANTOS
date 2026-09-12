@@ -1,3 +1,4 @@
+import {clockReportValid} from './demo-clock-contract';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const decimal = (v: unknown) => typeof v === 'string' && /^-?\d{1,40}(\.\d{1,40})?$/.test(v);
@@ -14,6 +15,14 @@ const reconciliationKeys = ['initial_equity', 'ending_equity', 'price_pnl', 'fee
 function openingValid(v: unknown, report: Record<string, unknown>, asOf: number): boolean {
   if (v === null) return true;
   const symbol = (s: unknown): s is string => typeof s === 'string' && /^[A-Z0-9_\u3400-\u9fff]{1,32}$/.test(s);
+  if (object(v)) {
+    const clock=report.clock,b=v.clock_boundary;
+    if (clock!==undefined) {
+      if (!clockReportValid(clock,asOf)||!object(b)||b.policy!=='CONSERVATIVE_VENUE_UPPER_BOUND_NOT_OBSERVATION_V1'||
+        b.source_verified!==false||b.clock_input_sha256!==clock.input_sha256||b.local_observed_at_ms!==v.opening_at_ms||
+        !count(b.local_observed_at_ms)||b.venue_not_before_ms!==b.local_observed_at_ms+clock.offset_upper_ms) return false;
+    } else if (b!==undefined) return false;
+  }
   if (!object(v) || v.schema !== 'DEMO_OPENING_ASSESSMENT_V1' || v.scope !== 'SINGLE_QUOTE_ACCOUNT_BOOK_TECHNICAL_PROJECTION' ||
       !['INPUTS_INCOMPLETE', 'DECLARED_INPUTS_READY'].includes(String(v.status)) || !hash(v.capture_hash) || !hash(v.account_ref_sha256) ||
       !count(v.opening_at_ms) || v.opening_at_ms > asOf || !count(report.observed_at_ms) || v.opening_at_ms > report.observed_at_ms ||
@@ -45,6 +54,8 @@ export function executionSnapshotValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (v.status !== 'AVAILABLE') return ['NO_JOURNAL', 'CORRUPT_OR_UNREADABLE', 'DATA_BLOCKED'].includes(String(v.status)) && v.report === null;
   const r = v.report;
+  if (object(r)&&r.clock!==undefined&&!clockReportValid(r.clock,asOf)) return false;
+  const clock=object(r)&&clockReportValid(r.clock,asOf)?r.clock:null;
   if (!object(r) || r.schema !== 'DEMO_EXECUTION_REPLAY_V1' || r.environment !== 'BINANCE_USDM_DEMO' ||
       r.scope !== 'TECHNICAL_VALIDATION_ONLY' || r.source_verified !== false || r.authoritative !== false || r.submission_enabled !== false ||
       !['SYNTHETIC_TEST_FIXTURE', 'IMPORTED_UNVERIFIED'].includes(String(r.provenance)) ||
@@ -59,13 +70,16 @@ export function executionSnapshotValid(v: unknown, asOf: number): boolean {
       !Array.isArray(r.limitations) || !r.limitations.every(code) || !openingValid(r.opening, r, asOf) ||
       !Array.isArray(r.orders) || r.orders.length > 200 || !r.orders.every(o => object(o) && orderId(o.order_id) &&
         ['BUY', 'SELL'].includes(String(o.side)) && states.includes(String(o.state)) && decimal(o.quantity) && decimal(o.filled_quantity) &&
-        (o.last_event_at_ms === null || count(o.last_event_at_ms) && o.last_event_at_ms <= asOf)) ||
+        (o.last_event_at_ms === null || count(o.last_event_at_ms) && o.last_event_at_ms-(clock?.offset_upper_ms??0) <= asOf)) ||
       !Array.isArray(r.recent_trades) || r.recent_trades.length > 50 || !r.recent_trades.every(t => object(t) &&
         orderId(t.order_id) && venueId(t.venue_order_id) && venueId(t.trade_id) && decimal(t.quantity) && decimal(t.price) &&
         ['MAKER', 'TAKER'].includes(String(t.liquidity_role)) && nullableDecimal(t.reported_commission) &&
         (t.commission_asset === null || typeof t.commission_asset === 'string' && /^[A-Z0-9]{1,20}$/.test(t.commission_asset)) &&
         hash(t.response_sha256) && count(t.venue_trade_ms) && count(t.transaction_ms) && count(t.event_ms) && count(t.received_at_ms) &&
-        t.venue_trade_ms <= t.transaction_ms && t.transaction_ms <= t.event_ms && t.event_ms <= t.received_at_ms && t.received_at_ms <= asOf)) return false;
+        t.venue_trade_ms <= t.transaction_ms && t.transaction_ms <= t.event_ms && t.received_at_ms <= asOf &&
+        (clock ? clock.start_ms<=t.received_at_ms&&t.received_at_ms<=clock.end_ms&&
+          t.event_ms-clock.offset_upper_ms<=t.received_at_ms&&t.venue_trade_ms-clock.offset_lower_ms>=clock.start_ms :
+          t.event_ms<=t.received_at_ms))) return false;
   if (r.projection_status === 'UNRESOLVED') return code(r.projection_reason) && r.reconciliation === null &&
     r.ledger_state_hash === null && r.position_quantity === null && r.position_comparison === 'UNKNOWN';
   return r.projection_status === 'REPLAYED_TECHNICAL_ONLY' && r.projection_reason === null &&

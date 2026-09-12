@@ -68,6 +68,44 @@ def test_exact_cash_projection_deduplicates_commissions_and_separates_external_m
     assert r['source_verified'] is False and r['coverage_verified'] is False
 
 
+def clocked_inputs(offset=1000):
+    m,messages,cash=inputs(); native=m['native']; native['schema']='BINANCE_USDM_ORDER_RECEIPTS_V3'
+    for b in native['bindings']: b.update(time_in_force='GTX',reduce_only=False)
+    native['clock_bracket']={'schema':'BINANCE_USDM_CLOCK_BRACKET_V1','provenance':'SYNTHETIC_TEST_FIXTURE',
+        'before':{'requested_at_ms':NOW-6000,'received_at_ms':NOW-5980,'server_time_ms':NOW-5990+offset,
+                  'response_sha256':'a'*64,'source_sha256':'b'*64},
+        'after':{'requested_at_ms':NOW+70100,'received_at_ms':NOW+70120,'server_time_ms':NOW+70110+offset,
+                 'response_sha256':'c'*64,'source_sha256':'d'*64}}
+    for i,r in enumerate(messages):
+        p=json.loads(r['raw_utf8']); p['E']+=offset; p['T']+=offset; p['o']['T']+=offset
+        messages[i]=receipt(p,r['received_at_ms'])
+    for r in cash['reads']:
+        if r['kind'].startswith('clock'): r['data']['serverTime']+=offset
+        if r['kind']=='income':
+            for flow in r['data']: flow['time']+=offset
+    return m,messages,cash
+
+
+@pytest.mark.parametrize('offset',[-1000,1000])
+def test_two_clock_cash_remains_exact_and_reports_retrospective_availability(tmp_path,offset):
+    m,messages,cash=clocked_inputs(offset)
+    with DemoExecutionJournal(tmp_path/'clocked-cash.db',manifest=m) as journal:
+        journal.append(messages); r=project_cash_window(journal,cash)
+    assert r['status']=='MATCHED_REPORTED_INPUTS' and r['canonical_wallet']=='1099.7802'
+    assert r['reconciliation']['fee']=='0.0198' and r['reconciliation']['funding']=='-0.2'
+    assert r['clock']['exact_latency_ms'] is None and r['observed_at_ms']>=r['clock']['available_at_ms']
+
+
+def test_cash_near_venue_boundary_does_not_get_a_false_match_from_local_epoch(tmp_path):
+    m,messages,cash=clocked_inputs(-1000)
+    for read in cash['reads']:
+        if read['kind']=='income': read['data'][2]['time']=NOW+55000
+    with DemoExecutionJournal(tmp_path/'ambiguous-cash.db',manifest=m) as journal:
+        journal.append(messages); r=project_cash_window(journal,cash)
+    assert r['status']=='UNRESOLVED' and 'CASH_CLOCK_INTERIOR_UNRESOLVED' in r['issues']
+    assert r['canonical_wallet'] is None and r['strategy_pnl'] is None
+
+
 @pytest.mark.parametrize('failure', ['namespace','wallet','fee','trade_id','extra_trade','funding_symbol',
     'income_type','window','missing_receipt','gap','endpoint','cash_sweep','initial_wallet'])
 def test_missing_or_conflicting_inputs_do_not_invent_a_cash_match(tmp_path, failure):

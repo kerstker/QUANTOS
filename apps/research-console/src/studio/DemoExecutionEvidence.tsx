@@ -1,11 +1,13 @@
 import type {DemoExecutionSnapshot} from '@/lib/types/binance-demo';
 import {Empty, Metric, Panel} from './components';
 import {DemoOpeningEvidence} from './DemoOpeningEvidence';
+import {DemoClockEvidence} from './DemoClockEvidence';
 
 const stateNames: Record<string, string> = {UNKNOWN: '未知', ACK: '已确认', PARTIALLY_FILLED: '部分成交', FILLED: '全部成交', CANCELLED: '已撤单', EXPIRED: '已失效'};
 const comparisons: Record<string, string> = {UNKNOWN: '尚无法比较', WAITING_TERMINAL_ORDERS: '等待订单终态', DECLARED_POSITION_MATCH: '与声明持仓一致', DECLARED_POSITION_MISMATCH: '与声明持仓不一致'};
 const reasons: Record<string, string> = {NO_RECEIPTS: '尚未导入回执', DECLARED_STREAM_GAPS: '声明窗口存在数据缺口',
   OPENING_INPUTS_INCOMPLETE: '账户起点仍有缺项',
+  OPENING_CLOCK_BOUNDARY_UNRESOLVED: '成交可能与账户起点重叠，时间归属尚不明确',
   COMMISSION_NOT_SUPPORTED: '费用缺失、币种不符或返佣尚不支持'};
 const timestamp = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace('Z', ' UTC');
 
@@ -21,6 +23,7 @@ export function DemoExecutionEvidence({snapshot, refreshFailed}: {snapshot?: Dem
       {refreshFailed && <p role="status" className="s-demo-notice">刷新失败，以下是上次读取的历史回放，不能表示当前日志状态。</p>}
       <p className="s-demo-description">{report.opening ? '从绑定的账户起点与固定订单回执重新计算。' : '从固定订单与原始回执重新计算；初始空仓、抵押金和期末目标均来自声明。'}真实账户现金、资金费及外部流水尚未核对。</p>
       {report.opening && <DemoOpeningEvidence opening={report.opening}/>}
+      <DemoClockEvidence clock={report.clock} opening={report.opening}/>
       {report.projection_status === 'UNRESOLVED' && <div className="s-demo-notice" role="status"><strong>{reasons[report.projection_reason ?? ''] ?? '成交事实无法按当前模型完整回放'}</strong>
         <p>原始回执仍保留；账本数值保持未知。原因：{report.projection_reason}</p></div>}
       <div className="s-metrics s-demo-metrics">
@@ -48,7 +51,7 @@ export function DemoExecutionEvidence({snapshot, refreshFailed}: {snapshot?: Dem
         {[['冻结规格', report.manifest_hash], ['日志末端', report.journal_tail], ['回放代码指纹', report.replay_source_sha256],
           ['声明源码版本', report.declared_source_commit], ['技术账本状态', report.ledger_state_hash ?? '未知']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
         <div><dt>最后接收时间</dt><dd>{report.observed_at_ms === null ? '未知' : timestamp(report.observed_at_ms)}</dd></div>
-      </dl><p>身份哈希用于内容核对与复现，不是来源签名或交易授权。当前只覆盖固定 LIMIT / GTX、单向、全仓订单。</p></details>
+      </dl><p>身份哈希用于内容核对与复现，不是来源签名或交易授权。当前只覆盖已绑定的固定 LIMIT / GTX 或 IOC、单向、全仓订单。</p></details>
     </div>}
   </Panel>;
 }

@@ -142,6 +142,45 @@ function replay(): DemoReplayReport {
   };
 }
 
+function clockedReplay():DemoReplayReport {
+  const r=replay();
+  r.clock={schema:'BINANCE_USDM_CLOCK_BRACKET_V1',policy:'ENDPOINT_ENVELOPE_WITH_DECLARED_500MS_INTERIOR_DRIFT_V1',
+    input_sha256:'a'.repeat(64),start_ms:100,end_ms:300,available_at_ms:320,offset_lower_ms:489,offset_upper_ms:1511,
+    local_domain:'CAPTURE_PROCESS_EPOCH_MS',venue_domain:'BINANCE_USDM_SERVER_EPOCH_MS',quantization_ms:1,
+    declared_interior_drift_ms:500,source_verified:false,interior_drift_verified:false,exact_latency_ms:null,
+    causality_status:'COMPATIBILITY_ONLY_NOT_CAUSAL_CERTIFICATION'};
+  for(const t of r.recent_trades){t.event_ms+=1000;t.transaction_ms+=1000;t.venue_trade_ms+=1000;}
+  r.orders[0].last_event_at_ms=1121;
+  return r;
+}
+
+it('shows separate raw clocks and uncertainty without inventing exact latency',()=>{
+  const data={...payload(),execution:{status:'AVAILABLE' as const,report:clockedReplay()}};
+  expect(parseDemoPayload(data).execution.status).toBe('AVAILABLE');
+  render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('时间口径与不确定区间')).toBeInTheDocument();
+  expect(screen.getByText(/489 至 1511 ms/)).toBeInTheDocument();
+  expect(screen.getByText(/不提供精确延迟/)).toBeInTheDocument();
+  expect(screen.getByText('9007199254740993')).toBeInTheDocument();
+});
+
+it('rejects future clock probes, claimed authority and incompatible raw events',()=>{
+  for(const change of ['future','authority','latency','interval','event','missing'] as const){
+    const data={...payload(),execution:{status:'AVAILABLE' as const,report:clockedReplay()}};
+    const r=data.execution.report;
+    if(change==='future')r.clock!.available_at_ms=data.as_of_ms+1;
+    else if(change==='event')r.recent_trades[0].event_ms+=10000;
+    else if(change==='missing')delete r.clock;
+    else {
+      const c=r.clock as unknown as Record<string,unknown>;
+      if(change==='authority')c.interior_drift_verified=true;
+      else if(change==='latency')c.exact_latency_ms=20;
+      else c.offset_upper_ms=100000;
+    }
+    expect(()=>parseDemoPayload(data)).toThrow();
+  }
+});
+
 it('preserves exact receipt IDs and amounts and labels partial imported fills as technical evidence', () => {
   const data = {...payload(), execution: {status: 'AVAILABLE' as const, report: replay()}};
   parseDemoPayload(data);

@@ -1,4 +1,5 @@
 export interface DemoCanonicalCashReport {
+  clock?:import('./demo-clock').DemoClockReport;
   schema: 'DEMO_CANONICAL_CASH_COMPARISON_V1'; environment: 'BINANCE_USDM_DEMO'; scope: 'TECHNICAL_VALIDATION_ONLY';
   status: 'MATCHED_REPORTED_INPUTS' | 'DIFFERENCE_FOUND' | 'UNRESOLVED';
   account_ref_sha256: string; symbol: 'BTCUSDT' | 'BTCUSDC'; quote_asset: 'USDT' | 'USDC';

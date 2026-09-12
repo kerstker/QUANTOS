@@ -74,6 +74,47 @@ def test_demo_oms_status_is_read_only_and_rejects_future_or_corrupt_projection(t
     assert client.get('/api/v1/console/binance-demo').json()['oms_status']=={'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
+def test_demo_two_clock_replay_is_only_available_after_both_probes(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    from tests.research.test_binance_order_receipt_clocks import clocked_opening
+    frozen,messages=clocked_opening()
+    path=tmp_path/'two-clocks.sqlite3'
+    with DemoExecutionJournal(path,manifest=frozen) as journal: journal.append(messages)
+    monkeypatch.setattr(views,'_execution_journal_path',lambda:path)
+    monkeypatch.setattr(views.time,'time_ns',lambda:10319*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['execution']=={'status':'DATA_BLOCKED','report':None}
+    monkeypatch.setattr(views.time,'time_ns',lambda:10320*1_000_000)
+    before=path.read_bytes(); result=client.get('/api/v1/console/binance-demo').json()['execution']
+    assert result['status']=='AVAILABLE' and path.read_bytes()==before
+    r=result['report']
+    assert r['clock']['available_at_ms']==10320 and r['clock']['exact_latency_ms'] is None
+    assert r['opening']['clock_boundary']['venue_not_before_ms']==10511
+    assert r['recent_trades'][0]['event_ms']>r['recent_trades'][0]['received_at_ms']
+    assert r['source_verified'] is False and r['authoritative'] is False
+
+
+def test_demo_two_clock_cash_waits_for_retrospective_clock_input(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_cash_window import save_capture
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    from tests.research.test_demo_cash_projection import clocked_inputs,NOW
+    frozen,messages,cash=clocked_inputs()
+    frozen['native']['clock_bracket']['after'].update(requested_at_ms=NOW+120100,
+        received_at_ms=NOW+120120,server_time_ms=NOW+121110)
+    path=tmp_path/'two-clock-cash.sqlite3'; directory=tmp_path/'cash'
+    with DemoExecutionJournal(path,manifest=frozen) as journal: journal.append(messages)
+    save_capture(directory,cash)
+    monkeypatch.setattr(views,'_execution_journal_path',lambda:path)
+    monkeypatch.setattr(views,'_cash_window_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+120119)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['canonical_cash']=={'status':'DATA_BLOCKED','report':None}
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+120120)*1_000_000)
+    r=client.get('/api/v1/console/binance-demo').json()['canonical_cash']['report']
+    assert r['observed_at_ms']==r['clock']['available_at_ms']==NOW+120120
+    assert r['canonical_wallet']=='1099.7802' and r['strategy_pnl'] is None
+
+
 def test_demo_canonical_cash_contract_is_read_only_and_keeps_technical_scope(tmp_path, monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_cash_window import save_capture

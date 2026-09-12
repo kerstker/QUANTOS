@@ -1386,7 +1386,7 @@
           "path": "services/research/ai_factory_sleeves.py"
         },
         {
-          "line": 15,
+          "line": 17,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/binance_order_receipts.py"
         },
@@ -1553,7 +1553,7 @@
     {
       "references": [
         {
-          "line": 14,
+          "line": 16,
           "module": "services.governance.json_integrity",
           "path": "services/research/binance_order_receipts.py"
         },
@@ -1938,7 +1938,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "a8f484947e90b12e26e14c176d4234dd12e230551c5610cac1493fb66410e779",
+  "graph_sha256": "65aaf075455beceb8b057382d21b4652c9ba5d79b48580686a8205c149ab9d5d",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

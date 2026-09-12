@@ -16,6 +16,7 @@ from services.execution.perpetual_ledger_v2 import (
     LinearPerpetualLedger, PerpetualLedgerError, ledger_decimal_context,
 )
 from services.research.demo_account_baseline import build_baseline
+from quantos.contracts.binance_demo_clock import bracket_bounds
 
 OPENING_MANIFEST_SCHEMA = 'DEMO_EXECUTION_REPLAY_V2'
 
@@ -77,10 +78,18 @@ def prepare_opening(manifest, primary):
     if (capture.status != 'CAPTURED' or
             sha(raw['capture_hash']) != hashlib.sha256(capture.model_dump_json().encode()).hexdigest()):
         raise ValueError('OPENING_CAPTURE_INVALID')
-    # A declared common clock domain is a technical input, not an authenticated
-    # venue watermark. Stable REST brackets cannot prove atomic completeness.
+    # Availability is always local. V3 adds a separate conservative venue cutoff;
+    # neither that bound nor the common-clock legacy input is source authority.
     if not 0 < manifest['native']['coverage']['start_ms'] - capture.completed_at_ms <= 120000:
         raise ValueError('OPENING_CUTOFF_MUST_PRECEDE_RECEIPT_WINDOW')
+    boundary=None
+    if manifest['native'].get('schema')=='BINANCE_USDM_ORDER_RECEIPTS_V3':
+        clock=bracket_bounds(manifest['native']['clock_bracket'],start_ms=capture.completed_at_ms,
+            end_ms=manifest['native']['coverage']['end_ms'])
+        boundary={'policy':'CONSERVATIVE_VENUE_UPPER_BOUND_NOT_OBSERVATION_V1',
+            'local_observed_at_ms':capture.completed_at_ms,
+            'venue_not_before_ms':capture.completed_at_ms+clock['offset_upper_ms'],
+            'clock_input_sha256':clock['input_sha256'],'source_verified':False}
     baseline = build_baseline(capture, as_of_ms=capture.completed_at_ms)
     wallets = [a for a in baseline['assets'] if a['asset'] == primary.margin_asset]
     if len(wallets) != 1 or decimal(wallets[0]['observed_wallet']) != decimal(manifest['initial_collateral']):
@@ -123,8 +132,9 @@ def prepare_opening(manifest, primary):
     seed = None
     if not issues:
         try:
-            seed = OpeningLedgerState(timestamp=capture.completed_at_ms,
-                source_sha256=hashlib.sha256(json.dumps(raw, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest(),
+            seed = OpeningLedgerState(timestamp=boundary['venue_not_before_ms'] if boundary else capture.completed_at_ms,
+                source_sha256=hashlib.sha256(json.dumps({'opening':raw,'clock_boundary':boundary} if boundary else raw,
+                    sort_keys=True,separators=(',', ':'),ensure_ascii=False).encode()).hexdigest(),
                 positions=tuple(OpeningPosition(instrument_id=p['symbol'], quantity=decimal(p['quantity']),
                     entry_notional=decimal(basis[p['symbol']]['entry_notional']), mark_price=decimal(p['observed_mark_price']),
                     margin_mode=MarginMode.CROSS if p['margin_mode']=='CROSSED' else MarginMode.ISOLATED,
@@ -137,6 +147,7 @@ def prepare_opening(manifest, primary):
         'status': 'INPUTS_INCOMPLETE' if issues else 'DECLARED_INPUTS_READY',
         'capture_hash': raw['capture_hash'], 'account_ref_sha256': raw['account_ref_sha256'],
         'opening_at_ms': capture.completed_at_ms, 'quote_asset': primary.margin_asset,
+        **({'clock_boundary':boundary} if boundary else {}),
         'initial_collateral': manifest['initial_collateral'], 'initial_position': manifest['initial_position'],
         'positions_count': len(positions), 'other_quote_positions_count': len(baseline['positions']) - len(positions),
         'missing_basis_symbols': missing_basis, 'missing_contract_symbols': missing_contracts, 'issues': sorted(set(issues)),

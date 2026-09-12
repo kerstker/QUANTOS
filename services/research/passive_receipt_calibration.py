@@ -11,6 +11,7 @@ import re
 
 from services.execution.perpetual_ledger_v2 import canonical_decimal, ledger_decimal_context
 from services.research.binance_order_receipts import CALIBRATION_SCHEMA, normalize_order_receipts
+from quantos.contracts.binance_demo_clock import bracket_bounds, compatible_event
 
 SCHEMA='PASSIVE_RECEIPT_CALIBRATION_V1'
 STATES={'ACK','PARTIALLY_FILLED','FILLED','REJECTED','CANCELLED','EXPIRED','CANCEL_REJECTED'}
@@ -30,7 +31,8 @@ def _amount(value):
 
 
 def _trace(document,actions,symbol,action_hash):
-    if (not isinstance(document,dict) or set(document)!={'action_hash','symbol','coverage','provenance','orders'}
+    clocked=isinstance(document,dict) and 'clock_bracket' in document
+    if (not isinstance(document,dict) or set(document)!={'action_hash','symbol','coverage','provenance','orders'}|({'clock_bracket'} if clocked else set())
             or document['action_hash']!=action_hash or not re.fullmatch('[0-9a-f]{64}',action_hash)
             or document['symbol']!=symbol or symbol not in ('BTCUSDC','BTCUSDT')):
         raise ValueError('same frozen actions and contract required')
@@ -39,6 +41,7 @@ def _trace(document,actions,symbol,action_hash):
         raise ValueError('explicit receipt coverage required')
     start,end=_time(coverage['start_ms']),_time(coverage['end_ms'])
     if not start<end or end-start>150000:raise ValueError('bounded receipt coverage required')
+    clock=bracket_bounds(document['clock_bracket'],start_ms=start,end_ms=end) if clocked else None
     if (not isinstance(source,dict) or set(source)!={'kind','declared_source_sha256'}
             or source['kind'] not in ('IMPORTED_PRIVATE_RECEIPTS','SYNTHETIC_TEST_FIXTURE','MODEL_DIAGNOSTIC')
             or not isinstance(source['declared_source_sha256'],str)
@@ -70,8 +73,10 @@ def _trace(document,actions,symbol,action_hash):
                 raise ValueError('both venue and actual receive clocks required')
             receipt=e['receipt_id'];venue=_time(e['venue_ms']);received=_time(e['received_ms'])
             state=e['state'];quantity=_amount(e['cumulative_filled'])
+            causal=(last_venue<=venue and compatible_event(venue,claimed_at_ms=action.timestamp,
+                received_at_ms=received,bounds=clock)) if clocked else max(action.timestamp,last_venue)<=venue<=received
             if (not isinstance(receipt,str) or not 1<=len(receipt)<=128 or receipt in seen
-                    or state not in STATES or not max(action.timestamp,last_venue)<=venue<=received
+                    or state not in STATES or not causal
                     or not last_receive<=received<=end or not filled<=quantity<=action.quantity):
                 raise ValueError('duplicate, noncausal or inconsistent receipt')
             if terminal and state!='CANCEL_REJECTED':raise ValueError('order receipt after terminal state')
@@ -86,6 +91,14 @@ def _trace(document,actions,symbol,action_hash):
     return result
 
 
+def validate_observed_trace(document,actions,symbol,action_hash):
+    """Validate states and quantities; a clock bracket retains only compatibility.
+
+    Receipt journaling uses this without entering an exact-latency calibration.
+    """
+    return _trace(document,actions,symbol,action_hash)
+
+
 def validate_calibration(spec,tape,actions,action_hash,*,reduce_only_ids=frozenset(),account_ref_sha256=None):
     try:
         native=None
@@ -94,6 +107,8 @@ def validate_calibration(spec,tape,actions,action_hash,*,reduce_only_ids=frozens
                 raise ValueError('versioned native passive calibration contract required')
             observed,native=normalize_order_receipts(spec['raw_observed'],actions,tape.symbol,action_hash,
                 reduce_only_ids=reduce_only_ids)
+            if 'clock_bracket' in observed:
+                raise ValueError('interval clock observations require a versioned interval calibration')
             if any(option['time_in_force']!='GTX' for option in native.get('order_options',[])):
                 raise ValueError('passive calibration requires fixed GTX receipts')
             if account_ref_sha256 is not None and native['account_ref_sha256']!=account_ref_sha256:
@@ -102,6 +117,8 @@ def validate_calibration(spec,tape,actions,action_hash,*,reduce_only_ids=frozens
         if not isinstance(spec,dict) or set(spec)!={'schema','cutoff_ms','observed'} or spec['schema']!=SCHEMA:
             raise ValueError('versioned passive calibration contract required')
         cutoff=_time(spec['cutoff_ms']);observed=spec['observed']
+        if 'clock_bracket' in observed:
+            raise ValueError('interval clock observations require a versioned interval calibration')
         _trace(observed,actions,tape.symbol,action_hash)
         coverage=observed['coverage']
         if not tape.start_ms==coverage['start_ms']<cutoff<coverage['end_ms']<=tape.end_ms:
@@ -146,6 +163,8 @@ def _advance(events,index,at,quantity,state):
 @ledger_decimal_context()
 def compare_receipts(observed,simulated,actions,*,start_ms,end_ms):
     """Whole-account continuation; tail reports retain their inherited state."""
+    if 'clock_bracket' in observed or 'clock_bracket' in simulated:
+        raise ValueError('interval clock observations cannot use exact venue-time errors')
     a=_trace(observed,actions,observed['symbol'],observed['action_hash'])
     b=_trace(simulated,actions,observed['symbol'],observed['action_hash'])
     _time(start_ms);_time(end_ms)

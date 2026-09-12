@@ -2,6 +2,8 @@
 
 V1 supports fixed ordinary LIMIT/GTX orders in one-way mode. V2 binds each
 order's GTX/IOC and reduce-only options; passive calibration still requires GTX.
+V3 retains a retrospective clock bracket instead of comparing two raw epochs as
+if they were synchronized. Its intervals are not an exact latency calibration.
 Native messages remain in the immutable input; this projection does not place
 orders, query a private endpoint, or apply real fills to simulated admission.
 """
@@ -13,9 +15,12 @@ import re
 
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.execution.perpetual_ledger_v2 import canonical_decimal, ledger_decimal_context
+from quantos.contracts.binance_demo_clock import bracket_bounds, compatible_event
 
 SCHEMA = 'BINANCE_USDM_ORDER_RECEIPTS_V1'
 OPTIONS_SCHEMA = 'BINANCE_USDM_ORDER_RECEIPTS_V2'
+CLOCK_SCHEMA = 'BINANCE_USDM_ORDER_RECEIPTS_V3'
+OPTION_SCHEMAS = (OPTIONS_SCHEMA, CLOCK_SCHEMA)
 CALIBRATION_SCHEMA = 'PASSIVE_BINANCE_ORDER_RECEIPTS_V1'
 REQUIRED_ORDER = {'s','c','S','o','f','q','p','x','X','i','l','z','L','T','t','m','R','ps'}
 OPTIONAL_ORDER = {'ap','sp','N','n','b','a','wt','ot','cp','AP','cr','pP','si','ss','rp','V','pm','gtd'}
@@ -94,28 +99,33 @@ def normalize_order_receipts(document, actions, symbol, action_hash, *, reduce_o
 
 
 def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
-    _fields(document,{'schema','symbol','account_ref_sha256','action_hash','provenance','coverage','bindings','messages'})
-    if (document['schema'] not in (SCHEMA,OPTIONS_SCHEMA) or document['symbol']!=symbol or symbol not in ('BTCUSDC','BTCUSDT')
+    clocked=isinstance(document,dict) and document.get('schema')==CLOCK_SCHEMA
+    _fields(document,{'schema','symbol','account_ref_sha256','action_hash','provenance','coverage','bindings','messages'}|
+        ({'clock_bracket'} if clocked else set()))
+    if (document['schema'] not in (SCHEMA,*OPTION_SCHEMAS) or document['symbol']!=symbol or symbol not in ('BTCUSDC','BTCUSDT')
             or document['action_hash']!=action_hash or document['provenance'] not in ('SYNTHETIC_TEST_FIXTURE','IMPORTED_UNVERIFIED')):
         raise ValueError('same frozen actions and explicit unverified native source required')
     _sha(action_hash);_sha(document['account_ref_sha256'])
     coverage=document['coverage'];_fields(coverage,{'start_ms','end_ms','gaps'})
     start,end=_integer(coverage['start_ms']),_integer(coverage['end_ms'])
     if not start<end or end-start>150000:raise ValueError('bounded native receipt window required')
+    clock=bracket_bounds(document['clock_bracket'],start_ms=start,end_ms=end) if clocked else None
+    if clocked and document['clock_bracket']['provenance']!=document['provenance']:
+        raise ValueError('receipt and clock provenance differ')
     fixed={a.order_id:a for a in actions if a.kind=='ORDER'}
     bindings=document['bindings'];messages=document['messages']
     if not isinstance(bindings,list) or len(bindings)>200 or not isinstance(messages,list) or len(messages)>10000:
         raise ValueError('bounded native bindings and messages required')
     by_venue={};by_client={};rows={};options=[]
     for binding in bindings:
-        _fields(binding,{'order_id','venue_order_id','client_order_id'}|({'time_in_force','reduce_only'} if document['schema']==OPTIONS_SCHEMA else set()))
+        _fields(binding,{'order_id','venue_order_id','client_order_id'}|({'time_in_force','reduce_only'} if document['schema'] in OPTION_SCHEMAS else set()))
         name=binding['order_id'];venue=_binding_id(binding['venue_order_id']);client=binding['client_order_id']
         if (name not in fixed or name in rows or venue in by_venue or not isinstance(client,str)
                 or not re.fullmatch(r'[.A-Z\:/a-z0-9_-]{1,36}',client) or client in by_client
                 or client.startswith(('autoclose-','adl_autoclose','settlement_autoclose-'))):
             raise ValueError('unique ordinary fixed-order binding required')
         action=fixed[name];by_venue[venue]=binding;by_client[client]=binding
-        if document['schema']==OPTIONS_SCHEMA:
+        if document['schema'] in OPTION_SCHEMAS:
             if (binding['time_in_force'] not in ('GTX','IOC') or type(binding['reduce_only']) is not bool or
                 binding['reduce_only']!=(name in reduce_only_ids)):
                 raise ValueError('bound order options differ from fixed scope')
@@ -137,7 +147,7 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         payload=load_json_without_duplicate_keys(raw);_fields(payload,{'e','E','T','o'})
         if payload['e']!='ORDER_TRADE_UPDATE':raise ValueError('unsupported native event type')
         event_ms,transaction_ms=_integer(payload['E']),_integer(payload['T'])
-        order=payload['o'];_fields(order,REQUIRED_ORDER,OPTIONAL_ORDER|({'er'} if document['schema']==OPTIONS_SCHEMA else set()))
+        order=payload['o'];_fields(order,REQUIRED_ORDER,OPTIONAL_ORDER|({'er'} if document['schema'] in OPTION_SCHEMAS else set()))
         _optional_order_fields(order)
         if 'er' in order:expiry_reason(order['er'])
         trade_ms=_integer(order['T']);venue=_integer(order['i'],2**63-1)
@@ -145,20 +155,25 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         if binding is None or order['c']!=binding['client_order_id']:
             raise ValueError('native order lacks a frozen binding')
         name=binding['order_id'];action=fixed[name]
-        tif=binding['time_in_force'] if document['schema']==OPTIONS_SCHEMA else 'GTX'
+        tif=binding['time_in_force'] if document['schema'] in OPTION_SCHEMAS else 'GTX'
         if (order['s']!=symbol or order['S']!=action.side or order['o']!='LIMIT' or order['f']!=tif
                 or order['ps']!='BOTH' or _amount(order['q'])!=action.quantity or _amount(order['p'])!=action.price
                 or type(order['m']) is not bool or type(order['R']) is not bool
                 or order['R']!=(name in reduce_only_ids) or order.get('cp',False) is not False
                 or order.get('ot','LIMIT')!='LIMIT' or order.get('pm','NONE')!='NONE'):
             raise ValueError('native order conflicts with fixed ordinary intent')
-        if not action.timestamp<=trade_ms<=transaction_ms<=event_ms<=received:
+        if clocked:
+            if (not trade_ms<=transaction_ms<=event_ms or
+                not compatible_event(trade_ms,claimed_at_ms=action.timestamp,received_at_ms=received,bounds=clock) or
+                not compatible_event(event_ms,claimed_at_ms=action.timestamp,received_at_ms=received,bounds=clock)):
+                raise ValueError('native event outside clock compatibility interval')
+        elif not action.timestamp<=trade_ms<=transaction_ms<=event_ms<=received:
             raise ValueError('noncausal native event clocks')
         state=STATES.get((order['x'],order['X']))
         if state is None:raise ValueError('unsupported native execution and state pair')
         quantity,total,price=_amount(order['l']),_amount(order['z']),_amount(order['L'])
         trade=order['x']=='TRADE';fingerprint=_digest(order);key=(venue,trade_id)
-        if document['schema']==OPTIONS_SCHEMA and trade and order['m']!=(tif=='GTX'):
+        if document['schema'] in OPTION_SCHEMAS and trade and order['m']!=(tif=='GTX'):
             raise ValueError('reported liquidity role conflicts with frozen GTX/IOC option')
         fee=_amount(order['n'],signed=True) if 'n' in order else None
         asset=order.get('N')
@@ -198,8 +213,10 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
     observed={'action_hash':action_hash,'symbol':symbol,'coverage':deepcopy(coverage),
         'provenance':{'kind':'SYNTHETIC_TEST_FIXTURE' if document['provenance']=='SYNTHETIC_TEST_FIXTURE' else 'IMPORTED_PRIVATE_RECEIPTS',
             'declared_source_sha256':source_hash},'orders':list(rows.values())}
+    if clocked:observed['clock_bracket']=deepcopy(document['clock_bracket'])
     evidence={'schema':document['schema'],'input_hash':source_hash,'account_ref_sha256':document['account_ref_sha256'],
-        **({'order_options':options} if document['schema']==OPTIONS_SCHEMA else {}),
+        **({'order_options':options} if document['schema'] in OPTION_SCHEMAS else {}),
+        **({'clock':clock} if clocked else {}),
         'symbol':symbol,'quote':symbol[3:],'provenance':document['provenance'],'source_verified':False,'actual_paid_fees':None,
         'messages_count':len(messages),'unique_messages':len(message_rows),'duplicate_messages':len(duplicates),
         'trades_count':len(trade_rows),'missing_commission_trades':missing,'all_commissions_in_quote':all_quote,
@@ -211,7 +228,9 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         'coverage':deepcopy(coverage),'economic_eligible':False,
         'limitations':['IMPORTED_SOURCE_UNVERIFIED','DECLARED_COVERAGE_NOT_TRANSPORT_ATTESTATION',
             'NO_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION','NO_CURRENCY_CONVERSION',
-            'FIXED_LIMIT_GTX_IOC_ONE_WAY_ONLY' if document['schema']==OPTIONS_SCHEMA else 'FIXED_LIMIT_GTX_ONE_WAY_ONLY']}
+            'FIXED_LIMIT_GTX_IOC_ONE_WAY_ONLY' if document['schema'] in OPTION_SCHEMAS else 'FIXED_LIMIT_GTX_ONE_WAY_ONLY']}
+    if clocked:evidence['limitations']+=['CLOCK_BRACKET_RETROSPECTIVE_ONLY','INTERIOR_CLOCK_DRIFT_ASSUMED_NOT_VERIFIED',
+        'NO_EXACT_LATENCY_OR_CAUSAL_CERTIFICATION']
     return observed,evidence
 
 

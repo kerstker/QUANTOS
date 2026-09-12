@@ -19,6 +19,7 @@ export interface DemoAccount {
   positions: Array<{symbol: string; position_side: 'BOTH' | 'LONG' | 'SHORT'; quantity: string; unrealized_profit: string}>;
 }
 export interface DemoReplayReport {
+  clock?:import('./demo-clock').DemoClockReport;
   opening: DemoOpeningAssessment | null;
   schema: 'DEMO_EXECUTION_REPLAY_V1'; environment: 'BINANCE_USDM_DEMO'; scope: 'TECHNICAL_VALIDATION_ONLY';
   source_verified: false; authoritative: false; submission_enabled: false;
@@ -111,6 +112,8 @@ export type DemoAccountBaselineSnapshot = {status: 'AVAILABLE'; report: DemoAcco
   {status: 'NO_SNAPSHOT' | 'DATA_BLOCKED' | 'CORRUPT_OR_UNREADABLE'; report: null};
 
 export interface DemoOpeningAssessment {
+  clock_boundary?:{policy:'CONSERVATIVE_VENUE_UPPER_BOUND_NOT_OBSERVATION_V1'; local_observed_at_ms:number;
+    venue_not_before_ms:number; clock_input_sha256:string; source_verified:false};
   schema: 'DEMO_OPENING_ASSESSMENT_V1'; scope: 'SINGLE_QUOTE_ACCOUNT_BOOK_TECHNICAL_PROJECTION';
   status: 'INPUTS_INCOMPLETE' | 'DECLARED_INPUTS_READY'; capture_hash: string; account_ref_sha256: string;
   opening_at_ms: number; quote_asset: 'USDT' | 'USDC'; initial_collateral: string; initial_position: string;

@@ -24,8 +24,10 @@ from services.execution.perpetual_ledger_v2 import (
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.ai_factory_store import digest
 from services.research.passive_receipt_calibration import validate_calibration,SCHEMA as TRACE_SCHEMA
-from services.research.binance_order_receipts import normalize_order_receipts,OPTIONS_SCHEMA
+from services.research.passive_receipt_calibration import validate_observed_trace
+from services.research.binance_order_receipts import normalize_order_receipts,CLOCK_SCHEMA,OPTION_SCHEMAS
 from services.research.demo_opening_projection import contract_spec, prepare_opening, OPENING_MANIFEST_SCHEMA
+from quantos.contracts.binance_demo_clock import bracket_bounds
 
 SCHEMA = "DEMO_EXECUTION_REPLAY_V1"
 ZERO_HASH = "0" * 64
@@ -36,6 +38,7 @@ REPLAY_SOURCE_SHA256 = hashlib.sha256(b"\n".join(
     for name in ("execution/perpetual_ledger_v2.py", "execution/passive_queue.py",
                  "governance/json_integrity.py", "research/ai_factory_store.py",
                  "research/binance_order_receipts.py", "research/passive_receipt_calibration.py",
+                 "../quantos/contracts/binance_demo_clock.py",
                  "../quantos/contracts/binance_demo_orders.py",
                  "research/demo_execution_journal.py", "research/demo_opening_projection.py",
                  "research/demo_account_baseline.py", "../quantos/contracts/binance_demo_account.py"))).hexdigest()
@@ -91,7 +94,8 @@ def prepare(manifest):
     if len({a.order_id for a in actions}) != len(actions):
         raise ValueError("DUPLICATE_FIXED_ORDER")
     native = manifest["native"]
-    _fields(native, "schema symbol account_ref_sha256 action_hash provenance coverage bindings")
+    clocked=isinstance(native,dict) and native.get('schema')==CLOCK_SCHEMA
+    _fields(native, "schema symbol account_ref_sha256 action_hash provenance coverage bindings"+(' clock_bracket' if clocked else ''))
     if native["symbol"] != spec.instrument_id or native["action_hash"] != digest(manifest["actions"]):
         raise ValueError("FROZEN_ACTION_IDENTITY_MISMATCH")
     window = native["coverage"]
@@ -101,8 +105,15 @@ def prepare(manifest):
         or not 2 <= end - start <= 150_000 or start // 86_400_000 != end // 86_400_000
         or any(not start <= a.timestamp <= end for a in actions)):
         raise ValueError("BOUNDED_SAME_DAY_WINDOW_REQUIRED")
+    period=start//86_400_000
+    if clocked:
+        clock=bracket_bounds(native['clock_bracket'],start_ms=start,end_ms=end)
+        lower,upper=start+clock['offset_lower_ms'],end+clock['offset_upper_ms']
+        if lower<0 or lower//86_400_000!=upper//86_400_000:
+            raise ValueError('CAPACITY_CLOCK_DAY_UNRESOLVED')
+        period=lower//86_400_000
     capacity = CapacityPolicy(venue_id="BINANCE_USDM", window_id=digest(manifest),
-        period_rule_id=BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, period_index=start // 86_400_000,
+        period_rule_id=BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, period_index=period,
         adv_notional=_decimal(manifest["adv_notional"]), max_participation_rate=_decimal(manifest["participation_rate"]),
         action=CapacityAction.REJECT)
     prepare_opening(manifest, spec)
@@ -116,9 +127,12 @@ def observations(manifest, messages, parsed):
     native = deepcopy(manifest["native"])
     native["messages"] = messages
     start, end = native["coverage"]["start_ms"], native["coverage"]["end_ms"]
-    if native['schema']==OPTIONS_SCHEMA:
+    if native['schema'] in OPTION_SCHEMAS:
         reduce_only=frozenset(b['order_id'] for b in native['bindings'] if b.get('reduce_only') is True)
         observed,evidence=normalize_order_receipts(native,actions,spec.instrument_id,native['action_hash'],reduce_only_ids=reduce_only)
+        if native['schema']==CLOCK_SCHEMA:
+            validate_observed_trace(observed,actions,spec.instrument_id,native['action_hash'])
+            return {'observed':observed,'native_observations':evidence}
         checked=validate_calibration({'schema':TRACE_SCHEMA,'cutoff_ms':start+1,'observed':observed},
             SimpleNamespace(symbol=spec.instrument_id,start_ms=start,end_ms=end),actions,native['action_hash'])
         return {**checked,'native_observations':evidence}
@@ -299,6 +313,9 @@ def replay_report(journal):
     elif any(t["reported_commission"] is None or t["commission_asset"] != spec.margin_asset
              or Decimal(t["reported_commission"]) < 0 for t in evidence["trade_rows"]):
         reason = "COMMISSION_NOT_SUPPORTED"
+    elif opening is not None and 'clock_boundary' in opening and any(
+            t['venue_trade_ms']<=opening['clock_boundary']['venue_not_before_ms'] for t in evidence['trade_rows']):
+        reason = 'OPENING_CLOCK_BOUNDARY_UNRESOLVED'
     if reason is None:
         try:
             ledger = replay_ledger(manifest, journal.parsed, evidence)
@@ -315,6 +332,7 @@ def replay_report(journal):
         comparison = "DECLARED_POSITION_MATCH" if Decimal(quantity) == Decimal(manifest["expected_end_position"]) else "DECLARED_POSITION_MISMATCH"
     return {"schema": SCHEMA, "environment": "BINANCE_USDM_DEMO", "scope": "TECHNICAL_VALIDATION_ONLY",
         "source_verified": False, "authoritative": False, "submission_enabled": False,
+        **({'clock':evidence['clock']} if 'clock' in evidence else {}),
         "manifest_hash": journal.manifest_hash, "declared_source_commit": manifest["source_commit"],
         "opening": opening,
         "query_binding_hash": query_binding_hash(fixed_order_bindings(manifest['actions'], manifest['native']['bindings']), manifest['native']['account_ref_sha256']),
@@ -337,5 +355,5 @@ def replay_report(journal):
         "recent_trades": evidence["trade_rows"][-50:],
         "limitations": ["OPENING_ACCOUNT_INPUTS_DECLARED_ONLY" if opening is not None else "INITIAL_FLAT_ACCOUNT_DECLARED_ONLY",
                         "OTHER_POSITIONS_MARKS_FROZEN_NO_OTHER_ORDER_CASHFLOWS", "NO_MARK_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION",
-                        "FIXED_LIMIT_GTX_IOC_ONE_WAY_CROSS_ONLY" if manifest['native']['schema']==OPTIONS_SCHEMA else
+                        "FIXED_LIMIT_GTX_IOC_ONE_WAY_CROSS_ONLY" if manifest['native']['schema'] in OPTION_SCHEMAS else
                         "FIXED_LIMIT_GTX_ONE_WAY_CROSS_ONLY", "IMPORTED_SOURCE_UNVERIFIED"]}

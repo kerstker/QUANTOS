@@ -88,6 +88,8 @@ def build_canonical_cash_snapshot(*, path: Path, directory: Path, as_of_ms: int)
             if raw['completed_at_ms'] > as_of_ms or any(r['received_at_ms'] > as_of_ms for r in records):
                 return {'status': 'DATA_BLOCKED', 'report': None}
             report = project_cash_window(journal, raw)
+        if report['observed_at_ms']>as_of_ms:
+            return {'status':'DATA_BLOCKED','report':None}
         return {'status': 'AVAILABLE', 'report': report}
     except Exception:
         return {'status': 'CORRUPT_OR_UNREADABLE', 'report': None}
@@ -181,7 +183,8 @@ def build_execution_snapshot(*, path: Path, as_of_ms: int):
     try:
         with DemoExecutionJournal(path, read_only=True) as journal:
             report = replay_report(journal)
-        if report["observed_at_ms"] is not None and report["observed_at_ms"] > as_of_ms:
+        if (report["observed_at_ms"] is not None and report["observed_at_ms"] > as_of_ms or
+                report.get('clock',{}).get('available_at_ms',0)>as_of_ms):
             return {"status": "DATA_BLOCKED", "report": None}
         return {"status": "AVAILABLE", "report": report}
     except Exception:

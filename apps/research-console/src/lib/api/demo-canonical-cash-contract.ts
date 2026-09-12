@@ -1,3 +1,4 @@
+import {clockReportValid} from './demo-clock-contract';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const decimal = (v: unknown): v is string => typeof v === 'string' && /^-?\d{1,35}(\.\d{1,24})?$/.test(v);
@@ -10,6 +11,8 @@ export function canonicalCashValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (['INPUTS_MISSING','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status))) return v.report===null;
   const r=v.report;
+  if (object(r)&&r.clock!==undefined&&(!clockReportValid(r.clock,asOf)||
+      !Number.isSafeInteger(r.observed_at_ms)||Number(r.observed_at_ms)<r.clock.available_at_ms)) return false;
   if (v.status!=='AVAILABLE' || !object(r) || r.schema!=='DEMO_CANONICAL_CASH_COMPARISON_V1' ||
       r.environment!=='BINANCE_USDM_DEMO' || r.scope!=='TECHNICAL_VALIDATION_ONLY' ||
       !['MATCHED_REPORTED_INPUTS','DIFFERENCE_FOUND','UNRESOLVED'].includes(String(r.status)) ||

@@ -1,6 +1,7 @@
 import type {DemoCanonicalCashSnapshot} from '@/lib/types/demo-canonical-cash';
 import {Empty, Metric, Panel} from './components';
 import {stamp} from './data';
+import {DemoClockEvidence} from './DemoClockEvidence';
 
 const issues: Record<string,string> = {
   ACCOUNT_NAMESPACE_MISMATCH:'现金窗口和成交回执来自不同账户命名空间。',
@@ -25,6 +26,7 @@ const issues: Record<string,string> = {
   DECLARED_POSITION_MISMATCH:'账本期末数量与声明目标不符。',
   RECEIPT_SNAPSHOT_CHANGED:'读取期间回执已推进，请刷新以比较同一份记录。',
   CASH_BEFORE_BOUND_OPENING:'存在账本起点之前的资金流水，不能重复计入。',
+  CASH_CLOCK_INTERIOR_UNRESOLVED:'资金流水的可能时间区间触及钱包采样边界，暂不能归入本次现金核对。',
 };
 const titles = {MATCHED_REPORTED_INPUTS:'报告输入与唯一账本相符',DIFFERENCE_FOUND:'唯一账本核对存在差额',UNRESOLVED:'唯一账本核对待补齐'};
 
@@ -37,6 +39,7 @@ export function DemoCanonicalCash({snapshot, refreshFailed}: {snapshot?: DemoCan
       <div className="s-demo-replay-heading"><h3>{titles[r.status]}</h3><span className="s-demo-source">{r.symbol} · {r.quote_asset}</span></div>
       <p className="s-demo-description">固定输入截至 {stamp(r.observed_at_ms,true)}。数值相符仅说明这些报告输入可重放，不代表策略盈利或完整场所验收。</p>
       {refreshFailed && <p role="status">刷新失败，以下保留上次成功读取的核对记录。</p>}
+      <DemoClockEvidence clock={r.clock}/>
       {!!r.issues.length && <div className="s-demo-notice" role="status"><ul>{r.issues.map(i=><li key={i}>{issues[i] ?? `核对未完成（${i}）`}</li>)}</ul></div>}
       <div className="s-metrics s-demo-origin-metrics">
         <Metric label="账本期末钱包" value={r.canonical_wallet ?? '待核对'} note={r.quote_asset}/>
