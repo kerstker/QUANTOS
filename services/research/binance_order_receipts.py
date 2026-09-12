@@ -53,6 +53,15 @@ def _binding_id(value):
     return _integer(int(value),2**63-1)
 
 
+def expiry_reason(value):
+    """Validate metadata without coercing its retained native representation."""
+    if type(value) is str:
+        if re.fullmatch(r'0|[1-9][0-9]{0,18}',value) is None:
+            raise ValueError('exact expiry reason token required')
+        return _integer(int(value),2**63-1)
+    return _integer(value,2**63-1)
+
+
 def _amount(value, *, signed=False):
     pattern = r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?' if signed else r'(?:0|[1-9][0-9]*)(?:\.[0-9]+)?'
     if not isinstance(value,str) or len(value)>64 or not re.fullmatch(pattern,value):
@@ -128,8 +137,9 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         payload=load_json_without_duplicate_keys(raw);_fields(payload,{'e','E','T','o'})
         if payload['e']!='ORDER_TRADE_UPDATE':raise ValueError('unsupported native event type')
         event_ms,transaction_ms=_integer(payload['E']),_integer(payload['T'])
-        order=payload['o'];_fields(order,REQUIRED_ORDER,OPTIONAL_ORDER)
+        order=payload['o'];_fields(order,REQUIRED_ORDER,OPTIONAL_ORDER|({'er'} if document['schema']==OPTIONS_SCHEMA else set()))
         _optional_order_fields(order)
+        if 'er' in order:expiry_reason(order['er'])
         trade_ms=_integer(order['T']);venue=_integer(order['i'],2**63-1)
         trade_id=_integer(order['t'],2**63-1);binding=by_venue.get(venue)
         if binding is None or order['c']!=binding['client_order_id']:

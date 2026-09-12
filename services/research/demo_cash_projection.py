@@ -64,7 +64,13 @@ def project_cash_window(journal, capture):
         if Decimal(wallet['opening_wallet']) != Decimal(manifest['initial_collateral']):
             issues.append('OPENING_WALLET_MISMATCH')
     bounds = cash['bounds']; window = manifest['native']['coverage']
-    if bounds is None or not (window['start_ms'] <= bounds['query_start_ms'] and window['end_ms'] >= bounds['query_end_ms']):
+    # A bound flat account origin can lie inside the initial cash read guard.
+    # Its inventory is the separate starting fact; replay begins strictly after
+    # it. Any reported flow at/before that origin is rejected below, and the
+    # initial wallet must match. Do not manufacture receipts before the origin.
+    required_start = None if bounds is None else max(bounds['query_start_ms'],
+        opening['opening_at_ms']+1 if opening is not None else bounds['query_start_ms'])
+    if bounds is None or not (window['start_ms'] <= required_start and window['end_ms'] >= bounds['query_end_ms']):
         issues.append('RECEIPT_WINDOW_DOES_NOT_COVER_CASH')
     # No initial position/unknown old flows may be carried into this bounded
     # flat projection. Every planned action must follow the opening observation.

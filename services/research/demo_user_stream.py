@@ -14,7 +14,7 @@ import time
 
 from quantos.contracts.binance_demo_account import _decimal, _symbol, _text, _bool, _int, _side
 from services.governance.json_integrity import load_json_without_duplicate_keys
-from services.research.binance_order_receipts import REQUIRED_ORDER, OPTIONAL_ORDER
+from services.research.binance_order_receipts import REQUIRED_ORDER, OPTIONAL_ORDER, expiry_reason
 
 SCHEMA = 'DEMO_USER_STREAM_V1'
 MAX_MESSAGE_BYTES = 131072
@@ -85,7 +85,7 @@ def _validate_payload(p):
     elif kind=='ORDER_TRADE_UPDATE':
         _fields(p,{'e','E','T','o'});o=p['o'];_fields(o,REQUIRED_ORDER,OPTIONAL_ORDER|{'er'})
         parsers={'s':_symbol,'c':lambda v:_text(v,r'[.A-Z:/a-z0-9_-]{1,36}'),'S':lambda v:_enum(v,{'BUY','SELL'}),
-                 'ps':_side,**dict.fromkeys(('i','t','T','si','ss','gtd','er'),_int),
+                 'ps':_side,**dict.fromkeys(('i','t','T','si','ss','gtd'),_int),'er':expiry_reason,
                  **dict.fromkeys(('q','p','l','z','L','ap','sp','n','b','a','AP','cr','rp'),_decimal),
                  **dict.fromkeys(('m','R','cp','pP'),_bool),'N':lambda v:None if v is None else _text(v),
                  **dict.fromkeys(('o','f','x','X','wt','ot','V','pm'),_text)}

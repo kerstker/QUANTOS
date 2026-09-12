@@ -61,6 +61,16 @@ def v2_spec(tif='IOC',reduce_only=False):
     return spec
 
 
+def test_v2_expiry_reason_is_retained_without_reinterpreting_v1_history():
+    source=v2_spec()
+    for i in range(3):edit_message(source,i,lambda p:p['o'].update(er='0'))
+    raw=source['raw_observed']
+    _,evidence=normalize_order_receipts(raw,ACTIONS,'BTCUSDC',HASH)
+    assert evidence['trades_count']==2 and raw['messages'][0]['raw_utf8'].endswith('"er":"0"}}')
+    old=native_spec();edit_message(old,0,lambda p:p['o'].update(er='0'))
+    with pytest.raises(ValueError):parse(old)
+
+
 def test_v2_ioc_observations_bind_options_and_keep_reported_taker_costs():
     spec=v2_spec();raw=spec['raw_observed'];original=deepcopy(raw)
     _,evidence=normalize_order_receipts(raw,ACTIONS,'BTCUSDC',HASH)

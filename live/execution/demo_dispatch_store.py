@@ -76,13 +76,14 @@ def _hash(record):
 
 class DemoDispatchStore:
     """Use only an executor-controlled state path; deployment enforces custody."""
-    def __init__(self,path, *, create=False):
-        self.path=Path(path).absolute();self._lock=threading.RLock()
+    def __init__(self,path, *, create=False, read_only=False):
+        if create and read_only:raise DemoDispatchConflict('DEMO_DISPATCH_READ_ONLY')
+        self.path=Path(path).absolute();self._lock=threading.RLock();self.read_only=read_only
         if self.path.is_symlink():raise DemoDispatchConflict('DEMO_DISPATCH_STATE_SYMLINK')
         if create:
             fd=os.open(self.path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
             os.close(fd)
-        self._conn=sqlite3.connect(self.path.as_uri()+'?mode=rw',uri=True,timeout=5,check_same_thread=False)
+        self._conn=sqlite3.connect(self.path.as_uri()+('?mode=ro' if read_only else '?mode=rw'),uri=True,timeout=5,check_same_thread=False)
         self._conn.row_factory=sqlite3.Row
         try:
             self._conn.execute('PRAGMA synchronous=FULL')
@@ -138,6 +139,7 @@ class DemoDispatchStore:
             finally:self._conn.rollback()
 
     def reserve(self,envelope_bytes, *, expected_context,orders,now_ms):
+        if self.read_only:raise DemoDispatchConflict('DEMO_DISPATCH_READ_ONLY')
         # Detached exact input bytes prevent caller mutations after verification.
         frozen_orders=json.loads(_canonical(orders));context=json.loads(_canonical(expected_context))
         with self._lock:
@@ -217,7 +219,20 @@ class DemoDispatchStore:
                 raise DemoDispatchConflict('DEMO_WIRE_STATE_INVALID') from None
             finally:self._conn.rollback()
 
+    def evidence_snapshot(self):
+        """Read reservations and their wire chain from one verified SQLite view."""
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                reservations = self._verified_rows()
+                return {'reservations': reservations, 'wire': self._wire_rows(reservations)}
+            except (sqlite3.Error, ValueError, TypeError, KeyError):
+                raise DemoDispatchConflict('DEMO_DISPATCH_EVIDENCE_INVALID') from None
+            finally:
+                self._conn.rollback()
+
     def _append_wire(self, *,kind,reservation_sha256,client_order_id,at_ms,payload):
+        if self.read_only:raise DemoDispatchConflict('DEMO_DISPATCH_READ_ONLY')
         with self._lock:
             try:
                 self._conn.execute('BEGIN IMMEDIATE')

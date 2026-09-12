@@ -25,6 +25,22 @@ def test_partial_funding_update_preserves_exact_facts_without_inventing_flat_pos
     assert event['response_sha256']==hashlib.sha256(raw.encode()).hexdigest()
 
 
+@pytest.mark.parametrize('value', ['0','2',0,2])
+def test_order_expiry_reason_preserves_exact_string_or_existing_integer_encoding(value):
+    from tests.research.test_binance_order_receipts import message
+    p=message(NOW,'NEW');p['o']['er']=value
+    raw=json.dumps(p);event=normalize_message(raw)
+    assert event['payload']['o']['er']==value and type(event['payload']['o']['er']) is type(value)
+    assert event['raw_utf8']==raw
+
+
+@pytest.mark.parametrize('value', [True, 0.0, '0.0', '01', '-1', '1e0', '', str(2**63)])
+def test_expiry_reason_rejects_inexact_or_oversized_tokens(value):
+    from tests.research.test_binance_order_receipts import message
+    p=message(NOW,'NEW');p['o']['er']=value
+    with pytest.raises(ValueError):normalize_message(json.dumps(p))
+
+
 def test_balance_only_funding_update_preserves_omitted_position_field(tmp_path):
     body=account_event();body['a'].pop('P')
     raw=json.dumps(body);event=normalize_message(raw)

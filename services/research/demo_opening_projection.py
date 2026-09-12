@@ -42,7 +42,9 @@ def sha(value):
 
 @ledger_decimal_context()
 def contract_spec(raw):
-    fields(raw, 'decimal_context margin_admission_policy instrument_id contract_type margin_asset contract_multiplier quantity_step min_quantity min_notional liquidation_fee_rate settlement_quantum margin_brackets')
+    finite = isinstance(raw, dict) and 'new_risk_notional_cap' in raw
+    fields(raw, 'decimal_context margin_admission_policy instrument_id contract_type margin_asset contract_multiplier quantity_step min_quantity min_notional liquidation_fee_rate settlement_quantum margin_brackets'+
+           (' new_risk_notional_cap margin_overflow_policy' if finite else ''))
     if not isinstance(raw['margin_brackets'], list) or not 1 <= len(raw['margin_brackets']) <= 20:
         raise ValueError('BOUNDED_MARGIN_BRACKETS_REQUIRED')
     brackets = []
@@ -51,7 +53,9 @@ def contract_spec(raw):
         brackets.append(MarginBracket(**{k: None if v is None else decimal(v) for k, v in row.items()}))
     spec = ContractSpec(**{k: raw[k] for k in ('instrument_id', 'contract_type', 'margin_asset')},
         **{k: decimal(raw[k]) for k in ('contract_multiplier', 'quantity_step', 'min_quantity', 'min_notional', 'liquidation_fee_rate', 'settlement_quantum')},
-        margin_brackets=tuple(brackets))
+        margin_brackets=tuple(brackets),
+        **({'new_risk_notional_cap':decimal(raw['new_risk_notional_cap']),
+            'margin_overflow_policy':raw['margin_overflow_policy']} if finite else {}))
     if spec.as_canonical_dict() != raw:
         raise ValueError('CONTRACT_VERSION_OR_QUOTE_MISMATCH')
     if spec.contract_multiplier != Decimal(1):

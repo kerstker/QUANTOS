@@ -78,6 +78,40 @@ def _rate(leverage):
 
 
 @ledger_decimal_context()
+def parse_margin_table(table, *, symbol, selected_leverage, selected_cap=None):
+    """Shared exact observed table; omitted symbol cap is explicitly not known.
+
+    This parser does not attest the source or authorize new exposure. A caller
+    omitting the separate symbol cap must retain that limitation in its output.
+    """
+    selected = _integer(selected_leverage, 1, 125)
+    _fields(table, {'symbol', 'brackets'}, {'notionalCoef'})
+    if table['symbol'] != symbol:
+        raise ValueError('margin table symbol mismatch')
+    if 'notionalCoef' in table and _amount(table['notionalCoef']) != 1:
+        raise ValueError('adjusted notional coefficient semantics are unsupported')
+    rows = table['brackets']
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
+        raise ValueError('bounded finite account margin table required')
+    brackets = []; facts = []; previous_max = 125; eligible_cap = Decimal('0')
+    for index, row in enumerate(rows):
+        _fields(row, {'bracket', 'initialLeverage', 'notionalFloor', 'notionalCap', 'maintMarginRatio', 'cum'})
+        if _integer(row['bracket'], 1, 100) != index+1:
+            raise ValueError('ordered account margin brackets required')
+        maximum = _integer(row['initialLeverage'], 1, previous_max)
+        previous_max = maximum
+        bracket = MarginBracket(_amount(row['notionalFloor']), _amount(row['notionalCap']),
+            _rate(min(selected, maximum)), _amount(row['maintMarginRatio'], maximum=Decimal('1')), _amount(row['cum']))
+        brackets.append(bracket)
+        facts.append({**bracket.as_canonical_dict(), 'maximum_initial_leverage': maximum})
+        if selected <= maximum: eligible_cap = bracket.notional_cap
+    cap = eligible_cap if selected_cap is None else min(_amount(selected_cap), eligible_cap)
+    if cap <= 0:
+        raise ValueError('selected leverage has no supported positive account capacity')
+    return tuple(brackets), facts, cap
+
+
+@ledger_decimal_context()
 def apply_account_terms(terms, environment, *, symbol, start_ms, end_ms):
     """Return a new rule set, bound manifest and ordinary simulation fee rates."""
     try:
@@ -120,28 +154,8 @@ def _apply(terms, environment, *, symbol, start_ms, end_ms):
         raise ValueError('only fixed cross margin simulation is supported')
     selected = _integer(config['leverage'], 1, 125)
     selected_cap = _amount(config['maxNotionalValue'])
-    table = before['brackets']
-    _fields(table, {'symbol', 'brackets'}, {'notionalCoef'})
-    if 'notionalCoef' in table and _amount(table['notionalCoef']) != 1:
-        raise ValueError('adjusted notional coefficient semantics are unsupported')
-    rows = table['brackets']
-    if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
-        raise ValueError('bounded finite account margin table required')
-    brackets = []; facts = []; previous_max = 125; eligible_cap = Decimal('0')
-    for index, row in enumerate(rows):
-        _fields(row, {'bracket', 'initialLeverage', 'notionalFloor', 'notionalCap', 'maintMarginRatio', 'cum'})
-        if _integer(row['bracket'], 1, 100) != index+1:
-            raise ValueError('ordered account margin brackets required')
-        maximum = _integer(row['initialLeverage'], 1, previous_max)
-        previous_max = maximum
-        bracket = MarginBracket(_amount(row['notionalFloor']), _amount(row['notionalCap']),
-            _rate(min(selected, maximum)), _amount(row['maintMarginRatio'], maximum=Decimal('1')), _amount(row['cum']))
-        brackets.append(bracket)
-        facts.append({**bracket.as_canonical_dict(), 'maximum_initial_leverage': maximum})
-        if selected <= maximum: eligible_cap = bracket.notional_cap
-    cap = min(selected_cap, eligible_cap)
-    if cap <= 0:
-        raise ValueError('selected leverage has no supported positive account capacity')
+    brackets, facts, cap = parse_margin_table(before['brackets'], symbol=symbol,
+                                             selected_leverage=selected, selected_cap=selected_cap)
     old_rule = environment['contract_rules'][0]
     spec = replace(old_rule.spec, margin_brackets=tuple(brackets), new_risk_notional_cap=cap,
                    margin_overflow_policy=OVERFLOW)

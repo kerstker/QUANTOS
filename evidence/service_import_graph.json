@@ -539,6 +539,11 @@
           "path": "services/console/api/binance_demo_views.py"
         },
         {
+          "line": 19,
+          "module": "services.research.demo_cash_projection",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1371,9 +1376,14 @@
           "path": "services/research/ai_factory_sleeves.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/binance_order_receipts.py"
+        },
+        {
+          "line": 10,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_cash_projection.py"
         },
         {
           "line": 16,
@@ -1381,12 +1391,12 @@
           "path": "services/research/demo_cash_window.py"
         },
         {
-          "line": 17,
+          "line": 18,
           "module": "services.execution.passive_queue",
           "path": "services/research/demo_execution_journal.py"
         },
         {
-          "line": 18,
+          "line": 19,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_execution_journal.py"
         },
@@ -1399,6 +1409,16 @@
           "line": 11,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_order_recovery.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.frozen_account_terms",
+          "path": "services/research/demo_origin_contract.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_origin_contract.py"
         },
         {
           "line": 13,
@@ -1523,7 +1543,7 @@
     {
       "references": [
         {
-          "line": 13,
+          "line": 14,
           "module": "services.governance.json_integrity",
           "path": "services/research/binance_order_receipts.py"
         },
@@ -1533,7 +1553,7 @@
           "path": "services/research/demo_cash_window.py"
         },
         {
-          "line": 23,
+          "line": 24,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_execution_journal.py"
         },
@@ -1909,7 +1929,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "e96f76a79942542e3826a6112b382f2667bc5843dae4b454fa36ba8b55d0315b",
+  "graph_sha256": "ee46e72985545171d1c75d689cedffb9a7138af7bc8383c0448028eb7782f6f3",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1947,7 +1967,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 570,
+  "source_file_count": 572,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -36,6 +36,21 @@ def test_committed_grant_and_exact_orders_survive_restart_and_cannot_replay(tmp_
         assert reopened.snapshot()==[row]
 
 
+def test_operator_evidence_view_is_read_only_and_cannot_claim_a_send(tmp_path,monkeypatch):
+    _,orders,context,envelope=configured(monkeypatch);path=tmp_path/'dispatch.db'
+    with DemoDispatchStore(path,create=True) as writer:
+        row=reserve(writer,orders,context,envelope)
+    before=path.read_bytes()
+    with DemoDispatchStore(path,read_only=True) as store:
+        assert store.evidence_snapshot()=={'reservations':[row],'wire':[]}
+        with pytest.raises(DemoDispatchConflict,match='READ_ONLY'):
+            reserve(store,orders,context,envelope)
+        with pytest.raises(DemoDispatchConflict,match='READ_ONLY'):
+            store.claim_send(reservation_sha256=row['record_hash'],client_order_id=orders[0]['newClientOrderId'],
+                request_sha256='a'*64,preflight_sha256='b'*64,now_ms=NOW+1)
+    assert path.read_bytes()==before
+
+
 def test_different_approval_cannot_reuse_an_already_reserved_client_id(tmp_path,monkeypatch):
     private,orders,context,envelope=configured(monkeypatch)
     with DemoDispatchStore(tmp_path/'dispatch.db',create=True) as store:
