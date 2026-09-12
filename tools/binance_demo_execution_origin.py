@@ -93,7 +93,7 @@ def get_response(path, *, params, headers):
     return raw
 
 
-def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=None):
+def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=None, credential_reader=None):
     get, clock_ms = get or get_response, clock_ms or now_ms
     started = clock_ms()
     report = {'schema': ACCOUNT_TERMS_SCHEMA, 'status': 'NOT_REQUESTED', 'symbol': symbol,
@@ -106,7 +106,10 @@ def collect(*, credential_file, symbol, operator_read=False, get=None, clock_ms=
     kind, sent, offset = 'credentials', started, 0
     response_hash, server_time = None, None
     try:
-        key, secret = load_credentials(credential_file)
+        # Internal composition seam; the CLI still has only its original
+        # operator-owned file contract. Protected tools supply their fixed
+        # independently controlled reader without patching this module.
+        key, secret = (credential_reader or load_credentials)(credential_file)
         report['account_ref_sha256'] = hashlib.sha256(('BINANCE_USDM_DEMO:'+key).encode()).hexdigest()
         for kind, path in READ_PLAN:
             sent = clock_ms()
