@@ -46,3 +46,27 @@ def test_uninstalled_executor_does_not_read_any_credential_file(monkeypatch):
     monkeypatch.setattr(demo_authority,'load_registry_for_executor',lambda:(_ for _ in ()).throw(ValueError('uninstalled fixture')))
     monkeypatch.setattr(demo_authority,'_read_root_owned_json',lambda path:pytest.fail('credentials must not be read'))
     with pytest.raises(ValueError):transport._credentials('a'*64)
+
+
+def test_cancel_transport_has_one_delete_to_fixed_demo_host_and_bounded_response(monkeypatch):
+    calls=[]
+    class Response:
+        status=200
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+        def read(self,n):assert n==65537;return b'{}'
+    class Opener:
+        def open(self,request,timeout):calls.append((request,timeout));return Response()
+    def build(*handlers):
+        assert any(isinstance(h,urllib.request.ProxyHandler) and h.proxies=={} for h in handlers)
+        assert any(isinstance(h,transport._NoRedirect) for h in handlers)
+        return Opener()
+    monkeypatch.setattr(urllib.request,'build_opener',build)
+    assert transport._http_delete_once(b'origClientOrderId=QDtest000001',{})==(200,b'{}')
+    request,timeout=calls[0]
+    assert request.get_method()=='DELETE' and request.data is None and timeout==10
+    assert request.full_url=='https://demo-fapi.binance.com/fapi/v1/order?origClientOrderId=QDtest000001'
+    def fail(*a,**kw):calls.append('failed');raise urllib.error.URLError('isolated timeout')
+    monkeypatch.setattr(Opener,'open',fail)
+    with pytest.raises(urllib.error.URLError):transport._http_delete_once(b'origClientOrderId=QDtest000001',{})
+    assert calls[-1]=='failed' and len(calls)==2

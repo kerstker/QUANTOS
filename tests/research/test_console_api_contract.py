@@ -30,6 +30,30 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_cancellation_contract_keeps_unknown_and_success_responses_pending_recovery(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_cancel_status import build_status,save
+    from live.execution.demo_cancel_store import DemoCancelStore
+    from tests.live.test_demo_cancel_store import configured,NOW
+    _,commands,context,envelope=configured(monkeypatch);directory=tmp_path/'cancel-display'
+    monkeypatch.setattr(views,'_cancel_status_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+10)*1_000_000)
+    with DemoCancelStore(tmp_path/'cancel.db',create=True) as store:
+        grant=store.reserve(envelope,context=context,commands=commands,now_ms=NOW)
+        store.claim(grant['record_hash'],commands[0]['origClientOrderId'],request_sha256='a'*64,now_ms=NOW+1)
+        raw=build_status(store.snapshot(),observed_at_ms=NOW+1);path=save(directory,raw)
+        before={p.name:p.read_bytes() for p in directory.iterdir()}
+        payload=client.get('/api/v1/console/binance-demo').json()
+        assert payload['cancellation_status']=={'status':'AVAILABLE','report':raw}
+        assert payload['read_only'] is True and payload['submission_enabled'] is False
+        assert raw['unresolved_responses']==1 and raw['phase']=='ORIGINAL_ID_QUERY_RECOVERY_REQUIRED'
+        assert before=={p.name:p.read_bytes() for p in directory.iterdir()}
+        monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1_000_000)
+        assert client.get('/api/v1/console/binance-demo').json()['cancellation_status']=={'status':'DATA_BLOCKED','report':None}
+        path.write_text('{}')
+        assert client.get('/api/v1/console/binance-demo').json()['cancellation_status']=={'status':'CORRUPT_OR_UNREADABLE','report':None}
+
+
 def test_demo_oms_status_is_read_only_and_rejects_future_or_corrupt_projection(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_oms_status import build_status,save
@@ -177,7 +201,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

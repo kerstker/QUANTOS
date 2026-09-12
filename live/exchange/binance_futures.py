@@ -108,6 +108,17 @@ def _demo_exact_get_once(path,query,headers):
         finally:exc.close()
 
 
+def _demo_exact_delete_once(query,headers):
+    """One original-ID Demo cancellation, with the same bounded transport."""
+    req=urllib.request.Request(DEMO_REST_BASE+'/fapi/v1/order?'+query.decode('ascii'),headers=headers,method='DELETE')
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}),_DemoNoRedirect()).open(req,timeout=10) as response:
+            return response.status,response.read(65537)
+    except urllib.error.HTTPError as exc:
+        try:return exc.code,exc.read(65537)
+        finally:exc.close()
+
+
 class BinanceFuturesAdapter:
     TESTNET_BASE = DEMO_REST_BASE
     MAINNET_BASE = "https://fapi.binance.com"

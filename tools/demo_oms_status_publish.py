@@ -7,23 +7,25 @@ import argparse
 import json
 from pathlib import Path
 
-from services.research.demo_oms_status import load_latest,save
+from services.research import demo_oms_status,demo_cancel_status
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir',type=Path,required=True)
     parser.add_argument('--output-dir',type=Path,required=True)
+    parser.add_argument('--kind',choices=('oms','cancellation'),default='oms')
     args=parser.parse_args(argv)
+    model=demo_cancel_status if args.kind=='cancellation' else demo_oms_status
     try:
         source=args.source_dir.resolve(strict=True);output=args.output_dir.resolve()
         if source==output or source in output.parents or output in source.parents:
             raise ValueError('OMS_DISPLAY_OVERLAPPING_DIRECTORIES')
-        raw=load_latest(source)
+        raw=model.load_latest(source)
         if (output/'latest.json').exists() or (output/'latest.json').is_symlink():
-            previous=load_latest(output)
+            previous=model.load_latest(output)
             if previous['observed_at_ms']>raw['observed_at_ms']:raise ValueError('OMS_DISPLAY_TIME_REVERSED')
-        save(output,raw)
+        model.save(output,raw)
         print(json.dumps({'status':'PUBLISHED_UNVERIFIED_DISPLAY','phase':raw['phase'],
             'source_verified':False,'submission_enabled':False,'cash_reconciled':False}))
         return 0

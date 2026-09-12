@@ -16,6 +16,21 @@ def test_publish_copies_validated_display_only_and_preserves_source(tmp_path,cap
     assert out['source_verified'] is False and out['submission_enabled'] is False
 
 
+def test_cancellation_publish_uses_its_own_schema_and_rejects_oms_mixup(tmp_path,monkeypatch):
+    from tools.demo_oms_status_publish import main
+    from services.research import demo_cancel_status
+    from live.execution.demo_cancel_store import DemoCancelStore
+    from tests.live.test_demo_cancel_store import configured,NOW
+    _,commands,context,envelope=configured(monkeypatch)
+    with DemoCancelStore(tmp_path/'cancel.db',create=True) as store:
+        store.reserve(envelope,context=context,commands=commands,now_ms=NOW)
+        raw=demo_cancel_status.build_status(store.snapshot(),observed_at_ms=NOW)
+    source=tmp_path/'private';dest=tmp_path/'public';demo_cancel_status.save(source,raw)
+    args=['--source-dir',str(source),'--output-dir',str(dest)]
+    assert main(args)==3 and not dest.exists()
+    assert main([*args,'--kind','cancellation'])==0 and demo_cancel_status.load_latest(dest)==raw
+
+
 @pytest.mark.parametrize('failure',['corrupt','backwards','same_directory','nested_source','nested_output'])
 def test_publish_rejects_invalid_or_overlapping_input_without_replacing_good_view(tmp_path,capsys,failure):
     from tools.demo_oms_status_publish import main

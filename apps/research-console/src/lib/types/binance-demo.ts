@@ -4,6 +4,7 @@ import type {DemoCashWindowSnapshot} from './demo-cash-window';
 import type {DemoExecutionOriginSnapshot} from './demo-execution-origin';
 import type {DemoCanonicalCashSnapshot} from './demo-canonical-cash';
 import type {DemoOmsStatusSnapshot} from './demo-oms-status';
+import type {DemoCancelStatusSnapshot} from './demo-cancel-status';
 export interface DemoSymbol {
   symbol: string; quote_asset: string; margin_asset: string; contract_type: 'PERPETUAL';
   status: 'TRADING'; tick_size: string; step_size: string; min_qty: string; min_notional: string;
@@ -72,6 +73,7 @@ export interface BinanceDemoPayload {
   execution_origin: DemoExecutionOriginSnapshot;
   canonical_cash: DemoCanonicalCashSnapshot;
   oms_status: DemoOmsStatusSnapshot;
+  cancellation_status: DemoCancelStatusSnapshot;
 }
 
 export interface DemoPrivateCheckReport {

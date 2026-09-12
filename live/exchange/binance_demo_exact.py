@@ -13,10 +13,12 @@ from live.execution import demo_authority
 from live.exchange.binance_futures import (
     _DemoNoRedirect as _NoRedirect, _demo_exact_encode_params,
     _demo_exact_post_once as _http_once, _demo_exact_get_once as _http_get_once,
+    _demo_exact_delete_once as _http_delete_once,
 )
 from quantos.contracts.binance_demo import DEMO_REST_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.validation.demo_submission import validate_orders
+from services.validation.demo_cancellation import validate_commands
 
 _CREDENTIAL_FILE=Path('/etc/quantos/demo-submission/credentials.json')
 
@@ -65,3 +67,21 @@ def _query_reserved(order, *,timestamp_ms,account_ref):
         'timestamp':timestamp_ms,'recvWindow':5000})
     query+=b'&signature='+hmac.new(secret.encode(),query,hashlib.sha256).hexdigest().encode()
     return _http_get_once('/fapi/v1/order',query,{'X-MBX-APIKEY':key})
+
+
+def cancellation_payload(command,timestamp_ms):
+    validate_commands([command])
+    if type(timestamp_ms) is not int or not 0<timestamp_ms<=9007199254740991:raise ValueError('DEMO_CANCEL_TIME')
+    return _demo_exact_encode_params({**command,'timestamp':timestamp_ms,'recvWindow':5000})
+
+
+def cancellation_sha256(command,timestamp_ms):
+    return hashlib.sha256(b'DELETE\0'+DEMO_REST_BASE.encode()+b'/fapi/v1/order\0'+cancellation_payload(command,timestamp_ms)).hexdigest()
+
+
+def _cancel_claimed(command,*,timestamp_ms,account_ref,final_check):
+    query=cancellation_payload(command,timestamp_ms)
+    key,secret=_credentials(account_ref)
+    query+=b'&signature='+hmac.new(secret.encode(),query,hashlib.sha256).hexdigest().encode()
+    final_check()
+    return _http_delete_once(query,{'X-MBX-APIKEY':key})
