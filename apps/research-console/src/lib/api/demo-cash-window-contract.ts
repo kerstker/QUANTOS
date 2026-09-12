@@ -6,12 +6,51 @@ const code = (v: unknown) => typeof v === 'string' && /^[A-Z0-9_]{1,80}$/.test(v
 const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const list = (v: unknown, max: number, check: (x: unknown) => boolean): v is unknown[] =>
   Array.isArray(v) && v.length <= max && v.every(check);
+const kinds = ['clock_before','wallet_before','wallet_after','clock_after','income'];
+const reasons = ['REQUEST_FAILED','RATE_LIMITED','AUTHENTICATION_REJECTED','RESPONSE_TOO_LARGE',
+  'RESPONSE_INVALID','CLOCK_UNRELIABLE','CAPTURE_BUDGET_EXHAUSTED'];
+
+function attemptsValid(r: Record<string,unknown>): boolean {
+  if (r.schema === 'DEMO_CASH_WINDOW_V1') return !('attempts' in r);
+  if (!list(r.attempts,42,a => object(a) && Object.keys(a).length===11 && kinds.includes(String(a.kind)) &&
+      integer(a.sweep) && a.sweep<=2 && integer(a.page) && a.page<=5 && integer(a.attempt) && a.attempt>=1 && a.attempt<=3 &&
+      integer(a.requested_at_ms) && integer(a.received_at_ms) && a.received_at_ms>=a.requested_at_ms &&
+      a.received_at_ms<=Number(r.completed_at_ms) &&
+      (a.response_sha256===null || hash(a.response_sha256)) &&
+      (a.server_time_ms===null || (String(a.kind).startsWith('clock') && integer(a.server_time_ms) && a.server_time_ms>0 && hash(a.response_sha256))) &&
+      (a.outcome==='SUCCESS' ? a.reason===null && hash(a.response_sha256) : a.outcome==='FAILED' && reasons.includes(String(a.reason))))) return false;
+  let previous=Number(r.observed_at_ms), prior: Record<string,unknown> | null=null, successes=0;
+  for (const item of r.attempts) {
+    const a=item as Record<string,unknown>;
+    if (Number(a.requested_at_ms)<previous ||
+        (a.kind==='income' ? !(Number(a.sweep)>0 && Number(a.page)>0) : a.sweep!==0 || a.page!==0) ||
+        a.account_ref_sha256!==(String(a.kind).startsWith('clock') ? null : r.account_ref_sha256) ||
+        (!String(a.kind).startsWith('clock') && !hash(a.account_ref_sha256))) return false;
+    if (prior?.outcome==='FAILED') {
+      if (prior.reason!=='REQUEST_FAILED' || !['kind','sweep','page'].every(k=>a[k]===prior?.[k]) ||
+          a.attempt!==Number(prior.attempt)+1 || Number(a.requested_at_ms)<previous+250*2**(Number(prior.attempt)-1)) return false;
+    } else if (a.attempt!==1) return false;
+    if (a.outcome==='SUCCESS') {
+      if (Number(a.received_at_ms)-Number(a.requested_at_ms)>10000) return false;
+      if (String(a.kind).startsWith('clock') && a.server_time_ms===null) return false;
+      successes++;
+    }
+    previous=Number(a.received_at_ms);prior=a;
+  }
+  if (successes!==r.read_count || !Array.isArray(r.failures)) return false;
+  const terminal=r.failures[0];
+  if (object(terminal) && !['credentials','worker'].includes(String(terminal.kind))) {
+    if (!prior || prior.outcome!=='FAILED' || !['kind','sweep','page','requested_at_ms','received_at_ms','reason'].every(k=>prior?.[k]===terminal[k])) return false;
+  } else if (prior && prior.outcome!=='SUCCESS') return false;
+  if (object(terminal) && ['credentials','worker'].includes(String(terminal.kind)) && r.attempts.length) return false;
+  return true;
+}
 
 export function cashWindowValid(v: unknown, asOf: number): boolean {
   if (!object(v)) return false;
   if (['NO_SNAPSHOT','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status))) return v.report === null;
   const r = v.report;
-  if (v.status !== 'AVAILABLE' || !object(r) || r.schema !== 'DEMO_CASH_WINDOW_V1' || r.environment !== 'BINANCE_USDM_DEMO' ||
+  if (v.status !== 'AVAILABLE' || !object(r) || !['DEMO_CASH_WINDOW_V1','DEMO_CASH_WINDOW_V2'].includes(String(r.schema)) || r.environment !== 'BINANCE_USDM_DEMO' ||
       !['MATCHED_REPORTED_WINDOW','DIFFERENCE_FOUND','UNRESOLVED'].includes(String(r.status)) ||
       !['NOT_REQUESTED','CAPTURED','PARTIAL','FAILED'].includes(String(r.capture_status)) ||
       !integer(r.observed_at_ms) || r.observed_at_ms <= 5000 || !integer(r.completed_at_ms) ||
@@ -47,5 +86,5 @@ export function cashWindowValid(v: unknown, asOf: number): boolean {
       'transfers','commissions','funding','realized_pnl'].every(k=>decimal(a[k])))) return false;
     if ((r.status === 'MATCHED_REPORTED_WINDOW') !== r.assets.every(a => object(a) && zero(a.residual))) return false;
   } else if (!r.issues.length || !r.assets.every(a => object(a) && a.residual === null)) return false;
-  return true;
+  return attemptsValid(r);
 }

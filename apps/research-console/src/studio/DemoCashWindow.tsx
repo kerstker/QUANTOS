@@ -15,6 +15,9 @@ const issues: Record<string,string> = {
 };
 const types: Record<string,string> = {TRANSFER:'转入转出',COMMISSION:'手续费',FUNDING_FEE:'资金费',REALIZED_PNL:'已实现盈亏'};
 const titles = {MATCHED_REPORTED_WINDOW:'窗口报告数值相符',DIFFERENCE_FOUND:'发现未解释差额',UNRESOLVED:'核对条件未齐'};
+const readNames: Record<string,string> = {clock_before:'期初时钟',wallet_before:'期初钱包',wallet_after:'期末钱包',clock_after:'期末时钟',income:'资金流水'};
+const failureNames: Record<string,string> = {REQUEST_FAILED:'请求暂时失败',RATE_LIMITED:'交易所限流',AUTHENTICATION_REJECTED:'访问被拒绝',
+  RESPONSE_TOO_LARGE:'响应超出预算',RESPONSE_INVALID:'请求或响应不符合约定',CLOCK_UNRELIABLE:'时钟检查未通过',CAPTURE_BUDGET_EXHAUSTED:'采集预算耗尽'};
 
 export function DemoCashWindow({snapshot,refreshFailed}: {snapshot?: DemoCashWindowSnapshot; refreshFailed: boolean}) {
   const r=snapshot?.report;
@@ -31,6 +34,15 @@ export function DemoCashWindow({snapshot,refreshFailed}: {snapshot?: DemoCashWin
       {refreshFailed && <p role="status">刷新失败，以下为上次成功读取的固定窗口记录。</p>}
       <p>这里只比较窗口内报告数值，不代表策略盈利、完整历史或交易账本已闭合。固定窗口余额不代表当前余额。</p>
       {!!r.issues.length && <div className="s-demo-notice" role="status"><ul>{r.issues.map(i => <li key={i}>{issues[i] ?? i}</li>)}</ul></div>}
+      {r.attempts && <details className="s-demo-identities"><summary>查看读取与重试记录（{r.attempts.length} 次尝试，{r.attempts.filter(a=>a.outcome==='FAILED').length} 次失败）</summary>
+        <p>临时请求失败最多尝试三次。每次失败均保留；时钟、限流和访问拒绝会终止本窗口。</p>
+        <ol>{r.attempts.map((a,i)=><li key={i}>
+          {readNames[a.kind]}{a.sweep>0 && ` · 第 ${a.sweep} 轮 / 第 ${a.page} 页`} · 尝试 {a.attempt} ·
+          {a.outcome==='SUCCESS' ? '读取成功' : failureNames[a.reason ?? ''] ?? a.reason} · {stamp(a.received_at_ms,true)}
+          <p className="s-demo-description">耗时 {a.received_at_ms-a.requested_at_ms} 毫秒
+            {a.server_time_ms!==null && `；服务端与请求中点相差 ${a.server_time_ms-Math.floor((a.requested_at_ms+a.received_at_ms)/2)} 毫秒${a.outcome==='FAILED' ? '（未通过检查，仅供诊断）' : ''}`}。</p>
+        </li>)}</ol>
+      </details>}
       <div className="s-demo-stream-filter">
         <label htmlFor="cash-window-asset">核对资产</label>
         <select className="s-input" id="cash-window-asset" value={selected} onChange={e=>setAsset(e.target.value)}>

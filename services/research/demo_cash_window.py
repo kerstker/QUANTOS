@@ -18,6 +18,8 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_statement import normalize as normalize_statement
 
 SCHEMA = 'DEMO_CASH_WINDOW_V1'
+RETRY_SCHEMA = 'DEMO_CASH_WINDOW_V2'
+MAX_ATTEMPTS = 3
 MAX_BYTES = 8_000_000
 MAX_PAGES = 5
 GUARD_MS = 5000
@@ -52,8 +54,10 @@ def window_bounds(reads):
 
 
 def validate(raw):
-    _fields(raw, 'schema status observed_at_ms completed_at_ms account_ref_sha256 source_sha256 observe_seconds reads failures')
-    if raw['schema'] != SCHEMA or raw['status'] not in ('NOT_REQUESTED', 'CAPTURED', 'PARTIAL', 'FAILED'):
+    retry_schema = isinstance(raw, dict) and raw.get('schema') == RETRY_SCHEMA
+    _fields(raw, 'schema status observed_at_ms completed_at_ms account_ref_sha256 source_sha256 observe_seconds reads failures' +
+            (' attempts' if retry_schema else ''))
+    if raw['schema'] not in (SCHEMA, RETRY_SCHEMA) or raw['status'] not in ('NOT_REQUESTED', 'CAPTURED', 'PARTIAL', 'FAILED'):
         raise ValueError('CASH_WINDOW_SCHEMA')
     start, end = _int(raw['observed_at_ms']), _int(raw['completed_at_ms'])
     seconds = _int(raw['observe_seconds'])
@@ -137,7 +141,72 @@ def validate(raw):
         raise ValueError('CASH_WINDOW_DEFAULT_NOT_OFFLINE')
     if raw['status'] in ('FAILED', 'PARTIAL') and not failures:
         raise ValueError('CASH_WINDOW_FAILURE_MISSING')
+    if retry_schema:
+        _validate_attempts(raw)
     return raw
+
+
+def _validate_attempts(raw):
+    """Bind every accepted read and terminal failure to the ordered attempt trace.
+
+    Old V1 artifacts stay V1; they cannot acquire synthetic retry evidence.
+    A failed clock candidate is diagnostic only, never an accepted clock read.
+    """
+    attempts = raw['attempts']
+    if not isinstance(attempts, list) or len(attempts) > (4+2*MAX_PAGES)*MAX_ATTEMPTS:
+        raise ValueError('CASH_WINDOW_ATTEMPT_BOUNDS')
+    previous, successes, prior = raw['observed_at_ms'], [], None
+    coordinate = lambda a: (a['kind'], a['sweep'], a['page'])
+    for a in attempts:
+        _fields(a, 'kind sweep page attempt requested_at_ms received_at_ms account_ref_sha256 outcome reason response_sha256 server_time_ms')
+        sent, received, number = _int(a['requested_at_ms']), _int(a['received_at_ms']), _int(a['attempt'])
+        if a['kind'] not in KINDS or not 0 <= _int(a['sweep']) <= 2 or not 0 <= _int(a['page']) <= MAX_PAGES:
+            raise ValueError('CASH_WINDOW_ATTEMPT_KIND')
+        if (a['kind']=='income') != (a['sweep']>0 and a['page']>0) or (a['kind']!='income' and (a['sweep'] or a['page'])):
+            raise ValueError('CASH_WINDOW_ATTEMPT_KIND')
+        if not previous <= sent <= received <= raw['completed_at_ms'] or not 1 <= number <= MAX_ATTEMPTS:
+            raise ValueError('CASH_WINDOW_ATTEMPT_CLOCK')
+        previous = received
+        ref = None if a['kind'].startswith('clock') else raw['account_ref_sha256']
+        if a['account_ref_sha256'] != ref or (not a['kind'].startswith('clock') and ref is None):
+            raise ValueError('CASH_WINDOW_ATTEMPT_IDENTITY')
+        if a['response_sha256'] is not None:
+            _sha(a['response_sha256'])
+        if a['server_time_ms'] is not None:
+            if not a['kind'].startswith('clock') or _int(a['server_time_ms']) <= 0 or a['response_sha256'] is None:
+                raise ValueError('CASH_WINDOW_ATTEMPT_SERVER')
+        if a['outcome'] not in ('SUCCESS', 'FAILED') or (a['outcome']=='SUCCESS' and (a['reason'] is not None or a['response_sha256'] is None)) or (a['outcome']=='FAILED' and a['reason'] not in REASONS):
+            raise ValueError('CASH_WINDOW_ATTEMPT_OUTCOME')
+        if prior is not None and prior['outcome']=='FAILED':
+            if prior['reason']!='REQUEST_FAILED' or coordinate(a)!=coordinate(prior) or number!=prior['attempt']+1:
+                raise ValueError('CASH_WINDOW_RETRY_NOT_ALLOWED')
+            if sent < prior['received_at_ms']+250*2**(prior['attempt']-1):
+                raise ValueError('CASH_WINDOW_RETRY_TOO_EARLY')
+        elif number != 1:
+            raise ValueError('CASH_WINDOW_ATTEMPT_ORDER')
+        if a['outcome']=='SUCCESS':
+            if len(successes)>=len(raw['reads']):
+                raise ValueError('CASH_WINDOW_ATTEMPT_READ_MISSING')
+            read = raw['reads'][len(successes)]
+            for key in ('kind','sweep','page','requested_at_ms','received_at_ms','account_ref_sha256','response_sha256'):
+                if a[key] != read[key]:
+                    raise ValueError('CASH_WINDOW_ATTEMPT_READ_BINDING')
+            if a['server_time_ms'] != (read['data']['serverTime'] if a['kind'].startswith('clock') else None):
+                raise ValueError('CASH_WINDOW_ATTEMPT_SERVER')
+            successes.append(a)
+        prior = a
+    if len(successes)!=len(raw['reads']):
+        raise ValueError('CASH_WINDOW_ATTEMPT_READ_MISSING')
+    terminal = raw['failures'][0] if raw['failures'] else None
+    if terminal and terminal['kind'] not in ('credentials', 'worker'):
+        if prior is None or prior['outcome']!='FAILED' or any(prior[k]!=terminal[k] for k in terminal):
+            raise ValueError('CASH_WINDOW_ATTEMPT_FAILURE_BINDING')
+    elif prior is not None and prior['outcome']!='SUCCESS':
+        raise ValueError('CASH_WINDOW_ATTEMPT_FAILURE_MISSING')
+    if terminal and terminal['kind'] in ('credentials','worker') and attempts:
+        raise ValueError('CASH_WINDOW_ATTEMPT_UNAVAILABLE')
+    if raw['status']=='PARTIAL' and not raw['reads'] or raw['status']=='FAILED' and raw['reads']:
+        raise ValueError('CASH_WINDOW_ATTEMPT_STATUS')
 
 
 def _sweep(reads):
@@ -206,7 +275,8 @@ def assess(raw, *, as_of_ms=None):
                        'breakdown': [{'type': k, 'amount': fmt(v)} for k, v in sorted(by_type.items())]})
     status = 'UNRESOLVED' if issues else ('DIFFERENCE_FOUND' if any(Decimal(a['residual']) != 0 for a in assets)
                                         else 'MATCHED_REPORTED_WINDOW')
-    return {'schema': SCHEMA, 'environment': 'BINANCE_USDM_DEMO', 'status': status,
+    return {'schema': raw['schema'], **({'attempts': raw['attempts']} if raw['schema']==RETRY_SCHEMA else {}),
+            'environment': 'BINANCE_USDM_DEMO', 'status': status,
             'capture_status': raw['status'], 'observed_at_ms': raw['observed_at_ms'], 'completed_at_ms': raw['completed_at_ms'],
             'account_ref_sha256': raw['account_ref_sha256'], 'source_sha256': raw['source_sha256'],
             'observe_seconds': raw['observe_seconds'], 'bounds': bounds, 'read_count': len(reads),

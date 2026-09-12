@@ -133,3 +133,44 @@ def test_failed_capture_preserves_observation_without_claiming_zeros():
     assert report['status']=='UNRESOLVED'
     assert report['income_count']==0 and report['assets'][0]['closing_wallet'] is None
     assert report['assets'][0]['reported_flow'] is None
+
+
+def retry_fixture():
+    raw=fixture();raw['schema']='DEMO_CASH_WINDOW_V2'
+    raw['attempts']=[{**{k:r[k] for k in ('kind','sweep','page','requested_at_ms','received_at_ms','account_ref_sha256','response_sha256')},
+                     'attempt':1,'outcome':'SUCCESS','reason':None,
+                     'server_time_ms':r['data']['serverTime'] if r['kind'].startswith('clock') else None} for r in raw['reads']]
+    failed=deepcopy(raw['attempts'][-1])
+    failed.update(outcome='FAILED',reason='REQUEST_FAILED',response_sha256=None,
+                  requested_at_ms=NOW+100000,received_at_ms=NOW+100100)
+    raw['attempts'][-1]['attempt']=2
+    raw['attempts'].insert(-1,failed)
+    return raw
+
+
+def test_recovered_window_keeps_all_attempts_and_legacy_stays_readable(tmp_path):
+    old=fixture();save_capture(tmp_path/'old',old)
+    assert load_capture(tmp_path/'old')==old
+    assert assess(old)['schema']=='DEMO_CASH_WINDOW_V1' and 'attempts' not in assess(old)
+    raw=retry_fixture();save_capture(tmp_path/'new',raw)
+    report=assess(load_capture(tmp_path/'new'))
+    assert report['status']=='MATCHED_REPORTED_WINDOW' and report['failures']==[]
+    assert report['attempts'][-2]['reason']=='REQUEST_FAILED'
+    assert report['strategy_pnl'] is None
+
+
+@pytest.mark.parametrize('change',['missing','identity','order','number','too_early','terminal','reason','digest','server','extra','unavailable'])
+def test_attempt_trace_tampering_cannot_be_used_as_recovered_evidence(change):
+    raw=retry_fixture()
+    if change=='missing':raw['attempts'].pop(0)
+    elif change=='identity':raw['attempts'][-2]['account_ref_sha256']='d'*64
+    elif change=='order':raw['attempts'][-2]['page']=2
+    elif change=='number':raw['attempts'][-1]['attempt']=4
+    elif change=='too_early':raw['attempts'][-2]['received_at_ms']=raw['attempts'][-1]['requested_at_ms']-100
+    elif change=='terminal':raw['attempts'].pop()
+    elif change=='reason':raw['attempts'][-2]['reason']='CLOCK_UNRELIABLE'
+    elif change=='digest':raw['attempts'][-1]['response_sha256']='e'*64
+    elif change=='server':raw['attempts'][0]['server_time_ms']+=1
+    elif change=='extra':raw['attempts'][-2]['signature']='DO_NOT_RETAIN'
+    elif change=='unavailable':raw['attempts'][-2]['server_time_ms']=NOW
+    with pytest.raises(ValueError):validate(raw)

@@ -19,7 +19,7 @@ import urllib.request
 from quantos.contracts.binance_demo import DEMO_REST_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_cash_window import (
-    SCHEMA, MAX_BYTES, MAX_PAGES, GUARD_MS, REASONS, assess, load_capture, normalize_wallet,
+    RETRY_SCHEMA, MAX_ATTEMPTS, MAX_BYTES, MAX_PAGES, GUARD_MS, REASONS, assess, load_capture, normalize_wallet,
     save_capture, validate, window_bounds,
 )
 from services.research.demo_statement import normalize as normalize_statement
@@ -55,7 +55,8 @@ def get_response(path, *, params, headers):
     except urllib.error.HTTPError as exc:
         status = exc.code; exc.close()
         raise ProbeFailure('RATE_LIMITED' if status in (418,429) else
-                           'AUTHENTICATION_REJECTED' if status in (401,403) else 'REQUEST_FAILED') from None
+                           'AUTHENTICATION_REJECTED' if status in (401,403) else
+                           'REQUEST_FAILED' if status==408 or 500<=status<600 else 'RESPONSE_INVALID') from None
     except ProbeFailure:
         raise
     except Exception:
@@ -70,9 +71,9 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
     clock_ms = clock_ms or now_ms
     sleep = sleep or time.sleep
     started = clock_ms()
-    report = {'schema': SCHEMA, 'status': 'NOT_REQUESTED', 'observed_at_ms': started, 'completed_at_ms': started,
+    report = {'schema': RETRY_SCHEMA, 'status': 'NOT_REQUESTED', 'observed_at_ms': started, 'completed_at_ms': started,
               'account_ref_sha256': None, 'source_sha256': source_hash(), 'observe_seconds': observe_seconds,
-              'reads': [], 'failures': []}
+              'reads': [], 'failures': [], 'attempts': []}
     validate(report)
     if not operator_read:
         return report
@@ -85,47 +86,71 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
 
         def read(kind, path, *, sweep=0, page=0, params=None):
             nonlocal current_kind, current_sweep, current_page, current_at, offset
-            current_kind, current_sweep, current_page, current_at = kind, sweep, page, clock_ms()
-            if time.monotonic() > deadline:
-                raise ProbeFailure('CAPTURE_BUDGET_EXHAUSTED')
-            query, headers = '', {}
-            if path in PRIVATE:
-                values = dict(params or {}, timestamp=current_at+offset, recvWindow=5000)
-                query = urllib.parse.urlencode(values)
-                query += '&signature='+hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
-                headers = {'X-MBX-APIKEY': key}
-            raw = get(path, params=query, headers=headers)
-            received = clock_ms()
-            if not current_at <= received <= current_at+10000:
-                raise ProbeFailure('CLOCK_UNRELIABLE')
-            try:
-                payload = load_json_without_duplicate_keys(raw)
-                if kind.startswith('clock'):
-                    server = payload['serverTime']
-                    if type(server) is not int or server <= 0:
-                        raise ValueError('invalid server time')
-                    new_offset = server-(current_at+received)//2
-                    if received-current_at > 5000 or abs(new_offset) > 2000 or (kind=='clock_after' and abs(new_offset-offset)>500):
+            current_kind, current_sweep, current_page = kind, sweep, page
+            for number in range(1, MAX_ATTEMPTS+1):
+                current_at = clock_ms()
+                attempt = {'kind': kind, 'sweep': sweep, 'page': page, 'attempt': number,
+                           'requested_at_ms': current_at, 'received_at_ms': current_at,
+                           'account_ref_sha256': report['account_ref_sha256'] if path in PRIVATE else None,
+                           'outcome': 'FAILED', 'reason': None, 'response_sha256': None, 'server_time_ms': None}
+                try:
+                    if time.monotonic()+10 > deadline:
+                        raise ProbeFailure('CAPTURE_BUDGET_EXHAUSTED')
+                    query, headers = '', {}
+                    if path in PRIVATE:
+                        values = dict(params or {}, timestamp=current_at+offset, recvWindow=5000)
+                        query = urllib.parse.urlencode(values)
+                        query += '&signature='+hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+                        headers = {'X-MBX-APIKEY': key}
+                    try:
+                        raw = get(path, params=query, headers=headers)
+                    except ProbeFailure:
+                        raise
+                    except Exception:
+                        raise ProbeFailure('REQUEST_FAILED') from None
+                    received = clock_ms()
+                    attempt['response_sha256'] = hashlib.sha256(raw).hexdigest()
+                    if not current_at <= received <= current_at+10000:
                         raise ProbeFailure('CLOCK_UNRELIABLE')
-                    offset = new_offset
-                    data = {'serverTime': server}
-                elif kind.startswith('wallet'):
-                    data = normalize_wallet([{'asset': a['asset'], 'wallet': a['walletBalance'],
-                                              'updated_at_ms': a['updateTime']} for a in payload['assets']])
-                    if any(a['updated_at_ms'] > received+GUARD_MS for a in data):
-                        raise ValueError('wallet update from future')
-                else:
-                    data = normalize_statement('income', payload, [])
-                    if any(not params['startTime'] <= r['time'] <= params['endTime'] for r in data):
-                        raise ValueError('out of query window')
-            except ProbeFailure:
-                raise
-            except Exception:
-                raise ProbeFailure('RESPONSE_INVALID') from None
-            report['reads'].append({'kind': kind, 'requested_at_ms': current_at, 'received_at_ms': received,
-                                    'account_ref_sha256': report['account_ref_sha256'] if path in PRIVATE else None,
-                                    'response_sha256': hashlib.sha256(raw).hexdigest(), 'sweep': sweep, 'page': page, 'data': data})
-            return data
+                    try:
+                        payload = load_json_without_duplicate_keys(raw)
+                        if kind.startswith('clock'):
+                            server = payload['serverTime']
+                            if type(server) is not int or server <= 0:
+                                raise ValueError('invalid server time')
+                            attempt['server_time_ms'] = server
+                            new_offset = server-(current_at+received)//2
+                            if received-current_at > 5000 or abs(new_offset) > 2000 or (kind=='clock_after' and abs(new_offset-offset)>500):
+                                raise ProbeFailure('CLOCK_UNRELIABLE')
+                            offset = new_offset
+                            data = {'serverTime': server}
+                        elif kind.startswith('wallet'):
+                            data = normalize_wallet([{'asset': a['asset'], 'wallet': a['walletBalance'],
+                                                      'updated_at_ms': a['updateTime']} for a in payload['assets']])
+                            if any(a['updated_at_ms'] > received+GUARD_MS for a in data):
+                                raise ValueError('wallet update from future')
+                        else:
+                            data = normalize_statement('income', payload, [])
+                            if any(not params['startTime'] <= r['time'] <= params['endTime'] for r in data):
+                                raise ValueError('out of query window')
+                    except ProbeFailure:
+                        raise
+                    except Exception:
+                        raise ProbeFailure('RESPONSE_INVALID') from None
+                except ProbeFailure as exc:
+                    reason = str(exc) if str(exc) in REASONS else 'REQUEST_FAILED'
+                    attempt.update(received_at_ms=clock_ms(), reason=reason)
+                    report['attempts'].append(attempt)
+                    if reason=='REQUEST_FAILED' and number<MAX_ATTEMPTS:
+                        sleep(.25*2**(number-1))
+                        continue
+                    raise ProbeFailure(reason) from None
+                attempt.update(received_at_ms=received, outcome='SUCCESS')
+                report['attempts'].append(attempt)
+                report['reads'].append({'kind': kind, 'requested_at_ms': current_at, 'received_at_ms': received,
+                                        'account_ref_sha256': attempt['account_ref_sha256'],
+                                        'response_sha256': attempt['response_sha256'], 'sweep': sweep, 'page': page, 'data': data})
+                return data
 
         read('clock_before', '/fapi/v1/time')
         read('wallet_before', '/fapi/v3/account')
@@ -147,7 +172,7 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
     except Exception as exc:
         reason = str(exc) if isinstance(exc, ProbeFailure) and str(exc) in REASONS else 'REQUEST_FAILED'
         report['failures'].append({'kind': current_kind, 'sweep': current_sweep, 'page': current_page,
-                                   'requested_at_ms': current_at, 'received_at_ms': clock_ms(), 'reason': reason})
+                                   'requested_at_ms': current_at, 'received_at_ms': report['attempts'][-1]['received_at_ms'] if report['attempts'] else clock_ms(), 'reason': reason})
         report['status'] = 'PARTIAL' if report['reads'] else 'FAILED'
     report['completed_at_ms'] = clock_ms()
     return validate(report)

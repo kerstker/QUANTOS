@@ -1,5 +1,12 @@
+export interface DemoCashAttempt {
+  kind: 'clock_before' | 'wallet_before' | 'wallet_after' | 'clock_after' | 'income';
+  sweep: number; page: number; attempt: number; requested_at_ms: number; received_at_ms: number;
+  account_ref_sha256: string | null; outcome: 'SUCCESS' | 'FAILED'; reason: string | null;
+  response_sha256: string | null; server_time_ms: number | null;
+}
 export interface DemoCashWindowReport {
-  schema: 'DEMO_CASH_WINDOW_V1'; environment: 'BINANCE_USDM_DEMO';
+  schema: 'DEMO_CASH_WINDOW_V1' | 'DEMO_CASH_WINDOW_V2'; environment: 'BINANCE_USDM_DEMO';
+  attempts?: DemoCashAttempt[];
   status: 'MATCHED_REPORTED_WINDOW' | 'DIFFERENCE_FOUND' | 'UNRESOLVED';
   capture_status: 'NOT_REQUESTED' | 'CAPTURED' | 'PARTIAL' | 'FAILED';
   observed_at_ms: number; completed_at_ms: number; account_ref_sha256: string | null; source_sha256: string;

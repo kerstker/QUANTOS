@@ -30,6 +30,23 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_cash_retry_contract_preserves_recovered_failures(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_cash_window import save_capture
+    from tests.research.test_demo_cash_window import retry_fixture, NOW
+    raw=retry_fixture();directory=tmp_path/'cash';save_capture(directory,raw)
+    before={p.name:p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(views,'_cash_window_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+120000)*1_000_000)
+    payload=client.get('/api/v1/console/binance-demo').json()
+    r=payload['cash_window']['report']
+    assert payload['read_only'] is True and payload['submission_enabled'] is False
+    assert r['schema']=='DEMO_CASH_WINDOW_V2' and r['attempts']==raw['attempts']
+    assert r['status']=='MATCHED_REPORTED_WINDOW' and r['failures']==[]
+    assert r['strategy_pnl'] is None and r['source_verified'] is False
+    assert before=={p.name:p.read_bytes() for p in directory.iterdir()}
+
+
 def test_factory_execution_cost_contract_keeps_unknown_real_costs():
     from services.research.ai_factory_execution_feedback import execution_feedback
     from services.research.perpetual_alpha import replay
