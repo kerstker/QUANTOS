@@ -9,6 +9,7 @@ from services.research.demo_execution_journal import DemoExecutionJournal, repla
 from services.research.ai_factory_store import digest
 from tests.execution.test_perpetual_ledger_v2 import _spec
 from tests.research.test_binance_order_receipts import native_spec, edit_message
+from tests.research.test_binance_order_receipts import v2_spec
 
 
 def manifest():
@@ -21,6 +22,18 @@ def manifest():
             "source_commit":"a"*40, "initial_collateral":"1000", "initial_position":"0",
             "contract":spec.as_canonical_dict(), "adv_notional":"1000000", "participation_rate":"0.1",
             "actions":actions, "native":native, "expected_end_position":"1"}
+
+
+def test_ioc_receipts_replay_exact_fees_without_becoming_passive_calibration(tmp_path):
+    source=v2_spec();frozen=manifest();native=deepcopy(source['raw_observed']);native.pop('messages')
+    native['action_hash']=digest(frozen['actions']);frozen['native']=native
+    with DemoExecutionJournal(tmp_path/'ioc.db',manifest=frozen) as journal:
+        journal.append(source['raw_observed']['messages'])
+        result=replay_report(journal)
+        assert result['projection_status']=='REPLAYED_TECHNICAL_ONLY'
+        assert result['reconciliation']['fee']=='0.0198' and result['venue_cash_reconciliation']=='UNKNOWN'
+        assert {t['liquidity_role'] for t in result['recent_trades']}=={'TAKER'}
+        assert 'FIXED_LIMIT_GTX_ONE_WAY_CROSS_ONLY' not in result['limitations']
 
 
 def test_journal_survives_restart_and_replays_partial_fills_once(tmp_path):

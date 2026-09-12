@@ -1,6 +1,7 @@
 """Offline USD-M order observations, never authenticated account evidence.
 
-The supported subset is fixed ordinary LIMIT/GTX orders in one-way mode.
+V1 supports fixed ordinary LIMIT/GTX orders in one-way mode. V2 binds each
+order's GTX/IOC and reduce-only options; passive calibration still requires GTX.
 Native messages remain in the immutable input; this projection does not place
 orders, query a private endpoint, or apply real fills to simulated admission.
 """
@@ -14,6 +15,7 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.execution.perpetual_ledger_v2 import canonical_decimal, ledger_decimal_context
 
 SCHEMA = 'BINANCE_USDM_ORDER_RECEIPTS_V1'
+OPTIONS_SCHEMA = 'BINANCE_USDM_ORDER_RECEIPTS_V2'
 CALIBRATION_SCHEMA = 'PASSIVE_BINANCE_ORDER_RECEIPTS_V1'
 REQUIRED_ORDER = {'s','c','S','o','f','q','p','x','X','i','l','z','L','T','t','m','R','ps'}
 OPTIONAL_ORDER = {'ap','sp','N','n','b','a','wt','ot','cp','AP','cr','pP','si','ss','rp','V','pm','gtd'}
@@ -84,7 +86,7 @@ def normalize_order_receipts(document, actions, symbol, action_hash, *, reduce_o
 
 def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
     _fields(document,{'schema','symbol','account_ref_sha256','action_hash','provenance','coverage','bindings','messages'})
-    if (document['schema']!=SCHEMA or document['symbol']!=symbol or symbol not in ('BTCUSDC','BTCUSDT')
+    if (document['schema'] not in (SCHEMA,OPTIONS_SCHEMA) or document['symbol']!=symbol or symbol not in ('BTCUSDC','BTCUSDT')
             or document['action_hash']!=action_hash or document['provenance'] not in ('SYNTHETIC_TEST_FIXTURE','IMPORTED_UNVERIFIED')):
         raise ValueError('same frozen actions and explicit unverified native source required')
     _sha(action_hash);_sha(document['account_ref_sha256'])
@@ -95,15 +97,20 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
     bindings=document['bindings'];messages=document['messages']
     if not isinstance(bindings,list) or len(bindings)>200 or not isinstance(messages,list) or len(messages)>10000:
         raise ValueError('bounded native bindings and messages required')
-    by_venue={};by_client={};rows={}
+    by_venue={};by_client={};rows={};options=[]
     for binding in bindings:
-        _fields(binding,{'order_id','venue_order_id','client_order_id'})
+        _fields(binding,{'order_id','venue_order_id','client_order_id'}|({'time_in_force','reduce_only'} if document['schema']==OPTIONS_SCHEMA else set()))
         name=binding['order_id'];venue=_binding_id(binding['venue_order_id']);client=binding['client_order_id']
         if (name not in fixed or name in rows or venue in by_venue or not isinstance(client,str)
                 or not re.fullmatch(r'[.A-Z\:/a-z0-9_-]{1,36}',client) or client in by_client
                 or client.startswith(('autoclose-','adl_autoclose','settlement_autoclose-'))):
             raise ValueError('unique ordinary fixed-order binding required')
         action=fixed[name];by_venue[venue]=binding;by_client[client]=binding
+        if document['schema']==OPTIONS_SCHEMA:
+            if (binding['time_in_force'] not in ('GTX','IOC') or type(binding['reduce_only']) is not bool or
+                binding['reduce_only']!=(name in reduce_only_ids)):
+                raise ValueError('bound order options differ from fixed scope')
+            options.append({'order_id':name,'time_in_force':binding['time_in_force'],'reduce_only':binding['reduce_only']})
         rows[name]={'order_id':name,'side':action.side,'quantity':canonical_decimal(action.quantity),
             'limit_price':canonical_decimal(action.price),'events':[]}
     filled={name:ZERO for name in rows};seen_raw=set();seen_trade={};duplicates=[];trade_rows=[];message_rows=[]
@@ -128,7 +135,8 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         if binding is None or order['c']!=binding['client_order_id']:
             raise ValueError('native order lacks a frozen binding')
         name=binding['order_id'];action=fixed[name]
-        if (order['s']!=symbol or order['S']!=action.side or order['o']!='LIMIT' or order['f']!='GTX'
+        tif=binding['time_in_force'] if document['schema']==OPTIONS_SCHEMA else 'GTX'
+        if (order['s']!=symbol or order['S']!=action.side or order['o']!='LIMIT' or order['f']!=tif
                 or order['ps']!='BOTH' or _amount(order['q'])!=action.quantity or _amount(order['p'])!=action.price
                 or type(order['m']) is not bool or type(order['R']) is not bool
                 or order['R']!=(name in reduce_only_ids) or order.get('cp',False) is not False
@@ -140,6 +148,8 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         if state is None:raise ValueError('unsupported native execution and state pair')
         quantity,total,price=_amount(order['l']),_amount(order['z']),_amount(order['L'])
         trade=order['x']=='TRADE';fingerprint=_digest(order);key=(venue,trade_id)
+        if document['schema']==OPTIONS_SCHEMA and trade and order['m']!=(tif=='GTX'):
+            raise ValueError('reported liquidity role conflicts with frozen GTX/IOC option')
         fee=_amount(order['n'],signed=True) if 'n' in order else None
         asset=order.get('N')
         if asset is not None and (not isinstance(asset,str) or not re.fullmatch('[A-Z0-9]{1,20}',asset)):
@@ -178,7 +188,8 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
     observed={'action_hash':action_hash,'symbol':symbol,'coverage':deepcopy(coverage),
         'provenance':{'kind':'SYNTHETIC_TEST_FIXTURE' if document['provenance']=='SYNTHETIC_TEST_FIXTURE' else 'IMPORTED_PRIVATE_RECEIPTS',
             'declared_source_sha256':source_hash},'orders':list(rows.values())}
-    evidence={'schema':SCHEMA,'input_hash':source_hash,'account_ref_sha256':document['account_ref_sha256'],
+    evidence={'schema':document['schema'],'input_hash':source_hash,'account_ref_sha256':document['account_ref_sha256'],
+        **({'order_options':options} if document['schema']==OPTIONS_SCHEMA else {}),
         'symbol':symbol,'quote':symbol[3:],'provenance':document['provenance'],'source_verified':False,'actual_paid_fees':None,
         'messages_count':len(messages),'unique_messages':len(message_rows),'duplicate_messages':len(duplicates),
         'trades_count':len(trade_rows),'missing_commission_trades':missing,'all_commissions_in_quote':all_quote,
@@ -189,7 +200,8 @@ def _normalize(document, actions, symbol, action_hash, reduce_only_ids):
         'trade_rows':trade_rows,'message_rows':message_rows,'duplicates':duplicates,
         'coverage':deepcopy(coverage),'economic_eligible':False,
         'limitations':['IMPORTED_SOURCE_UNVERIFIED','DECLARED_COVERAGE_NOT_TRANSPORT_ATTESTATION',
-            'NO_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION','NO_CURRENCY_CONVERSION','FIXED_LIMIT_GTX_ONE_WAY_ONLY']}
+            'NO_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION','NO_CURRENCY_CONVERSION',
+            'FIXED_LIMIT_GTX_IOC_ONE_WAY_ONLY' if document['schema']==OPTIONS_SCHEMA else 'FIXED_LIMIT_GTX_ONE_WAY_ONLY']}
     return observed,evidence
 
 

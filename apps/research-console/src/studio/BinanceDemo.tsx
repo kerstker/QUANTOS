@@ -1,5 +1,6 @@
 import {DemoStatement} from './DemoStatement';
 import {DemoCashWindow} from './DemoCashWindow';
+import {DemoCanonicalCash} from './DemoCanonicalCash';
 import {DemoExecutionOrigin} from './DemoExecutionOrigin';
 import {fetchBinanceDemo} from '@/lib/api/binance-demo-api';
 import type {BinanceDemoPayload} from '@/lib/types/binance-demo';
@@ -72,6 +73,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
     <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
     <DemoExecutionOrigin snapshot={data?.execution_origin} refreshFailed={!!error}/>
+    <DemoCanonicalCash snapshot={data?.canonical_cash} refreshFailed={!!error}/>
     <DemoCashWindow snapshot={data?.cash_window} refreshFailed={!!error}/>
     <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
     <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>

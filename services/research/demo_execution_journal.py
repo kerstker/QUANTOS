@@ -7,6 +7,7 @@ from copy import deepcopy
 from decimal import Decimal
 import json
 import hashlib
+from itertools import groupby
 from pathlib import Path
 import re
 import sqlite3
@@ -18,11 +19,12 @@ from services.execution.passive_queue import Action
 from services.execution.perpetual_ledger_v2 import (
     BINANCE_USDM_UTC_DAY_CAPACITY_RULE_ID, CapacityPolicy, CapacityAction,
     ContractSpec, MarginMode, LinearPerpetualLedger,
-    ReportedFillReplayEvent, canonical_decimal, ledger_decimal_context,
+    ReportedFillReplayEvent, ReportedCashReplayPolicy, canonical_decimal, ledger_decimal_context,
 )
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.ai_factory_store import digest
-from services.research.passive_receipt_calibration import validate_calibration
+from services.research.passive_receipt_calibration import validate_calibration,SCHEMA as TRACE_SCHEMA
+from services.research.binance_order_receipts import normalize_order_receipts,OPTIONS_SCHEMA
 from services.research.demo_opening_projection import contract_spec, prepare_opening, OPENING_MANIFEST_SCHEMA
 
 SCHEMA = "DEMO_EXECUTION_REPLAY_V1"
@@ -114,6 +116,12 @@ def observations(manifest, messages, parsed):
     native = deepcopy(manifest["native"])
     native["messages"] = messages
     start, end = native["coverage"]["start_ms"], native["coverage"]["end_ms"]
+    if native['schema']==OPTIONS_SCHEMA:
+        reduce_only=frozenset(b['order_id'] for b in native['bindings'] if b.get('reduce_only') is True)
+        observed,evidence=normalize_order_receipts(native,actions,spec.instrument_id,native['action_hash'],reduce_only_ids=reduce_only)
+        checked=validate_calibration({'schema':TRACE_SCHEMA,'cutoff_ms':start+1,'observed':observed},
+            SimpleNamespace(symbol=spec.instrument_id,start_ms=start,end_ms=end),actions,native['action_hash'])
+        return {**checked,'native_observations':evidence}
     return validate_calibration({"schema": "PASSIVE_BINANCE_ORDER_RECEIPTS_V1", "cutoff_ms": start + 1,
                                 "raw_observed": native},
         SimpleNamespace(symbol=spec.instrument_id, start_ms=start, end_ms=end), actions, native["action_hash"])
@@ -228,6 +236,50 @@ class DemoExecutionJournal:
 
 
 @ledger_decimal_context()
+def replay_ledger(manifest, parsed, evidence, *, cash_events=None):
+    """One fill projection for receipt-only and explicitly reported cash replay.
+
+    Callers validate their input/window coverage before using this projection.
+    It mutates no input store and returns no authority or economic admission.
+    """
+    spec, collateral, actions, capacity = parsed
+    specs, seed, opening = prepare_opening(manifest, spec)
+    if opening is not None and opening['status'] != 'DECLARED_INPUTS_READY':
+        raise ValueError('OPENING_INPUTS_INCOMPLETE')
+    policy = None if cash_events is None else ReportedCashReplayPolicy(
+        account_ref_sha256=manifest['native']['account_ref_sha256'], asset=spec.margin_asset)
+    ledger = LinearPerpetualLedger(specs, initial_collateral=collateral, opening_state=seed,
+                                  reported_cash_policy=policy)
+    by_id = {a.order_id: a for a in actions}
+    options = {b['order_id']: b for b in manifest['native']['bindings']}
+    events = []
+    for trade in evidence['trade_rows']:
+        side = 1 if by_id[trade['order_id']].side == 'BUY' else -1
+        events.append(ReportedFillReplayEvent(timestamp=trade['venue_trade_ms'], instrument_id=spec.instrument_id,
+            quantity_delta=side*Decimal(trade['quantity']), execution_price=Decimal(trade['price']),
+            margin_mode=MarginMode.CROSS, capacity=capacity, fee=Decimal(trade['reported_commission']),
+            order_id=trade['order_id'], receipt_sha256=trade['response_sha256']))
+    events.extend(cash_events or ())
+    # Stable fill order is the validated stream order; cash batches retain the
+    # ledger's atomic group checks and reject ambiguous same-ms funding/fills.
+    ordered = events if cash_events is None else sorted(events, key=lambda e: e.timestamp)
+    for _, group in groupby(ordered, key=lambda e: e.timestamp):
+        cash = []
+        for event in group:
+            if not isinstance(event, ReportedFillReplayEvent):
+                cash.append(event)
+                continue
+            if options[event.order_id].get('reduce_only'):
+                held = ledger.position(spec.instrument_id)
+                if held is None or held.quantity*event.quantity_delta >= 0 or abs(event.quantity_delta) > abs(held.quantity):
+                    raise ValueError('reported reduce-only fill conflicts with preceding position')
+            ledger.apply_event(event)
+        if cash:
+            ledger.process_events(cash)
+    return ledger
+
+
+@ledger_decimal_context()
 def replay_report(journal):
     records, tail, rejected = journal.read()
     manifest = journal.manifest
@@ -247,16 +299,9 @@ def replay_report(journal):
     elif any(t["reported_commission"] is None or t["commission_asset"] != spec.margin_asset
              or Decimal(t["reported_commission"]) < 0 for t in evidence["trade_rows"]):
         reason = "COMMISSION_NOT_SUPPORTED"
-    by_id = {a.order_id: a for a in actions}
     if reason is None:
         try:
-            ledger = LinearPerpetualLedger(specs, initial_collateral=collateral, opening_state=seed)
-            for trade in evidence["trade_rows"]:
-                side = 1 if by_id[trade["order_id"]].side == "BUY" else -1
-                ledger.apply_event(ReportedFillReplayEvent(timestamp=trade["venue_trade_ms"], instrument_id=spec.instrument_id,
-                    quantity_delta=side * Decimal(trade["quantity"]), execution_price=Decimal(trade["price"]),
-                    margin_mode=MarginMode.CROSS, capacity=capacity, fee=Decimal(trade["reported_commission"]),
-                    order_id=trade["order_id"], receipt_sha256=trade["response_sha256"]))
+            ledger = replay_ledger(manifest, journal.parsed, evidence)
         except Exception as exc:
             reason = "MODEL_REPLAY_" + type(exc).__name__.upper()
     resolved = reason is None
@@ -292,4 +337,5 @@ def replay_report(journal):
         "recent_trades": evidence["trade_rows"][-50:],
         "limitations": ["OPENING_ACCOUNT_INPUTS_DECLARED_ONLY" if opening is not None else "INITIAL_FLAT_ACCOUNT_DECLARED_ONLY",
                         "OTHER_POSITIONS_MARKS_FROZEN_NO_OTHER_ORDER_CASHFLOWS", "NO_MARK_FUNDING_OR_EXTERNAL_CASHFLOW_RECONCILIATION",
+                        "FIXED_LIMIT_GTX_IOC_ONE_WAY_CROSS_ONLY" if manifest['native']['schema']==OPTIONS_SCHEMA else
                         "FIXED_LIMIT_GTX_ONE_WAY_CROSS_ONLY", "IMPORTED_SOURCE_UNVERIFIED"]}

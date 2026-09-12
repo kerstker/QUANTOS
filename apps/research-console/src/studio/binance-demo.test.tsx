@@ -27,6 +27,7 @@ function payload(): BinanceDemoPayload {
     user_stream: {status: 'NO_JOURNAL', report: null},
     cash_window: {status: 'NO_SNAPSHOT', report: null},
     execution_origin: {status: 'NO_SNAPSHOT', report: null},
+    canonical_cash: {status: 'INPUTS_MISSING', report: null},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }

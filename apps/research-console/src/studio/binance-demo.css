@@ -60,6 +60,7 @@
   .s-demo-cash-wallet td {padding:12px 10px;white-space:normal;overflow-wrap:anywhere;border:0;}
   .s-demo-cash-wallet td::before {content:attr(data-label);display:block;margin-bottom:7px;color:var(--s-muted);font-size:11px;}
   .s-demo-cash-wallet td:nth-child(-n+2) {font-weight:600;border-bottom:1px solid var(--s-line);}
+  .s-demo-canonical-costs td:last-child {grid-column:1 / -1;}
 }
 .s-demo-origin-metrics .s-metric {min-width:0;}
 .s-demo-origin-metrics .s-metric>strong {overflow-wrap:anywhere;}

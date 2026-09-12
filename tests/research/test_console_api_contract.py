@@ -30,6 +30,31 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_canonical_cash_contract_is_read_only_and_keeps_technical_scope(tmp_path, monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research.demo_cash_window import save_capture
+    from services.research.demo_execution_journal import DemoExecutionJournal
+    from tests.research.test_demo_cash_projection import inputs, NOW
+    manifest, messages, capture = inputs()
+    path = tmp_path/'receipts.db'; directory = tmp_path/'cash'
+    with DemoExecutionJournal(path, manifest=manifest) as journal: journal.append(messages)
+    save_capture(directory, capture)
+    monkeypatch.setattr(views, '_execution_journal_path', lambda: path)
+    monkeypatch.setattr(views, '_cash_window_directory', lambda: directory)
+    monkeypatch.setattr(views.time, 'time_ns', lambda: (NOW+120000)*1_000_000)
+    before = path.read_bytes()
+    payload = client.get('/api/v1/console/binance-demo').json()
+    r = payload['canonical_cash']['report']
+    assert r['status'] == 'MATCHED_REPORTED_INPUTS'
+    assert r['canonical_wallet'] == '1099.7802' and r['wallet_residual'] == '0'
+    assert r['strategy_pnl'] is None and r['coverage_verified'] is False and r['source_verified'] is False
+    assert r['reconciliation']['external_cash_flow'] == '100'
+    assert payload['read_only'] is True and payload['submission_enabled'] is False
+    assert path.read_bytes() == before
+    monkeypatch.setattr(views.time, 'time_ns', lambda: NOW*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['canonical_cash'] == {'status':'DATA_BLOCKED','report':None}
+
+
 def test_demo_execution_origin_contract_is_read_only_and_keeps_conditions(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research.demo_execution_origin import save
@@ -129,7 +154,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

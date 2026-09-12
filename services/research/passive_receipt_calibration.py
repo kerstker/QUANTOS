@@ -94,6 +94,8 @@ def validate_calibration(spec,tape,actions,action_hash,*,reduce_only_ids=frozens
                 raise ValueError('versioned native passive calibration contract required')
             observed,native=normalize_order_receipts(spec['raw_observed'],actions,tape.symbol,action_hash,
                 reduce_only_ids=reduce_only_ids)
+            if any(option['time_in_force']!='GTX' for option in native.get('order_options',[])):
+                raise ValueError('passive calibration requires fixed GTX receipts')
             if account_ref_sha256 is not None and native['account_ref_sha256']!=account_ref_sha256:
                 raise ValueError('receipt account differs from frozen account conditions')
             spec={'schema':SCHEMA,'cutoff_ms':spec['cutoff_ms'],'observed':observed}

@@ -9,6 +9,7 @@ import pytest
 
 from services.execution.passive_queue import Action
 from services.research.passive_receipt_calibration import validate_calibration
+from services.research.binance_order_receipts import normalize_order_receipts
 
 HASH = 'a' * 64
 ACTIONS = (Action(100, 'ORDER', 'fixed-buy', 'BUY', D('1'), D('99')),)
@@ -50,6 +51,42 @@ def edit_message(spec, index, change):
     record=spec['raw_observed']['messages'][index]
     payload=json.loads(record['raw_utf8']);change(payload)
     spec['raw_observed']['messages'][index]=receipt(payload, record['received_at_ms'])
+
+
+def v2_spec(tif='IOC',reduce_only=False):
+    spec=native_spec();raw=spec['raw_observed'];raw['schema']='BINANCE_USDM_ORDER_RECEIPTS_V2'
+    raw['bindings'][0].update(time_in_force=tif,reduce_only=reduce_only)
+    for i in range(len(raw['messages'])):
+        edit_message(spec,i,lambda p:p['o'].update(f=tif,m=tif=='GTX',R=reduce_only))
+    return spec
+
+
+def test_v2_ioc_observations_bind_options_and_keep_reported_taker_costs():
+    spec=v2_spec();raw=spec['raw_observed'];original=deepcopy(raw)
+    _,evidence=normalize_order_receipts(raw,ACTIONS,'BTCUSDC',HASH)
+    assert raw==original and evidence['schema']=='BINANCE_USDM_ORDER_RECEIPTS_V2'
+    assert evidence['reported_quote_commission']=='0.0198'
+    assert {r['liquidity_role'] for r in evidence['trade_rows']}=={'TAKER'}
+    assert evidence['order_options']==[{'order_id':'fixed-buy','time_in_force':'IOC','reduce_only':False}]
+    with pytest.raises(ValueError,match='GTX'):parse(spec)
+
+
+def test_v2_reduce_only_flags_must_match_external_fixed_order_scope():
+    spec=v2_spec('GTX',True)
+    with pytest.raises(ValueError):normalize_order_receipts(spec['raw_observed'],ACTIONS,'BTCUSDC',HASH)
+    _,evidence=normalize_order_receipts(spec['raw_observed'],ACTIONS,'BTCUSDC',HASH,reduce_only_ids=frozenset({'fixed-buy'}))
+    assert evidence['order_options'][0]['reduce_only'] is True
+
+
+@pytest.mark.parametrize('change',['missing_option','unknown_tif','different_tif','ioc_maker','legacy_options'])
+def test_v2_order_option_errors_do_not_relax_v1_or_maker_assumptions(change):
+    spec=v2_spec();raw=spec['raw_observed']
+    if change=='missing_option':del raw['bindings'][0]['reduce_only']
+    elif change=='unknown_tif':raw['bindings'][0]['time_in_force']='GTC'
+    elif change=='different_tif':raw['bindings'][0]['time_in_force']='GTX'
+    elif change=='ioc_maker':edit_message(spec,1,lambda p:p['o'].update(m=True))
+    else:raw['schema']='BINANCE_USDM_ORDER_RECEIPTS_V1'
+    with pytest.raises(ValueError):normalize_order_receipts(raw,ACTIONS,'BTCUSDC',HASH)
 
 
 def test_native_partial_fills_use_receive_time_and_exact_observed_commission():

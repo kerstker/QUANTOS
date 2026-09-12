@@ -55,6 +55,38 @@ def test_nonflat_receipt_restart_does_not_recount_opening_pnl_or_commission(tmp_
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize('flat', [False, True])
+def test_ioc_reduce_only_uses_preceding_canonical_inventory(tmp_path, flat):
+    from tests.research.test_binance_order_receipts import v2_spec, edit_message
+    from services.research.ai_factory_store import digest
+    m = manifest() if flat else opening_manifest()
+    source = v2_spec(reduce_only=True)
+    m['actions'][0]['side'] = 'SELL'
+    m['expected_end_position'] = '1'
+    native = source['raw_observed']
+    for i in range(len(native['messages'])):
+        edit_message(source, i, lambda p: p['o'].update(S='SELL'))
+    messages = native.pop('messages')
+    native['action_hash'] = digest(m['actions'])
+    m['native'] = native
+    path = tmp_path / 'reduce.db'
+    with DemoExecutionJournal(path, manifest=m) as journal:
+        journal.append(messages)
+        report = replay_report(journal)
+        assert report['journal_records'] == 3
+        if flat:
+            assert report['projection_status'] == 'UNRESOLVED'
+            assert report['projection_reason'] == 'MODEL_REPLAY_VALUEERROR'
+            assert report['reconciliation'] is None
+        else:
+            assert report['position_quantity'] == '1'
+            assert report['reconciliation']['fee'] == '0.0198'
+            assert report['reconciliation']['residual'] == '0'
+            assert report['position_comparison'] == 'DECLARED_POSITION_MATCH'
+    with DemoExecutionJournal(path, read_only=True) as journal:
+        assert replay_report(journal) == report
+
+
 def test_missing_exact_basis_keeps_receipts_without_estimated_cash_projection(tmp_path):
     with DemoExecutionJournal(tmp_path/'journal.db', manifest=opening_manifest(basis=False)) as journal:
         journal.append(native_spec()['raw_observed']['messages'])
