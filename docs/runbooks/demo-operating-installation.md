@@ -73,7 +73,8 @@ python -P -m tools.demo_operating_bundle \
 在独立 root oneshot 单元中运行 `python -P -m tools.demo_protected_publish
 --source-commit <完整身份> --kind <种类>`；`market` 必须额外指定
 `--symbol BTCUSDC` 或 `--symbol BTCUSDT`。可选种类：`market`、`executor-observation`、
-`issuer`、`oms`、`cancellation`、`resident`。来源和各 Console 缓存目录固定映射，
+`issuer`、`oms`、`cancellation`、`resident`、`backup`。备份摘要来自 root 私有监控目录，
+按[恢复点监控手册](demo-namespace-checkpoint.md#只读恢复点监控)接入。来源和各 Console 缓存目录固定映射，
 不接受自选私有输入路径。分别调度，不以缺失 OMS 阻塞行情发布。
 
 单元沿用 PrivateNetwork、PrivateDevices、ProtectSystem=strict、ProtectHome=read-only、

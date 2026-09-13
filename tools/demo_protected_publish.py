@@ -17,12 +17,14 @@ from live.execution.demo_issuer_policy import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research import demo_market_inputs,demo_executor_observation,demo_issuer_status
 from services.research import demo_oms_status,demo_cancel_status,demo_resident_status
+from services.research import demo_backup_status
 from tools.demo_issuer import verify_source
 
 PROFILE=Path('/etc/quantos/demo-observation/publication.json')
 EXECUTOR=Path('/var/lib/quantos-demo-executor')
 ISSUER=Path('/var/lib/quantos-demo-issuer')
-KINDS=('market','executor-observation','issuer','oms','cancellation','resident')
+CHECKPOINTS=Path('/var/lib/quantos-demo-checkpoints')
+KINDS=('market','executor-observation','issuer','oms','cancellation','resident','backup')
 
 
 def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
@@ -34,6 +36,7 @@ def selection(kind,symbol):
         require(symbol in ('BTCUSDC','BTCUSDT'),'PUBLICATION_QUOTE')
         return demo_market_inputs,EXECUTOR,'market-inputs-'+symbol,'binance_demo_market_inputs/'+symbol,'completed_at_ms'
     return {
+        'backup':(demo_backup_status,CHECKPOINTS,'views','binance_demo_backup_status','observed_at_ms'),
         'executor-observation':(demo_executor_observation,EXECUTOR,'observation-views','binance_demo_executor_observation','observed_at_ms'),
         'issuer':(demo_issuer_status,ISSUER,'views','binance_demo_issuer_status','observed_at_ms'),
         'oms':(demo_oms_status,EXECUTOR,'receipt-reconciliation/views','binance_demo_oms_status','observed_at_ms'),
@@ -103,7 +106,8 @@ def drop_identity(uid,gid):
 def run(*,source_commit,kind,symbol=None):
     verify_source(source_commit);require(os.geteuid()==0,'PUBLICATION_ROOT_REQUIRED')
     cfg=configuration(source_commit);model,root,relative,cache,time_key=selection(kind,symbol)
-    raw=read_snapshot(root/relative,root=root,uid=cfg['issuer_uid' if kind=='issuer' else 'executor_uid'],model=model)
+    owner=0 if kind=='backup' else cfg['issuer_uid' if kind=='issuer' else 'executor_uid']
+    raw=read_snapshot(root/relative,root=root,uid=owner,model=model)
     if kind=='market':require(raw['symbol']==symbol,'PUBLICATION_SOURCE_QUOTE')
     drop_identity(cfg['research_uid'],cfg['research_gid'])
     # No user-controlled file or directory is accessed before all saved root

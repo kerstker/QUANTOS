@@ -35,7 +35,7 @@ CONTROLLER_DIRECTORIES={'requests','claims','results','tasks','task-claims','tas
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
-    'binance_demo_oms_status','binance_demo_cancel_status'}
+    'binance_demo_oms_status','binance_demo_cancel_status','binance_demo_backup_status'}
 EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock',
     'resident-recovery/cycle.lock'}
 PROTECTED_ROOTS=tuple(Path(p) for p in ('/srv/quantos/state','/opt/quantos/releases',

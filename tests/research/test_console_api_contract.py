@@ -30,6 +30,27 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_backup_status_is_read_only_and_preserves_unknown_stale_failure(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_backup_status as model
+    from tests.research.test_demo_backup_status import report,NOW
+    directory=tmp_path/'backup-display'
+    monkeypatch.setattr(views,'_backup_status_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['backup_status']=={'status':'NO_SNAPSHOT','report':None}
+    raw=report();path=model.save(directory,raw);before=path.read_bytes()
+    result=client.get('/api/v1/console/binance-demo').json()
+    assert result['backup_status']=={'status':'AVAILABLE','report':raw} and result['read_only']
+    assert result['backup_status']['report']['components'][0]['summary']['failed_cycles']==1
+    assert path.read_bytes()==before
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+1800001)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['backup_status']['status']=='STALE'
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW-1)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['backup_status']=={'status':'DATA_BLOCKED','report':None}
+    path.write_text('{"private_key":"DO_NOT_DISPLAY"}')
+    assert client.get('/api/v1/console/binance-demo').json()['backup_status']=={'status':'CORRUPT_OR_UNREADABLE','report':None}
+
+
 def test_demo_market_inputs_show_quote_specific_closed_bars_and_retained_failures(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research import demo_market_inputs as model
@@ -348,7 +369,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs", "backup_status")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

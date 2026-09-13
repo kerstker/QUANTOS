@@ -94,4 +94,33 @@ python -P -m tools.demo_checkpoint_cycle status \
 
 单元生成入口为 `scripts/render_demo_checkpoint_units.py`，提供发行提交、命名空间、
 原目录和 UID 后只输出四份禁用单元及摘要。安装前核对真实身份、挂载、空间、原进程
-保全和自然周期；原 8 小时全规模演练保持独立。自动归档/清理及前端发布仍待进一步接线。
+保全和自然周期；原 8 小时全规模演练保持独立。自动归档/清理仍待进一步接线。
+
+## 只读恢复点监控
+
+对应[前后端实现与验证范围](../engineering/specs/2026-09-13-demo-backup-display.md)。
+监控读取固定 `/var/lib/quantos-demo-checkpoint-captures/<namespace>` 与
+`/mnt/quantos-backup/demo-namespaces/<namespace>`，不会读取任意一次性演练目录。
+原一次性恢复成功不能据此自动填成周期运行通过。
+
+先具备与发行版本绑定的原 `DEMO_DISPLAY_PUBLICATION_V1` 配置，字段见
+[展示发布手册](demo-operating-installation.md#4-安装单向展示发布)。安装步骤需建立
+root 所有、0700 的 `/var/lib/quantos-demo-checkpoints`，以及研究 UID/GID 所有、
+0700 的 `<research-state-root>/data/cache/binance_demo_backup_status`；后者必须和
+受保护配置里的研究路径一致。不要代替缺失的签发/工作流创建业务状态。
+
+```bash
+python scripts/render_demo_checkpoint_units.py \
+  --release-commit <完整已验收发行身份> --monitor \
+  --research-state-root <实际/home目录中的研究state路径> \
+  --output-dir <全新审阅输出目录>
+```
+
+渲染只生成 `quantos-demo-checkpoint-monitor.service/.timer` 和摘要，不安装或启动。
+单元调用 `tools.demo_backup_observe --source-commit <完整身份> --publish`，不装载
+备份密钥；先保存 root 私有摘要，随后使用原永久降权发布器送到固定研究缓存。
+默认启动一分钟后观察，以后每次结束十五分钟后再观察，单次两分钟上限。
+
+安装后分别检查服务结果、页面的四类范围和实际定时器运行状态。监控即使在备份挂载
+缺失时也应输出不可用；某一类捕获或加密目录缺失保持未知。超过三十分钟的摘要会在
+页面标为历史。它不重新解密归档、不执行生产恢复，也不替代各周期的完整恢复证明。

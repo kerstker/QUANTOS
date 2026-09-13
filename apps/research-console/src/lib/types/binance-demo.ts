@@ -10,6 +10,7 @@ import type {DemoResidentStatusSnapshot} from './demo-resident-status';
 import type {DemoExecutorObservationSnapshot} from './demo-executor-observation';
 import type {DemoIssuerSnapshot} from './demo-issuer-status';
 import type {DemoMarketInputsSnapshots} from './demo-market-inputs';
+import type {DemoBackupSnapshot} from './demo-backup-status';
 export interface DemoSymbol {
   symbol: string; quote_asset: string; margin_asset: string; contract_type: 'PERPETUAL';
   status: 'TRADING'; tick_size: string; step_size: string; min_qty: string; min_notional: string;
@@ -85,6 +86,7 @@ export interface BinanceDemoPayload {
   executor_observation: DemoExecutorObservationSnapshot;
   issuer_status: DemoIssuerSnapshot;
   market_inputs: DemoMarketInputsSnapshots;
+  backup_status: DemoBackupSnapshot;
 }
 
 export interface DemoPrivateCheckReport {

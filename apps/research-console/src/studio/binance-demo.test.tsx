@@ -34,6 +34,7 @@ function payload(): BinanceDemoPayload {
     resident_status: {status: 'NO_SNAPSHOT', report: null, last_result: null},
     executor_observation: {status:'NO_SNAPSHOT',report:null},
     issuer_status: {status:'NO_SNAPSHOT',report:null},
+    backup_status: {status:'NO_SNAPSHOT',report:null},
     market_inputs:{BTCUSDC:{status:'NO_SNAPSHOT',report:null},BTCUSDT:{status:'NO_SNAPSHOT',report:null}},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };

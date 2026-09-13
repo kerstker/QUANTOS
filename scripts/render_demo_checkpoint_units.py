@@ -108,16 +108,91 @@ Unit={prefix}-{role}.service
             prefix + '-seal.timer': timer('seal', '3min', '15min')}
 
 
+def render_monitor(*, release_commit, research_state_root):
+    # Reuse the exact path/release grammar of the capture unit, without installing it.
+    render(release_commit=release_commit, namespace='research', source_uid=1000,
+           source_dir=research_state_root+'/data/cache')
+    release='/opt/quantos/releases/'+release_commit
+    python='/opt/quantos/venvs/'+release_commit+'/bin/python'
+    cache=research_state_root+'/data/cache/binance_demo_backup_status'
+    service=f'''[Unit]
+Description=QUANTOS Demo backup recovery points and timer status
+ConditionPathExists=/etc/quantos/demo-observation/publication.json
+
+[Service]
+Type=oneshot
+User=0
+Group=0
+UMask=0077
+Environment=PYTHONPATH={release}
+Environment=PYTHONNOUSERSITE=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=LIVE_TRADING_ENABLED=false
+Environment=REAL_BROKER_ENABLED=false
+Environment=ALLOW_ORDER_SUBMISSION=false
+Environment=ALLOW_AI_DIRECT_TRADING=false
+Environment=REQUIRE_HUMAN_APPROVAL=true
+WorkingDirectory=/var/lib/quantos-demo-checkpoints
+ExecStartPre={python} -P -m tools.demo_checkpoint_cycle verify-release --source-commit {release_commit}
+ExecStart={python} -P -m tools.demo_backup_observe --source-commit {release_commit} --publish
+TimeoutStartSec=2min
+TimeoutStopSec=15s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+PrivateNetwork=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SETUID CAP_SETGID
+AmbientCapabilities=
+ReadOnlyPaths=-/var/lib/quantos-demo-checkpoint-captures -/mnt/quantos-backup/demo-namespaces /etc/quantos/demo-observation
+ReadWritePaths=/var/lib/quantos-demo-checkpoints {cache}
+InaccessiblePaths=-/etc/quantos/credentials -/etc/quantos/demo-submission -/etc/quantos/demo-issuer
+'''
+    timer='''[Unit]
+Description=QUANTOS Demo backup status publication schedule
+
+[Timer]
+OnActiveSec=1min
+OnUnitInactiveSec=15min
+AccuracySec=5s
+Unit=quantos-demo-checkpoint-monitor.service
+'''
+    return {'quantos-demo-checkpoint-monitor.service':service,'quantos-demo-checkpoint-monitor.timer':timer}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--release-commit', required=True)
-    parser.add_argument('--namespace', required=True)
-    parser.add_argument('--source-uid', type=int, required=True)
-    parser.add_argument('--source-dir', required=True)
+    parser.add_argument('--namespace')
+    parser.add_argument('--source-uid', type=int)
+    parser.add_argument('--source-dir')
+    parser.add_argument('--monitor', action='store_true')
+    parser.add_argument('--research-state-root')
     parser.add_argument('--output-dir', type=Path, required=True)
     args = parser.parse_args(argv)
-    units = render(release_commit=args.release_commit, namespace=args.namespace,
-                   source_uid=args.source_uid, source_dir=args.source_dir)
+    if args.monitor:
+        if not args.research_state_root or any(value is not None for value in (args.namespace,args.source_uid,args.source_dir)):
+            parser.error('monitor requires only --research-state-root and a release commit')
+        units=render_monitor(release_commit=args.release_commit,research_state_root=args.research_state_root)
+    else:
+        if any(value is None for value in (args.namespace,args.source_uid,args.source_dir)) or args.research_state_root is not None:
+            parser.error('capture/seal units require namespace, source UID and source directory')
+        units = render(release_commit=args.release_commit, namespace=args.namespace,
+                       source_uid=args.source_uid, source_dir=args.source_dir)
     args.output_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
     hashes = {}
     for name, body in units.items():
@@ -125,7 +200,7 @@ def main(argv=None):
             handle.write(body)
         hashes[name] = hashlib.sha256(body.encode()).hexdigest()
     receipt = dict(schema='DEMO_CHECKPOINT_UNITS_V1', release_commit=args.release_commit,
-                   namespace=args.namespace, source_uid=args.source_uid, unit_sha256=hashes,
+                   namespace=args.namespace, source_uid=args.source_uid, monitor=args.monitor, unit_sha256=hashes,
                    installed=False, started=False, enabled=False, source_full_acceptance=False,
                    submission_enabled=False, economic_authority=False)
     (args.output_dir / 'review.json').write_text(json.dumps(receipt, indent=2) + '\n')

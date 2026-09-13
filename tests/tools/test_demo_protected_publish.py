@@ -101,3 +101,21 @@ def test_permanent_drop_clears_groups_and_all_saved_identifiers(monkeypatch):
 @pytest.mark.parametrize('kind,symbol',[('market',None),('issuer','BTCUSDC'),('credentials',None)])
 def test_no_arbitrary_private_paths_or_ambiguous_quote_can_be_selected(kind,symbol):
     with pytest.raises(ValueError):tool.selection(kind,symbol)
+
+
+def test_backup_view_reads_root_summary_and_drops_identity_before_research_write(tmp_path,monkeypatch):
+    from services.research import demo_backup_status
+    from tests.research.test_demo_backup_status import report
+    cfg,_,events=ready(tmp_path,monkeypatch);raw=report()
+    def read(directory,*,root,uid,model):
+        assert root==Path('/var/lib/quantos-demo-checkpoints') and uid==0 and model is demo_backup_status
+        events.append('read_private');return raw
+    monkeypatch.setattr(tool,'read_snapshot',read)
+    original=demo_backup_status.save
+    def save(path,value):
+        assert events==['read_private','permanent_drop'];events.append('write_display')
+        return original(path,value)
+    monkeypatch.setattr(demo_backup_status,'save',save)
+    result=tool.run(source_commit='c'*40,kind='backup')
+    assert result['status']=='PUBLISHED_UNVERIFIED_DISPLAY' and result['phase']=='PARTIAL_RECOVERY_POINTS'
+    assert demo_backup_status.load_latest(Path(cfg['research_state_root'])/'data/cache/binance_demo_backup_status')==raw
