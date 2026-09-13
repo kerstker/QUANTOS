@@ -31,6 +31,38 @@ def test_cancellation_publish_uses_its_own_schema_and_rejects_oms_mixup(tmp_path
     assert main([*args,'--kind','cancellation'])==0 and demo_cancel_status.load_latest(dest)==raw
 
 
+def test_market_publishing_preserves_exact_bytes_quote_and_failed_attempts(tmp_path,capsys):
+    from tools.demo_oms_status_publish import main
+    from services.research import demo_market_inputs as model
+    from tests.tools.test_binance_demo_market_inputs import capture
+    source=tmp_path/'private';output=tmp_path/'display'/'BTCUSDC'
+    raw,_=capture();path=model.save(source,raw);original=path.read_bytes()
+    args=['--kind','market','--symbol','BTCUSDC','--source-dir',str(source),'--output-dir',str(output)]
+    assert main(args)==0 and model.load_latest(output)==raw
+    assert path.read_bytes()==original and (output/path.name).read_bytes()==original
+    failed,_=capture(lambda d:d['klines'].pop());model.save(source,failed)
+    assert main(args)==0 and model.load_latest(output)==failed
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])['phase']=='FAILED'
+
+
+@pytest.mark.parametrize('bad',['wrong_symbol','older_completion','symbol_without_market'])
+def test_market_publish_cannot_replace_the_other_quote_or_a_newer_view(tmp_path,capsys,bad):
+    from tools.demo_oms_status_publish import main
+    from services.research import demo_market_inputs as model
+    from tests.tools.test_binance_demo_market_inputs import capture
+    source=tmp_path/'private';output=tmp_path/'display'/'BTCUSDC';raw,_=capture()
+    model.save(output,raw)
+    if bad=='older_completion':
+        # A failure is allowed a longer actual elapsed time; it still cannot
+        # overwrite a later completed observation with an earlier completion.
+        raw=dict(raw,status='FAILED',completed_at_ms=raw['completed_at_ms']-1,reads=[],failure={'kind':'worker','reason':'REQUEST_FAILED'})
+    model.save(source,raw);before=(output/'latest.json').read_bytes()
+    args=['--kind','market','--symbol','BTCUSDT' if bad=='wrong_symbol' else 'BTCUSDC',
+        '--source-dir',str(source),'--output-dir',str(output)]
+    if bad=='symbol_without_market':args[1]='oms'
+    assert main(args)==3 and (output/'latest.json').read_bytes()==before
+
+
 @pytest.mark.parametrize('failure',['corrupt','backwards','same_directory','nested_source','nested_output'])
 def test_publish_rejects_invalid_or_overlapping_input_without_replacing_good_view(tmp_path,capsys,failure):
     from tools.demo_oms_status_publish import main

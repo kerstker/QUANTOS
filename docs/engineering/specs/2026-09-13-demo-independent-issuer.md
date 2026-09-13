@@ -1,5 +1,12 @@
 # Demo 独立签发、一次性总控与额度展示
 
+> **11:17 完整验收结果**：b8dbc51cdab97aadaad4d341fa7ea19c86328ddf 的持久
+> attempt 3 已完整 **28/28 PASS**；后端 8227/19 跳过、执行 4043/2 跳过、前端
+> 425 通过，原生 ARM64 两次冷构建、扫描与断网启动证据保持同一源码绑定。
+> 原退出 143 的失败记录保留。结果在
+> `/home/kerstker/quantos-dev-output/demo-issuer-acceptance-20260913/canonical-attempt3-result.json`。
+> 该结果不覆盖 783 当前行情任务或后续安装/发布代码，也不代表实际签发部署或普通订单完成。
+
 > 10:30 后续：b8dbc51cd 的两次 ARM64 冷构建、扫描、断网启动完成，但 canonical
 > 在后端约 96% 处被终止，交互任务退出 143，原因未确认，没有完整 PASS。
 > 同一冻结源码和原生证据的 attempt 3 已改为持久用户单元
