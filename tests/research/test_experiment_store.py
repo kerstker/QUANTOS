@@ -2,6 +2,8 @@
 fail-closed on an uninitialized/corrupt store (never reads as empty)."""
 from concurrent.futures import ThreadPoolExecutor
 import sqlite3
+import threading
+import time
 
 import pytest
 import services.research.experiment_registry.store as experiment_store
@@ -892,3 +894,71 @@ def test_search_preflight_reads_one_snapshot_while_another_writer_appends(
         assert len(reader.search_candidates("new-search")) == 1
     finally:
         reader.close()
+
+
+def test_research_writer_waits_for_valid_transaction_longer_than_five_seconds(tmp_path):
+    path = tmp_path / "bounded-write-wait.db"
+    holder = SqliteExperimentStore(str(path), create=True)
+    holder._conn.execute("PRAGMA journal_mode=WAL")
+    holder._conn.execute("BEGIN IMMEDIATE")
+    begin_seen = threading.Event()
+
+    def waiting_writer():
+        writer = SqliteExperimentStore(str(path))
+        writer._conn.set_trace_callback(
+            lambda sql: begin_seen.set() if sql == "BEGIN IMMEDIATE" else None
+        )
+        try:
+            writer.begin_search_attempt(
+                search_id="after-bounded-wait", search_kind="CONCURRENCY_TEST",
+                source="tests.research", dataset_version="dataset-v1", recorded_at=1000,
+            )
+            assert not writer._conn.in_transaction
+        finally:
+            writer.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(waiting_writer)
+            try:
+                assert begin_seen.wait(timeout=10)
+                time.sleep(6.1)
+            finally:
+                holder._conn.rollback()
+            future.result(timeout=10)
+        assert holder.search_history_valid() is True
+        assert len(holder.search_attempt_events("after-bounded-wait")) == 1
+    finally:
+        holder.close()
+
+
+def test_research_write_wait_expiry_has_no_partial_event_and_connection_recovers(tmp_path):
+    path = tmp_path / "write-wait-expiry.db"
+    holder = SqliteExperimentStore(str(path), create=True)
+    holder._conn.execute("PRAGMA journal_mode=WAL")
+    writer = SqliteExperimentStore(str(path), lock_timeout_seconds=0.05)
+    request = dict(search_id="one-event", search_kind="CONCURRENCY_TEST",
+                   source="tests.research", dataset_version="dataset-v1", recorded_at=1000)
+    try:
+        holder._conn.execute("BEGIN IMMEDIATE")
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                writer.begin_search_attempt(**request)
+        finally:
+            holder._conn.rollback()
+        assert not writer._conn.in_transaction and writer._active_write_lease is None
+        assert writer.search_attempt_events("one-event") == []
+        writer.begin_search_attempt(**request)
+        assert len(writer.search_attempt_events("one-event")) == 1
+        assert writer.search_history_valid() is True
+    finally:
+        writer.close()
+        holder.close()
+
+
+@pytest.mark.parametrize("budget", [True, False, -1, 61, float("inf"), float("nan"), "30", None])
+def test_invalid_lock_wait_budget_does_not_create_a_store(tmp_path, budget):
+    path = tmp_path / "invalid-budget.db"
+    with pytest.raises(ValueError, match="lock_timeout_seconds"):
+        SqliteExperimentStore(str(path), create=True, lock_timeout_seconds=budget)
+    assert not path.exists()

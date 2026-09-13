@@ -503,7 +503,13 @@ class SqliteExperimentStore:
         read_only: bool = False,
         expected_authority_instance_id: str | None = None,
         external_providers: FamilyAuthorityExternalProviders | None = None,
+        lock_timeout_seconds: float = 30.0,
     ) -> None:
+        # Research batches share one append-only ledger. Wait for SQLite's
+        # existing writer before BEGIN; never retry a transaction body or
+        # wait without a bound. Callers with a tighter latency budget may lower it.
+        if type(lock_timeout_seconds) not in (int, float) or not 0 <= lock_timeout_seconds <= 60:
+            raise ValueError("lock_timeout_seconds must be finite and between 0 and 60")
         if create and read_only:
             raise ExperimentStoreError("create and read_only are mutually exclusive")
         if read_only and path == ":memory:":
@@ -511,7 +517,7 @@ class SqliteExperimentStore:
         connection = None
         try:
             target = Path(path).resolve().as_uri() + "?mode=ro" if read_only else path
-            connection = sqlite3.connect(target, timeout=5.0, uri=read_only)
+            connection = sqlite3.connect(target, timeout=lock_timeout_seconds, uri=read_only)
             if read_only:
                 connection.execute("PRAGMA query_only=ON")
         except (OSError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
