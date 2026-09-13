@@ -23,6 +23,11 @@ python -P -m tools.demo_namespace_checkpoint capture \
 来源没有安装时会拒绝，不创建占位状态。原驻留 `resident-recovery/cycle.lock` 等确切
 零字节进程锁不会写入归档；非空锁或未知文件仍拒绝，不能删除它们强行通过检查。
 
+研究观察持续追加时，可以为 `--namespace research` 明确追加 `--observation-prefix`。
+它固定本次所列文件和索引，下一批新增观察留待下次归档，已经列入的历史仍检查未改写。
+V2 结果必须标明 `RESEARCH_FROZEN_FILE_INVENTORY`；不表示所有文件来自同一原子时点。
+该选项不能用于执行/签发/控制器，不应拿它跳过订单或领取数据库的一致性检查。
+
 由单独的备份身份使用现有密钥来源进行加密：
 
 ```bash

@@ -23,6 +23,8 @@ from tools.l2_backup import _snapshot_source_file as snapshot_file,_sqlite_integ
 from tools.live_backup import encrypt_file,decrypt_file,_check_passphrase_strength
 
 SCHEMA='DEMO_NAMESPACE_CHECKPOINT_V1'
+PREFIX_SCHEMA='DEMO_NAMESPACE_CHECKPOINT_V2'
+PREFIX_MODEL='RESEARCH_FROZEN_FILE_INVENTORY'
 MAX_FILES=100000
 MAX_BYTES=20*1024**3
 MAX_JSON_BYTES=16*1024*1024
@@ -92,7 +94,20 @@ def data_clock(path):
     return result
 
 
-def inventory(root,namespace):
+def frozen_json(path,info):
+    limit=1024 if path.name=='latest.json' else MAX_JSON_BYTES
+    require(info.st_size<=limit,'CHECKPOINT_POINTER_SIZE')
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+    with os.fdopen(fd,'rb') as source:
+        before=os.fstat(source.fileno())
+        fields=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns')
+        require(all(getattr(before,k)==getattr(info,k) for k in fields),'CHECKPOINT_SOURCE_CHANGED')
+        body=source.read(limit+1);after=os.fstat(source.fileno())
+        require(len(body)==info.st_size and all(getattr(before,k)==getattr(after,k) for k in fields),'CHECKPOINT_SOURCE_CHANGED')
+    return body
+
+
+def inventory(root,namespace,*,freeze_observation_pointers=False):
     root=Path(root).absolute();files,directories,required=scope(namespace)
     require(root.is_dir() and not root.is_symlink(),'CHECKPOINT_SOURCE_MISSING')
     require(not any(p.is_symlink() for p in root.parents),'CHECKPOINT_SOURCE_PARENT')
@@ -115,8 +130,10 @@ def inventory(root,namespace):
                 continue
             require(allowed(relative,namespace),'CHECKPOINT_UNDECLARED_FILE')
             require(path.suffix!='.json' or info.st_size<=MAX_JSON_BYTES,'CHECKPOINT_JSON_SIZE')
-            result[relative]={'size':info.st_size,'inode':info.st_ino,'device':info.st_dev,
-                'mtime_ns':info.st_mtime_ns,'json_sha256':sha(path) if path.suffix=='.json' else None,
+            frozen=frozen_json(path,info) if freeze_observation_pointers and namespace=='research' and (
+                path.name=='latest.json' or relative=='binance_demo_readiness.json') else None
+            result[relative]={'size':info.st_size,'inode':info.st_ino,'device':info.st_dev,'frozen_json':frozen,
+                'mtime_ns':info.st_mtime_ns,'json_sha256':hashlib.sha256(frozen).hexdigest() if frozen is not None else sha(path) if path.suffix=='.json' else None,
                 'data_clock':None if path.suffix=='.json' or relative in ('user-stream.sqlite3','binance_demo_user_stream.db') else data_clock(path)}
     require(required<=set(result) and result and len(result)<=MAX_FILES and sum(v['size'] for v in result.values())<=MAX_BYTES,'CHECKPOINT_REQUIRED_OR_BUDGET')
     if namespace=='controller':require(all((root/name).is_dir() for name in CONTROLLER_DIRECTORIES),'CHECKPOINT_CONTROLLER_LAYOUT')
@@ -182,7 +199,7 @@ def verify_state(root,namespace):
     return result
 
 
-def verify_files(root,entries,namespace):
+def verify_files(root,entries,namespace,*,observation_prefix=False):
     require(type(entries) is dict and 0<len(entries)<=MAX_FILES,'CHECKPOINT_ENTRIES')
     for name,entry in entries.items():
         require(allowed(name,namespace) and type(entry) is dict and set(entry)=={'sha256','size','snapshot_method'},'CHECKPOINT_ENTRY')
@@ -195,14 +212,24 @@ def verify_files(root,entries,namespace):
         else:
             require(entry['snapshot_method']=='STABLE_FILE_READ','CHECKPOINT_JSON_SNAPSHOT_REQUIRED')
             require(entry['size']<=MAX_JSON_BYTES,'CHECKPOINT_JSON_SIZE')
-            load_json_without_duplicate_keys(path.read_bytes())
+            document=load_json_without_duplicate_keys(path.read_bytes())
+            if observation_prefix and path.name=='latest.json':
+                require(type(document) is dict and set(document)=={'sha256'} and type(document['sha256']) is str and
+                    re.fullmatch('[a-f0-9]{64}',document['sha256']) is not None,'CHECKPOINT_OBSERVATION_POINTER')
+                target=(PurePosixPath(name).parent/(document['sha256']+'.json')).as_posix()
+                require(target in entries and entries[target]['sha256']==document['sha256'],'CHECKPOINT_OBSERVATION_TARGET')
     require(sum(v['size'] for v in entries.values())<=MAX_BYTES,'CHECKPOINT_TOTAL_SIZE')
     _,_,required=scope(namespace);require(required<=set(entries),'CHECKPOINT_REQUIRED_MISSING')
     return verify_state(root,namespace)
 
 
 def manifest_check(manifest):
-    require(type(manifest) is dict and set(manifest)==set('schema namespace source_commit source_uid captured_from_ms captured_until_ms entries directories state'.split()) and manifest['schema']==SCHEMA,'CHECKPOINT_MANIFEST')
+    require(type(manifest) is dict and manifest.get('schema') in (SCHEMA,PREFIX_SCHEMA),'CHECKPOINT_MANIFEST')
+    fields=set('schema namespace source_commit source_uid captured_from_ms captured_until_ms entries directories state'.split())
+    if manifest['schema']==PREFIX_SCHEMA:
+        fields.add('consistency_model')
+        require(manifest.get('namespace')=='research' and manifest.get('consistency_model')==PREFIX_MODEL,'CHECKPOINT_OBSERVATION_PREFIX_SCOPE')
+    require(set(manifest)==fields,'CHECKPOINT_MANIFEST')
     _,directories,_=scope(manifest['namespace'])
     require(type(manifest['source_commit']) is str and re.fullmatch('[a-f0-9]{40}',manifest['source_commit']) is not None,'CHECKPOINT_SOURCE_COMMIT')
     require(type(manifest['source_uid']) is int and 0<=manifest['source_uid']<2**31,'CHECKPOINT_SOURCE_UID')
@@ -242,19 +269,21 @@ def restore_checkpoint(archive,destination,*,passphrase,expected_sha256):
                     target.chmod(0o600)
                     for block in iter(lambda:src.read(1024*1024),b''):dst.write(block)
                     dst.flush();os.fsync(dst.fileno())
-            checked=verify_files(tree,entries,namespace)
+            checked=verify_files(tree,entries,namespace,observation_prefix=manifest['schema']==PREFIX_SCHEMA)
             require(checked==manifest['state'],'CHECKPOINT_STATE_CHANGED')
             # Verification cannot silently migrate restored records.
             require(all(sha(tree/name)==entry['sha256'] for name,entry in entries.items()),'CHECKPOINT_RESTORE_MUTATED')
         os.rename(tree,destination)
     return {'status':'RESTORED_ISOLATED','namespace':namespace,'files':len(entries),'state':checked,
+        'consistency_model':manifest.get('consistency_model','STABLE_FILES_AND_STREAM_PREFIX'),
         'source_commit':manifest['source_commit'],'source_uid':manifest['source_uid'],'source_verified':False,
         'cross_namespace_atomic':False,'submission_enabled':False,'economic_authority':False,'production_restore_performed':False}
 
 
-def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capture_only=False):
+def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capture_only=False,observation_prefix=False):
     root=Path(root).absolute();destination=Path(destination).absolute()
     require(type(capture_only) is bool,'CHECKPOINT_CAPTURE_MODE')
+    require(type(observation_prefix) is bool and (not observation_prefix or namespace=='research'),'CHECKPOINT_OBSERVATION_PREFIX_SCOPE')
     if not capture_only:_check_passphrase_strength(passphrase)
     require(type(source_commit) is str and re.fullmatch('[a-f0-9]{40}',source_commit) is not None,'CHECKPOINT_SOURCE_COMMIT')
     require(not destination.exists() and not destination.is_symlink() and root!=destination and root not in destination.parents,'CHECKPOINT_NEW_ARCHIVE_DESTINATION')
@@ -262,22 +291,31 @@ def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capt
     started=time.time_ns()//1000000
     require(root.is_dir() and not root.is_symlink(),'CHECKPOINT_SOURCE_MISSING')
     require(root.stat().st_uid==os.getuid(),'CHECKPOINT_SOURCE_OWNER_REQUIRED')
-    before,directories=inventory(root,namespace)
+    before,directories=inventory(root,namespace,freeze_observation_pointers=observation_prefix)
     destination.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.demo-checkpoint-',dir=destination.parent) as temporary:
         stage=Path(temporary);copies=stage/'files';scratch=stage/'scratch';copies.mkdir(mode=0o700);scratch.mkdir(mode=0o700);entries={}
         for name in before:
-            path=root/name;snapshot,method,_=snapshot_file(path,scratch)
-            target=copies/name;target.parent.mkdir(parents=True,exist_ok=True,mode=0o700);os.rename(snapshot,target);target.chmod(0o600)
+            path=root/name;target=copies/name;target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+            if before[name]['frozen_json'] is not None:
+                target.write_bytes(before[name]['frozen_json']);method='STABLE_FILE_READ'
+            else:
+                snapshot,method,_=snapshot_file(path,scratch);os.rename(snapshot,target)
+            target.chmod(0o600)
             entries[name]={'sha256':sha(target),'size':target.stat().st_size,'snapshot_method':method}
+            if path.suffix=='.json':require(entries[name]['sha256']==before[name]['json_sha256'],'CHECKPOINT_SOURCE_CHANGED')
         after,later_directories=inventory(root,namespace)
-        require(directories==later_directories and set(before)==set(after) and all(before[n]['inode']==after[n]['inode'] and before[n]['device']==after[n]['device'] and
-            before[n]['json_sha256']==after[n]['json_sha256'] and before[n]['data_clock']==after[n]['data_clock'] for n in before),'CHECKPOINT_SOURCE_CHANGED')
+        layout=(set(directories)<=set(later_directories) and set(before)<=set(after)) if observation_prefix else (
+            directories==later_directories and set(before)==set(after))
+        stable=[n for n in before if before[n]['frozen_json'] is None]
+        require(layout and all(before[n]['inode']==after[n]['inode'] and before[n]['device']==after[n]['device'] and
+            before[n]['json_sha256']==after[n]['json_sha256'] and before[n]['data_clock']==after[n]['data_clock'] for n in stable),'CHECKPOINT_SOURCE_CHANGED')
         for name in directories:(copies/name).mkdir(parents=True,mode=0o700,exist_ok=True)
-        checked=verify_files(copies,entries,namespace)
+        checked=verify_files(copies,entries,namespace,observation_prefix=observation_prefix)
         require(all(sha(copies/n)==v['sha256'] for n,v in entries.items()),'CHECKPOINT_VERIFIER_MUTATED')
         manifest={'schema':SCHEMA,'namespace':namespace,'source_commit':source_commit,'source_uid':root.stat().st_uid,
             'captured_from_ms':started,'captured_until_ms':time.time_ns()//1000000,'entries':entries,'directories':directories,'state':checked}
+        if observation_prefix:manifest.update(schema=PREFIX_SCHEMA,consistency_model=PREFIX_MODEL)
         manifest_check(manifest)
         archive=stage/'checkpoint.zip'
         with zipfile.ZipFile(archive,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=1) as z:
@@ -292,6 +330,7 @@ def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capt
             finally:os.close(fd)
             return {'status':'CAPTURED_PRIVATE_NAMESPACE_ARCHIVE','namespace':namespace,'files':len(entries),
                 'sha256':sha(archive),'source_commit':source_commit,'source_verified':False,'state':checked,
+                'consistency_model':manifest.get('consistency_model','STABLE_FILES_AND_STREAM_PREFIX'),
                 'encrypted':False,'cross_namespace_atomic':False,'submission_enabled':False,
                 'economic_authority':False,'production_restore_performed':False}
         encrypted=stage/'checkpoint.enc';encrypt_file(str(archive),str(encrypted),passphrase);encrypted.chmod(0o600)
@@ -303,6 +342,7 @@ def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capt
         try:os.fsync(fd)
         finally:os.close(fd)
     return {'status':'VERIFIED_ENCRYPTED_NAMESPACE_CHECKPOINT','namespace':namespace,'files':len(entries),'sha256':digest,
+        'consistency_model':manifest.get('consistency_model','STABLE_FILES_AND_STREAM_PREFIX'),
         'source_commit':source_commit,'source_verified':False,'state':checked,'encrypted':True,
         'cross_namespace_atomic':False,'submission_enabled':False,'economic_authority':False,'production_restore_performed':False}
 
@@ -345,6 +385,7 @@ def main(argv=None):
     for command in ('create','capture'):
         create=commands.add_parser(command);create.add_argument('--namespace',required=True,choices=('executor','issuer','controller','research'))
         create.add_argument('--source-dir',type=Path,required=True);create.add_argument('--source-commit',required=True);create.add_argument('--output',type=Path,required=True)
+        create.add_argument('--observation-prefix',action='store_true',help='Freeze research observation inventory and pointer bytes while collection continues')
     for command in ('restore','seal'):
         restore=commands.add_parser(command);restore.add_argument('--archive',type=Path,required=True)
         restore.add_argument('--expected-sha256',required=True);restore.add_argument('--output',type=Path,required=True)
@@ -352,7 +393,7 @@ def main(argv=None):
     try:
         passphrase=None if args.command=='capture' else resolve_backup_passphrase(environment_passphrase=os.environ.get('QUANTOS_BACKUP_PASSPHRASE'),passphrase_file=_default_passphrase_file())
         if args.command in ('create','capture'):result=create_checkpoint(args.source_dir,args.output,namespace=args.namespace,source_commit=args.source_commit,
-            passphrase=passphrase,capture_only=args.command=='capture')
+            passphrase=passphrase,capture_only=args.command=='capture',observation_prefix=args.observation_prefix)
         elif args.command=='seal':result=seal_checkpoint(args.archive,args.output,passphrase=passphrase,expected_sha256=args.expected_sha256)
         else:result=restore_checkpoint(args.archive,args.output,passphrase=passphrase,expected_sha256=args.expected_sha256)
         del passphrase

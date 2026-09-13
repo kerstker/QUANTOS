@@ -248,3 +248,62 @@ def test_issuer_empty_append_log_and_directory_layout_restore_without_reset(tmp_
     restored=tmp_path/'restored'
     checked=checkpoint.restore_checkpoint(tmp_path/'issuer.enc',restored,passphrase=SECRET,expected_sha256=report['sha256'])
     assert checked['state']['issuer_records']==0 and (restored/'results').is_dir() and (restored/'views').is_dir()
+
+
+def research_observations(tmp_path):
+    from services.research.demo_user_stream import UserStreamJournal
+    root=tmp_path/'research';root.mkdir()
+    with UserStreamJournal(root/'binance_demo_user_stream.db',account_ref_sha256='a'*64):pass
+    directory=root/'binance_demo_market_inputs/BTCUSDC';directory.mkdir(parents=True)
+    body=b'{"observation":1}';digest=checkpoint.hashlib.sha256(body).hexdigest()
+    (directory/(digest+'.json')).write_bytes(body)
+    (directory/'latest.json').write_text(json.dumps({'sha256':digest}))
+    return root,directory,digest
+
+
+def test_research_prefix_restores_frozen_pointer_while_new_observations_arrive(tmp_path,monkeypatch):
+    root,directory,first=research_observations(tmp_path)
+    original=checkpoint.snapshot_file;updated=False
+    second_body=b'{"observation":2}';second=checkpoint.hashlib.sha256(second_body).hexdigest()
+    def capture(*args,**kwargs):
+        nonlocal updated
+        result=original(*args,**kwargs)
+        if not updated:
+            updated=True;(directory/(second+'.json')).write_bytes(second_body)
+            (directory/'latest.json').write_text(json.dumps({'sha256':second}))
+        return result
+    monkeypatch.setattr(checkpoint,'snapshot_file',capture)
+    archive=tmp_path/'research.enc'
+    result=checkpoint.create_checkpoint(root,archive,namespace='research',source_commit=COMMIT,passphrase=SECRET,observation_prefix=True)
+    restored=tmp_path/'restored'
+    report=checkpoint.restore_checkpoint(archive,restored,passphrase=SECRET,expected_sha256=result['sha256'])
+    saved=restored/'binance_demo_market_inputs/BTCUSDC'
+    assert json.loads((saved/'latest.json').read_text())=={'sha256':first}
+    assert (saved/(first+'.json')).read_bytes()==b'{"observation":1}'
+    assert not (saved/(second+'.json')).exists() and (directory/(second+'.json')).exists()
+    assert report['consistency_model']=='RESEARCH_FROZEN_FILE_INVENTORY'
+    assert not report['cross_namespace_atomic'] and not report['source_verified']
+
+
+@pytest.mark.parametrize('change',['history','dangling_pointer'])
+def test_research_prefix_rejects_mutated_history_or_unincluded_pointer_target(tmp_path,monkeypatch,change):
+    root,directory,digest=research_observations(tmp_path)
+    if change=='dangling_pointer':(directory/'latest.json').write_text(json.dumps({'sha256':'f'*64}))
+    else:
+        original=checkpoint.snapshot_file;updated=False
+        def capture(*args,**kwargs):
+            nonlocal updated
+            result=original(*args,**kwargs)
+            if not updated:updated=True;(directory/(digest+'.json')).write_text('{"rewritten":true}')
+            return result
+        monkeypatch.setattr(checkpoint,'snapshot_file',capture)
+    with pytest.raises(ValueError):
+        checkpoint.create_checkpoint(root,tmp_path/'capture.zip',namespace='research',source_commit=COMMIT,
+            passphrase=None,capture_only=True,observation_prefix=True)
+    assert not (tmp_path/'capture.zip').exists()
+
+
+def test_research_prefix_mode_cannot_relax_executor_or_controller_snapshot(tmp_path):
+    with pytest.raises(ValueError,match='CHECKPOINT_OBSERVATION_PREFIX_SCOPE'):
+        checkpoint.create_checkpoint(tmp_path,tmp_path/'other.zip',namespace='executor',source_commit=COMMIT,
+            passphrase=None,capture_only=True,observation_prefix=True)
