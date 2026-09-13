@@ -65,5 +65,33 @@ python -P -m tools.demo_namespace_checkpoint restore \
 恢复目录中的所有记录仍按原编号、时间和状态保留。它不恢复进程内批准，不重发不确定订单，
 也不初始化停机状态或授予签名权限。多命名空间共同截止点和实际恢复接管需要分别核验。
 
-目前该工具没有安装定时器或轮转日志。实际接线时先验证同范围数据、源记录/进程保全、
-完整加密往返、失败投影和容量计划，再接入常驻备份；原 8 小时全规模演练保持独立。
+## 周期运行接线
+
+新增[周期工作者和单元渲染](../engineering/specs/2026-09-13-demo-periodic-checkpoints.md)，
+仍未安装。原数据 UID 使用独立、已建立的 0700 私有 spool：
+
+```bash
+python -P -m tools.demo_checkpoint_cycle capture \
+  --namespace research --source-dir <原state/data/cache> \
+  --source-commit <确切已验收发行提交> --spool <原身份私有spool> --observation-prefix
+```
+
+独立封装身份从原 `LoadCredential` 读取现有口令，对已完成的捕获处理积压：
+
+```bash
+python -P -m tools.demo_checkpoint_cycle seal --pending \
+  --namespace research --spool <原身份私有spool> \
+  --source-uid <来源UID> --backup <封装身份私有备份目录>
+python -P -m tools.demo_checkpoint_cycle status \
+  --namespace research --spool <原身份私有spool> \
+  --source-uid <来源UID> --backup <封装身份私有备份目录> --rpo-seconds 86400
+```
+
+积压处理的 `PROCESSED` 仅表示这一轮处理完成；空队列不是备份通过。以各周期的完整
+恢复结果与 `status` 恢复点年龄核对。失败和中断记录不得删除，密文后的中断必须重新恢复。
+不要在命令参数中传口令。运行 `-P -m` 时应由已审阅单元设置确切 `PYTHONPATH`，不能
+依赖当前目录自动加入模块搜索路径。
+
+单元生成入口为 `scripts/render_demo_checkpoint_units.py`，提供发行提交、命名空间、
+原目录和 UID 后只输出四份禁用单元及摘要。安装前核对真实身份、挂载、空间、原进程
+保全和自然周期；原 8 小时全规模演练保持独立。自动归档/清理及前端发布仍待进一步接线。
