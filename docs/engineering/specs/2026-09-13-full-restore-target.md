@@ -48,6 +48,19 @@ SQLite 通过原 `mode=ro` / `query_only=ON` 连接处理正常日志辅助文�
 演练仅输出到独立目录，没有把失败或尚在进行的检查发布为生产健康通过。
 本机备份挂载仍在同一物理 NVMe 上，不作为异机或独立物理设备恢复证据。
 
+## 新增数据目录的覆盖缺口
+
+本次演练的 34 个文件仍属于原 `/srv/quantos/state` 来源合同。当前
+`SOURCE_CONTRACT_VERSION=16` 的 38 个配置来源没有 Demo 专用数据条目。
+新研究运行目录
+`/home/kerstker/quantos-dev-output/research-runtime-244dd6fbe/state` 的 Demo 缓存及
+`/var/lib/quantos-demo-executor` 是另外的数据目录；已核对目录身份，研究 Demo
+文件也不是指向原来源的符号链接。不能用原范围的恢复结果声称这些新数据已受保护。
+
+后续须分别补齐研究原始观察与受保护执行日志的加密备份、来源清单、恢复后的原账户
+身份及追加历史核对，并实际验证恢复。展示缓存不能代替执行原始日志。新增覆盖应建立
+独立版本和结果，不修改正在进行的原范围测量；凭证不进入研究备份或展示数据。
+
 这次调整不改变 [Demo D0–D4](../plans/2026-09-12-demo-execution-completion.md) 的
 实际订单/回执/现金核对条件，也不改变 P3/P4/P6 的冻结窗口和盈利验收。
 
@@ -69,6 +82,10 @@ CPU/IO 权重、内存上限和交换空间配置保持原值，进程 PID 68277
 `worker-deadline-dropin-probe.json`、`worker-deadline-dropin-review.json` 与
 `worker-deadline-dropin-result.json`。后续报告须同时注明此次进程预算调整及原
 两小时 RTO；允许检查继续运行本身不能当作恢复已达标。
+
+07:46 再核对：原进程已运行 14,699 秒，超过原 4 小时外部上限后仍保持相同 PID、
+启动时钟和命令摘要，确认延期实际生效。`worker-budget-after-four-hours.json` 保存
+该观察；恢复最终结果仍未产出。
 
 ## 定时任务配置接线
 
