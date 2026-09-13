@@ -112,6 +112,41 @@ def test_missing_namespaces_are_unknown_and_do_not_create_empty_state(tmp_path):
         assert not root.exists()
 
 
+def test_resident_recovery_empty_process_lock_does_not_block_checkpoint(tmp_path,monkeypatch):
+    import zipfile
+    root,_=executor(tmp_path,monkeypatch)
+    resident=root/'resident-recovery';resident.mkdir()
+    (resident/'cycle.lock').touch()
+    (resident/'original.json').write_text('{"pending":true}')
+    archive=tmp_path/'capture.zip'
+    report=checkpoint.create_checkpoint(root,archive,namespace='executor',source_commit=COMMIT,passphrase=None,capture_only=True)
+    with zipfile.ZipFile(archive) as saved:
+        assert 'resident-recovery/cycle.lock' not in saved.namelist()
+        assert saved.read('resident-recovery/original.json')==b'{"pending":true}'
+    assert report['state']['pending_recoveries']==1
+    assert (resident/'cycle.lock').is_file()
+
+
+@pytest.mark.parametrize('lock',['observation.lock','resident-recovery/cycle.lock'])
+def test_nonempty_runtime_lock_cannot_be_silently_omitted(tmp_path,monkeypatch,lock):
+    root,_=executor(tmp_path,monkeypatch)
+    path=root/lock;path.parent.mkdir(exist_ok=True);path.write_bytes(b'preserve this record')
+    with pytest.raises(ValueError,match='CHECKPOINT_NONEMPTY_RUNTIME_LOCK'):
+        checkpoint.create_checkpoint(root,tmp_path/'capture.zip',namespace='executor',source_commit=COMMIT,passphrase=None,capture_only=True)
+
+
+def test_cli_exposes_fixed_checkpoint_reason_without_raw_external_errors(tmp_path,monkeypatch,capsys):
+    command=['capture','--namespace','executor','--source-dir',str(tmp_path/'missing'),
+        '--output',str(tmp_path/'capture.zip'),'--source-commit',COMMIT]
+    assert checkpoint.main(command)==3
+    assert json.loads(capsys.readouterr().out)['reason_code']=='CHECKPOINT_SOURCE_MISSING'
+    def error(*args,**kwargs):raise ValueError('private external exception detail')
+    monkeypatch.setattr(checkpoint,'create_checkpoint',error)
+    assert checkpoint.main(command)==3
+    output=capsys.readouterr().out
+    assert json.loads(output)['reason_code']=='CHECKPOINT_UNCLASSIFIED' and 'private' not in output
+
+
 def test_order_database_wal_change_during_capture_is_not_an_atomic_order_snapshot(tmp_path,monkeypatch):
     root,_=executor(tmp_path,monkeypatch);original=checkpoint.snapshot_file;changed=False
     with sqlite3.connect(root/'oms.sqlite3') as writer:

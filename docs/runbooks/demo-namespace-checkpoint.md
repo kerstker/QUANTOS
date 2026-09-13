@@ -2,7 +2,8 @@
 
 对应[实现、盘点和范围](../engineering/specs/2026-09-13-demo-namespace-checkpoint.md)。
 原夜间备份不会自动覆盖这些新目录。使用已核对的 Python 3.12 环境，保留每次命令、
-退出状态和 JSON 结果；不从“生成了文件”推断恢复成功。
+退出状态和 JSON 结果；不从“生成了文件”推断恢复成功。失败中的 `reason_code`
+给出固定检查原因；`CHECKPOINT_UNCLASSIFIED` 不包含外部异常原文，需保留该次材料再诊断。
 
 ## 捕获与加密分开运行
 
@@ -19,7 +20,8 @@ python -P -m tools.demo_namespace_checkpoint capture \
 该步骤不读取密钥，返回 `CAPTURED_PRIVATE_NAMESPACE_ARCHIVE` 和明文归档摘要。
 `encrypted=false`，不是备份验收成功。研究数据使用 `--namespace research`，
 `--source-dir` 指向实际研究 state 的 `data/cache`；issuer/controller 分别使用原专用目录。
-来源没有安装时会拒绝，不创建占位状态。
+来源没有安装时会拒绝，不创建占位状态。原驻留 `resident-recovery/cycle.lock` 等确切
+零字节进程锁不会写入归档；非空锁或未知文件仍拒绝，不能删除它们强行通过检查。
 
 由单独的备份身份使用现有密钥来源进行加密：
 

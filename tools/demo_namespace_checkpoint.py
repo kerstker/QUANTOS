@@ -34,13 +34,18 @@ RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
     'binance_demo_oms_status','binance_demo_cancel_status'}
-EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock'}
+EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock',
+    'resident-recovery/cycle.lock'}
 PROTECTED_ROOTS=tuple(Path(p) for p in ('/srv/quantos/state','/opt/quantos/releases',
     '/var/lib/quantos-demo-executor','/var/lib/quantos-demo-issuer','/var/lib/quantos-demo-controller'))
 
 
+class CheckpointError(ValueError):
+    """A fixed checkpoint condition, separate from external exception messages."""
+
+
 def require(value,reason):
-    if not value:raise ValueError(reason)
+    if not value:raise CheckpointError(reason)
 
 
 def sha(path):
@@ -102,7 +107,8 @@ def inventory(root,namespace):
             if stat.S_ISDIR(info.st_mode):
                 require(first in directories,'CHECKPOINT_UNDECLARED_DIRECTORY');pending.append(path);directory_names.append(relative);continue
             require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,'CHECKPOINT_SOURCE_FILE')
-            if relative in EPHEMERAL:continue
+            if relative in EPHEMERAL:
+                require(info.st_size==0,'CHECKPOINT_NONEMPTY_RUNTIME_LOCK');continue
             if any(relative.endswith(suffix) for suffix in ('-wal','-shm','-journal')):
                 suffix=next(s for s in ('-wal','-shm','-journal') if relative.endswith(s))
                 require(allowed(relative[:-len(suffix)],namespace) and (root/relative[:-len(suffix)]).is_file(),'CHECKPOINT_ORPHAN_SIDECAR')
@@ -351,8 +357,9 @@ def main(argv=None):
         else:result=restore_checkpoint(args.archive,args.output,passphrase=passphrase,expected_sha256=args.expected_sha256)
         del passphrase
         print(json.dumps(result,sort_keys=True));return 0
-    except Exception:
+    except Exception as error:
         print(json.dumps({'status':'CHECKPOINT_NOT_COMPLETED','command':args.command,
+            'reason_code':str(error) if type(error) is CheckpointError else 'CHECKPOINT_UNCLASSIFIED',
             'production_restore_performed':False,'submission_enabled':False,'economic_authority':False}));return 3
     finally:os.umask(previous)
 
