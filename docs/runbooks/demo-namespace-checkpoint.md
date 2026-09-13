@@ -125,6 +125,11 @@ python scripts/render_demo_checkpoint_units.py \
 缺失时也应输出不可用；某一类捕获或加密目录缺失保持未知。超过三十分钟的摘要会在
 页面标为历史。它不重新解密归档、不执行生产恢复，也不替代各周期的完整恢复证明。
 
+DGX实际发布还需显式`AmbientCapabilities=CAP_SETUID`；bounding set声明不足以证明
+进程实际获得该权限。原NoNewPrivileges和权限上限保留；以实际研究UID核对永久切换后
+有效/许可/ambient权限归零、私有来源不可读且无法取回root。实际失败与修正见
+[运行记录](../engineering/specs/2026-09-13-demo-backup-runtime.md)。捕获和封装不需要此能力。
+
 ## 公开行情日归档的兼容接入
 
 公开研究采集 CLI 的 `--archive-observations` 将新的报告按原观察时间的UTC日写入

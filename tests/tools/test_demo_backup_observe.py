@@ -105,6 +105,22 @@ def test_monitor_unit_has_no_backup_key_and_explicit_identity_drop_capabilities(
     service=units['quantos-demo-checkpoint-monitor.service']
     assert 'LoadCredential=' not in service and '--publish' in service
     assert 'CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SETUID CAP_SETGID' in service
+    # DGX's actual launch retained SETGID but lost effective SETUID without
+    # an explicit ambient declaration; a bounding set alone was insufficient.
+    assert 'AmbientCapabilities=CAP_SETUID\n' in service
     assert 'PrivateNetwork=true' in service and 'ConditionPathIsMountPoint' not in service
     assert 'binance_demo_backup_status' in service
     assert '[Install]' not in service and '[Install]' not in units['quantos-demo-checkpoint-monitor.timer']
+
+
+def test_only_the_publisher_can_inherit_the_uid_transition_capability():
+    from scripts.render_demo_checkpoint_units import render
+    for namespace, uid, source in (
+        ('research', 1000, '/home/operator/research/state/data/cache'),
+        ('executor', 1001, '/var/lib/quantos-demo-executor'),
+    ):
+        units = render(release_commit='c'*40, namespace=namespace, source_uid=uid, source_dir=source)
+        for name, body in units.items():
+            if name.endswith('.service'):
+                assert 'AmbientCapabilities=\n' in body
+                assert 'CAP_SETUID' not in body and 'CAP_SETGID' not in body
