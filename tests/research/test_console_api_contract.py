@@ -30,6 +30,31 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_market_inputs_show_quote_specific_closed_bars_and_retained_failures(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_market_inputs as model
+    from tests.tools.test_binance_demo_market_inputs import capture,NOW
+    raw,_=capture();directory=tmp_path/'market'
+    monkeypatch.setattr(views,'_market_inputs_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+10)*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['market_inputs']['BTCUSDC']=={'status':'NO_SNAPSHOT','report':None}
+    path=model.save(directory/'BTCUSDC',raw);before=path.read_bytes()
+    payload=client.get('/api/v1/console/binance-demo').json();value=payload['market_inputs']['BTCUSDC']
+    assert value['status']=='AVAILABLE' and payload['market_inputs']['BTCUSDT']['status']=='NO_SNAPSHOT'
+    assert value['report']['metrics']['daily_volume_base']=='123.456'
+    assert len(value['report']['metrics']['bars'])==61 and value['report']['failure'] is None
+    assert 'body' not in json.dumps(value) and path.read_bytes()==before and payload['read_only']
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+30008)*1_000_000)
+    stale=client.get('/api/v1/console/binance-demo').json()['market_inputs']['BTCUSDC']
+    assert stale['status']=='STALE' and stale['report']==value['report']
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1_000_000)
+    assert client.get('/api/v1/console/binance-demo').json()['market_inputs']['BTCUSDC']=={'status':'DATA_BLOCKED','report':None}
+    failed,_=capture(lambda d:d['klines'].pop());model.save(directory/'BTCUSDC',failed)
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+10)*1_000_000)
+    bad=client.get('/api/v1/console/binance-demo').json()['market_inputs']['BTCUSDC']['report']
+    assert bad['capture_status']=='FAILED' and bad['metrics'] is None and bad['failure']['reason']=='INPUTS_INVALID'
+
+
 def test_demo_issuer_budget_is_read_only_and_preserves_stale_or_missing_evidence(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research import demo_issuer_status as model
@@ -323,7 +348,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

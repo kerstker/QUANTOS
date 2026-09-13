@@ -23,8 +23,25 @@ from services.research.demo_resident_status import load_latest as load_resident_
 from services.research.demo_cash_chain_status import load_latest as load_cash_chain
 from services.research.demo_executor_observation import load_latest as load_executor_observation
 from services.research.demo_issuer_status import load_latest as load_issuer_status
+from services.research import demo_market_inputs
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _market_inputs_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_market_inputs'
+
+
+def build_market_inputs_snapshot(*,directory:Path,as_of_ms:int):
+    if not (directory/'latest.json').exists() and not (directory/'latest.json').is_symlink():
+        return {'status':'NO_SNAPSHOT','report':None}
+    try:
+        raw=demo_market_inputs.load_latest(directory)
+        if raw['symbol']!=directory.name or raw['completed_at_ms']>as_of_ms:
+            return {'status':'DATA_BLOCKED','report':None}
+        status='STALE' if as_of_ms-raw['completed_at_ms']>demo_market_inputs.MAX_AGE_MS else 'AVAILABLE'
+        return {'status':status,'report':demo_market_inputs.display(raw)}
+    except Exception:return {'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
 def _issuer_status_directory():
@@ -309,6 +326,8 @@ def binance_demo_snapshot():
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
         'executor_observation':build_executor_observation_snapshot(directory=_executor_observation_directory(),as_of_ms=as_of_ms),
         'issuer_status':build_issuer_status_snapshot(directory=_issuer_status_directory(),as_of_ms=as_of_ms),
+        'market_inputs':{symbol:build_market_inputs_snapshot(directory=_market_inputs_directory()/symbol,as_of_ms=as_of_ms)
+                         for symbol in ('BTCUSDC','BTCUSDT')},
         'execution_origin': build_execution_origin_snapshot(directory=_execution_origin_directory(), as_of_ms=as_of_ms),
         'oms_status': build_oms_status_snapshot(directory=_oms_status_directory(),as_of_ms=as_of_ms),
         'cancellation_status': build_cancel_status_snapshot(directory=_cancel_status_directory(),as_of_ms=as_of_ms),

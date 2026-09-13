@@ -112,9 +112,10 @@ def exchange(executable,issuer_factory,request,*,purpose,deadline):
             'result_sha256':hashlib.sha256(result_raw).hexdigest(),'result':result}
 
 
-def claim(directory,value):
+def claim(directory,value,*,identity_field='request_sha256'):
     _root_private_directory(directory)
-    identity=value['request_sha256'];require(re.fullmatch('[a-f0-9]{64}',identity) is not None,'SUPERVISOR_REQUEST_HASH')
+    require(identity_field in ('request_sha256','task_sha256'),'SUPERVISOR_CLAIM_KIND')
+    identity=value[identity_field];require(re.fullmatch('[a-f0-9]{64}',identity) is not None,'SUPERVISOR_REQUEST_HASH')
     path=directory/(identity+'.json');body=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
     fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'wb') as stream:stream.write(body);stream.flush();os.fsync(stream.fileno())
@@ -124,9 +125,9 @@ def claim(directory,value):
     return path
 
 
-def read_request(identity):
+def read_document(directory,identity):
     require(type(identity) is str and re.fullmatch('[a-f0-9]{64}',identity) is not None,'SUPERVISOR_REQUEST_HASH')
-    directory=STATE/'requests';_root_private_directory(directory)
+    _root_private_directory(directory)
     fd=os.open(directory/(identity+'.json'),os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
     def check(info):
         require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_nlink==1 and
@@ -144,6 +145,9 @@ def read_request(identity):
         value=load_json_without_duplicate_keys(raw)
         return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
     finally:os.close(fd)
+
+
+def read_request(identity):return read_document(STATE/'requests',identity)
 
 
 def configuration(source_commit):

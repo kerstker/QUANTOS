@@ -16,6 +16,7 @@ import {DemoAccountBaseline} from './DemoAccountBaseline';
 import {DemoUserStream} from './DemoUserStream';
 import {DemoExecutorObservation} from './DemoExecutorObservation';
 import {DemoIssuerStatus} from './DemoIssuerStatus';
+import {DemoMarketInputs} from './DemoMarketInputs';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -76,6 +77,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     </div>
     <DemoExecutorObservation snapshot={data?.executor_observation} asOf={data?.as_of_ms} refreshFailed={!!error}/>
     <DemoIssuerStatus snapshot={data?.issuer_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
+    <DemoMarketInputs snapshots={data?.market_inputs} refreshFailed={!!error}/>
     <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
     <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
     <DemoExecutionOrigin snapshot={data?.execution_origin} refreshFailed={!!error}/>

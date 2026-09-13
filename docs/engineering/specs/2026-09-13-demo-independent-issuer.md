@@ -1,5 +1,12 @@
 # Demo 独立签发、一次性总控与额度展示
 
+> 10:30 后续：b8dbc51cd 的两次 ARM64 冷构建、扫描、断网启动完成，但 canonical
+> 在后端约 96% 处被终止，交互任务退出 143，原因未确认，没有完整 PASS。
+> 同一冻结源码和原生证据的 attempt 3 已改为持久用户单元
+> `quantos-issuer-acceptance-b8-attempt3-20260913.service`，预算 3 小时，结果待观察。
+> 原失败日志保留。另见[任务与当前行情接线](2026-09-13-demo-observed-request-workflow.md)，
+> 该后续源码不包含在 b8 的验收范围内；实际签发安装与普通订单仍未完成。
+
 2026-09-13。开发起点 `7668725f68a56828c1cc1aab45ad8f9dfe0139a1`。
 承接 [D0–D4](../plans/2026-09-12-demo-execution-completion.md)、
 [已有撤单会话](2026-09-13-demo-cancellation-session.md)和

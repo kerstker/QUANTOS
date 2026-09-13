@@ -574,6 +574,11 @@
           "path": "services/console/api/binance_demo_views.py"
         },
         {
+          "line": 26,
+          "module": "services.research",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
           "line": 4,
           "module": "services.research.ai_factory_episodes",
           "path": "services/console/api/factory_research_notes.py"
@@ -1441,6 +1446,11 @@
           "path": "services/research/demo_issuer_status.py"
         },
         {
+          "line": 7,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_market_inputs.py"
+        },
+        {
           "line": 14,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_opening_projection.py"
@@ -1606,6 +1616,11 @@
           "line": 20,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_execution_origin.py"
+        },
+        {
+          "line": 8,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_market_inputs.py"
         },
         {
           "line": 12,
@@ -1968,7 +1983,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "817c35112dd884d8371180517037d65c8a62d90d701e9ff6f5663dcd72baf26e",
+  "graph_sha256": "73d7a584f642a3d61892dbded4d80e890d6c9884d5c487f22e9b5d387e107a8c",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2006,7 +2021,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 581,
+  "source_file_count": 582,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -34,6 +34,7 @@ function payload(): BinanceDemoPayload {
     resident_status: {status: 'NO_SNAPSHOT', report: null, last_result: null},
     executor_observation: {status:'NO_SNAPSHOT',report:null},
     issuer_status: {status:'NO_SNAPSHOT',report:null},
+    market_inputs:{BTCUSDC:{status:'NO_SNAPSHOT',report:null},BTCUSDT:{status:'NO_SNAPSHOT',report:null}},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }
@@ -69,7 +70,7 @@ it('separates public connectivity from account and order readiness without fake 
   expect(screen.getByText('公共接口可达')).toBeInTheDocument();
   expect(screen.getByText('账户尚未查询')).toBeInTheDocument();
   expect(screen.getByText('执行条件未满足')).toBeInTheDocument();
-  expect(screen.getByText('BTCUSDC')).toBeInTheDocument();
+  expect(screen.getByRole('cell',{name:/BTCUSDC/})).toBeInTheDocument();
   expect(screen.queryByRole('button', {name: /下单|开启交易/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name: '刷新快照'}));
   expect(refresh).toHaveBeenCalledTimes(1);
