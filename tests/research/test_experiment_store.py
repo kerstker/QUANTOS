@@ -841,3 +841,54 @@ def test_shared_ledger_serializes_concurrent_candidate_batches_at_scale(tmp_path
         assert [
             row["status"] for row in final.search_attempt_events(search_id)
         ] == ["STARTED", "COMPLETED"]
+
+
+def test_search_preflight_reads_one_snapshot_while_another_writer_appends(
+    tmp_path, monkeypatch
+):
+    """An event list from before a commit must not mix with later candidates."""
+    from services.research.experiment_registry import family_schema_v2_semantics as semantics
+
+    path = tmp_path / "concurrent-preflight.db"
+    reader = SqliteExperimentStore(str(path), create=True)
+    reader._conn.execute("PRAGMA journal_mode=WAL")
+    original = semantics._rows
+    interleaved = False
+
+    def append_batch():
+        writer = SqliteExperimentStore(str(path), create=False)
+        try:
+            writer.begin_search_attempt(
+                search_id="new-search",
+                search_kind="CONCURRENCY_TEST",
+                source="tests.research",
+                dataset_version="dataset-v1",
+                recorded_at=1000,
+            )
+            writer.register_search_candidates(
+                "new-search", ["new-candidate"], registered_at=1000
+            )
+        finally:
+            writer.close()
+
+    def rows(connection, sql):
+        nonlocal interleaved
+        result = original(connection, sql)
+        if (
+            connection is reader._conn
+            and not interleaved
+            and "FROM search_attempt_events ORDER BY" in sql
+        ):
+            interleaved = True
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(append_batch).result(timeout=10)
+        return result
+
+    monkeypatch.setattr(semantics, "_rows", rows)
+    try:
+        reader._ensure_search_schema()
+        assert interleaved and not reader._conn.in_transaction
+        assert reader.search_history_valid() is True
+        assert len(reader.search_candidates("new-search")) == 1
+    finally:
+        reader.close()

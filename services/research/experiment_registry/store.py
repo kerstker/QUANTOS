@@ -799,29 +799,47 @@ class SqliteExperimentStore:
 
         self._ensure_search_schema()
 
+    @contextmanager
+    def _search_read_snapshot(self) -> Iterator[None]:
+        """Pin the implicit read snapshot until every preflight query finishes.
+
+        An unfinished SELECT keeps SQLite's read snapshot on this connection.
+        Close it before the existing BEGIN IMMEDIATE; preflight must not add
+        transaction-control statements or acquire a store write lease.
+        """
+        self._reject_write_ownership_conflict()
+        cursor = self._conn.execute("SELECT name FROM main.sqlite_schema")
+        try:
+            if cursor.fetchone() is None:
+                raise ExperimentStoreError("store uninitialized; missing tables")
+            yield
+        finally:
+            cursor.close()
+
     def _ensure_search_schema(self, *, require_provenance: bool = False) -> None:
         """Migrate only an already-valid experiment store on the first search write."""
         self._reject_write_ownership_conflict()
-        self._require_schema()
         migration_started = False
         try:
-            current_version = self._schema_version()
-            if current_version > _SEARCH_SCHEMA_VERSION:
-                raise ExperimentStoreError(f"unsupported experiment store user_version: {current_version}")
-            if current_version == _SEARCH_SCHEMA_VERSION:
-                self._require_search_write_permission(current_version)
-                return
-            if current_version == 3:
-                self._require_search_write_permission(current_version)
-                if require_provenance:
-                    raise ExperimentStoreError(
-                        "trial provenance is unavailable in exact family schema v3"
-                    )
-                return
-            if current_version == 2:
-                self._require_search_write_permission(current_version)
-                if not require_provenance:
+            with self._search_read_snapshot():
+                self._require_schema()
+                current_version = self._schema_version()
+                if current_version > _SEARCH_SCHEMA_VERSION:
+                    raise ExperimentStoreError(f"unsupported experiment store user_version: {current_version}")
+                if current_version == _SEARCH_SCHEMA_VERSION:
+                    self._require_search_write_permission(current_version)
                     return
+                if current_version == 3:
+                    self._require_search_write_permission(current_version)
+                    if require_provenance:
+                        raise ExperimentStoreError(
+                            "trial provenance is unavailable in exact family schema v3"
+                        )
+                    return
+                if current_version == 2:
+                    self._require_search_write_permission(current_version)
+                    if not require_provenance:
+                        return
 
             self._conn.execute("BEGIN IMMEDIATE")
             migration_started = True
@@ -834,7 +852,8 @@ class SqliteExperimentStore:
                     migration_started = False
                     self._invalidate_connection("migration commit failed", commit_exc)
                 migration_started = False
-                self._require_search_write_permission(locked_version)
+                with self._search_read_snapshot():
+                    self._require_search_write_permission(locked_version)
                 return
             if locked_version > _SEARCH_SCHEMA_VERSION:
                 raise ExperimentStoreError(f"unsupported experiment store user_version: {locked_version}")
