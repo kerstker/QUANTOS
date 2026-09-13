@@ -6,7 +6,7 @@ import json
 from quantos.contracts.binance_demo_clock import bracket_bounds
 from services.execution.perpetual_ledger_v2 import ledger_decimal_context,canonical_decimal
 from services.governance.json_integrity import load_json_without_duplicate_keys
-from services.research import demo_display_store
+from services.research import demo_display_store,demo_observation_store
 from services.research.demo_execution_origin import fields,sha
 from services.research.demo_oms_status import _time
 
@@ -103,10 +103,12 @@ def assess(raw,*,as_of_ms):
     return result
 
 
-def save(directory,raw):return demo_display_store.save(directory,raw,validator=validate)
+def save(directory,raw,*,archive=False):
+    require(type(archive) is bool,'MARKET_STORAGE_MODE')
+    return (demo_observation_store if archive else demo_display_store).save(directory,raw,validator=validate)
 
 
-def load_latest(directory):return demo_display_store.load_latest(directory,validator=validate)
+def load_latest(directory):return demo_observation_store.load_latest(directory,validator=validate)
 
 
 def display(raw):

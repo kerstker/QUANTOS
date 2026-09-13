@@ -19,6 +19,7 @@ import time
 import zipfile
 
 from services.governance.json_integrity import load_json_without_duplicate_keys
+from services.research import demo_observation_store,demo_market_inputs
 from tools.l2_backup import _snapshot_source_file as snapshot_file,_sqlite_integrity,resolve_backup_passphrase,_default_passphrase_file
 from tools.live_backup import encrypt_file,decrypt_file,_check_passphrase_strength
 
@@ -37,7 +38,8 @@ RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
     'binance_demo_oms_status','binance_demo_cancel_status','binance_demo_backup_status'}
 EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock',
-    'resident-recovery/cycle.lock'}
+    'resident-recovery/cycle.lock',
+    'binance_demo_market_inputs/BTCUSDC/archive/append.lock','binance_demo_market_inputs/BTCUSDT/archive/append.lock'}
 PROTECTED_ROOTS=tuple(Path(p) for p in ('/srv/quantos/state','/opt/quantos/releases',
     '/var/lib/quantos-demo-executor','/var/lib/quantos-demo-issuer','/var/lib/quantos-demo-controller'))
 
@@ -78,6 +80,19 @@ def scope(namespace):
 def allowed(relative,namespace):
     path=safe_relative(relative);files,directories,_=scope(namespace)
     return (len(path.parts)==1 and relative in files or len(path.parts)>1 and path.parts[0] in directories) and path.suffix in ('.db','.sqlite3','.json')
+
+
+def market_archive(relative,namespace):
+    return namespace=='research' and re.fullmatch(r'binance_demo_market_inputs/BTC(?:USDC|USDT)/archive/day-[0-9]{8}\.sqlite3',relative) is not None
+
+
+def market_archive_validator(relative):
+    symbol=PurePosixPath(relative).parts[1]
+    def validate(raw):
+        demo_market_inputs.validate(raw)
+        require(raw['symbol']==symbol,'CHECKPOINT_MARKET_ARCHIVE_QUOTE')
+        return raw
+    return validate
 
 
 def data_clock(path):
@@ -134,7 +149,8 @@ def inventory(root,namespace,*,freeze_observation_pointers=False):
                 path.name=='latest.json' or relative=='binance_demo_readiness.json') else None
             result[relative]={'size':info.st_size,'inode':info.st_ino,'device':info.st_dev,'frozen_json':frozen,
                 'mtime_ns':info.st_mtime_ns,'json_sha256':hashlib.sha256(frozen).hexdigest() if frozen is not None else sha(path) if path.suffix=='.json' else None,
-                'data_clock':None if path.suffix=='.json' or relative in ('user-stream.sqlite3','binance_demo_user_stream.db') else data_clock(path)}
+                'data_clock':None if path.suffix=='.json' or relative in ('user-stream.sqlite3','binance_demo_user_stream.db') or
+                    freeze_observation_pointers and market_archive(relative,namespace) else data_clock(path)}
     require(required<=set(result) and result and len(result)<=MAX_FILES and sum(v['size'] for v in result.values())<=MAX_BYTES,'CHECKPOINT_REQUIRED_OR_BUDGET')
     if namespace=='controller':require(all((root/name).is_dir() for name in CONTROLLER_DIRECTORIES),'CHECKPOINT_CONTROLLER_LAYOUT')
     return dict(sorted(result.items())),sorted(directory_names)
@@ -201,6 +217,7 @@ def verify_state(root,namespace):
 
 def verify_files(root,entries,namespace,*,observation_prefix=False):
     require(type(entries) is dict and 0<len(entries)<=MAX_FILES,'CHECKPOINT_ENTRIES')
+    archived={}
     for name,entry in entries.items():
         require(allowed(name,namespace) and type(entry) is dict and set(entry)=={'sha256','size','snapshot_method'},'CHECKPOINT_ENTRY')
         require(type(entry['size']) is int and 0<=entry['size']<=MAX_BYTES and
@@ -209,18 +226,38 @@ def verify_files(root,entries,namespace,*,observation_prefix=False):
         require(path.is_file() and not path.is_symlink() and path.stat().st_size==entry['size'] and sha(path)==entry['sha256'],'CHECKPOINT_CONTENT')
         if path.suffix in ('.db','.sqlite3'):
             require(entry['snapshot_method']=='SQLITE_ONLINE_BACKUP','CHECKPOINT_SQLITE_SNAPSHOT_REQUIRED');_sqlite_integrity(path)
+            if market_archive(name,namespace):
+                archived[name]=demo_observation_store.verify_segment(path,validator=market_archive_validator(name))
         else:
             require(entry['snapshot_method']=='STABLE_FILE_READ','CHECKPOINT_JSON_SNAPSHOT_REQUIRED')
             require(entry['size']<=MAX_JSON_BYTES,'CHECKPOINT_JSON_SIZE')
             document=load_json_without_duplicate_keys(path.read_bytes())
-            if observation_prefix and path.name=='latest.json':
+            if path.name=='latest.json' and type(document) is dict and document.get('schema')==demo_observation_store.POINTER_SCHEMA:
+                require(namespace=='research' and re.fullmatch(r'binance_demo_market_inputs/BTC(?:USDC|USDT)/latest\.json',name),
+                    'CHECKPOINT_ARCHIVED_POINTER_SCOPE')
+                demo_observation_store.validate_pointer(document)
+                target=(PurePosixPath(name).parent/'archive'/document['segment']).as_posix()
+                require(target in entries and market_archive(target,namespace),'CHECKPOINT_ARCHIVED_TARGET')
+                demo_observation_store.load_pointer(path.parent,document,validator=market_archive_validator(name))
+            elif observation_prefix and path.name=='latest.json':
                 require(type(document) is dict and set(document)=={'sha256'} and type(document['sha256']) is str and
                     re.fullmatch('[a-f0-9]{64}',document['sha256']) is not None,'CHECKPOINT_OBSERVATION_POINTER')
                 target=(PurePosixPath(name).parent/(document['sha256']+'.json')).as_posix()
                 require(target in entries and entries[target]['sha256']==document['sha256'],'CHECKPOINT_OBSERVATION_TARGET')
     require(sum(v['size'] for v in entries.values())<=MAX_BYTES,'CHECKPOINT_TOTAL_SIZE')
     _,_,required=scope(namespace);require(required<=set(entries),'CHECKPOINT_REQUIRED_MISSING')
-    return verify_state(root,namespace)
+    state=verify_state(root,namespace)
+    if archived:
+        quotes={}
+        for name,report in archived.items():
+            symbol=PurePosixPath(name).parts[1]
+            item=quotes.setdefault(symbol,dict(segments=0,records=0))
+            item['segments']+=1;item['records']+=report['records']
+        # Keep cycle metadata bounded even after years of daily segments.
+        state['market_observation_archives']=dict(segments=len(archived),
+            records=sum(report['records'] for report in archived.values()),
+            inventory_sha256=hashlib.sha256(canonical(archived)).hexdigest(),quotes=quotes)
+    return state
 
 
 def manifest_check(manifest):
@@ -304,7 +341,7 @@ def create_checkpoint(root,destination,*,namespace,source_commit,passphrase,capt
             target.chmod(0o600)
             entries[name]={'sha256':sha(target),'size':target.stat().st_size,'snapshot_method':method}
             if path.suffix=='.json':require(entries[name]['sha256']==before[name]['json_sha256'],'CHECKPOINT_SOURCE_CHANGED')
-        after,later_directories=inventory(root,namespace)
+        after,later_directories=inventory(root,namespace,freeze_observation_pointers=observation_prefix)
         layout=(set(directories)<=set(later_directories) and set(before)<=set(after)) if observation_prefix else (
             directories==later_directories and set(before)==set(after))
         stable=[n for n in before if before[n]['frozen_json'] is None]

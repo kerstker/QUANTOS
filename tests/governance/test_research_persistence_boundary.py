@@ -21,6 +21,8 @@ SQLITE_PERSISTENCE_OWNERS = {
     "services/research/demo_execution_journal.py",
     # Operator-captured input events only; no cash ledger or order dispatch.
     "services/research/demo_user_stream.py",
+    # Lossless public observation segments; no position, cash or order state.
+    "services/research/demo_observation_store.py",
     "services/research/alpha_workflow_store.py",
     "services/research/experiment_registry/store.py",
     "services/research/experiment_registry/family_schema_runtime.py",

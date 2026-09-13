@@ -26,7 +26,8 @@ def source_hash():
     root=Path(__file__).resolve().parents[1]
     names=('tools/binance_demo_market_inputs.py','services/research/demo_market_inputs.py',
         'quantos/contracts/binance_demo_clock.py','services/execution/perpetual_ledger_v2.py',
-        'services/governance/json_integrity.py')
+        'services/governance/json_integrity.py','services/research/demo_display_store.py',
+        'services/research/demo_observation_store.py')
     return hashlib.sha256(b'\0'.join((root/name).read_bytes() for name in names)).hexdigest()
 
 
@@ -112,7 +113,10 @@ def main(argv=None):
     parser.add_argument('--output-dir',type=Path)
     parser.add_argument('--capture-worker',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--protected-network',action='store_true',help=argparse.SUPPRESS)
+    parser.add_argument('--archive-observations',action='store_true',help='Append public research observations to lossless daily segments')
     args=parser.parse_args(argv)
+    if args.archive_observations and (args.protected_network or args.capture_worker):
+        parser.error('--archive-observations is only available for the public research collector')
     if args.capture_worker:
         try:
             get=None
@@ -124,7 +128,8 @@ def main(argv=None):
         except Exception:return 3
     if args.output_dir is None:parser.error('--output-dir is required')
     try:
-        raw=collect_bounded(symbol=args.symbol,protected=args.protected_network);path=model.save(args.output_dir,raw)
+        raw=collect_bounded(symbol=args.symbol,protected=args.protected_network)
+        path=model.save(args.output_dir,raw,archive=True) if args.archive_observations else model.save(args.output_dir,raw)
         print(json.dumps({'status':raw['status'],'path':str(path),'assessment':model.assess(raw,as_of_ms=now_ms())}))
         return 0 if raw['status']=='CAPTURED' else 3
     except Exception:

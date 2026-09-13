@@ -1623,6 +1623,11 @@
           "path": "services/research/demo_market_inputs.py"
         },
         {
+          "line": 19,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_observation_store.py"
+        },
+        {
           "line": 12,
           "module": "services.governance.json_integrity",
           "path": "services/research/demo_order_recovery.py"
@@ -1983,7 +1988,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "4959e493eb1c821aa5dcf6d244a3306c31fc58942600b4c7b71bffa31ed51cae",
+  "graph_sha256": "351b2821848ea4bb88fdadea30cd1064bbc4b03ba257cbc6fbfbf5b1a1ba0691",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2021,7 +2026,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 583,
+  "source_file_count": 584,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
