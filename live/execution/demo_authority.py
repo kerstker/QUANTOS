@@ -36,7 +36,7 @@ def _require_protected(info, *, directory):
         raise DemoSubmissionRejected('DEMO_REGISTRY_FILE')
 
 
-def _read_root_owned_json(path):
+def _read_root_owned_json(path, *, file_check=None):
     """Descriptor-relative traversal also prevents symlink replacement races."""
     path=Path(path)
     if not path.is_absolute() or '..' in path.parts:
@@ -51,12 +51,14 @@ def _read_root_owned_json(path):
             _require_protected(os.fstat(current),directory=True)
         leaf=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=current)
         before=os.fstat(leaf);_require_protected(before,directory=False)
+        if file_check is not None:file_check(before)
         chunks=[];size=0
         while size<=65536:
             data=os.read(leaf,min(8192,65537-size))
             if not data:break
             chunks.append(data);size+=len(data)
         after=os.fstat(leaf);_require_protected(after,directory=False)
+        if file_check is not None:file_check(after)
         fields=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns')
         if size!=before.st_size or any(getattr(before,k)!=getattr(after,k) for k in fields):
             raise DemoSubmissionRejected('DEMO_REGISTRY_CHANGED_DURING_READ')

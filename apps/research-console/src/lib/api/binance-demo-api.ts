@@ -8,6 +8,7 @@ import {omsStatusValid} from './demo-oms-status-contract';
 import {cancelStatusValid} from './demo-cancel-status-contract';
 import {residentStatusValid} from './demo-resident-status-contract';
 import {executorObservationValid} from './demo-executor-observation-contract';
+import {issuerStatusValid} from './demo-issuer-status-contract';
 import {RESEARCH_CONSOLE_API_BASE} from './research-console-api';
 import type {BinanceDemoPayload} from '../types/binance-demo';
 import {executionSnapshotValid, orderRecoveryValid} from './demo-execution-contract';
@@ -85,6 +86,7 @@ export function parseDemoPayload(v: unknown): BinanceDemoPayload {
       !reason(v.data_quality.reason) || !time(v.as_of_ms) || !nullableTime(v.observed_at_ms) ||
       !(v.age_ms === null || integer(v.age_ms) && v.age_ms >= 0) || v.max_age_ms !== 120000 ||
       !executorObservationValid(v.executor_observation,v.as_of_ms as number) ||
+      !issuerStatusValid(v.issuer_status,v.as_of_ms as number) ||
       !publicValid(v.public) || !accountValid(v.account) || !executionSnapshotValid(v.execution, v.as_of_ms as number) || !orderRecoveryValid(v.order_recovery) ||
       !cashChainValid(v.cash_chain, v.as_of_ms as number) || !residentStatusValid(v.resident_status, v.as_of_ms as number) || !cancelStatusValid(v.cancellation_status, v.as_of_ms as number) || !omsStatusValid(v.oms_status, v.as_of_ms as number) || !canonicalCashValid(v.canonical_cash, v.as_of_ms as number) || !executionOriginValid(v.execution_origin, v.as_of_ms as number) || !cashWindowValid(v.cash_window, v.as_of_ms as number) || !userStreamValid(v.user_stream, v.as_of_ms as number) || !statementValid(v.statement, v.as_of_ms as number) || !privateChecksValid(v.private_checks, v.as_of_ms as number) || !accountBaselineValid(v.account_baseline, v.as_of_ms as number) ||
       v.execution_reason !== 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE' ||

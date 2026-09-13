@@ -9,6 +9,8 @@
 .s-demo-notice {border-left:3px solid var(--s-muted);padding:14px 18px;background:var(--s-panel);margin:0 0 24px;font-size:13px;}
 .s-demo-notice p {color:var(--s-muted);margin:4px 0 0;}
 .s-demo-metrics .s-metric>strong {font-size:24px;}
+.s-demo-issuer-metrics {grid-template-columns:repeat(3,minmax(0,1fr));}
+@media(max-width:600px) {.s-demo-issuer-metrics {grid-template-columns:repeat(2,minmax(0,1fr));}.s-demo-issuer-metrics .s-metric:last-child {grid-column:1/-1;}}
 .s-demo-cell-note {display:block;color:var(--s-muted);font-size:11px;margin-top:5px;}
 .s-demo-table:focus-visible {outline:2px solid var(--s-accent);outline-offset:2px;}
 .s-demo-oms-orders td {overflow-wrap:anywhere;}

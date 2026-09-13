@@ -30,6 +30,15 @@ def test_root_owned_readable_regular_file_is_allowed_but_mutable_directory_is_no
         boundary._require_protected(metadata(st_mode=stat.S_IFDIR|0o775),directory=True)
 
 
+def test_additional_private_file_check_precedes_any_secret_bytes(tmp_path,monkeypatch):
+    path=tmp_path/'isolated-private.json';path.write_text('{"fixture":true}')
+    monkeypatch.setattr(boundary,'_require_protected',lambda *a,**k:None)
+    monkeypatch.setattr(boundary.os,'read',lambda *a:pytest.fail('private bytes read before file check'))
+    def private_check(info):raise ValueError('ISOLATED_FILE_MODE_REJECTED')
+    with pytest.raises(ValueError,match='ISOLATED_FILE_MODE_REJECTED'):
+        boundary._read_root_owned_json(path,file_check=private_check)
+
+
 def test_real_user_owned_tree_cannot_be_a_production_trust_root(tmp_path):
     if os.geteuid()==0:pytest.skip('requires an unprivileged test process')
     path=tmp_path/'registry.json';path.write_text('{}')

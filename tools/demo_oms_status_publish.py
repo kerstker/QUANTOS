@@ -7,17 +7,17 @@ import argparse
 import json
 from pathlib import Path
 
-from services.research import demo_oms_status,demo_cancel_status,demo_resident_status,demo_executor_observation
+from services.research import demo_oms_status,demo_cancel_status,demo_resident_status,demo_executor_observation,demo_issuer_status
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir',type=Path,required=True)
     parser.add_argument('--output-dir',type=Path,required=True)
-    parser.add_argument('--kind',choices=('oms','cancellation','resident','executor-observation'),default='oms')
+    parser.add_argument('--kind',choices=('oms','cancellation','resident','executor-observation','issuer'),default='oms')
     args=parser.parse_args(argv)
     model={'oms':demo_oms_status,'cancellation':demo_cancel_status,'resident':demo_resident_status,
-        'executor-observation':demo_executor_observation}[args.kind]
+        'executor-observation':demo_executor_observation,'issuer':demo_issuer_status}[args.kind]
     try:
         source=args.source_dir.resolve(strict=True);output=args.output_dir.resolve()
         if source==output or source in output.parents or output in source.parents:
