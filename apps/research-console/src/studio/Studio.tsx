@@ -36,7 +36,7 @@ export default function Studio() {
   }, [theme]);
   useEffect(() => {
     setMenu(false);
-    document.title = 'QUANTOS · Research Studio';
+    document.title = location.pathname === '/studio/demo' ? 'DEMO 控制中心 · QUANTOS' : 'QUANTOS · Research Studio';
     const module = CONSOLE_MODULES.find(m => location.pathname === `/research/${m.id}`);
     const redirect = LEGACY[location.pathname] ?? (module ? `/studio/modules/${module.id}` : null);
     if (redirect)
@@ -142,6 +142,7 @@ export default function Studio() {
           <input id="studio-search" aria-label="全局搜索运行" placeholder="搜索运行…" value={search} onChange={e => setSearch(e.target.value)} />
           <kbd>⌘ K</kbd>
         </form>
+        <Link className="s-demo-shortcut" to="/studio/demo" aria-label="打开 DEMO 控制中心"><Icon name="forward"/><span>DEMO</span></Link>
         <span className="s-mode" title="L2_DRY_RUN_ONLY">
           <i />研究模式</span>
         <button className="s-icon-button" aria-label={theme === 'light' ? '切换深色模式' : '切换浅色模式'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>

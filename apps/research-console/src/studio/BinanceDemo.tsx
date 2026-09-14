@@ -1,3 +1,5 @@
+import type {ReactNode} from 'react';
+import {DemoControlCenter} from './DemoControlCenter';
 import {DemoStatement} from './DemoStatement';
 import {DemoCashWindow} from './DemoCashWindow';
 import {DemoCanonicalCash} from './DemoCanonicalCash';
@@ -49,11 +51,29 @@ export function DemoReadinessView({data, loading, error, refresh}: {
   const publicTitle = publicReady ? '公共接口可达' : historical ? '等待重新检查' : data?.public?.status === 'FAILED' ? '公共接口检查失败' : '公共接口待检查';
   const accountTitle = accountReady ? '账户查询成功' : historical ? '账户状态待更新' : data?.account?.status === 'FAILED' ? '账户查询未通过' : '账户尚未查询';
   return <>
-    <Header eyebrow="EXECUTION / BINANCE DEMO" title="模拟盘接入" action={
+    <Header eyebrow="EXECUTION / BINANCE DEMO" title="DEMO 控制中心" action={
       <button className="s-button" onClick={refresh} disabled={loading}>{loading ? '正在刷新…' : '刷新快照'}</button>
-    }>从公共连接、账户读取到订单回执与对账，逐步核实执行链路。</Header>
+    }>从首次启动到往返成交与现金核对，在一个工作区跟进 DEMO 全流程。</Header>
     <ErrorNote error={error} retry={refresh}/>
     {loading && !data && <Loading/>}
+    <DemoControlCenter snapshot={data?.functional_cycle} connected={accountReady===true} refreshFailed={!!error}
+      enrollmentObserved={!!data?.issuer_status?.report}/>
+    <WorkspaceSection id="demo-cycle" title="交易周期">
+      <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error}/>
+    </WorkspaceSection>
+    <WorkspaceSection id="demo-orders" title="订单与恢复">
+      <DemoOmsStatus snapshot={data?.oms_status} resident={data?.resident_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
+      <DemoCancellation snapshot={data?.cancellation_status} refreshFailed={!!error}/>
+      <div id="demo-execution-evidence" tabIndex={-1}><DemoExecutionEvidence snapshot={data?.execution} refreshFailed={!!error}/></div>
+      <div id="demo-order-recovery" tabIndex={-1}><DemoOrderRecovery snapshot={data?.order_recovery} refreshFailed={!!error}/></div>
+    </WorkspaceSection>
+    <WorkspaceSection id="demo-cash" title="现金与对账">
+      <DemoCanonicalCash chain={data?.cash_chain} snapshot={data?.canonical_cash} refreshFailed={!!error}/>
+      <DemoCashWindow snapshot={data?.cash_window} refreshFailed={!!error}/>
+      <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
+    </WorkspaceSection>
+    <WorkspaceSection id="demo-connection" title="连接与账户">
+      <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>
     <div className="s-demo-environment"><span>BINANCE USDⓈ-M · DEMO</span><span>虚拟资金 · 接入诊断</span></div>
     <ol className="s-demo-steps" aria-label="模拟盘接入步骤">
       {[
@@ -78,20 +98,6 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       <Metric label="快照年龄" value={data?.age_ms == null ? '—' : `${Math.floor(data.age_ms / 1000)} 秒`} note="有效期 120 秒"/>
       <Metric label="交易执行" value={cycleComplete?'本轮 Demo 完成':data?.functional_cycle?.report?'查看本轮状态':'未启用'} note="有限测试结果见下方周期记录"/>
     </div>
-    <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error}/>
-    <DemoExecutorObservation snapshot={data?.executor_observation} asOf={data?.as_of_ms} refreshFailed={!!error}/>
-    <DemoIssuerStatus snapshot={data?.issuer_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
-    <DemoBackupStatus snapshot={data?.backup_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
-    <DemoMarketInputs snapshots={data?.market_inputs} refreshFailed={!!error}/>
-    <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
-    <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
-    <DemoExecutionOrigin snapshot={data?.execution_origin} refreshFailed={!!error}/>
-    <DemoOmsStatus snapshot={data?.oms_status} resident={data?.resident_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
-    <DemoCancellation snapshot={data?.cancellation_status} refreshFailed={!!error}/>
-    <DemoCanonicalCash chain={data?.cash_chain} snapshot={data?.canonical_cash} refreshFailed={!!error}/>
-    <DemoCashWindow snapshot={data?.cash_window} refreshFailed={!!error}/>
-    <DemoStatement snapshot={data?.statement} refreshFailed={!!error}/>
-    <DemoAccountBaseline snapshot={data?.account_baseline} refreshFailed={!!error}/>
     <Panel title="合约与计价" note={`${historical ? '历史观察 · ' : ''}BTCUSDT 与 BTCUSDC 分别保留数量、价格与保证金币种`}>
       {data?.public?.symbols.length ? <div className="s-table-wrap s-demo-table" role="region" aria-label="合约规则表" tabIndex={0}><table className="s-table"><thead><tr>
         <th>合约</th><th>报价 / 保证金</th><th>价格步长</th><th>数量步长</th><th>最小数量</th><th>最小名义金额</th>
@@ -115,15 +121,24 @@ export function DemoReadinessView({data, loading, error, refresh}: {
           : <Empty title="持仓数据未知">账户查询成功后显示原始数量与持仓侧。</Empty>}
       </Panel>
     </div>
-    <div id="demo-execution-evidence" tabIndex={-1}><DemoExecutionEvidence snapshot={data?.execution} refreshFailed={!!error}/></div>
-    <div id="demo-order-recovery" tabIndex={-1}><DemoOrderRecovery snapshot={data?.order_recovery} refreshFailed={!!error}/></div>
-    <Panel title="下一步：核实执行链路" note="执行条件未满足">
-      <div className="s-demo-next"><p>公共接口可用、账户可读，不代表测试网订单已接通。当前提交入口仍缺少独立执行权威集成；下一阶段需完成订单回执、恢复与账本对账的联调。</p>
-        <p>Demo 用于验证连接和执行工程。真实费用、真实场所成交校准和成本后盈利仍需各自的证据。</p>
-        <a className="s-button" href="/studio/modules/mft-execution">查看订单与对账工作区</a>
-      </div>
-    </Panel>
+    </WorkspaceSection>
+    <WorkspaceSection id="demo-diagnostics" title="运行诊断">
+      <DemoExecutorObservation snapshot={data?.executor_observation} asOf={data?.as_of_ms} refreshFailed={!!error}/>
+      <DemoIssuerStatus snapshot={data?.issuer_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
+      <DemoMarketInputs snapshots={data?.market_inputs} refreshFailed={!!error}/>
+      <DemoPrivateChecks snapshot={data?.private_checks} refreshFailed={!!error}/>
+      <DemoUserStream snapshot={data?.user_stream} refreshFailed={!!error}/>
+      <DemoExecutionOrigin snapshot={data?.execution_origin} refreshFailed={!!error}/>
+      <DemoBackupStatus snapshot={data?.backup_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
+    </WorkspaceSection>
     <footer className="s-demo-footer"><span>采集于 {stamp(data?.observed_at_ms, true)} · {data?.rest_base ?? 'https://demo-fapi.binance.com'}</span>
       <span>刷新每 15 秒读取快照，不向交易所发起检查。</span></footer>
   </>;
+}
+
+function WorkspaceSection({id,title,children}:{id:string;title:string;children:ReactNode}) {
+  return <section id={id} className="s-demo-workspace-section" tabIndex={-1} aria-labelledby={`${id}-title`}>
+    <header className="s-demo-workspace-heading"><h2 id={`${id}-title`}>{title}</h2><a href="#demo-center">返回综合入口 ↑</a></header>
+    {children}
+  </section>;
 }

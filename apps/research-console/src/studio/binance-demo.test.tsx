@@ -41,6 +41,16 @@ function payload(): BinanceDemoPayload {
   };
 }
 
+it('offers a control center above the cycle and resolves every workspace anchor', () => {
+  render(<DemoReadinessView data={payload()} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByRole('heading',{name:'DEMO 控制中心',level:1})).toBeInTheDocument();
+  expect(screen.getByLabelText('DGX 本机启动命令')).toBeInTheDocument();
+  for(const link of screen.getByRole('navigation',{name:'DEMO 工作区'}).querySelectorAll('a')) {
+    expect(document.getElementById(link.hash.slice(1))).not.toBeNull();
+  }
+  expect(screen.queryByText(/下一阶段需完成订单回执/)).not.toBeInTheDocument();
+});
+
 it('requires fills, flat exposure and matched cash before showing a completed Demo cycle', () => {
   const data=payload();
   data.functional_cycle={status:'AVAILABLE',report:{schema:'DEMO_FUNCTIONAL_STATUS_V1',environment:'BINANCE_USDM_DEMO',
@@ -84,12 +94,12 @@ it('separates public connectivity from account and order readiness without fake 
   render(<DemoReadinessView data={payload()} loading={false} error={null} refresh={refresh}/>);
   expect(screen.getByText('公共接口可达')).toBeInTheDocument();
   expect(screen.getByText('账户尚未查询')).toBeInTheDocument();
-  expect(screen.getByText('执行条件未满足')).toBeInTheDocument();
+  expect(screen.getByText('尚未收到交易周期记录')).toBeInTheDocument();
   expect(screen.getByRole('cell',{name:/BTCUSDC/})).toBeInTheDocument();
   expect(screen.queryByRole('button', {name: /下单|开启交易/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', {name: '刷新快照'}));
   expect(refresh).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(/不代表测试网订单已接通/)).toBeInTheDocument();
+  expect(screen.getByText(/首次登记在 DGX 终端完成/)).toBeInTheDocument();
 });
 
 it('shows missing and corrupt execution journals without declaring the ledger reconciled', () => {

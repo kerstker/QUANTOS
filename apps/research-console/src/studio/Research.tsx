@@ -62,6 +62,10 @@ export function Overview({ runs, health }: {
     <Header eyebrow="RESEARCH / OVERVIEW" title="研究工作台" action={<Link className="s-button primary" to="/studio/new">
       <Icon name="plus" />新建研究</Link>}>从机制假设到可复核的实验，让每一次研究都有据可循。</Header>
     <ErrorNote error={runs.error} retry={runs.refresh} />
+    <Link to="/studio/demo" className="s-demo-home-entry" aria-label="进入 DEMO 控制中心">
+      <span className="s-demo-home-icon"><Icon name="forward"/></span><span><strong>DEMO 控制中心</strong><small>首次启动指引 · 交易进度 · 订单恢复 · 现金对账</small></span>
+      <span className="s-demo-home-action">进入工作区 <Icon name="arrow"/></span>
+    </Link>
     <div className="s-metrics">
       <Metric label="研究运行" value={runs.available ? runs.rows.length : '—'} note="当前登记库中的记录" />
       <Metric label="正在推进" value={runs.available ? runs.rows.filter(r => ['running', 'queued'].includes(r.status)).length : '—'} note="运行中与排队任务" />

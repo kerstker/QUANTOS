@@ -22,7 +22,9 @@ describe('Research Studio', () => {
     expect(screen.getByRole('heading', { name: '研究工作台' })).toBeInTheDocument();
     expect(await screen.findByText('还没有研究运行')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '主导航' }).querySelectorAll('a')).toHaveLength(12);
-    expect(screen.getByRole('link', {name: '模拟盘接入'})).toHaveAttribute('href', '/studio/demo');
+    expect(screen.getByRole('link', {name: 'DEMO 控制中心'})).toHaveAttribute('href', '/studio/demo');
+    expect(screen.getByRole('link', {name: '打开 DEMO 控制中心'})).toHaveAttribute('href', '/studio/demo');
+    expect(screen.getByRole('link', {name: '进入 DEMO 控制中心'})).toHaveAttribute('href', '/studio/demo');
     expect(screen.getByRole('link', { name: /Alpha 生命周期/ })).toHaveAttribute('href', '/studio/lifecycle');
     expect(screen.getByText('研究模式')).toHaveAttribute('title', 'L2_DRY_RUN_ONLY');
   });
