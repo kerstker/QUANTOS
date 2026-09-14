@@ -1,5 +1,9 @@
 # Demo 命名空间快照操作
 
+当前运行与恢复证据见[2026-09-14恢复交付记录](../engineering/specs/2026-09-14-demo-recovery-completion.md)。
+研究、执行、签发和工作流四类周期备份已安装并完成实际加密与隔离恢复核验。
+下文命令说明操作合同，实际安装版本、范围和自然周期结果以该交付记录为准。
+
 对应[实现、盘点和范围](../engineering/specs/2026-09-13-demo-namespace-checkpoint.md)。
 原夜间备份不会自动覆盖这些新目录。使用已核对的 Python 3.12 环境，保留每次命令、
 退出状态和 JSON 结果；不从“生成了文件”推断恢复成功。失败中的 `reason_code`
@@ -67,8 +71,8 @@ python -P -m tools.demo_namespace_checkpoint restore \
 
 ## 周期运行接线
 
-新增[周期工作者和单元渲染](../engineering/specs/2026-09-13-demo-periodic-checkpoints.md)，
-仍未安装。原数据 UID 使用独立、已建立的 0700 私有 spool：
+[周期工作者和单元渲染](../engineering/specs/2026-09-13-demo-periodic-checkpoints.md)
+按命名空间运行。原数据 UID 使用独立、已建立的 0700 私有 spool：
 
 ```bash
 python -P -m tools.demo_checkpoint_cycle capture \
