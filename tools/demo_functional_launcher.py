@@ -11,12 +11,16 @@ import os,sys
 from pathlib import Path
 if os.geteuid()!=0:raise SystemExit('Run with sudo from the operator terminal.')
 args=sys.argv[1:]
-if args not in ([],['--recover'],['--resume']):raise SystemExit('Use --recover (no orders) or --resume (original active mandate).')
+if args not in ([],['--recover'],['--resume'],['--new-cycle']):raise SystemExit('Use --recover, --resume, or --new-cycle (new local enrollment).')
 source='''+repr(source_commit)+'''
 root='/opt/quantos/releases/'+source
 python='/opt/quantos/venvs/'+source+'/bin/python'
 installed=Path('/etc/quantos/demo-operator-setup').exists()
-if args or installed:
+if args==['--new-cycle']:
+    if not installed:raise SystemExit('Complete the first setup before a successor enrollment.')
+    module='tools.demo_successor_setup'
+    operation=['--enroll','--run-cycle']
+elif args or installed:
     module='tools.demo_functional_cycle'
     operation=args or ['--recover']
 else:

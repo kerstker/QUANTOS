@@ -128,11 +128,13 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
         outcomes = _records(area/'outcomes')
         imports = _records(area/'receipts/imports')
         completed = {v['plan_sha256'] for v in outcomes.values()
-            if v.get('schema') == 'DEMO_OMS_RECEIPT_RESOLUTION_V1' and v.get('status') == 'OMS_TERMINAL_PROJECTED'}
+            if v.get('schema') in ('DEMO_OMS_RECEIPT_RESOLUTION_V1','DEMO_REPORTED_ACCOUNT_RESOLUTION_V1') and
+            v.get('status') == 'OMS_TERMINAL_PROJECTED'}
         models = {o['client_order_id']: o for o in state['oms']}
         recovered = {r['client_order_id']: r for r in state['recovery']}
         with ExitStack() as stack:
             bs = []; sources = []; original_proofs = []; available = 0; total_records = 0; file_facts = {}; total_bytes = 0
+            account_prefix = None
             for reservation in reservations:
                 body = reservation['payload']; context = body['context']; fixed = body['orders']
                 _require(context['account_ref_sha256'] == account_ref and all(o['symbol'] == symbol for o in fixed),
@@ -148,6 +150,44 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 proof = proofs[plan['proposal_sha256']]
                 _require(proof['context'] == context and proof['orders'] == fixed,
                          'POSITION_CONTEXT_ORIGINAL_PROPOSAL')
+                if plan['schema'] == 'DEMO_REPORTED_ACCOUNT_RESOLUTION_V1':
+                    from services.research.demo_account_recovery import reconcile as replay_account
+                    _require(not bs and not sources and account_prefix is None,
+                             'POSITION_CONTEXT_FIRST_ACCOUNT_RECOVERY_ONLY')
+                    inputs = plan['account_inputs']; risk = proof['risk']['input_snapshot']
+                    _require(_digest(inputs) == plan['inputs_sha256'] and inputs['opening'] == proof['origin'] and
+                        inputs['system_orders'] == fixed and
+                        Decimal(inputs['adv_notional']) == Decimal(str(risk['market']['daily_volume_base'])) *
+                        Decimal(str(risk['market']['reference_price'])) and
+                        Decimal(inputs['participation_rate']) == Decimal(str(risk['native_limits']['max_participation_rate'])),
+                        'POSITION_CONTEXT_REPORTED_ORIGINAL')
+                    report, prefix_ledger = replay_account(**inputs)
+                    _require(report == plan['account_report'] and report['status'] == 'REPORTED_ACCOUNT_MATCHED' and
+                        not report['stream_coverage_repaired'] and not report['automatic_cycle_completed'] and
+                        not any(f['asset'] == symbol[3:] and f['incomeType'] in ('TRANSFER','FUNDING_FEE')
+                                for f in inputs['statements'][0]['income']), 'POSITION_CONTEXT_REPORTED_REPLAY')
+                    _require(plan['resolution_at_ms'] <= as_of_ms and
+                        max(inputs['closing']['completed_at_ms'],inputs['statements'][-1]['completed_at_ms'],
+                            max(w['end_ms'] for w in inputs['windows'])) <= plan['resolution_at_ms'],
+                        'POSITION_CONTEXT_REPORTED_TIME')
+                    _require(len(plan['orders']) == len(fixed) and {o['client_order_id'] for o in plan['orders']} ==
+                        {o['newClientOrderId'] for o in fixed}, 'POSITION_CONTEXT_REPORTED_ORDER_SET')
+                    for resolution in plan['orders']:
+                        client = resolution['client_order_id']; model = models[client]; recovery = recovered[client]
+                        queries = [w for w in state['wire'] if w['kind'] == 'QUERY_RESULT' and
+                            w['reservation_sha256'] == reservation['record_hash'] and w['client_order_id'] == client]
+                        _require(queries and queries[-1]['record_hash'] == resolution['query_record_sha256'] and
+                            queries[-1]['payload']['outcome']['status'] == 'FOUND' and
+                            model['status'] == recovery['observed_status'] == resolution['terminal_status'] == 'FILLED' and
+                            model['venue_order_id'] == recovery['exchange_order_id'] == resolution['venue_order_id'] ==
+                            queries[-1]['payload']['outcome']['order']['orderId'] and
+                            Decimal(queries[-1]['payload']['outcome']['order']['executedQty']) == Decimal(resolution['filled_quantity']),
+                            'POSITION_CONTEXT_REPORTED_QUERY')
+                    account_prefix = {'ledger':prefix_ledger,'plan':plan,'report':report}
+                    available = plan['resolution_at_ms']; original_proofs.append(proof)
+                    sources.append({'reservation_sha256':reservation['record_hash'],'plan_sha256':plan_hash,
+                                    'manifest_hash':None,'journal_tail':None})
+                    continue
                 imported = imports[plan['import_sha256']]
                 _require(imported['status'] == 'IMPORTED_TECHNICAL_RECEIPTS' and
                     imported['reservation_sha256'] == reservation['record_hash'] and
@@ -195,20 +235,34 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 original_proofs.append(proof)
                 sources.append({'reservation_sha256': reservation['record_hash'], 'plan_sha256': plan_hash,
                     'manifest_hash': journal.manifest_hash, 'journal_tail': batch['tail']})
-            first = bs[0]; original = first['manifest']
-            _require(Decimal(original['initial_position']) == 0 and
-                (first['opening'] is None or first['opening']['positions_count'] == 0), 'POSITION_CONTEXT_FIRST_FLAT')
+            if account_prefix:
+                from services.research.demo_origin_contract import contract_from_origin
+                inputs = account_prefix['plan']['account_inputs']
+                original = {'contract':contract_from_origin(inputs['opening'])[0], 'initial_collateral':
+                    account_prefix['ledger'].state_as_canonical_dict()['initial_collateral'],
+                    'adv_notional':inputs['adv_notional'], 'participation_rate':inputs['participation_rate'],
+                    'native':{'coverage':{'start_ms':inputs['opening']['observed_at_ms']}}}
+                for b in bs:
+                    _require(Decimal(b['manifest']['adv_notional']) == Decimal(original['adv_notional']) and
+                        Decimal(b['manifest']['participation_rate']) == Decimal(original['participation_rate']) and
+                        b['parsed'][3].period_index == original['native']['coverage']['start_ms']//86400000,
+                        'POSITION_CONTEXT_REPORTED_CAPACITY')
+            else:
+                first = bs[0]; original = first['manifest']
+                _require(Decimal(original['initial_position']) == 0 and
+                    (first['opening'] is None or first['opening']['positions_count'] == 0), 'POSITION_CONTEXT_FIRST_FLAT')
             capacities = [{k:v for k,v in b['parsed'][3].as_canonical_dict().items() if k != 'window_id'} for b in bs]
             _require(all(c == capacities[0] for c in capacities), 'POSITION_CONTEXT_CAPACITY_CHANGED')
             _require(all(b['manifest']['contract'] == original['contract'] for b in bs), 'POSITION_CONTEXT_CONTRACT_CHANGED')
-            _require(len({b['clock'] is None for b in bs}) == 1, 'POSITION_CONTEXT_MIXED_CLOCKS')
+            _require(not bs or len({b['clock'] is None for b in bs}) == 1, 'POSITION_CONTEXT_MIXED_CLOCKS')
             for field in ('order_id', 'client_order_id', 'venue_order_id'):
                 ids = [o[field] for b in bs for o in b['manifest']['native']['bindings']]
                 _require(len(ids) == len(set(ids)), 'POSITION_CONTEXT_REUSED_ORDER_ID')
-            ledger = replay_ledger(original, first['parsed'], {'trade_rows': []}, cash_events=[])
-            last_event = None; previous_available = None
+            ledger = account_prefix['ledger'] if account_prefix else replay_ledger(original, first['parsed'], {'trade_rows': []}, cash_events=[])
+            last_event = None
+            previous_available = account_prefix['plan']['resolution_at_ms'] if account_prefix else None
             for i, b in enumerate(bs):
-                if i:
+                if i or account_prefix:
                     opening = b['opening']; m = b['manifest']; before = ledger.state_as_canonical_dict()
                     _require(opening is not None, 'POSITION_CONTEXT_CONTINUATION_REQUIRED')
                     start = m['opening']['capture']['observed_at_ms']
@@ -239,7 +293,7 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 _require(before == tuple(getattr(after,k) for k in ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns')),
                          'POSITION_CONTEXT_JOURNAL_CHANGED')
             final = ledger.state_as_canonical_dict(); owned = ledger.position(symbol)
-            return {'schema': 'DEMO_CANONICAL_POSITION_CONTEXT_V1', 'symbol': symbol,
+            result = {'schema': 'DEMO_CANONICAL_POSITION_CONTEXT_V1', 'symbol': symbol,
                 'account_ref_sha256': account_ref, 'quantity': canonical_decimal(owned.quantity if owned else Decimal(0)),
                 'entry_notional': final['positions'][symbol]['entry_notional'] if owned else '0',
                 'canonical_wallet': final['wallet_balance'], 'initial_equity': original['initial_collateral'],
@@ -252,6 +306,12 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 'participation_rate': original['participation_rate'], 'capacity_consumed': final['capacity_consumed'],
                 'cash_flow_policy': _POLICY, 'cash_reconciled': False, 'source_verified': False,
                 'submission_enabled': False, 'economic_authority': False}
+            if account_prefix:
+                result['reported_account_prefix'] = {'plan_sha256':_digest(account_prefix['plan']),
+                    'manual_order_ids':account_prefix['report']['manual_order_ids'],
+                    'fill_count':account_prefix['report']['fill_count'],
+                    'stream_coverage_repaired':False,'automatic_cycle_completed':False}
+            return result
     except PositionContextRejected:
         raise
     except Exception:

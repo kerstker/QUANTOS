@@ -30,6 +30,22 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_account_order_recovery_view_keeps_missing_native_journal_explicit(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_oms_status as model
+    from tests.research.test_demo_oms_status import inputs,result,NOW
+    prepared,plan=inputs()
+    raw=model.build_status(prepared,plan,observed_at_ms=NOW,result=result(plan))
+    raw.update(phase='OMS_ACCOUNT_RECONCILED',manifest_hash=None,journal_tail=None)
+    model.validate(raw)
+    directory=tmp_path/'oms';model.save(directory,raw)
+    monkeypatch.setattr(views,'_oms_status_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1000000)
+    data=client.get('/api/v1/console/binance-demo').json()
+    assert data['oms_status']=={'status':'AVAILABLE','report':raw}
+    assert data['submission_enabled'] is False and raw['cash_reconciled'] is False
+
+
 def test_demo_functional_cycle_preserves_missing_future_and_incomplete_results(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research import demo_functional_status as model
@@ -63,6 +79,13 @@ def test_demo_read_only_recovery_reports_remaining_position_without_execution_pe
         observed_at_ms=NOW+1,result={'orders_attempted':1,'cash_status':'UNRESOLVED'})
     model.save(directory,gap);monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+1)*1000000)
     assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']=={'status':'AVAILABLE','report':gap}
+    manual=model.build(phase='MANUAL_ACCOUNT_RECONCILED',source_commit='a'*40,cycle_sha256='b'*64,
+        observed_at_ms=NOW+2,result=dict(orders_attempted=1,fill_count=2,final_quantity='0',
+            cash_status='MATCHED_REPORTED_ACCOUNT',cash_reconciled=True))
+    model.save(directory,manual);monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+2)*1000000)
+    data=client.get('/api/v1/console/binance-demo').json()
+    assert data['functional_cycle']=={'status':'AVAILABLE','report':manual}
+    assert data['submission_enabled'] is False and manual['phase']!='DEMO_CYCLE_COMPLETED'
 
 
 def test_demo_backup_status_is_read_only_and_preserves_unknown_stale_failure(tmp_path,monkeypatch):

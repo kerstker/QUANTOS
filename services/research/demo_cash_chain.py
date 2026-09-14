@@ -19,6 +19,7 @@ from services.research.demo_execution_journal import (
     REPLAY_SOURCE_SHA256,
 )
 from services.research.demo_opening_projection import prepare_opening
+from services.research.demo_income_time import association, POLICY as INCOME_TIME_POLICY
 
 SCHEMA = 'DEMO_CANONICAL_CASH_CHAIN_V1'
 MAX_BATCHES = 32
@@ -73,7 +74,7 @@ def _cash_interval(at, batches):
 
 
 @ledger_decimal_context()
-def project_cash_chain(journals, capture):
+def project_cash_chain(journals, capture, *, account_prefix=None):
     """Check 1–32 same-day batch journals against one complete cash window.
 
     Each later batch needs an observed opening with exact basis tied to the
@@ -146,7 +147,8 @@ def project_cash_chain(journals, capture):
         pnl = [r for r in flows if r['incomeType'] == 'REALIZED_PNL']
         _require(len({r['tradeId'] for r in pnl}) == len(pnl) and all(r['tradeId'] in by_trade for r in pnl), 'REALIZED_PNL_TRADE_SCOPE_MISMATCH')
         # This also checks receipt/cash duplicate identity clocks, not only money.
-        _require(all(r['time'] == by_trade[r['tradeId']]['venue_trade_ms'] for r in fees+pnl), 'INCOME_TRADE_TIME_MISMATCH')
+        _require(all(association(r['time'],by_trade[r['tradeId']]['venue_trade_ms']) is not None for r in fees+pnl), 'INCOME_TRADE_TIME_MISMATCH')
+        result['income_time_policy']=INCOME_TIME_POLICY
         events, intervals, reduce_only = [], [], set()
         for b in bs:
             _require(all(bounds['inner_start_ms'] < a['timestamp'] < bounds['inner_end_ms'] for a in b['manifest']['actions']), 'ORDER_OUTSIDE_CASH_INTERIOR')
@@ -167,6 +169,30 @@ def project_cash_chain(journals, capture):
         ordered = sorted(events, key=lambda e:e.timestamp)
         # Create once from the original account origin, then retain all state.
         ledger = replay_ledger(fm, first['parsed'], {'trade_rows':[]}, cash_events=[])
+        prior_fee = prior_funding = prior_cash = Decimal(0)
+        if account_prefix is not None:
+            from services.research.demo_account_recovery import reconcile as replay_account
+            from services.research.demo_origin_contract import contract_from_origin
+            prefix_report, original_ledger = replay_account(**account_prefix)
+            _require(prefix_report['status'] == 'REPORTED_ACCOUNT_MATCHED' and original_ledger is not None,
+                     'ACCOUNT_PREFIX_UNRESOLVED')
+            _require(prefix_report['account_ref_sha256'] == capture['account_ref_sha256'] and
+                prefix_report['symbol'] == symbol and contract_from_origin(account_prefix['opening'])[0] == fm['contract'],
+                'ACCOUNT_PREFIX_CONTRACT_OR_ACCOUNT')
+            _require(account_prefix['statements'][-1]['completed_at_ms'] < capture['observed_at_ms'] and
+                account_prefix['closing']['completed_at_ms'] < capture['observed_at_ms'] and
+                (first['opening'] is None or account_prefix['statements'][-1]['completed_at_ms'] <
+                 fm['opening']['capture']['observed_at_ms']), 'ACCOUNT_PREFIX_FUTURE')
+            _require(Decimal(prefix_report['canonical_wallet']) == Decimal(fm['initial_collateral']) and
+                Decimal(account_prefix['adv_notional']) == Decimal(fm['adv_notional']) and
+                Decimal(account_prefix['participation_rate']) == Decimal(fm['participation_rate']) and
+                account_prefix['opening']['observed_at_ms']//86400000 == first['parsed'][3].period_index,
+                'ACCOUNT_PREFIX_WALLET_OR_CAPACITY')
+            ledger = original_ledger
+            prefix_rec = ledger.reconciliation_snapshot().as_canonical_dict()
+            prior_fee, prior_funding, prior_cash = (Decimal(prefix_rec[k]) for k in ('fee','funding','external_cash_flow'))
+            result['account_prefix_sha256'] = digest(account_prefix)
+            result['limitations'].append('MANUAL_PREFIX_RETAINED_STREAM_GAPS_NOT_REPAIRED')
         cursor = 0
         for index, b in enumerate(bs[1:], 1):
             cap = b['manifest']['opening']['capture']; start, end = cap['observed_at_ms'], cap['completed_at_ms']
@@ -202,7 +228,10 @@ def project_cash_chain(journals, capture):
         _require(expected is None or Decimal(expected) == quantity, 'DECLARED_POSITION_MISMATCH')
         # Re-read every input before publishing; a changed receipt tail is unknown.
         _require(all(b['journal'].read()[1] == b['tail'] for b in bs), 'RECEIPT_SNAPSHOT_CHANGED')
-        realized = Decimal(state['wallet_balance'])-Decimal(fm['initial_collateral'])+Decimal(rec['fee'])-Decimal(rec['funding'])-Decimal(rec['external_cash_flow'])
+        window_fee = Decimal(rec['fee'])-prior_fee
+        realized = Decimal(state['wallet_balance'])-Decimal(fm['initial_collateral'])+window_fee-(Decimal(rec['funding'])-prior_funding)-(Decimal(rec['external_cash_flow'])-prior_cash)
+        if account_prefix is not None:
+            result.update(window_fee=canonical_decimal(window_fee),window_realized_pnl=canonical_decimal(realized))
         reported_realized = sum((Decimal(r['income']) for r in pnl), Decimal(0))
         residual = Decimal(wallet['closing_wallet'])-Decimal(state['wallet_balance'])
         result.update(canonical_wallet=state['wallet_balance'], wallet_residual=canonical_decimal(residual),

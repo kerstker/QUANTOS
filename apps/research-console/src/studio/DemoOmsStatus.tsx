@@ -5,7 +5,8 @@ import {DemoResidentStatus} from './DemoResidentStatus';
 import type {DemoResidentStatusSnapshot} from '@/lib/types/demo-resident-status';
 
 const titles={INPUTS_UNRESOLVED:'输入未齐',AWAITING_PROJECTION:'输入已配对，等待订单状态投影',
-  PROJECTION_INTERRUPTED:'订单状态投影中断，等待恢复',OMS_TERMINAL_PROJECTED:'订单状态恢复已完成'};
+  PROJECTION_INTERRUPTED:'订单状态投影中断，等待恢复',OMS_TERMINAL_PROJECTED:'订单状态恢复已完成',
+  OMS_ACCOUNT_RECONCILED:'原订单已通过账户核对恢复'};
 const reasons:Record<string,string>={
   ORIGINAL_ID_QUERY_MISSING:'缺少原订单编号的查询结果。',
   ORIGINAL_ID_QUERY_UNKNOWN:'原订单查询尚未确认订单存在。',
@@ -29,6 +30,7 @@ export function DemoOmsStatus({snapshot,refreshFailed,resident,asOf}:{snapshot?:
       取得固定批次的原订单查询、私有终态回执及持久化结果后，展示实际恢复进度。
     </Empty> : <div className="s-demo-replay">
       <div className="s-demo-replay-heading"><h3>{titles[r.phase]}</h3><span className="s-demo-source">DEMO · 技术验证</span></div>
+      {r.phase==='OMS_ACCOUNT_RECONCILED' && <p className="s-demo-notice">原订单、原编号查询及两次完整账户流水已核对。原私有流缺口仍保留；人工平仓不会生成系统订单。</p>}
       <p className="s-demo-description">记录截至 {stamp(r.observed_at_ms,true)}。配对成功后仍需完成订单状态写入；现金核对请查看唯一账本。</p>
       {refreshFailed&&<p role="status">刷新失败，以下保留上次成功读取的历史恢复记录。</p>}
       <div className="s-metrics">
@@ -46,7 +48,7 @@ export function DemoOmsStatus({snapshot,refreshFailed,resident,asOf}:{snapshot?:
           <td data-label="私有回执">{o.private_event_count} 条 · {stamp(o.last_received_at_ms,true)}</td>
         </tr>)}</tbody></table></div>}
         <dl>{[['固定批准预留',r.reservation_sha256],['订单提案',r.proposal_sha256],['恢复计划',r.plan_sha256],
-          ['回执导入',r.import_sha256],['冻结回执清单',r.manifest_hash??'尚未形成'],['回执日志',r.journal_tail??'尚未形成']]
+          [r.phase==='OMS_ACCOUNT_RECONCILED'?'账户核对输入':'回执导入',r.import_sha256],['冻结回执清单',r.manifest_hash??'尚未形成'],['回执日志',r.journal_tail??'尚未形成']]
           .map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <p>订单状态恢复与资金核对分别记录；本页不确认现金闭合、盈利或交易准入。</p>
       </details>

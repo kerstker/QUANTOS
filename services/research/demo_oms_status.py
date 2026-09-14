@@ -7,7 +7,7 @@ import re
 from services.research import demo_display_store
 
 SCHEMA='DEMO_OMS_STATUS_V1'
-PHASES=('INPUTS_UNRESOLVED','AWAITING_PROJECTION','PROJECTION_INTERRUPTED','OMS_TERMINAL_PROJECTED')
+PHASES=('INPUTS_UNRESOLVED','AWAITING_PROJECTION','PROJECTION_INTERRUPTED','OMS_TERMINAL_PROJECTED','OMS_ACCOUNT_RECONCILED')
 MAX_BYTES=65536
 
 
@@ -67,11 +67,14 @@ def validate(raw):
     if raw['phase']=='INPUTS_UNRESOLVED':
         if not issues or done is not None:raise ValueError('OMS_STATUS_INCOMPLETE')
     else:
-        if matched!=n or raw['manifest_hash'] is None or raw['journal_tail'] is None:raise ValueError('OMS_STATUS_MATCHED_COUNT')
+        account=raw['phase']=='OMS_ACCOUNT_RECONCILED'
+        if matched!=n or (not account and (raw['manifest_hash'] is None or raw['journal_tail'] is None)):
+            raise ValueError('OMS_STATUS_MATCHED_COUNT')
+        if account and (raw['manifest_hash'] is not None or raw['journal_tail'] is not None):raise ValueError('OMS_STATUS_ACCOUNT_SOURCE')
         if raw['phase']=='PROJECTION_INTERRUPTED':
             if issues!=['OMS_PROJECTION_INTERRUPTED']:raise ValueError('OMS_STATUS_INTERRUPTION')
         elif issues:raise ValueError('OMS_STATUS_SUCCESS_ISSUES')
-        if raw['phase']=='OMS_TERMINAL_PROJECTED':
+        if raw['phase'] in ('OMS_TERMINAL_PROJECTED','OMS_ACCOUNT_RECONCILED'):
             if type(done) is not int or done!=n:raise ValueError('OMS_STATUS_PROJECTED_COUNT')
         elif done is not None:raise ValueError('OMS_STATUS_UNCONFIRMED_PROJECTION')
     return raw
@@ -79,9 +82,14 @@ def validate(raw):
 
 def build_status(prepared,plan,*,observed_at_ms,result=None,interrupted=False):
     _time(observed_at_ms)
-    if (plan['schema']!='DEMO_OMS_RECEIPT_RESOLUTION_V1' or plan['status'] not in ('UNRESOLVED','READY_FOR_OMS_PROJECTION') or
+    reported=plan['schema']=='DEMO_REPORTED_ACCOUNT_RESOLUTION_V1'
+    if reported and (result is None or interrupted or plan['cash_reconciled'] is not True or
+        plan['account_report']['status']!='REPORTED_ACCOUNT_MATCHED' or plan['stream_coverage_repaired'] is not False):
+        raise ValueError('OMS_STATUS_ACCOUNT_RESULT_REQUIRED')
+    if (plan['schema'] not in ('DEMO_OMS_RECEIPT_RESOLUTION_V1','DEMO_REPORTED_ACCOUNT_RESOLUTION_V1') or plan['status'] not in ('UNRESOLVED','READY_FOR_OMS_PROJECTION') or
         any(plan[k]!=prepared[k] for k in ('reservation_sha256','proposal_sha256')) or
-        any(plan[k] is not False for k in ('submission_enabled','source_verified','economic_authority','cash_reconciled')) or
+        any(plan[k] is not False for k in ('submission_enabled','source_verified','economic_authority')) or
+        not reported and plan['cash_reconciled'] is not False or
         type(interrupted) is not bool or interrupted and result is not None):raise ValueError('OMS_STATUS_PLAN_BINDING')
     fixed={o['newClientOrderId']:o for o in prepared['orders']}
     if len(fixed)!=len(prepared['orders']):raise ValueError('OMS_STATUS_FIXED_IDS')
@@ -103,12 +111,14 @@ def build_status(prepared,plan,*,observed_at_ms,result=None,interrupted=False):
             raise ValueError('OMS_STATUS_FILLED_QUANTITY')
         rows.append({k:row[k] for k in ('client_order_id','venue_order_id','terminal_status','filled_quantity','query_native_status','query_record_sha256')}|
                     {'private_event_count':len(events),'last_received_at_ms':events[-1]['received_at_ms']})
-    phase='OMS_TERMINAL_PROJECTED' if result is not None else 'PROJECTION_INTERRUPTED' if interrupted else 'AWAITING_PROJECTION' if ready else 'INPUTS_UNRESOLVED'
+    phase='OMS_ACCOUNT_RECONCILED' if reported else 'OMS_TERMINAL_PROJECTED' if result is not None else 'PROJECTION_INTERRUPTED' if interrupted else 'AWAITING_PROJECTION' if ready else 'INPUTS_UNRESOLVED'
     return validate({'schema':SCHEMA,'environment':'BINANCE_USDM_DEMO','scope':'TECHNICAL_VALIDATION_ONLY',
         'phase':phase,'observed_at_ms':observed_at_ms,'order_count':len(fixed),'matched_orders':len(rows),
         'projected_orders':len(fixed) if result is not None else None,'orders':rows,
         'issues':['OMS_PROJECTION_INTERRUPTED'] if interrupted else list(plan['issues']),
-        **{k:plan[k] for k in ('reservation_sha256','proposal_sha256','import_sha256','manifest_hash','journal_tail')},
+        **{k:plan[k] for k in ('reservation_sha256','proposal_sha256')},
+        'import_sha256':plan['inputs_sha256'] if reported else plan['import_sha256'],
+        'manifest_hash':None if reported else plan['manifest_hash'],'journal_tail':None if reported else plan['journal_tail'],
         'plan_sha256':digest,'source_verified':False,'authoritative':False,'submission_enabled':False,
         'economic_authority':False,'cash_reconciled':False})
 

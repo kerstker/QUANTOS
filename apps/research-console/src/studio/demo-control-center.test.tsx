@@ -4,6 +4,19 @@ import type {DemoFunctionalReport} from '@/lib/types/demo-functional-status';
 import {DemoControlCenter} from './DemoControlCenter';
 
 afterEach(() => {cleanup(); vi.unstubAllGlobals();});
+
+it('keeps manual cash recovery distinct and offers an explicit new finite enrollment', async () => {
+  const request=vi.fn(),copy=vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('fetch',request);vi.stubGlobal('navigator',{clipboard:{writeText:copy}});
+  const manual={...report('MANUAL_ACCOUNT_RECONCILED'),orders_attempted:1,cash_status:'MATCHED_REPORTED_ACCOUNT' as const,cash_reconciled:true};
+  render(<DemoControlCenter connected snapshot={{status:'AVAILABLE',report:manual}}/>);
+  expect(screen.getByRole('heading',{name:'人工平仓账务已核对'})).toBeInTheDocument();
+  expect(screen.queryByRole('heading',{name:'本轮 DEMO 闭环已完成'})).not.toBeInTheDocument();
+  expect(screen.getByLabelText('DGX 本机下一轮测试命令')).toHaveValue('sudo /usr/local/sbin/quantos-demo-functional --new-cycle');
+  fireEvent.click(screen.getByRole('button',{name:'复制下一轮命令'}));
+  await waitFor(()=>expect(copy).toHaveBeenCalledWith('sudo /usr/local/sbin/quantos-demo-functional --new-cycle'));
+  expect(request).not.toHaveBeenCalled();
+});
 const report = (phase: DemoFunctionalReport['phase']): DemoFunctionalReport => ({
   schema:'DEMO_FUNCTIONAL_STATUS_V1',environment:'BINANCE_USDM_DEMO',scope:'TECHNICAL_VALIDATION_ONLY',
   phase,observed_at_ms:1800000000000,source_commit:'c'.repeat(40),cycle_sha256:'a'.repeat(64),

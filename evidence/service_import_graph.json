@@ -1416,6 +1416,11 @@
           "path": "services/research/binance_order_receipts.py"
         },
         {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_account_recovery.py"
+        },
+        {
           "line": 12,
           "module": "services.execution.perpetual_ledger_v2",
           "path": "services/research/demo_cash_chain.py"
@@ -1993,7 +1998,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "2b565c08a4382b25e0991b284166f286f9810aca343e95eeafc7d68cda308dc4",
+  "graph_sha256": "0e4634eaf614b8244656cde0dde8af9ab6e54a102cd5deef4e30e5f4a42b5cde",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2031,7 +2036,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 586,
+  "source_file_count": 588,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

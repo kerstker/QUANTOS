@@ -82,7 +82,7 @@ def test_cash_worker_replays_original_multi_batch_journals_without_mutating_them
         identity=setup.digest(manifest);sources.append({'manifest_hash':identity})
         with DemoExecutionJournal(directory/(identity+'.sqlite3'),manifest=manifest) as journal:journal.append(messages)
     before={p.name:p.read_bytes() for p in directory.glob('*.sqlite3')}
-    monkeypatch.setattr(tool,'position',lambda *a:({'sources':sources,'quantity':'0.6'},2))
+    monkeypatch.setattr(tool,'position',lambda *a,strategy_id=None:({'sources':sources,'quantity':'0.6'},2))
     report=tool.reconcile(tmp_path,area,cash['account_ref_sha256'])
     assert report['status']=='MATCHED_REPORTED_INPUTS' and report['wallet_residual']=='0'
     assert report['final_quantity']=='0.6' and report['economic_authority'] is False

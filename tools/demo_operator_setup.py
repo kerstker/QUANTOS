@@ -56,9 +56,18 @@ def _first_origin(origin,now_ms):
     return report
 
 
-def propose(*,origin,registry,source_commit,now_ms):
+def _continuation(origin,registry,context,now_ms):
+    from live.execution.demo_position_context import validate_origin
+    require(context is not None and registry['keys'] and
+        all(k['valid_until_ms'] <= now_ms for k in registry['keys']), 'SETUP_EXPIRED_PRIOR_ENROLLMENT_REQUIRED')
+    require(context['quantity']=='0','SETUP_FLAT_CONTINUATION_REQUIRED')
+    return validate_origin(origin,context,as_of_ms=now_ms)
+
+
+def propose(*,origin,registry,source_commit,now_ms,position_context=None):
     validate_registry(registry);_first_origin(origin,now_ms)
-    require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
+    if position_context is None:require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
+    else:_continuation(origin,registry,position_context,now_ms)
     spec=spec_check({**json.loads(canonical(FIXED)), 'source_commit':source_commit,
         'account_ref_sha256':origin['account_ref_sha256'],'registry_sha256':registry_sha256(registry),
         'observed_origin_sha256':digest(origin)})
@@ -102,14 +111,16 @@ def _approval_check(approval,spec,now_ms):
     require(type(at) is int and 0<=now_ms-at<spec['window_seconds']*1000,'SETUP_OPERATOR_WINDOW')
 
 
-def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms):
+def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms,position_context=None):
     """Called after operator enrollment, with an existing stop image unchanged.
 
     This pure assembly function does not authenticate humans. The runtime CLI
     establishes the operator operation and protected custody before calling it.
     """
     spec_check(spec);_approval_check(approval,spec,now_ms);validate_registry(registry)
-    require(not registry['keys'] and registry_sha256(registry)==spec['registry_sha256'],'SETUP_REGISTRY_CHANGED')
+    require(registry_sha256(registry)==spec['registry_sha256'],'SETUP_REGISTRY_CHANGED')
+    if position_context is None:require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
+    else:_continuation(origin,registry,position_context,now_ms)
     report=_first_origin(origin,now_ms)
     require(origin['account_ref_sha256']==spec['account_ref_sha256'],'SETUP_ACCOUNT_CHANGED')
     at=approval['approved_at_ms'];until=at+spec['window_seconds']*1000
@@ -138,6 +149,13 @@ def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms):
         'strategy':{'strategy_id':sid,'approved':True,'approval_id':identity},'mandate':mandate,
         'attestations':{sid:attestation},'initial_day_pnl':'0','initial_peak_equity':report['wallet'],
         'minimum_plan_turnover':0}
+    if position_context is not None:
+        from live.execution.demo_position_context import continuation_risk
+        account=_continuation(origin,registry,position_context,now_ms)
+        profile['initial_day_pnl']=account['day_pnl']
+        profile['initial_peak_equity']=canonical_decimal(max(Decimal(position_context['initial_equity']),
+            Decimal(position_context['peak_equity_floor']),Decimal(account['equity'])))
+        profile['minimum_plan_turnover']=continuation_risk({'account':account,'plan_turnover':0},position_context)['plan_turnover']
     policy={'schema':'DEMO_ISSUER_POLICY_V1','environment':'BINANCE_USDM_DEMO','policy_id':'demo-policy-'+identity[:16],
         'deployment_sha256':registry['deployment_sha256'],'registry_sha256':registry_sha256(expanded),
         'executor_release_commit':spec['source_commit'],'account_ref_sha256':spec['account_ref_sha256'],
@@ -176,7 +194,7 @@ def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms):
     return manifest,files
 
 
-def _runtime_inputs(source_commit):
+def _runtime_inputs(source_commit,*,continuation=False):
     """Obtain fresh originals under the existing executor UID, without secrets."""
     import os
     from pathlib import Path
@@ -189,7 +207,7 @@ def _runtime_inputs(source_commit):
     from tools.demo_issuer import verify_source
     verify_source(source_commit);require(os.geteuid()==0,'SETUP_ROOT_REQUIRED')
     registry=validate_registry(load_json_without_duplicate_keys(_read_root_owned_json(installer.REGISTRY)))
-    require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
+    if not continuation:require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
     uid=registry['executor_uid'];root=Path('/opt/quantos/releases')/source_commit
     child=subprocess.run([sys.executable,'-P','-B','-m','tools.demo_executor_origin',
         '--source-commit',source_commit,'--symbol','BTCUSDC'],user=uid,group=uid,extra_groups=[],
@@ -206,12 +224,12 @@ def _runtime_inputs(source_commit):
     return registry,load(path)
 
 
-def _stop_image():
+def _stop_image(*,path=None):
     """Copy existing quiescent stop bytes, never initialize or reset them."""
     import os
     from pathlib import Path
     import stat
-    path=Path('/srv/quantos/state/data/cache/live_kill_switch.db')
+    path=Path('/srv/quantos/state/data/cache/live_kill_switch.db') if path is None else Path(path)
     # Nonempty sidecars require the original backup/export path; never pretend
     # copying a live WAL database's base file is a consistent state snapshot.
     for suffix in ('-wal','-journal'):

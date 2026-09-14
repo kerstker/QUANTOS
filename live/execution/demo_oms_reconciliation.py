@@ -118,7 +118,11 @@ def _project_resolution(plan,*,prepared,dispatch,recovery,oms,event_store,now_ms
     crashes replay those same event identities and cannot append another fill.
     There is no network, retry authorization, credential or cash operation.
     """
-    if (plan.get('schema')!=SCHEMA or plan.get('status')!='READY_FOR_OMS_PROJECTION' or plan.get('issues') or
+    if plan.get('schema') == 'DEMO_REPORTED_ACCOUNT_RESOLUTION_V1':
+        from live.execution.demo_reported_recovery import prepare
+        if prepare(prepared, dispatch=dispatch, inputs=plan['account_inputs'], as_of_ms=now_ms) != plan:
+            raise ValueError('DEMO_REPORTED_ACCOUNT_PLAN_CHANGED')
+    if (plan.get('schema') not in (SCHEMA,'DEMO_REPORTED_ACCOUNT_RESOLUTION_V1') or plan.get('status')!='READY_FOR_OMS_PROJECTION' or plan.get('issues') or
         plan.get('reservation_sha256')!=prepared['reservation_sha256'] or
         plan.get('proposal_sha256')!=prepared['proposal_sha256'] or type(now_ms) is not int or
         type(plan.get('resolution_at_ms')) is not int or now_ms<plan['resolution_at_ms']):
@@ -170,5 +174,5 @@ def _project_resolution(plan,*,prepared,dispatch,recovery,oms,event_store,now_ms
             recovery.transition(client,RecoveryState.FOUND,now_ms=now_ms,reason='DEMO_PRIVATE_QUERY_MATCHED',
                 exchange_order_id=row['venue_order_id'],observed_status=row['terminal_status'])
         recovery.mark_resolved(client,now_ms=now_ms,observed_status=row['terminal_status'])
-    return {'schema':SCHEMA,'status':'OMS_TERMINAL_PROJECTED','plan_sha256':_digest(plan),
+    return {'schema':plan['schema'],'status':'OMS_TERMINAL_PROJECTED','plan_sha256':_digest(plan),
         'orders':len(plan['orders']),'cash_reconciled':False,'economic_authority':False,'submission_enabled':False}

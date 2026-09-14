@@ -7,7 +7,7 @@ export function omsStatusValid(v:unknown,asOf:number):boolean {
   if(['NO_SNAPSHOT','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status)))return v.report===null;
   const r=v.report;
   if(v.status!=='AVAILABLE'||!object(r)||r.schema!=='DEMO_OMS_STATUS_V1'||r.environment!=='BINANCE_USDM_DEMO'||r.scope!=='TECHNICAL_VALIDATION_ONLY'||
-    !['INPUTS_UNRESOLVED','AWAITING_PROJECTION','PROJECTION_INTERRUPTED','OMS_TERMINAL_PROJECTED'].includes(String(r.phase))||
+    !['INPUTS_UNRESOLVED','AWAITING_PROJECTION','PROJECTION_INTERRUPTED','OMS_TERMINAL_PROJECTED','OMS_ACCOUNT_RECONCILED'].includes(String(r.phase))||
     !integer(r.observed_at_ms)||!r.observed_at_ms||r.observed_at_ms>asOf||
     !integer(r.order_count)||!r.order_count||r.order_count>20||!integer(r.matched_orders)||r.matched_orders>r.order_count||
     !Array.isArray(r.orders)||r.orders.length!==r.matched_orders||
@@ -25,6 +25,8 @@ export function omsStatusValid(v:unknown,asOf:number):boolean {
     integer(o.last_received_at_ms)&&o.last_received_at_ms>0&&o.last_received_at_ms<=Number(r.observed_at_ms)&&hash(o.query_record_sha256)))return false;
   if(new Set(r.orders.map(o=>o.client_order_id)).size!==r.orders.length||new Set(r.orders.map(o=>o.venue_order_id)).size!==r.orders.length)return false;
   if(r.phase==='INPUTS_UNRESOLVED')return r.issues.length>0&&r.projected_orders===null;
+  if(r.phase==='OMS_ACCOUNT_RECONCILED')return r.matched_orders===r.order_count && r.projected_orders===r.order_count &&
+    integer(r.projected_orders) && r.issues.length===0 && r.manifest_hash===null && r.journal_tail===null;
   if(r.matched_orders!==r.order_count||!hash(r.manifest_hash)||!hash(r.journal_tail))return false;
   if(r.phase==='PROJECTION_INTERRUPTED')return r.projected_orders===null&&r.issues.length===1&&r.issues[0]==='OMS_PROJECTION_INTERRUPTED';
   return r.issues.length===0&&(r.phase==='OMS_TERMINAL_PROJECTED'?integer(r.projected_orders)&&r.projected_orders===r.order_count:r.projected_orders===null);

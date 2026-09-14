@@ -47,15 +47,15 @@ def area_for(root,cycle):
     return area
 
 
-def position(root,account):
+def position(root,account,*,strategy_id=None):
     with ExitStack() as stack:
         stores=_open(stack,root)
         state=_state(stores['dispatch'],stores['recovery'],stores['oms'])
         context=load_context(state,symbol='BTCUSDC',account_ref=account,as_of_ms=now_ms())
-        return context,len(stores['oms'].fills())
+        return context,len(stores['oms'].fills(strategy_id=strategy_id))
 
 
-def settle(root,account,source_commit):
+def settle(root,account,source_commit,*,strategy_id=None):
     deadline=time.monotonic()+45
     with ExitStack() as stack:
         stores=_open(stack,root)
@@ -69,7 +69,7 @@ def settle(root,account,source_commit):
             if 'STREAM_GAPS_IN_WINDOW' in resolution.get('issues',[]):
                 return {'status':'EVIDENCE_REPAIR_REQUIRED','quantity':None,'fill_count':None,
                     'reason':'STREAM_GAPS_IN_WINDOW'}
-            try:context,count=position(root,account)
+            try:context,count=position(root,account,strategy_id=strategy_id)
             except ValueError:pass
             else:
                 return {'status':'SETTLED','quantity':context['quantity'],'fill_count':count,
@@ -177,15 +177,21 @@ def reduce_task(root,account,source_commit,payload):
 
 
 def reconcile(root,area,account):
-    capture=load_capture(area/'cash');context,count=position(root,account)
+    capture=load_capture(area/'cash');context,count=position(root,account,strategy_id=cycle_strategy(root,area))
     require(capture['account_ref_sha256']==account,'FUNCTIONAL_CASH_ACCOUNT')
     with ExitStack() as stack:
-        journals=[]
+        journals=[];account_prefix=None
         for source in context['sources']:
+            if source['manifest_hash'] is None:
+                from tools.demo_reported_recovery import _read
+                plan=_read(root/'receipt-reconciliation/plans'/(source['plan_sha256']+'.json'),root,maximum=16_000_000)
+                require(account_prefix is None and plan['schema']=='DEMO_REPORTED_ACCOUNT_RESOLUTION_V1',
+                        'FUNCTIONAL_ACCOUNT_PREFIX')
+                account_prefix=plan['account_inputs'];continue
             path=root/'receipt-reconciliation/receipts/journals'/(source['manifest_hash']+'.sqlite3')
             _check_path(path,root.stat().st_uid,directory=False)
             journals.append(stack.enter_context(DemoExecutionJournal(path,read_only=True)))
-        report=project_cash_chain(journals,capture)
+        report=project_cash_chain(journals,capture,account_prefix=account_prefix)
     _retain(area/'cash-chain-reports',report)
     save_cash_status(root/'resident-recovery/functional-cash/views',cash_status(report))
     return {'status':report['status'],'issues':report['issues'],'final_quantity':context['quantity'],
@@ -193,11 +199,23 @@ def reconcile(root,area,account):
         'wallet_residual':report['wallet_residual'],'economic_authority':False}
 
 
+def cycle_strategy(root,area):
+    path=area/'cycle-scope.json'
+    if not path.exists() and not path.is_symlink():return None
+    _check_path(path,root.stat().st_uid,directory=False)
+    require(path.stat().st_size<=1024,'FUNCTIONAL_SCOPE_SIZE')
+    value=load_json_without_duplicate_keys(path.read_bytes())
+    require(set(value)=={'schema','cycle_sha256','strategy_id'} and value['schema']=='DEMO_CYCLE_SCOPE_V1' and
+        value['cycle_sha256']==area.name and type(value['strategy_id']) is str and
+        re.fullmatch('demo-functional-[a-f0-9]{16}',value['strategy_id']),'FUNCTIONAL_SCOPE_BINDING')
+    return value['strategy_id']
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-commit',required=True)
     parser.add_argument('--cycle-sha256',required=True)
-    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash'),required=True)
+    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context'),required=True)
     args=parser.parse_args(argv);os.umask(0o077)
     try:
         verify_source(args.source_commit);root=require_custody();_,account=fixed_account()
@@ -205,13 +223,29 @@ def main(argv=None):
         raw=read_frame(sys.stdin.fileno(),maximum=65536,deadline=time.monotonic()+10)
         payload=load_json_without_duplicate_keys(raw);require(type(payload) is dict,'FUNCTIONAL_INPUT')
         area=area_for(root,args.cycle_sha256)
-        if args.operation=='cash':result=capture_cash(root,area,account,args.source_commit)
+        if args.operation=='account-cash':
+            from tools.demo_account_cash import run
+            result=run(root,area,account,args.source_commit,strategy_id=cycle_strategy(root,area))
+        elif args.operation=='context':
+            context,_=position(root,account)
+            result={'status':'CANONICAL_CONTEXT','context':context}
+        elif args.operation=='account-recover':
+            from tools.demo_reported_recovery import run
+            result=run(source_commit=args.source_commit)
+        elif args.operation=='cash':
+            if payload.get('strategy_id') is not None:
+                from tools.demo_operating_bundle import write_new
+                sid=payload['strategy_id']
+                require(type(sid) is str and re.fullmatch('demo-functional-[a-f0-9]{16}',sid),'FUNCTIONAL_SCOPE_BINDING')
+                write_new(area/'cycle-scope.json',demo_operator_setup.canonical(dict(schema='DEMO_CYCLE_SCOPE_V1',
+                    cycle_sha256=area.name,strategy_id=sid)),uid=root.stat().st_uid,gid=root.stat().st_gid)
+            result=capture_cash(root,area,account,args.source_commit)
         elif args.operation=='resume-check':
             prefix=opening_prefix(root,area,account,args.source_commit)
             result={'status':'ORIGINAL_OPENING_RETAINED','capture_prefix_sha256':demo_operator_setup.digest(prefix)}
         elif args.operation=='resume-cash':result=resume_cash(root,area,account,args.source_commit)
         elif args.operation=='close-cash':result=close_cash(area,account,args.source_commit)
-        elif args.operation=='settle':result=settle(root,account,args.source_commit)
+        elif args.operation=='settle':result=settle(root,account,args.source_commit,strategy_id=cycle_strategy(root,area))
         elif args.operation=='reduce':result=reduce_task(root,account,args.source_commit,payload)
         else:result=reconcile(root,area,account)
         result.update(source_commit=args.source_commit,cycle_sha256=args.cycle_sha256,observed_at_ms=now_ms())

@@ -4,6 +4,15 @@ import {DemoOmsStatus} from './DemoOmsStatus';
 import {omsStatusValid} from '@/lib/api/demo-oms-status-contract';
 import type {DemoOmsStatusReport} from '@/lib/types/demo-oms-status';
 afterEach(cleanup);
+it('reports account recovery without inventing a gap-free receipt journal',()=>{
+  const r:DemoOmsStatusReport={...report(),phase:'OMS_ACCOUNT_RECONCILED',manifest_hash:null,journal_tail:null};
+  expect(omsStatusValid({status:'AVAILABLE',report:r},now)).toBe(true);
+  expect(omsStatusValid({status:'AVAILABLE',report:{...r,phase:'OMS_TERMINAL_PROJECTED'}},now)).toBe(false);
+  render(<DemoOmsStatus snapshot={{status:'AVAILABLE',report:r}} refreshFailed={false}/>);
+  expect(screen.getByText('原订单已通过账户核对恢复')).toBeInTheDocument();
+  expect(screen.getByText(/原私有流缺口仍保留/)).toBeInTheDocument();
+  expect(screen.getByText('账户核对输入')).toBeInTheDocument();
+});
 const now=1800000000000;
 function report():DemoOmsStatusReport {
   return {schema:'DEMO_OMS_STATUS_V1',environment:'BINANCE_USDM_DEMO',scope:'TECHNICAL_VALIDATION_ONLY',

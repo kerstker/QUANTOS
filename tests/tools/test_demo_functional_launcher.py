@@ -13,6 +13,7 @@ from tools.demo_functional_launcher import render
     (True,[], 'tools.demo_functional_cycle',['--recover']),
     (True,['--recover'], 'tools.demo_functional_cycle',['--recover']),
     (True,['--resume'], 'tools.demo_functional_cycle',['--resume']),
+    (True,['--new-cycle'], 'tools.demo_successor_setup',['--enroll','--run-cycle']),
 ])
 def test_fixed_entrypoint_routes_without_mutating_setup_or_loading_keys(monkeypatch,installed,args,module,operation):
     calls=[]

@@ -20,6 +20,17 @@ from tools.demo_execution_session import read_frame
 SETUP=Path('/etc/quantos/demo-operator-setup')
 
 
+def _save_status(area,value):
+    demo_functional_status.save(area/'views',value)
+    common=supervisor.STATE/'functional-cycle'
+    if common!=area:demo_functional_status.save(common/'views',value)
+
+
+def _stage():
+    from tools.demo_successor_setup import active_setup
+    return active_setup(root=SETUP)
+
+
 def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress,
           recovery_checks=1,checkpoint=None,resume=None,allow_new_tasks=True):
     """Persist each attempt before dispatch; a resumed attempt is query-only.
@@ -90,10 +101,10 @@ def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress,
 
 
 def child_command(operation,*,source_commit,registry,cycle,unit):
-    require(operation in ('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash'),'FUNCTIONAL_OPERATION')
+    require(operation in ('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context'),'FUNCTIONAL_OPERATION')
     command=supervisor.child_command('executor',source_commit=source_commit,registry=registry,purpose='submission',unit=unit)
     command[command.index('tools.demo_execution_session')]='tools.demo_functional_worker'
-    budget='840s' if operation=='cash' else '300s' if operation=='resume-cash' else '160s'
+    budget='840s' if operation=='cash' else '420s' if operation in ('account-recover','account-cash') else '300s' if operation=='resume-cash' else '160s'
     command[command.index('RuntimeMaxSec=90s')]='RuntimeMaxSec='+budget
     del command[-2:]
     return command+['--operation',operation,'--cycle-sha256',cycle]
@@ -191,12 +202,14 @@ def recover(*,source_commit):
     policy=validate_policy(load_json_without_duplicate_keys(_read_root_owned_json(supervisor.ISSUER_POLICY)))
     require(policy['registry_sha256']==registry_sha256(registry) and
         policy['deployment_sha256']==registry['deployment_sha256'],'FUNCTIONAL_RECOVERY_REGISTRY')
-    installed=load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'result.json'))
-    spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'spec.json')))
+    stage=_stage()
+    installed=load_json_without_duplicate_keys(_read_root_owned_json(stage/'result.json'))
+    spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(stage/'spec.json')))
     require(installed['status']=='INSTALLED_PENDING_CYCLE' and installed['source_commit']==spec['source_commit']==
         policy['executor_release_commit'] and installed['spec_sha256']==demo_operator_setup.digest(spec) and
         policy['account_ref_sha256']==spec['account_ref_sha256'],'FUNCTIONAL_RECOVERY_INSTALLATION')
     cycle=demo_operator_setup.digest(installed);area=supervisor.STATE/'functional-cycle'
+    if stage!=SETUP:area=area/'cycles'/cycle
     with checkpoints.cycle_lock(area):
         history=area/'recovery-results'
         if history.exists():
@@ -220,10 +233,15 @@ def recover(*,source_commit):
             result=drive(opening_task=template,execute=no_submission,settle=lambda:runtime.invoke('settle',timeout=60),
                 prepare_reduce=no_submission,cash_finish=lambda:runtime.invoke('reconcile'),progress=progress,
                 recovery_checks=3,resume=resume,allow_new_tasks=False)
+            if result['status'] in ('EVIDENCE_REPAIR_REQUIRED','NO_TRADING_EVIDENCE'):
+                try:recovered=runtime.invoke('account-recover',timeout=415)
+                except Exception:recovered={}
+                if recovered.get('status')=='MANUAL_ACCOUNT_RECONCILED':
+                    result.update({k:recovered[k] for k in ('status','final_quantity','fill_count','cash_status','cash_reconciled')})
             result.update(cycle_sha256=cycle,source_commit=source_commit,observed_at_ms=supervisor.now_ms(),
                 mode='RECOVERY_ONLY',original_source_commit=installed['source_commit'])
             _retain(area/'recovery-results',result)
-            demo_functional_status.save(area/'views',demo_functional_status.build(phase=result['status'],
+            _save_status(area,demo_functional_status.build(phase=result['status'],
                 source_commit=source_commit,cycle_sha256=cycle,observed_at_ms=result['observed_at_ms'],result=result))
             print(json.dumps(result,sort_keys=True),flush=True)
             return 0 if result['status']=='DEMO_CYCLE_COMPLETED' else 2
@@ -243,8 +261,9 @@ def main(argv=None):
     try:
         if args.recover:return recover(source_commit=args.source_commit)
         registry,policy=supervisor.configuration(args.source_commit)
-        installed=load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'result.json'))
-        spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'spec.json')))
+        stage=_stage()
+        installed=load_json_without_duplicate_keys(_read_root_owned_json(stage/'result.json'))
+        spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(stage/'spec.json')))
         require(installed['status']=='INSTALLED_PENDING_CYCLE' and installed['source_commit']==args.source_commit and
             installed['spec_sha256']==demo_operator_setup.digest(spec) and policy['account_ref_sha256']==spec['account_ref_sha256'],
             'FUNCTIONAL_INSTALLATION_BINDING')
@@ -253,6 +272,10 @@ def main(argv=None):
         require(demo_operator_setup.digest(template)==installed['task_sha256'],'FUNCTIONAL_INITIAL_TASK')
         demo_task.task_check(template,policy=policy,source_commit=args.source_commit,now_ms=supervisor.now_ms())
         area=supervisor.STATE/'functional-cycle'
+        if stage!=SETUP:
+            parent=area/'cycles'
+            parent.mkdir(mode=0o700,exist_ok=True);supervisor._root_private_directory(parent)
+            area=parent/cycle
         # One enrollment has one cycle. An interrupted or completed run cannot
         # create another opening task by calling this command again.
         if not args.resume:area.mkdir(mode=0o700)
@@ -278,7 +301,7 @@ def main(argv=None):
             phase=value
             _retain(area/'events',{'cycle_sha256':cycle,'phase':value,'observed_at_ms':supervisor.now_ms()})
             if value in demo_functional_status.ACTIVE:
-                demo_functional_status.save(area/'views',demo_functional_status.build(phase=value,
+                _save_status(area,demo_functional_status.build(phase=value,
                     source_commit=args.source_commit,cycle_sha256=cycle,observed_at_ms=supervisor.now_ms()))
             print(json.dumps({'phase':value,'cycle_sha256':cycle}),flush=True)
         if args.resume:
@@ -286,7 +309,7 @@ def main(argv=None):
             cash=None
         else:
             progress('OPENING_CASH_CAPTURE');started=supervisor.now_ms()
-            cash=runtime.start('cash',{});deadline=time.monotonic()+30
+            cash=runtime.start('cash',{'strategy_id':template['profile']['strategy']['strategy_id']});deadline=time.monotonic()+30
             while True:
                 try:marker=_opening_marker(registry,cycle,args.source_commit,started)
                 except FileNotFoundError:
@@ -313,8 +336,15 @@ def main(argv=None):
             else:
                 require(runtime.invoke('close-cash',timeout=20)['status']=='CLOSE_REQUESTED','FUNCTIONAL_CASH_CLOSE_FAILED')
                 capture=runtime.finish(cash,240)
-            require(capture['status']=='CAPTURED','FUNCTIONAL_CASH_CAPTURE_INCOMPLETE')
-            return runtime.invoke('reconcile')
+            if capture['status']=='CAPTURED':
+                try:
+                    comparison=runtime.invoke('reconcile')
+                    if comparison['status']=='MATCHED_REPORTED_INPUTS':return comparison
+                except Exception:pass
+            # Per-order receipt windows need not cover the whole cash window.
+            # The fixed-account alternative must independently match the
+            # already completed canonical book and this cycle's system fills.
+            return runtime.invoke('account-cash',timeout=415)
         result=drive(opening_task=template,execute=execute,settle=lambda:runtime.invoke('settle',timeout=60),
             prepare_reduce=reduce,cash_finish=finish_cash,progress=progress,recovery_checks=3,
             resume=resume,
@@ -323,7 +353,7 @@ def main(argv=None):
         result.update(cycle_sha256=cycle,source_commit=args.source_commit,observed_at_ms=supervisor.now_ms())
         if args.resume:_retain(area/'recovery-results',result)
         else:write_new(area/'result.json',demo_operator_setup.canonical(result))
-        demo_functional_status.save(area/'views',demo_functional_status.build(phase=result['status'],
+        _save_status(area,demo_functional_status.build(phase=result['status'],
             source_commit=args.source_commit,cycle_sha256=cycle,observed_at_ms=result['observed_at_ms'],result=result))
         print(json.dumps(result,sort_keys=True),flush=True)
         return 0 if result['status']=='DEMO_CYCLE_COMPLETED' else 2
@@ -337,7 +367,7 @@ def main(argv=None):
         if claimed:
             try:
                 _retain(area/'events',dict(result,observed_at_ms=supervisor.now_ms()))
-                demo_functional_status.save(area/'views',demo_functional_status.build(phase='CYCLE_NOT_COMPLETED',
+                _save_status(area,demo_functional_status.build(phase='CYCLE_NOT_COMPLETED',
                     source_commit=args.source_commit,cycle_sha256=cycle,observed_at_ms=supervisor.now_ms()))
             except Exception:pass
         print(json.dumps(result),flush=True);return 3
