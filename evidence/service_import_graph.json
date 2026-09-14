@@ -1476,6 +1476,11 @@
           "path": "services/research/demo_statement.py"
         },
         {
+          "line": 11,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_trade_crosscheck.py"
+        },
+        {
           "line": 14,
           "module": "services.execution.paper_reconciliation",
           "path": "services/research/paper_trading/domain/reconciliation.py"
@@ -1988,7 +1993,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c9658bd1926ca3b801223d662388a7ce9642d50104dd7dc68d6b87ecb60e8d8c",
+  "graph_sha256": "2b565c08a4382b25e0991b284166f286f9810aca343e95eeafc7d68cda308dc4",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2026,7 +2031,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 585,
+  "source_file_count": 586,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
