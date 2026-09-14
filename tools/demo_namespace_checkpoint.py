@@ -31,7 +31,8 @@ MAX_BYTES=20*1024**3
 MAX_JSON_BYTES=16*1024*1024
 EXECUTOR_DATABASES={'dispatch.sqlite3','recovery.sqlite3','oms.sqlite3','order-events.sqlite3','user-stream.sqlite3'}
 EXECUTOR_DIRECTORIES={'evidence','execution-origins','resident-recovery','receipt-reconciliation',
-    'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT','request-preparation-results'}
+    'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT',
+    'request-preparation-results','session-results','cancellation-session-results'}
 CONTROLLER_REQUIRED_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
 CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle'}
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',

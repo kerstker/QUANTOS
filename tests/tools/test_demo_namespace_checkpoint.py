@@ -61,6 +61,23 @@ def test_encrypted_roundtrip_preserves_pending_orders_and_original_hashes(tmp_pa
     with pytest.raises(ValueError):checkpoint.restore_checkpoint(archive,restored,passphrase=SECRET,expected_sha256=result['sha256'])
 
 
+@pytest.mark.parametrize('directory',['session-results','cancellation-session-results'])
+def test_execution_session_results_survive_encrypted_restore(tmp_path,monkeypatch,directory):
+    root,_=executor(tmp_path,monkeypatch)
+    result=root/directory;result.mkdir()
+    retained=b'{"status":"RECOVERY_REQUIRED","orders_submitted":false}\n'
+    (result/'original.json').write_bytes(retained)
+    archive=tmp_path/'checkpoint.enc'
+    captured=checkpoint.create_checkpoint(root,archive,namespace='executor',source_commit=COMMIT,passphrase=SECRET)
+    restored=tmp_path/'restored'
+    report=checkpoint.restore_checkpoint(archive,restored,passphrase=SECRET,expected_sha256=captured['sha256'])
+    assert (restored/directory/'original.json').read_bytes()==retained
+    assert (result/'original.json').read_bytes()==retained
+    assert report['state']['reservations']==report['state']['pending_recoveries']==1
+    assert report['state']['fills']==0
+    assert not report['production_restore_performed'] and not report['submission_enabled']
+
+
 @pytest.mark.parametrize('failure',['password','digest','tamper'])
 def test_restore_failure_never_publishes_a_partial_destination(tmp_path,monkeypatch,failure):
     root,_=executor(tmp_path,monkeypatch);archive=tmp_path/'checkpoint.enc'
