@@ -212,7 +212,16 @@ class RecoveryLoop:
                 elif self.stream is None or self.event_store is None or self.source_commit is None:
                     report['reason'] = 'RESIDENT_RECEIPT_STORES_REQUIRED'
                 elif not 2 <= at-1-first <= 150000 or first//86400000 != (at-1)//86400000:
-                    report['reason'] = 'RESIDENT_RECEIPT_WINDOW_UNRESOLVED'
+                    from live.execution.demo_receipt_binding import retained_receipt_window
+                    window=retained_receipt_window(item['prepared'],dispatch=self.stores['dispatch'])
+                    if window is None:
+                        report['reason'] = 'RESIDENT_RECEIPT_WINDOW_UNRESOLVED'
+                    else:
+                        report['receipt_window']=window
+                        report['resolution']=executor.reconcile_reserved(item['prepared'],**self.stores,
+                            stream=self.stream,event_store=self.event_store,source_commit=self.source_commit,**window)
+                        if report['resolution']['status']=='OMS_TERMINAL_PROJECTED':
+                            report['status']='OMS_TERMINAL_CASH_SEPARATE'
                 else:
                     report['resolution'] = executor.reconcile_reserved(item['prepared'], **self.stores,
                         stream=self.stream, event_store=self.event_store, source_commit=self.source_commit,

@@ -26,13 +26,19 @@ SCHEMA = 'DEMO_RESERVED_RECEIPT_BINDING_V1'
 BINDING_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
-def _retained_clock_bracket(proof,wire,clients,*,start_ms,end_ms):
+def _retained_clock_bracket(proof,wire,clients,*,start_ms,end_ms,query_clock_sha256=None):
     """Derive clock inputs only from the original proposal and query journal.
 
     All selected latest query rows must share the same retained clock read.
     A partly refreshed batch never falls back to the legacy common-clock path.
     """
-    latest={r['client_order_id']:r for r in wire if r['kind']=='QUERY_RESULT'}
+    queries=[r for r in wire if r['kind']=='QUERY_RESULT']
+    if query_clock_sha256 is not None:
+        if type(query_clock_sha256) is not str or re.fullmatch('[a-f0-9]{64}',query_clock_sha256) is None:
+            raise ValueError('HISTORICAL_QUERY_CLOCK_ID_INVALID')
+        queries=[r for r in queries if 'clock' in r['payload'] and _digest(r['payload']['clock'])==query_clock_sha256]
+        if not queries:raise ValueError('HISTORICAL_QUERY_CLOCK_MISSING')
+    latest={r['client_order_id']:r for r in queries}
     if not any('clock' in r['payload'] for r in latest.values()):return None,[]
     if set(latest)!=set(clients) or any('clock' not in r['payload'] for r in latest.values()):
         raise ValueError('QUERY_CLOCK_BATCH_INCOMPLETE')
@@ -49,7 +55,45 @@ def _retained_clock_bracket(proof,wire,clients,*,start_ms,end_ms):
     return bracket,[latest[c]['record_hash'] for c in clients]
 
 
-def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
+def retained_receipt_window(prepared, *, dispatch):
+    """Find the earliest retained complete terminal-query clock after the send.
+
+    The historical receive window is immutable, not extended to the recovery
+    clock. This selects no messages and removes no gaps. Binding and projection
+    still check every receipt, original intent, and the latest query outcome.
+    """
+    proof=_load_proof(prepared)
+    snapshot=dispatch.evidence_snapshot()
+    reservations=[r for r in snapshot['reservations'] if r['record_hash']==prepared['reservation_sha256']]
+    if (len(reservations)!=1 or reservations[0]['payload']['orders']!=proof['orders'] or
+            reservations[0]['payload']['context']!=proof['context']):
+        raise ValueError('HISTORICAL_QUERY_RESERVATION_MISMATCH')
+    wire=[r for r in snapshot['wire'] if r['reservation_sha256']==prepared['reservation_sha256']]
+    clients={o['newClientOrderId'] for o in proof['orders']}
+    claims={r['client_order_id']:r['at_ms'] for r in wire if r['kind']=='SEND_CLAIM'}
+    if set(claims)!=clients:return None
+    start=min(claims.values());groups={}
+    for row in wire:
+        if row['kind']=='QUERY_RESULT' and 'clock' in row['payload']:
+            sha=_digest(row['payload']['clock'])
+            groups.setdefault(sha,[]).append(row)
+    candidates=[]
+    for sha,rows in groups.items():
+        latest={r['client_order_id']:r for r in rows}
+        if set(latest)!=clients:continue
+        if any(r['payload']['outcome']['status']!='FOUND' or
+               r['payload']['outcome']['order']['status'] not in ('FILLED','CANCELED','EXPIRED','EXPIRED_IN_MATCH')
+               for r in latest.values()):continue
+        end=rows[0]['payload']['clock']['requested_at_ms']
+        if not 2<=end-start<=150000 or start//86400000!=end//86400000:continue
+        try:
+            _retained_clock_bracket(proof,wire,clients,start_ms=start,end_ms=end,query_clock_sha256=sha)
+        except ValueError:continue
+        candidates.append({'start_ms':start,'end_ms':end,'query_clock_sha256':sha})
+    return min(candidates,key=lambda r:(r['end_ms'],r['query_clock_sha256'])) if candidates else None
+
+
+def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, query_clock_sha256=None):
     """Read-only, bounded binding; all monetary numbers remain exact strings.
 
     New original-ID query clocks select V3 automatically. Legacy query rows keep
@@ -154,7 +198,8 @@ def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
     result['bound_messages_count'] = len(selected)
     clock=None
     try:
-        clock,clock_queries=_retained_clock_bracket(proof,wire,by_client,start_ms=start_ms,end_ms=end_ms)
+        clock,clock_queries=_retained_clock_bracket(proof,wire,by_client,start_ms=start_ms,end_ms=end_ms,
+            query_clock_sha256=query_clock_sha256)
         if clock is not None:
             result['clock_policy']=bracket_bounds(clock,start_ms=start_ms,end_ms=end_ms)['policy']
             result['clock_query_record_sha256']=clock_queries
@@ -180,7 +225,8 @@ def bind_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms):
 
 
 @ledger_decimal_context()
-def import_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, source_commit, output_directory):
+def import_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, source_commit, output_directory,
+                             query_clock_sha256=None):
     """Retain the derived binding and import its raw facts into the old journal.
 
     This isolated technical projection never mutates the executor OMS/recovery,
@@ -190,7 +236,8 @@ def import_reserved_receipts(prepared, *, dispatch, stream, start_ms, end_ms, so
     if type(source_commit) is not str or re.fullmatch('[a-f0-9]{40}',source_commit) is None:
         raise ValueError('DEMO_RECEIPT_SOURCE_COMMIT_REQUIRED')
     prepared = deepcopy(prepared)
-    binding = bind_reserved_receipts(prepared, dispatch=dispatch, stream=stream, start_ms=start_ms, end_ms=end_ms)
+    binding = bind_reserved_receipts(prepared, dispatch=dispatch, stream=stream, start_ms=start_ms, end_ms=end_ms,
+        query_clock_sha256=query_clock_sha256)
     directory = Path(output_directory)
     binding_path = _retain(directory/'bindings', binding)
     result = {'schema':'DEMO_RESERVED_RECEIPT_IMPORT_V1','status':'UNRESOLVED','issues':list(binding['issues']),

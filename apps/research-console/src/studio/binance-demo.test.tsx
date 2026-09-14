@@ -64,6 +64,45 @@ it('requires fills, flat exposure and matched cash before showing a completed De
   expect(()=>parseDemoPayload({...data,functional_cycle:{status:'AVAILABLE',report:{...data.functional_cycle.report,fill_count:0}}})).toThrow();
 });
 
+it('distinguishes the current flat BTCUSDC account from unresolved historical execution', () => {
+  const data=payload();
+  data.functional_cycle={status:'AVAILABLE',report:{schema:'DEMO_FUNCTIONAL_STATUS_V1',environment:'BINANCE_USDM_DEMO',
+    scope:'TECHNICAL_VALIDATION_ONLY',phase:'RECOVERY_REQUIRED',observed_at_ms:data.as_of_ms-2000,
+    source_commit:'c'.repeat(40),cycle_sha256:'a'.repeat(64),orders_attempted:1,final_quantity:null,fill_count:null,
+    cash_status:'UNRESOLVED',cash_reconciled:false,economic_authority:false,submission_enabled:false}};
+  data.account={status:'READY',reason:'ACCOUNT_READ_SUCCEEDED',observed_at_ms:data.as_of_ms-100,
+    assets:[],positions:[{symbol:'BTCUSDT',position_side:'BOTH',quantity:'0.0097',unrealized_profit:'0'}]};
+  const view=render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByRole('heading',{name:'BTCUSDC 已空仓，历史账务待恢复'})).toBeInTheDocument();
+  expect(screen.getByText('账户观察：BTCUSDC 当前无持仓')).toBeInTheDocument();
+  expect(screen.getByText('账本持仓数量')).toBeInTheDocument();
+  expect(screen.queryByRole('heading',{name:'本轮 DEMO 闭环已完成'})).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('DGX 本机启动命令')).not.toBeInTheDocument();
+  view.rerender(<DemoReadinessView data={data} loading={false} error="刷新失败" refresh={vi.fn()}/>);
+  expect(screen.queryByText('账户观察：BTCUSDC 当前无持仓')).not.toBeInTheDocument();
+});
+
+it.each(['stale','before-cycle','future','hedged','small-position'])(
+  'does not label %s account evidence as a current flat position', condition => {
+    const data=payload();
+    data.functional_cycle={status:'AVAILABLE',report:{schema:'DEMO_FUNCTIONAL_STATUS_V1',environment:'BINANCE_USDM_DEMO',
+      scope:'TECHNICAL_VALIDATION_ONLY',phase:'RECOVERY_REQUIRED',observed_at_ms:data.as_of_ms-2000,
+      source_commit:'c'.repeat(40),cycle_sha256:'a'.repeat(64),orders_attempted:1,final_quantity:null,fill_count:null,
+      cash_status:'UNRESOLVED',cash_reconciled:false,economic_authority:false,submission_enabled:false}};
+    data.account={status:'READY',reason:'ACCOUNT_READ_SUCCEEDED',observed_at_ms:data.as_of_ms-100,assets:[],positions:[]};
+    if(condition==='stale')data.account.observed_at_ms=data.as_of_ms-120001;
+    if(condition==='before-cycle')data.account.observed_at_ms=data.as_of_ms-2001;
+    if(condition==='future')data.account.observed_at_ms=data.as_of_ms+1;
+    if(condition==='hedged')data.account.positions=[
+      {symbol:'BTCUSDC',position_side:'LONG',quantity:'0.002',unrealized_profit:'0'},
+      {symbol:'BTCUSDC',position_side:'SHORT',quantity:'-0.002',unrealized_profit:'0'}];
+    if(condition==='small-position')data.account.positions=[
+      {symbol:'BTCUSDC',position_side:'BOTH',quantity:'0.000000000000000000000001',unrealized_profit:'0'}];
+    render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+    expect(screen.queryByText('账户观察：BTCUSDC 当前无持仓')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading',{name:'BTCUSDC 已空仓，历史账务待恢复'})).not.toBeInTheDocument();
+});
+
 it('shows connection tests separately from missing actual fills, and rejects false submission evidence', () => {
   const data = payload();
   data.private_checks = {status: 'AVAILABLE', report: {

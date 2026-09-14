@@ -25,12 +25,13 @@ TERMINAL={'FILLED':'FILLED','CANCELLED':'CANCELED','EXPIRED':'EXPIRED'}
 
 
 @ledger_decimal_context()
-def prepare_resolution(prepared,*,dispatch,stream,start_ms,end_ms,source_commit,output_directory,as_of_ms):
+def prepare_resolution(prepared,*,dispatch,stream,start_ms,end_ms,source_commit,output_directory,as_of_ms,
+                       query_clock_sha256=None):
     """Retain a bounded resolution plan; never change OMS/recovery or cash."""
     if type(as_of_ms) is not int or as_of_ms<end_ms:raise ValueError('DEMO_RESOLUTION_FUTURE_WINDOW')
     directory=Path(output_directory)
     imported=import_reserved_receipts(prepared,dispatch=dispatch,stream=stream,start_ms=start_ms,end_ms=end_ms,
-        source_commit=source_commit,output_directory=directory/'receipts')
+        source_commit=source_commit,output_directory=directory/'receipts',query_clock_sha256=query_clock_sha256)
     proof=_load_proof(prepared);snapshot=dispatch.evidence_snapshot()
     result={'schema':SCHEMA,'status':'UNRESOLVED','issues':[],'orders':[],
         'reservation_sha256':prepared['reservation_sha256'],'proposal_sha256':prepared['proposal_sha256'],
@@ -42,6 +43,9 @@ def prepare_resolution(prepared,*,dispatch,stream,start_ms,end_ms,source_commit,
     issues=result['issues']
     if imported['status']!='IMPORTED_TECHNICAL_RECEIPTS' or imported['replay']['projection_status']!='REPLAYED_TECHNICAL_ONLY':
         issues.append('RECEIPT_LEDGER_UNRESOLVED')
+        # Preserve the concrete cause through OMS/resident display instead of
+        # reducing every rejected stream or clock to the same generic failure.
+        issues.extend(imported['issues'])
     else:
         with DemoExecutionJournal(imported['journal_path'],read_only=True) as journal:
             records,tail,_=journal.read()

@@ -190,6 +190,60 @@ def test_expired_clock_scope_is_not_extended_to_make_reconciliation_pass(tmp_pat
         close_stream(args, stream)
 
 
+@pytest.mark.parametrize('failure', [None, 'gap', 'later_query_conflict'])
+def test_late_restart_uses_retained_window_and_keeps_its_original_gaps(tmp_path, monkeypatch, failure):
+    from live.execution.order_event_store import SqliteOrderEventStore
+    from live.exchange import binance_demo_exact as transport
+    from services.research.demo_user_stream import normalize_message
+    from tests.live.test_demo_receipt_binding import fixture, close as close_stream
+    from tests.live.test_demo_reserved_queries import snapshot
+    batch, args, stream, message = fixture(tmp_path, monkeypatch, ack=False)
+    events = SqliteOrderEventStore(str(tmp_path/'events.sqlite3'), create=True)
+    now = [NOW+1020]
+    monkeypatch.setattr(resident.executor, 'now_ms', lambda: now[0])
+    monkeypatch.setattr(resident.executor, '_STATE_ROOT', tmp_path)
+    monkeypatch.setattr(resident.executor, '_require_receipt_store_custody', lambda *a: None)
+    def get(path, query, headers):
+        if path == '/fapi/v1/time':
+            return 200, json.dumps({'serverTime': now[0]+400}).encode()
+        conflict=failure=='later_query_conflict' and now[0]>NOW+150000
+        return 200, json.dumps(snapshot(batch['orders'][0], status='EXPIRED' if conflict else 'FILLED',
+            executedQty='0.001' if conflict else '0.002',
+            time=NOW+1000, updateTime=NOW+1400)).encode()
+    monkeypatch.setattr(transport, '_http_get_once', get)
+    monkeypatch.setattr(transport, '_http_once', lambda *a: pytest.fail('recovery cannot POST'))
+    try:
+        message['E'] = message['T'] = message['o']['T'] = NOW+1400
+        stream.record('MESSAGE', at_ms=NOW+1012, message=normalize_message(json.dumps(message)))
+        if failure=='gap': stream.record('GAP', at_ms=NOW+1015, reason='MESSAGE_REJECTED', response_sha256='c'*64)
+        # Original query succeeded, but this process died before importing receipts.
+        assert resident.executor.query_reserved(batch,
+            **{k:args[k] for k in ('dispatch','recovery','oms')})['status'] == 'ORDER_SNAPSHOTS_OBSERVED'
+        original_stream = stream.verify()
+        now[0] = NOW+300000
+        values = dict(dispatch=args['dispatch'], recovery=args['recovery'], oms=args['oms'], stream=stream,
+            event_store=events, evidence_directory=tmp_path/'evidence', output_directory=tmp_path/'resident',
+            source_commit='a'*40, clock=lambda: now[0])
+        result = resident.RecoveryLoop(**values).tick()
+        assert result['receipt_window']['end_ms'] == NOW+1020
+        assert result['receipt_window']['query_clock_sha256']
+        assert stream.verify() == original_stream
+        assert result['cash_reconciled'] is False and result['new_order_submission_enabled'] is False
+        if failure:
+            assert result['resolution']['status'] == 'UNRESOLVED'
+            expected='STREAM_GAPS_IN_WINDOW' if failure=='gap' else 'PRIVATE_QUERY_STATE_OR_QUANTITY_DIFFERENCE'
+            assert expected in result['resolution']['issues']
+            assert args['oms'].fills() == [] and len(args['recovery'].pending()) == 1
+        else:
+            assert result['status'] == 'OMS_TERMINAL_CASH_SEPARATE', result
+            assert len(args['oms'].fills()) == 1 and not args['recovery'].pending()
+            now[0] += 30001
+            resident.RecoveryLoop(**values).tick()
+            assert len(args['oms'].fills()) == 1
+    finally:
+        events.close(); close_stream(args, stream)
+
+
 def test_competing_resident_cycle_cannot_issue_a_parallel_query(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     import threading

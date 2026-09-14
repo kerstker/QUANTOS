@@ -269,7 +269,8 @@ def _require_receipt_store_custody(event_store,stream):
             raise DemoExecutionStopped('DEMO_RECEIPT_STATE_CUSTODY')
 
 
-def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start_ms,end_ms,source_commit):
+def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start_ms,end_ms,source_commit,
+                       query_clock_sha256=None):
     """Protected internal receipt->OMS recovery step, with no network or cash.
 
     The resident executor must own both input journals; a user-writable research
@@ -284,7 +285,8 @@ def reconcile_reserved(prepared,*,dispatch,recovery,oms,event_store,stream,start
         with _preparation_lease(dispatch):
             output=_STATE_ROOT/'receipt-reconciliation'
             plan=prepare_resolution(prepared,dispatch=dispatch,stream=stream,start_ms=start_ms,end_ms=end_ms,
-                source_commit=source_commit,output_directory=output,as_of_ms=now_ms())
+                source_commit=source_commit,output_directory=output,as_of_ms=now_ms(),
+                query_clock_sha256=query_clock_sha256)
             save_status(output/'views',build_status(prepared,plan,observed_at_ms=now_ms()))
             if plan['status']!='READY_FOR_OMS_PROJECTION':return plan
             try:

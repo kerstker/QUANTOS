@@ -21,6 +21,7 @@ import {DemoIssuerStatus} from './DemoIssuerStatus';
 import {DemoMarketInputs} from './DemoMarketInputs';
 import {DemoBackupStatus} from './DemoBackupStatus';
 import {DemoFunctionalCycle} from './DemoFunctionalCycle';
+import {currentDemoPosition} from './demo-account-position';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -48,6 +49,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
   const accountReady = current && data?.account?.status === 'READY';
   const historical = !!data?.public && !current;
   const cycleComplete=!error && data?.functional_cycle?.report?.phase==='DEMO_CYCLE_COMPLETED';
+  const position=currentDemoPosition(data,!!error);
   const publicTitle = publicReady ? '公共接口可达' : historical ? '等待重新检查' : data?.public?.status === 'FAILED' ? '公共接口检查失败' : '公共接口待检查';
   const accountTitle = accountReady ? '账户查询成功' : historical ? '账户状态待更新' : data?.account?.status === 'FAILED' ? '账户查询未通过' : '账户尚未查询';
   return <>
@@ -57,9 +59,9 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     <ErrorNote error={error} retry={refresh}/>
     {loading && !data && <Loading/>}
     <DemoControlCenter snapshot={data?.functional_cycle} connected={accountReady===true} refreshFailed={!!error}
-      enrollmentObserved={!!data?.issuer_status?.report}/>
+      enrollmentObserved={!!data?.issuer_status?.report} position={position}/>
     <WorkspaceSection id="demo-cycle" title="交易周期">
-      <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error}/>
+      <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error} position={position}/>
     </WorkspaceSection>
     <WorkspaceSection id="demo-orders" title="订单与恢复">
       <DemoOmsStatus snapshot={data?.oms_status} resident={data?.resident_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>

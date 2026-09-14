@@ -50,8 +50,9 @@ function StartGuide() {
   </section>;
 }
 
-export function DemoControlCenter({snapshot,connected,refreshFailed=false,enrollmentObserved=false}: {
+export function DemoControlCenter({snapshot,connected,refreshFailed=false,enrollmentObserved=false,position}: {
   snapshot?:DemoFunctionalSnapshot;connected:boolean;refreshFailed?:boolean;enrollmentObserved?:boolean;
+  position?:import('./demo-account-position').DemoAccountPosition|null;
 }) {
   const report=snapshot?.report;
   const uncertain=refreshFailed || snapshot?.status==='STALE';
@@ -81,6 +82,11 @@ export function DemoControlCenter({snapshot,connected,refreshFailed=false,enroll
     };
     const nextAction=next[report.phase as keyof typeof next];
     if(nextAction) [title,description,target,action]=nextAction;
+    if(position?.flat && (report.phase==='RECOVERY_REQUIRED' || report.phase==='REDUCTION_INCOMPLETE')) {
+      title='BTCUSDC 已空仓，历史账务待恢复';
+      description='最新账户观察已无 BTCUSDC 持仓。保留本轮原订单，继续核对回执与费用；无需依据旧数量再次减仓。';
+      target='#demo-orders';action='查看订单与恢复';
+    }
   } else if(enrollmentObserved) {
     title='已收到登记相关记录';description='等待交易周期发布。请检查原终端的执行结果，勿重复进行首次登记。';
   }
