@@ -70,3 +70,27 @@ it('keeps financial completion distinct from connectivity and partial fills', ()
   expect(within(screen.getByRole('navigation',{name:'DEMO 工作区'})).getAllByRole('link')).toHaveLength(5);
   expect(screen.queryByLabelText('DGX 本机启动命令')).not.toBeInTheDocument();
 });
+
+it('explains that read-only recovery did not submit the remaining reduction', () => {
+  render(<DemoControlCenter connected snapshot={{status:'AVAILABLE',report:report('REDUCTION_AUTHORIZATION_REQUIRED')}}/>);
+  expect(screen.getByRole('heading',{name:'持仓已核对，等待后续处理'})).toBeInTheDocument();
+  expect(screen.getByText(/没有发送新的减仓单/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('DGX 本机启动命令')).not.toBeInTheDocument();
+});
+
+it('copies the query-only recovery entrypoint without renewing or submitting', async () => {
+  const copy=vi.fn().mockResolvedValue(undefined),request=vi.fn();
+  vi.stubGlobal('navigator',{clipboard:{writeText:copy}});vi.stubGlobal('fetch',request);
+  render(<DemoControlCenter connected snapshot={{status:'AVAILABLE',report:report('RECOVERY_REQUIRED')}}/>);
+  expect(screen.getByLabelText('DGX 本机恢复命令')).toHaveValue('sudo /usr/local/sbin/quantos-demo-functional --recover');
+  fireEvent.click(screen.getByRole('button',{name:'复制恢复命令'}));
+  await waitFor(()=>expect(copy).toHaveBeenCalledWith('sudo /usr/local/sbin/quantos-demo-functional --recover'));
+  expect(request).not.toHaveBeenCalled();
+});
+
+it('does not encourage repeated recovery when original evidence is missing', () => {
+  render(<DemoControlCenter connected snapshot={{status:'AVAILABLE',report:report('EVIDENCE_REPAIR_REQUIRED')}}/>);
+  expect(screen.getByRole('heading',{name:'原始回执缺失，重试已停止'})).toBeInTheDocument();
+  expect(screen.getByRole('link',{name:'查看缺失证据'})).toHaveAttribute('href','#demo-orders');
+  expect(screen.queryByRole('button',{name:'复制恢复命令'})).not.toBeInTheDocument();
+});

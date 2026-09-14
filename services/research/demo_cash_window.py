@@ -57,7 +57,7 @@ def validate(raw):
     retry_schema = isinstance(raw, dict) and raw.get('schema') == RETRY_SCHEMA
     _fields(raw, 'schema status observed_at_ms completed_at_ms account_ref_sha256 source_sha256 observe_seconds reads failures' +
             (' attempts' if retry_schema else ''))
-    if raw['schema'] not in (SCHEMA, RETRY_SCHEMA) or raw['status'] not in ('NOT_REQUESTED', 'CAPTURED', 'PARTIAL', 'FAILED'):
+    if raw['schema'] not in (SCHEMA, RETRY_SCHEMA) or raw['status'] not in ('NOT_REQUESTED', 'OPENING_CAPTURED', 'CAPTURED', 'PARTIAL', 'FAILED'):
         raise ValueError('CASH_WINDOW_SCHEMA')
     start, end = _int(raw['observed_at_ms']), _int(raw['completed_at_ms'])
     seconds = _int(raw['observe_seconds'])
@@ -139,6 +139,9 @@ def validate(raw):
         raise ValueError('CASH_WINDOW_CAPTURE_INCOMPLETE')
     if raw['status'] == 'NOT_REQUESTED' and (reads or failures or raw['account_ref_sha256'] is not None):
         raise ValueError('CASH_WINDOW_DEFAULT_NOT_OFFLINE')
+    if raw['status'] == 'OPENING_CAPTURED' and (len(reads)!=2 or failures or raw['account_ref_sha256'] is None or
+        end!=reads[-1]['received_at_ms']):
+        raise ValueError('CASH_WINDOW_OPENING_PREFIX')
     if raw['status'] in ('FAILED', 'PARTIAL') and not failures:
         raise ValueError('CASH_WINDOW_FAILURE_MISSING')
     if retry_schema:

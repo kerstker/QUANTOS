@@ -8,6 +8,42 @@ from tools import demo_functional_worker as tool
 from tools import demo_operator_setup as setup
 
 
+def test_actual_historical_gap_exits_worker_without_retries_or_oms_projection(tmp_path,monkeypatch):
+    from live.execution import demo_resident_recovery as resident
+    from live.execution.order_event_store import SqliteOrderEventStore
+    from live.exchange import binance_demo_exact as transport
+    from services.research.demo_user_stream import normalize_message
+    from tests.live.test_demo_receipt_binding import fixture,close,NOW
+    from tests.live.test_demo_reserved_queries import snapshot
+    batch,args,stream,message=fixture(tmp_path,monkeypatch,ack=False)
+    events=SqliteOrderEventStore(str(tmp_path/'events.sqlite3'),create=True)
+    now=[NOW+1020];calls=[]
+    monkeypatch.setattr(resident.executor,'now_ms',lambda:now[0])
+    monkeypatch.setattr(resident.executor,'_STATE_ROOT',tmp_path)
+    monkeypatch.setattr(resident.executor,'_require_receipt_store_custody',lambda *a:None)
+    def get(path,query,headers):
+        calls.append(path)
+        value={'serverTime':now[0]+400} if path=='/fapi/v1/time' else snapshot(batch['orders'][0],
+            status='FILLED',executedQty='0.002',time=NOW+1000,updateTime=NOW+1400)
+        return 200,json.dumps(value).encode()
+    monkeypatch.setattr(transport,'_http_get_once',get)
+    monkeypatch.setattr(transport,'_http_once',lambda *a:pytest.fail('new order'))
+    stores={k:args[k] for k in ('dispatch','recovery','oms')}
+    try:
+        message['E']=message['T']=message['o']['T']=NOW+1400
+        stream.record('MESSAGE',at_ms=NOW+1012,message=normalize_message(json.dumps(message)))
+        stream.record('GAP',at_ms=NOW+1015,reason='MESSAGE_REJECTED',response_sha256='c'*64)
+        resident.executor.query_reserved(batch,**stores);before=stream.verify();calls.clear();now[0]=NOW+300000
+        monkeypatch.setattr(tool,'_open',lambda *a:dict(stores,stream=stream,event_store=events))
+        monkeypatch.setattr(tool,'RecoveryLoop',lambda **kwargs:resident.RecoveryLoop(**kwargs,clock=lambda:now[0]))
+        monkeypatch.setattr(tool.time,'sleep',lambda _:pytest.fail('retry of permanent evidence gap'))
+        result=tool.settle(tmp_path,batch['context']['account_ref_sha256'],'a'*40)
+        assert result['status']=='EVIDENCE_REPAIR_REQUIRED'
+        assert calls==['/fapi/v1/time','/fapi/v1/order'] and stream.verify()==before
+        assert args['oms'].fills()==[] and len(args['recovery'].pending())==1
+    finally:events.close();close(args,stream)
+
+
 def test_reduction_uses_original_confirmed_basis_and_fresh_venue_grid(tmp_path,monkeypatch):
     from tests.live.test_demo_position_context import completed,held_inputs,NOW,close
     from services.research.demo_execution_origin import save

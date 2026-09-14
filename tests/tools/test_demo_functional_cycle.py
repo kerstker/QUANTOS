@@ -106,6 +106,7 @@ def runtime_fixture(tmp_path,monkeypatch,*,cash_ready=True):
     monkeypatch.setattr(tool.supervisor,'read_document',lambda p,h:(p/(h+'.json')).read_bytes())
     from live.execution import demo_authority
     monkeypatch.setattr(demo_authority,'_read_root_owned_json',lambda p:p.read_bytes())
+    monkeypatch.setattr(tool.supervisor,'_read_root_owned_json',lambda p:p.read_bytes())
     def write(path,body):
         with path.open('xb') as stream:stream.write(body)
     monkeypatch.setattr('tools.demo_operating_bundle.write_new',write)
@@ -121,6 +122,8 @@ def runtime_fixture(tmp_path,monkeypatch,*,cash_ready=True):
                 self.count+=1
                 return {'status':'SETTLED','quantity':'0.002' if self.count==1 else '0','fill_count':self.count}
             if operation=='close-cash':return {'status':'CLOSE_REQUESTED'}
+            if operation=='resume-check':return {'status':'ORIGINAL_OPENING_RETAINED'}
+            if operation=='resume-cash':return {'status':'CAPTURED'}
             if operation=='reduce':
                 value=json.loads(setup.canonical(task));value['orders'][0].update(side='SELL',reduceOnly=True,newClientOrderId='QDclose001')
                 return {'status':'REDUCTION_TASK_PREPARED','task':value}
@@ -154,3 +157,61 @@ def test_missing_opening_wallet_stops_before_first_task_and_publishes_failure(tm
     assert 'execute' not in calls and calls[-1]=='cleanup'
     value=tool.demo_functional_status.load_latest(state/'functional-cycle/views')
     assert value['phase']=='CYCLE_NOT_COMPLETED' and not value['cash_reconciled']
+
+
+def test_real_controller_restart_uses_retained_attempt_and_original_cash_prefix(tmp_path,monkeypatch):
+    state,calls=runtime_fixture(tmp_path,monkeypatch)
+    tasks=[]
+    def crash(**kwargs):
+        tasks.append(kwargs['task_sha256'])
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(tool.demo_task,'run',crash)
+    with pytest.raises(KeyboardInterrupt):tool.main(['--source-commit','c'*40])
+    area=state/'functional-cycle'
+    original=(area/'attempts/0.json').read_bytes()
+    claim=(area/'claim.json').read_bytes()
+    assert not (area/'result.json').exists()
+    monkeypatch.setattr(tool.demo_task,'run',lambda **kwargs:tasks.append(kwargs['task_sha256']))
+    assert tool.main(['--source-commit','c'*40,'--resume'])==0
+    assert len(tasks)==2 and tasks[0]!=tasks[1]
+    assert calls.count('cash')==1 and calls.count('resume-cash')==1
+    assert (area/'attempts/0.json').read_bytes()==original and (area/'claim.json').read_bytes()==claim
+    assert len(list((area/'recovery-results').iterdir()))==1
+    assert tool.demo_functional_status.load_latest(area/'views')['phase']=='DEMO_CYCLE_COMPLETED'
+
+
+def test_expired_authorization_stops_resume_before_worker_or_new_claim(tmp_path,monkeypatch):
+    state,calls=runtime_fixture(tmp_path,monkeypatch)
+    monkeypatch.setattr(tool.supervisor,'configuration',lambda _:(_ for _ in ()).throw(ValueError('ISSUER_POLICY_EXPIRED')))
+    assert tool.main(['--source-commit','c'*40,'--resume'])==3
+    assert calls==[] and not (state/'functional-cycle').exists()
+
+
+def test_read_only_recovery_works_after_policy_expiry_and_preserves_original_claim(tmp_path,monkeypatch):
+    from live.execution import demo_authority
+    from live.execution.demo_issuer_policy import current_key
+    from tools import demo_issuer
+    state,calls=runtime_fixture(tmp_path,monkeypatch)
+    def crash(**kwargs):raise KeyboardInterrupt()
+    monkeypatch.setattr(tool.demo_task,'run',crash)
+    with pytest.raises(KeyboardInterrupt):tool.main(['--source-commit','c'*40])
+    registry,policy=tool.supervisor.configuration('c'*40)
+    expired=policy['valid_until_ms']+1000
+    with pytest.raises(ValueError):current_key(policy,registry,expired)
+    records={str(tool.supervisor.EXECUTOR_REGISTRY):registry,str(tool.supervisor.ISSUER_REGISTRY):registry,
+        str(tool.supervisor.ISSUER_POLICY):policy}
+    def read(path):return json.dumps(records[str(path)]).encode() if str(path) in records else path.read_bytes()
+    monkeypatch.setattr(demo_authority,'_read_root_owned_json',read)
+    monkeypatch.setattr(tool.supervisor,'_read_root_owned_json',read)
+    monkeypatch.setattr(demo_issuer,'verify_source',lambda _:None)
+    monkeypatch.setattr(tool.os,'geteuid',lambda:0)
+    monkeypatch.setattr(tool.supervisor,'now_ms',lambda:expired)
+    monkeypatch.setattr(tool.supervisor,'configuration',lambda _:pytest.fail('active issuer configuration during recovery'))
+    monkeypatch.setattr(tool.demo_task,'run',lambda **kwargs:pytest.fail('send during read-only recovery'))
+    before=(state/'functional-cycle/claim.json').read_bytes();calls.clear()
+    assert tool.main(['--source-commit','d'*40,'--recover'])==2
+    report=tool.demo_functional_status.load_latest(state/'functional-cycle/views')
+    assert report['phase']=='REDUCTION_AUTHORIZATION_REQUIRED' and report['final_quantity']=='0.002'
+    assert calls==['settle','reconcile','cleanup']
+    assert (state/'functional-cycle/claim.json').read_bytes()==before
+    assert len(list((state/'functional-cycle/attempts').iterdir()))==1

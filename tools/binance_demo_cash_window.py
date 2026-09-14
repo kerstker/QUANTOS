@@ -67,7 +67,7 @@ def get_response(path, *, params, headers, opener=None):
 
 
 def collect(*, credential_file, observe_seconds=60, operator_read=False, get=None, clock_ms=None, sleep=None,
-            credential_reader=None, window_opened=None, observe_wait=None):
+            credential_reader=None, window_opened=None, observe_wait=None, opening_prefix=None):
     get = get or get_response
     clock_ms = clock_ms or now_ms
     sleep = sleep or time.sleep
@@ -76,13 +76,24 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
               'account_ref_sha256': None, 'source_sha256': source_hash(), 'observe_seconds': observe_seconds,
               'reads': [], 'failures': [], 'attempts': []}
     validate(report)
+    resumed_credentials=None
+    if opening_prefix is not None:
+        validate(opening_prefix)
+        if not operator_read or opening_prefix['schema']!=RETRY_SCHEMA or opening_prefix['status']!='OPENING_CAPTURED' or \
+            opening_prefix['source_sha256']!=source_hash() or not 0<=started-opening_prefix['completed_at_ms']<=(3600-observe_seconds)*1000:
+            raise ValueError('CASH_WINDOW_RESUME_PREFIX')
+        resumed_credentials=(credential_reader or load_credentials)(credential_file)
+        account=hashlib.sha256(('BINANCE_USDM_DEMO:'+resumed_credentials[0]).encode()).hexdigest()
+        if account!=opening_prefix['account_ref_sha256']:raise ValueError('CASH_WINDOW_RESUME_ACCOUNT')
+        report=json.loads(json.dumps(opening_prefix,allow_nan=False))
+        report['observe_seconds']=max(30,(started-report['completed_at_ms'])//1000+observe_seconds)
     if not operator_read:
         return report
     current_kind, current_sweep, current_page, current_at = 'credentials', 0, 0, started
     deadline = time.monotonic()+observe_seconds+220
     offset = 0
     try:
-        key, secret = (credential_reader or load_credentials)(credential_file)
+        key, secret = resumed_credentials or (credential_reader or load_credentials)(credential_file)
         report['account_ref_sha256'] = hashlib.sha256(('BINANCE_USDM_DEMO:'+key).encode()).hexdigest()
 
         def read(kind, path, *, sweep=0, page=0, params=None):
@@ -153,13 +164,19 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
                                         'response_sha256': attempt['response_sha256'], 'sweep': sweep, 'page': page, 'data': data})
                 return data
 
-        read('clock_before', '/fapi/v1/time')
-        read('wallet_before', '/fapi/v3/account')
+        if opening_prefix is None:
+            read('clock_before', '/fapi/v1/time')
+            read('wallet_before', '/fapi/v3/account')
+        else:
+            original=report['reads'][0]
+            offset=original['data']['serverTime']-(original['requested_at_ms']+original['received_at_ms'])//2
         current_kind,current_sweep,current_page,current_at='worker',0,0,clock_ms()
-        if window_opened is not None:
+        if window_opened is not None and opening_prefix is None:
             # Retain the opening wallet before releasing a bounded Demo task.
             # The callback receives a copy, never mutable collector state.
-            window_opened(json.loads(json.dumps(report,allow_nan=False)))
+            prefix=json.loads(json.dumps(report,allow_nan=False))
+            prefix.update(status='OPENING_CAPTURED',completed_at_ms=prefix['reads'][-1]['received_at_ms'])
+            window_opened(validate(prefix))
         if observe_wait is None:
             sleep(observe_seconds)
         else:
@@ -168,6 +185,9 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
                 clock_ms()-report['reads'][-1]['received_at_ms']<actual*1000):
                 raise ProbeFailure('CLOCK_UNRELIABLE')
             report['observe_seconds']=actual
+        if opening_prefix is not None:
+            report['observe_seconds']=(clock_ms()-report['reads'][1]['received_at_ms'])//1000
+            if not 30<=report['observe_seconds']<=3600:raise ProbeFailure('CAPTURE_BUDGET_EXHAUSTED')
         read('wallet_after', '/fapi/v3/account')
         read('clock_after', '/fapi/v1/time')
         bounds = window_bounds(report['reads'])

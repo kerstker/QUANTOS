@@ -155,7 +155,7 @@ async def _interruptible(awaitable,stop,timeout):
         await asyncio.gather(operation,signal_task,return_exceptions=True)
 
 
-async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_ms=None):
+async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_ms=None,retain_rejection=None):
     policy=policy or CapturePolicy();clock_ms=clock_ms or now_ms
     loop=asyncio.get_running_loop();deadline=loop.time()+policy.seconds
     messages=0;reconnects=0;previous_wall=0;reason='FAILED';diagnostics=0
@@ -193,6 +193,14 @@ async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_m
                 except ValueError as exc:
                     digest=hashlib.sha256(raw.encode() if isinstance(raw,str) else raw).hexdigest()
                     record('GAP',reason='MESSAGE_REJECTED',response_sha256=digest)
+                    retention='NOT_CONFIGURED'
+                    if retain_rejection is not None:
+                        try:
+                            retain_rejection(raw=raw,source_sha256=source_sha256,at_ms=previous_wall,
+                                diagnostic=rejection_diagnostic(exc))
+                            retention='REJECTION_EVIDENCE_RECORDED'
+                        except Exception:
+                            retention='REJECTION_RETENTION_UNAVAILABLE'
                     # The original GAP remains a blocking input to fail-closed
                     # receipt binding. This bounded, value-free stderr diagnostic
                     # is only for debugging, and leaves journal/API shapes intact.
@@ -200,7 +208,7 @@ async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_m
                         logging.getLogger(__name__).warning(json.dumps({
                             'schema':'DEMO_STREAM_REJECTION_DIAGNOSTIC_V1',
                             'at_ms':previous_wall,'response_sha256':digest,
-                            'source_sha256':source_sha256,**rejection_diagnostic(exc)}))
+                            'source_sha256':source_sha256,'retention':retention,**rejection_diagnostic(exc)}))
                         diagnostics += 1
                 else:
                     # Compare clocks only within the same event type/connection.

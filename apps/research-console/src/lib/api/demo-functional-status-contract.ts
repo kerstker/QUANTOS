@@ -1,7 +1,7 @@
 const object=(v:unknown):v is Record<string,unknown>=>!!v && typeof v==='object' && !Array.isArray(v);
 const integer=(v:unknown):v is number=>typeof v==='number' && Number.isSafeInteger(v);
 export const activeFunctionalPhases=['OPENING_CASH_CAPTURE','OPEN_IOC','RECEIPT_RECOVERY','REDUCE_ONLY_IOC','CASH_RECONCILIATION'];
-const terminal=['DEMO_CYCLE_COMPLETED','RECOVERY_REQUIRED','NO_TRADING_EVIDENCE','CASH_RECONCILIATION_REQUIRED','REDUCTION_INCOMPLETE','CYCLE_NOT_COMPLETED'];
+const terminal=['DEMO_CYCLE_COMPLETED','RECOVERY_REQUIRED','NO_TRADING_EVIDENCE','CASH_RECONCILIATION_REQUIRED','REDUCTION_INCOMPLETE','CYCLE_NOT_COMPLETED','REDUCTION_AUTHORIZATION_REQUIRED','EVIDENCE_REPAIR_REQUIRED'];
 export function functionalStatusValid(v:unknown,asOf:number):boolean {
   if (!object(v) || Object.keys(v).sort().join(' ')!=='report status') return false;
   if (['NO_SNAPSHOT','DATA_BLOCKED','CORRUPT_OR_UNREADABLE'].includes(String(v.status))) return v.report===null;

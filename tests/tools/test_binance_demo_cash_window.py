@@ -13,6 +13,42 @@ class Clock:
     def sleep(self, seconds): self.ms+=round(seconds*1000)
 
 
+def test_resume_keeps_original_opening_wallet_bytes_and_does_not_read_another_opening():
+    clock=Clock();opened=[];first=[]
+    tool.collect(credential_file=None,observe_seconds=600,operator_read=True,
+        credential_reader=lambda _:('isolated-key','isolated-secret'),window_opened=opened.append,
+        get=transport(clock,first),clock_ms=clock.now,sleep=clock.sleep)
+    prefix=json.loads(json.dumps(opened[0]));calls=[]
+    result=tool.collect(credential_file=None,observe_seconds=30,operator_read=True,
+        credential_reader=lambda _:('isolated-key','isolated-secret'),opening_prefix=prefix,
+        get=transport(clock,calls),clock_ms=clock.now,sleep=clock.sleep)
+    assert result['status']=='CAPTURED' and len(calls)==4
+    assert calls[0][0]=='/fapi/v3/account'
+    assert result['reads'][:2]==opened[0]['reads']
+    assert result['attempts'][:2]==opened[0]['attempts']
+    assert result['observed_at_ms']==opened[0]['observed_at_ms']
+    assert prefix==opened[0] and result['observe_seconds']>=630
+    assert tool.assess(result)['status']=='MATCHED_REPORTED_WINDOW'
+
+
+@pytest.mark.parametrize('change',['account','source','future','expired'])
+def test_resume_invalid_prefix_stops_before_network(change):
+    clock=Clock();opened=[]
+    tool.collect(credential_file=None,observe_seconds=30,operator_read=True,
+        credential_reader=lambda _:('isolated-key','isolated-secret'),window_opened=opened.append,
+        get=transport(clock,[]),clock_ms=clock.now,sleep=clock.sleep)
+    prefix=opened[0]
+    if change=='account': key='other-isolated-key'
+    else:key='isolated-key'
+    if change=='source':prefix['source_sha256']='f'*64
+    if change=='future':clock.ms=prefix['observed_at_ms']-1
+    if change=='expired':clock.sleep(3601)
+    with pytest.raises(ValueError):
+        tool.collect(credential_file=None,operator_read=True,opening_prefix=prefix,
+            credential_reader=lambda _:(key,'isolated-secret'),clock_ms=clock.now,
+            get=lambda *a,**k:pytest.fail('network with bad prefix'))
+
+
 def transport(clock, calls, *, fail_after=False, saturated=False):
     wallets=0
     def get(path, *, params, headers):

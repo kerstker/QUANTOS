@@ -23,7 +23,7 @@ from services.research.demo_cash_chain import project_cash_chain
 from services.research.demo_cash_chain_status import build_status as cash_status, save as save_cash_status
 from services.research.demo_execution_journal import DemoExecutionJournal
 from services.research.demo_execution_origin import load as load_origin
-from services.research.demo_cash_window import save_capture, load_capture
+from services.research.demo_cash_window import save_capture, load_capture, validate as validate_cash, GUARD_MS
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_resident_status import build_status, save as save_status
 from live.execution import demo_authority
@@ -65,6 +65,10 @@ def settle(root,account,source_commit):
             report=loop.tick()
             save_status(root/'resident-recovery/views',build_status(report,
                 executor_boot_sha256=demo_authority.executor_boot_sha256(),source_commit=source_commit))
+            resolution=report.get('resolution') or {}
+            if 'STREAM_GAPS_IN_WINDOW' in resolution.get('issues',[]):
+                return {'status':'EVIDENCE_REPAIR_REQUIRED','quantity':None,'fill_count':None,
+                    'reason':'STREAM_GAPS_IN_WINDOW'}
             try:context,count=position(root,account)
             except ValueError:pass
             else:
@@ -94,6 +98,36 @@ def capture_cash(root,area,account,source_commit):
     return {'status':report['status'],'capture_sha256':demo_operator_setup.digest(report)}
 
 
+def opening_prefix(root,area,account,source_commit):
+    """Load the actual pre-order observation; never replace it with today's wallet."""
+    for path in (area/'cash-opening.json',):_check_path(path,root.stat().st_uid,directory=False)
+    marker=load_json_without_duplicate_keys((area/'cash-opening.json').read_bytes())
+    require(marker['schema']=='DEMO_FUNCTIONAL_CASH_OPENING_V1' and marker['account_ref_sha256']==account and
+        marker['source_commit']==source_commit,'FUNCTIONAL_RESUME_OPENING_BINDING')
+    identity=marker['capture_prefix_sha256']
+    require(type(identity) is str and re.fullmatch('[a-f0-9]{64}',identity),'FUNCTIONAL_RESUME_PREFIX_ID')
+    directory=area/'cash-prefix';_check_path(directory,root.stat().st_uid,directory=True)
+    path=directory/(identity+'.json');_check_path(path,root.stat().st_uid,directory=False)
+    require(path.stat().st_size<=65536,'FUNCTIONAL_RESUME_PREFIX_SIZE')
+    prefix=validate_cash(load_json_without_duplicate_keys(path.read_bytes()))
+    require(demo_operator_setup.digest(prefix)==identity and prefix['status']=='OPENING_CAPTURED' and
+        prefix['account_ref_sha256']==account and prefix['source_sha256']==binance_demo_cash_window.source_hash() and
+        prefix['completed_at_ms']==marker['opened_at_ms'] and
+        0<=now_ms()-prefix['completed_at_ms']<=3000_000,'FUNCTIONAL_RESUME_CASH_WINDOW')
+    return prefix
+
+
+def resume_cash(root,area,account,source_commit):
+    prefix=opening_prefix(root,area,account,source_commit)
+    opener=demo_network.opener()
+    report=binance_demo_cash_window.collect(credential_file=None,observe_seconds=30,operator_read=True,
+        credential_reader=lambda _:binance_demo_exact._credentials(account),opening_prefix=prefix,
+        get=lambda path,**kwargs:binance_demo_cash_window.get_response(path,opener=opener,**kwargs))
+    require(report['account_ref_sha256']==account,'FUNCTIONAL_CASH_ACCOUNT')
+    save_capture(area/'cash',report)
+    return {'status':report['status'],'capture_sha256':demo_operator_setup.digest(report)}
+
+
 def wait_cash_close(area,account,source_commit,maximum):
     start=time.monotonic();path=area/'cash-close.json'
     while time.monotonic()-start<maximum:
@@ -105,7 +139,7 @@ def wait_cash_close(area,account,source_commit,maximum):
                 'source_commit':source_commit,'cycle_sha256':area.name},'FUNCTIONAL_CASH_CLOSE_BINDING')
             # Retain a real post-execution wallet, with the existing collector's
             # minimum window and settlement guard. No fixed 300-second wait.
-            time.sleep(max(2,30-(time.monotonic()-start)))
+            time.sleep(max(GUARD_MS/1000+1,30-(time.monotonic()-start)))
             return min(maximum,int(time.monotonic()-start))
         time.sleep(.2)
     return maximum
@@ -163,7 +197,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-commit',required=True)
     parser.add_argument('--cycle-sha256',required=True)
-    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile'),required=True)
+    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash'),required=True)
     args=parser.parse_args(argv);os.umask(0o077)
     try:
         verify_source(args.source_commit);root=require_custody();_,account=fixed_account()
@@ -172,6 +206,10 @@ def main(argv=None):
         payload=load_json_without_duplicate_keys(raw);require(type(payload) is dict,'FUNCTIONAL_INPUT')
         area=area_for(root,args.cycle_sha256)
         if args.operation=='cash':result=capture_cash(root,area,account,args.source_commit)
+        elif args.operation=='resume-check':
+            prefix=opening_prefix(root,area,account,args.source_commit)
+            result={'status':'ORIGINAL_OPENING_RETAINED','capture_prefix_sha256':demo_operator_setup.digest(prefix)}
+        elif args.operation=='resume-cash':result=resume_cash(root,area,account,args.source_commit)
         elif args.operation=='close-cash':result=close_cash(area,account,args.source_commit)
         elif args.operation=='settle':result=settle(root,account,args.source_commit)
         elif args.operation=='reduce':result=reduce_task(root,account,args.source_commit,payload)

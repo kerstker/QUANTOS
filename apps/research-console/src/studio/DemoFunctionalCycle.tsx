@@ -9,6 +9,8 @@ const titles:Record<DemoFunctionalPhase,string>={
   DEMO_CYCLE_COMPLETED:'成交、持仓与现金核对完成',RECOVERY_REQUIRED:'订单结果需要恢复核对',
   NO_TRADING_EVIDENCE:'本轮未形成完整往返成交',CASH_RECONCILIATION_REQUIRED:'持仓已结束，现金仍待核对',
   REDUCTION_INCOMPLETE:'仍有未完成减仓',CYCLE_NOT_COMPLETED:'本轮测试未完成',
+  REDUCTION_AUTHORIZATION_REQUIRED:'已核对持仓，后续减仓需要有效测试授权',
+  EVIDENCE_REPAIR_REQUIRED:'原始回执有缺口，本轮推进已停止',
 };
 export function DemoFunctionalCycle({snapshot,refreshFailed=false,position}:{snapshot?:DemoFunctionalSnapshot;
   refreshFailed?:boolean;position?:DemoAccountPosition|null}) {

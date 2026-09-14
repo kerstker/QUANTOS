@@ -47,6 +47,24 @@ def test_demo_functional_cycle_preserves_missing_future_and_incomplete_results(t
     assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']=={'status':'DATA_BLOCKED','report':None}
 
 
+def test_demo_read_only_recovery_reports_remaining_position_without_execution_permission(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_functional_status as model
+    from tests.research.test_demo_functional_status import NOW
+    directory=tmp_path/'cycle';monkeypatch.setattr(views,'_functional_status_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1000000)
+    raw=model.build(phase='REDUCTION_AUTHORIZATION_REQUIRED',source_commit='a'*40,cycle_sha256='b'*64,
+        observed_at_ms=NOW,result={'orders_attempted':1,'fill_count':1,'final_quantity':'0.002','cash_status':'UNRESOLVED'})
+    model.save(directory,raw)
+    data=client.get('/api/v1/console/binance-demo').json()
+    assert data['functional_cycle']=={'status':'AVAILABLE','report':raw}
+    assert data['submission_enabled'] is False and raw['cash_reconciled'] is False
+    gap=model.build(phase='EVIDENCE_REPAIR_REQUIRED',source_commit='a'*40,cycle_sha256='b'*64,
+        observed_at_ms=NOW+1,result={'orders_attempted':1,'cash_status':'UNRESOLVED'})
+    model.save(directory,gap);monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+1)*1000000)
+    assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']=={'status':'AVAILABLE','report':gap}
+
+
 def test_demo_backup_status_is_read_only_and_preserves_unknown_stale_failure(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research import demo_backup_status as model

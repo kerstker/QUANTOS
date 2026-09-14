@@ -27,6 +27,7 @@ from tools.binance_demo_user_stream import (
     CapturePolicy, capture, lease_request, writer_lock, source_hash as original_source_hash, now_ms, _token,
 )
 from tools.binance_demo_readiness import ProbeFailure
+from tools import demo_stream_quarantine
 
 MAX_RECORDS = 200000
 MAX_BYTES = 128*1024*1024
@@ -35,7 +36,7 @@ MAX_BYTES = 128*1024*1024
 def source_hash():
     return hashlib.sha256(Path(__file__).read_bytes()+original_source_hash().encode()+
         Path(transport.__file__).read_bytes()+Path(transport.demo_authority.__file__).read_bytes()+
-        demo_network.source_bytes()).hexdigest()
+        demo_network.source_bytes()+Path(demo_stream_quarantine.__file__).read_bytes()).hexdigest()
 
 
 def _budget(store, *, for_write=True):
@@ -125,7 +126,9 @@ async def run(*,source_commit,stop,policy=None):
         with ProtectedJournal(root/'user-stream.sqlite3',account_ref_sha256=account) as store:
             _budget(store)
             reason = await capture(store,source_sha256=source_hash(),lease=lease_child,connect=connect_socket,
-                stop=stop,policy=policy or CapturePolicy(),clock_ms=now_ms)
+                stop=stop,policy=policy or CapturePolicy(),clock_ms=now_ms,
+                retain_rejection=lambda **kwargs:demo_stream_quarantine.retain(root,
+                    account_ref_sha256=account,**kwargs))
             report = {'schema':'DEMO_EXECUTOR_STREAM_CAPTURE_V1','source_commit':source_commit,
                 'source_sha256':source_hash(),'observed_at_ms':now_ms(),'reason':reason,
                 'snapshot':store.snapshot(as_of_ms=now_ms()),'new_order_submission_enabled':False,

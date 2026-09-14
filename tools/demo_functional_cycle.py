@@ -20,21 +20,49 @@ from tools.demo_execution_session import read_frame
 SETUP=Path('/etc/quantos/demo-operator-setup')
 
 
-def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress):
+def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress,
+          recovery_checks=1,checkpoint=None,resume=None,allow_new_tasks=True):
+    """Persist each attempt before dispatch; a resumed attempt is query-only.
+
+    The original task executor still owns the actual at-most-once send barrier,
+    current mandate, issuer and risk checks. This checkpoint cannot grant a send.
+    """
+    require(type(recovery_checks) is int and 1<=recovery_checks<=3,'FUNCTIONAL_RECOVERY_BUDGET')
+    state={'schema':'DEMO_CYCLE_CONTINUATION_V1','attempts':[]} if resume is None else json.loads(json.dumps(resume))
+    require(type(state) is dict and set(state)=={'schema','attempts'} and
+        state['schema']=='DEMO_CYCLE_CONTINUATION_V1' and type(state['attempts']) is list and
+        len(state['attempts'])<=3 and all(type(t) is dict for t in state['attempts']), 'FUNCTIONAL_CONTINUATION_SHAPE')
+    attempts=state['attempts']
+    require(not attempts or attempts[0]==opening_task,'FUNCTIONAL_CONTINUATION_OPENING')
+    require(len({demo_operator_setup.digest(t) for t in attempts})==len(attempts),'FUNCTIONAL_CONTINUATION_DUPLICATE')
+    checkpoint=checkpoint or (lambda _:None)
     result={'schema':'DEMO_FUNCTIONAL_CYCLE_RESULT_V1','status':'RECOVERY_REQUIRED',
-        'orders_attempted':0,'final_quantity':None,'fill_count':None,'cash_reconciled':False,
+        'orders_attempted':len(attempts),'final_quantity':None,'fill_count':None,'cash_reconciled':False,
         'economic_authority':False,'retry_submission':False}
-    task=opening_task
+    task=attempts[-1] if attempts else opening_task
+    pending=bool(attempts)
     try:
-        for index in range(3):
-            progress('OPEN_IOC' if index==0 else 'REDUCE_ONLY_IOC')
-            result['orders_attempted']+=1
+        for index in range(max(0,len(attempts)-1),3):
+            if not pending:
+                if not allow_new_tasks:
+                    result['status']='REDUCTION_AUTHORIZATION_REQUIRED';break
+                progress('OPEN_IOC' if index==0 else 'REDUCE_ONLY_IOC')
+                require(task not in attempts,'FUNCTIONAL_CONTINUATION_DUPLICATE')
+                next_state={'schema':state['schema'],'attempts':attempts+[task]}
+                checkpoint(next_state)
+                attempts=next_state['attempts'];result['orders_attempted']=len(attempts)
             # A lost supervisor response may follow an actual send. Always
             # query the retained original IDs before deciding whether to reduce.
-            try:execute(task)
-            except Exception:pass
+                try:execute(task)
+                except Exception:pass
+            pending=False
             progress('RECEIPT_RECOVERY')
-            position=settle()
+            position={}
+            for _ in range(recovery_checks):
+                position=settle()
+                if position.get('status') in ('SETTLED','EVIDENCE_REPAIR_REQUIRED'):break
+            if position.get('status')=='EVIDENCE_REPAIR_REQUIRED':
+                result['status']='EVIDENCE_REPAIR_REQUIRED';break
             if position.get('status')!='SETTLED':break
             quantity=Decimal(position['quantity'])
             if not quantity.is_finite() or quantity<0:break
@@ -44,6 +72,8 @@ def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress):
                 break
             if index==2:
                 result['status']='REDUCTION_INCOMPLETE';break
+            if not allow_new_tasks:
+                result['status']='REDUCTION_AUTHORIZATION_REQUIRED';break
             task=prepare_reduce(position,index+1)
     except Exception:
         result['status']='RECOVERY_REQUIRED'
@@ -60,10 +90,11 @@ def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress):
 
 
 def child_command(operation,*,source_commit,registry,cycle,unit):
-    require(operation in ('cash','close-cash','settle','reduce','reconcile'),'FUNCTIONAL_OPERATION')
+    require(operation in ('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash'),'FUNCTIONAL_OPERATION')
     command=supervisor.child_command('executor',source_commit=source_commit,registry=registry,purpose='submission',unit=unit)
     command[command.index('tools.demo_execution_session')]='tools.demo_functional_worker'
-    command[command.index('RuntimeMaxSec=90s')]='RuntimeMaxSec=840s' if operation=='cash' else 'RuntimeMaxSec=160s'
+    budget='840s' if operation=='cash' else '300s' if operation=='resume-cash' else '160s'
+    command[command.index('RuntimeMaxSec=90s')]='RuntimeMaxSec='+budget
     del command[-2:]
     return command+['--operation',operation,'--cycle-sha256',cycle]
 
@@ -141,14 +172,76 @@ def _opening_marker(registry,cycle,source_commit,started_ms):
     finally:os.close(fd)
 
 
+def recover(*,source_commit):
+    """Recover an already claimed cycle without asking the issuer for any grant.
+
+    Expiry stops new exposure, not original-ID reads or cash reconciliation.
+    The old result remains immutable; subsequent reports are appended separately.
+    """
+    from contextlib import ExitStack
+    from live.execution.demo_authority import _read_root_owned_json
+    from live.execution.demo_issuer_policy import validate_policy
+    from services.validation.demo_submission import validate_registry,registry_sha256
+    from tools.demo_issuer import verify_source
+    from tools import demo_cycle_checkpoint as checkpoints
+    require(os.geteuid()==0,'FUNCTIONAL_RECOVERY_ROOT_REQUIRED');verify_source(source_commit)
+    registry=validate_registry(load_json_without_duplicate_keys(_read_root_owned_json(supervisor.EXECUTOR_REGISTRY)))
+    require(load_json_without_duplicate_keys(_read_root_owned_json(supervisor.ISSUER_REGISTRY))==registry,
+        'FUNCTIONAL_RECOVERY_REGISTRY_MIRROR')
+    policy=validate_policy(load_json_without_duplicate_keys(_read_root_owned_json(supervisor.ISSUER_POLICY)))
+    require(policy['registry_sha256']==registry_sha256(registry) and
+        policy['deployment_sha256']==registry['deployment_sha256'],'FUNCTIONAL_RECOVERY_REGISTRY')
+    installed=load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'result.json'))
+    spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'spec.json')))
+    require(installed['status']=='INSTALLED_PENDING_CYCLE' and installed['source_commit']==spec['source_commit']==
+        policy['executor_release_commit'] and installed['spec_sha256']==demo_operator_setup.digest(spec) and
+        policy['account_ref_sha256']==spec['account_ref_sha256'],'FUNCTIONAL_RECOVERY_INSTALLATION')
+    cycle=demo_operator_setup.digest(installed);area=supervisor.STATE/'functional-cycle'
+    with checkpoints.cycle_lock(area):
+        history=area/'recovery-results'
+        if history.exists():
+            supervisor._root_private_directory(history)
+            require(len(list(history.iterdir()))<32,'FUNCTIONAL_RECOVERY_HISTORY_BUDGET')
+        claim=load_json_without_duplicate_keys(_read_root_owned_json(area/'claim.json'))
+        require(claim['cycle_sha256']==cycle and claim['source_commit']==installed['source_commit'],
+            'FUNCTIONAL_RECOVERY_CLAIM')
+        template=load_json_without_duplicate_keys(supervisor.read_document(supervisor.STATE/'tasks',installed['task_sha256']))
+        require(demo_operator_setup.digest(template)==installed['task_sha256'],'FUNCTIONAL_RECOVERY_TASK')
+        resume=checkpoints.read(area,cycle=cycle,source_commit=installed['source_commit'],opening_task=template)
+        if not resume or not resume['attempts']:
+            resume=checkpoints.legacy_attempts(opening_task=template,source_commit=installed['source_commit'])
+        with ExitStack() as stack:
+            runtime=Runtime(source_commit,registry,cycle);stack.callback(runtime.close)
+            def progress(phase):
+                _retain(area/'events',{'cycle_sha256':cycle,'phase':phase,'observed_at_ms':supervisor.now_ms(),
+                    'source_commit':source_commit,'mode':'RECOVERY_ONLY'})
+                print(json.dumps({'phase':phase,'cycle_sha256':cycle,'mode':'RECOVERY_ONLY'}),flush=True)
+            def no_submission(*_):raise ValueError('FUNCTIONAL_RECOVERY_CANNOT_SUBMIT')
+            result=drive(opening_task=template,execute=no_submission,settle=lambda:runtime.invoke('settle',timeout=60),
+                prepare_reduce=no_submission,cash_finish=lambda:runtime.invoke('reconcile'),progress=progress,
+                recovery_checks=3,resume=resume,allow_new_tasks=False)
+            result.update(cycle_sha256=cycle,source_commit=source_commit,observed_at_ms=supervisor.now_ms(),
+                mode='RECOVERY_ONLY',original_source_commit=installed['source_commit'])
+            _retain(area/'recovery-results',result)
+            demo_functional_status.save(area/'views',demo_functional_status.build(phase=result['status'],
+                source_commit=source_commit,cycle_sha256=cycle,observed_at_ms=result['observed_at_ms'],result=result))
+            print(json.dumps(result,sort_keys=True),flush=True)
+            return 0 if result['status']=='DEMO_CYCLE_COMPLETED' else 2
+
+
 def main(argv=None):
     import argparse
     from live.execution.demo_authority import _read_root_owned_json
     from tools.demo_operating_bundle import write_new
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source-commit',required=True);args=parser.parse_args(argv)
-    previous=os.umask(0o077);runtime=None;area=None;phase='CONFIGURATION';claimed=False;cycle=None
+    parser.add_argument('--source-commit',required=True)
+    mode=parser.add_mutually_exclusive_group()
+    mode.add_argument('--recover',action='store_true',help='Original-ID recovery only; never submits or renews an order.')
+    mode.add_argument('--resume',action='store_true',help='Continue a claimed cycle within its original active finite mandate.')
+    args=parser.parse_args(argv)
+    previous=os.umask(0o077);runtime=None;area=None;phase='CONFIGURATION';claimed=False;cycle=None;lease=None
     try:
+        if args.recover:return recover(source_commit=args.source_commit)
         registry,policy=supervisor.configuration(args.source_commit)
         installed=load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'result.json'))
         spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(SETUP/'spec.json')))
@@ -162,10 +255,22 @@ def main(argv=None):
         area=supervisor.STATE/'functional-cycle'
         # One enrollment has one cycle. An interrupted or completed run cannot
         # create another opening task by calling this command again.
-        area.mkdir(mode=0o700)
+        if not args.resume:area.mkdir(mode=0o700)
         supervisor._root_private_directory(area)
-        write_new(area/'claim.json',demo_operator_setup.canonical({'cycle_sha256':cycle,
-            'source_commit':args.source_commit,'started_at_ms':supervisor.now_ms()}))
+        from tools import demo_cycle_checkpoint as checkpoints
+        lease=checkpoints.cycle_lock(area);lease.__enter__()
+        resume=None
+        if args.resume:
+            claim=load_json_without_duplicate_keys(_read_root_owned_json(area/'claim.json'))
+            require(claim['cycle_sha256']==cycle and claim['source_commit']==args.source_commit,'FUNCTIONAL_RESUME_CLAIM')
+            resume=checkpoints.read(area,cycle=cycle,source_commit=args.source_commit,opening_task=template)
+            require(resume and resume['attempts'],'FUNCTIONAL_RESUME_CHECKPOINT_REQUIRED')
+            if (area/'result.json').exists():
+                prior=load_json_without_duplicate_keys(_read_root_owned_json(area/'result.json'))
+                require(prior['status']!='DEMO_CYCLE_COMPLETED','FUNCTIONAL_ALREADY_COMPLETED')
+        else:
+            write_new(area/'claim.json',demo_operator_setup.canonical({'cycle_sha256':cycle,
+                'source_commit':args.source_commit,'started_at_ms':supervisor.now_ms()}))
         claimed=True
         runtime=Runtime(args.source_commit,registry,cycle)
         def progress(value):
@@ -176,16 +281,22 @@ def main(argv=None):
                 demo_functional_status.save(area/'views',demo_functional_status.build(phase=value,
                     source_commit=args.source_commit,cycle_sha256=cycle,observed_at_ms=supervisor.now_ms()))
             print(json.dumps({'phase':value,'cycle_sha256':cycle}),flush=True)
-        progress('OPENING_CASH_CAPTURE');started=supervisor.now_ms()
-        cash=runtime.start('cash',{});deadline=time.monotonic()+30
-        while True:
-            try:marker=_opening_marker(registry,cycle,args.source_commit,started)
-            except FileNotFoundError:
-                require(cash.poll() is None and time.monotonic()<deadline,'FUNCTIONAL_OPENING_WALLET_UNAVAILABLE')
-                time.sleep(.2);continue
-            require(marker['account_ref_sha256']==spec['account_ref_sha256'],'FUNCTIONAL_OPENING_ACCOUNT')
-            break
+        if args.resume:
+            require(runtime.invoke('resume-check')['status']=='ORIGINAL_OPENING_RETAINED','FUNCTIONAL_ORIGINAL_CASH_REQUIRED')
+            cash=None
+        else:
+            progress('OPENING_CASH_CAPTURE');started=supervisor.now_ms()
+            cash=runtime.start('cash',{});deadline=time.monotonic()+30
+            while True:
+                try:marker=_opening_marker(registry,cycle,args.source_commit,started)
+                except FileNotFoundError:
+                    require(cash.poll() is None and time.monotonic()<deadline,'FUNCTIONAL_OPENING_WALLET_UNAVAILABLE')
+                    time.sleep(.2);continue
+                require(marker['account_ref_sha256']==spec['account_ref_sha256'],'FUNCTIONAL_OPENING_ACCOUNT')
+                break
         def execute(task):
+            if cash is not None:
+                require(cash.poll() is None,'FUNCTIONAL_CASH_CAPTURE_ALREADY_ENDED')
             identity=demo_operator_setup.digest(task)
             if identity!=installed['task_sha256']:
                 demo_task.task_check(task,policy=policy,source_commit=args.source_commit,now_ms=supervisor.now_ms())
@@ -197,21 +308,32 @@ def main(argv=None):
             require(value['task']['orders'][0]['quantity']==position['quantity'],'FUNCTIONAL_POSITION_CHANGED')
             return value['task']
         def finish_cash():
-            require(runtime.invoke('close-cash',timeout=20)['status']=='CLOSE_REQUESTED','FUNCTIONAL_CASH_CLOSE_FAILED')
-            capture=runtime.finish(cash,240)
+            if args.resume:
+                capture=runtime.invoke('resume-cash',timeout=295)
+            else:
+                require(runtime.invoke('close-cash',timeout=20)['status']=='CLOSE_REQUESTED','FUNCTIONAL_CASH_CLOSE_FAILED')
+                capture=runtime.finish(cash,240)
             require(capture['status']=='CAPTURED','FUNCTIONAL_CASH_CAPTURE_INCOMPLETE')
             return runtime.invoke('reconcile')
         result=drive(opening_task=template,execute=execute,settle=lambda:runtime.invoke('settle',timeout=60),
-            prepare_reduce=reduce,cash_finish=finish_cash,progress=progress)
+            prepare_reduce=reduce,cash_finish=finish_cash,progress=progress,recovery_checks=3,
+            resume=resume,
+            checkpoint=lambda state:checkpoints.append(area,state,cycle=cycle,
+                source_commit=args.source_commit,opening_task=template))
         result.update(cycle_sha256=cycle,source_commit=args.source_commit,observed_at_ms=supervisor.now_ms())
-        write_new(area/'result.json',demo_operator_setup.canonical(result))
+        if args.resume:_retain(area/'recovery-results',result)
+        else:write_new(area/'result.json',demo_operator_setup.canonical(result))
         demo_functional_status.save(area/'views',demo_functional_status.build(phase=result['status'],
             source_commit=args.source_commit,cycle_sha256=cycle,observed_at_ms=result['observed_at_ms'],result=result))
         print(json.dumps(result,sort_keys=True),flush=True)
         return 0 if result['status']=='DEMO_CYCLE_COMPLETED' else 2
-    except Exception:
+    except Exception as error:
         result={'schema':'DEMO_FUNCTIONAL_CYCLE_RESULT_V1','status':'CYCLE_NOT_COMPLETED','phase':phase,
             'cash_reconciled':False,'economic_authority':False,'retry_submission':False}
+        safe_reasons={'ISSUER_POLICY_EXPIRED','ISSUER_KEY_EXPIRED','FUNCTIONAL_CYCLE_BUSY',
+            'FUNCTIONAL_RESUME_CHECKPOINT_REQUIRED','FUNCTIONAL_ALREADY_COMPLETED',
+            'FUNCTIONAL_ORIGINAL_CASH_REQUIRED','FUNCTIONAL_LEGACY_ATTEMPTS_REQUIRED'}
+        result['reason']=str(error) if isinstance(error,ValueError) and str(error) in safe_reasons else 'FUNCTIONAL_INPUT_OR_WORKER_UNAVAILABLE'
         if claimed:
             try:
                 _retain(area/'events',dict(result,observed_at_ms=supervisor.now_ms()))
@@ -221,6 +343,7 @@ def main(argv=None):
         print(json.dumps(result),flush=True);return 3
     finally:
         if runtime is not None:runtime.close()
+        if lease is not None:lease.__exit__(None,None,None)
         os.umask(previous)
 
 

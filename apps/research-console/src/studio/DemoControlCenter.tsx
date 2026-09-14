@@ -8,11 +8,12 @@ import './demo-control-center.css';
 const LOCAL_COMMAND='sudo /usr/local/sbin/quantos-demo-functional';
 const REMOTE_COMMAND='ssh -t -o GSSAPIAuthentication=no kerstker@192.168.5.68 "sudo /usr/local/sbin/quantos-demo-functional"';
 
-function StartGuide() {
+function StartGuide({recover=false}:{recover?:boolean}) {
   const [remote,setRemote]=useState(false);
   const [copied,setCopied]=useState<{command:string;message:string}|null>(null);
   const field=useRef<HTMLTextAreaElement>(null);
-  const command=remote?REMOTE_COMMAND:LOCAL_COMMAND;
+  const command=recover?(remote?REMOTE_COMMAND.replace('quantos-demo-functional"','quantos-demo-functional --recover"'):`${LOCAL_COMMAND} --recover`):(remote?REMOTE_COMMAND:LOCAL_COMMAND);
+  const id=recover?'demo-recovery':'demo-start';
   async function copy() {
     try {
       if(!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
@@ -23,10 +24,10 @@ function StartGuide() {
       setCopied({command,message:'命令已选中，请用系统复制操作复制，然后在终端粘贴。'});
     }
   }
-  return <section className="s-demo-start" id="demo-start" aria-labelledby="demo-start-title" tabIndex={-1}>
+  return <section className="s-demo-start" id={id} aria-labelledby={`${id}-title`} tabIndex={-1}>
     <div className="s-demo-start-heading"><span className="s-demo-section-index">01</span><div>
-      <h3 id="demo-start-title">首次启动 · 在终端完成登记</h3>
-      <p>网页集中查看进度；首次登记在 DGX 终端完成。这里不需要填写 API 密钥。</p>
+      <h3 id={`${id}-title`}>{recover?'恢复本轮 · 查询与账务核对':'首次启动 · 在终端完成登记'}</h3>
+      <p>{recover?'查询原订单并重新核对已有账务；本命令不会发送开仓或减仓单，也不会续期授权。':'网页集中查看进度；首次登记在 DGX 终端完成。这里不需要填写 API 密钥。'}</p>
     </div></div>
     <div className="s-demo-start-grid">
       <div>
@@ -34,19 +35,23 @@ function StartGuide() {
           <button type="button" aria-pressed={!remote} onClick={()=>setRemote(false)}>DGX 本机</button>
           <button type="button" aria-pressed={remote} onClick={()=>setRemote(true)}>另一台电脑</button>
         </div>
-        <label className="s-sr-only" htmlFor="demo-start-command">{remote?'另一台电脑启动命令':'DGX 本机启动命令'}</label>
-        <textarea ref={field} id="demo-start-command" className="s-demo-command" readOnly value={command} rows={remote?3:2} spellCheck={false}/>
-        <div className="s-demo-command-actions"><button type="button" className="s-button" onClick={()=>void copy()}>复制启动命令</button>
+        <label className="s-sr-only" htmlFor={`${id}-command`}>{remote?'另一台电脑':'DGX 本机'}{recover?'恢复命令':'启动命令'}</label>
+        <textarea ref={field} id={`${id}-command`} className="s-demo-command" readOnly value={command} rows={remote?3:2} spellCheck={false}/>
+        <div className="s-demo-command-actions"><button type="button" className="s-button" onClick={()=>void copy()}>{recover?'复制恢复命令':'复制启动命令'}</button>
           <span>{remote?'在另一台电脑的 CMD、PowerShell 或终端中执行':'在 DGX 的终端中执行'}</span></div>
         <p className="s-demo-copy-status" role="status">{copied?.command===command?copied.message:''}</p>
       </div>
-      <ol className="s-demo-start-instructions">
+      {recover?<ol className="s-demo-start-instructions">
+        <li><strong>先查看本轮持仓</strong><span>以最新账户观察为准；已人工平仓时，不根据旧账本数量再次减仓。</span></li>
+        <li><strong>在终端执行恢复命令</strong><span>程序检查原记录，按原订单编号查询；已有失败和尝试记录全部保留。</span></li>
+        <li><strong>查看恢复后的结果</strong><span>缺失原文、现金差额或仍有持仓会明确保留待处理状态，不会被重试掩盖。</span></li>
+      </ol>:<ol className="s-demo-start-instructions">
         <li><strong>打开终端，执行命令</strong><span>首次启动会读取账户并展示本次测试规格。</span></li>
         <li><strong>在原终端输入本次确认行</strong><span>如果原终端已在等待登记，输入它当次显示的完整「DEMO + 摘要」并回车。无需重新启动命令；不要使用旧确认行。</span></li>
         <li><strong>回到本页查看执行结果</strong><span>登记后程序自动推进开仓、回执、减仓和现金核对。本页每 15 秒更新。</span></li>
-      </ol>
+      </ol>}
     </div>
-    <p className="s-demo-start-note">首次入口的预设范围：BTCUSDC · 单笔最多 250 USDC · 累计最多 750 USDC · 最多 3 笔 · 有效期 1 小时。以终端本次展示的规格为准。没有收到周期记录时，不能据此判断登记是否已完成。</p>
+    <p className="s-demo-start-note">{recover?'恢复原账务不等于新一轮测试。人工平仓保留人工属性；新的交易动作仍受原授权有效期、剩余额度和风控限制。':'首次入口的预设范围：BTCUSDC · 单笔最多 250 USDC · 累计最多 750 USDC · 最多 3 笔 · 有效期 1 小时。以终端本次展示的规格为准。没有收到周期记录时，不能据此判断登记是否已完成。'}</p>
   </section>;
 }
 
@@ -75,6 +80,8 @@ export function DemoControlCenter({snapshot,connected,refreshFailed=false,enroll
   } else if(report) {
     const next={
       RECOVERY_REQUIRED:['先恢复本轮订单结果','保留原订单编号，先核对未明回执，再决定后续处理。','#demo-orders','查看订单与恢复'],
+      REDUCTION_AUTHORIZATION_REQUIRED:['持仓已核对，等待后续处理','本次仅恢复原订单与账务，没有发送新的减仓单。请在账户中核对 BTCUSDC 持仓与测试授权。','#demo-orders','查看订单与恢复'],
+      EVIDENCE_REPAIR_REQUIRED:['原始回执缺失，重试已停止','原窗口存在私有流缺口，需要修复证据。单纯等待或重复查询无法补回丢失的原文；本轮保留未完成状态。','#demo-orders','查看缺失证据'],
       REDUCTION_INCOMPLETE:['仍有持仓需要减仓','本轮尚未归零。请查看已确认数量与减仓结果。','#demo-orders','查看订单与恢复'],
       CASH_RECONCILIATION_REQUIRED:['成交已结束，现金仍待核对','查看缺失流水、费用和差异。现金未匹配前，本轮闭环未完成。','#demo-cash','查看本轮对账'],
       NO_TRADING_EVIDENCE:['本轮未形成完整往返成交','查看实际订单与成交记录，无成交和单边成交都会保留。','#demo-orders','查看订单与恢复'],
@@ -82,7 +89,7 @@ export function DemoControlCenter({snapshot,connected,refreshFailed=false,enroll
     };
     const nextAction=next[report.phase as keyof typeof next];
     if(nextAction) [title,description,target,action]=nextAction;
-    if(position?.flat && (report.phase==='RECOVERY_REQUIRED' || report.phase==='REDUCTION_INCOMPLETE')) {
+    if(position?.flat && (report.phase==='RECOVERY_REQUIRED' || report.phase==='REDUCTION_INCOMPLETE' || report.phase==='EVIDENCE_REPAIR_REQUIRED')) {
       title='BTCUSDC 已空仓，历史账务待恢复';
       description='最新账户观察已无 BTCUSDC 持仓。保留本轮原订单，继续核对回执与费用；无需依据旧数量再次减仓。';
       target='#demo-orders';action='查看订单与恢复';
@@ -113,6 +120,7 @@ export function DemoControlCenter({snapshot,connected,refreshFailed=false,enroll
       </div>
     </div>
     {first && guideExpanded && <StartGuide/>}
+    {!first && report && !complete && !active && !uncertain && !damaged && report.phase!=='EVIDENCE_REPAIR_REQUIRED' && <StartGuide recover/>}
     <nav className="s-demo-workspaces" aria-label="DEMO 工作区">{workspaces.map(([href,label,state,icon])=><a key={href} href={href}>
       <Icon name={icon}/><span><strong>{label}</strong><small>{state}</small></span><span aria-hidden="true">↗</span>
     </a>)}</nav>
