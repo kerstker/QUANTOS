@@ -33,11 +33,11 @@ def source_hash():
     return hashlib.sha256(b'\0'.join((root/p).read_bytes() for p in paths)).hexdigest()
 
 
-def get_response(path,*,params,headers):
+def get_response(path,*,params,headers,opener=None):
     if path not in PUBLIC|PRIVATE or path in PUBLIC and (params or headers):raise ProbeFailure('REQUEST_FAILED')
     request=urllib.request.Request(DEMO_REST_BASE+path+('?' + params if params else ''),headers=headers,method='GET')
     try:
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=10) as response:
+        with (opener or urllib.request.build_opener(NoRedirect())).open(request,timeout=10) as response:
             raw=response.read(8_000_001)
     except urllib.error.HTTPError as exc:
         status=exc.code;exc.close()
@@ -47,7 +47,7 @@ def get_response(path,*,params,headers):
     return raw
 
 
-def collect(*,credential_file,symbols,start_ms,end_ms,operator_read=False,get=None,clock=None):
+def collect(*,credential_file,symbols,start_ms,end_ms,operator_read=False,get=None,clock=None,credential_reader=None):
     get=get or get_response;clock=clock or (lambda:time.time_ns()//1_000_000)
     started=clock();deadline=time.monotonic()+480
     if (not 1<=len(symbols)<=30 or len(set(symbols))!=len(symbols) or
@@ -61,7 +61,7 @@ def collect(*,credential_file,symbols,start_ms,end_ms,operator_read=False,get=No
     if not operator_read:return report
     current_kind='credentials';current_symbol='';offset=0;request_count=0
     try:
-        key,secret=load_credentials(credential_file)
+        key,secret=(credential_reader or load_credentials)(credential_file)
         def read(kind,path,symbol='',start=None,end=None):
             nonlocal current_kind,current_symbol,request_count
             current_kind=kind;current_symbol=symbol
