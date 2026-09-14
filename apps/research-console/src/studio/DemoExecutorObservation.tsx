@@ -8,7 +8,7 @@ const phases:Record<string,string> = {CONNECTING:'连接建立中',CONNECTED:'�
   OBSERVED_FLAT_QUOTE:'已观察到同币种空仓',UNRESOLVED:'起点条件未齐',NO_RESERVATIONS:'尚无订单预留',INPUTS_UNRESOLVED:'输入尚未齐备',
   WAITING_QUERY_INTERVAL:'等待下一次查询',RESIDENT_BUSY:'恢复处理中',QUERY_RECOVERY_REQUIRED:'等待原编号查询',
   QUERY_OBSERVED_RECEIPTS_REQUIRED:'查询已返回，等待回执',OMS_TERMINAL_CASH_SEPARATE:'订单终态已投影，现金待核对',
-  AWAITING_PROJECTION:'等待状态投影',PROJECTION_INTERRUPTED:'状态投影中断',OMS_TERMINAL_PROJECTED:'订单终态已投影',
+  AWAITING_PROJECTION:'等待状态投影',PROJECTION_INTERRUPTED:'状态投影中断',OMS_TERMINAL_PROJECTED:'订单终态已投影',OMS_ACCOUNT_RECONCILED:'原订单已恢复，人工平仓账务已核对',
   RESERVED_AWAITING_ATTEMPTS:'撤单范围已预留',ORIGINAL_ID_QUERY_RECOVERY_REQUIRED:'撤单后等待原编号查询'};
 
 export function DemoExecutorObservation({snapshot,asOf,refreshFailed=false}:{snapshot?:DemoExecutorObservationSnapshot;asOf?:number;refreshFailed?:boolean}) {

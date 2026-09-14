@@ -256,15 +256,26 @@ async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_m
 
 
 @contextmanager
-def writer_lock(path):
+def writer_lock(path,*,wait_seconds=0):
+    # Only fixed-account REST captures opt into a bounded queue. Long-lived
+    # stream writers retain the immediate exclusive-owner check.
+    if type(wait_seconds) is not int or not 0<=wait_seconds<=35:
+        raise ValueError('STREAM_LOCK_WAIT_BUDGET')
     path=Path(path);path.parent.mkdir(parents=True,mode=0o700,exist_ok=True)
     fd=os.open(path,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
     try:
         info=os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)&0o077:
             raise ValueError('STREAM_LOCK_PERMISSIONS')
-        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:raise ValueError('STREAM_WRITER_ALREADY_RUNNING') from None
+        deadline=time.monotonic()+wait_seconds if wait_seconds else 0
+        while True:
+            try:
+                fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining=deadline-time.monotonic() if wait_seconds else 0
+                if remaining<=0:raise ValueError('STREAM_WRITER_ALREADY_RUNNING') from None
+                time.sleep(min(.25,remaining))
         yield
     finally:os.close(fd)
 

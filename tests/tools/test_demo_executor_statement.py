@@ -97,6 +97,9 @@ def test_existing_origin_lease_serializes_fixed_account_reads(tmp_path, monkeypa
     from tools.binance_demo_user_stream import writer_lock
     monkeypatch.setattr(worker.subprocess, 'run', lambda *a, **k: pytest.fail('parallel network capture'))
     with writer_lock(tmp_path/'origin-capture.lock'):
+        from tools import binance_demo_user_stream as locking
+        clock=iter([0,35])
+        monkeypatch.setattr(locking.time,'monotonic',lambda:next(clock))
         with pytest.raises(ValueError, match='STREAM_WRITER_ALREADY_RUNNING'):
             worker.run(symbol='BTCUSDT', start_ms=NOW-1000, end_ms=NOW, source_commit='a'*40)
 

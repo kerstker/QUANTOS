@@ -45,7 +45,7 @@ def run(*,symbol,source_commit):
     if symbol not in ('BTCUSDT','BTCUSDC') or type(source_commit) is not str or re.fullmatch('[a-f0-9]{40}',source_commit) is None:
         raise ValueError('PROTECTED_ORIGIN_INPUT')
     root, account = fixed_account()
-    with writer_lock(root/'origin-capture.lock'):
+    with writer_lock(root/'origin-capture.lock',wait_seconds=35):
         return _run_locked(symbol=symbol,source_commit=source_commit,root=root,account=account)
 
 

@@ -135,3 +135,22 @@ def test_observation_capacity_failure_is_bounded_and_leaves_the_last_view(tmp_pa
     with pytest.raises(ValueError,match='EXECUTOR_OBSERVATION_OUTPUT_BUDGET'):
         tool.run(source_commit='c'*40)
     assert (directory/'latest.json').read_bytes()==before
+
+
+def test_resident_history_above_thousand_keeps_latest_real_status_visible(tmp_path,monkeypatch):
+    from services.research import demo_resident_status
+    root=populated(tmp_path,monkeypatch)
+    (root/'resident-recovery').mkdir(mode=0o700)
+    directory=root/'resident-recovery'/'views';directory.mkdir(mode=0o700)
+    row=demo_resident_status.build_status(dict(status='OMS_TERMINAL_CASH_SEPARATE',reason=None,
+        observed_at_ms=NOW,attempt_count=None,last_attempt_at_ms=None,next_query_at_ms=None,
+        reservation_sha256=None,query=None,resolution=None),executor_boot_sha256='d'*64,source_commit='c'*40)
+    for offset in range(1001):demo_resident_status.save(directory,dict(row,observed_at_ms=NOW+offset))
+    before={p.name:p.read_bytes() for p in directory.iterdir()}
+    monkeypatch.setattr(tool,'now_ms',lambda:NOW+1002)
+    result=tool.run(source_commit='c'*40)
+    assert result['components'][3]['phase']=='OMS_TERMINAL_CASH_SEPARATE'
+    assert result['components'][3]['observed_at_ms']==NOW+1000
+    assert all((directory/name).read_bytes()==body for name,body in before.items())
+    monkeypatch.setattr(tool,'MAX_RESIDENT_INPUT_FILES',1000)
+    assert tool.run(source_commit='c'*40)['components'][3]['status']=='CORRUPT_OR_UNREADABLE'

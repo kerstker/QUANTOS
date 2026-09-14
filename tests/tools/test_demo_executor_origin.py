@@ -71,6 +71,9 @@ def test_parallel_capture_cannot_race_the_latest_origin_pointer(tmp_path,monkeyp
     monkeypatch.setattr(worker,'fixed_account',lambda:(tmp_path,'a'*64))
     monkeypatch.setattr(worker.subprocess,'run',lambda *a,**k:pytest.fail('second capture'))
     with writer_lock(tmp_path/'origin-capture.lock'):
+        from tools import binance_demo_user_stream as locking
+        clock=iter([0,35])
+        monkeypatch.setattr(locking.time,'monotonic',lambda:next(clock))
         with pytest.raises(ValueError,match='STREAM_WRITER_ALREADY_RUNNING'):
             worker.run(symbol='BTCUSDC',source_commit='a'*40)
 

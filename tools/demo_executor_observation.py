@@ -22,6 +22,7 @@ from tools.binance_demo_user_stream import writer_lock
 # extending observation capacity never deletes history or changes order risk.
 MAX_OUTPUT_FILES=10000
 MAX_OUTPUT_BYTES=64*1024*1024
+MAX_RESIDENT_INPUT_FILES=10000
 
 
 def now_ms():return time.time_ns()//1_000_000
@@ -33,10 +34,11 @@ def _directory(root,relative):
         path=path/name
         _check_path(path,root.stat().st_uid,directory=True)
     count=size=0
+    limit=MAX_RESIDENT_INPUT_FILES if relative=='resident-recovery/views' else 1000
     for entry in path.iterdir():
         _check_path(entry,root.stat().st_uid,directory=False)
         count+=1;size+=entry.stat().st_size
-        if count>1000 or size>64*1024*1024:raise ValueError('EXECUTOR_OBSERVATION_INPUT_BUDGET')
+        if count>limit or size>64*1024*1024:raise ValueError('EXECUTOR_OBSERVATION_INPUT_BUDGET')
     return path
 
 

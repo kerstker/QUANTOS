@@ -105,7 +105,7 @@ def run(*, symbol, start_ms, end_ms, source_commit):
     _check_path(destination, root.stat().st_uid, directory=True)
     # Share the existing fixed-account REST capture lease. This also preserves
     # the current backup namespace; no unrecognized lock file is introduced.
-    with writer_lock(root/'origin-capture.lock'):
+    with writer_lock(root/'origin-capture.lock',wait_seconds=35):
         count = size = 0
         for path in destination.iterdir():
             _check_path(path, root.stat().st_uid, directory=False)

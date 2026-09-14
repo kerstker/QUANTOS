@@ -53,3 +53,14 @@ it('marks an old origin independently even when the exporter is fresh',()=>{
   expect(screen.getByText(/观察已过期/)).toBeInTheDocument();
   expect(screen.getByText(/最近观察/)).toBeInTheDocument();
 });
+it('accepts recovered original OMS in the composite inventory and labels the manual recovery',()=>{
+  const raw=report();
+  raw.components[4]={name:'oms',status:'AVAILABLE',phase:'OMS_ACCOUNT_RECONCILED',
+    observed_at_ms:now-1,report_sha256:'d'.repeat(64),counts:null};
+  const snapshot={status:'AVAILABLE' as const,report:raw};
+  expect(executorObservationValid(snapshot,now)).toBe(true);
+  render(<DemoExecutorObservation snapshot={snapshot} asOf={now}/>);
+  expect(screen.getByText('原订单已恢复，人工平仓账务已核对')).toBeInTheDocument();
+  expect(screen.queryByText('本轮 DEMO 闭环已完成')).not.toBeInTheDocument();
+  expect(executorObservationValid({...snapshot,report:{...raw,cash_reconciled:true}},now)).toBe(false);
+});
