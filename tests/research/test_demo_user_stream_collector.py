@@ -100,6 +100,69 @@ def test_bad_payload_and_out_of_order_same_type_do_not_disappear(tmp_path):
     asyncio.run(scenario())
 
 
+def test_rejected_account_row_has_safe_field_diagnostic_and_remains_a_gap(tmp_path, caplog):
+    """A real capture must identify a failing nested field without logging values."""
+    async def scenario():
+        event = account_event()
+        event['a']['B'][0]['wb'] = 'private-value-must-not-be-logged'
+        raw = json.dumps(event)
+        async def lease(method): return 'x' * 64
+        with UserStreamJournal(tmp_path / 'stream.db', account_ref_sha256='a' * 64) as store:
+            await capture(store, source_sha256='b' * 64, lease=lease,
+                connect=lambda token: Socket([raw]), stop=asyncio.Event(),
+                policy=CapturePolicy(seconds=1, max_messages=1), clock_ms=lambda: NOW + 100)
+            exported = store.export_order_messages(start_ms=NOW, end_ms=NOW + 200)
+            assert len(exported['gaps']) == 1 and exported['messages'] == []
+            assert exported['coverage_verified'] is False
+            assert store.verify()['records'] > 0
+        diagnostics = [json.loads(r.message) for r in caplog.records
+                       if r.name == 'tools.binance_demo_user_stream']
+        assert len(diagnostics) == 1
+        assert diagnostics[0]['location'] == 'ACCOUNT_UPDATE.a.B[].wb'
+        assert diagnostics[0]['error_code'] == 'STREAM_VALUE_INVALID'
+        assert diagnostics[0]['response_sha256'] == exported['gaps'][0]['response_sha256']
+        assert 'private-value-must-not-be-logged' not in caplog.text
+        assert 'x' * 64 not in caplog.text
+    asyncio.run(scenario())
+
+
+def test_rejection_logging_is_bounded_and_never_formats_unknown_keys_or_errors(tmp_path, caplog, monkeypatch):
+    from tools import binance_demo_user_stream as module
+    async def scenario():
+        async def lease(method): return 'x' * 64
+        def invalid(raw): raise ValueError('private-exception-do-not-log')
+        monkeypatch.setattr(module, 'normalize_message', invalid)
+        with UserStreamJournal(tmp_path / 'stream.db', account_ref_sha256='a' * 64) as store:
+            await capture(store, source_sha256='b' * 64, lease=lease,
+                connect=lambda token: Socket(['{"private-field":"private-value"}'] * 40),
+                stop=asyncio.Event(), policy=CapturePolicy(seconds=1, max_messages=40), clock_ms=lambda: NOW)
+            assert store.snapshot(as_of_ms=NOW)['gaps'] == 40
+        diagnostics = [json.loads(r.message) for r in caplog.records
+                       if r.name == 'tools.binance_demo_user_stream']
+        assert len(diagnostics) == 32
+        assert all(d['error_code'] == 'STREAM_MESSAGE_INVALID' for d in diagnostics)
+        assert 'private-' not in caplog.text
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('raw', [
+    '{"e":"ACCOUNT_UPDATE","E":1,"T":1,"a":{"m":"ORDER","B":[]},"private-key":"private-value"}',
+    '{"e":"listenKeyExpired","E":"private-value","listenKey":"private-token"}',
+    '{"private-key":"private-value", "private-key":2}',
+])
+def test_malformed_input_diagnostic_does_not_copy_unknown_fields_or_lease(raw, tmp_path, caplog):
+    async def scenario():
+        async def lease(method): return 'x' * 64
+        with UserStreamJournal(tmp_path / 'stream.db', account_ref_sha256='a' * 64) as store:
+            await capture(store, source_sha256='b' * 64, lease=lease,
+                connect=lambda token: Socket([raw]), stop=asyncio.Event(),
+                policy=CapturePolicy(seconds=1, max_messages=1), clock_ms=lambda: NOW)
+            assert store.snapshot(as_of_ms=NOW)['gaps'] == 1
+            assert 'private-' not in str(list(store.db.execute('SELECT body FROM stream_records')))
+        assert caplog.records and 'private-' not in caplog.text
+    asyncio.run(scenario())
+
+
 def test_idle_connection_renews_lease_and_retains_heartbeats_without_fake_events(tmp_path):
     async def scenario():
         calls=[];stop=asyncio.Event();socket=Socket()

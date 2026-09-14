@@ -23,6 +23,22 @@ GAP_REASONS = {'UNCLEAN_RESTART','RESTART_WINDOW','CONNECT_FAILED','STREAM_DISCO
                'LEASE_EXPIRED','KEEPALIVE_FAILED','MESSAGE_REJECTED','OUT_OF_ORDER_EVENT',
                'CLOCK_REGRESSION','RECONNECT_BUDGET_EXHAUSTED'}
 STOP_REASONS = {'BUDGET_EXHAUSTED','SIGNAL','AUTHENTICATION_REJECTED','RATE_LIMITED','FAILED'}
+
+
+class StreamValidationError(ValueError):
+    """Fixed error code and a schema-owned path; never carries input values."""
+    def __init__(self, code, location):
+        super().__init__(code)
+        self.code, self.location = code, location
+
+
+def _parse(value, parser, location):
+    try:
+        return parser(value)
+    except (ValueError, KeyError, TypeError, ArithmeticError, RecursionError, UnicodeError):
+        raise StreamValidationError('STREAM_VALUE_INVALID', location) from None
+
+
 DDL = (
     'CREATE TABLE stream_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),body TEXT NOT NULL,hash TEXT NOT NULL)',
     'CREATE TABLE stream_records(sequence INTEGER PRIMARY KEY,kind TEXT NOT NULL,at_ms INTEGER NOT NULL,body TEXT NOT NULL,prev_hash TEXT NOT NULL,record_hash TEXT NOT NULL UNIQUE,response_hash TEXT)',
@@ -44,9 +60,9 @@ def _time(value):
     return value
 
 
-def _fields(value,required,optional=frozenset()):
+def _fields(value,required,optional=frozenset(), *, location='event'):
     if not isinstance(value,dict) or not set(required)<=value.keys()<=set(required)|set(optional):
-        raise ValueError('STREAM_FIELDS_INVALID')
+        raise StreamValidationError('STREAM_FIELDS_INVALID', location)
 
 
 def _enum(value,allowed):
@@ -54,14 +70,16 @@ def _enum(value,allowed):
     return value
 
 
-def _rows(value,required,optional,identity,parsers):
-    if not isinstance(value,list) or len(value)>2000:raise ValueError('STREAM_ROWS_INVALID')
+def _rows(value,required,optional,identity,parsers, *, location='event'):
+    if not isinstance(value,list) or len(value)>2000:
+        raise StreamValidationError('STREAM_ROWS_INVALID', location)
     seen=set()
     for row in value:
-        _fields(row,required,optional)
-        for key,v in row.items():parsers[key](v)
+        _fields(row,required,optional,location=location+'[]')
+        # Field names are schema-owned only after _fields has accepted the row.
+        for key,v in row.items():_parse(v,parsers[key],location+'[].'+key)
         key=tuple(row[k] for k in identity)
-        if key in seen:raise ValueError('STREAM_DUPLICATE_IDENTITY')
+        if key in seen:raise StreamValidationError('STREAM_DUPLICATE_IDENTITY',location)
         seen.add(key)
 
 
@@ -69,27 +87,30 @@ def _validate_payload(p):
     if not isinstance(p,dict):raise ValueError('STREAM_OBJECT_REQUIRED')
     kind=p.get('e')
     if kind=='ACCOUNT_UPDATE':
-        _fields(p,{'e','E','T','a'});a=p['a'];_fields(a,{'m','B'},{'P','S'})
-        _enum(a['m'],{'DEPOSIT','WITHDRAW','ORDER','FUNDING_FEE','WITHDRAW_REJECT','ADJUSTMENT',
+        _fields(p,{'e','E','T','a'},location='ACCOUNT_UPDATE');a=p['a']
+        _fields(a,{'m','B'},{'P','S'},location='ACCOUNT_UPDATE.a')
+        _parse(a['m'],lambda v:_enum(v,{'DEPOSIT','WITHDRAW','ORDER','FUNDING_FEE','WITHDRAW_REJECT','ADJUSTMENT',
               'INSURANCE_CLEAR','ADMIN_DEPOSIT','ADMIN_WITHDRAW','MARGIN_TRANSFER','MARGIN_TYPE_CHANGE',
               'ASSET_TRANSFER','OPTIONS_PREMIUM_FEE','OPTIONS_SETTLE_PROFIT','AUTO_EXCHANGE',
-              'COIN_SWAP_DEPOSIT','COIN_SWAP_WITHDRAW'})
-        if 'S' in a:_symbol(a['S'])
-        _rows(a['B'],{'a','wb','cw','bc'},set(),('a',),{'a':_text,'wb':_decimal,'cw':_decimal,'bc':_decimal})
+              'COIN_SWAP_DEPOSIT','COIN_SWAP_WITHDRAW'}),'ACCOUNT_UPDATE.a.m')
+        if 'S' in a:_parse(a['S'],_symbol,'ACCOUNT_UPDATE.a.S')
+        _rows(a['B'],{'a','wb','cw','bc'},set(),('a',),{'a':_text,'wb':_decimal,'cw':_decimal,'bc':_decimal},
+              location='ACCOUNT_UPDATE.a.B')
         # Crossed funding updates can omit P entirely. Preserve absence: it is
         # a partial observation, not a statement that the account has no positions.
         if 'P' in a:
             _rows(a['P'],{'s','pa','ep','cr','up','mt','iw','ps'},{'bep'},('s','ps'),
                   {'s':_symbol,'ps':_side,'mt':lambda v:_enum(v,{'isolated','cross'}),
-                   **dict.fromkeys(('pa','ep','bep','cr','up','iw'),_decimal)})
+                   **dict.fromkeys(('pa','ep','bep','cr','up','iw'),_decimal)},location='ACCOUNT_UPDATE.a.P')
     elif kind=='ORDER_TRADE_UPDATE':
-        _fields(p,{'e','E','T','o'});o=p['o'];_fields(o,REQUIRED_ORDER,OPTIONAL_ORDER|{'er'})
+        _fields(p,{'e','E','T','o'},location='ORDER_TRADE_UPDATE');o=p['o']
+        _fields(o,REQUIRED_ORDER,OPTIONAL_ORDER|{'er'},location='ORDER_TRADE_UPDATE.o')
         parsers={'s':_symbol,'c':lambda v:_text(v,r'[.A-Z:/a-z0-9_-]{1,36}'),'S':lambda v:_enum(v,{'BUY','SELL'}),
                  'ps':_side,**dict.fromkeys(('i','t','T','si','ss','gtd'),_int),'er':expiry_reason,
                  **dict.fromkeys(('q','p','l','z','L','ap','sp','n','b','a','AP','cr','rp'),_decimal),
                  **dict.fromkeys(('m','R','cp','pP'),_bool),'N':lambda v:None if v is None else _text(v),
                  **dict.fromkeys(('o','f','x','X','wt','ot','V','pm'),_text)}
-        for key,value in o.items():parsers[key](value)
+        for key,value in o.items():_parse(value,parsers[key],'ORDER_TRADE_UPDATE.o.'+key)
     elif kind=='ACCOUNT_CONFIG_UPDATE':
         _fields(p,{'e','E','T'},{'ac','ai'})
         if not ({'ac','ai'} & p.keys()):raise ValueError('STREAM_CONFIG_MISSING')
@@ -111,8 +132,8 @@ def _validate_payload(p):
     elif kind=='listenKeyExpired':
         _fields(p,{'e','E'})
     else:raise ValueError('STREAM_EVENT_UNSUPPORTED')
-    _time(p['E'])
-    if 'T' in p:_time(p['T'])
+    _parse(p['E'],_time,kind+'.E')
+    if 'T' in p:_parse(p['T'],_time,kind+'.T')
 
 
 def normalize_message(raw):

@@ -25,12 +25,33 @@ import urllib.request
 
 from quantos.contracts.binance_demo import DEMO_REST_BASE, DEMO_WEBSOCKET_BASE
 from services.governance.json_integrity import load_json_without_duplicate_keys
-from services.research.demo_user_stream import UserStreamJournal, normalize_message, MAX_MESSAGE_BYTES
+from services.research.demo_user_stream import UserStreamJournal, normalize_message, MAX_MESSAGE_BYTES, StreamValidationError
 from tools.binance_demo_private_check import load_credentials
 from tools.binance_demo_readiness import NoRedirect, ProbeFailure
 
 
 def now_ms():return time.time_ns()//1_000_000
+
+
+def rejection_diagnostic(exc):
+    """Do not format arbitrary exceptions, rejected input or unknown field names."""
+    code, location = 'STREAM_MESSAGE_INVALID', 'event'
+    if isinstance(exc, StreamValidationError):
+        # Restrict even structured errors before crossing into service logs.
+        allowed_codes = {'STREAM_FIELDS_INVALID', 'STREAM_VALUE_INVALID',
+                         'STREAM_ROWS_INVALID', 'STREAM_DUPLICATE_IDENTITY'}
+        allowed_paths = {'event', 'ACCOUNT_UPDATE', 'ACCOUNT_UPDATE.a',
+                         'ORDER_TRADE_UPDATE', 'ORDER_TRADE_UPDATE.o'}
+        allowed_paths.update('ACCOUNT_UPDATE.a.'+k for k in ('m','S','B','B[]','P','P[]'))
+        allowed_paths.update('ACCOUNT_UPDATE.a.B[].'+k for k in ('a','wb','cw','bc'))
+        allowed_paths.update('ACCOUNT_UPDATE.a.P[].'+k for k in ('s','pa','ep','cr','up','mt','iw','ps','bep'))
+        from services.research.binance_order_receipts import REQUIRED_ORDER, OPTIONAL_ORDER
+        allowed_paths.update('ORDER_TRADE_UPDATE.o.'+k for k in REQUIRED_ORDER | OPTIONAL_ORDER | {'er'})
+        allowed_paths.update(kind+'.'+k for kind in ('ACCOUNT_UPDATE','ORDER_TRADE_UPDATE',
+            'ACCOUNT_CONFIG_UPDATE','MARGIN_CALL','TRADE_LITE','listenKeyExpired') for k in ('E','T'))
+        if exc.code in allowed_codes and exc.location in allowed_paths:
+            code, location = exc.code, exc.location
+    return {'error_code':code,'location':location}
 
 
 def source_hash():
@@ -137,7 +158,7 @@ async def _interruptible(awaitable,stop,timeout):
 async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_ms=None):
     policy=policy or CapturePolicy();clock_ms=clock_ms or now_ms
     loop=asyncio.get_running_loop();deadline=loop.time()+policy.seconds
-    messages=0;reconnects=0;previous_wall=0;reason='FAILED'
+    messages=0;reconnects=0;previous_wall=0;reason='FAILED';diagnostics=0
 
     def record(kind,**data):
         nonlocal previous_wall
@@ -148,7 +169,7 @@ async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_m
         previous_wall=at;journal.record(kind,at_ms=at,**data)
 
     async def connection(token):
-        nonlocal messages
+        nonlocal messages, diagnostics
         # The enclosing interruptible deadline bounds open/close and idle reads.
         async with connect(token) as socket:
             record('CONNECTED');ordered={}
@@ -169,9 +190,18 @@ async def capture(journal,*,source_sha256,lease,connect,stop,policy=None,clock_m
                 except TimeoutError:continue
                 messages+=1
                 try:message=normalize_message(raw)
-                except ValueError:
+                except ValueError as exc:
                     digest=hashlib.sha256(raw.encode() if isinstance(raw,str) else raw).hexdigest()
                     record('GAP',reason='MESSAGE_REJECTED',response_sha256=digest)
+                    # The original GAP remains a blocking input to fail-closed
+                    # receipt binding. This bounded, value-free stderr diagnostic
+                    # is only for debugging, and leaves journal/API shapes intact.
+                    if diagnostics < 32:
+                        logging.getLogger(__name__).warning(json.dumps({
+                            'schema':'DEMO_STREAM_REJECTION_DIAGNOSTIC_V1',
+                            'at_ms':previous_wall,'response_sha256':digest,
+                            'source_sha256':source_sha256,**rejection_diagnostic(exc)}))
+                        diagnostics += 1
                 else:
                     # Compare clocks only within the same event type/connection.
                     # The exchange supplies no sequence proving complete delivery.

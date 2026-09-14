@@ -68,6 +68,30 @@ OMS 保持原订单、零投影成交；恢复库保持 ORDER_SUBMISSION_UNKNOWN
 4. 同一周期在有效政策内从确认持仓恢复 reduceOnly 和现金核对；过期批准和外部手动平仓
    需明确处理，不能重建开仓 claim 或把人工平仓标为自动闭环。
 
+## 用户反馈“可以了”后的核验与诊断增量
+
+再次只读核对后，新增 SELL 成交对应 **BTCUSDT**，订单 `28584994743`，累计
+`0.0097 BTC`，最终 FILLED；它与本轮 **BTCUSDC** 订单不同，不能作为本轮平仓。
+账户在 `1789384202815` 的读取仍显示 BTCUSDC `0.002 BTC`，USDC 钱包
+`4999.92987831`。已明确提示用户核对 BTCUSDC，不重复开仓。
+
+原已验收历史采集器再次取得 6 次 GET、1 笔 BTCUSDC 成交、52 条账户收入流水，
+窗口内无分页缺口；唯一 BTCUSDC 成交仍是原 BUY，没有 SELL。证据为任务输出中的
+`closing-statement/da3027b0bbba9966b4dffd1c7e8ff40ded8b7bb15a0b9cc14bb0bcd51ef12fdd.json`。
+这不证明后续时段已归零。另一次 180 秒有界诊断监听正常结束、未收到事件，
+日志 `event-diagnostic-attempt3.log` 保留；仍没有取得原被拒消息，根因字段未知。
+
+本次新增软件为**拒收诊断**：账户余额/持仓行、订单字段及事件时间的校验错误可以携带
+固定代码和受支持的字段路径。采集器先保留原 GAP，再向服务日志写入摘要、收到时间、
+采集源码摘要及校验位置；每次 capture 最多 32 条诊断，超过时所有 GAP 仍逐条保存。
+不写输入值、未知字段名、租约、任意异常文字或被拒原文。正常消息接受范围、原日志
+DDL/哈希链、API 和前端合同未变；诊断不供回执入账，不消除原缺口。
+
+先复现两个失败回归（此前没有任何定位日志），再实现修复。账户/订单消息、持续采集、
+受保护采集、回执绑定及治理边界联合 **137 PASS**；初始失败与最终日志均在任务输出。
+本批未跑完整 canonical、未安装、未切换驻留服务，不覆盖原已验收版本。
+原文保留/精确兼容性修复、历史回执恢复和同周期续接仍是未完成项。
+
 方法核对使用 Binance 官方的[用户数据流说明](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/user-data-streams)
 及[账户成交历史接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade)。
 这些接口说明不构成上述实际账户证据，实际结论以本地原始记录为依据。
