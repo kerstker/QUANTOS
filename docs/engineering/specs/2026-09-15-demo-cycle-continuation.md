@@ -123,3 +123,55 @@
 `/var/lib/quantos-demo-continuation-install/de46390053b27c243da137b5f6ec159ef7df40ca`。
 原 `result.json` 与全部失败保留，新恢复写入追加历史和独立展示。
 网页接线和采集并发补修的完整验收/安装须另行记录，不继承5c的完整通过声明。
+
+## 04:50 最终验收安装和实际页面
+
+本节更新此前待验收/待安装状态。修复及原账户恢复已交付；新的真实自动往返仍未发生。
+
+- 冻结源码 `2e239657d66450a3e365ebdef4ece0ed1aabef15` 完整28/28 PASS。
+  两轮ARM64冷构建、扫描与断网只读启动通过；后端8,328通过/19跳过（2,494秒），
+  执行及工具4,348通过/2跳过（671.22秒），前端78文件453通过；类型、ESLint、生产构建通过。
+  完整驱动共4,857.91秒。这个结果仅表示软件验收，不代表新订单成功或盈利。
+- 证据发布 `5bb37730f8e33d0b4c15a4c7be2a1e844095881c` 已安装。
+  11项受保护服务包含两项BTCUSDC/BTCUSDT起点采集，后者采用有界锁等待，服务超时165秒；
+  私有流重新连接，各原定时器恢复。既有监控drop-in逐字节保留。
+  发布Git元数据采用 `core.sharedRepository=0644`，隔离UID的源码、依赖和证据绑定检查通过。
+  七个原数据库inode、原登记/政策/任务/周期结果和停机内容一致。
+- 仅切换15911网页及其Console；研究执行器、观察器、公开行情、因果前向、P6前向及用户侧流
+  六项服务的PID、重启计数和启动身份保持。新发布前端104个应用文件与验收构建逐字节一致。
+- 固定 `/usr/local/sbin/quantos-demo-functional --recover` 在新版本实际运行成功，
+  原周期 `f35fc22677ef687a92c5e7832ed2e6f1ff6067f4999f7cad7162cdf8949bb6d5`
+  为 `MANUAL_ACCOUNT_RECONCILED` / `MATCHED_REPORTED_ACCOUNT`，数量0、成交2、尝试1。
+  这是仅恢复模式，人工恢复终态退出码2属于约定行为；没有提交或重试订单。
+  独立受限UID复核原OMS1单/1系统成交、SEND_CLAIM1、待恢复0。
+  原初始5000 USDC、毛损益 -0.3528、手续费0.14008463、净额 -0.49288463、钱包4999.50711537均一致。
+  人工平仓编号1203150289与原两处GAP保留；新私有流CONNECTED，本地完整链10,860条、50处GAP验证通过。
+  “完整链验证”表示留存链完整，不表示交易所事件没有缺口。
+- 正式 [DEMO控制中心](http://192.168.5.68:15911/studio/demo) 实际HTTP检查通过：
+  桌面1440、平板900、手机390、小手机320及暗色无横向溢出、无WCAG2A/AA违规、无页面JS错误。
+  五个工作区锚点滚动及焦点、返回入口、本机/异机下一轮命令及剪贴板不可用时的选中回退通过。
+  API返回人工恢复且现金匹配，网页真实显示“人工平仓账务已核对”；浏览器检查零HTTP写请求。
+- 新版本未签署次轮规格实采预检通过：BTCUSDC、单笔最多250、累计750 USDC、最多3笔、3600秒、
+  日亏损限额10 USDC；沿用初始5000和当前钱包4999.50711537，不重新初始化原账本。
+  没有新增登记、公钥签发或实际自动周期。旧一小时批准已过期，不能续用旧确认摘要。
+
+证据目录：
+
+- `/home/kerstker/quantos-dev-output/demo-cycle-continuation-20260915/observation-hotfix`：
+  `result.json`、`canonical-report.json`、`accepted-frontend-comparison.json`、
+  `runtime-review/user-install-result.json`、`installed-browser-final/result.json`及五种页面截图。
+- `/var/lib/quantos-demo-continuation-install/5bb37730f8e33d0b4c15a4c7be2a1e844095881c`：
+  受保护安装结果、独立原账户恢复核验和 `unsigned-successor-proposal.json`。
+  既有失败和原周期结果全部保留，没有覆盖成成功。
+
+实际操作员的剩余步骤是在DGX自己的终端运行：
+
+```bash
+sudo /usr/local/sbin/quantos-demo-functional --new-cycle
+```
+
+核对当次有限规格并输入该终端显示的完整确认行后，程序才启动新自动往返。
+这一步来自现有本机操作员登记约束，开发代理不能代填确认或续期原批准。
+当前账本续接仅支持原交易所在的同一UTC日（本次至北京时间2026-09-15 08:00），
+跨日需另行完成日风险账本续接，不能默默把损失或已用容量清零。
+最终自动闭环只以新周期真实开仓、回执、只减仓归零、现金匹配及实际页面结果为准。
