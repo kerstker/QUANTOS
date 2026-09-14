@@ -92,6 +92,36 @@ DDL/哈希链、API 和前端合同未变；诊断不供回执入账，不消除
 本批未跑完整 canonical、未安装、未切换驻留服务，不覆盖原已验收版本。
 原文保留/精确兼容性修复、历史回执恢复和同周期续接仍是未完成项。
 
+## BTCUSDC 人工平仓最终核验
+
+用户再次报告“平了”后，私有流已保存原文，独立 REST 只读采集也得到相同订单/成交、
+方向、数量、价格及手续费。本次历史采集 6 次 GET、2 笔 BTCUSDC 成交、54 条账户收入，
+无分页缺口，摘要 `cf9e9727920c8ad9c09277d0211df5a72aea00f026fe785f51c7c15b65e8ad84`。
+
+| 项目 | 观察结果 |
+|---|---|
+| 平仓订单/成交 | 1203150289 / 93376072，网页客户端标识，SELL reduceOnly，FILLED |
+| 成交时间 | 1789384794776（场所时间） |
+| 平仓数量/均价 | 0.002 BTC / 77,736.6 USDC |
+| 平仓手续费 | 0.06996294 USDC |
+| 两笔成交毛损益/总手续费 | -0.35280000 / 0.14008463 USDC |
+| 两笔成交扣手续费后 | -0.49288463 USDC |
+| 最新 USDC 钱包/可用余额 | 均为 4999.50711537 USDC，未实现损益为 0 |
+| 新账户读取 | 1789384865431，无 BTCUSDC 仓位 |
+| 执行起点读取 | 1789384805541 至 1789384823867，计价仓位/普通挂单/条件挂单均为 0 |
+
+首次读到的账户快照在平仓成交之前，仍显示 0.002；没有用该旧快照否定本次平仓。
+更新后的账户和起点支持归零。原起点仍有行情时效问题，不将归零等同于重新具备开仓条件。
+
+交易手续费逐笔与收入流水一致，仅计一次；平仓前后钱包变化 -0.42276294 USDC
+等于平仓损益减平仓手续费。以上是**只读算术核对**，没有投影原 OMS、写入唯一现金账本，
+也没有把手工网页订单改成系统自动减仓。原周期继续 RECOVERY_REQUIRED、cash_reconciled=false；
+自动回执恢复和完整自动周期仍未完成。无需用户再次平仓，不重建开仓 claim。
+
+任务输出中的 `manual-close-stream-evidence.json`、`manual-close-statement/`、
+`manual-close-verification-after.json` 与 `manual-close-assessment.json` 保留核验材料。
+本次未发新订单、未改风控/原批准、未安装新代码或重启服务。
+
 方法核对使用 Binance 官方的[用户数据流说明](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/user-data-streams)
 及[账户成交历史接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade)。
 这些接口说明不构成上述实际账户证据，实际结论以本地原始记录为依据。
