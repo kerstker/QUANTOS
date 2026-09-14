@@ -161,3 +161,32 @@ IOC 无成交、回执不明、未完全减仓及费用未成熟仍可能使本�
 
 该入口依据 [AGENTS.md](../../../AGENTS.md) 的 “Do not fabricate a HUMAN actor”
 保留真实本机操作员登记，代理不能代输确认。已有 Demo/API 授权仍有效，无需重新提交密钥。
+
+### 确认后 FRESH_INPUTS 失败与权限修复
+
+用户正确输入本次确认行后，程序返回 `SETUP_NOT_COMPLETED / FRESH_INPUTS`。
+通过其提案中的原始观察摘要定位两份对应采集：确认前后均为 `CAPTURED`，在各自完成时
+均为 `OBSERVED_FLAT_QUOTE`，无读取失败或质量问题。实际失败点是同阶段随后调用的
+`_stop_image()`：原 `/srv/quantos/state/data/cache/live_kill_switch.db` 为 `0664`，
+触发 `SETUP_STOP_CUSTODY`；该阶段的泛化报错不能直接解释为行情刷新失败。
+
+先在隔离 SQLite 夹具上复现原函数拒绝 `0664`、收紧为 `0600` 后导出相同字节通过。
+再核对实际源码、文件身份、无 WAL/回滚日志、原状态链和未登记条件，仅将实际文件权限
+改为 `0600`。归属 `quantos:quantos`、inode、大小、mtime 和全部数据库字节保持一致；
+原安装代码 `_stop_image()` 随即通过。既有一条状态记录和其哈希不变，没有初始化或
+复位停机状态，没有重启服务、修改代码或放宽检查。
+
+随后使用已安装 `8d61aef5f01ade1b348d02b910fb28b47f73ae56` 的原读取/提案函数，
+完成连续两次真实采集、注册表一致性、最新空仓检查和停机导出：
+`PREFLIGHT=PASS`、`FRESH_INPUTS=PASS`，共约 30.6 秒。该检查跳过了操作员登记、
+签名与安装调用，结果是 `UNSIGNED_BOTH_STAGES_PASS`，不代表真实交易闭环或长期网络稳定。
+
+修复前后数据库 SHA-256：
+`3e60ad769893bf693e6d1ad5a327a40a7908dd104b60602ee6cc9b492cca99b5`。
+记录目录：`/home/kerstker/quantos-dev-output/demo-fresh-inputs-20260914`，包含
+`failure-inspection.json`、`custody.json`、`permission-regression.json`、
+`repair-result.json` 和 `unsigned-sequence.json`。
+
+旧程序在上述检查之后才保存操作员登记；本次失败时登记目录尚不存在、注册表仍零键。
+不能从终端或聊天文本补造登记。操作员须重新运行固定入口，并使用新一轮显示的确认行。
+此前正确确认和本次失败保留为事实，不归因于用户输入错误。
