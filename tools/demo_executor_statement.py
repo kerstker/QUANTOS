@@ -76,7 +76,7 @@ def validate(report):
         validate_statement(raw)
         if (raw['status'] not in ('CAPTURED','PARTIAL','FAILED') or report['status'] != raw['status'] or
             report['reason'] is not None or report['statement_sha256'] != _digest(raw) or
-            raw['symbols'] != [report['symbol']] or raw['source_sha256'] != original.source_hash() or
+            raw['symbols'] != [report['symbol']] or
             any(raw[name] != report[name] for name in ('start_ms','end_ms','observed_at_ms','completed_at_ms'))):
             raise ValueError('EXECUTOR_STATEMENT_BINDING')
     return report
@@ -123,6 +123,7 @@ def run(*, symbol, start_ms, end_ms, source_commit):
             report = validate(load_json_without_duplicate_keys(child.stdout))
             if (report['source_sha256'] != source_hash() or report['account_ref_sha256'] != account or
                 report['symbol'] != symbol or report['start_ms'] != start_ms or report['end_ms'] != end_ms or
+                report['statement'] is not None and report['statement']['source_sha256'] != original.source_hash() or
                 not observed <= report['observed_at_ms'] <= report['completed_at_ms'] <= now_ms()):
                 raise ValueError('EXECUTOR_STATEMENT_WORKER_BINDING')
         except Exception as error:

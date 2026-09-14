@@ -43,7 +43,7 @@ def test_fixed_capture_binds_account_and_exact_window_without_exposing_credentia
     assert report['economic_authority'] is False
 
 
-@pytest.mark.parametrize('failure', [None, 'timeout', 'account', 'source', 'window', 'digest', 'private_error'])
+@pytest.mark.parametrize('failure', [None, 'timeout', 'account', 'source', 'raw_source', 'window', 'digest', 'private_error'])
 def test_parent_retains_worker_failures_and_never_retries_network(tmp_path, monkeypatch, failure):
     worker, account, _, _ = fixed_worker(tmp_path, monkeypatch)
     report = worker.capture_worker('BTCUSDT', NOW-1000, NOW)
@@ -57,6 +57,9 @@ def test_parent_retains_worker_failures_and_never_retries_network(tmp_path, monk
         if failure == 'private_error': raise RuntimeError('PRIVATE_DATA_SHOULD_NOT_ESCAPE')
         if failure == 'account': report['account_ref_sha256'] = 'f'*64
         if failure == 'source': report['source_sha256'] = 'f'*64
+        if failure == 'raw_source':
+            report['statement']['source_sha256'] = 'f'*64
+            report['statement_sha256'] = worker._digest(report['statement'])
         if failure == 'window': report['start_ms'] -= 1
         if failure == 'digest': report['statement_sha256'] = 'f'*64
         return SimpleNamespace(stdout=json.dumps(report).encode())
@@ -69,6 +72,14 @@ def test_parent_retains_worker_failures_and_never_retries_network(tmp_path, monk
     assert result['orders_submitted'] is False
     assert 'PRIVATE_DATA_SHOULD_NOT_ESCAPE' not in json.dumps(retained)
     assert not list(tmp_path.glob('*.sqlite3'))
+
+
+def test_structural_read_of_historical_evidence_does_not_require_current_collector_version(tmp_path, monkeypatch):
+    worker, _, _, _ = fixed_worker(tmp_path, monkeypatch)
+    report = worker.capture_worker('BTCUSDT', NOW-1000, NOW)
+    monkeypatch.setattr(worker.original, 'source_hash', lambda: 'f'*64)
+    assert worker.validate(report) == report
+    assert report['source_verified'] is False
 
 
 def test_symlink_rejected_before_child(tmp_path, monkeypatch):
