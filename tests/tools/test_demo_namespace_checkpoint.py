@@ -176,6 +176,18 @@ def test_controller_claim_identity_and_task_bytes_survive_restore(tmp_path):
     assert (restored/'tasks'/(identity+'.json')).read_bytes()==task and checked['state']['task_claims']==1
 
 
+def test_optional_functional_claim_survives_controller_restore(tmp_path):
+    root=tmp_path/'controller';root.mkdir()
+    for name in ('tasks','requests','claims','results','task-claims','task-results'):(root/name).mkdir()
+    area=root/'functional-cycle';area.mkdir()
+    claim=b'{"cycle_sha256":"isolated-original-cycle"}'
+    (area/'claim.json').write_bytes(claim)
+    result=checkpoint.create_checkpoint(root,tmp_path/'controller.enc',namespace='controller',source_commit=COMMIT,passphrase=SECRET)
+    restored=tmp_path/'restored'
+    checkpoint.restore_checkpoint(tmp_path/'controller.enc',restored,passphrase=SECRET,expected_sha256=result['sha256'])
+    assert (restored/'functional-cycle/claim.json').read_bytes()==claim
+
+
 def test_research_scope_excludes_other_research_and_preserves_demo_records(tmp_path):
     from services.research.demo_user_stream import UserStreamJournal
     root=tmp_path/'research';root.mkdir();(root/'unrelated.json').write_text('{"do_not_archive":true}')

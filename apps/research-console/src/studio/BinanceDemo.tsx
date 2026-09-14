@@ -18,6 +18,7 @@ import {DemoExecutorObservation} from './DemoExecutorObservation';
 import {DemoIssuerStatus} from './DemoIssuerStatus';
 import {DemoMarketInputs} from './DemoMarketInputs';
 import {DemoBackupStatus} from './DemoBackupStatus';
+import {DemoFunctionalCycle} from './DemoFunctionalCycle';
 
 const reasons: Record<string, string> = {
   RECEIPT_MISSING: '尚未生成检查快照', RECEIPT_FROM_FUTURE: '采集时间晚于当前时间，请检查时钟',
@@ -44,6 +45,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
   const publicReady = current && data?.public?.status === 'READY';
   const accountReady = current && data?.account?.status === 'READY';
   const historical = !!data?.public && !current;
+  const cycleComplete=!error && data?.functional_cycle?.report?.phase==='DEMO_CYCLE_COMPLETED';
   const publicTitle = publicReady ? '公共接口可达' : historical ? '等待重新检查' : data?.public?.status === 'FAILED' ? '公共接口检查失败' : '公共接口待检查';
   const accountTitle = accountReady ? '账户查询成功' : historical ? '账户状态待更新' : data?.account?.status === 'FAILED' ? '账户查询未通过' : '账户尚未查询';
   return <>
@@ -57,8 +59,8 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       {[
         [publicTitle, publicReady ? 'BTCUSDT / BTCUSDC 合约规则已读取' : explain(data?.public?.reason), publicReady],
         [accountTitle, accountReady ? '按资产与合约展示场所返回值' : explain(data?.account?.reason), accountReady],
-        ['订单回执待联调', '连接恢复、成交与撤单轨迹尚未验收', false],
-        ['账本对账待验证', '等待逐单回执与唯一账本比较', false],
+        [cycleComplete?'本轮成交回执已核对':'订单回执待联调', cycleComplete?'有限交易周期完成；其他故障工况单独验证':'连接恢复、成交与撤单轨迹尚未验收', cycleComplete],
+        [cycleComplete?'本轮现金已核对':'账本对账待验证', cycleComplete?'本轮持仓归零，成本与现金输入匹配':'等待逐单回执与唯一账本比较', cycleComplete],
       ].map(([title, description, ready], index) => <li key={String(title)} className={ready ? 'verified' : ''}>
         <span className="s-demo-step-number">{String(index + 1).padStart(2, '0')}</span>
         <h2>{title}</h2><p>{description}</p>
@@ -74,8 +76,9 @@ export function DemoReadinessView({data, loading, error, refresh}: {
       <Metric label="公共时间接口往返" value={data?.public?.round_trip_ms == null ? '—' : `${data.public.round_trip_ms} ms`} note="单次 REST 诊断，不代表下单延迟"/>
       <Metric label="场所时钟偏差" value={data?.public?.clock_offset_ms == null ? '—' : `${data.public.clock_offset_ms} ms`} note="相对请求中点的估计值"/>
       <Metric label="快照年龄" value={data?.age_ms == null ? '—' : `${Math.floor(data.age_ms / 1000)} 秒`} note="有效期 120 秒"/>
-      <Metric label="交易执行" value="未启用" note="公共检查不授予下单权限"/>
+      <Metric label="交易执行" value={cycleComplete?'本轮 Demo 完成':data?.functional_cycle?.report?'查看本轮状态':'未启用'} note="有限测试结果见下方周期记录"/>
     </div>
+    <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error}/>
     <DemoExecutorObservation snapshot={data?.executor_observation} asOf={data?.as_of_ms} refreshFailed={!!error}/>
     <DemoIssuerStatus snapshot={data?.issuer_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>
     <DemoBackupStatus snapshot={data?.backup_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>

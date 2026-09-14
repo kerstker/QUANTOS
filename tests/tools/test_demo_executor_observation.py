@@ -111,3 +111,27 @@ def test_read_only_inventory_can_display_a_journal_at_its_write_budget(tmp_path,
     assert result['components'][0]['counts']['records']==5
     with UserStreamJournal(root/'user-stream.sqlite3',read_only=True) as journal:
         with pytest.raises(ValueError,match='RECORD_BUDGET'):demo_executor_stream._budget(journal)
+
+
+def test_observation_continues_after_first_thousand_files_without_removing_history(tmp_path,monkeypatch):
+    root=populated(tmp_path,monkeypatch)
+    report=tool.run(source_commit='c'*40)
+    directory=root/'observation-views'
+    for offset in range(1,999):
+        model.save(directory,dict(report,observed_at_ms=report['observed_at_ms']+offset))
+    previous={p.name:p.read_bytes() for p in directory.iterdir() if p.name!='latest.json'}
+    assert len(list(directory.iterdir()))==1000
+    monkeypatch.setattr(tool,'now_ms',lambda:report['observed_at_ms']+1000)
+    current=tool.run(source_commit='c'*40)
+    assert model.load_latest(directory)==current
+    assert all((directory/name).read_bytes()==body for name,body in previous.items())
+
+
+def test_observation_capacity_failure_is_bounded_and_leaves_the_last_view(tmp_path,monkeypatch):
+    root=populated(tmp_path,monkeypatch)
+    tool.run(source_commit='c'*40)
+    directory=root/'observation-views';before=(directory/'latest.json').read_bytes()
+    monkeypatch.setattr(tool,'MAX_OUTPUT_FILES',2)
+    with pytest.raises(ValueError,match='EXECUTOR_OBSERVATION_OUTPUT_BUDGET'):
+        tool.run(source_commit='c'*40)
+    assert (directory/'latest.json').read_bytes()==before

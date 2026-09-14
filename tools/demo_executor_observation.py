@@ -17,6 +17,12 @@ from tools.demo_resident_recovery import require_custody, _check_path
 from tools.demo_executor_stream import _budget
 from tools.binance_demo_user_stream import writer_lock
 
+# A minute-by-minute inventory exhausted the previous 1,000-file limit in
+# under a day. Keep a finite Demo observation window and the same byte cap;
+# extending observation capacity never deletes history or changes order risk.
+MAX_OUTPUT_FILES=10000
+MAX_OUTPUT_BYTES=64*1024*1024
+
 
 def now_ms():return time.time_ns()//1_000_000
 
@@ -87,7 +93,8 @@ def run(*,source_commit):
         for entry in destination.iterdir():
             _check_path(entry,root.stat().st_uid,directory=False)
             count+=1;size+=entry.stat().st_size
-            if count>=1000 or size>=64*1024*1024:raise ValueError('EXECUTOR_OBSERVATION_OUTPUT_BUDGET')
+            if count>=MAX_OUTPUT_FILES or size+65536>=MAX_OUTPUT_BYTES:
+                raise ValueError('EXECUTOR_OBSERVATION_OUTPUT_BUDGET')
         model.save(destination,report)
         return report
 

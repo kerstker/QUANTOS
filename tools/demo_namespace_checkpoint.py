@@ -32,11 +32,13 @@ MAX_JSON_BYTES=16*1024*1024
 EXECUTOR_DATABASES={'dispatch.sqlite3','recovery.sqlite3','oms.sqlite3','order-events.sqlite3','user-stream.sqlite3'}
 EXECUTOR_DIRECTORIES={'evidence','execution-origins','resident-recovery','receipt-reconciliation',
     'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT','request-preparation-results'}
-CONTROLLER_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
+CONTROLLER_REQUIRED_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
+CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle'}
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
-    'binance_demo_oms_status','binance_demo_cancel_status','binance_demo_backup_status'}
+    'binance_demo_oms_status','binance_demo_cancel_status','binance_demo_backup_status',
+    'binance_demo_functional_cycle','binance_demo_cash_chain'}
 EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock',
     'resident-recovery/cycle.lock',
     'binance_demo_market_inputs/BTCUSDC/archive/append.lock','binance_demo_market_inputs/BTCUSDT/archive/append.lock'}
@@ -152,7 +154,7 @@ def inventory(root,namespace,*,freeze_observation_pointers=False):
                 'data_clock':None if path.suffix=='.json' or relative in ('user-stream.sqlite3','binance_demo_user_stream.db') or
                     freeze_observation_pointers and market_archive(relative,namespace) else data_clock(path)}
     require(required<=set(result) and result and len(result)<=MAX_FILES and sum(v['size'] for v in result.values())<=MAX_BYTES,'CHECKPOINT_REQUIRED_OR_BUDGET')
-    if namespace=='controller':require(all((root/name).is_dir() for name in CONTROLLER_DIRECTORIES),'CHECKPOINT_CONTROLLER_LAYOUT')
+    if namespace=='controller':require(all((root/name).is_dir() for name in CONTROLLER_REQUIRED_DIRECTORIES),'CHECKPOINT_CONTROLLER_LAYOUT')
     return dict(sorted(result.items())),sorted(directory_names)
 
 
@@ -276,7 +278,7 @@ def manifest_check(manifest):
     require(type(names) is list and len(names)<=10000 and all(type(n) is str for n in names) and names==sorted(set(names)),'CHECKPOINT_DIRECTORIES')
     require(all(safe_relative(n).parts[0] in directories for n in names),'CHECKPOINT_DIRECTORY_SCOPE')
     require(type(manifest['entries']) is dict and set(names).isdisjoint(manifest['entries']) and type(manifest['state']) is dict,'CHECKPOINT_LAYOUT')
-    if manifest['namespace']=='controller':require(CONTROLLER_DIRECTORIES<=set(names),'CHECKPOINT_CONTROLLER_LAYOUT')
+    if manifest['namespace']=='controller':require(CONTROLLER_REQUIRED_DIRECTORIES<=set(names),'CHECKPOINT_CONTROLLER_LAYOUT')
     return manifest
 
 

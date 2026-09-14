@@ -43,12 +43,12 @@ def source_hash():
     return hashlib.sha256(b'\0'.join((root/name).read_bytes() for name in names)).hexdigest()
 
 
-def get_response(path, *, params, headers):
+def get_response(path, *, params, headers, opener=None):
     if path not in PRIVATE | {'/fapi/v1/time'} or path == '/fapi/v1/time' and (params or headers):
         raise ProbeFailure('REQUEST_FAILED')
     request = urllib.request.Request(DEMO_REST_BASE+path+('?' + params if params else ''), headers=headers, method='GET')
     try:
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
+        with (opener or urllib.request.build_opener(NoRedirect())).open(request, timeout=10) as response:
             if not 200 <= response.status < 300:
                 raise ProbeFailure('REQUEST_FAILED')
             raw = response.read(2_000_001)
@@ -66,7 +66,8 @@ def get_response(path, *, params, headers):
     return raw
 
 
-def collect(*, credential_file, observe_seconds=60, operator_read=False, get=None, clock_ms=None, sleep=None):
+def collect(*, credential_file, observe_seconds=60, operator_read=False, get=None, clock_ms=None, sleep=None,
+            credential_reader=None, window_opened=None, observe_wait=None):
     get = get or get_response
     clock_ms = clock_ms or now_ms
     sleep = sleep or time.sleep
@@ -81,7 +82,7 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
     deadline = time.monotonic()+observe_seconds+220
     offset = 0
     try:
-        key, secret = load_credentials(credential_file)
+        key, secret = (credential_reader or load_credentials)(credential_file)
         report['account_ref_sha256'] = hashlib.sha256(('BINANCE_USDM_DEMO:'+key).encode()).hexdigest()
 
         def read(kind, path, *, sweep=0, page=0, params=None):
@@ -154,7 +155,19 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
 
         read('clock_before', '/fapi/v1/time')
         read('wallet_before', '/fapi/v3/account')
-        sleep(observe_seconds)
+        current_kind,current_sweep,current_page,current_at='worker',0,0,clock_ms()
+        if window_opened is not None:
+            # Retain the opening wallet before releasing a bounded Demo task.
+            # The callback receives a copy, never mutable collector state.
+            window_opened(json.loads(json.dumps(report,allow_nan=False)))
+        if observe_wait is None:
+            sleep(observe_seconds)
+        else:
+            actual=observe_wait(observe_seconds)
+            if type(actual) is not int or not 30<=actual<=observe_seconds or (
+                clock_ms()-report['reads'][-1]['received_at_ms']<actual*1000):
+                raise ProbeFailure('CLOCK_UNRELIABLE')
+            report['observe_seconds']=actual
         read('wallet_after', '/fapi/v3/account')
         read('clock_after', '/fapi/v1/time')
         bounds = window_bounds(report['reads'])
@@ -172,7 +185,7 @@ def collect(*, credential_file, observe_seconds=60, operator_read=False, get=Non
     except Exception as exc:
         reason = str(exc) if isinstance(exc, ProbeFailure) and str(exc) in REASONS else 'REQUEST_FAILED'
         report['failures'].append({'kind': current_kind, 'sweep': current_sweep, 'page': current_page,
-                                   'requested_at_ms': current_at, 'received_at_ms': report['attempts'][-1]['received_at_ms'] if report['attempts'] else clock_ms(), 'reason': reason})
+                                   'requested_at_ms': current_at, 'received_at_ms': report['attempts'][-1]['received_at_ms'] if report['attempts'] and current_kind!='worker' else clock_ms(), 'reason': reason})
         report['status'] = 'PARTIAL' if report['reads'] else 'FAILED'
     report['completed_at_ms'] = clock_ms()
     return validate(report)

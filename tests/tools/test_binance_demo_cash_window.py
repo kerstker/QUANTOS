@@ -56,6 +56,33 @@ def test_bounded_observations_use_one_identity_and_signed_private_gets(tmp_path)
     assert summary['strategy_pnl'] is None
 
 
+def test_opening_wallet_handoff_precedes_test_window_and_cannot_mutate_capture(monkeypatch):
+    clock=Clock();calls=[];opened=[]
+    monkeypatch.setattr(tool,'load_credentials',lambda _:pytest.fail('alternate credential path read'))
+    def handoff(report):
+        assert [r['kind'] for r in report['reads']]==['clock_before','wallet_before']
+        assert len(calls)==2 and report['account_ref_sha256']
+        opened.append(report['reads'][1]['received_at_ms'])
+        report['reads'].clear()
+    result=tool.collect(credential_file=None,observe_seconds=60,operator_read=True,
+        credential_reader=lambda _:('isolated-key','isolated-secret'),window_opened=handoff,
+        get=transport(clock,calls),clock_ms=clock.now,sleep=clock.sleep)
+    assert result['status']=='CAPTURED' and len(result['reads'])==6 and len(opened)==1
+    assert 'isolated-secret' not in json.dumps(result)
+
+
+def test_failed_opening_wallet_never_announces_a_ready_test_window():
+    clock=Clock()
+    def get(path,**kwargs):
+        if path=='/fapi/v3/account':raise tool.ProbeFailure('AUTHENTICATION_REJECTED')
+        return transport(clock,[])(path,**kwargs)
+    result=tool.collect(credential_file=None,observe_seconds=60,operator_read=True,
+        credential_reader=lambda _:('isolated-key','isolated-secret'),
+        window_opened=lambda _:pytest.fail('failed opening released a task'),
+        get=get,clock_ms=clock.now,sleep=clock.sleep)
+    assert result['status']=='PARTIAL' and len(result['reads'])==1
+
+
 def test_partial_network_failure_keeps_opening_wallet_and_redacts_exception(tmp_path):
     clock=Clock()
     raw=tool.collect(credential_file=credentials(tmp_path),observe_seconds=60,operator_read=True,
@@ -175,3 +202,24 @@ def test_worker_budget_stops_retries_and_retains_the_failed_attempt(tmp_path,mon
     assert raw['status']=='PARTIAL'
     assert [a['reason'] for a in raw['attempts']]==[None,'REQUEST_FAILED','CAPTURE_BUDGET_EXHAUSTED']
     assert raw['failures'][0]['reason']=='CAPTURE_BUDGET_EXHAUSTED'
+
+
+def test_bounded_functional_window_retains_actual_duration_and_captures_after_close():
+    clock=Clock();calls=[]
+    def wait(maximum):
+        assert maximum==600 and len(calls)==2
+        clock.sleep(75.5)
+        return 75
+    raw=tool.collect(credential_file=None,credential_reader=lambda _:('test-key','test-secret'),
+        observe_seconds=600,operator_read=True,get=transport(clock,calls),clock_ms=clock.now,sleep=clock.sleep,
+        observe_wait=wait)
+    assert raw['status']=='CAPTURED' and raw['observe_seconds']==75
+    assert raw['reads'][2]['requested_at_ms']>=raw['reads'][1]['received_at_ms']+75000
+
+
+def test_invalid_functional_wait_duration_does_not_read_closing_wallet():
+    clock=Clock();calls=[]
+    raw=tool.collect(credential_file=None,credential_reader=lambda _:('test-key','test-secret'),
+        observe_seconds=600,operator_read=True,get=transport(clock,calls),clock_ms=clock.now,sleep=clock.sleep,
+        observe_wait=lambda _:0)
+    assert raw['status']=='PARTIAL' and len(calls)==2

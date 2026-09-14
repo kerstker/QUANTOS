@@ -23,9 +23,24 @@ from services.research.demo_resident_status import load_latest as load_resident_
 from services.research.demo_cash_chain_status import load_latest as load_cash_chain
 from services.research.demo_executor_observation import load_latest as load_executor_observation
 from services.research.demo_issuer_status import load_latest as load_issuer_status
-from services.research import demo_market_inputs, demo_backup_status
+from services.research import demo_market_inputs, demo_backup_status, demo_functional_status
 
 router = APIRouter(tags=["binance-demo"])
+
+
+def _functional_status_directory():
+    return runtime_state_root() / 'data/cache/binance_demo_functional_cycle'
+
+
+def build_functional_status_snapshot(*,directory:Path,as_of_ms:int):
+    if not (directory/'latest.json').exists() and not (directory/'latest.json').is_symlink():
+        return {'status':'NO_SNAPSHOT','report':None}
+    try:
+        raw=demo_functional_status.load_latest(directory)
+        if raw['observed_at_ms']>as_of_ms:return {'status':'DATA_BLOCKED','report':None}
+        stale=raw['phase'] in demo_functional_status.ACTIVE and as_of_ms-raw['observed_at_ms']>120000
+        return {'status':'STALE' if stale else 'AVAILABLE','report':raw}
+    except Exception:return {'status':'CORRUPT_OR_UNREADABLE','report':None}
 
 
 def _backup_status_directory():
@@ -340,6 +355,7 @@ def binance_demo_snapshot():
     as_of_ms = time.time_ns() // 1_000_000
     execution = build_execution_snapshot(path=_execution_journal_path(), as_of_ms=as_of_ms)
     return build_snapshot(path=_receipt_path(), as_of_ms=as_of_ms) | {
+        'functional_cycle':build_functional_status_snapshot(directory=_functional_status_directory(),as_of_ms=as_of_ms),
         'backup_status':build_backup_status_snapshot(directory=_backup_status_directory(),as_of_ms=as_of_ms),
         'executor_observation':build_executor_observation_snapshot(directory=_executor_observation_directory(),as_of_ms=as_of_ms),
         'issuer_status':build_issuer_status_snapshot(directory=_issuer_status_directory(),as_of_ms=as_of_ms),

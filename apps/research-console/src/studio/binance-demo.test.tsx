@@ -35,10 +35,24 @@ function payload(): BinanceDemoPayload {
     executor_observation: {status:'NO_SNAPSHOT',report:null},
     issuer_status: {status:'NO_SNAPSHOT',report:null},
     backup_status: {status:'NO_SNAPSHOT',report:null},
+    functional_cycle: {status:'NO_SNAPSHOT',report:null},
     market_inputs:{BTCUSDC:{status:'NO_SNAPSHOT',report:null},BTCUSDT:{status:'NO_SNAPSHOT',report:null}},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
 }
+
+it('requires fills, flat exposure and matched cash before showing a completed Demo cycle', () => {
+  const data=payload();
+  data.functional_cycle={status:'AVAILABLE',report:{schema:'DEMO_FUNCTIONAL_STATUS_V1',environment:'BINANCE_USDM_DEMO',
+    scope:'TECHNICAL_VALIDATION_ONLY',phase:'DEMO_CYCLE_COMPLETED',observed_at_ms:data.as_of_ms,
+    source_commit:'c'.repeat(40),cycle_sha256:'a'.repeat(64),orders_attempted:2,final_quantity:'0',fill_count:2,
+    cash_status:'MATCHED_REPORTED_INPUTS',cash_reconciled:true,economic_authority:false,submission_enabled:false}};
+  expect(parseDemoPayload(data).functional_cycle.report?.cash_reconciled).toBe(true);
+  render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByRole('heading',{name:'Demo 有限交易周期'})).toBeInTheDocument();
+  expect(screen.getByText('成交、持仓与现金核对完成')).toBeInTheDocument();
+  expect(()=>parseDemoPayload({...data,functional_cycle:{status:'AVAILABLE',report:{...data.functional_cycle.report,fill_count:0}}})).toThrow();
+});
 
 it('shows connection tests separately from missing actual fills, and rejects false submission evidence', () => {
   const data = payload();

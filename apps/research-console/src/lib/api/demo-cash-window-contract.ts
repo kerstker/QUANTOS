@@ -42,7 +42,10 @@ function attemptsValid(r: Record<string,unknown>): boolean {
   if (object(terminal) && !['credentials','worker'].includes(String(terminal.kind))) {
     if (!prior || prior.outcome!=='FAILED' || !['kind','sweep','page','requested_at_ms','received_at_ms','reason'].every(k=>prior?.[k]===terminal[k])) return false;
   } else if (prior && prior.outcome!=='SUCCESS') return false;
-  if (object(terminal) && ['credentials','worker'].includes(String(terminal.kind)) && r.attempts.length) return false;
+  if (object(terminal) && ['credentials','worker'].includes(String(terminal.kind)) && r.attempts.length &&
+      !(terminal.kind==='worker' && r.capture_status==='PARTIAL' && r.read_count===2 &&
+        r.attempts.filter(v=>object(v) && v.outcome==='SUCCESS').every((v,i)=>
+          object(v) && v.kind===['clock_before','wallet_before'][i]) && prior?.outcome==='SUCCESS')) return false;
   return true;
 }
 

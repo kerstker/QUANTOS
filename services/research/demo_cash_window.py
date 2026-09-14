@@ -204,7 +204,13 @@ def _validate_attempts(raw):
     elif prior is not None and prior['outcome']!='SUCCESS':
         raise ValueError('CASH_WINDOW_ATTEMPT_FAILURE_MISSING')
     if terminal and terminal['kind'] in ('credentials','worker') and attempts:
-        raise ValueError('CASH_WINDOW_ATTEMPT_UNAVAILABLE')
+        # A finite controller can fail after retaining the opening wallet and
+        # before requesting the closing wallet. Preserve that real prefix; it
+        # still cannot be a completed or reconciled cash window.
+        if not (terminal['kind']=='worker' and raw['status']=='PARTIAL' and
+                [r['kind'] for r in raw['reads']]==['clock_before','wallet_before'] and
+                prior['outcome']=='SUCCESS'):
+            raise ValueError('CASH_WINDOW_ATTEMPT_UNAVAILABLE')
     if raw['status']=='PARTIAL' and not raw['reads'] or raw['status']=='FAILED' and raw['reads']:
         raise ValueError('CASH_WINDOW_ATTEMPT_STATUS')
 

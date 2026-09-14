@@ -30,6 +30,23 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
+def test_demo_functional_cycle_preserves_missing_future_and_incomplete_results(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_functional_status as model
+    from tests.research.test_demo_functional_status import report,NOW
+    directory=tmp_path/'functional';monkeypatch.setattr(views,'_functional_status_directory',lambda:directory)
+    monkeypatch.setattr(views.time,'time_ns',lambda:NOW*1000000)
+    client=TestClient(app)
+    assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']=={'status':'NO_SNAPSHOT','report':None}
+    raw=report();model.save(directory,raw)
+    value=client.get('/api/v1/console/binance-demo').json()['functional_cycle']
+    assert value=={'status':'AVAILABLE','report':raw} and value['report']['cash_reconciled'] is False
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW+121000)*1000000)
+    assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']['status']=='STALE'
+    monkeypatch.setattr(views.time,'time_ns',lambda:(NOW-1)*1000000)
+    assert client.get('/api/v1/console/binance-demo').json()['functional_cycle']=={'status':'DATA_BLOCKED','report':None}
+
+
 def test_demo_backup_status_is_read_only_and_preserves_unknown_stale_failure(tmp_path,monkeypatch):
     from services.console.api import binance_demo_views as views
     from services.research import demo_backup_status as model
@@ -369,7 +386,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs", "backup_status")),
+    "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs", "backup_status", "functional_cycle")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
     "/api/v1/console/forward-dashboard": ("", ("as_of_ms", "observations", "schedule", "errors")),

@@ -83,3 +83,16 @@ it('rejects missing traces, false retries, wrong identities and terminal failure
     const r=recovered();mutate(r);expect(cashWindowValid({status:'AVAILABLE',report:r},at+110000)).toBe(false);
   }
 });
+
+it('keeps an opening-wallet controller failure visible without inventing a closing wallet',()=>{
+  const r=recovered();
+  Object.assign(r,{status:'UNRESOLVED',capture_status:'PARTIAL',completed_at_ms:at+400,bounds:null,
+    read_count:2,income_count:0,sweeps_match:false,issues:['CAPTURE_INCOMPLETE'],assets:[],recent_flows:[],
+    failures:[{kind:'worker',sweep:0,page:0,requested_at_ms:at+300,received_at_ms:at+400,reason:'REQUEST_FAILED'}]});
+  r.attempts=r.attempts!.slice(0,2);
+  expect(cashWindowValid({status:'AVAILABLE',report:r},at+400)).toBe(true);
+  render(<DemoCashWindow snapshot={{status:'AVAILABLE',report:r}} refreshFailed={false}/>);
+  expect(screen.getByText('核对条件未齐')).toBeInTheDocument();
+  r.failures[0].kind='credentials';
+  expect(cashWindowValid({status:'AVAILABLE',report:r},at+400)).toBe(false);
+});

@@ -119,3 +119,26 @@ def test_backup_view_reads_root_summary_and_drops_identity_before_research_write
     result=tool.run(source_commit='c'*40,kind='backup')
     assert result['status']=='PUBLISHED_UNVERIFIED_DISPLAY' and result['phase']=='PARTIAL_RECOVERY_POINTS'
     assert demo_backup_status.load_latest(Path(cfg['research_state_root'])/'data/cache/binance_demo_backup_status')==raw
+
+
+@pytest.mark.parametrize('kind',['functional-cycle','cash-chain'])
+def test_functional_views_keep_fixed_owner_and_drop_before_display_write(tmp_path,monkeypatch,kind):
+    cfg,_,events=ready(tmp_path,monkeypatch)
+    model,root,relative,destination,_=tool.selection(kind,None)
+    if kind=='functional-cycle':
+        raw=model.build(phase='OPEN_IOC',source_commit='c'*40,cycle_sha256='a'*64,observed_at_ms=1000)
+    else:
+        from tests.research.test_demo_cash_chain import run
+        raw=model.build_status(run(tmp_path))
+    def read(directory,*,root,uid,model):
+        assert directory==root/relative
+        assert uid==(0 if kind=='functional-cycle' else 2001)
+        events.append('read_private');return raw
+    monkeypatch.setattr(tool,'read_snapshot',read)
+    original=model.save
+    def save(path,value):
+        assert events==['read_private','permanent_drop']
+        events.append('write_display');return original(path,value)
+    monkeypatch.setattr(model,'save',save)
+    assert tool.run(source_commit='c'*40,kind=kind)['status']=='PUBLISHED_UNVERIFIED_DISPLAY'
+    assert model.load_latest(Path(cfg['research_state_root'])/'data/cache'/destination)==raw
