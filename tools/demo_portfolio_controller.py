@@ -18,6 +18,7 @@ from live.execution.demo_request_inputs import profile_check, profile_declaratio
 from live.execution.demo_pre_submit import _retain
 from quantos.contracts.killswitch import KillSwitchState
 from services.governance.json_integrity import load_json_without_duplicate_keys
+from services.research import demo_portfolio_status
 from tools import demo_supervisor as supervisor, demo_task as task_tool
 from tools import demo_portfolio_sources as sources, demo_portfolio_checkpoint as checkpoint
 from tools.demo_cycle_checkpoint import cycle_lock
@@ -159,8 +160,17 @@ def cash_result(recovered):
     return result
 
 
+def publish_status(result,*,config=None,policy=None):
+    require(os.geteuid()==0,'PORTFOLIO_DISPLAY_ROOT_REQUIRED')
+    supervisor._root_private_directory(supervisor.STATE)
+    area=supervisor.STATE/'portfolio-views';checkpoint._directory(area)
+    with cycle_lock(area):
+        checkpoint._budget(area)
+        demo_portfolio_status.save(area,demo_portfolio_status.build(result,config=config,policy=policy))
+
+
 def run(*,source_commit,execute=False,reconcile=False,close=False,tick=False,expected_policy_sha256=None):
-    previous=os.umask(0o077);area=None;phase='CONFIGURATION'
+    previous=os.umask(0o077);area=None;phase='CONFIGURATION';config=None;policy=None
     result={'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
         'status':'INPUTS_UNRESOLVED','task_sha256':None,'cash_reconciled':False,
         'economic_authority':False,'retry_submission':False}
@@ -193,8 +203,9 @@ def run(*,source_commit,execute=False,reconcile=False,close=False,tick=False,exp
                 return result
             if close:
                 phase='PORTFOLIO_CLOSING'
-                result.update(close_step(source_commit=source_commit,registry=registry,policy=policy,
-                    profile=profile,config=config,execute=execute))
+                step=close_step(source_commit=source_commit,registry=registry,policy=policy,
+                    profile=profile,config=config,execute=execute)
+                result.update({k:v for k,v in step.items() if k!='schema'})
                 if tick and (result['status']=='ALREADY_FLAT' or
                     result['status']=='CLOSE_RECOVERY_REQUIRED' and result.get('close_index')==2):
                     phase='ORIGINAL_ACCOUNT_RECONCILIATION'
@@ -254,16 +265,24 @@ def run(*,source_commit,execute=False,reconcile=False,close=False,tick=False,exp
     finally:
         result.update(phase=phase,observed_at_ms=supervisor.now_ms())
         if area is not None:
-            try:_retain(area,result)
+            try:
+                _retain(area,result)
+                publish_status(result,config=config,policy=policy)
             except Exception:
                 result['status']='CONTROLLER_RESULT_NOT_RETAINED'
+        elif os.geteuid()==0:
+            try:
+                supervisor.verify_source(source_commit)
+                publish_status(result)
+            except Exception:pass
         os.umask(previous)
 
 
 def run_cycle(*,source_commit):
     """Advance one installed policy only; never enroll or renew it."""
+    config=None;policy=None
     try:
-        _,policy,_,_=reconciliation_configuration(source_commit)
+        _,policy,_,config=reconciliation_configuration(source_commit)
         require(0<policy['valid_until_ms']-policy['valid_from_ms']<=3600000 and
             policy['max_orders']==policy['max_grants']==3,'PORTFOLIO_CYCLE_BOUNDARY')
         deadline=time.monotonic()+max(0,(policy['valid_until_ms']-supervisor.now_ms())/1000)+420
@@ -277,11 +296,16 @@ def run_cycle(*,source_commit):
                 return result
             # After expiry the next tick can only recover. No implicit renewal.
             time.sleep(min(15,max(0,deadline-time.monotonic())))
-        return {'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
+        result={'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
             'status':'CYCLE_DEADLINE_REACHED','cash_reconciled':False,'economic_authority':False}
     except Exception:
-        return {'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
+        result={'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
             'status':'INPUTS_UNRESOLVED','cash_reconciled':False,'economic_authority':False}
+    result.update(observed_at_ms=supervisor.now_ms(),phase='CYCLE')
+    if config is not None:
+        try:publish_status(result,config=config,policy=policy)
+        except Exception:result['status']='CONTROLLER_RESULT_NOT_RETAINED'
+    return result
 
 
 def main(argv=None):

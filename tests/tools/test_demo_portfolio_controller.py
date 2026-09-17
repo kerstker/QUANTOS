@@ -64,7 +64,7 @@ def test_controller_retains_exact_task_and_only_original_executor_can_claim_it(t
             assert kwargs['operation']=='reconcile'
             return {'status':'MATCHED_REPORTED_INPUTS','cash_reconciled':True,
                 'cash':{'status':'MATCHED_REPORTED_INPUTS','final_quantity':'0','wallet_residual':'0',
-                    'report_sha256':'e'*64,'economic_authority':False}}
+                    'report_sha256':'e'*64,'display_report_sha256':'e'*64,'fill_count':2,'economic_authority':False}}
         now=policy['valid_until_ms']-240000
         close_calls=[]
         def closing(bundle,**kwargs):
@@ -85,10 +85,14 @@ def test_controller_retains_exact_task_and_only_original_executor_can_claim_it(t
             else:assert bundle['previous_close']['orders'][0]['reduceOnly'] is True
             return {'status':closing_build['status'],'build':closing_build}
         monkeypatch.setattr(controller,'prepare',closing)
-        assert controller.run(source_commit='c'*40,tick=True)['status']=='EXECUTION_ATTEMPT_RECORDED'
+        closing_result=controller.run(source_commit='c'*40,tick=True)
+        assert closing_result['status']=='EXECUTION_ATTEMPT_RECORDED'
+        assert closing_result['schema']=='DEMO_PORTFOLIO_CONTROLLER_V1'
         assert len(sent)==2 and close_calls==[1]
         assert controller.run(source_commit='c'*40,execute=True)['status']=='CLOSING_REQUIRED'
         assert controller.run_cycle(source_commit='c'*40)['status']=='CASH_RECONCILED'
+        display=controller.demo_portfolio_status.load_latest(state/'portfolio-views')
+        assert display['cash_reconciled'] and display['allocation_sha256']==_digest(allocation)
         assert close_calls==[1,2] and len(sent)==2
         now=policy['valid_until_ms']+1
         monkeypatch.setattr(controller,'prepare',reconcile)

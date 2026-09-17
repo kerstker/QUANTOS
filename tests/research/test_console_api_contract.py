@@ -17,6 +17,7 @@ type in the same commit — that is the point.
 """
 import hashlib
 import json
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -28,6 +29,32 @@ from services.console.api import alpha_lifecycle_views
 from services.console.api import ashare_views
 
 client = TestClient(app)
+
+
+def test_portfolio_cycle_snapshot_distinguishes_preparation_cash_and_stale_evidence(tmp_path,monkeypatch):
+    from services.console.api import binance_demo_views as views
+    from services.research import demo_portfolio_status as model
+    directory=tmp_path/'portfolio'
+    monkeypatch.setattr(views,'_portfolio_status_directory',lambda:directory)
+    now=1800000010000
+    monkeypatch.setattr(views.time,'time_ns',lambda:now*1000000)
+    assert client.get('/api/v1/console/binance-demo').json()['portfolio_cycle']=={'status':'NO_SNAPSHOT','report':None}
+    result={'status':'TASK_READY','phase':'DECISION_RETENTION','source_commit':'c'*40,'observed_at_ms':now,
+        'task_sha256':'d'*64,'cash_reconciled':False}
+    config={'allocation':{'model_hash':'a'*64,'capital':'250'}}
+    raw=model.build(result,config=config,policy={'valid_until_ms':now+3600000})
+    model.save(directory,raw)
+    assert client.get('/api/v1/console/binance-demo').json()['portfolio_cycle']=={'status':'AVAILABLE','report':raw}
+    with pytest.raises(ValueError):model.validate({**raw,'cash_reconciled':True})
+    result.update(status='CASH_RECONCILED',cash_reconciled=True,reconciliation={'cash':{
+        'status':'MATCHED_REPORTED_INPUTS','final_quantity':'0','wallet_residual':'0','fill_count':2,
+        'report_sha256':'e'*64,'display_report_sha256':'e'*64,'economic_authority':False}})
+    model.save(directory,model.build(result,config=config,policy={'valid_until_ms':now+3600000}))
+    assert client.get('/api/v1/console/binance-demo').json()['portfolio_cycle']['report']['cash_reconciled'] is True
+    now+=121000
+    assert client.get('/api/v1/console/binance-demo').json()['portfolio_cycle']['status']=='STALE'
+    now-=121001
+    assert client.get('/api/v1/console/binance-demo').json()['portfolio_cycle']=={'status':'DATA_BLOCKED','report':None}
 
 
 def test_demo_account_order_recovery_view_keeps_missing_native_journal_explicit(tmp_path,monkeypatch):

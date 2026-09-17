@@ -34,12 +34,12 @@ EXECUTOR_DIRECTORIES={'evidence','execution-origins','resident-recovery','receip
     'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT',
     'request-preparation-results','session-results','cancellation-session-results'}
 CONTROLLER_REQUIRED_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
-CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle','portfolio-decisions','portfolio-results','portfolio-closes'}
+CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle','portfolio-decisions','portfolio-results','portfolio-closes','portfolio-views'}
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
     'binance_demo_oms_status','binance_demo_cancel_status','binance_demo_backup_status',
-    'binance_demo_functional_cycle','binance_demo_cash_chain'}
+    'binance_demo_functional_cycle','binance_demo_cash_chain','binance_demo_portfolio_cycle','binance_demo_portfolio_cash'}
 EPHEMERAL={'observation.lock','origin-capture.lock','user-stream.lock','binance_demo_user_stream.lock',
     'resident-recovery/cycle.lock',
     'binance_demo_market_inputs/BTCUSDC/archive/append.lock','binance_demo_market_inputs/BTCUSDT/archive/append.lock'}

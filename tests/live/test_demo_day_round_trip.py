@@ -165,6 +165,8 @@ def test_next_day_round_trip_keeps_original_loss_and_matches_full_account(tmp_pa
         if portfolio:
             completed=cash_tool.run_portfolio(tmp_path,tmp_path/'portfolio-cycle'/('f'*64),context['account_ref_sha256'],
                 'c'*40,allocation=allocation)
+            from services.research.demo_cash_chain_status import load_latest
+            assert completed['display_report_sha256']==load_latest(tmp_path/'resident-recovery/portfolio-cash/views')['report_sha256']
             with pytest.raises(ValueError,match='ACCOUNT_CASH_PORTFOLIO_SCOPE'):
                 cash_tool.run_portfolio(tmp_path,tmp_path/'portfolio-cycle'/('f'*64),context['account_ref_sha256'],
                     'c'*40,allocation={**allocation,'account_ref_sha256':'f'*64})

@@ -36,6 +36,8 @@ function payload(): BinanceDemoPayload {
     issuer_status: {status:'NO_SNAPSHOT',report:null},
     backup_status: {status:'NO_SNAPSHOT',report:null},
     functional_cycle: {status:'NO_SNAPSHOT',report:null},
+    portfolio_cycle: {status:'NO_SNAPSHOT',report:null},
+    portfolio_cash: {status:'NO_SNAPSHOT',report:null},
     market_inputs:{BTCUSDC:{status:'NO_SNAPSHOT',report:null},BTCUSDT:{status:'NO_SNAPSHOT',report:null}},
     statement: {status: 'NO_SNAPSHOT', report: null}, account_baseline: {status: 'NO_SNAPSHOT', report: null},
   };
@@ -62,6 +64,31 @@ it('requires fills, flat exposure and matched cash before showing a completed De
   expect(screen.getByRole('heading',{name:'Demo 有限交易周期'})).toBeInTheDocument();
   expect(screen.getByText('成交、持仓与现金核对完成')).toBeInTheDocument();
   expect(()=>parseDemoPayload({...data,functional_cycle:{status:'AVAILABLE',report:{...data.functional_cycle.report,fill_count:0}}})).toThrow();
+});
+
+it('keeps portfolio preparation distinct from completion and refuses a false cash match', () => {
+  const data=payload();
+  const report={schema:'DEMO_PORTFOLIO_STATUS_V1' as const,environment:'BINANCE_USDM_DEMO' as const,
+    scope:'TECHNICAL_VALIDATION_ONLY' as const,source_commit:'c'.repeat(40),observed_at_ms:data.as_of_ms,
+    status:'TASK_READY' as const,phase:'DECISION_RETENTION',allocation_sha256:'a'.repeat(64),model_hash:'b'.repeat(64),
+    capital:'250',policy_valid_until_ms:data.as_of_ms+3600000,task_sha256:'d'.repeat(64),close_index:null,
+    final_quantity:null,fill_count:null,cash_status:null,cash_report_sha256:null,wallet_residual:null,
+    cash_reconciled:false,economic_authority:false as const,submission_enabled:false as const};
+  data.portfolio_cycle={status:'AVAILABLE',report};
+  expect(parseDemoPayload(data).portfolio_cycle.report?.status).toBe('TASK_READY');
+  const view=render(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('调仓任务已准备，尚未证明成交')).toBeInTheDocument();
+  expect(screen.queryByLabelText('DGX 本机启动命令')).not.toBeInTheDocument();
+  expect(()=>parseDemoPayload({...data,portfolio_cycle:{status:'AVAILABLE',report:{...report,cash_reconciled:true}}})).toThrow();
+  data.portfolio_cycle={status:'AVAILABLE',report:{...report,status:'CASH_RECONCILED',cash_reconciled:true,
+    fill_count:2,final_quantity:'0',wallet_residual:'0',cash_status:'MATCHED_REPORTED_INPUTS',cash_report_sha256:'e'.repeat(64)}};
+  expect(parseDemoPayload(data).portfolio_cycle.report?.cash_reconciled).toBe(true);
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('本轮现金明细尚未同步，暂不展示其他周期的现金报告。')).toBeInTheDocument();
+  data.portfolio_cycle.report.observed_at_ms-=121000;data.portfolio_cycle.status='STALE';
+  expect(parseDemoPayload(data).portfolio_cycle.status).toBe('STALE');
+  view.rerender(<DemoReadinessView data={data} loading={false} error={null} refresh={vi.fn()}/>);
+  expect(screen.getByText('记录待刷新：下方是历史结果，不能代表当前账户状态。')).toBeInTheDocument();
 });
 
 it('distinguishes the current flat BTCUSDC account from unresolved historical execution', () => {

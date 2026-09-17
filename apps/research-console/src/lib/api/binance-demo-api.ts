@@ -1,4 +1,5 @@
 import {cashChainValid} from './demo-cash-chain-contract';
+import {portfolioStatusValid} from './demo-portfolio-contract';
 import {statementValid} from './demo-statement-contract';
 import {userStreamValid} from './demo-user-stream-contract';
 import {cashWindowValid} from './demo-cash-window-contract';
@@ -93,6 +94,7 @@ export function parseDemoPayload(v: unknown): BinanceDemoPayload {
       !marketInputsValid(v.market_inputs,v.as_of_ms as number) ||
       !backupStatusValid(v.backup_status,v.as_of_ms as number) ||
       !functionalStatusValid(v.functional_cycle,v.as_of_ms as number) ||
+      !portfolioStatusValid(v.portfolio_cycle,v.as_of_ms as number) || !cashChainValid(v.portfolio_cash,v.as_of_ms as number) ||
       !publicValid(v.public) || !accountValid(v.account) || !executionSnapshotValid(v.execution, v.as_of_ms as number) || !orderRecoveryValid(v.order_recovery) ||
       !cashChainValid(v.cash_chain, v.as_of_ms as number) || !residentStatusValid(v.resident_status, v.as_of_ms as number) || !cancelStatusValid(v.cancellation_status, v.as_of_ms as number) || !omsStatusValid(v.oms_status, v.as_of_ms as number) || !canonicalCashValid(v.canonical_cash, v.as_of_ms as number) || !executionOriginValid(v.execution_origin, v.as_of_ms as number) || !cashWindowValid(v.cash_window, v.as_of_ms as number) || !userStreamValid(v.user_stream, v.as_of_ms as number) || !statementValid(v.statement, v.as_of_ms as number) || !privateChecksValid(v.private_checks, v.as_of_ms as number) || !accountBaselineValid(v.account_baseline, v.as_of_ms as number) ||
       v.execution_reason !== 'LIVE_SUBMISSION_AUTHORITY_UNAVAILABLE' ||

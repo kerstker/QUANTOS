@@ -88,6 +88,8 @@ export interface BinanceDemoPayload {
   market_inputs: DemoMarketInputsSnapshots;
   backup_status: DemoBackupSnapshot;
   functional_cycle: import('./demo-functional-status').DemoFunctionalSnapshot;
+  portfolio_cycle: import('./demo-portfolio-status').DemoPortfolioSnapshot;
+  portfolio_cash: DemoCashChainSnapshot;
 }
 
 export interface DemoPrivateCheckReport {

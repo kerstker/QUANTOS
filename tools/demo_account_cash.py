@@ -122,6 +122,8 @@ def _run(root,area,account,source_commit,*,strategy_id,maximum_orders,portfolio)
             account_reconciliation=report,limitations=['FIXED_ACCOUNT_TWO_REST_SWEEPS','PRIVATE_STREAM_GAPS_RETAINED',
                 'CUMULATIVE_ORIGINAL_LEDGER_WITH_CYCLE_BATCH_SCOPE','TECHNICAL_VALIDATION_ONLY'])
         _retain(area/'cash-chain-reports',view)
-        save(root/'resident-recovery'/('portfolio-cash' if portfolio else 'functional-cash')/'views',build_status(view))
+        display=build_status(view)
+        save(root/'resident-recovery'/('portfolio-cash' if portfolio else 'functional-cash')/'views',display)
         return dict(status='MATCHED_REPORTED_INPUTS',issues=[],final_quantity='0',fill_count=count,
-                    wallet_residual='0',report_sha256=_digest(view),economic_authority=False)
+                    wallet_residual='0',report_sha256=_digest(view),economic_authority=False,
+                    **({'display_report_sha256':display['report_sha256']} if portfolio else {}))

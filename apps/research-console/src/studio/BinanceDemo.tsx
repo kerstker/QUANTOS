@@ -21,6 +21,7 @@ import {DemoIssuerStatus} from './DemoIssuerStatus';
 import {DemoMarketInputs} from './DemoMarketInputs';
 import {DemoBackupStatus} from './DemoBackupStatus';
 import {DemoFunctionalCycle} from './DemoFunctionalCycle';
+import {DemoPortfolioCycle} from './DemoPortfolioCycle';
 import {currentDemoPosition} from './demo-account-position';
 
 const reasons: Record<string, string> = {
@@ -48,7 +49,9 @@ export function DemoReadinessView({data, loading, error, refresh}: {
   const publicReady = current && data?.public?.status === 'READY';
   const accountReady = current && data?.account?.status === 'READY';
   const historical = !!data?.public && !current;
-  const cycleComplete=!error && data?.functional_cycle?.report?.phase==='DEMO_CYCLE_COMPLETED';
+  const portfolioObserved=!!data?.portfolio_cycle && data.portfolio_cycle.status!=='NO_SNAPSHOT';
+  const cycleComplete=!error && (portfolioObserved ? data?.portfolio_cycle.status==='AVAILABLE' &&
+    data.portfolio_cycle.report.cash_reconciled : data?.functional_cycle?.report?.phase==='DEMO_CYCLE_COMPLETED');
   const position=currentDemoPosition(data,!!error);
   const publicTitle = publicReady ? '公共接口可达' : historical ? '等待重新检查' : data?.public?.status === 'FAILED' ? '公共接口检查失败' : '公共接口待检查';
   const accountTitle = accountReady ? '账户查询成功' : historical ? '账户状态待更新' : data?.account?.status === 'FAILED' ? '账户查询未通过' : '账户尚未查询';
@@ -58,10 +61,13 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     }>从首次启动到往返成交与现金核对，在一个工作区跟进 DEMO 全流程。</Header>
     <ErrorNote error={error} retry={refresh}/>
     {loading && !data && <Loading/>}
-    <DemoControlCenter snapshot={data?.functional_cycle} connected={accountReady===true} refreshFailed={!!error}
-      enrollmentObserved={!!data?.issuer_status?.report} position={position}/>
+    {!portfolioObserved && <DemoControlCenter snapshot={data?.functional_cycle} connected={accountReady===true} refreshFailed={!!error}
+      enrollmentObserved={!!data?.issuer_status?.report} position={position}/>}
     <WorkspaceSection id="demo-cycle" title="交易周期">
-      <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error} position={position}/>
+      <DemoPortfolioCycle snapshot={data?.portfolio_cycle} cash={data?.portfolio_cash} refreshFailed={!!error}/>
+      {portfolioObserved ? <details><summary>查看历史固定测试周期</summary>
+        <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error} position={position}/>
+      </details> : <DemoFunctionalCycle snapshot={data?.functional_cycle} refreshFailed={!!error} position={position}/>}
     </WorkspaceSection>
     <WorkspaceSection id="demo-orders" title="订单与恢复">
       <DemoOmsStatus snapshot={data?.oms_status} resident={data?.resident_status} asOf={data?.as_of_ms} refreshFailed={!!error}/>

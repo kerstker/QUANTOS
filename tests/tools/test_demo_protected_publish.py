@@ -121,18 +121,21 @@ def test_backup_view_reads_root_summary_and_drops_identity_before_research_write
     assert demo_backup_status.load_latest(Path(cfg['research_state_root'])/'data/cache/binance_demo_backup_status')==raw
 
 
-@pytest.mark.parametrize('kind',['functional-cycle','cash-chain'])
+@pytest.mark.parametrize('kind',['functional-cycle','cash-chain','portfolio-cycle','portfolio-cash'])
 def test_functional_views_keep_fixed_owner_and_drop_before_display_write(tmp_path,monkeypatch,kind):
     cfg,_,events=ready(tmp_path,monkeypatch)
     model,root,relative,destination,_=tool.selection(kind,None)
     if kind=='functional-cycle':
         raw=model.build(phase='OPEN_IOC',source_commit='c'*40,cycle_sha256='a'*64,observed_at_ms=1000)
+    elif kind=='portfolio-cycle':
+        raw=model.build({'status':'TASK_READY','phase':'DECISION_RETENTION','source_commit':'c'*40,
+            'observed_at_ms':1000,'cash_reconciled':False})
     else:
         from tests.research.test_demo_cash_chain import run
         raw=model.build_status(run(tmp_path))
     def read(directory,*,root,uid,model):
         assert directory==root/relative
-        assert uid==(0 if kind=='functional-cycle' else 2001)
+        assert uid==(0 if kind in ('functional-cycle','portfolio-cycle') else 2001)
         events.append('read_private');return raw
     monkeypatch.setattr(tool,'read_snapshot',read)
     original=model.save
