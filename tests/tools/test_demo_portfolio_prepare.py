@@ -38,7 +38,7 @@ def test_executor_pipe_prepares_bound_portfolio_and_rejects_changed_config_befor
         monkeypatch.setattr(common,'_open',lambda *a:{k:v for k,v in zip(('dispatch','recovery','oms'),opened)})
         monkeypatch.setattr(common,'capture_inputs',lambda **k:(captures.append(1) or (kwargs['origin'],kwargs['market_inputs'])))
         monkeypatch.setattr(worker.sources,'capture_funding',lambda:funds)
-        def call():
+        def call(operation='prepare'):
             read,write=os.pipe();out_read,out_write=os.pipe()
             def drain():
                 with os.fdopen(out_read,'rb') as channel:return channel.read()
@@ -47,7 +47,7 @@ def test_executor_pipe_prepares_bound_portfolio_and_rejects_changed_config_befor
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     future=pool.submit(drain)
                     with os.fdopen(out_write,'w') as output:
-                        code=worker.run(source_commit='c'*40,input_fd=read,output=output)
+                        code=worker.run(source_commit='c'*40,input_fd=read,output=output,operation=operation)
                     return code,json.loads(future.result(timeout=3))
             finally:os.close(read)
         code,value=call()
@@ -57,6 +57,20 @@ def test_executor_pipe_prepares_bound_portfolio_and_rejects_changed_config_befor
         allocation['capital']='600'
         code,value=call()
         assert code==3 and value['status']=='INPUTS_UNRESOLVED' and captures==[1]
+        allocation['capital']='500'
+        now=policy['valid_until_ms']+1
+        monkeypatch.setattr(worker.functional,'settle',lambda *a,**k:{'status':'SETTLED','quantity':'0','fill_count':2})
+        cash_calls=[]
+        def cash(*a,**k):
+            cash_calls.append(k['allocation'])
+            return {'status':'MATCHED_REPORTED_INPUTS','final_quantity':'0','fill_count':2,
+                'wallet_residual':'0','report_sha256':'e'*64,'economic_authority':False}
+        monkeypatch.setattr(worker.cash_tool,'run_portfolio',cash)
+        code,value=call('reconcile')
+        assert code==0 and value['cash_reconciled'] is True and cash_calls==[allocation]
+        assert captures==[1]
+        code,value=call()
+        assert code==3 and value['cash_reconciled'] is False and captures==[1]
         assert opened[0].snapshot()==[] and opened[2].orders()==[] and log.snapshot()==[]
     finally:
         log.close()

@@ -23,6 +23,10 @@ from tools.demo_executor_stream import fixed_account
 
 
 def compare(inputs,context,*,cycle_order_ids):
+    return _compare(inputs,context,cycle_order_ids=cycle_order_ids,maximum_orders=3)
+
+
+def _compare(inputs,context,*,cycle_order_ids,maximum_orders):
     replay=reconcile_days if context.get('day_checkpoint_sha256') else reconcile
     report,ledger=replay(**inputs)
     require(report['status']=='REPORTED_ACCOUNT_MATCHED' and ledger is not None,'ACCOUNT_CASH_UNRESOLVED')
@@ -31,7 +35,7 @@ def compare(inputs,context,*,cycle_order_ids):
         'ACCOUNT_CASH_CANONICAL_DIFFERENCE')
     historical=context.get('reported_account_prefix',{}).get('manual_order_ids',[])
     require(set(report['manual_order_ids'])==set(historical),'ACCOUNT_CASH_NEW_MANUAL_ORDER')
-    require(2<=len(cycle_order_ids)<=3 and len(set(cycle_order_ids))==len(cycle_order_ids) and
+    require(2<=len(cycle_order_ids)<=maximum_orders and len(set(cycle_order_ids))==len(cycle_order_ids) and
         set(cycle_order_ids)<=set(report['system_order_ids']),'ACCOUNT_CASH_CYCLE_ORDER_SCOPE')
     current=[t for t in inputs['statements'][0]['trades'] if t['orderId'] in cycle_order_ids]
     require({t['side'] for t in current}=={'BUY','SELL'} and
@@ -43,6 +47,25 @@ def compare(inputs,context,*,cycle_order_ids):
 def run(root,area,account,source_commit,*,strategy_id):
     require(require_custody()==root and fixed_account()==(root,account),'ACCOUNT_CASH_CUSTODY')
     require(type(strategy_id) is str and strategy_id.startswith('demo-functional-'),'ACCOUNT_CASH_CYCLE_SCOPE')
+    return _run(root,area,account,source_commit,strategy_id=strategy_id,maximum_orders=3,portfolio=False)
+
+
+def run_portfolio(root,area,account,source_commit,*,allocation):
+    """Read-only terminal reconciliation for the exact registered allocation.
+
+    Does not grant authority or accept an arbitrary strategy-name prefix. Open
+    inventory, a new manual trade or a missing round trip remain unresolved.
+    """
+    from live.execution.demo_portfolio_task import strategy_id
+    sid=strategy_id(allocation)
+    require(allocation['schema']=='DEMO_PORTFOLIO_ALLOCATION_V2' and
+        allocation['account_ref_sha256']==account and allocation['source_commit']==source_commit and
+        allocation['symbol']=='BTCUSDC','ACCOUNT_CASH_PORTFOLIO_SCOPE')
+    return _run(root,area,account,source_commit,strategy_id=sid,maximum_orders=32,portfolio=True)
+
+
+def _run(root,area,account,source_commit,*,strategy_id,maximum_orders,portfolio):
+    require(require_custody()==root and fixed_account()==(root,account),'ACCOUNT_CASH_CUSTODY')
     with _cycle_lease(root/'resident-recovery'),ExitStack() as stack:
         stores=_open(stack,root);state=_state(stores['dispatch'],stores['recovery'],stores['oms'])
         context=load_context(state,symbol='BTCUSDC',account_ref=account,as_of_ms=now_ms())
@@ -57,7 +80,7 @@ def run(root,area,account,source_commit,*,strategy_id):
             proofs.append(proof)
         orders=stores['oms'].orders(strategy_id=strategy_id)
         cycle_order_ids=[o['venue_order_id'] for o in orders]
-        require(2<=len(orders)<=3 and all(o['status'] in ('FILLED','EXPIRED','CANCELED') for o in orders),
+        require(2<=len(orders)<=maximum_orders and all(o['status'] in ('FILLED','EXPIRED','CANCELED') for o in orders),
                 'ACCOUNT_CASH_CYCLE_NOT_COMPLETE')
         inputs=capture_inputs(root,account,source_commit,opening=proofs[0]['origin'],
             system_orders=[o for p in proofs for o in p['orders']],adv_notional=context['adv_notional'],
@@ -65,7 +88,7 @@ def run(root,area,account,source_commit,*,strategy_id):
             **({'day_replay':True} if context.get('day_checkpoint_sha256') else {}))
         _retain(area/'account-cash-inputs',dict(schema='DEMO_ACCOUNT_CASH_INPUTS_V1',inputs=inputs,
             source_commit=source_commit,cycle_sha256=area.name,context_sha256=_digest(context),orders_submitted=False))
-        report,ledger,count=compare(inputs,context,cycle_order_ids=cycle_order_ids)
+        report,ledger,count=_compare(inputs,context,cycle_order_ids=cycle_order_ids,maximum_orders=maximum_orders)
         require(_state(stores['dispatch'],stores['recovery'],stores['oms'])==state,'ACCOUNT_CASH_EXECUTOR_CHANGED')
         require(count==len(stores['oms'].fills(strategy_id=strategy_id)),'ACCOUNT_CASH_CYCLE_FILL_COUNT')
         batches=[]
@@ -99,6 +122,6 @@ def run(root,area,account,source_commit,*,strategy_id):
             account_reconciliation=report,limitations=['FIXED_ACCOUNT_TWO_REST_SWEEPS','PRIVATE_STREAM_GAPS_RETAINED',
                 'CUMULATIVE_ORIGINAL_LEDGER_WITH_CYCLE_BATCH_SCOPE','TECHNICAL_VALIDATION_ONLY'])
         _retain(area/'cash-chain-reports',view)
-        save(root/'resident-recovery/functional-cash/views',build_status(view))
+        save(root/'resident-recovery'/('portfolio-cash' if portfolio else 'functional-cash')/'views',build_status(view))
         return dict(status='MATCHED_REPORTED_INPUTS',issues=[],final_quantity='0',fill_count=count,
                     wallet_residual='0',report_sha256=_digest(view),economic_authority=False)

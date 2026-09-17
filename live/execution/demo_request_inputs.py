@@ -20,12 +20,17 @@ from services.research.demo_oms_status import _time
 
 
 def profile_check(profile,policy,market,now_ms):
+    profile_declarations(profile,policy,market)
+    require(policy['valid_from_ms']<=now_ms<policy['valid_until_ms'],'REQUEST_POLICY_EXPIRED')
+
+
+def profile_declarations(profile,policy,market):
+    """Check content bindings only; this never establishes current permission."""
     validate_policy(policy)
     _fields(profile,'schema environment symbol market_source_sha256 volatility_policy native_limits strategy mandate attestations '
         'initial_day_pnl initial_peak_equity minimum_plan_turnover')
     require(profile['schema']=='DEMO_REQUEST_PROFILE_V1' and profile['environment']=='BINANCE_USDM_DEMO' and
         profile['symbol']==policy['scope']['symbol']==market['symbol'],'REQUEST_PROFILE_SCOPE')
-    require(policy['valid_from_ms']<=now_ms<policy['valid_until_ms'],'REQUEST_POLICY_EXPIRED')
     require(profile['market_source_sha256']==market['source_sha256'] and
         profile['volatility_policy']==demo_market_inputs.VOLATILITY_POLICY,'REQUEST_MARKET_SOURCE_OR_METHOD')
     bindings=policy['bindings']

@@ -77,6 +77,15 @@ def current_key(policy,registry,now_ms):
     return key
 
 
+def historical_policy_binding(policy,registry):
+    """Identity checks for read-only recovery; no active key or send authority."""
+    validate_policy(policy);submission.validate_registry(registry)
+    require(policy['deployment_sha256']==registry['deployment_sha256'] and
+        policy['registry_sha256']==submission.registry_sha256(registry),'ISSUER_POLICY_REGISTRY')
+    keys=[k for k in registry['keys'] if (k['authority_id'],k['key_id'])==(policy['authority_id'],policy['key_id'])]
+    require(len(keys)==1,'ISSUER_KEY_UNAVAILABLE')
+
+
 def handoff_proposal(handoff,purpose):
     _fields(handoff,'schema proposal_sha256 proposal_path proposal status submission_enabled')
     prefix='DEMO_EXECUTION_SESSION' if purpose=='submission' else 'DEMO_CANCELLATION_SESSION'

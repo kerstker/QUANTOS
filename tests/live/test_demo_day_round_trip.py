@@ -35,7 +35,8 @@ def observation(template, at, wallet, quantity='0'):
     return origin
 
 
-def test_next_day_round_trip_keeps_original_loss_and_matches_full_account(tmp_path,monkeypatch):
+@pytest.mark.parametrize('portfolio',[False,True])
+def test_next_day_round_trip_keeps_original_loss_and_matches_full_account(tmp_path,monkeypatch,portfolio):
     from tests.live import test_demo_prepared_execution as fixture
     from tests.live.test_demo_submission_verification import encoded
     from tests.research.test_binance_order_receipts import message,receipt
@@ -69,6 +70,12 @@ def test_next_day_round_trip_keeps_original_loss_and_matches_full_account(tmp_pa
         stream.start_session(source_sha256='a'*64,at_ms=NOW+DAY+190000)
         original_risk=deepcopy(stores['risk_inputs']);all_orders=[];all_trades=[];all_income=[];windows=[];calls=[]
         strategy_id='demo-functional-isolated-next-day'
+        allocation={'schema':'DEMO_PORTFOLIO_ALLOCATION_V2','source_commit':'c'*40,'symbol':'BTCUSDC',
+            'account_ref_sha256':context['account_ref_sha256'],'model_hash':'a'*64,'capital':'500',
+            'fee_bps':4,'slip_bps':5,'ioc_offset_bps':5,'source_binding_sha256':'b'*64}
+        if portfolio:
+            from live.execution.demo_portfolio_task import strategy_id as portfolio_strategy_id
+            strategy_id=portfolio_strategy_id(allocation)
         previous_id=original_risk['strategy'].strategy_id
         original_risk['strategy']=original_risk['strategy'].model_copy(update={'strategy_id':strategy_id})
         stores['attestations']={strategy_id:replace(stores['attestations'][previous_id],strategy_id=strategy_id)}
@@ -155,8 +162,18 @@ def test_next_day_round_trip_keeps_original_loss_and_matches_full_account(tmp_pa
             assert kw['day_replay'] is True and kw['system_orders']==cash['system_orders']
             return cash
         monkeypatch.setattr(cash_tool,'capture_inputs',capture)
-        completed=cash_tool.run(tmp_path,tmp_path/'functional-cycle'/('f'*64),context['account_ref_sha256'],
-            'c'*40,strategy_id=strategy_id)
+        if portfolio:
+            completed=cash_tool.run_portfolio(tmp_path,tmp_path/'portfolio-cycle'/('f'*64),context['account_ref_sha256'],
+                'c'*40,allocation=allocation)
+            with pytest.raises(ValueError,match='ACCOUNT_CASH_PORTFOLIO_SCOPE'):
+                cash_tool.run_portfolio(tmp_path,tmp_path/'portfolio-cycle'/('f'*64),context['account_ref_sha256'],
+                    'c'*40,allocation={**allocation,'account_ref_sha256':'f'*64})
+            with pytest.raises(ValueError,match='ACCOUNT_CASH_CYCLE_SCOPE'):
+                cash_tool.run(tmp_path,tmp_path/'functional-cycle'/('f'*64),context['account_ref_sha256'],
+                    'c'*40,strategy_id=strategy_id)
+        else:
+            completed=cash_tool.run(tmp_path,tmp_path/'functional-cycle'/('f'*64),context['account_ref_sha256'],
+                'c'*40,strategy_id=strategy_id)
         assert completed['status']=='MATCHED_REPORTED_INPUTS' and completed['fill_count']==2
         assert len(calls)==2
         # Removing the checkpoint breaks reconstruction even with valid receipts.

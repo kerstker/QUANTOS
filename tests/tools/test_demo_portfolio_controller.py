@@ -1,5 +1,6 @@
 import json
 import os
+import pytest
 
 from tools import demo_portfolio_controller as controller
 from tools import demo_portfolio_checkpoint as checkpoint
@@ -55,6 +56,18 @@ def test_controller_retains_exact_task_and_only_original_executor_can_claim_it(t
         third=controller.run(source_commit='c'*40,execute=True)
         assert third['status']=='QUERY_ONLY' and prepared==[1] and len(sent)==1
         assert not third['cash_reconciled'] and not third['economic_authority']
+        now=policy['valid_until_ms']+1
+        monkeypatch.setattr(controller,'reconciliation_configuration',lambda _:({},policy,profile,config))
+        monkeypatch.setattr(controller.sources,'load_forecast',lambda **k:pytest.fail('cash recovery read a forecast'))
+        def reconcile(bundle,**kwargs):
+            assert kwargs['operation']=='reconcile'
+            return {'status':'MATCHED_REPORTED_INPUTS','cash_reconciled':True,
+                'cash':{'status':'MATCHED_REPORTED_INPUTS','final_quantity':'0','wallet_residual':'0',
+                    'report_sha256':'e'*64,'economic_authority':False}}
+        monkeypatch.setattr(controller,'prepare',reconcile)
+        result=controller.run(source_commit='c'*40,reconcile=True)
+        assert result['status']=='CASH_RECONCILED' and result['cash_reconciled'] is True and len(sent)==1
+        assert controller.run(source_commit='c'*40,reconcile=True,execute=True)['status']=='INPUTS_UNRESOLVED'
     finally:
         log.close()
         for store in opened:store.close()
