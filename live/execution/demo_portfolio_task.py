@@ -15,9 +15,14 @@ from services.research.portfolio_target_intent import resolve_target
 
 
 def strategy_id(allocation):
-    _fields(allocation, 'schema source_commit symbol account_ref_sha256 model_hash capital fee_bps slip_bps ioc_offset_bps')
-    require(allocation['schema']=='DEMO_PORTFOLIO_ALLOCATION_V1' and allocation['symbol']=='BTCUSDC',
+    version2=allocation.get('schema')=='DEMO_PORTFOLIO_ALLOCATION_V2'
+    _fields(allocation, 'schema source_commit symbol account_ref_sha256 model_hash capital fee_bps slip_bps ioc_offset_bps'+
+        (' source_binding_sha256' if version2 else ''))
+    require(allocation['schema'] in ('DEMO_PORTFOLIO_ALLOCATION_V1','DEMO_PORTFOLIO_ALLOCATION_V2') and allocation['symbol']=='BTCUSDC',
         'PORTFOLIO_ALLOCATION_SCOPE')
+    if version2:
+        require(type(allocation['source_binding_sha256']) is str and
+            re.fullmatch('[a-f0-9]{64}',allocation['source_binding_sha256']),'PORTFOLIO_ALLOCATION_SOURCE_BINDING')
     for name,length in (('source_commit',40),('account_ref_sha256',64),('model_hash',64)):
         require(type(allocation[name]) is str and re.fullmatch('[a-f0-9]{'+str(length)+'}',allocation[name]),
             'PORTFOLIO_ALLOCATION_IDENTITY')

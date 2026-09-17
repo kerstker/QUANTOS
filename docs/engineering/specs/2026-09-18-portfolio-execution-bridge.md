@@ -69,5 +69,37 @@ ID 使用 QP 被原校验拒绝，已按既有 QD 格式修正，未放宽身份
 仅有实际记录时增加数量，未放宽原清单一致性比较。
 最终任务/中断/加密备份联合40项通过，日志 `/tmp/quantos-portfolio-checkpoint-tests.log`。
 
+## 冻结来源到任务增量
+
+`tools/demo_portfolio_sources.py::build_from_sources` 读取指定研究根下的固定 attempt/
+portfolio/forward 路径；V2配置绑定 freeze 与 observer source 的完整摘要。目录逐级
+拒绝符号链接、文件有界稳定读取，未开放任意文件或网络地址输入。模型和采集原文
+复核后，重新生成特征和组合预测，与原预发行预测逐字段一致才进入原任务生成。
+不读标签，不回填丢失预测，不切换到 baseline，不允许独立 sleeve 分数当仓位。
+
+资金费复用既有无密钥公开 GET，最多9条，检查原始响应、币种、接收时间、顺序和
+有限覆盖；它是研究侧决策输入，不是 Demo 账户的实际结算费用。来源自摘要仍不是
+独立经济认证；根目录与配置仍必须由受保护控制器选取，尚未安装此控制器。
+
+关键检查从真实格式的冻结文件及原始响应生成原风控任务，并拒绝重新计算摘要的
+篡改预测；与任务、持久化联合6项通过。初始缺入口失败保留。服务导入图检查通过。
+日志 `/tmp/quantos-portfolio-sources-tests.log`。
+
+### 只读运行核对
+
+`quantos-next-observer.service` 实际使用
+`/home/kerstker/quantos-dev-output/research-runtime-244dd6fbe/state`，此根下未发现
+`*/portfolio/forward/freeze.json`。原单模型研究根 `ai-factory-20260907/state` 下同样
+未发现组合模型或组合激活文件；不据此断言所有其他实验目录都不存在。
+
+路线图指定的 `balder-roadmap-20260910/portfolio-state-2e99dfbcc` 中有 #4 组合，
+模型摘要 `70625c49d8bbecc09b9fc7cfe98caf7cfbf604f0c7da71dec34ba503471a30c3`，
+3组件、2048训练行、已选权重 `[0,0,0]`，没有 forward freeze。不能为制造成交擅自
+改用 `[4,0,0]` 基线。先前尝试读取默认 `/srv/quantos/state` 被权限拒绝；随后依据
+实际服务命令定位以上可读研究根，未扩大权限。
+
+因此运行交付还需为明确选定的冻结组合建立自然前向来源并完成有限配置登记；
+仅接上源读取代码不会自动产生有效交易信号。没有启动、重启、迁移现有研究服务。
+
 完整验收、安装和实际周期仍按
 [跨日验收记录](2026-09-18-demo-full-acceptance.md) 分别核实。
