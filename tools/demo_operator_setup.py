@@ -23,6 +23,7 @@ from tools.binance_demo_market_inputs import source_hash as market_source_hash
 from tools import demo_operating_bundle as installer
 
 SCHEMA='DEMO_FUNCTIONAL_SETUP_SPEC_V1'
+PORTFOLIO_SCHEMA='DEMO_PORTFOLIO_SETUP_SPEC_V1'
 PURPOSE='DEMO_FUNCTIONAL_TEST_ONLY'
 FIXED={
     'schema':SCHEMA,'environment':'BINANCE_USDM_DEMO','symbol':'BTCUSDC',
@@ -40,12 +41,34 @@ def encoded(value):return base64.urlsafe_b64encode(value).rstrip(b'=').decode('a
 
 
 def spec_check(spec):
-    require(type(spec) is dict and set(spec)==set(FIXED)|{
-        'source_commit','account_ref_sha256','registry_sha256','observed_origin_sha256'},'SETUP_SPEC_FIELDS')
-    for key,value in FIXED.items():require(type(spec[key]) is type(value) and spec[key]==value,'SETUP_SPEC_BOUNDARY')
+    portfolio=type(spec) is dict and spec.get('schema')==PORTFOLIO_SCHEMA
+    expected={**FIXED,**({'schema':PORTFOLIO_SCHEMA,'steps':['PORTFOLIO_DECISION','REDUCE_ONLY_IOC','RECONCILE']} if portfolio else {})}
+    require(type(spec) is dict and set(spec)==set(expected)|{
+        'source_commit','account_ref_sha256','registry_sha256','observed_origin_sha256'}|({'portfolio'} if portfolio else set()),'SETUP_SPEC_FIELDS')
+    for key,value in expected.items():require(type(spec[key]) is type(value) and spec[key]==value,'SETUP_SPEC_BOUNDARY')
     require(type(spec['source_commit']) is str and re.fullmatch('[a-f0-9]{40}',spec['source_commit']),'SETUP_SOURCE')
     for key in ('account_ref_sha256','registry_sha256','observed_origin_sha256'):
         require(type(spec[key]) is str and re.fullmatch('[a-f0-9]{64}',spec[key]),'SETUP_BINDING')
+    if portfolio:
+        from pathlib import Path
+        from live.execution.demo_portfolio_task import strategy_id
+        value=spec['portfolio']
+        require(type(value) is dict and set(value)=={'allocation','binding','research_root'},'SETUP_PORTFOLIO_FIELDS')
+        allocation=value['allocation'];strategy_id(allocation)
+        require(allocation['schema']=='DEMO_PORTFOLIO_ALLOCATION_V2' and
+            allocation['source_commit']==spec['source_commit'] and
+            allocation['account_ref_sha256']==spec['account_ref_sha256'] and
+            allocation['source_binding_sha256']==digest(value['binding']) and
+            Decimal(allocation['capital'])<=Decimal(spec['max_order_notional']) and
+            allocation['ioc_offset_bps']==spec['ioc_price_offset_bps'],'SETUP_PORTFOLIO_SCOPE')
+        binding=value['binding']
+        require(type(binding) is dict and set(binding)=={'schema','attempt','freeze_sha256','observer_source_sha256'} and
+            binding['schema']=='DEMO_PORTFOLIO_SOURCE_BINDING_V1' and type(binding['attempt']) is int and
+            binding['attempt']>0 and all(type(binding[k]) is str and re.fullmatch('[a-f0-9]{64}',binding[k])
+            for k in ('freeze_sha256','observer_source_sha256')),'SETUP_PORTFOLIO_BINDING')
+        root=value['research_root']
+        require(type(root) is str and len(root)<=4096 and Path(root).is_absolute() and '..' not in Path(root).parts,
+            'SETUP_PORTFOLIO_ROOT')
     return spec
 
 
@@ -64,15 +87,17 @@ def _continuation(origin,registry,context,now_ms):
     return validate_origin(origin,context,as_of_ms=now_ms)
 
 
-def propose(*,origin,registry,source_commit,now_ms,position_context=None):
+def propose(*,origin,registry,source_commit,now_ms,position_context=None,portfolio=None):
     validate_registry(registry);_first_origin(origin,now_ms)
     if position_context is None:require(not registry['keys'],'SETUP_FIRST_ENROLLMENT_ONLY')
     else:_continuation(origin,registry,position_context,now_ms)
-    spec=spec_check({**json.loads(canonical(FIXED)), 'source_commit':source_commit,
+    extra={} if portfolio is None else {'schema':PORTFOLIO_SCHEMA,'portfolio':json.loads(canonical(portfolio)),
+        'steps':['PORTFOLIO_DECISION','REDUCE_ONLY_IOC','RECONCILE']}
+    spec=spec_check({**json.loads(canonical(FIXED)),**extra, 'source_commit':source_commit,
         'account_ref_sha256':origin['account_ref_sha256'],'registry_sha256':registry_sha256(registry),
         'observed_origin_sha256':digest(origin)})
     # The example order checks feasibility but is neither stored nor authorized.
-    opening_order(origin,spec,client_order_id='QDsetupfeasibility',now_ms=now_ms)
+    if portfolio is None:opening_order(origin,spec,client_order_id='QDsetupfeasibility',now_ms=now_ms)
     return spec
 
 
@@ -83,6 +108,7 @@ def _ceil_grid(value,minimum,step):
 @ledger_decimal_context()
 def opening_order(origin,spec,*,client_order_id,now_ms):
     spec_check(spec);_first_origin(origin,now_ms)
+    require(spec['schema']==SCHEMA,'SETUP_FIXED_OPENING_NOT_PORTFOLIO')
     require(origin['account_ref_sha256']==spec['account_ref_sha256'],'SETUP_ACCOUNT_CHANGED')
     data={r['kind']:r['data'] for r in origin['reads']}
     filters={f['filterType']:f for f in data['rules']['terms']['filters']}
@@ -102,7 +128,8 @@ def opening_order(origin,spec,*,client_order_id,now_ms):
 def _approval_check(approval,spec,now_ms):
     require(type(approval) is dict and set(approval)=={
         'schema','spec_sha256','operator_id','approved_at_ms','purpose'},'SETUP_OPERATOR_RECORD_REQUIRED')
-    require(approval['schema']=='DEMO_OPERATOR_ENROLLMENT_V1' and approval['purpose']==PURPOSE and
+    purpose='DEMO_PORTFOLIO_TEST_ONLY' if spec['schema']==PORTFOLIO_SCHEMA else PURPOSE
+    require(approval['schema']=='DEMO_OPERATOR_ENROLLMENT_V1' and approval['purpose']==purpose and
         approval['spec_sha256']==digest(spec),'SETUP_OPERATOR_SCOPE')
     name=approval['operator_id']
     require(type(name) is str and re.fullmatch('[A-Za-z0-9_.@-]{1,96}',name) and
@@ -125,6 +152,10 @@ def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms,posit
     require(origin['account_ref_sha256']==spec['account_ref_sha256'],'SETUP_ACCOUNT_CHANGED')
     at=approval['approved_at_ms'];until=at+spec['window_seconds']*1000
     identity=digest(approval);sid='demo-functional-'+identity[:16]
+    portfolio=spec.get('portfolio')
+    if portfolio is not None:
+        from live.execution.demo_portfolio_task import strategy_id
+        sid=strategy_id(portfolio['allocation'])
     public=private_key.public_key().public_bytes_raw()
     key={'authority_id':'demo-operator-'+identity[:16],'key_id':'key-'+identity[:16],
         'public_key_base64url':encoded(public),'public_key_sha256':hashlib.sha256(public).hexdigest(),
@@ -179,16 +210,22 @@ def assemble(*,spec,approval,origin,registry,private_key,stop_image,now_ms,posit
         finally:store.close()
     require(not snapshot['state'].tripped,'SETUP_STOP_ACTIVE')
     require(max(snapshot['recorded_at'],snapshot['state'].armed_at,snapshot['state'].reset_at)<=now_ms,'SETUP_STOP_FUTURE')
-    task={'schema':'DEMO_REQUEST_TASK_V1','source_commit':spec['source_commit'],'valid_from_ms':at,'valid_until_ms':until,
-        'issuer_policy_sha256':digest(policy),'profile':profile,'kill_switch':snapshot['state'].model_dump(mode='json'),
-        'orders':[opening_order(origin,spec,client_order_id='QD'+identity[:24]+'open',now_ms=now_ms)]}
     documents={'registry.json':expanded,'policy.json':policy,'profile.json':profile,
         'signing-key.json':{'schema':'DEMO_ISSUER_KEY_V1','authority_id':key['authority_id'],'key_id':key['key_id'],
-            'private_key_base64url':encoded(private_key.private_bytes_raw())},digest(task)+'.json':task}
+            'private_key_base64url':encoded(private_key.private_bytes_raw())}}
+    tasks=[]
+    if portfolio is not None:
+        documents['portfolio-runtime.json']={'schema':'DEMO_PORTFOLIO_RUNTIME_V1','source_commit':spec['source_commit'],
+            **portfolio,'kill_switch':snapshot['state'].model_dump(mode='json')}
+    else:
+        task={'schema':'DEMO_REQUEST_TASK_V1','source_commit':spec['source_commit'],'valid_from_ms':at,'valid_until_ms':until,
+            'issuer_policy_sha256':digest(policy),'profile':profile,'kill_switch':snapshot['state'].model_dump(mode='json'),
+            'orders':[opening_order(origin,spec,client_order_id='QD'+identity[:24]+'open',now_ms=now_ms)]}
+        tasks=[digest(task)];documents[digest(task)+'.json']=task
     files={name:canonical(value) for name,value in documents.items()};files['kill-switch.sqlite3']=stop_image
-    manifest={'schema':'DEMO_OPERATING_BUNDLE_V1','source_commit':spec['source_commit'],
+    manifest={'schema':'DEMO_PORTFOLIO_OPERATING_BUNDLE_V1' if portfolio is not None else 'DEMO_OPERATING_BUNDLE_V1','source_commit':spec['source_commit'],
         'expected_registry_sha256':registry_sha256(registry),'files':{name:hashlib.sha256(body).hexdigest() for name,body in files.items()},
-        'tasks':[digest(task)]}
+        'tasks':tasks}
     installer.validate_materials(manifest=manifest,files=files,existing_registry=registry,
         source_commit=spec['source_commit'],account_ref=spec['account_ref_sha256'],now_ms=now_ms)
     return manifest,files
@@ -263,6 +300,7 @@ def operator_confirmation(spec):
     raw=os.environ.get('SUDO_UID','')
     require(raw.isdigit() and int(raw)>0,'SETUP_SUDO_OPERATOR_REQUIRED')
     operator=pwd.getpwuid(int(raw)).pw_name
+    spec_check(spec)
     require(os.environ.get('SUDO_USER')==operator,'SETUP_SUDO_OPERATOR_IDENTITY')
     print(json.dumps(spec,ensure_ascii=False,indent=2))
     print('仅 Binance DEMO：单笔最多 250 USDC、累计最多 750 USDC、最多 3 笔、有效期 1 小时。')
@@ -270,7 +308,7 @@ def operator_confirmation(spec):
     expected='DEMO '+digest(spec)
     require(input('登记此测试配置请输入 '+expected+'\n').strip()==expected,'SETUP_OPERATOR_NOT_CONFIRMED')
     return {'schema':'DEMO_OPERATOR_ENROLLMENT_V1','spec_sha256':digest(spec),'operator_id':operator,
-        'approved_at_ms':installer.now_ms(),'purpose':PURPOSE}
+        'approved_at_ms':installer.now_ms(),'purpose':'DEMO_PORTFOLIO_TEST_ONLY' if spec['schema']==PORTFOLIO_SCHEMA else PURPOSE}
 
 
 def main(argv=None):

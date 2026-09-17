@@ -11,12 +11,24 @@ import os,sys
 from pathlib import Path
 if os.geteuid()!=0:raise SystemExit('Run with sudo from the operator terminal.')
 args=sys.argv[1:]
-if args not in ([],['--recover'],['--resume'],['--new-cycle']):raise SystemExit('Use --recover, --resume, or --new-cycle (new local enrollment).')
+portfolio_modes=['--portfolio-preflight','--portfolio-enroll','--portfolio-prepare','--portfolio-execute','--portfolio-reconcile']
+if args not in ([],['--recover'],['--resume'],['--new-cycle']) and args not in [[v] for v in portfolio_modes]:
+    raise SystemExit('Use a fixed recovery, successor enrollment, or portfolio operation without extra arguments.')
 source='''+repr(source_commit)+'''
 root='/opt/quantos/releases/'+source
 python='/opt/quantos/venvs/'+source+'/bin/python'
 installed=Path('/etc/quantos/demo-operator-setup').exists()
-if args==['--new-cycle']:
+if args and args[0] in portfolio_modes:
+    if not installed:raise SystemExit('Complete the first setup before portfolio successor enrollment.')
+    if args[0] in ('--portfolio-preflight','--portfolio-enroll'):
+        module='tools.demo_successor_setup'
+        operation=['--portfolio-config','/etc/quantos/demo-operator-setup/portfolio-proposal.json']
+        if args[0]=='--portfolio-enroll':operation.append('--enroll')
+    else:
+        module='tools.demo_portfolio_controller'
+        operation={'--portfolio-prepare':[],'--portfolio-execute':['--execute'],
+            '--portfolio-reconcile':['--reconcile']}[args[0]]
+elif args==['--new-cycle']:
     if not installed:raise SystemExit('Complete the first setup before a successor enrollment.')
     module='tools.demo_successor_setup'
     operation=['--enroll','--run-cycle']

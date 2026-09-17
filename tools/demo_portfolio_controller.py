@@ -47,6 +47,11 @@ def registered_configuration(source_commit,registry,policy,*,read_only):
     require(policy['executor_release_commit']==source_commit,'SUPERVISOR_POLICY_RELEASE')
     config=load_json_without_duplicate_keys(supervisor._read_root_owned_json(supervisor.STATE/'portfolio-runtime.json'))
     profile=load_json_without_duplicate_keys(supervisor._read_root_owned_json(PROFILE))
+    validate_runtime(config,profile,policy,source_commit=source_commit,now_ms=supervisor.now_ms(),read_only=read_only)
+    return registry,policy,profile,config
+
+
+def validate_runtime(config,profile,policy,*,source_commit,now_ms,read_only=False):
     _fields(config,'schema source_commit research_root allocation binding kill_switch')
     require(config['schema']=='DEMO_PORTFOLIO_RUNTIME_V1' and config['source_commit']==source_commit,
         'PORTFOLIO_CONTROLLER_CONFIG')
@@ -62,9 +67,8 @@ def registered_configuration(source_commit,registry,policy,*,read_only):
         'PORTFOLIO_CONTROLLER_RESEARCH_ROOT')
     market={'source_sha256':market_source_hash(),'symbol':allocation['symbol']}
     if read_only:profile_declarations(profile,policy,market)
-    else:profile_check(profile,policy,market,supervisor.now_ms())
+    else:profile_check(profile,policy,market,now_ms)
     KillSwitchState.model_validate_json(json.dumps(config['kill_switch']),strict=True)
-    return registry,policy,profile,config
 
 
 def prepare(bundle,*,source_commit,registry,operation='prepare'):

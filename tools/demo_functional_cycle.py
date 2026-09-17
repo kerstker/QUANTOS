@@ -205,6 +205,7 @@ def recover(*,source_commit):
     stage=_stage()
     installed=load_json_without_duplicate_keys(_read_root_owned_json(stage/'result.json'))
     spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(stage/'spec.json')))
+    require(spec['schema']==demo_operator_setup.SCHEMA,'FUNCTIONAL_USE_PORTFOLIO_CONTROLLER')
     require(installed['status']=='INSTALLED_PENDING_CYCLE' and installed['source_commit']==spec['source_commit']==
         policy['executor_release_commit'] and installed['spec_sha256']==demo_operator_setup.digest(spec) and
         policy['account_ref_sha256']==spec['account_ref_sha256'],'FUNCTIONAL_RECOVERY_INSTALLATION')
@@ -264,6 +265,7 @@ def main(argv=None):
         stage=_stage()
         installed=load_json_without_duplicate_keys(_read_root_owned_json(stage/'result.json'))
         spec=demo_operator_setup.spec_check(load_json_without_duplicate_keys(_read_root_owned_json(stage/'spec.json')))
+        require(spec['schema']==demo_operator_setup.SCHEMA,'FUNCTIONAL_USE_PORTFOLIO_CONTROLLER')
         require(installed['status']=='INSTALLED_PENDING_CYCLE' and installed['source_commit']==args.source_commit and
             installed['spec_sha256']==demo_operator_setup.digest(spec) and policy['account_ref_sha256']==spec['account_ref_sha256'],
             'FUNCTIONAL_INSTALLATION_BINDING')

@@ -11,11 +11,20 @@ from tests.tools.test_demo_operator_setup import stop_bytes
 from tests.tools.test_binance_demo_execution_origin import NOW
 
 
-def prepared(tmp_path,monkeypatch):
+def prepared(tmp_path,monkeypatch,*,portfolio=False):
     origin,registry,private,context=fixture(tmp_path)
-    spec=setup.propose(origin=origin,registry=registry,source_commit='c'*40,now_ms=NOW+60000,position_context=context)
+    config=None
+    if portfolio:
+        binding={'schema':'DEMO_PORTFOLIO_SOURCE_BINDING_V1','attempt':1,
+            'freeze_sha256':'a'*64,'observer_source_sha256':'b'*64}
+        config={'research_root':str(tmp_path),'binding':binding,'allocation':{
+            'schema':'DEMO_PORTFOLIO_ALLOCATION_V2','source_commit':'c'*40,'symbol':'BTCUSDC',
+            'account_ref_sha256':origin['account_ref_sha256'],'model_hash':'a'*64,'capital':'250',
+            'fee_bps':4,'slip_bps':5,'ioc_offset_bps':5,'source_binding_sha256':setup.digest(binding)}}
+    spec=setup.propose(origin=origin,registry=registry,source_commit='c'*40,now_ms=NOW+60000,
+        position_context=context,portfolio=config)
     approval=dict(schema='DEMO_OPERATOR_ENROLLMENT_V1',spec_sha256=setup.digest(spec),operator_id='isolated-operator',
-        approved_at_ms=NOW+60000,purpose=setup.PURPOSE)
+        approved_at_ms=NOW+60000,purpose='DEMO_PORTFOLIO_TEST_ONLY' if portfolio else setup.PURPOSE)
     stop=stop_bytes(tmp_path)
     manifest,files=setup.assemble(spec=spec,approval=approval,origin=origin,registry=registry,private_key=private,
         stop_image=stop,now_ms=NOW+60000,position_context=context)
@@ -29,7 +38,8 @@ def prepared(tmp_path,monkeypatch):
     stage=root/'cycles'/setup.digest(approval);stage.mkdir(parents=True)
     (stage/'result.json').write_bytes(setup.canonical(dict(schema='DEMO_OPERATOR_SETUP_RESULT_V1',
         status='INSTALLED_PENDING_CYCLE',enrollment_sha256=setup.digest(approval),spec_sha256=setup.digest(spec),
-        source_commit='c'*40,task_sha256=manifest['tasks'][0],orders_submitted=False,economic_authority=False)))
+        source_commit='c'*40,task_sha256=manifest['tasks'][0] if manifest['tasks'] else None,
+        orders_submitted=False,economic_authority=False)))
     old_policy=deepcopy(materials['policy']);old=registry['keys'][0]
     old_policy.update(policy_id='demo-old-policy',registry_sha256=registry_sha256(registry),
         authority_id=old['authority_id'],key_id=old['key_id'],valid_from_ms=old['valid_from_ms'],valid_until_ms=old['valid_until_ms'])
@@ -51,8 +61,9 @@ def prepared(tmp_path,monkeypatch):
     return materials,files,setup.canonical(registry),stage,protected
 
 
-def test_activation_is_last_and_retry_keeps_preimages_orders_kill_and_issuance(tmp_path,monkeypatch):
-    materials,files,preimage,stage,protected=prepared(tmp_path,monkeypatch)
+@pytest.mark.parametrize('portfolio',[False,True])
+def test_activation_is_last_and_retry_keeps_preimages_orders_kill_and_issuance(tmp_path,monkeypatch,portfolio):
+    materials,files,preimage,stage,protected=prepared(tmp_path,monkeypatch,portfolio=portfolio)
     replace=tool._replace;calls=[]
     def crash(path,body,**kw):
         calls.append(path)
@@ -69,7 +80,9 @@ def test_activation_is_last_and_retry_keeps_preimages_orders_kill_and_issuance(t
     assert tool.active_setup()==stage
     assert {p.name:p.read_bytes() for p in (stage/'previous-files').iterdir()}==originals
     assert all(path.read_bytes()==body for path,body in protected.items())
-    assert len(list((tool.installer.CONTROLLER/'tasks').iterdir()))==1
+    assert len(list((tool.installer.CONTROLLER/'tasks').iterdir()))==(0 if portfolio else 1)
+    if portfolio:
+        assert (tool.installer.CONTROLLER/'portfolio-runtime.json').read_bytes()==files['portfolio-runtime.json']
     tool.install_successor(materials,files,registry_preimage=preimage,stage=stage)
     assert all(path.read_bytes()==body for path,body in protected.items())
 

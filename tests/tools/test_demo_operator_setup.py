@@ -57,16 +57,42 @@ def stop_bytes(tmp_path):
     return path.read_bytes()
 
 
-def test_operator_enrollment_builds_files_accepted_by_original_installer(tmp_path):
+@pytest.mark.parametrize('portfolio',[False,True])
+def test_operator_enrollment_builds_files_accepted_by_original_installer(tmp_path,portfolio):
     origin,registry,private,spec=inputs(tmp_path);stop=stop_bytes(tmp_path)
+    if portfolio:
+        binding={'schema':'DEMO_PORTFOLIO_SOURCE_BINDING_V1','attempt':1,
+            'freeze_sha256':'a'*64,'observer_source_sha256':'b'*64}
+        allocation={'schema':'DEMO_PORTFOLIO_ALLOCATION_V2','source_commit':'c'*40,'symbol':'BTCUSDC',
+            'account_ref_sha256':origin['account_ref_sha256'],'model_hash':'a'*64,'capital':'250',
+            'fee_bps':4,'slip_bps':5,'ioc_offset_bps':5,'source_binding_sha256':tool.digest(binding)}
+        spec=tool.propose(origin=origin,registry=registry,source_commit='c'*40,now_ms=NOW,
+            portfolio={'allocation':allocation,'binding':binding,'research_root':str(tmp_path)})
     approval={'schema':'DEMO_OPERATOR_ENROLLMENT_V1','spec_sha256':tool.digest(spec),
-        'operator_id':'isolated-human-operator','approved_at_ms':NOW,'purpose':'DEMO_FUNCTIONAL_TEST_ONLY'}
+        'operator_id':'isolated-human-operator','approved_at_ms':NOW,
+        'purpose':'DEMO_PORTFOLIO_TEST_ONLY' if portfolio else 'DEMO_FUNCTIONAL_TEST_ONLY'}
     manifest,files=tool.assemble(spec=spec,approval=approval,origin=origin,registry=registry,
         private_key=private,stop_image=stop,now_ms=NOW)
     from tools.demo_operating_bundle import validate_materials
     reviewed=validate_materials(manifest=manifest,files=files,existing_registry=registry,
         source_commit='c'*40,account_ref=origin['account_ref_sha256'],now_ms=NOW)
-    assert files['kill-switch.sqlite3']==stop and len(reviewed['tasks'])==1
+    assert files['kill-switch.sqlite3']==stop and len(reviewed['tasks'])==(0 if portfolio else 1)
+    if portfolio:
+        from live.execution.demo_portfolio_task import strategy_id
+        assert reviewed['portfolio']['allocation']==allocation
+        assert reviewed['profile']['strategy']['strategy_id']==strategy_id(allocation)
+        assert manifest['tasks']==[] and 'portfolio-runtime.json' in files
+        altered=deepcopy(spec);altered['portfolio']['allocation']['capital']='251'
+        with pytest.raises(ValueError):tool.spec_check(altered)
+        altered=deepcopy(approval);altered['purpose']='DEMO_FUNCTIONAL_TEST_ONLY'
+        with pytest.raises(ValueError):tool.assemble(spec=spec,approval=altered,origin=origin,registry=registry,
+            private_key=private,stop_image=stop,now_ms=NOW)
+        altered=json.loads(files['portfolio-runtime.json']);altered['allocation']['capital']='100'
+        changed_files={**files,'portfolio-runtime.json':tool.canonical(altered)}
+        changed_manifest=deepcopy(manifest)
+        changed_manifest['files']['portfolio-runtime.json']=hashlib.sha256(changed_files['portfolio-runtime.json']).hexdigest()
+        with pytest.raises(ValueError):validate_materials(manifest=changed_manifest,files=changed_files,
+            existing_registry=registry,source_commit='c'*40,account_ref=origin['account_ref_sha256'],now_ms=NOW)
     assert reviewed['profile']['mandate']['approved_by']==['isolated-human-operator']
     assert reviewed['profile']['attestations'][reviewed['profile']['strategy']['strategy_id']]['kind']=='human_override'
     assert reviewed['policy']['scope']['symbol']=='BTCUSDC'

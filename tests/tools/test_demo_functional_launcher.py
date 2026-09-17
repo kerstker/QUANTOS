@@ -14,6 +14,12 @@ from tools.demo_functional_launcher import render
     (True,['--recover'], 'tools.demo_functional_cycle',['--recover']),
     (True,['--resume'], 'tools.demo_functional_cycle',['--resume']),
     (True,['--new-cycle'], 'tools.demo_successor_setup',['--enroll','--run-cycle']),
+    (True,['--portfolio-preflight'], 'tools.demo_successor_setup',
+        ['--portfolio-config','/etc/quantos/demo-operator-setup/portfolio-proposal.json']),
+    (True,['--portfolio-enroll'], 'tools.demo_successor_setup',
+        ['--portfolio-config','/etc/quantos/demo-operator-setup/portfolio-proposal.json','--enroll']),
+    (True,['--portfolio-execute'], 'tools.demo_portfolio_controller',['--execute']),
+    (True,['--portfolio-reconcile'], 'tools.demo_portfolio_controller',['--reconcile']),
 ])
 def test_fixed_entrypoint_routes_without_mutating_setup_or_loading_keys(monkeypatch,installed,args,module,operation):
     calls=[]

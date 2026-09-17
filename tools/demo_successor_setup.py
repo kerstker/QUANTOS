@@ -80,6 +80,20 @@ def install_successor(materials,files,*,registry_preimage,stage):
     for name,key in targets.items():
         value=_read_root_owned_json(installer.CONFIG/name)
         require(value in (_read_root_owned_json(previous/name),files[key]),'SUCCESSOR_CONFIG_CHANGED')
+    if 'portfolio' in materials:
+        path=installer.CONTROLLER/'portfolio-runtime.json'
+        saved=previous/'portfolio-runtime.json';absent=previous/'portfolio-runtime.absent'
+        require(not (saved.exists() and absent.exists()),'SUCCESSOR_PORTFOLIO_PREIMAGE')
+        if not saved.exists() and not absent.exists():
+            if path.exists() or path.is_symlink():installer.write_new(saved,_read_root_owned_json(path))
+            else:installer.write_new(absent,b'ABSENT\n')
+        old_runtime=_read_root_owned_json(saved) if saved.exists() else None
+        if absent.exists():require(_read_root_owned_json(absent)==b'ABSENT\n','SUCCESSOR_PORTFOLIO_PREIMAGE')
+        current_runtime=_read_root_owned_json(path) if path.exists() or path.is_symlink() else None
+        require(current_runtime in (old_runtime,files['portfolio-runtime.json']),'SUCCESSOR_PORTFOLIO_CHANGED')
+        if current_runtime!=files['portfolio-runtime.json']:
+            if current_runtime is None:installer.write_new(path,files['portfolio-runtime.json'])
+            else:_replace(path,files['portfolio-runtime.json'])
     for task in materials['tasks']:
         path=installer.CONTROLLER/'tasks'/(setup.digest(task)+'.json');body=installer.canonical(task)
         if path.exists():require(_read_root_owned_json(path)==body,'SUCCESSOR_TASK_CHANGED')
@@ -93,6 +107,9 @@ def install_successor(materials,files,*,registry_preimage,stage):
         _replace(installer.REGISTRY,installer.canonical(registry),gid=registry['executor_uid'],mode=0o640)
     require(all(_read_root_owned_json(installer.CONFIG/name)==files[key] for name,key in targets.items()) and
         _read_root_owned_json(installer.REGISTRY)==installer.canonical(registry),'SUCCESSOR_ACTIVATION_INCOMPLETE')
+    if 'portfolio' in materials:
+        require(_read_root_owned_json(installer.CONTROLLER/'portfolio-runtime.json')==files['portfolio-runtime.json'],
+            'SUCCESSOR_PORTFOLIO_ACTIVATION')
     result=read(stage/'result.json')
     pointer=dict(schema='DEMO_ACTIVE_ENROLLMENT_V1',enrollment_sha256=result['enrollment_sha256'],result_sha256=setup.digest(result))
     _replace(SETUP/'active.json',installer.canonical(pointer))
@@ -128,10 +145,12 @@ def main(argv=None):
     parser.add_argument('--source-commit',required=True)
     parser.add_argument('--enroll',action='store_true')
     parser.add_argument('--run-cycle',action='store_true')
+    parser.add_argument('--portfolio-config',type=Path,help='Protected allocation/binding/research_root document; installs no opening order.')
     args=parser.parse_args(argv);previous=os.umask(0o077);phase='PREFLIGHT'
     try:
         verify_source(args.source_commit);require(os.geteuid()==0,'SUCCESSOR_ROOT_REQUIRED')
         require(not args.run_cycle or args.enroll,'SUCCESSOR_ENROLLMENT_REQUIRED')
+        require(not (args.portfolio_config and args.run_cycle),'SUCCESSOR_PORTFOLIO_USE_CONTROLLER')
         with cycle_lock(installer.CONTROLLER/'functional-cycle'):
             original_stage=active_setup();installed=read(original_stage/'result.json');cycle=setup.digest(installed)
             pending=SETUP/'pending.json'
@@ -148,14 +167,22 @@ def main(argv=None):
                 approval=read(stage/'operator-enrollment.json');spec=setup.spec_check(read(stage/'spec.json'))
                 setup._approval_check(approval,spec,installer.now_ms())
                 require(spec['source_commit']==args.source_commit,'SUCCESSOR_PENDING_SOURCE')
+                require(not args.run_cycle or spec['schema']==setup.SCHEMA,'SUCCESSOR_PORTFOLIO_USE_CONTROLLER')
+                if args.portfolio_config:
+                    require(spec.get('portfolio')==read(args.portfolio_config),'SUCCESSOR_PENDING_PORTFOLIO_CHANGED')
                 registry_preimage=_read_root_owned_json(stage/'registry-preimage.json')
             else:
                 registry,origin=setup._runtime_inputs(args.source_commit,continuation=True)
                 context=context_for(args.source_commit,registry,cycle)
                 current,origin=setup._runtime_inputs(args.source_commit,continuation=True)
                 require(current==registry,'SUCCESSOR_REGISTRY_CHANGED')
+                portfolio=read(args.portfolio_config) if args.portfolio_config else None
                 spec=setup.propose(origin=origin,registry=registry,source_commit=args.source_commit,
-                    now_ms=installer.now_ms(),position_context=context)
+                    now_ms=installer.now_ms(),position_context=context,portfolio=portfolio)
+                if portfolio is not None:
+                    from tools.demo_portfolio_sources import load_forecast
+                    load_forecast(root=portfolio['research_root'],binding=portfolio['binding'],
+                        allocation=portfolio['allocation'],now_ms=installer.now_ms())
                 if not args.enroll:
                     print(json.dumps(dict(status='UNSIGNED_SUCCESSOR_PROPOSAL',spec=spec,spec_sha256=setup.digest(spec),
                         original_equity=context['initial_equity'],current_wallet=context['canonical_wallet'],
@@ -184,7 +211,8 @@ def main(argv=None):
                 installer.write_new(bundle/'manifest.json',installer.canonical(manifest))
                 result=dict(schema='DEMO_OPERATOR_SETUP_RESULT_V1',status='INSTALLED_PENDING_CYCLE',
                     spec_sha256=setup.digest(spec),enrollment_sha256=setup.digest(approval),source_commit=args.source_commit,
-                    task_sha256=manifest['tasks'][0],orders_submitted=False,economic_authority=False)
+                    task_sha256=manifest['tasks'][0] if manifest['tasks'] else None,
+                    orders_submitted=False,economic_authority=False)
                 installer.write_new(stage/'result.json',installer.canonical(result))
                 installer.write_new(pending,installer.canonical(dict(schema='DEMO_PENDING_ENROLLMENT_V1',
                     enrollment_sha256=setup.digest(approval))))

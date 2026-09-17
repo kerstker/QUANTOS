@@ -77,11 +77,13 @@ def read_private(path,*,maximum):
 
 def manifest_check(manifest):
     _fields(manifest,'schema source_commit expected_registry_sha256 files tasks')
-    require(manifest['schema']=='DEMO_OPERATING_BUNDLE_V1','OPERATING_SCHEMA')
-    require(type(manifest['tasks']) is list and 1<=len(manifest['tasks'])<=20 and
+    portfolio=manifest['schema']=='DEMO_PORTFOLIO_OPERATING_BUNDLE_V1'
+    require(portfolio or manifest['schema']=='DEMO_OPERATING_BUNDLE_V1','OPERATING_SCHEMA')
+    require(type(manifest['tasks']) is list and (len(manifest['tasks'])==0 if portfolio else 1<=len(manifest['tasks'])<=20) and
         all(type(v) is str and re.fullmatch('[a-f0-9]{64}',v) for v in manifest['tasks']) and
         len(set(manifest['tasks']))==len(manifest['tasks']),'OPERATING_TASK_IDENTITIES')
-    require(type(manifest['files']) is dict and set(manifest['files'])==BASE_FILES|{v+'.json' for v in manifest['tasks']},'OPERATING_FILE_SET')
+    require(type(manifest['files']) is dict and set(manifest['files'])==BASE_FILES|{v+'.json' for v in manifest['tasks']}|
+        ({'portfolio-runtime.json'} if portfolio else set()),'OPERATING_FILE_SET')
     for digest in [manifest['expected_registry_sha256'],*manifest['files'].values()]:
         require(type(digest) is str and re.fullmatch('[a-f0-9]{64}',digest),'OPERATING_FILE_HASH')
     return manifest
@@ -126,6 +128,11 @@ def validate_materials(*,manifest,files,existing_registry,source_commit,account_
             finally:store.close()
     except Exception:raise ValueError('OPERATING_STOP_SOURCE_INVALID') from None
     require(max(snapshot['recorded_at'],snapshot['state'].armed_at,snapshot['state'].reset_at)<=now_ms,'OPERATING_STOP_SOURCE_FUTURE')
+    portfolio=documents.get('portfolio-runtime.json')
+    if portfolio is not None:
+        from tools.demo_portfolio_controller import validate_runtime
+        validate_runtime(portfolio,profile,policy,source_commit=source_commit,now_ms=now_ms)
+        require(portfolio['kill_switch']==snapshot['state'].model_dump(mode='json'),'OPERATING_PORTFOLIO_STOP_BINDING')
     tasks=[];ids=set()
     for identity in manifest['tasks']:
         task=documents[identity+'.json'];require(_digest(task)==identity,'OPERATING_TASK_DIGEST')
@@ -137,7 +144,7 @@ def validate_materials(*,manifest,files,existing_registry,source_commit,account_
     require(len(tasks)<=policy['max_grants'] and len(ids)<=policy['max_orders'],'OPERATING_TASK_BUDGET')
     notional=sum((amount(order['quantity'])*amount(order['price']) for task in tasks for order in task['orders']),Decimal(0))
     require(notional<=amount(policy['max_total_notional']),'OPERATING_TASK_NOTIONAL_BUDGET')
-    return {'registry':registry,'policy':policy,'profile':profile,'tasks':tasks,'kill_state':snapshot['state'],
+    return {'registry':registry,'policy':policy,'profile':profile,'tasks':tasks,**({'portfolio':portfolio} if portfolio is not None else {}),'kill_state':snapshot['state'],
         'kill_record_sha256':snapshot['record_hash'],'public_key_sha256':key['public_key_sha256']}
 
 
@@ -194,6 +201,7 @@ def install(materials,files,*,registry_preimage):
     os.chmod(EXECUTOR/'cancellations.sqlite3',0o600);os.chown(EXECUTOR/'cancellations.sqlite3',executor,executor)
     write_new(EXECUTOR/'kill-switch.sqlite3',files['kill-switch.sqlite3'],uid=executor,gid=executor)
     for task in materials['tasks']:write_new(CONTROLLER/'tasks'/(_digest(task)+'.json'),canonical(task))
+    if 'portfolio' in materials:write_new(CONTROLLER/'portfolio-runtime.json',files['portfolio-runtime.json'])
     # Public registry publication is the final activation step. Other workers
     # see the old registry until every supplied file and empty append log exists.
     require(_read_root_owned_json(REGISTRY)==registry_preimage,'OPERATING_REGISTRY_CHANGED')
