@@ -304,6 +304,8 @@ def operator_confirmation(spec):
     require(os.environ.get('SUDO_USER')==operator,'SETUP_SUDO_OPERATOR_IDENTITY')
     print(json.dumps(spec,ensure_ascii=False,indent=2))
     print('仅 Binance DEMO：单笔最多 250 USDC、累计最多 750 USDC、最多 3 笔、有效期 1 小时。')
+    if spec['schema']==PORTFOLIO_SCHEMA:
+        print('组合周期最多一次调仓决策；到期或 UTC 换日前5分钟进入减仓，最多两次，不自动续期。')
     print('沿用现有风控和停机状态。此操作登记测试授权，不证明策略盈利，不开放主网。')
     expected='DEMO '+digest(spec)
     require(input('登记此测试配置请输入 '+expected+'\n').strip()==expected,'SETUP_OPERATOR_NOT_CONFIRMED')

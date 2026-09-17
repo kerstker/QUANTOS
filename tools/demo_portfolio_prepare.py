@@ -21,8 +21,8 @@ from tools import demo_request_prepare as common, demo_portfolio_sources as sour
 from tools import demo_account_cash as cash_tool, demo_functional_worker as functional
 
 
-def check_bundle(bundle,*,registry,account,source_commit,now_ms):
-    _fields(bundle,'allocation binding forecast profile policy kill_switch')
+def check_bundle(bundle,*,registry,account,source_commit,now_ms,closing=False):
+    _fields(bundle,'allocation binding forecast profile policy kill_switch'+(' close_index previous_close' if closing else ''))
     allocation,profile,policy=bundle['allocation'],bundle['profile'],bundle['policy']
     current_key(policy,registry,now_ms)
     sid=demo_portfolio_task.strategy_id(allocation)
@@ -33,13 +33,32 @@ def check_bundle(bundle,*,registry,account,source_commit,now_ms):
         profile['strategy']['strategy_id']==sid,'PORTFOLIO_WORKER_SCOPE')
     common.demo_request_inputs.profile_check(profile,policy,
         {'source_sha256':common.binance_demo_market_inputs.source_hash(),'symbol':allocation['symbol']},now_ms)
-    forecast=sources._sealed(bundle['forecast'])
-    require(forecast['model_hash']==allocation['model_hash'] and
-        type(forecast['entry_ms']) is int and forecast['entry_ms']<=now_ms<forecast['entry_ms']+sources.HOUR,
-        'PORTFOLIO_WORKER_FORECAST')
+    if closing:
+        require(bundle['forecast'] is None and type(bundle['close_index']) is int and
+            1<=bundle['close_index']<=2 and ((bundle['previous_close'] is None)==(bundle['close_index']==1)),
+            'PORTFOLIO_WORKER_CLOSE_INDEX')
+    else:
+        forecast=sources._sealed(bundle['forecast'])
+        require(forecast['model_hash']==allocation['model_hash'] and
+            type(forecast['entry_ms']) is int and forecast['entry_ms']<=now_ms<forecast['entry_ms']+sources.HOUR,
+            'PORTFOLIO_WORKER_FORECAST')
     kill=KillSwitchState.model_validate_json(json.dumps(bundle['kill_switch']),strict=True)
     common.demo_current_kill.require_expected(kill,now_ms=now_ms)
     return kill
+
+
+def previous_close_terminal(bundle,oms):
+    previous=bundle['previous_close']
+    if previous is None:return
+    policy=bundle['policy'];allocation=bundle['allocation']
+    client='QDC'+_digest({'allocation':_digest(allocation),'policy':_digest(policy),'close_index':1})[:30]
+    require(previous['source_commit']==allocation['source_commit'] and previous['profile']==bundle['profile'] and
+        previous['issuer_policy_sha256']==_digest(policy) and len(previous['orders'])==1 and
+        previous['orders'][0]['reduceOnly'] is True and previous['orders'][0]['newClientOrderId']==client,
+        'PORTFOLIO_PREVIOUS_CLOSE_SCOPE')
+    orders=[o for o in oms.orders(strategy_id=demo_portfolio_task.strategy_id(allocation)) if o['client_order_id']==client]
+    require(len(orders)==1 and orders[0]['status'] in ('FILLED','EXPIRED','CANCELED'),
+        'PORTFOLIO_PREVIOUS_CLOSE_NOT_TERMINAL')
 
 
 def check_reconciliation_bundle(bundle,*,registry,account,source_commit):
@@ -76,7 +95,7 @@ def run(*,source_commit,input_fd=None,output=None,operation='prepare'):
     root=None;bundle_hash=None;phase='CONFIGURATION';previous=os.umask(0o077)
     schema='DEMO_PORTFOLIO_RECONCILIATION_V1' if operation=='reconcile' else 'DEMO_PORTFOLIO_PREPARATION_V1'
     try:
-        require(operation in ('prepare','reconcile'),'PORTFOLIO_WORKER_OPERATION')
+        require(operation in ('prepare','close','reconcile'),'PORTFOLIO_WORKER_OPERATION')
         common.verify_source(source_commit);root,account=common.fixed_account()
         registry=common.demo_authority.load_registry_for_executor()
         require(os.geteuid()==os.getegid()==registry['executor_uid'] and
@@ -95,28 +114,37 @@ def run(*,source_commit,input_fd=None,output=None,operation='prepare'):
             common._retain(common.destination(root,'request-preparation-results'),result)
             print(json.dumps(result,sort_keys=True,separators=(',',':')),file=channel,flush=True)
             return 0 if result['cash_reconciled'] else 3
-        check_bundle(bundle,registry=registry,account=account,source_commit=source_commit,now_ms=common.now_ms())
+        closing=operation=='close'
+        check_bundle(bundle,registry=registry,account=account,source_commit=source_commit,now_ms=common.now_ms(),closing=closing)
+        if closing:
+            phase='ORIGINAL_ORDER_RECOVERY'
+            settled=functional.settle(root,account,source_commit,strategy_id=demo_portfolio_task.strategy_id(bundle['allocation']))
+            require(settled['status']=='SETTLED','PORTFOLIO_CLOSE_RECOVERY_REQUIRED')
         target=common.destination(root,'request-preparation-results')
         phase='OBSERVATIONS'
         origin,market=common.capture_inputs(root=root,symbol=bundle['allocation']['symbol'],source_commit=source_commit)
-        funding_receipt=sources.capture_funding()
-        at=common.now_ms()
-        funds=sources.funding_rows(funding_receipt,now_ms=at)
-        # Retain the source response as well as the derived rows before success.
-        common._retain(target,{'schema':'DEMO_PORTFOLIO_FUNDING_INPUT_V1','source_commit':source_commit,
-            'bundle_sha256':bundle_hash,'receipt':funding_receipt,'economic_authority':False})
+        funding_receipt=None;funds=None
+        if not closing:
+            funding_receipt=sources.capture_funding()
+            at=common.now_ms()
+            funds=sources.funding_rows(funding_receipt,now_ms=at)
+            common._retain(target,{'schema':'DEMO_PORTFOLIO_FUNDING_INPUT_V1','source_commit':source_commit,
+                'bundle_sha256':bundle_hash,'receipt':funding_receipt,'economic_authority':False})
         phase='ORIGINAL_RISK'
         with ExitStack() as stack:
             stores=common._open(stack,root)
             with demo_pre_submit._preparation_lease(stores['dispatch']):
                 at=common.now_ms()
-                kill=check_bundle(bundle,registry=registry,account=account,source_commit=source_commit,now_ms=at)
-                built=demo_portfolio_task.build(allocation=bundle['allocation'],forecast=bundle['forecast'],funding=funds,
-                    origin=origin,market_inputs=market,profile=bundle['profile'],issuer_policy=bundle['policy'],
+                kill=check_bundle(bundle,registry=registry,account=account,source_commit=source_commit,now_ms=at,closing=closing)
+                kwargs=dict(allocation=bundle['allocation'],origin=origin,market_inputs=market,profile=bundle['profile'],issuer_policy=bundle['policy'],
                     kill_state=kill,**{k:stores[k] for k in ('dispatch','recovery','oms')},now_ms=at)
+                if closing:
+                    previous_close_terminal(bundle,stores['oms'])
+                    built=demo_portfolio_task.build_close(index=bundle['close_index'],**kwargs)
+                else:built=demo_portfolio_task.build(forecast=bundle['forecast'],funding=funds,**kwargs)
         result={'schema':schema,'status':built['status'],'source_commit':source_commit,
             'bundle_sha256':bundle_hash,'observed_at_ms':common.now_ms(),'build':built,
-            'funding_receipt_sha256':digest(funding_receipt),'submission_enabled':False,'economic_authority':False}
+            'funding_receipt_sha256':None if closing else digest(funding_receipt),'submission_enabled':False,'economic_authority':False}
         body=json.dumps(result,sort_keys=True,separators=(',',':'),allow_nan=False)
         require(len(body.encode())<=common.MAX_INPUT_BYTES,'PORTFOLIO_WORKER_RESULT_SIZE')
         phase='RESULT_PERSISTENCE';common._retain(target,result)
@@ -138,7 +166,7 @@ def run(*,source_commit,input_fd=None,output=None,operation='prepare'):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-commit',required=True)
-    parser.add_argument('--operation',choices=('prepare','reconcile'),default='prepare')
+    parser.add_argument('--operation',choices=('prepare','close','reconcile'),default='prepare')
     args=parser.parse_args(argv)
     return run(source_commit=args.source_commit,operation=args.operation)
 

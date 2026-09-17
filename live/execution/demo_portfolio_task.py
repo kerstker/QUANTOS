@@ -38,6 +38,51 @@ def _grid(value,minimum,step,rounding):
 
 
 @ledger_decimal_context()
+def build_close(*,allocation,index,origin,market_inputs,profile,issuer_policy,kill_state,
+                dispatch,recovery,oms,now_ms):
+    """Prepare only the exact current position's exit, without any forecast."""
+    require(type(index) is int and 1<=index<=2,'PORTFOLIO_CLOSE_INDEX')
+    sid=strategy_id(allocation)
+    demo_request_inputs.profile_check(profile,issuer_policy,market_inputs,now_ms)
+    require(profile['strategy']['strategy_id']==sid and profile['strategy']['approved'] is True and
+        allocation['source_commit']==issuer_policy['executor_release_commit'] and
+        allocation['account_ref_sha256']==issuer_policy['account_ref_sha256'] and
+        allocation['symbol']==origin['symbol']==profile['symbol'],'PORTFOLIO_CLOSE_SCOPE')
+    account,position=demo_request_inputs.observed_account(origin=origin,profile=profile,
+        issuer_policy=issuer_policy,dispatch=dispatch,recovery=recovery,oms=oms,now_ms=now_ms)
+    held=Decimal('0') if position is None else Decimal(position['quantity'])
+    result={'schema':'DEMO_PORTFOLIO_CLOSE_BUILD_V1','allocation_sha256':_digest(allocation),
+        'policy_sha256':_digest(issuer_policy),'index':index,'current_quantity':canonical_decimal(held),
+        'position_context_sha256':None if position is None else _digest(position),
+        'task':None,'status':'ALREADY_FLAT','submission_enabled':False,'economic_authority':False}
+    if held==0:return result
+    data={r['kind']:r['data'] for r in origin['reads']}
+    tick=next(f for f in data['rules']['terms']['filters'] if f['filterType']=='PRICE_FILTER')
+    side='SELL' if held>0 else 'BUY'
+    book=Decimal(data['book']['bidPrice' if held>0 else 'askPrice'])
+    offset=Decimal(allocation['ioc_offset_bps'])/10000
+    price=_grid(book*(1-offset if held>0 else 1+offset),Decimal(tick['minPrice']),
+        Decimal(tick['tickSize']),ROUND_FLOOR if held>0 else ROUND_CEILING)
+    identity=_digest({'allocation':_digest(allocation),'policy':_digest(issuer_policy),'close_index':index})
+    order={'symbol':allocation['symbol'],'side':side,'type':'LIMIT','timeInForce':'IOC',
+        'quantity':canonical_decimal(abs(held)),'price':canonical_decimal(price),'reduceOnly':True,
+        'positionSide':'BOTH','newClientOrderId':'QDC'+identity[:30],'newOrderRespType':'ACK'}
+    prepared=demo_request_inputs.build(orders=[order],origin=origin,market_inputs=market_inputs,
+        profile=profile,issuer_policy=issuer_policy,kill_state=kill_state,
+        dispatch=dispatch,recovery=recovery,oms=oms,now_ms=now_ms)
+    require(prepared['precheck_status']=='RISK_CHECKS_PASSED' and
+        prepared['request']['risk']['account']==account and
+        prepared['position_context_sha256']==result['position_context_sha256'],'PORTFOLIO_CLOSE_RISK')
+    task={'schema':'DEMO_REQUEST_TASK_V1','source_commit':allocation['source_commit'],
+        'valid_from_ms':now_ms,'valid_until_ms':min(now_ms+30000,issuer_policy['valid_until_ms']),
+        'issuer_policy_sha256':_digest(issuer_policy),'profile':profile,
+        'kill_switch':kill_state.model_dump(mode='json'),'orders':[order]}
+    demo_request_inputs.task_check(task,policy=issuer_policy,source_commit=allocation['source_commit'],now_ms=now_ms)
+    result.update(status='CLOSE_TASK_PREPARED',task=task,task_sha256=_digest(task),request_build=prepared)
+    return result
+
+
+@ledger_decimal_context()
 def build(*,allocation,forecast,funding,origin,market_inputs,profile,issuer_policy,kill_state,
           dispatch,recovery,oms,now_ms):
     sid=strategy_id(allocation)

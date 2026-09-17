@@ -1,5 +1,6 @@
 import json
 import os
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 
 from tools import demo_portfolio_prepare as worker
@@ -54,10 +55,31 @@ def test_executor_pipe_prepares_bound_portfolio_and_rejects_changed_config_befor
         assert code==0 and value['status']=='TASK_PREPARED'
         assert value['build']['request_build']['precheck_status']=='RISK_CHECKS_PASSED'
         assert value['build']['task']['orders'][0]['side']=='BUY'
+        opening_task=value['build']['task']
         allocation['capital']='600'
         code,value=call()
         assert code==3 and value['status']=='INPUTS_UNRESOLVED' and captures==[1]
         allocation['capital']='500'
+        monkeypatch.setattr(worker.functional,'settle',lambda *a,**k:{'status':'SETTLED','quantity':'0','fill_count':0})
+        monkeypatch.setattr(worker.sources,'capture_funding',lambda:pytest.fail('closing fetched research funding'))
+        bundle.update(forecast=None,close_index=1,previous_close=None)
+        code,value=call('close')
+        assert code==0 and value['status']=='ALREADY_FLAT' and value['build']['task'] is None
+        assert captures==[1,1] and value['funding_receipt_sha256'] is None
+        previous=json.loads(json.dumps(opening_task))
+        client='QDC'+_digest({'allocation':_digest(allocation),'policy':_digest(policy),'close_index':1})[:30]
+        previous['orders'][0].update(reduceOnly=True,side='SELL',newClientOrderId=client)
+        bundle.update(close_index=2,previous_close=previous)
+        with pytest.raises(ValueError,match='PORTFOLIO_PREVIOUS_CLOSE_NOT_TERMINAL'):
+            worker.previous_close_terminal(bundle,opened[2])
+        class KnownOrder:
+            state='NEW'
+            def orders(self,**kwargs):return [{'client_order_id':client,'status':self.state}]
+        known=KnownOrder()
+        with pytest.raises(ValueError,match='PORTFOLIO_PREVIOUS_CLOSE_NOT_TERMINAL'):
+            worker.previous_close_terminal(bundle,known)
+        known.state='EXPIRED';worker.previous_close_terminal(bundle,known)
+        del bundle['close_index'],bundle['previous_close'];bundle['forecast']=forecast
         now=policy['valid_until_ms']+1
         monkeypatch.setattr(worker.functional,'settle',lambda *a,**k:{'status':'SETTLED','quantity':'0','fill_count':2})
         cash_calls=[]
@@ -68,9 +90,12 @@ def test_executor_pipe_prepares_bound_portfolio_and_rejects_changed_config_befor
         monkeypatch.setattr(worker.cash_tool,'run_portfolio',cash)
         code,value=call('reconcile')
         assert code==0 and value['cash_reconciled'] is True and cash_calls==[allocation]
-        assert captures==[1]
+        assert captures==[1,1]
         code,value=call()
-        assert code==3 and value['cash_reconciled'] is False and captures==[1]
+        assert code==3 and value['cash_reconciled'] is False and captures==[1,1]
+        bundle.update(forecast=None,close_index=1,previous_close=None)
+        code,value=call('close')
+        assert code==3 and value['status']=='INPUTS_UNRESOLVED' and captures==[1,1]
         assert opened[0].snapshot()==[] and opened[2].orders()==[] and log.snapshot()==[]
     finally:
         log.close()

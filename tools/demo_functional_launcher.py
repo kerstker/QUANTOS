@@ -11,7 +11,8 @@ import os,sys
 from pathlib import Path
 if os.geteuid()!=0:raise SystemExit('Run with sudo from the operator terminal.')
 args=sys.argv[1:]
-portfolio_modes=['--portfolio-preflight','--portfolio-enroll','--portfolio-prepare','--portfolio-execute','--portfolio-reconcile']
+portfolio_modes=['--portfolio-preflight','--portfolio-enroll','--portfolio-prepare','--portfolio-execute',
+    '--portfolio-close','--portfolio-reconcile','--portfolio-cycle']
 if args not in ([],['--recover'],['--resume'],['--new-cycle']) and args not in [[v] for v in portfolio_modes]:
     raise SystemExit('Use a fixed recovery, successor enrollment, or portfolio operation without extra arguments.')
 source='''+repr(source_commit)+'''
@@ -27,6 +28,7 @@ if args and args[0] in portfolio_modes:
     else:
         module='tools.demo_portfolio_controller'
         operation={'--portfolio-prepare':[],'--portfolio-execute':['--execute'],
+            '--portfolio-close':['--close','--execute'],'--portfolio-cycle':['--cycle'],
             '--portfolio-reconcile':['--reconcile']}[args[0]]
 elif args==['--new-cycle']:
     if not installed:raise SystemExit('Complete the first setup before a successor enrollment.')

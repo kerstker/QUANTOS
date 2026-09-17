@@ -20,6 +20,8 @@ from tools.demo_functional_launcher import render
         ['--portfolio-config','/etc/quantos/demo-operator-setup/portfolio-proposal.json','--enroll']),
     (True,['--portfolio-execute'], 'tools.demo_portfolio_controller',['--execute']),
     (True,['--portfolio-reconcile'], 'tools.demo_portfolio_controller',['--reconcile']),
+    (True,['--portfolio-close'], 'tools.demo_portfolio_controller',['--close','--execute']),
+    (True,['--portfolio-cycle'], 'tools.demo_portfolio_controller',['--cycle']),
 ])
 def test_fixed_entrypoint_routes_without_mutating_setup_or_loading_keys(monkeypatch,installed,args,module,operation):
     calls=[]

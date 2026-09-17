@@ -54,7 +54,8 @@ def test_frozen_portfolio_target_reaches_original_task_and_risk_gate(tmp_path,mo
         for store in opened:store.close()
 
 
-def test_reversal_reduces_original_held_position_before_new_opening(tmp_path,monkeypatch):
+@pytest.mark.parametrize('closing',[False,True])
+def test_reversal_reduces_original_held_position_before_new_opening(tmp_path,monkeypatch,closing):
     from tests.live.test_demo_position_context import completed,held_inputs,close
     from tests.live.test_demo_issuer import policy_for
     from tests.live.test_demo_request_inputs import profile
@@ -70,8 +71,9 @@ def test_reversal_reduces_original_held_position_before_new_opening(tmp_path,mon
             issuer_policy=policy,kill_state=held['risk_inputs']['kill_switch'].state,now_ms=NOW+10,**stores)
         allocation,forecast,funding=declarations(kwargs,-.01)
         before=demo_pre_submit._state(**stores)
-        result=bridge.build(allocation=allocation,forecast=forecast,funding=funding,**kwargs)
-        assert result['status']=='REDUCE_BEFORE_REVERSE'
+        result=(bridge.build_close(allocation=allocation,index=1,**kwargs) if closing else
+            bridge.build(allocation=allocation,forecast=forecast,funding=funding,**kwargs))
+        assert result['status']==('CLOSE_TASK_PREPARED' if closing else 'REDUCE_BEFORE_REVERSE')
         orders=result['task']['orders']
         assert len(orders)==1 and orders[0]['reduceOnly'] is True
         assert orders[0]['side']=='SELL' and orders[0]['quantity']=='0.002'

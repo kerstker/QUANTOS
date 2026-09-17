@@ -24,6 +24,13 @@ from tools.demo_cycle_checkpoint import cycle_lock
 from tools.binance_demo_market_inputs import source_hash as market_source_hash
 
 PROFILE=Path('/etc/quantos/demo-issuer/profile.json')
+CLOSE_WINDOW_MS=300000
+
+
+def closing_at(policy):
+    # Current continuation supports flat UTC-day boundaries, not overnight marks.
+    day_end=(policy['valid_from_ms']//86400000+1)*86400000
+    return min(policy['valid_until_ms'],day_end)-CLOSE_WINDOW_MS
 
 
 def configuration(source_commit):
@@ -72,11 +79,11 @@ def validate_runtime(config,profile,policy,*,source_commit,now_ms,read_only=Fals
 
 
 def prepare(bundle,*,source_commit,registry,operation='prepare'):
-    require(operation in ('prepare','reconcile'),'PORTFOLIO_CONTROLLER_OPERATION')
+    require(operation in ('prepare','close','reconcile'),'PORTFOLIO_CONTROLLER_OPERATION')
     unit='quantos-demo-executor-'+os.urandom(8).hex()
     command=task_tool.preparation_command(source_commit=source_commit,registry=registry,unit=unit)
     command[command.index('tools.demo_request_prepare')]='tools.demo_portfolio_prepare'
-    seconds=420 if operation=='reconcile' else 180
+    seconds=420 if operation=='reconcile' else 240 if operation=='close' else 180
     command[command.index('RuntimeMaxSec=155s')]=f'RuntimeMaxSec={seconds}s'
     command.extend(['--operation',operation])
     env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8','SYSTEMD_COLORS':'0'}
@@ -95,7 +102,8 @@ def prepare(bundle,*,source_commit,registry,operation='prepare'):
             value.get('submission_enabled') is False and value.get('economic_authority') is False,
             'PORTFOLIO_CONTROLLER_CHILD_BINDING')
         code=process.wait(timeout=max(.01,deadline-time.monotonic()))
-        successes=('MATCHED_REPORTED_INPUTS',) if operation=='reconcile' else ('TASK_PREPARED','REDUCE_BEFORE_REVERSE','NO_CHANGE')
+        successes=('MATCHED_REPORTED_INPUTS',) if operation=='reconcile' else (
+            ('CLOSE_TASK_PREPARED','ALREADY_FLAT') if operation=='close' else ('TASK_PREPARED','REDUCE_BEFORE_REVERSE','NO_CHANGE'))
         failures=('INPUTS_UNRESOLVED','RECONCILIATION_BLOCKED') if operation=='reconcile' else ('INPUTS_UNRESOLVED',)
         require((code==0 and value['status'] in successes) or
             (code==3 and value['status'] in failures),'PORTFOLIO_CONTROLLER_CHILD_STATUS')
@@ -113,40 +121,104 @@ def prepare(bundle,*,source_commit,registry,operation='prepare'):
                 if channel is not None:channel.close()
 
 
-def run(*,source_commit,execute=False,reconcile=False):
+def close_step(*,source_commit,registry,policy,profile,config,execute):
+    previous=None
+    for index in (1,2):
+        allocation=config['allocation']
+        record=checkpoint.read_close(allocation=allocation,policy=policy,index=index)
+        built=None
+        if record is None:
+            bundle={'allocation':allocation,'binding':config['binding'],'forecast':None,'profile':profile,
+                'policy':policy,'kill_switch':config['kill_switch'],'close_index':index,'previous_close':previous}
+            prepared=prepare(bundle,source_commit=source_commit,registry=registry,operation='close')
+            if prepared['status']=='INPUTS_UNRESOLVED':
+                return {'status':'CLOSE_RECOVERY_REQUIRED','worker_phase':prepared.get('phase')}
+            built=prepared['build']
+            if built['task'] is not None:task_tool.same_declarations(built['request_build']['request'],built['task'])
+            require(configuration(source_commit)==(registry,policy,profile,config),'PORTFOLIO_CONTROLLER_CONFIG_CHANGED')
+        retained=checkpoint.retain_close(allocation=allocation,policy=policy,index=index,built=built,now_ms=supervisor.now_ms())
+        if retained['status']=='QUERY_ONLY':
+            previous=record['task']
+            continue
+        if execute and retained['status']=='TASK_READY':
+            execution=task_tool.run(source_commit=source_commit,task_sha256=retained['task_sha256'])
+            retained.update(status='EXECUTION_ATTEMPT_RECORDED' if execution.get('status')=='EXECUTOR_RESULT_RECORDED'
+                else 'EXECUTION_NOT_COMPLETED',execution=execution)
+        return {**retained,'close_index':index}
+    return {'status':'CLOSE_RECOVERY_REQUIRED','close_index':2}
+
+
+def cash_result(recovered):
+    result={'status':'CASH_RECONCILIATION_REQUIRED','reconciliation':recovered,'cash_reconciled':False}
+    if recovered.get('cash_reconciled') is True:
+        cash=recovered['cash']
+        require(recovered['status']==cash['status']=='MATCHED_REPORTED_INPUTS' and
+            cash['final_quantity']=='0' and cash['wallet_residual']=='0' and
+            cash['economic_authority'] is False,'PORTFOLIO_CONTROLLER_CASH')
+        result.update(status='CASH_RECONCILED',cash_reconciled=True)
+    return result
+
+
+def run(*,source_commit,execute=False,reconcile=False,close=False,tick=False,expected_policy_sha256=None):
     previous=os.umask(0o077);area=None;phase='CONFIGURATION'
     result={'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
         'status':'INPUTS_UNRESOLVED','task_sha256':None,'cash_reconciled':False,
         'economic_authority':False,'retry_submission':False}
     try:
-        require(type(execute) is bool and type(reconcile) is bool and not (execute and reconcile),
+        require(all(type(v) is bool for v in (execute,reconcile,close,tick)) and
+            not (reconcile and (execute or close)) and not (tick and (execute or reconcile or close)),
             'PORTFOLIO_CONTROLLER_EXECUTION_MODE')
+        if tick:
+            _,policy,_,_=reconciliation_configuration(source_commit)
+            reconcile=supervisor.now_ms()>=policy['valid_until_ms']
+            execute=not reconcile
+            close=not reconcile and supervisor.now_ms()>=closing_at(policy)
         read_config=reconciliation_configuration if reconcile else configuration
         registry,policy,profile,config=read_config(source_commit)
+        require(expected_policy_sha256 is None or _digest(policy)==expected_policy_sha256,
+            'PORTFOLIO_CYCLE_POLICY_CHANGED')
         area=supervisor.STATE/'portfolio-results';area.mkdir(mode=0o700,exist_ok=True)
         supervisor._root_private_directory(area)
         with cycle_lock(area):
             checkpoint._budget(area)
+            closing_started=checkpoint.read_close(allocation=config['allocation'],policy=policy,index=1) is not None
+            if tick and closing_started and not reconcile:close=True
             if reconcile:
                 phase='ORIGINAL_ACCOUNT_RECONCILIATION'
                 bundle={'allocation':config['allocation'],'binding':config['binding'],'forecast':None,
                     'profile':profile,'policy':policy,'kill_switch':config['kill_switch']}
                 recovered=prepare(bundle,source_commit=source_commit,registry=registry,operation='reconcile')
                 require(read_config(source_commit)==(registry,policy,profile,config),'PORTFOLIO_CONTROLLER_CONFIG_CHANGED')
-                result.update(status='CASH_RECONCILIATION_REQUIRED',reconciliation=recovered)
-                if recovered.get('cash_reconciled') is True:
-                    cash=recovered['cash']
-                    require(recovered['status']==cash['status']=='MATCHED_REPORTED_INPUTS' and
-                        cash['final_quantity']=='0' and cash['wallet_residual']=='0' and
-                        cash['economic_authority'] is False,'PORTFOLIO_CONTROLLER_CASH')
-                    result.update(status='CASH_RECONCILED',cash_reconciled=True)
+                result.update(cash_result(recovered))
                 return result
+            if close:
+                phase='PORTFOLIO_CLOSING'
+                result.update(close_step(source_commit=source_commit,registry=registry,policy=policy,
+                    profile=profile,config=config,execute=execute))
+                if tick and (result['status']=='ALREADY_FLAT' or
+                    result['status']=='CLOSE_RECOVERY_REQUIRED' and result.get('close_index')==2):
+                    phase='ORIGINAL_ACCOUNT_RECONCILIATION'
+                    bundle={'allocation':config['allocation'],'binding':config['binding'],'forecast':None,
+                        'profile':profile,'policy':policy,'kill_switch':config['kill_switch']}
+                    result.update(cash_result(prepare(bundle,source_commit=source_commit,registry=registry,operation='reconcile')))
+                return result
+            if closing_started or supervisor.now_ms()>=closing_at(policy):
+                result['status']='CLOSING_REQUIRED';return result
             phase='FROZEN_SOURCES'
             forecast=sources.load_forecast(root=config['research_root'],binding=config['binding'],
                 allocation=config['allocation'],now_ms=supervisor.now_ms())
             identity=_digest({'account':config['allocation']['account_ref_sha256'],
                 'model':config['allocation']['model_hash'],'slot_ms':forecast['slot_ms']})
             result.update(decision_sha256=identity,forecast_sha256=forecast['result_hash'])
+            # Reserve the remaining two grants for bounded closing attempts.
+            decisions=supervisor.STATE/'portfolio-decisions'
+            if decisions.exists():
+                checkpoint._budget(decisions)
+                for path in decisions.glob('*.json'):
+                    old=load_json_without_duplicate_keys(supervisor._read_root_owned_json(path))
+                    task=old.get('task')
+                    if old['identity']!=identity and task is not None and task['issuer_policy_sha256']==_digest(policy):
+                        result['status']='DECISION_BUDGET_RESERVED';return result
             built=None
             if not (supervisor.STATE/'portfolio-decisions'/(identity+'.json')).exists():
                 phase='EXECUTOR_PREPARATION'
@@ -169,6 +241,8 @@ def run(*,source_commit,execute=False,reconcile=False):
             result.update(status=retained['status'],task_sha256=retained['task_sha256'],
                 checkpoint_sha256=retained['checkpoint_sha256'])
             if execute and retained['status']=='TASK_READY':
+                if supervisor.now_ms()>=closing_at(policy):
+                    result['status']='CLOSING_REQUIRED';return result
                 phase='ORIGINAL_TASK_EXECUTOR'
                 execution=task_tool.run(source_commit=source_commit,task_sha256=retained['task_sha256'])
                 result.update(status='EXECUTION_ATTEMPT_RECORDED' if execution.get('status')=='EXECUTOR_RESULT_RECORDED'
@@ -186,17 +260,46 @@ def run(*,source_commit,execute=False,reconcile=False):
         os.umask(previous)
 
 
+def run_cycle(*,source_commit):
+    """Advance one installed policy only; never enroll or renew it."""
+    try:
+        _,policy,_,_=reconciliation_configuration(source_commit)
+        require(0<policy['valid_until_ms']-policy['valid_from_ms']<=3600000 and
+            policy['max_orders']==policy['max_grants']==3,'PORTFOLIO_CYCLE_BOUNDARY')
+        deadline=time.monotonic()+max(0,(policy['valid_until_ms']-supervisor.now_ms())/1000)+420
+        identity=_digest(policy)
+        while time.monotonic()<deadline:
+            require(_digest(reconciliation_configuration(source_commit)[1])==identity,'PORTFOLIO_CYCLE_POLICY_CHANGED')
+            result=run(source_commit=source_commit,tick=True,expected_policy_sha256=identity)
+            if result['status']=='CASH_RECONCILED' or result['status'] not in (
+                'NO_CHANGE','QUERY_ONLY','DECISION_BUDGET_RESERVED','EXECUTION_ATTEMPT_RECORDED',
+                'CLOSE_RECOVERY_REQUIRED','CLOSING_REQUIRED'):
+                return result
+            # After expiry the next tick can only recover. No implicit renewal.
+            time.sleep(min(15,max(0,deadline-time.monotonic())))
+        return {'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
+            'status':'CYCLE_DEADLINE_REACHED','cash_reconciled':False,'economic_authority':False}
+    except Exception:
+        return {'schema':'DEMO_PORTFOLIO_CONTROLLER_V1','source_commit':source_commit,
+            'status':'INPUTS_UNRESOLVED','cash_reconciled':False,'economic_authority':False}
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-commit',required=True)
     mode=parser.add_mutually_exclusive_group()
     mode.add_argument('--execute',action='store_true',help='Use the existing task executor within the installed approval.')
     mode.add_argument('--reconcile',action='store_true',help='Recover original orders and reconcile cash, including after approval expiry.')
+    mode.add_argument('--tick',action='store_true',help='Advance a finite registered cycle; close in the last five minutes and recover after expiry.')
+    mode.add_argument('--cycle',action='store_true',help='Run one installed finite policy through closing and reconciliation, without renewal.')
+    parser.add_argument('--close',action='store_true',help='Prepare only a bounded exit; combine with --execute to use the original executor.')
     args=parser.parse_args(argv)
-    result=run(source_commit=args.source_commit,execute=args.execute,reconcile=args.reconcile)
+    if args.cycle and args.close:parser.error('--cycle cannot be combined with --close')
+    result=(run_cycle(source_commit=args.source_commit) if args.cycle else
+        run(source_commit=args.source_commit,execute=args.execute,reconcile=args.reconcile,close=args.close,tick=args.tick))
     print(json.dumps(result,sort_keys=True))
     return 3 if result['status'] in ('INPUTS_UNRESOLVED','CONTROLLER_RESULT_NOT_RETAINED','EXECUTION_NOT_COMPLETED',
-        'CASH_RECONCILIATION_REQUIRED') else 0
+        'CASH_RECONCILIATION_REQUIRED','CLOSE_RECOVERY_REQUIRED','CLOSING_REQUIRED','EXPIRED_QUERY_ONLY','CYCLE_DEADLINE_REACHED') else 0
 
 
 if __name__=='__main__':raise SystemExit(main())

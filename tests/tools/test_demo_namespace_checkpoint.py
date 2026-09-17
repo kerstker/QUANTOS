@@ -206,6 +206,11 @@ def test_optional_functional_claim_survives_controller_restore(tmp_path):
         'task':None,'observed_at_ms':1}
     decision['record_sha256']=digest(decision);decision_bytes=canonical(decision)
     (portfolio/('a'*64+'.json')).write_bytes(decision_bytes)
+    closes=root/'portfolio-closes';closes.mkdir()
+    closing={k:v for k,v in decision.items() if k not in ('record_sha256','forecast_sha256')}
+    closing.update(schema='DEMO_PORTFOLIO_CLOSE_CHECKPOINT_V1',policy_sha256='e'*64,index=1)
+    closing['record_sha256']=digest(closing);closing_bytes=canonical(closing)
+    (closes/('a'*64+'.json')).write_bytes(closing_bytes)
     runtime=b'{"schema":"DEMO_PORTFOLIO_RUNTIME_V1","review_fixture":true}'
     (root/'portfolio-runtime.json').write_bytes(runtime)
     (root/'portfolio-results').mkdir()
@@ -215,6 +220,7 @@ def test_optional_functional_claim_survives_controller_restore(tmp_path):
     checkpoint.restore_checkpoint(tmp_path/'controller.enc',restored,passphrase=SECRET,expected_sha256=result['sha256'])
     assert (restored/'functional-cycle/claim.json').read_bytes()==claim
     assert (restored/'portfolio-decisions'/('a'*64+'.json')).read_bytes()==decision_bytes
+    assert (restored/'portfolio-closes'/('a'*64+'.json')).read_bytes()==closing_bytes
     assert (restored/'portfolio-runtime.json').read_bytes()==runtime
     assert (restored/'portfolio-results/status.json').read_bytes()==b'{"status":"QUERY_ONLY"}'
 
