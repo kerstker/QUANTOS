@@ -199,10 +199,18 @@ def test_optional_functional_claim_survives_controller_restore(tmp_path):
     area=root/'functional-cycle';area.mkdir()
     claim=b'{"cycle_sha256":"isolated-original-cycle"}'
     (area/'claim.json').write_bytes(claim)
+    from tools.demo_operator_setup import canonical,digest
+    portfolio=root/'portfolio-decisions';portfolio.mkdir()
+    decision={'schema':'DEMO_PORTFOLIO_DECISION_CHECKPOINT_V1','identity':'a'*64,
+        'allocation_sha256':'b'*64,'forecast_sha256':'c'*64,'build_sha256':'d'*64,
+        'task':None,'observed_at_ms':1}
+    decision['record_sha256']=digest(decision);decision_bytes=canonical(decision)
+    (portfolio/('a'*64+'.json')).write_bytes(decision_bytes)
     result=checkpoint.create_checkpoint(root,tmp_path/'controller.enc',namespace='controller',source_commit=COMMIT,passphrase=SECRET)
     restored=tmp_path/'restored'
     checkpoint.restore_checkpoint(tmp_path/'controller.enc',restored,passphrase=SECRET,expected_sha256=result['sha256'])
     assert (restored/'functional-cycle/claim.json').read_bytes()==claim
+    assert (restored/'portfolio-decisions'/('a'*64+'.json')).read_bytes()==decision_bytes
 
 
 def test_research_scope_excludes_other_research_and_preserves_demo_records(tmp_path):

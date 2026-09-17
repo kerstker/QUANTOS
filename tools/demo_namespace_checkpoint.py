@@ -34,7 +34,7 @@ EXECUTOR_DIRECTORIES={'evidence','execution-origins','resident-recovery','receip
     'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT',
     'request-preparation-results','session-results','cancellation-session-results'}
 CONTROLLER_REQUIRED_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
-CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle'}
+CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle','portfolio-decisions'}
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
@@ -215,6 +215,18 @@ def verify_state(root,namespace):
                 if field is None:require(sha(path)==path.stem,'CHECKPOINT_CONTROLLER_BYTES')
                 else:require(load_json_without_duplicate_keys(path.read_bytes()).get(field)==path.stem,'CHECKPOINT_CONTROLLER_CLAIM')
             result[folder.replace('-','_')]=len(paths)
+        portfolio=root/'portfolio-decisions'
+        if portfolio.exists():
+            from tools.demo_operator_setup import digest
+            paths=list(portfolio.glob('*.json'))
+            for path in paths:
+                value=load_json_without_duplicate_keys(path.read_bytes())
+                require(re.fullmatch('[a-f0-9]{64}',path.stem) is not None and
+                    value.get('schema')=='DEMO_PORTFOLIO_DECISION_CHECKPOINT_V1' and
+                    value.get('identity')==path.stem and
+                    value.get('record_sha256')==digest({k:v for k,v in value.items() if k!='record_sha256'}),
+                    'CHECKPOINT_PORTFOLIO_DECISION')
+            if paths:result['portfolio_decisions']=len(paths)
     return result
 
 
