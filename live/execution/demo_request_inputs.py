@@ -68,15 +68,11 @@ def task_check(task,*,policy,source_commit,now_ms):
 
 
 @ledger_decimal_context()
-def build(*,orders,origin,market_inputs,profile,issuer_policy,kill_state,dispatch,recovery,oms,now_ms):
-    profile_check(profile,issuer_policy,market_inputs,now_ms)
-    market=demo_market_inputs.assess(market_inputs,as_of_ms=now_ms)
-    require(market['status']=='OBSERVED','REQUEST_MARKET_UNAVAILABLE')
+def observed_account(*,origin,profile,issuer_policy,dispatch,recovery,oms,now_ms):
+    """Shared account reconstruction for target sizing and risk preparation."""
     report=assess_origin(origin,as_of_ms=now_ms)
     require(origin['symbol']==profile['symbol'] and origin['account_ref_sha256']==issuer_policy['account_ref_sha256'],
             'REQUEST_ACCOUNT_SCOPE')
-    order_scope(orders,issuer_policy)
-    require(type(kill_state) is KillSwitchState,'REQUEST_KILL_STATE')
     state=demo_pre_submit._state(dispatch,recovery,oms)
     source={r['kind']:r['data'] for r in origin['reads']}
     wallet=next(a for a in source['account_after']['assets'] if a['asset']==report['quote_asset'])
@@ -90,6 +86,19 @@ def build(*,orders,origin,market_inputs,profile,issuer_policy,kill_state,dispatc
         actual=demo_position_context.validate_origin(origin,position,as_of_ms=now_ms)
         account.update(actual)
         account['peak_equity']=canonical_decimal(max(Decimal(position['initial_equity']),Decimal(position['peak_equity_floor']),Decimal(account['equity'])))
+    return account,position
+
+
+@ledger_decimal_context()
+def build(*,orders,origin,market_inputs,profile,issuer_policy,kill_state,dispatch,recovery,oms,now_ms):
+    profile_check(profile,issuer_policy,market_inputs,now_ms)
+    market=demo_market_inputs.assess(market_inputs,as_of_ms=now_ms)
+    require(market['status']=='OBSERVED','REQUEST_MARKET_UNAVAILABLE')
+    order_scope(orders,issuer_policy)
+    require(type(kill_state) is KillSwitchState,'REQUEST_KILL_STATE')
+    account,position=observed_account(origin=origin,profile=profile,issuer_policy=issuer_policy,
+        dispatch=dispatch,recovery=recovery,oms=oms,now_ms=now_ms)
+    source={r['kind']:r['data'] for r in origin['reads']}
     # The existing executor independently reloads the original history and
     # enforces accumulated turnover, cash and held-position restrictions again.
     request={'schema':'DEMO_EXECUTION_SESSION_INPUT_V1','orders':orders,'origin':origin,
