@@ -121,5 +121,28 @@ portfolio/forward 路径；V2配置绑定 freeze 与 observer source 的完整�
 也不是连续前向验收。原观察入口同时建立的十四天成本登记尚未完成，不以这一次
 预测代替成熟窗口。尚无实际配置资金、操作员登记或订单。
 
+## 受保护运行入口增量
+
+新增 `tools/demo_portfolio_controller.py` 和 `tools/demo_portfolio_prepare.py`。控制器读取
+原根用户策略/签发配置和 `portfolio-runtime.json`；V2配置、来源绑定、模型、账户与
+已批准策略 ID 必须一致。通过原 systemd 隔离命令将有限输入传给执行 UID；执行侧
+重新检查私有管道、注册身份、当前签发政策及停机状态，使用原账户和行情采集入口，
+保留公开资金费原文，在原准备锁内构造任务并做风控。没有初始化或重置执行库。
+
+控制器默认准备任务，显式执行模式才调用原 `demo_task.run`。原决策存在时不再次
+采集或生成任务；原任务领取记录存在时只返回 QUERY_ONLY。执行失败保留为
+EXECUTION_NOT_COMPLETED，不能用进程成功掩盖失败。所有结果的现金核对仍为 false。
+运行配置位于原受保护控制器目录 `/var/lib/quantos-demo-controller/portfolio-runtime.json`，
+结果位于 `portfolio-results`；两者同步纳入原加密备份范围。
+
+关键管道回归及原任务/备份联合23项通过，入口帮助及服务导入图通过，日志
+`/tmp/quantos-portfolio-runtime-tests.log`。新测试只在隔离文件和模拟传输上运行，
+没有实际 root 身份、签发配置安装或订单。缺入口的初始失败保留在任务输出中。
+
+**仍缺交付项**：真实操作员的组合配置登记/安装、组合模式的终态现金核对（原
+`demo_account_cash` 仍限定 `demo-functional-` 和有限完整往返）、到期/减仓运行
+编排、只读页面及实际验收。此运行入口尚未进入完整发布验收或安装，不能用旧
+`27479d73a` 的28/28作为它的发布证明，也不能把准备任务成功说成交易闭环完成。
+
 完整验收、安装和实际周期仍按
 [跨日验收记录](2026-09-18-demo-full-acceptance.md) 分别核实。

@@ -34,7 +34,7 @@ EXECUTOR_DIRECTORIES={'evidence','execution-origins','resident-recovery','receip
     'observation-views','stream-capture-results','market-inputs-BTCUSDC','market-inputs-BTCUSDT',
     'request-preparation-results','session-results','cancellation-session-results'}
 CONTROLLER_REQUIRED_DIRECTORIES={'requests','claims','results','tasks','task-claims','task-results'}
-CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle','portfolio-decisions'}
+CONTROLLER_DIRECTORIES=CONTROLLER_REQUIRED_DIRECTORIES|{'functional-cycle','portfolio-decisions','portfolio-results'}
 RESEARCH_DIRECTORIES={'binance_demo_account_captures','binance_demo_cash_windows','binance_demo_execution_origins',
     'binance_demo_executor_observation','binance_demo_private_checks','binance_demo_statements',
     'binance_demo_market_inputs','binance_demo_issuer_status','binance_demo_resident_status',
@@ -75,7 +75,7 @@ def safe_relative(value):
 def scope(namespace):
     if namespace=='executor':return EXECUTOR_DATABASES|{'kill-switch.sqlite3','cancellations.sqlite3'},EXECUTOR_DIRECTORIES,EXECUTOR_DATABASES
     if namespace=='issuer':return {'issuance.sqlite3'},{'results','views'},{'issuance.sqlite3'}
-    if namespace=='controller':return {'installation.json'},CONTROLLER_DIRECTORIES,set()
+    if namespace=='controller':return {'installation.json','portfolio-runtime.json'},CONTROLLER_DIRECTORIES,set()
     if namespace=='research':return {'binance_demo_user_stream.db','binance_demo_readiness.json'},RESEARCH_DIRECTORIES,{'binance_demo_user_stream.db'}
     raise ValueError('CHECKPOINT_NAMESPACE')
 

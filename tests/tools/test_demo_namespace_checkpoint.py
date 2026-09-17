@@ -206,11 +206,17 @@ def test_optional_functional_claim_survives_controller_restore(tmp_path):
         'task':None,'observed_at_ms':1}
     decision['record_sha256']=digest(decision);decision_bytes=canonical(decision)
     (portfolio/('a'*64+'.json')).write_bytes(decision_bytes)
+    runtime=b'{"schema":"DEMO_PORTFOLIO_RUNTIME_V1","review_fixture":true}'
+    (root/'portfolio-runtime.json').write_bytes(runtime)
+    (root/'portfolio-results').mkdir()
+    (root/'portfolio-results/status.json').write_bytes(b'{"status":"QUERY_ONLY"}')
     result=checkpoint.create_checkpoint(root,tmp_path/'controller.enc',namespace='controller',source_commit=COMMIT,passphrase=SECRET)
     restored=tmp_path/'restored'
     checkpoint.restore_checkpoint(tmp_path/'controller.enc',restored,passphrase=SECRET,expected_sha256=result['sha256'])
     assert (restored/'functional-cycle/claim.json').read_bytes()==claim
     assert (restored/'portfolio-decisions'/('a'*64+'.json')).read_bytes()==decision_bytes
+    assert (restored/'portfolio-runtime.json').read_bytes()==runtime
+    assert (restored/'portfolio-results/status.json').read_bytes()==b'{"status":"QUERY_ONLY"}'
 
 
 def test_research_scope_excludes_other_research_and_preserves_demo_records(tmp_path):
