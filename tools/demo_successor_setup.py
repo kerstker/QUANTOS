@@ -115,6 +115,10 @@ def context_for(source_commit,registry,cycle):
     try:
         result=runtime.invoke('context',timeout=60)
         require(result['status']=='CANONICAL_CONTEXT','SUCCESSOR_CONTEXT_UNAVAILABLE')
+        if result['context']['day_id']!=installer.now_ms()//86400000:
+            result=runtime.invoke('day-checkpoint',timeout=415)
+            require(result['status']=='CANONICAL_CONTEXT' and
+                    result['context']['day_id']==installer.now_ms()//86400000,'SUCCESSOR_DAY_CHECKPOINT_REQUIRED')
         return result['context']
     finally:runtime.close()
 
@@ -148,6 +152,8 @@ def main(argv=None):
             else:
                 registry,origin=setup._runtime_inputs(args.source_commit,continuation=True)
                 context=context_for(args.source_commit,registry,cycle)
+                current,origin=setup._runtime_inputs(args.source_commit,continuation=True)
+                require(current==registry,'SUCCESSOR_REGISTRY_CHANGED')
                 spec=setup.propose(origin=origin,registry=registry,source_commit=args.source_commit,
                     now_ms=installer.now_ms(),position_context=context)
                 if not args.enroll:
@@ -158,6 +164,8 @@ def main(argv=None):
                 phase='FRESH_INPUTS';current,origin=setup._runtime_inputs(args.source_commit,continuation=True)
                 require(current==registry,'SUCCESSOR_REGISTRY_CHANGED')
                 context=context_for(args.source_commit,registry,cycle)
+                current,origin=setup._runtime_inputs(args.source_commit,continuation=True)
+                require(current==registry,'SUCCESSOR_REGISTRY_CHANGED')
                 stop=setup._stop_image(path=installer.EXECUTOR/'kill-switch.sqlite3')
                 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
                 private=Ed25519PrivateKey.generate()

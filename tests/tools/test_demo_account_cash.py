@@ -7,6 +7,7 @@ from tools.demo_account_cash import compare
 from services.research.demo_account_recovery import reconcile
 from tests.research.test_demo_account_recovery import inputs
 from tests.research.test_binance_order_receipts import receipt
+from live.execution.demo_batch_risk import _digest
 
 
 def fixture(tmp_path):
@@ -18,7 +19,7 @@ def fixture(tmp_path):
     value['windows'][1]['messages']=[receipt(p,row['received_at_ms'])]
     report,_=reconcile(**value)
     assert report['status']=='REPORTED_ACCOUNT_MATCHED'
-    context=dict(ledger_state_hash=report['ledger_state_hash'],canonical_wallet=report['canonical_wallet'],quantity='0')
+    context=dict(ledger_state_hash=_digest(report['ledger_state']),canonical_wallet=report['canonical_wallet'],quantity='0')
     return value,context
 
 

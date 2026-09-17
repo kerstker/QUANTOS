@@ -23,6 +23,7 @@ from services.governance.json_integrity import load_json_without_duplicate_keys
 from services.research.demo_statement import validate as validate_statement
 
 SCHEMA = 'DEMO_EXECUTOR_STATEMENT_V1'
+DAY_SCHEMA = 'DEMO_EXECUTOR_DAY_STATEMENT_V1'
 MAX_BYTES = 12_000_000
 
 
@@ -39,13 +40,13 @@ def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
-def _scope(symbol, start, end, at):
-    if symbol not in ('BTCUSDT', 'BTCUSDC') or type(start) is not int or type(end) is not int or not 0 < start < end <= at or end-start > 86_400_000:
+def _scope(symbol, start, end, at, *, day_replay=False):
+    if type(day_replay) is not bool or symbol not in ('BTCUSDT', 'BTCUSDC') or type(start) is not int or type(end) is not int or not 0 < start < end <= at or end-start > (7 if day_replay else 1)*86_400_000:
         raise ValueError('EXECUTOR_STATEMENT_SCOPE')
 
 
-def _report(account, symbol, start, end, observed, completed, statement=None, reason=None):
-    return {'schema': SCHEMA, 'account_ref_sha256': account, 'source_sha256': source_hash(),
+def _report(account, symbol, start, end, observed, completed, statement=None, reason=None, *, day_replay=False):
+    return {'schema': DAY_SCHEMA if day_replay else SCHEMA, 'account_ref_sha256': account, 'source_sha256': source_hash(),
         'symbol': symbol, 'start_ms': start, 'end_ms': end, 'observed_at_ms': observed,
         'completed_at_ms': completed, 'status': statement['status'] if statement is not None else 'FAILED',
         'statement': statement, 'statement_sha256': _digest(statement) if statement is not None else None,
@@ -55,7 +56,7 @@ def _report(account, symbol, start, end, observed, completed, statement=None, re
 
 def validate(report):
     keys = set('schema account_ref_sha256 source_sha256 symbol start_ms end_ms observed_at_ms completed_at_ms status statement statement_sha256 reason source_verified canonical_ledger_reconciled orders_submitted economic_authority'.split())
-    if not isinstance(report, dict) or set(report) != keys or report['schema'] != SCHEMA:
+    if not isinstance(report, dict) or set(report) != keys or report['schema'] not in (SCHEMA,DAY_SCHEMA):
         raise ValueError('EXECUTOR_STATEMENT_SCHEMA')
     for name in ('account_ref_sha256', 'source_sha256'):
         if not isinstance(report[name], str) or re.fullmatch('[a-f0-9]{64}', report[name]) is None:
@@ -63,7 +64,7 @@ def validate(report):
     for name in ('observed_at_ms', 'completed_at_ms'):
         if type(report[name]) is not int or not 0 < report[name] <= 2**53-1:
             raise ValueError('EXECUTOR_STATEMENT_CLOCK')
-    _scope(report['symbol'], report['start_ms'], report['end_ms'], report['observed_at_ms'])
+    _scope(report['symbol'], report['start_ms'], report['end_ms'], report['observed_at_ms'],day_replay=report['schema']==DAY_SCHEMA)
     if report['observed_at_ms'] > report['completed_at_ms']:
         raise ValueError('EXECUTOR_STATEMENT_CLOCK')
     if any(report[name] is not False for name in ('source_verified','canonical_ledger_reconciled','orders_submitted','economic_authority')):
@@ -82,18 +83,18 @@ def validate(report):
     return report
 
 
-def capture_worker(symbol, start_ms, end_ms):
-    _scope(symbol, start_ms, end_ms, now_ms())
+def capture_worker(symbol, start_ms, end_ms, *, day_replay=False):
+    _scope(symbol, start_ms, end_ms, now_ms(),day_replay=day_replay)
     _, account = fixed_account()
     opener = demo_network.opener()
     report = original.collect(credential_file=None, symbols=[symbol], start_ms=start_ms, end_ms=end_ms,
         operator_read=True, clock=now_ms, credential_reader=lambda _: transport._credentials(account),
         get=lambda path, **kwargs: original.get_response(path, opener=opener, **kwargs))
-    return validate(_report(account, symbol, start_ms, end_ms, report['observed_at_ms'], report['completed_at_ms'], report))
+    return validate(_report(account, symbol, start_ms, end_ms, report['observed_at_ms'], report['completed_at_ms'], report,day_replay=day_replay))
 
 
-def run(*, symbol, start_ms, end_ms, source_commit):
-    _scope(symbol, start_ms, end_ms, now_ms())
+def run(*, symbol, start_ms, end_ms, source_commit,day_replay=False):
+    _scope(symbol, start_ms, end_ms, now_ms(),day_replay=day_replay)
     if not isinstance(source_commit, str) or re.fullmatch('[a-f0-9]{40}', source_commit) is None:
         raise ValueError('EXECUTOR_STATEMENT_SOURCE')
     root, account = fixed_account()
@@ -117,22 +118,23 @@ def run(*, symbol, start_ms, end_ms, source_commit):
             'PYTHONPATH':str(source),'PYTHONNOUSERSITE':'1','PYTHONDONTWRITEBYTECODE':'1','NO_PROXY':'*','no_proxy':'*'}
         command = [sys.executable,'-P','-m','tools.demo_executor_statement','--capture-worker',
             '--symbol',symbol,'--start-ms',str(start_ms),'--end-ms',str(end_ms)]
+        if day_replay:command.append('--day-replay')
         try:
             child = subprocess.run(command,cwd=source,env=env,capture_output=True,check=True,timeout=115)
             if len(child.stdout) > MAX_BYTES: raise ValueError('EXECUTOR_STATEMENT_OUTPUT_BUDGET')
             report = validate(load_json_without_duplicate_keys(child.stdout))
-            if (report['source_sha256'] != source_hash() or report['account_ref_sha256'] != account or
+            if (report['schema'] != (DAY_SCHEMA if day_replay else SCHEMA) or report['source_sha256'] != source_hash() or report['account_ref_sha256'] != account or
                 report['symbol'] != symbol or report['start_ms'] != start_ms or report['end_ms'] != end_ms or
                 report['statement'] is not None and report['statement']['source_sha256'] != original.source_hash() or
                 not observed <= report['observed_at_ms'] <= report['completed_at_ms'] <= now_ms()):
                 raise ValueError('EXECUTOR_STATEMENT_WORKER_BINDING')
         except Exception as error:
             report = _report(account,symbol,start_ms,end_ms,observed,now_ms(),reason=
-                'CAPTURE_BUDGET_EXHAUSTED' if isinstance(error,subprocess.TimeoutExpired) else 'WORKER_UNAVAILABLE')
+                'CAPTURE_BUDGET_EXHAUSTED' if isinstance(error,subprocess.TimeoutExpired) else 'WORKER_UNAVAILABLE',day_replay=day_replay)
         validate(report)
         _check_path(destination,root.stat().st_uid,directory=True)
         path = _retain(destination,report)
-        return {'schema':SCHEMA,'source_commit':source_commit,'status':report['status'],'path':path,
+        return {'schema':report['schema'],'source_commit':source_commit,'status':report['status'],'path':path,
                 'orders_submitted':False,'canonical_ledger_reconciled':False,'economic_authority':False}
 
 
@@ -143,14 +145,15 @@ def main(argv=None):
     parser.add_argument('--end-ms',type=int,required=True)
     parser.add_argument('--source-commit')
     parser.add_argument('--capture-worker',action='store_true',help=argparse.SUPPRESS)
+    parser.add_argument('--day-replay',action='store_true',help='Bounded seven-day accounting capture; no execution authority.')
     args = parser.parse_args(argv); previous = os.umask(0o077)
     try:
         if args.capture_worker:
-            report = capture_worker(args.symbol,args.start_ms,args.end_ms)
+            report = capture_worker(args.symbol,args.start_ms,args.end_ms,day_replay=args.day_replay)
             encoded=json.dumps(report)
             if len(encoded.encode()) > MAX_BYTES: raise ValueError('EXECUTOR_STATEMENT_OUTPUT_BUDGET')
             print(encoded); return 0
-        result=run(symbol=args.symbol,start_ms=args.start_ms,end_ms=args.end_ms,source_commit=args.source_commit)
+        result=run(symbol=args.symbol,start_ms=args.start_ms,end_ms=args.end_ms,source_commit=args.source_commit,day_replay=args.day_replay)
         print(json.dumps({**result,'path':str(result['path'])}))
         return 0 if result['status']=='CAPTURED' else 2
     except Exception:

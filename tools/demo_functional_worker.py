@@ -215,7 +215,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-commit',required=True)
     parser.add_argument('--cycle-sha256',required=True)
-    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context'),required=True)
+    parser.add_argument('--operation',choices=('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context','day-checkpoint'),required=True)
     args=parser.parse_args(argv);os.umask(0o077)
     try:
         verify_source(args.source_commit);root=require_custody();_,account=fixed_account()
@@ -223,7 +223,11 @@ def main(argv=None):
         raw=read_frame(sys.stdin.fileno(),maximum=65536,deadline=time.monotonic()+10)
         payload=load_json_without_duplicate_keys(raw);require(type(payload) is dict,'FUNCTIONAL_INPUT')
         area=area_for(root,args.cycle_sha256)
-        if args.operation=='account-cash':
+        if args.operation=='day-checkpoint':
+            require(not payload,'DAY_CAPTURE_NO_CALLER_INPUTS')
+            from tools.demo_day_checkpoint import run
+            result=run(source_commit=args.source_commit)
+        elif args.operation=='account-cash':
             from tools.demo_account_cash import run
             result=run(root,area,account,args.source_commit,strategy_id=cycle_strategy(root,area))
         elif args.operation=='context':

@@ -101,10 +101,10 @@ def drive(*,opening_task,execute,settle,prepare_reduce,cash_finish,progress,
 
 
 def child_command(operation,*,source_commit,registry,cycle,unit):
-    require(operation in ('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context'),'FUNCTIONAL_OPERATION')
+    require(operation in ('cash','close-cash','settle','reduce','reconcile','resume-check','resume-cash','account-recover','account-cash','context','day-checkpoint'),'FUNCTIONAL_OPERATION')
     command=supervisor.child_command('executor',source_commit=source_commit,registry=registry,purpose='submission',unit=unit)
     command[command.index('tools.demo_execution_session')]='tools.demo_functional_worker'
-    budget='840s' if operation=='cash' else '420s' if operation in ('account-recover','account-cash') else '300s' if operation=='resume-cash' else '160s'
+    budget='840s' if operation=='cash' else '420s' if operation in ('account-recover','account-cash','day-checkpoint') else '300s' if operation=='resume-cash' else '160s'
     command[command.index('RuntimeMaxSec=90s')]='RuntimeMaxSec='+budget
     del command[-2:]
     return command+['--operation',operation,'--cycle-sha256',cycle]

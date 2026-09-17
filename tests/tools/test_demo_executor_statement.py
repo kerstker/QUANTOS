@@ -32,9 +32,11 @@ def fixed_worker(tmp_path, monkeypatch):
     return worker, account, seen, calls
 
 
-def test_fixed_capture_binds_account_and_exact_window_without_exposing_credentials(tmp_path, monkeypatch):
+@pytest.mark.parametrize('day_replay',[False,True])
+def test_fixed_capture_binds_account_and_exact_window_without_exposing_credentials(tmp_path, monkeypatch,day_replay):
     worker, account, seen, calls = fixed_worker(tmp_path, monkeypatch)
-    report = worker.capture_worker('BTCUSDT', NOW-1000, NOW)
+    report = worker.capture_worker('BTCUSDT', NOW-(3*86400000 if day_replay else 1000), NOW,day_replay=day_replay)
+    assert report['schema']==(worker.DAY_SCHEMA if day_replay else worker.SCHEMA)
     assert report['status'] == 'CAPTURED'
     assert report['account_ref_sha256'] == account and seen == [account]
     assert len(calls) == 6 and report['statement']['symbols'] == ['BTCUSDT']
@@ -118,3 +120,11 @@ def test_default_statement_stays_offline_with_injected_provider():
         end_ms=NOW, clock=lambda: NOW,
         credential_reader=lambda _: pytest.fail('credential access'), get=lambda *a, **k: pytest.fail('network'))
     assert result['status'] == 'NOT_REQUESTED'
+
+
+def test_explicit_day_replay_is_bounded_and_default_remains_one_day():
+    worker=worker_module()
+    worker._scope('BTCUSDC',NOW-3*86400000,NOW,NOW,day_replay=True)
+    with pytest.raises(ValueError):worker._scope('BTCUSDC',NOW-3*86400000,NOW,NOW)
+    with pytest.raises(ValueError):worker._scope('BTCUSDC',NOW-7*86400000-1,NOW,NOW,day_replay=True)
+    with pytest.raises(ValueError):worker._scope('BTCUSDC',NOW-1000,NOW,NOW,day_replay=1)

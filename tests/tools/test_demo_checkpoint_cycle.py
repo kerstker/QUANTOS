@@ -251,3 +251,90 @@ def test_capture_interrupted_before_first_metadata_is_visible(workspace):
     summary = cycle.summarize(workspace[1], workspace[2], expected_uid=os.getuid(), namespace='research',
                               now_ms=cycle._now(), rpo_seconds=86400)
     assert summary['interrupted_cycles'] == 1 and summary['status'] == 'NO_VERIFIED_BACKUP'
+
+
+def test_small_capture_seals_below_global_worst_case_reserve(workspace, monkeypatch):
+    from types import SimpleNamespace
+    captured = capture(workspace)
+    monkeypatch.setattr(cycle.shutil, 'disk_usage', lambda p: SimpleNamespace(free=4 * 1024**3))
+    result = seal(workspace, captured['cycle_id'])
+    assert result['status'] == 'VERIFIED'
+    assert (workspace[1] / captured['cycle_id'] / 'capture.zip').exists()
+
+
+def test_disk_shortage_is_retained_once_and_can_recover_without_reset(workspace, monkeypatch):
+    from types import SimpleNamespace
+    captured = capture(workspace)
+    monkeypatch.setattr(cycle.shutil, 'disk_usage', lambda p: SimpleNamespace(free=0))
+    real_seal = checkpoint.seal_checkpoint
+    monkeypatch.setattr(checkpoint, 'seal_checkpoint', lambda *a, **kw: pytest.fail('encrypt without reserve'))
+    for _ in range(cycle.MAX_SEAL_ATTEMPTS + 2):
+        result = cycle.seal_pending(workspace[1], workspace[2], expected_uid=os.getuid(),
+                                    namespace='research', passphrase=SECRET)
+        assert result['failed_cycles'] == 1 and result['exhausted_cycles'] == 0
+    folder = workspace[2] / captured['cycle_id']
+    retained = {p.name: p.read_bytes() for p in folder.glob('seal-failure-*.json')}
+    assert len(retained) == 1
+    monkeypatch.setattr(cycle.shutil, 'disk_usage', lambda p: SimpleNamespace(free=4 * 1024**3))
+    monkeypatch.setattr(checkpoint, 'seal_checkpoint', real_seal)
+    assert seal(workspace, captured['cycle_id'])['status'] == 'VERIFIED'
+    assert all((folder / name).read_bytes() == body for name, body in retained.items())
+
+
+def test_legacy_space_exhaustion_does_not_prevent_verified_retry(workspace, monkeypatch):
+    from types import SimpleNamespace
+    captured = capture(workspace)
+    folder = workspace[2] / captured['cycle_id']; folder.mkdir(mode=0o700)
+    for i in range(cycle.MAX_SEAL_ATTEMPTS):
+        cycle._write_json(folder / f'seal-failure-{i:032x}.json', dict(
+            schema=cycle.SCHEMA, cycle_id=captured['cycle_id'], namespace='research',
+            source_commit=SOURCE, status='FAILED', started_at_ms=captured['started_at_ms'],
+            completed_at_ms=captured['completed_at_ms'], reason_code='CYCLE_DISK_RESERVE', **cycle.SAFETY))
+    retained = {p.name: p.read_bytes() for p in folder.iterdir()}
+    monkeypatch.setattr(cycle.shutil, 'disk_usage', lambda p: SimpleNamespace(free=4 * 1024**3))
+    result = cycle.seal_pending(workspace[1], workspace[2], expected_uid=os.getuid(),
+                                namespace='research', passphrase=SECRET)
+    assert result['attempted_cycles'] == 1 and result['exhausted_cycles'] == 0
+    assert result['records'][0]['status'] == 'VERIFIED'
+    assert all((folder / name).read_bytes() == body for name, body in retained.items())
+
+
+def test_reserve_accounts_for_expansion_not_just_compressed_bytes(workspace, monkeypatch):
+    import zipfile
+    archive = workspace[1] / 'compressible.zip'
+    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.writestr('large.json', b'0' * (40 * 1024**2))
+    required = cycle._seal_reserve(archive, os.getuid())
+    assert required >= 40 * 1024**2 + 3 * archive.stat().st_size + 1024**3
+    monkeypatch.setattr(checkpoint, 'MAX_BYTES', 1)
+    with pytest.raises(checkpoint.CheckpointError, match='CHECKPOINT_ZIP_SIZE'):
+        cycle._seal_reserve(archive, os.getuid())
+
+
+def test_space_failures_do_not_refund_corrupt_archive_attempts(workspace, monkeypatch):
+    from types import SimpleNamespace
+    captured = capture(workspace)
+    monkeypatch.setattr(cycle.shutil, 'disk_usage', lambda p: SimpleNamespace(free=0))
+    with pytest.raises(checkpoint.CheckpointError, match='CYCLE_DISK_RESERVE'):
+        seal(workspace, captured['cycle_id'])
+    archive = workspace[1] / captured['cycle_id'] / 'capture.zip'
+    archive.write_bytes(archive.read_bytes() + b'changed')
+    monkeypatch.setattr(cycle, 'MAX_SEAL_ATTEMPTS', 2)
+    for _ in range(2):
+        result = cycle.seal_pending(workspace[1], workspace[2], expected_uid=os.getuid(),
+                                    namespace='research', passphrase=SECRET)
+        assert result['records'][0]['reason_code'] == 'CYCLE_CAPTURE_DIGEST'
+    result = cycle.seal_pending(workspace[1], workspace[2], expected_uid=os.getuid(),
+                                namespace='research', passphrase=SECRET)
+    assert result['exhausted_cycles'] == 1 and result['attempted_cycles'] == 0
+
+
+def test_failure_exemption_rejects_rebound_or_insecure_metadata(workspace):
+    captured = capture(workspace)
+    folder = workspace[2] / captured['cycle_id']; folder.mkdir(mode=0o700)
+    path = folder / ('seal-failure-' + 'a' * 32 + '.json')
+    cycle._write_json(path, dict(schema=cycle.SCHEMA, cycle_id=captured['cycle_id'],
+        namespace='issuer', source_commit=SOURCE, status='FAILED',
+        reason_code='CYCLE_DISK_RESERVE', **cycle.SAFETY))
+    with pytest.raises(checkpoint.CheckpointError, match='CYCLE_FAILURE_BINDING'):
+        seal(workspace, captured['cycle_id'])

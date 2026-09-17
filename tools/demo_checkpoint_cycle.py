@@ -16,6 +16,7 @@ import stat
 import tempfile
 import time
 import uuid
+import zipfile
 
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools import demo_namespace_checkpoint as checkpoint
@@ -175,6 +176,45 @@ def _capture(directory, uid, namespace):
     return result
 
 
+def _seal_failures(output, namespace):
+    """Retain legacy resource failures without spending cryptographic retries."""
+    paths = list(output.glob('seal-failure-*.json'))
+    _require(len(paths) <= 2 * MAX_SEAL_ATTEMPTS, 'CYCLE_FAILURE_HISTORY_BUDGET')
+    records = []
+    for path in paths:
+        value = _read(path, os.getuid())
+        _require(value.get('cycle_id') == output.name and value.get('namespace') == namespace and
+                 value.get('status') == 'FAILED', 'CYCLE_FAILURE_BINDING')
+        records.append(value)
+    return records
+
+
+def _seal_reserve(archive, uid):
+    """Bound peak copy/cipher/decrypt/restore storage before any encryption.
+
+    Restore still checks every member, hash and state. ZIP metadata is used only
+    for a space estimate, never as a claim that this archive is recoverable.
+    """
+    info = _private(archive, uid, directory=False)
+    _require(0 < info.st_size <= checkpoint.MAX_BYTES + 64 * 1024**2, 'CHECKPOINT_CAPTURE_FILE')
+    fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, 'rb') as source:
+        before = os.fstat(source.fileno())
+        fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        _require(all(getattr(info, k) == getattr(before, k) for k in fields), 'CYCLE_CAPTURE_CHANGED')
+        with zipfile.ZipFile(source) as zipped:
+            entries = zipped.infolist()
+            _require(0 < len(entries) <= checkpoint.MAX_FILES + 1 and
+                     len({entry.filename for entry in entries}) == len(entries), 'CHECKPOINT_ZIP_INVENTORY')
+            expanded = sum(entry.file_size for entry in entries)
+            _require(expanded <= checkpoint.MAX_BYTES + 32 * 1024**2, 'CHECKPOINT_ZIP_SIZE')
+        after = os.fstat(source.fileno())
+        _require(all(getattr(before, k) == getattr(after, k) for k in fields), 'CYCLE_CAPTURE_CHANGED')
+    # Three archive-sized files coexist during sealing. Also budget a full
+    # expanded tree, worst-case file/block overhead and 1 GiB free headroom.
+    return 3 * info.st_size + expanded + checkpoint.MAX_FILES * 8192 + 1024**3
+
+
 def seal_cycle(directory, backup, *, expected_uid, namespace, passphrase):
     checkpoint.scope(namespace)
     directory = Path(directory).absolute()
@@ -199,13 +239,15 @@ def seal_cycle(directory, backup, *, expected_uid, namespace, passphrase):
                      old.get('source_commit') == record['source_commit'] and old.get('sha256') == checkpoint.sha(destination),
                      'CYCLE_SEALED_BINDING')
             return old
-        failures = list(output.glob('seal-failure-*.json'))
-        _require(len(failures) < MAX_SEAL_ATTEMPTS, 'CYCLE_SEAL_ATTEMPT_BUDGET')
+        failures = _seal_failures(output, namespace)
+        _require(sum(f.get('reason_code') != 'CYCLE_DISK_RESERVE' for f in failures) < MAX_SEAL_ATTEMPTS,
+                 'CYCLE_SEAL_ATTEMPT_BUDGET')
         started = _now()
         record = None
         try:
             record = _capture(directory, expected_uid, namespace)
-            _require(shutil.disk_usage(backup).free >= 4 * checkpoint.MAX_BYTES + 1024**3, 'CYCLE_DISK_RESERVE')
+            reserve = _seal_reserve(directory / 'capture.zip', expected_uid)
+            _require(shutil.disk_usage(backup).free >= reserve, 'CYCLE_DISK_RESERVE')
             recovered = destination.exists()
             if recovered:
                 _private(destination, os.getuid(), directory=False)
@@ -229,7 +271,11 @@ def seal_cycle(directory, backup, *, expected_uid, namespace, passphrase):
             failure = dict(schema=SCHEMA, cycle_id=directory.name, namespace=namespace,
                 source_commit=None if record is None else record['source_commit'],
                 status='FAILED', started_at_ms=started, completed_at_ms=_now(), reason_code=_reason(error), **SAFETY)
-            _write_json(output / ('seal-failure-' + uuid.uuid4().hex + '.json'), failure)
+            # Resource deferral never reaches encryption. Record it once; each
+            # invocation still reports the failure and rechecks actual space.
+            if failure['reason_code'] != 'CYCLE_DISK_RESERVE' or not any(
+                    f.get('reason_code') == 'CYCLE_DISK_RESERVE' for f in failures):
+                _write_json(output / ('seal-failure-' + uuid.uuid4().hex + '.json'), failure)
             raise
         _write_json(final, result)
         return result
@@ -303,7 +349,8 @@ def seal_pending(spool, backup, *, expected_uid, namespace, passphrase):
             continue
         if output.exists():
             _private(output, os.getuid(), directory=True)
-            if len(list(output.glob('seal-failure-*.json'))) >= MAX_SEAL_ATTEMPTS:
+            failures = _seal_failures(output, namespace)
+            if sum(f.get('reason_code') != 'CYCLE_DISK_RESERVE' for f in failures) >= MAX_SEAL_ATTEMPTS:
                 exhausted += 1
                 continue
         pending.append(path)

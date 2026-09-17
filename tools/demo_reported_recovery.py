@@ -65,7 +65,7 @@ def _read(path, root, maximum=12_000_000, *, raw_digest=False):
     return value
 
 
-def capture_inputs(root,account,source_commit,*,opening,system_orders,adv_notional,participation_rate,stream):
+def capture_inputs(root,account,source_commit,*,opening,system_orders,adv_notional,participation_rate,stream,day_replay=False):
     """Complete fixed-account reads; callers supply only their retained originals."""
     captured=demo_executor_origin.run(symbol='BTCUSDC',source_commit=source_commit)
     require(captured['status']=='CAPTURED','ACCOUNT_CAPTURE_CLOSING_UNAVAILABLE')
@@ -74,15 +74,17 @@ def capture_inputs(root,account,source_commit,*,opening,system_orders,adv_notion
             'ACCOUNT_CAPTURE_CLOSING_BINDING')
     load_origin(Path(captured['path']))
     start,end=opening['observed_at_ms']-6000,closing['completed_at_ms']+6000
-    require(0<end-start<86400000,'ACCOUNT_CAPTURE_WINDOW_BUDGET')
+    require(type(day_replay) is bool and 0<end-start<(7 if day_replay else 1)*86400000,'ACCOUNT_CAPTURE_WINDOW_BUDGET')
     if now_ms()<=end:time.sleep((end-now_ms()+1)/1000)
     statements=[]
     for index in range(2):
         if index:time.sleep(max(0,(statements[-1]['completed_at_ms']+10001-now_ms())/1000))
-        result=demo_executor_statement.run(symbol='BTCUSDC',start_ms=start,end_ms=end,source_commit=source_commit)
+        result=demo_executor_statement.run(symbol='BTCUSDC',start_ms=start,end_ms=end,source_commit=source_commit,
+            **({'day_replay':True} if day_replay else {}))
         require(result['status']=='CAPTURED','ACCOUNT_CAPTURE_STATEMENT_UNAVAILABLE')
         wrapper=demo_executor_statement.validate(_read(result['path'],root))
-        require(wrapper['account_ref_sha256']==account and wrapper['source_sha256']==demo_executor_statement.source_hash() and
+        require(wrapper['schema']==(demo_executor_statement.DAY_SCHEMA if day_replay else demo_executor_statement.SCHEMA) and
+            wrapper['account_ref_sha256']==account and wrapper['source_sha256']==demo_executor_statement.source_hash() and
             wrapper['statement']['source_sha256']==demo_executor_statement.original.source_hash(),'ACCOUNT_CAPTURE_STATEMENT_BINDING')
         statements.append(wrapper['statement'])
     trades=statements[0]['trades'];require(1<=len(trades)<=32,'ACCOUNT_CAPTURE_NATIVE_WINDOW_BUDGET')

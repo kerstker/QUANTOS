@@ -79,3 +79,34 @@ def test_fixed_parent_recovery_uses_complete_captured_inputs_and_no_new_send(tmp
             assert view['cash_reconciled'] is False
         assert stores['dispatch'].evidence_snapshot()==wire and stream.verify()==original_stream
     finally:events.close();stream.db.close();close(stores)
+
+
+def test_fixed_day_capture_propagates_bounded_schema_without_changing_default(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from tests.research.test_demo_account_recovery import inputs
+    from tests.research.test_demo_account_days import later_close,DAY
+    from services.research.demo_execution_origin import save
+    from services.research.demo_account_recovery import reconcile_days
+    value=later_close(inputs(tmp_path));account=value['opening']['account_ref_sha256']
+    monkeypatch.setattr(tool,'_check_path',lambda *a,**kw:None)
+    monkeypatch.setattr(tool,'now_ms',lambda:NOW+DAY+100000)
+    monkeypatch.setattr(tool.time,'sleep',lambda _:None)
+    value['closing']['source_sha256']=demo_executor_origin.source_hash()
+    closing=save(tmp_path/'execution-origins/BTCUSDC',value['closing'])
+    monkeypatch.setattr(demo_executor_origin,'run',lambda **kw:dict(status='CAPTURED',path=closing))
+    calls=[]
+    def capture(**kw):
+        assert kw['day_replay'] is True
+        s=value['statements'][len(calls)];calls.append(kw)
+        wrapper=demo_executor_statement._report(account,'BTCUSDC',s['start_ms'],s['end_ms'],
+            s['observed_at_ms'],s['completed_at_ms'],s,day_replay=True)
+        return dict(status='CAPTURED',path=_retain(tmp_path/'statements',wrapper))
+    monkeypatch.setattr(demo_executor_statement,'run',capture)
+    stream=SimpleNamespace(export_order_messages=lambda **kw:next(w for w in value['windows'] if w['start_ms']==kw['start_ms']))
+    args=dict(opening=value['opening'],system_orders=value['system_orders'],adv_notional=value['adv_notional'],
+        participation_rate=value['participation_rate'],stream=stream)
+    with pytest.raises(ValueError,match='ACCOUNT_CAPTURE_WINDOW_BUDGET'):
+        tool.capture_inputs(tmp_path,account,'c'*40,**args)
+    assert calls==[]
+    captured=tool.capture_inputs(tmp_path,account,'c'*40,**args,day_replay=True)
+    assert len(calls)==2 and reconcile_days(**captured)[0]['status']=='REPORTED_ACCOUNT_MATCHED'

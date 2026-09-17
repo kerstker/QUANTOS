@@ -71,10 +71,12 @@ def validate_origin(origin, context, *, as_of_ms):
     _require(Decimal(wallet['observed_wallet']) == Decimal(wallet['observed_cross_wallet']) == Decimal(context['canonical_wallet']),
              'POSITION_CONTEXT_UNEXPLAINED_CASH_CHANGE')
     _require(Decimal(wallet['account_identity_residual']) == 0, 'POSITION_CONTEXT_ACCOUNT_IDENTITY')
+    pnl = Decimal(context['initial_day_pnl'])+Decimal(wallet['observed_margin_balance'])-Decimal(context['initial_equity'])
+    if 'day_checkpoint_sha256' in context:
+        pnl = min(pnl, Decimal(wallet['observed_margin_balance'])-Decimal(context['day_open_equity']))
     return {'positions': [{'symbol': owned['symbol'], 'quantity': owned['quantity'], 'mark_price': owned['observed_mark_price']}] if held else [],
         'cash': wallet['observed_available'], 'equity': wallet['observed_margin_balance'],
-        'day_pnl': canonical_decimal(Decimal(context['initial_day_pnl'])+
-            Decimal(wallet['observed_margin_balance'])-Decimal(context['initial_equity']))}
+        'day_pnl': canonical_decimal(pnl)}
 
 
 def _require(condition, reason):
@@ -127,6 +129,8 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
         plans = _records(area/'plans')
         outcomes = _records(area/'outcomes')
         imports = _records(area/'receipts/imports')
+        day_path = area/'day-checkpoints'
+        day_records = _records(day_path) if day_path.exists() or day_path.is_symlink() else {}
         completed = {v['plan_sha256'] for v in outcomes.values()
             if v.get('schema') in ('DEMO_OMS_RECEIPT_RESOLUTION_V1','DEMO_REPORTED_ACCOUNT_RESOLUTION_V1') and
             v.get('status') == 'OMS_TERMINAL_PROJECTED'}
@@ -244,14 +248,13 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                     'native':{'coverage':{'start_ms':inputs['opening']['observed_at_ms']}}}
                 for b in bs:
                     _require(Decimal(b['manifest']['adv_notional']) == Decimal(original['adv_notional']) and
-                        Decimal(b['manifest']['participation_rate']) == Decimal(original['participation_rate']) and
-                        b['parsed'][3].period_index == original['native']['coverage']['start_ms']//86400000,
+                        Decimal(b['manifest']['participation_rate']) == Decimal(original['participation_rate']),
                         'POSITION_CONTEXT_REPORTED_CAPACITY')
             else:
                 first = bs[0]; original = first['manifest']
                 _require(Decimal(original['initial_position']) == 0 and
                     (first['opening'] is None or first['opening']['positions_count'] == 0), 'POSITION_CONTEXT_FIRST_FLAT')
-            capacities = [{k:v for k,v in b['parsed'][3].as_canonical_dict().items() if k != 'window_id'} for b in bs]
+            capacities = [{k:v for k,v in b['parsed'][3].as_canonical_dict().items() if k not in ('window_id','period_index')} for b in bs]
             _require(all(c == capacities[0] for c in capacities), 'POSITION_CONTEXT_CAPACITY_CHANGED')
             _require(all(b['manifest']['contract'] == original['contract'] for b in bs), 'POSITION_CONTEXT_CONTRACT_CHANGED')
             _require(not bs or len({b['clock'] is None for b in bs}) == 1, 'POSITION_CONTEXT_MIXED_CLOCKS')
@@ -259,14 +262,44 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 ids = [o[field] for b in bs for o in b['manifest']['native']['bindings']]
                 _require(len(ids) == len(set(ids)), 'POSITION_CONTEXT_REUSED_ORDER_ID')
             ledger = account_prefix['ledger'] if account_prefix else replay_ledger(original, first['parsed'], {'trade_rows': []}, cash_events=[])
+            active_day = original['native']['coverage']['start_ms']//86400000
+            day_open = checkpoint_hash = None
+            checkpoint_available = 0
+            peak_floor = max(Decimal(p['risk']['input_snapshot']['account']['peak_equity']) for p in original_proofs)
+            def roll_day(target_day, prefix_count, before_ms, *, required):
+                nonlocal active_day,day_open,checkpoint_hash,checkpoint_available,peak_floor
+                _require(target_day>=active_day,'POSITION_CONTEXT_DAY_ORDER')
+                if target_day==active_day:return
+                prefix=sources[:prefix_count]
+                choices=[(key,record) for key,record in day_records.items()
+                    if record.get('day_id')==target_day and record.get('sources')==prefix and
+                    type(record.get('created_at_ms')) is int and record['created_at_ms']<before_ms]
+                if not choices and not required:return
+                _require(len(choices)==1 and prefix,'POSITION_CONTEXT_DAY_CHECKPOINT_REQUIRED')
+                key,record=choices[0]
+                state=ledger.state_as_canonical_dict();owned=ledger.position(symbol)
+                context=dict(symbol=symbol,account_ref_sha256=account_ref,sources=prefix,
+                    quantity=canonical_decimal(owned.quantity if owned else Decimal(0)),
+                    ledger_state_hash=_digest(state),canonical_wallet=state['wallet_balance'],day_id=active_day,
+                    available_at_ms=max(checkpoint_available,*(plans[s['plan_sha256']]['resolution_at_ms'] for s in prefix)),
+                    contract=original['contract'],adv_notional=original['adv_notional'],participation_rate=original['participation_rate'])
+                if account_prefix:context['reported_account_prefix']=account_prefix['report']
+                from live.execution.demo_day_checkpoint import validate
+                report=validate(record,context=context,proofs=original_proofs[:prefix_count],as_of_ms=before_ms-1)
+                active_day=target_day;day_open=report['daily_cash'][-1]['opening_wallet']
+                checkpoint_hash=key;checkpoint_available=record['created_at_ms']
+                peak_floor=max(peak_floor,*(Decimal(d['closing_wallet']) for d in report['daily_cash']))
             last_event = None
             previous_available = account_prefix['plan']['resolution_at_ms'] if account_prefix else None
             for i, b in enumerate(bs):
+                prefix_count=i+(1 if account_prefix else 0)
+                boundary=b['manifest']['opening']['capture']['observed_at_ms'] if b['opening'] is not None else b['manifest']['native']['coverage']['start_ms']
+                roll_day(b['parsed'][3].period_index,prefix_count,boundary,required=True)
                 if i or account_prefix:
                     opening = b['opening']; m = b['manifest']; before = ledger.state_as_canonical_dict()
                     _require(opening is not None, 'POSITION_CONTEXT_CONTINUATION_REQUIRED')
                     start = m['opening']['capture']['observed_at_ms']
-                    _require(previous_available < start, 'POSITION_CONTEXT_CONTINUATION_TIME')
+                    _require(max(previous_available,checkpoint_available) < start, 'POSITION_CONTEXT_CONTINUATION_TIME')
                     _require(Decimal(m['initial_collateral']) == Decimal(before['wallet_balance']), 'POSITION_CONTEXT_WALLET_CHANGED')
                     actual = {k:v for k,v in before['positions'].items() if Decimal(v['quantity']) != 0}
                     declared = {p['symbol']:p for p in opening['positions']}
@@ -286,6 +319,7 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 apply_reported_events(ledger, fills, reductions)
                 previous_available = max(b['manifest']['native']['coverage']['end_ms'],
                     b['clock']['available_at_ms'] if b['clock'] else 0, max(r['received_at_ms'] for r in b['records']))
+            roll_day(as_of_ms//86400000,len(sources),as_of_ms+1,required=False)
             _require(all(b['journal'].read()[1] == b['tail'] for b in bs), 'POSITION_CONTEXT_RECEIPTS_CHANGED')
             for path, before in file_facts.items():
                 _custody(path, directory=False)
@@ -299,13 +333,16 @@ def load_context(state, *, symbol, account_ref, as_of_ms):
                 'canonical_wallet': final['wallet_balance'], 'initial_equity': original['initial_collateral'],
                 'initial_day_pnl': original_proofs[0]['risk']['input_snapshot']['account']['day_pnl'],
                 'initial_plan_turnover': original_proofs[0]['risk']['input_snapshot']['context']['plan_turnover'],
-                'peak_equity_floor': canonical_decimal(max(Decimal(p['risk']['input_snapshot']['account']['peak_equity']) for p in original_proofs)),
-                'day_id': original['native']['coverage']['start_ms']//86400000,
-                'ledger_state_hash': _digest(final), 'available_at_ms': available, 'sources': sources,
+                'peak_equity_floor': canonical_decimal(peak_floor),
+                'day_id': active_day,
+                'ledger_state_hash': _digest(final), 'available_at_ms': max(available,checkpoint_available), 'sources': sources,
                 'contract': original['contract'], 'adv_notional': original['adv_notional'],
                 'participation_rate': original['participation_rate'], 'capacity_consumed': final['capacity_consumed'],
                 'cash_flow_policy': _POLICY, 'cash_reconciled': False, 'source_verified': False,
                 'submission_enabled': False, 'economic_authority': False}
+            if checkpoint_hash:
+                result.update(day_checkpoint_sha256=checkpoint_hash,day_open_equity=day_open,
+                              day_risk_policy='MIN_CURRENT_DAY_AND_ORIGINAL_ACCOUNT_PNL_V1')
             if account_prefix:
                 result['reported_account_prefix'] = {'plan_sha256':_digest(account_prefix['plan']),
                     'manual_order_ids':account_prefix['report']['manual_order_ids'],

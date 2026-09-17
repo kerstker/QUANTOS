@@ -28,8 +28,43 @@ def require(ok,reason):
     if not ok:raise AccountRecoveryRejected(reason)
 
 
-@ledger_decimal_context()
+DAY_MS = 86_400_000
+MAX_REPLAY_DAYS = 7
+
+
 def reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,participation_rate):
+    """Existing one-day recovery contract used by the protected executor."""
+    return _reconcile(opening=opening,closing=closing,statements=statements,windows=windows,
+        system_orders=system_orders,adv_notional=adv_notional,participation_rate=participation_rate,daily=False)
+
+
+def reconcile_days(*,opening,closing,statements,windows,system_orders,adv_notional,participation_rate):
+    """Offline, bounded day accounting; never grants cross-day execution.
+
+    The same original ledger survives every UTC boundary. A position held over
+    midnight is rejected because these inputs contain no verified midnight mark.
+    Partial first/last days are explicit, and historical gaps remain unrepaired.
+    """
+    return _reconcile(opening=opening,closing=closing,statements=statements,windows=windows,
+        system_orders=system_orders,adv_notional=adv_notional,participation_rate=participation_rate,daily=True)
+
+
+def _day_row(day, before, after, *, start, end):
+    changes = {key:Decimal(after[key])-Decimal(before[key])
+               for key in ('price_pnl','fee','funding','external_cash_flow')}
+    net = changes['price_pnl']-changes['fee']+changes['funding']
+    require(Decimal(after['ending_equity'])-Decimal(before['ending_equity']) ==
+            net+changes['external_cash_flow'], 'ACCOUNT_DAYS_CASH_IDENTITY')
+    low, high = max(start, day*DAY_MS), min(end, (day+1)*DAY_MS)
+    return dict(day_id=day, start_ms=low, end_ms=high,
+        complete_utc_day=low == day*DAY_MS and high == (day+1)*DAY_MS,
+        opening_wallet=before['ending_equity'], closing_wallet=after['ending_equity'],
+        net_after_costs=canonical_decimal(net),
+        **{key:canonical_decimal(value) for key,value in changes.items()})
+
+
+@ledger_decimal_context()
+def _reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,participation_rate,daily):
     """Return the verified reported projection and its one ledger, or unknown.
 
     Input custody and original intent/query binding belong to the protected
@@ -45,6 +80,9 @@ def reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,pa
         'net_after_fees':None,'ledger_state':None,'ledger_state_hash':None,'fill_count':None,
         'source_verified':False,'economic_authority':False,'automatic_cycle_completed':False,
         'submission_enabled':False,'strategy_pnl':None,'income_time_policy':INCOME_TIME_POLICY}
+    if daily:
+        result.update(schema='DEMO_REPORTED_ACCOUNT_DAYS_V1',daily_cash=[],risk_budget_reset=False,
+            day_policy='UTC_FLAT_BOUNDARIES_ORIGINAL_LEDGER_V1')
     try:
         before=assess(opening,as_of_ms=opening['completed_at_ms'])
         after=assess(closing,as_of_ms=closing['completed_at_ms'])
@@ -52,7 +90,14 @@ def reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,pa
         symbol=opening['symbol'];quote=symbol[3:];account=opening['account_ref_sha256']
         require(symbol==closing['symbol'] and account==closing['account_ref_sha256'],'ACCOUNT_RECOVERY_ACCOUNT_BINDING')
         start=opening['completed_at_ms'];end=closing['observed_at_ms']
-        require(0<end-start<86400000 and start//86400000==closing['completed_at_ms']//86400000,'ACCOUNT_RECOVERY_SAME_DAY_WINDOW')
+        if daily:
+            require(0<end-start<MAX_REPLAY_DAYS*DAY_MS and
+                0<=closing['completed_at_ms']//DAY_MS-start//DAY_MS<MAX_REPLAY_DAYS,
+                'ACCOUNT_DAYS_WINDOW_BUDGET')
+            require(opening['observed_at_ms']//DAY_MS==start//DAY_MS and
+                end//DAY_MS==closing['completed_at_ms']//DAY_MS,'ACCOUNT_DAYS_CHECKPOINT_BOUNDARY')
+        else:
+            require(0<end-start<86400000 and start//86400000==closing['completed_at_ms']//86400000,'ACCOUNT_RECOVERY_SAME_DAY_WINDOW')
         terms,_=contract_from_origin(opening);current_terms,_=contract_from_origin(closing)
         require(terms==current_terms,'ACCOUNT_RECOVERY_CONTRACT_CHANGED')
         require(type(statements) is list and len(statements)==2,'ACCOUNT_RECOVERY_TWO_REST_OBSERVATIONS')
@@ -149,7 +194,20 @@ def reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,pa
             events.append(ReportedCashFlowEvent(timestamp=row['time'],account_ref_sha256=account,asset=quote,
                 income_type=row['incomeType'],transaction_id=row['tranId'],amount=Decimal(row['income']),
                 instrument_id=symbol if row['incomeType']=='FUNDING_FEE' else None,source_sha256=digest(first)))
+        day = start//DAY_MS
+        day_open = ledger.reconciliation_snapshot().as_canonical_dict() if daily else None
+        day_rows = []
+        def finish_day():
+            position = ledger.position(symbol)
+            require(position is None or position.quantity == 0,'ACCOUNT_DAYS_MIDNIGHT_POSITION_UNVALUED')
+            snapshot = ledger.reconciliation_snapshot().as_canonical_dict()
+            day_rows.append(_day_row(day,day_open,snapshot,start=start,end=end))
+            return snapshot
         for event in sorted(events,key=lambda e:e.timestamp):
+            if daily:
+                while day < event.timestamp//DAY_MS:
+                    day_open = finish_day()
+                    day += 1
             if isinstance(event,ReportedFillReplayEvent) and event.quantity_delta<0:
                 position=ledger.position(symbol)
                 require(position is not None and position.quantity>=-event.quantity_delta,'ACCOUNT_RECOVERY_REDUCTION_EXCEEDS_POSITION')
@@ -160,6 +218,11 @@ def reconcile(*,opening,closing,statements,windows,system_orders,adv_notional,pa
         require(residual==0,'ACCOUNT_RECOVERY_WALLET_DIFFERENCE')
         cash=sum((Decimal(r['income']) for r in flows if r['incomeType'] in ('FUNDING_FEE','TRANSFER')),Decimal(0))
         require(Decimal(state['wallet_balance'])==Decimal(before['wallet'])+pnl-fee+cash,'ACCOUNT_RECOVERY_V2_PRICE_PNL_DIFFERENCE')
+        if daily:
+            while day <= end//DAY_MS:
+                day_open = finish_day()
+                day += 1
+            result['daily_cash'] = day_rows
         result.update(status='REPORTED_ACCOUNT_MATCHED',system_order_ids=sorted(owned,key=int),manual_order_ids=sorted(external,key=int),
             canonical_wallet=state['wallet_balance'],reported_wallet=after['wallet'],wallet_residual='0',final_quantity='0',
             reported_fee=canonical_decimal(fee),reported_realized_pnl=canonical_decimal(pnl),net_after_fees=canonical_decimal(pnl-fee),

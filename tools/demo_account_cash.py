@@ -14,7 +14,7 @@ from live.execution.demo_issuer_policy import require
 from live.execution.demo_position_context import load_context
 from live.execution.demo_pre_submit import _state, _retain
 from live.execution.demo_resident_recovery import _cycle_lease
-from services.research.demo_account_recovery import reconcile
+from services.research.demo_account_recovery import reconcile, reconcile_days
 from services.research.demo_cash_chain_status import build_status, save
 from services.research.demo_execution_journal import DemoExecutionJournal, REPLAY_SOURCE_SHA256, observations
 from tools.demo_reported_recovery import capture_inputs, _read, now_ms
@@ -23,9 +23,10 @@ from tools.demo_executor_stream import fixed_account
 
 
 def compare(inputs,context,*,cycle_order_ids):
-    report,ledger=reconcile(**inputs)
+    replay=reconcile_days if context.get('day_checkpoint_sha256') else reconcile
+    report,ledger=replay(**inputs)
     require(report['status']=='REPORTED_ACCOUNT_MATCHED' and ledger is not None,'ACCOUNT_CASH_UNRESOLVED')
-    require(report['ledger_state_hash']==context['ledger_state_hash'] and
+    require(_digest(report['ledger_state'])==context['ledger_state_hash'] and
         report['canonical_wallet']==context['canonical_wallet'] and report['final_quantity']==context['quantity']=='0',
         'ACCOUNT_CASH_CANONICAL_DIFFERENCE')
     historical=context.get('reported_account_prefix',{}).get('manual_order_ids',[])
@@ -60,7 +61,8 @@ def run(root,area,account,source_commit,*,strategy_id):
                 'ACCOUNT_CASH_CYCLE_NOT_COMPLETE')
         inputs=capture_inputs(root,account,source_commit,opening=proofs[0]['origin'],
             system_orders=[o for p in proofs for o in p['orders']],adv_notional=context['adv_notional'],
-            participation_rate=context['participation_rate'],stream=stores['stream'])
+            participation_rate=context['participation_rate'],stream=stores['stream'],
+            **({'day_replay':True} if context.get('day_checkpoint_sha256') else {}))
         _retain(area/'account-cash-inputs',dict(schema='DEMO_ACCOUNT_CASH_INPUTS_V1',inputs=inputs,
             source_commit=source_commit,cycle_sha256=area.name,context_sha256=_digest(context),orders_submitted=False))
         report,ledger,count=compare(inputs,context,cycle_order_ids=cycle_order_ids)
