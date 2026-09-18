@@ -1,5 +1,56 @@
 # 组合目标到执行任务：开发断点
 
+## 发布备份运行验收与观察网络修复
+
+用户执行组合安装后，`observation-install-result.json` 为
+OBSERVATION_SERVICES_INSTALLED；两个发布定时器和专用备份定时器active。
+首轮备份服务正常退出0，实际94文件CACHE_ROOT_V2加密、解密及研究完整恢复通过，
+local_rehearsal=false，追加恢复状态PASS；该挂载仍是同机镜像，不是异机灾备。
+
+深入核对发现专用观察服务未配置原研究网络代理，11:47启动后在自然窗口累计
+41次URLError，尚无预测。此前RUNNING/WAITING_WINDOW只表示进程和窗口状态，
+不能证明行情可达。按原研究网络配置，仅加入HTTP_PROXY、HTTPS_PROXY、NO_PROXY
+及其小写形式；无认证信息、安全开关覆盖或代码变更，不复制ALL_PROXY。
+首次准备因既有ALL_PROXY为socks5h被拒，未写运行配置，随后限缩到上述HTTP变量。
+单元检查后重启专用观察服务，真实公开GET取得25根小时线；这是连通性诊断，
+没有写入或回填任何预测。原41条错误、模型 `[0,0,0]`、freeze/source身份保留。
+
+证据为交付目录 `portfolio-observer-network-change.json`、
+`portfolio-network-public-probe.json`、`observation-deployment-verification.json`。
+页面portfolio_cycle/portfolio_cash仍NO_SNAPSHOT，需新自然预测及真实操作员
+有限登记后才可能有实际周期。尚无组合订单、自动往返或现金闭合结论。
+
+## 专用组合观察已启动
+
+用户要求继续后，以原入口在自然时间激活原#4组合，新freeze/source身份保留，
+模型及 `[0,0,0]` 权重不变；没有回填预测或创建交易登记。专用用户服务
+`quantos-portfolio-4-observer.service` 已启用，实际RUNNING/WAITING_WINDOW，
+前向成本WAITING_MATURITY；首轮52文件CACHE_ROOT_V2研究检查点通过。
+见交付目录 `portfolio-observer-activation.json` 与 `portfolio-observer-running.json`。
+
+后续发布/备份安装已合并成固定摘要约束的 `install_observation_services.py`，
+先完成两项预检，再安装四个只读发布单元、备份服务/定时器与固定封装脚本。
+备份目录仅准备uid1000根目录穿越ACL及独立0700子目录，不修改用户组；失败时
+原ACL及单元按各自安装器回退，保留归档和审计。成功步骤可只读核对后跳过，
+不会再次覆盖已安装目录。root操作仍待本机执行，实际加密周期尚未据此完成。
+
+## 主运行版本部署核对
+
+用户明确确认主运行部署，root只读预检为PASS。随后报告安装器第24行目标已存在
+断言失败。现场读取确认 `/opt/quantos/releases/c34f31b701c9d6b90456bfbf37f13e63b9b20ef7`
+已存在且干净，manifest绑定通过；11个系统服务文件、固定入口及venv与安装清单
+完全一致，私有流和相关定时器active。本次重复命令在安装写入前拒绝；没有删除
+已有目录重装。现场只读核对见交付目录 `installed-root-public-verification.json`。
+用户随后导出 `root-install-result.json`：INSTALLED_RECOVERY_READY、INSTALLED，
+原七个数据库inode及授权/停机记录保留标志为true，零登记、零下单。
+
+依已有部署授权执行用户侧安装器，结果 `CONSOLE_AND_WEB_INSTALLED`。
+正式15911前端合同为c34版本、真实同源API；Demo API环境正确、read_only=true、
+submission_enabled=false。切换前后六个原研究/采集用户进程的PID、启动时间与
+重启计数一致，详见 `runtime-review/user-install-result.json` 与 `installed-api.json`。
+这只完成主运行切换：组合发布器、专用观察和备份另行准备，未因本次启用；未
+创建操作员登记或提交组合订单，实际自动往返、现金和跨日/重启仍未验收。
+
 ## 最终软件验收与本地交付准备
 
 修复源码 `2626199a60a94c186887fb8a9fabc6ab1e99f7a6` 的完整验收已经结束，
