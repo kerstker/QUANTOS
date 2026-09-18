@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 import {DemoControlCenter} from './DemoControlCenter';
+import {DemoRuntimeFlow} from './DemoRuntimeFlow';
 import {DemoStatement} from './DemoStatement';
 import {DemoCashWindow} from './DemoCashWindow';
 import {DemoCanonicalCash} from './DemoCanonicalCash';
@@ -61,6 +62,7 @@ export function DemoReadinessView({data, loading, error, refresh}: {
     }>从首次启动到往返成交与现金核对，在一个工作区跟进 DEMO 全流程。</Header>
     <ErrorNote error={error} retry={refresh}/>
     {loading && !data && <Loading/>}
+    <DemoRuntimeFlow data={data} refreshFailed={!!error}/>
     {!portfolioObserved && <DemoControlCenter snapshot={data?.functional_cycle} connected={accountReady===true} refreshFailed={!!error}
       enrollmentObserved={!!data?.issuer_status?.report} position={position}/>}
     <WorkspaceSection id="demo-cycle" title="交易周期">

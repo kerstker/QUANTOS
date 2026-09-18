@@ -76,9 +76,13 @@ export function cashWindowValid(v: unknown, asOf: number): boolean {
         typeof f.symbol === 'string' && /^[A-Z0-9_\u3400-\u9fff]{0,32}$/.test(f.symbol) &&
         typeof f.transaction_id === 'string' && /^\d{1,19}$/.test(f.transaction_id) && BigInt(f.transaction_id) <= 9223372036854775807n)) return false;
   const bounds = r.bounds;
+  // An interrupted capture may finish before the wallet query's 5-second
+  // guard ends. This is a requested interval, never future observed evidence.
+  const queryGuard = r.status==='UNRESOLVED' && r.capture_status==='PARTIAL' ? 5000 : 0;
   if (bounds !== null && (!object(bounds) || !['query_start_ms','query_end_ms','inner_start_ms','inner_end_ms'].every(k => integer(bounds[k])) ||
       Number(bounds.query_start_ms) >= Number(bounds.inner_start_ms) || Number(bounds.inner_start_ms) >= Number(bounds.inner_end_ms) ||
-      Number(bounds.inner_end_ms) >= Number(bounds.query_end_ms) || Number(bounds.query_end_ms) > r.completed_at_ms)) return false;
+      Number(bounds.inner_end_ms) >= Number(bounds.query_end_ms) || Number(bounds.inner_end_ms) > r.completed_at_ms ||
+      Number(bounds.query_end_ms) > r.completed_at_ms+queryGuard)) return false;
   if (r.recent_flows.length !== Math.min(50,r.income_count) ||
       new Set(r.assets.map(a => (a as Record<string,unknown>).asset)).size !== r.assets.length) return false;
   if (r.status !== 'UNRESOLVED') {

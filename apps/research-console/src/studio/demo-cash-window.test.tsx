@@ -96,3 +96,18 @@ it('keeps an opening-wallet controller failure visible without inventing a closi
   r.failures[0].kind='credentials';
   expect(cashWindowValid({status:'AVAILABLE',report:r},at+400)).toBe(false);
 });
+
+it('retains an interrupted closing-clock observation whose query guard extends past capture completion',()=>{
+  const r=recovered();r.attempts=r.attempts!.slice(0,4);
+  const last=r.attempts[3];last.outcome='FAILED';last.reason='CLOCK_UNRELIABLE';
+  Object.assign(r,{status:'UNRESOLVED',capture_status:'PARTIAL',completed_at_ms:last.received_at_ms,
+    read_count:3,income_count:0,sweeps_match:false,issues:['CAPTURE_INCOMPLETE','INCOME_SWEEP_MISSING'],assets:[],recent_flows:[],
+    failures:[{kind:last.kind,sweep:0,page:0,requested_at_ms:last.requested_at_ms,received_at_ms:last.received_at_ms,reason:last.reason}]});
+  r.bounds={query_start_ms:at-4800,query_end_ms:at+65400,inner_start_ms:at+5300,inner_end_ms:at+55300};
+  expect(cashWindowValid({status:'AVAILABLE',report:r},r.completed_at_ms)).toBe(true);
+  expect(cashWindowValid({status:'AVAILABLE',report:r},r.completed_at_ms-1)).toBe(false);
+  r.bounds.query_end_ms=r.completed_at_ms+5001;
+  expect(cashWindowValid({status:'AVAILABLE',report:r},r.completed_at_ms)).toBe(false);
+  r.bounds.query_end_ms=at+65400;r.capture_status='CAPTURED';
+  expect(cashWindowValid({status:'AVAILABLE',report:r},r.completed_at_ms)).toBe(false);
+});
