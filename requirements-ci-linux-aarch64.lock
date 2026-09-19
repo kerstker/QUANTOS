@@ -3,14 +3,14 @@
 # python-version: 3.12
 # platform-tag: ubuntu_24_04_aarch64
 # source-sha256: requirements-dev.txt=96ea318522af76da516aab74e3c9b242f3e92aa5f449e96eefb04f0f0bc03af3
-# source-sha256: requirements.txt=1d4368ea74bc60832fb523de4e29d0b75b7815d02342a0f467511c53b123593f
+# source-sha256: requirements.txt=2e6b5e585d7e1d76980add4e67e4db19c98d19dffa388136c48f6f4ebff4fee1
 
 # package: annotated-doc==0.0.4
 annotated-doc @ https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl --hash=sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320
 # package: annotated-types==0.7.0
 annotated-types @ https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl --hash=sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
-# package: anyio==4.14.1
-anyio @ https://files.pythonhosted.org/packages/b0/7b/90df4a0a816d98d6ea26f559d87836d494a2cf1fcf063be67df50a7bcc30/anyio-4.14.1-py3-none-any.whl --hash=sha256:4e5533c5b8ff0a24f5d7a176cbe6877129cd183893f66b537f8f227d10527d72
+# package: anyio==4.14.2
+anyio @ https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494
 # package: boolean-py==5.0
 boolean-py @ https://files.pythonhosted.org/packages/e5/ca/78d423b324b8d77900030fa59c4aa9054261ef0925631cd2501dd015b7b7/boolean_py-5.0-py3-none-any.whl --hash=sha256:ef28a70bd43115208441b53a045d1549e2f0ec6e3d08a9d142cbc41c1938e8d9
 # package: cachecontrol==0.14.4

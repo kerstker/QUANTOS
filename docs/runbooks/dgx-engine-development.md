@@ -12,6 +12,12 @@
 
 ## 独立开发环境
 
+2026-09-19 Kraken整合验收发现 AnyIO 4.14.1 的新披露漏洞后，安全补丁测试环境为
+`/home/kerstker/quantos-dev-output/kraken-automation-20260919/anyio-security-venv`。
+它是原开发环境的独立副本，仅通过哈希校验安装 AnyIO 4.14.2；原环境保留4.14.1，
+用于尚在运行的旧源码验收。包含本次安全补丁的新源码应显式使用新环境的
+`bin/python`，不能用旧环境宣称依赖与新锁文件匹配。其余依赖版本不变，运行服务环境未修改。
+
 开发虚拟环境位于
 `/home/kerstker/quantos-dev-output/dgx-engine-foundation-20260905/venv`，
 由 Python 3.12 创建，已使用

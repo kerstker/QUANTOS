@@ -28,7 +28,7 @@ sigstore==4.4.0
 # Fully resolved runtime dependency pins for deterministic container builds.
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.14.1
+anyio==4.14.2
 cffi==2.1.0
 click==8.4.2
 h11==0.16.0
