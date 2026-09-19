@@ -26,11 +26,12 @@ from services.data import kraken_order_query as order_query
 from services.data import kraken_trade_query as trade_query
 from services.data import kraken_cash_reconciliation as cash_model
 from services.data import kraken_fees as fee_model
+from services.data import kraken_client_order_lookup as lookup_model
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools.kraken_public_capture import NoRedirect, atomic_json, digest
 
-ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades','Ledgers','TradeVolume')
+ENDPOINTS=('BalanceEx','OpenOrders','ClosedOrders','QueryOrders','QueryTrades','Ledgers','TradeVolume')
 
 
 def private_root(root):
@@ -62,7 +63,10 @@ class ReadOnlyClient:
         self._clock=clock_ms or (lambda:time.time_ns()//1_000_000)
 
     def read(self,endpoint,params):
-        if endpoint=='TradeVolume':
+        if endpoint=='ClosedOrders' or (endpoint=='OpenOrders' and 'cl_ord_id' in params):
+            lookup_model.validate_params(endpoint,params)
+            params=dict(params)
+        elif endpoint=='TradeVolume':
             fee_model.validate_params(params)
             params=json.loads(json.dumps(params,allow_nan=False))
         elif endpoint=='Ledgers':
@@ -297,7 +301,7 @@ def cash_order_hints(client, root, cash, *, clock_ms):
         yield discovered
 
 
-def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
+def track_orders(client, root, open_orders, *, clock_ms=None, cash=None, client_order_requests=None):
     """Retain known IDs before querying; unknown/missing orders never become empty."""
     root=private_root(root);clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
     fd=os.open(root/'.order-query.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
@@ -336,6 +340,20 @@ def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
         pending['result_hash']=digest(pending)
         atomic_json(root/'order-recovery.json',pending)
         atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
+        try:
+            from tools.kraken_client_order_lookup import hints
+            for discovered in hints(client,root,requests=client_order_requests,retired=retired,clock_ms=clock_ms):
+                ids.update(discovered);ordered=sorted(ids)
+                result.update(order_ids=ordered,status='UNRESOLVED')
+                pending={**result,'failure':{'error_type':'REFRESH_IN_PROGRESS'}}
+                pending['result_hash']=digest(pending)
+                atomic_json(root/'order-recovery.json',pending)
+                atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
+                order_query.identifiers(','.join(ordered))
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            result.update(status='UNRESOLVED',failure={'error_type':type(exc).__name__})
+            result['result_hash']=digest(result);atomic_json(root/'order-recovery.json',result)
+            return result
         if cash is not None:
             try:
                 for discovered in cash_order_hints(client,root,cash,clock_ms=clock_ms):
@@ -394,7 +412,7 @@ def validate_cash_opening(opening, account_ref):
 
 def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None,
                 track_known_orders=False, ledger_opening=None, clock_ms=None, auto_cash=False,
-                settlement_market_root=None, fee_market_root=None):
+                settlement_market_root=None, fee_market_root=None, client_order_requests=None):
     """Bounded human-started refresh; any transport/API failure ends the session."""
     require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
     require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
@@ -405,10 +423,15 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
         settlement_market_root=Path(settlement_market_root).absolute()
         require(settlement_market_root.resolve()==settlement_market_root and settlement_market_root.is_dir(),
                 'KRAKEN_CHECKPOINT_MARKET_ROOT')
-    track_known_orders=track_known_orders or auto_cash
+    if client_order_requests is not None:
+        require(isinstance(client_order_requests,list) and 1<=len(client_order_requests)<=32,'KRAKEN_CLIENT_LOOKUP_REQUEST_LIMIT')
+        for request in client_order_requests:lookup_model.requests(request)
+    track_known_orders=track_known_orders or auto_cash or client_order_requests is not None
     if ledger_opening is not None:
         validate_cash_opening(ledger_opening,client.account_ref_sha256)
     root=private_root(root)
+    track_known_orders=track_known_orders or any((root/name).exists() or (root/name).is_symlink() for name in
+        ('client-order-requests.json','client-order-recovery-required.json','client-order-resolutions'))
     fd=os.open(root/'.session.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -451,7 +474,8 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
             recovery=None
             bootstrap_blocked=auto_cash and ledger_opening is None and (status!='OBSERVED_STABLE' or report['open_orders'])
             if track_known_orders and status!='FAILED' and not bootstrap_blocked:
-                recovery=track_orders(client,root,report['open_orders'],clock_ms=clock_ms)
+                recovery=track_orders(client,root,report['open_orders'],clock_ms=clock_ms,
+                                      client_order_requests=client_order_requests if index==0 else None)
                 if recovery['status']=='UNRESOLVED':
                     failures+=status=='OBSERVED_STABLE';stop_reason='ORDER_QUERY_UNRESOLVED'
             if auto_cash and ledger_opening is None:
@@ -526,12 +550,19 @@ def main(argv=None):
     parser.add_argument('--settlement-market-root',type=Path,
         help='With --auto-cash, use archived public market evidence to advance settled checkpoints and retire known orders')
     parser.add_argument('--fee-market-root',type=Path,help='Persist public observer directory and refresh account fee evidence each cycle')
+    parser.add_argument('--client-order-requests',type=Path,help='Register bounded client-ID recovery requests; never resubmit missing orders')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(not (args.auto_cash and args.ledger_opening is not None),'KRAKEN_CASH_SESSION_MODE')
     require(args.settlement_market_root is None or args.auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
+    client_requests=None
+    if args.client_order_requests is not None:
+        from tools.kraken_inventory_report import load
+        client_requests=load(args.client_order_requests)
+        require(isinstance(client_requests,list) and 1<=len(client_requests)<=32,'KRAKEN_CLIENT_LOOKUP_REQUEST_LIMIT')
+        for request in client_requests:lookup_model.requests(request)
     opening=load_json_without_duplicate_keys(args.ledger_opening.read_bytes()) if args.ledger_opening is not None else None
     print('仅查询账户、订单与成交；不下单、不撤单、不转账。凭证仅保留在本进程内存。')
     key=getpass.getpass('Kraken API public key（不回显）: ')
@@ -540,7 +571,7 @@ def main(argv=None):
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
         on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders,
         ledger_opening=opening,auto_cash=args.auto_cash,settlement_market_root=args.settlement_market_root,
-        fee_market_root=args.fee_market_root)
+        fee_market_root=args.fee_market_root,client_order_requests=client_requests)
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

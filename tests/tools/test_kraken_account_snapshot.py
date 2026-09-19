@@ -7,6 +7,21 @@ from tools import kraken_account_snapshot as tool
 from tests.data.test_kraken_account import observations, NOW
 
 
+def test_client_id_lookup_endpoints_are_bounded_and_readonly(tmp_path):
+    from services.data.kraken_client_order_lookup import requests
+    from tests.data.test_kraken_client_order_lookup import REQUEST
+    calls=[]
+    client=tool.ReadOnlyClient(base64.b64encode(b'public fixture only').decode(),
+        base64.b64encode(b'non-secret fixture only').decode(),tmp_path,
+        transport=lambda url,body,headers:calls.append(url) or b'{"error":[],"result":{}}',clock_ms=lambda:NOW)
+    for endpoint,params in requests(REQUEST):client.read(endpoint,params)
+    assert calls==['https://api.kraken.com/0/private/OpenOrders','https://api.kraken.com/0/private/ClosedOrders']
+    endpoint,params=requests(REQUEST)[1]
+    for change in ({'closetime':'close'},{'ofs':50},{'end':params['start']+90000},{'trades':'false'}):
+        with pytest.raises(ValueError):client.read(endpoint,{**params,**change})
+    assert len(calls)==2
+
+
 def test_fee_query_encodes_class_qualified_json_and_signs_exact_body(tmp_path):
     import hashlib
     import hmac

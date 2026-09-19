@@ -2,7 +2,7 @@
 
 日期：2026-09-19。状态：公开数据自动观察首批实现，未完成账户管理或实盘执行。
 
-最新接续见第三十批：目标金额到精确数量规划。首批及下列各批描述保留各自历史时点，不能作为当前完整自动化已完成的声明。
+最新接续见第三十一批：客户端编号查找与未知订单恢复。首批及下列各批描述保留各自历史时点，不能作为当前完整自动化已完成的声明。
 
 用户明确目标为自动管理完整组合，股票采用 Kraken xStocks，黄金使用 XAUT；用户声明已具备产品授权且已有 xStocks 持仓。不再要求地区信息，不将其持仓当作接口已验证事实。账户授权声明与程序内签名、风控、人工 mandate、账本及执行权限分别处理；本批不读取凭证、不修改实盘开关、不提交订单。
 
@@ -444,3 +444,17 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 再次核对[官方xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)与[REST接口定义](https://docs.kraken.com/api-reference/trading/add-order)：FAQ说明显示份数、乘数和onchain数量间的关系，但仍不足以核准现有REST请求与Ticker在全部xStocks场景的数量/价格口径。TradeVolume当前接口定义也未明确本批所需的完整逐笔扣费舍入规则。现有XSTOCKS_PRICE_BASIS_INFERRED约束保留；输出为INDICATIVE_QUANTITIES，drafts为空，ORDER_QUANTITY_SEMANTICS_UNVERIFIED、FEE_DEBITS_NOT_SIZED和LIVE_ISSUER_NOT_CONNECTED仍阻止生成可执行请求。没有把规划结果自动送入资金预留，也未宣称费用预算已完成。
 
 回归先复现缺少数量模块及持仓/组合接线，再实现。覆盖xStocks基础数量与股票份数分离、XAUT原生数量、新建仓无既有余额、缺失/过期乘数、冻结持仓、调用方低精度、恰在步长边界及低于边界1e-18的舍入，以及买卖价差造成资金缺口。另用真实文件输入复现“无既有持仓且缺乘数时quantity_review为BLOCKED但CLI返回0”的错误，改为返回3并输出quantity_status。专项40项通过，首轮联合444通过/1跳过，补修CLI后的最终联合结果见项目状态。依赖图重建后20域54边零环。真实账户导出仍缺失，本批未部署、实采或重新完整验收。
+
+## 第三十一批 客户端编号查找与未知订单恢复
+
+既有QueryOrders要求已知交易所订单号，不能独立处理“发送结果未知、没有收到订单号”的断点。新增`services/data/kraken_client_order_lookup.py`，按固定32位客户端编号依次查询OpenOrders与ClosedOrders，后者固定按创建时间筛选、base数量、trades=true和第一页。查询窗口来自原请求的not_before_ms/deadline_ms，跨度最多24小时，向秒边界外扩后再按原始opentm精确过滤。ClosedOrders总数与首批结果必须一致且不超过50，超限拒绝，不声称已分页穷尽全部历史。
+
+依据[OpenOrders](https://docs.kraken.com/api-reference/account-data/get-open-orders)和[ClosedOrders](https://docs.kraken.com/api-reference/account-data/get-closed-orders)的cl_ord_id筛选参数。只读客户端新增ClosedOrders及OpenOrders的精确过滤形状，复用原nonce锁、持久递增及表单签名；仍不允许AddOrder、撤单或资金转移。普通账户OpenOrders读取形状不变。未访问真实API凭证或账户。
+
+新增`tools/kraken_client_order_lookup.py`保存查询请求与成功发现的原始证据，接入现有track_orders：先使旧恢复成功失效、保存请求，再查询；发现唯一订单号后，先将编号持久化，再走原QueryOrders、QueryTrades及后续现金对账。空结果、多候选、缺页、错误账户/编号、时钟错误或同一交易所编号创建时间变化均不能成功；resubmission_allowed与absence_proven始终false。查询期间同一订单从open转closed可合并同一编号；不把查询为空解释为从未提交。
+
+请求配置绑定账户与原窗口，删除已登记配置、改换窗口或损坏缓存拒绝。成功证据重启时按原时刻重放核对，只恢复编号提示；当前订单状态仍须重新查询。已结算归档的订单不重新加入活跃跟踪。每次最多新增32项请求，历史配置最多10000项，超过上限拒绝；历史容量与运行速率尚未做长期验收。仅本地内容完整性，不是外部签名的发送证明。
+
+账户有限会话新增`--client-order-requests <JSON数组文件>`，每项固定为client_order_id、not_before_ms、deadline_ms。请求在人工凭证输入前校验；成功登记后可省略该参数，重启会自动恢复跟踪。开发测试调用程序接口，未运行人工凭证入口。未来受控提交器仍需把原发送身份和窗口接到此入口；本批不能据此声称已实现真实提交超时恢复全链。
+
+回归先复现模块、只读端点与跟踪/会话接线缺失，并证明同一编号在两次查询中创建时间变化仍被误接受，再修复。覆盖open、快速结束、查询中状态迁移、空结果、历史重用编号、歧义/缺页、重启续查、配置和证据篡改，以及成功归档后尚未登记编号就中断的恢复。专项48项通过，最终联合结果见项目状态。未部署或重新完整验收；数量/费用核准、独立签发和真实提交/撤单仍未贯通。
