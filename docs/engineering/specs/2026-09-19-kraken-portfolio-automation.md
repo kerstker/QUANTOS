@@ -494,3 +494,11 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 随后在该隔离检出按package-lock执行npm ci --no-audit --no-fund，安装456包，未更改锁文件或生产环境；通过原canonical入口单独运行frontend选择，输出frontend-repair.log/frontend-repair-report.json。预备run_canonical_retry.py要求前端修复验证PASS、相同冻结HEAD、源码无修改（仅允许上一轮生成证据）、已有同源ARM64 PASS和工具存在，才可启动下一次完整门；新结果放canonical-retry-1，不覆盖原失败报告。前端专项成功也不能拼接为ALL通过。人工入口保持拒绝，未真实账户验证、下单或部署。
 
 前端修复专项已终态exit 0：typecheck、eslint、79个文件460项测试、生产构建全部通过。随后启动第二轮完整canonical，会话30943、父PID2791704，仍为冻结2be6dda39，日志与最终结果独立写入canonical-retry-1。旧7562与前端专项75975均已结束，不再轮询；后续仅续接30943并核对实际报告。第二轮尚无终态，预备人工入口仍指向旧失败报告而拒绝，需最终通过后再审阅更新其验收绑定。
+
+### 冻结2be6dda39第二轮完整验收通过
+
+会话30943已终态exit 0，不再轮询。canonical-retry-1/acceptance-result.json记录PASS、2930.158秒；canonical-report.json绑定2be6dda3994e973a01ce09ff38136b6475d430dd，selection_scope=ALL，28项全部通过，0失败、错误与超时。后端8519通过/19跳过/10警告（2075.56秒），执行与工具4579通过/2跳过/1警告（465.79秒）；前端79文件460项测试、类型检查、eslint和生产构建全部通过，Phase 13检查通过。沿用同源ARM64双冷构建、扫描和隔离冒烟证据；首轮失败证据保留。
+
+人工观察入口run-account-observation-2be6dda39.py已将验收目录绑定到canonical-retry-1，随后仅执行sh入口的--check，exit 0并输出ACCOUNT_OBSERVER_ACCEPTANCE_CHECK_PASSED；未访问账户、读取凭证、下单或切换驻留服务。入口仍只是60轮只读账户观察，尚未配置费用/结算接续。
+
+完整软件门通过不代表全部生产能力已成立：备份检查因CI缺配置内部SKIP，成熟度检查结果仍NOT_TOP_TIER（14/22），真实账户核对、xStocks数量/价格/费用生产口径、独立授权签发与实际执行接线仍须完成。后续不能把该报告当作实盘自动管理的证明。
