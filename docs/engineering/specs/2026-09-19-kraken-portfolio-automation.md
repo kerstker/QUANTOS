@@ -474,3 +474,11 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 零数量返回NO_ACTION_WITHIN_PLANNING_GRID；正数量但低于规划基准最小量/金额的产品单列，全部如此则BELOW_PLANNING_MINIMUM，不进入审阅步骤。这里的基准沿用第三十批明确的规划假设，不把REST数量口径推断升级成交易准入。输入缺失/失败时sequencing_review为null，不生成阶段。现有持仓报告与组合周期消费同一数量规划函数，因此同时获得顺序说明；没有新增执行器或改变Console API合同。
 
 本次重新检查[AddOrder文档](https://docs.kraken.com/api-reference/trading/add-order)、[Ticker定义](https://docs.kraken.com/api-reference/market-data/get-ticker-information)及[xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)，尚不足以核准当前xStocks报价、数量与费用的完整生产换算。本批仍execution_eligible=false、fee_budget_verified=false，无请求草案、真实查询、订单提交或部署。新增回归先证明顺序信息缺失，再覆盖混合买卖、减仓后重算、只有买入、价差导致现金不足、规划最小量及零数量，并核对组合周期输出。专项44项通过，最终联合结果见项目状态；未重新完整发布验收。
+
+## 冻结2be6dda39整合验收接续
+
+最近第二十三至三十三批只经过专项验证，旧f54deac34全量PASS不能覆盖。本轮冻结完整源码`2be6dda3994e973a01ce09ff38136b6475d430dd`，新建独立干净检出；保留主工作树无关用户修改和旧失败/通过证据。任务目录为`/home/kerstker/quantos-dev-output/kraken-automation-20260919/acceptance-2be6dda39`，沿用已检查的前轮run_acceptance/run_capture/capture/build_proxy驱动，仅替换源码身份与独立输出名称，不复制旧验收结果。
+
+使用AnyIO4.14.2隔离Python3.12及固定Node路径；先生成绑定当前源码的ARM64双冷构建、Trivy扫描和network=none只读Console冒烟证据，再自动运行`scripts/validate.py --timeout-seconds 3600`。启动前确认临时构建/冒烟容器未运行、专用回环构建隧道端口空闲及开发盘空间充足。临时容器不挂载生产状态/凭证，不安装或切换驻留服务。
+
+已启动会话7562、父进程2665758，首阶段ARM64_CAPTURE；外部命令日志记录开始/终态及独立输出。最终结果预期写入acceptance-result.json与canonical-report.json，尚未生成结果时不声称通过；续接时先轮询同一会话或核实真实进程，不因静默/暂时观察超时重新启动。即使全量软件验收通过，也仍须单独完成真实账户验证、数量/费用核准和受控执行，不能将其视为自动实盘已完成。
