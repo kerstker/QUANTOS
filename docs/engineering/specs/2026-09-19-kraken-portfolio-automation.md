@@ -175,3 +175,18 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 验证：新增查询回归先 RED，完成后查询/OMS映射/账户工具/组合周期/服务依赖图联合 **46 passed**。覆盖已见挂单→撤单→重启后仍查询、漏单不归零、数量/金额倒退、订单身份变更、失败停会话，以及终态后仍阻止下一轮、删除恢复证据不能绕过阻断。全部使用模拟响应，未查询真实订单或读取凭证；未运行完整发布门、未部署。
 
 本批完成已知订单恢复接线，成交与费用归档、逐资产现金/持仓对账仍未实现，是后续优先工作。原冻结9208995d8入口不包含新增 QueryOrders 能力，未被替换；新权限/入口仍需按独立人工流程接续。协议依据：[Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)。
+
+
+## 第十批 逐笔成交与订单累计数核对
+
+新增 `services/data/kraken_trade_query.py`，在已知订单恢复后按订单返回的成交编号查询 QueryTrades。固定 `rebase_multiplier=base`、`trades=false`，每请求最多20个ID、一次最多1000个成交/50批；账户身份一致、时间有序、全流程新鲜度限制。要求响应ID集合完整且无重复，逐筆绑定订单/产品/方向/类型，拒绝保证金成交与未来事件时间。保留十进制成交时间、数量、价格、成交额和费用；不以价格×数量替换交易所返回的成交额。
+
+对每个订单分别求和数量/成交额/费用，精确匹配 QueryOrders 累计数，状态 `TRADE_TOTALS_MATCHED`。源端舍入或订单/成交快照不同步导致不等时仍拒绝，尚未定义金额容差，不能自动调整账本使其通过。当前产品标识须精确一致，尚未自动猜测内部/展示名称别名。
+
+人工工具 `--track-orders` 已串入该步骤，私有只读白名单加入 QueryTrades；未提供交易写入。查询原文及归一结果留存，逐笔记录以成交ID归档，重复相同记录不新增，同ID变更拒绝覆盖。首次查询失败、缺笔或累计数不符使恢复 UNRESOLVED，采集会话停止；已持久化的订单/成交保留，重启可继续核对。
+
+组合周期增加 `trade_reconciliation_status`；逐笔核对通过后阻断原因缩小为 `CASH_RECONCILIATION_REQUIRED`，不因此允许下一轮。`fee_asset_status=UNKNOWN`、`cash_reconciled=false` 保持：成交API中的费用合计不能证明实际扣费资产，仍缺账目流水及前后余额核对。手续费返佣等本模型不支持的表示也拒绝，不默认为零。
+
+验证：新模型先RED（模块缺失），实现后成交/订单查询/人工工具/组合周期/依赖图联合 **46 passed**。覆盖漏笔、重复、串单、费用/金额/数量不符、未来时间、保证金成交、跨查询幂等与同ID冲突、20笔请求上限。全部模拟响应，未读真实凭证或查询私有API；未运行完整发布门、未部署。下一重点是逐资产账目与费用币种、现金/持仓余额衔接，以及受控执行的恢复闭环。
+
+协议依据：[Query Trades Info](https://docs.kraken.com/api-reference/account-data/query-trades-info)。原冻结人工入口仍未替换，新功能未投入真实会话。

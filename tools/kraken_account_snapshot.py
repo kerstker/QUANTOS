@@ -22,11 +22,12 @@ import urllib.request
 
 from services.data import kraken_account as model
 from services.data import kraken_order_query as order_query
+from services.data import kraken_trade_query as trade_query
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools.kraken_public_capture import NoRedirect, atomic_json, digest
 
-ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders')
+ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades')
 
 
 def private_root(root):
@@ -58,10 +59,11 @@ class ReadOnlyClient:
         self._clock=clock_ms or (lambda:time.time_ns()//1_000_000)
 
     def read(self,endpoint,params):
-        if endpoint=='QueryOrders':
-            require(set(params)=={'txid','trades','rebase_multiplier'} and params['trades']=='true' and
+        if endpoint in ('QueryOrders','QueryTrades'):
+            require(set(params)=={'txid','trades','rebase_multiplier'} and params['trades']==('true' if endpoint=='QueryOrders' else 'false') and
                     params['rebase_multiplier']=='base','KRAKEN_READ_ONLY_ENDPOINT')
-            order_query.identifiers(params['txid'])
+            ids=order_query.identifiers(params['txid'])
+            require(endpoint!='QueryTrades' or len(ids)<=20,'KRAKEN_TRADES_BATCH_LIMIT')
         else:
             require(endpoint in ('BalanceEx','OpenOrders') and params=={'rebase_multiplier':'base'},'KRAKEN_READ_ONLY_ENDPOINT')
         # Serialize allocation AND request dispatch, not only nonce increment.
@@ -135,6 +137,36 @@ def save(root,report):
 
 
 
+
+def query_trades(client, root, orders, *, clock_ms):
+    ids=sorted({t for order in orders['orders'] for t in order['trade_ids']})
+    require(len(ids)<=1000,'KRAKEN_TRADES_LIMIT')
+    reads=[]
+    for offset in range(0,len(ids),20):
+        params={'txid':','.join(ids[offset:offset+20]),'trades':'false','rebase_multiplier':'base'}
+        sent=clock_ms();body=client.read('QueryTrades',params);received=clock_ms()
+        require(isinstance(body,bytes) and len(body)<=model.MAX_BYTES,'KRAKEN_TRADE_QUERY_SIZE')
+        model.payload(body.decode('utf-8'))
+        reads.append({'endpoint':'QueryTrades','params':params,'requested_at_ms':sent,'received_at_ms':received,
+                      'account_ref_sha256':client.account_ref_sha256,'body':body.decode('utf-8')})
+    report=trade_query.assess(reads,orders=orders,as_of_ms=clock_ms())
+    for name in ('trade-queries','trade-observations'):
+        require(not (root/name).is_symlink(),'KRAKEN_TRADE_ARCHIVE_SYMLINK')
+        (root/name).mkdir(mode=0o700,exist_ok=True)
+    evidence={'reads':reads,'report':report};key=digest(evidence)
+    target=root/'trade-queries'/(key+'.json')
+    require(not target.is_symlink(),'KRAKEN_TRADE_ARCHIVE_SYMLINK')
+    if target.exists():require(load_json_without_duplicate_keys(target.read_bytes())==evidence,'KRAKEN_TRADE_ARCHIVE_CONFLICT')
+    else:atomic_json(target,evidence)
+    for trade in report['trades']:
+        record={'account_ref_sha256':client.account_ref_sha256,'quantity_basis':'base','trade':trade}
+        target=root/'trade-observations'/(trade['trade_id']+'.json')
+        require(not target.is_symlink(),'KRAKEN_TRADE_ARCHIVE_SYMLINK')
+        if target.exists():require(load_json_without_duplicate_keys(target.read_bytes())==record,'KRAKEN_TRADE_REPLAY_CONFLICT')
+        else:atomic_json(target,record)
+    return key,report
+
+
 def track_orders(client, root, open_orders, *, clock_ms=None):
     """Retain known IDs before querying; unknown/missing orders never become empty."""
     root=private_root(root);clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
@@ -155,6 +187,7 @@ def track_orders(client, root, open_orders, *, clock_ms=None):
         result={'schema':'KRAKEN_ORDER_RECOVERY_V1','account_ref_sha256':client.account_ref_sha256,
                 'status':'NO_TRACKED_ORDERS' if not ids else 'UNRESOLVED','order_ids':ordered,
                 'observed_at_ms':clock_ms(),'query_hash':None,'failure':None,'cash_reconciled':False,
+                'trade_status':'NOT_OBSERVED','trade_query_hash':None,
                 'full_history_observed':False,'next_cycle_allowed':False,'submission_enabled':False,'authoritative':False}
         if ids:
             try:
@@ -174,7 +207,9 @@ def track_orders(client, root, open_orders, *, clock_ms=None):
                 latest=root/'order-query-latest.json'
                 if latest.exists():order_query.check_progress(load_json_without_duplicate_keys(latest.read_bytes()),report)
                 atomic_json(latest,report)
-                result.update(status='ORDERS_OBSERVED',observed_at_ms=report['observed_at_ms'])
+                trade_hash,trades=query_trades(client,root,report,clock_ms=clock_ms)
+                result.update(status='ORDERS_OBSERVED',observed_at_ms=trades['as_of_ms'],
+                    trade_status=trades['status'],trade_query_hash=trade_hash)
             except (OSError,ValueError,KeyError,TypeError) as exc:
                 result['failure']={'error_type':type(exc).__name__}
         result['result_hash']=digest(result)
@@ -229,7 +264,7 @@ def main(argv=None):
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
-    print('仅查询余额与挂单；不下单、不撤单、不转账。凭证仅保留在本进程内存。')
+    print('仅查询账户、订单与成交；不下单、不撤单、不转账。凭证仅保留在本进程内存。')
     key=getpass.getpass('Kraken API public key（不回显）: ')
     secret=getpass.getpass('Kraken API secret（不回显）: ')
     client=ReadOnlyClient(key,secret,root);key=secret=None

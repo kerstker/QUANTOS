@@ -76,7 +76,7 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                 'stage':'MARKET','status':'MARKET_FAILED','market_status':'FAILED','market_hash':None,'inventory':None,'failure':None,
                 'config_sha256':capture.digest(binding),'execution_status':'DISABLED',
                 'portfolio_management_ready':False,'submission_enabled':False,'authoritative':False,
-                'order_recovery_status':'NOT_CONNECTED','cash_reconciliation_status':'NOT_CONNECTED','blockers':[]}
+                'order_recovery_status':'NOT_CONNECTED','trade_reconciliation_status':'NOT_CONNECTED','cash_reconciliation_status':'NOT_CONNECTED','blockers':[]}
         try:
             market=inventory.sealed(observe(root/'market',config))
             require(read(root/'market'/'status.json')==market,'KRAKEN_CYCLE_MARKET_PUBLICATION')
@@ -106,11 +106,12 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     require(recovery.get('schema')=='KRAKEN_ORDER_RECOVERY_V1' and
                             recovery['account_ref_sha256']==account['account_ref_sha256'],'KRAKEN_CYCLE_ORDER_ACCOUNT')
                     report['order_recovery_status']=recovery['status']
+                    report['trade_reconciliation_status']=recovery.get('trade_status','NOT_OBSERVED')
                     if type(recovery.get('observed_at_ms')) is not int or not 0<=now-recovery['observed_at_ms']<=120000:
                         report['blockers'].append('ORDER_RECOVERY_STALE')
                     if recovery['status']=='UNRESOLVED':report['blockers'].append('ORDER_QUERY_UNRESOLVED')
                     if recovery['order_ids']:
-                        report['blockers'].append('TRADE_AND_CASH_RECONCILIATION_REQUIRED')
+                        report['blockers'].append('CASH_RECONCILIATION_REQUIRED' if recovery.get('trade_status')=='TRADE_TOTALS_MATCHED' else 'TRADE_AND_CASH_RECONCILIATION_REQUIRED')
                 elif required_path.exists():
                     require(read(required_path)=={'required':True},'KRAKEN_CYCLE_RECOVERY_BINDING')
                     report['blockers'].append('ORDER_RECOVERY_MISSING')

@@ -134,6 +134,9 @@ def test_order_tracking_survives_restart_and_missing_order_never_becomes_complet
         account_ref_sha256='a'*64
         response=body()
         def read(self,endpoint,params):
+            if endpoint=='QueryTrades':
+                from tests.data.test_kraken_trade_query import trade_body
+                return json.dumps(trade_body()).encode()
             assert endpoint=='QueryOrders' and params['txid']=='ORDER-1'
             return self.response.encode()
     reader=Reader()
@@ -142,6 +145,8 @@ def test_order_tracking_survives_restart_and_missing_order_never_becomes_complet
     reader.response=body('canceled')
     second=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+1000)
     assert second['order_ids']==['ORDER-1'] and second['status']=='ORDERS_OBSERVED'
+    assert second['trade_status']=='TRADE_TOTALS_MATCHED'
+    assert len(list((tmp_path/'trade-observations').glob('*.json')))==1
     assert second['cash_reconciled'] is False and second['next_cycle_allowed'] is False
     reader.response='{"error":[],"result":{}}'
     failed=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+2000)
@@ -169,3 +174,34 @@ def test_enabled_session_stops_after_unresolved_order_query(tmp_path,monkeypatch
         collect_fn=lambda _:report,sleep_fn=lambda _:pytest.fail('must stop'))
     assert result['cycles_completed']==1 and result['non_stable_cycles']==1
     assert result['stop_reason']=='ORDER_QUERY_UNRESOLVED'
+
+
+def test_trade_replay_is_idempotent_and_changed_trade_cannot_overwrite(tmp_path):
+    from tests.data.test_kraken_trade_query import trade_body
+    from tests.data.test_kraken_order_query import read
+    from services.data.kraken_order_query import assess
+    class Reader:
+        account_ref_sha256='a'*64
+        response=trade_body()
+        def read(self,endpoint,params):
+            assert endpoint=='QueryTrades' and params['trades']=='false'
+            return json.dumps(self.response).encode()
+    reader=Reader();orders=assess(read(),as_of_ms=NOW+30)
+    tool.query_trades(reader,tmp_path,orders,clock_ms=lambda:NOW+50)
+    tool.query_trades(reader,tmp_path,orders,clock_ms=lambda:NOW+60)
+    path=tmp_path/'trade-observations'/'TRADE-1.json';before=path.read_bytes()
+    assert len(list(path.parent.glob('*.json')))==1
+    reader.response['result']['TRADE-1']['price']='100.01'
+    with pytest.raises(ValueError,match='REPLAY_CONFLICT'):
+        tool.query_trades(reader,tmp_path,orders,clock_ms=lambda:NOW+70)
+    assert path.read_bytes()==before
+
+
+def test_trade_query_signing_has_separate_twenty_id_limit(tmp_path):
+    calls=[]
+    key=base64.b64encode(b'public fixture only').decode();secret=base64.b64encode(b'non-secret fixture only').decode()
+    client=tool.ReadOnlyClient(key,secret,tmp_path,transport=lambda *args:calls.append(args),clock_ms=lambda:NOW)
+    client.read('QueryTrades',{'txid':'TRADE-1','trades':'false','rebase_multiplier':'base'})
+    with pytest.raises(ValueError):client.read('QueryTrades',{
+        'txid':','.join('T-'+str(i) for i in range(21)),'trades':'false','rebase_multiplier':'base'})
+    assert len(calls)==1
