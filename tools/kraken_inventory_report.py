@@ -9,8 +9,10 @@ import time
 
 from services.data.kraken_inventory import reconcile
 from services.data.kraken_quotes import parse as parse_quote
+from services.data.kraken_units import asset_units
 from services.portfolio.kraken_valuation import value as value_inventory
 from services.portfolio.kraken_allocation import prepare as prepare_allocation, validate_policy
+from services.portfolio.kraken_sizing import prepare as prepare_quantities
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools import kraken_public_capture as capture
@@ -84,8 +86,18 @@ def build(account_path, observer_root, *, as_of_ms, valuation_quote=None, policy
             valuation.update(status='INCOMPLETE',observed_spot_mid_value=None,observed_spot_bid_value=None)
         report['indicative_valuation']=valuation
         report['planning_quotes']=quotes
+        report['planning_units']=[]
+        for market in markets:
+            try:
+                report['planning_units'].append(asset_units(market['payload'],spec=market['spec'],
+                    received_at_ms=market['received_at_ms'],as_of_ms=as_of_ms))
+            except (ValueError,KeyError,TypeError):
+                # Quantity review treats an absent product unit as unresolved,
+                # including products not yet present in account balances.
+                continue
     if policy is not None:
         report['allocation_review']=prepare_allocation(report,policy,as_of_ms=as_of_ms)
+        report['quantity_review']=prepare_quantities(report,policy,as_of_ms=as_of_ms)
         report['allocation_policy_sha256']=capture.digest(policy)
     report['result_hash']=capture.digest(report)
     return report
@@ -106,9 +118,13 @@ def main(argv=None):
         json.dump(report,stream,sort_keys=True,allow_nan=False);stream.write('\n');stream.flush();os.fsync(stream.fileno())
     print(json.dumps({'status':report['status'],'valuation_status':report.get('indicative_valuation',{}).get('status'),
                       'allocation_status':report.get('allocation_review',{}).get('status'),
+                      'quantity_status':report.get('quantity_review',{}).get('status'),
                       'issues':report['issues'],'output':str(args.output),
                       'submission_enabled':False}))
-    return 0 if report['status']=='INVENTORY_MAPPED' and report.get('indicative_valuation',{}).get('status','INDICATIVE')=='INDICATIVE' and report.get('allocation_review',{}).get('status','REVIEW_ONLY')=='REVIEW_ONLY' else 3
+    return 0 if (report['status']=='INVENTORY_MAPPED' and
+        report.get('indicative_valuation',{}).get('status','INDICATIVE')=='INDICATIVE' and
+        report.get('allocation_review',{}).get('status','REVIEW_ONLY')=='REVIEW_ONLY' and
+        report.get('quantity_review',{}).get('status','INDICATIVE_QUANTITIES')=='INDICATIVE_QUANTITIES') else 3
 
 
 if __name__=='__main__':raise SystemExit(main())

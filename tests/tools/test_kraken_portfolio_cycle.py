@@ -57,6 +57,7 @@ def test_missing_inputs_publish_waiting_and_market_capture_continues(tmp_path):
     assert second['status']=='REVIEW_ONLY' and second['generation']==2
     assert second['previous_hash']==first['result_hash']
     assert second['inventory']['allocation_review']['targets'][0]['target_value']=='200'
+    assert second['inventory']['quantity_review']['status']=='INDICATIVE_QUANTITIES'
     assert second['execution_status']=='DISABLED' and second['submission_enabled'] is False
 
 

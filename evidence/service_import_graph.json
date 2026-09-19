@@ -1167,6 +1167,16 @@
         {
           "line": 5,
           "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_sizing.py"
+        },
+        {
+          "line": 6,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_sizing.py"
+        },
+        {
+          "line": 5,
+          "module": "services.data.kraken_account",
           "path": "services/portfolio/kraken_valuation.py"
         },
         {
@@ -2034,7 +2044,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "52911238ba7373e4251cb5a70cec2f9c394c563f175e13d9edcb1f32a6106339",
+  "graph_sha256": "d838dfa6391a354c2474455b6d33d6eb0f9d4795178e3e41945f3170840cbf7e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2072,7 +2082,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 605,
+  "source_file_count": 606,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

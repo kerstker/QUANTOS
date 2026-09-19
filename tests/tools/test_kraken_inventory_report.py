@@ -75,5 +75,30 @@ def test_policy_flows_through_archived_account_prices_and_budget(tmp_path):
     result=tool.build(path,root,as_of_ms=NOW+700,policy=policy)
     assert result['allocation_review']['status']=='REVIEW_ONLY'
     assert result['allocation_review']['targets'][0]['target_value']=='200'
+    assert result['quantity_review']['status']=='INDICATIVE_QUANTITIES'
+    assert result['quantity_review']['quantities'][0]['side']=='sell'
+    assert result['quantity_review']['drafts']==[]
     assert result['allocation_policy_sha256']==capture.digest(policy)
     assert result['submission_enabled'] is False
+
+
+def test_cli_reports_failure_when_new_position_has_no_valid_multiplier(tmp_path,monkeypatch):
+    import hashlib
+    from tests.data.test_kraken_allocation import inputs
+    path,root=fixture(tmp_path)
+    account=json.loads(path.read_text());account['open_orders']=[];account['balances'].pop('AAPLx.T')
+    account['result_hash']=capture.digest({k:v for k,v in account.items() if k!='result_hash'})
+    path.write_text(json.dumps(account))
+    observed=json.loads((root/'status.json').read_text());read=observed['instruments'][0]['units_read']
+    payload=json.loads(read['body']);payload['result']['AAPLx'].pop('token_multiplier')
+    read['body']=json.dumps(payload);read['body_sha256']=hashlib.sha256(read['body'].encode()).hexdigest()
+    observed['result_hash']=capture.digest({k:v for k,v in observed.items() if k!='result_hash'})
+    (root/'status.json').write_text(json.dumps(observed))
+    policy=tmp_path/'policy.json';policy.write_text(json.dumps(inputs()[1]))
+    monkeypatch.setattr(tool.time,'time_ns',lambda:(NOW+700)*1_000_000)
+    output=tmp_path/'result.json'
+    code=tool.main(['--account',str(path),'--observer-root',str(root),'--policy',str(policy),'--output',str(output)])
+    result=json.loads(output.read_text())
+    assert result['allocation_review']['status']=='REVIEW_ONLY'
+    assert result['quantity_review']['status']=='BLOCKED'
+    assert code==3

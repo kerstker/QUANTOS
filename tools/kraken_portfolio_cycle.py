@@ -12,6 +12,7 @@ import time
 
 from services.data.kraken_public import require
 from services.portfolio.kraken_allocation import validate_policy, prepare as prepare_allocation
+from services.portfolio.kraken_sizing import prepare as prepare_quantities
 from tools.kraken_settlement_review import build as build_settlement, replay_cash
 from tools import kraken_inventory_report as inventory
 from tools import kraken_portfolio_observer as observer
@@ -187,10 +188,13 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                             ('CASH_RECONCILIATION_REQUIRED','CASH_MOVEMENT_LINKAGE_REQUIRED')]
                         if not report['blockers'] and policy is not None:
                             result['allocation_review']=prepare_allocation(result,policy,as_of_ms=clock_ms())
+                            result['quantity_review']=prepare_quantities(result,policy,as_of_ms=clock_ms())
                             result['allocation_policy_sha256']=capture.digest(policy)
                             result['result_hash']=capture.digest({k:v for k,v in result.items() if k!='result_hash'})
                     else:report['blockers'].append('SETTLEMENT_LINKAGE_UNRESOLVED')
                 report['inventory']=result
+                if policy is not None and not report['blockers'] and result.get('quantity_review',{}).get('status')!='INDICATIVE_QUANTITIES':
+                    report['blockers'].append('QUANTITY_REVIEW_UNRESOLVED')
                 blocked=result['status']!='INVENTORY_MAPPED' or result.get('indicative_valuation',{}).get('status','INDICATIVE')!='INDICATIVE'
                 if blocked or report['blockers']:report['status']='BLOCKED'
                 elif policy is None:report['status']='WAITING_POLICY'
