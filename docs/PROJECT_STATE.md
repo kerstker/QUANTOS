@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-19 前端依赖修复验证通过，第二轮全量验收已启动**：冻结2be6dda39前端typecheck、eslint、460项测试和生产构建全部通过；完整重验会话30943、父PID2791704，输出位于`acceptance-2be6dda39/canonical-retry-1`。复用相同源码已通过的ARM64证据，重新运行全部canonical检查；首轮24/28失败报告保留。此时第二轮尚未完成，不是完整PASS，未部署。
+
 > **2026-09-19 冻结2be6dda39完整验收终态FAIL：前端依赖未安装**：会话7562已结束、exit 1，ALL 24/28；后端8519通过/19跳过，执行与工具4579通过/2跳过。四项前端检查因独立检出缺少tsc/eslint/vitest而失败。已按锁文件npm ci安装依赖，保留原失败报告，正在单独验证前端；此前ARM64通过仍有效但不能替代完整通过。不得再轮询旧7562，见[失败与修复记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39首轮完整验收失败与依赖修复)。
 
 > **2026-09-19 冻结2be6dda39的ARM64验收已通过，全量门运行中**：两轮冷构建分别591.971秒、584.219秒，Trivy离线扫描和network=none只读冒烟通过，证据发布任务exit 0；同一会话7562已自动进入CANONICAL。此为构建阶段结果，不是全部测试通过或真实账户验收。未部署，后续须核实最终acceptance-result及canonical-report，见[接续记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39整合验收接续)。

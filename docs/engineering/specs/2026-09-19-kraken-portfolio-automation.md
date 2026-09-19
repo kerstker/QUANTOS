@@ -492,3 +492,5 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 首轮会话7562已结束，acceptance-result.json记录FAIL、exit 1、4067.735秒；canonical-report.json为ALL 28项、24通过、4失败、0错误/超时。后端8519通过/19跳过，执行与工具4579通过/2跳过。四项失败均来自新独立检出未执行前端依赖安装，原错误分别为tsc、eslint、vitest找不到，构建也缺tsc；不是已经证明存在四个源码缺陷。启动验收前漏掉依赖准备是本轮流程问题，完整失败结果保留。
 
 随后在该隔离检出按package-lock执行npm ci --no-audit --no-fund，安装456包，未更改锁文件或生产环境；通过原canonical入口单独运行frontend选择，输出frontend-repair.log/frontend-repair-report.json。预备run_canonical_retry.py要求前端修复验证PASS、相同冻结HEAD、源码无修改（仅允许上一轮生成证据）、已有同源ARM64 PASS和工具存在，才可启动下一次完整门；新结果放canonical-retry-1，不覆盖原失败报告。前端专项成功也不能拼接为ALL通过。人工入口保持拒绝，未真实账户验证、下单或部署。
+
+前端修复专项已终态exit 0：typecheck、eslint、79个文件460项测试、生产构建全部通过。随后启动第二轮完整canonical，会话30943、父PID2791704，仍为冻结2be6dda39，日志与最终结果独立写入canonical-retry-1。旧7562与前端专项75975均已结束，不再轮询；后续仅续接30943并核对实际报告。第二轮尚无终态，预备人工入口仍指向旧失败报告而拒绝，需最终通过后再审阅更新其验收绑定。
