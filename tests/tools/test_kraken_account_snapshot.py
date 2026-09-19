@@ -65,3 +65,64 @@ def test_api_rejection_stops_before_repeating_authenticated_requests():
     client=Reader();report=tool.collect(client,clock_ms=lambda:NOW)
     assert client.calls==1 and report['status']=='FAILED'
     assert report['failure']['endpoint']=='BalanceEx'
+
+
+def test_bounded_session_reuses_client_and_refreshes_snapshot_without_reprompt(tmp_path):
+    from services.data.kraken_account import assess
+    class Reader:account_ref_sha256='a'*64
+    reader=Reader();sleeps=[];events=[];calls=[]
+    def collect(client):
+        assert client is reader
+        reads=observations();offset=len(calls)*60000
+        for r in reads:
+            r['requested_at_ms']+=offset;r['received_at_ms']+=offset
+        report=assess(reads,as_of_ms=NOW+offset+500)
+        report['result_hash']=tool.digest(report);calls.append(client)
+        return report
+    result=tool.run_session(reader,tmp_path,cycles=3,poll_seconds=60,collect_fn=collect,
+                            sleep_fn=sleeps.append,on_report=events.append)
+    assert result['cycles_completed']==3 and result['stop_reason']=='CYCLE_LIMIT'
+    assert len(events)==3 and sleeps==[60,60]
+    assert len(list((tmp_path/'observations').glob('*.json')))==3
+    assert json.loads((tmp_path/'latest.json').read_text())['observed_at_ms']==NOW+120350
+
+
+def test_session_stops_on_first_private_api_failure(tmp_path):
+    class Reader:
+        account_ref_sha256='a'*64
+        calls=0
+        def read(self,*_):
+            self.calls+=1
+            return b'{"error":["EAPI:Invalid key"],"result":{}}'
+    reader=Reader()
+    result=tool.run_session(reader,tmp_path,cycles=10,poll_seconds=60,
+                            sleep_fn=lambda _:pytest.fail('must not sleep or retry'))
+    assert result['cycles_completed']==1 and reader.calls==1
+    assert result['stop_reason']=='ACCOUNT_READ_FAILED'
+    assert json.loads((tmp_path/'latest.json').read_text())['status']=='FAILED'
+
+
+def test_session_rejects_account_switch_or_concurrent_session_before_network(tmp_path):
+    import fcntl
+    class Reader:account_ref_sha256='a'*64
+    def forbidden(_):pytest.fail('network must not be reached')
+    (tmp_path/'account-reference.json').write_text(json.dumps({'account_ref_sha256':'b'*64}))
+    with pytest.raises(ValueError):tool.run_session(Reader(),tmp_path,cycles=1,poll_seconds=60,collect_fn=forbidden)
+    (tmp_path/'account-reference.json').unlink()
+    with (tmp_path/'.session.lock').open('w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError):tool.run_session(Reader(),tmp_path,cycles=1,poll_seconds=60,collect_fn=forbidden)
+
+
+def test_failure_at_same_timestamp_supersedes_success_and_cannot_be_hidden(tmp_path):
+    from services.data.kraken_account import assess
+    stable=assess(observations(),as_of_ms=NOW+500);stable['result_hash']=tool.digest(stable)
+    tool.save(tmp_path,stable)
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,*_):raise OSError('failed')
+    failed=tool.collect(Reader(),clock_ms=lambda:stable['observed_at_ms'])
+    tool.save(tmp_path,failed)
+    assert json.loads((tmp_path/'latest.json').read_text())['status']=='FAILED'
+    tool.save(tmp_path,stable)
+    assert json.loads((tmp_path/'latest.json').read_text())['status']=='FAILED'

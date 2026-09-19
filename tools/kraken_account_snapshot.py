@@ -121,27 +121,67 @@ def save(root,report):
         if target.exists():require(not target.is_symlink() and load_json_without_duplicate_keys(target.read_bytes())==report,'KRAKEN_ACCOUNT_EXPORT_CONFLICT')
         else:atomic_json(target,report)
         path=root/'latest.json'
-        if not path.exists() or load_json_without_duplicate_keys(path.read_bytes())['observed_at_ms']<report['observed_at_ms']:
+        previous=load_json_without_duplicate_keys(path.read_bytes()) if path.exists() else None
+        if previous is None or previous['observed_at_ms']<report['observed_at_ms'] or (
+            previous['observed_at_ms']==report['observed_at_ms'] and report['status']=='FAILED' and previous['status']!='FAILED'):
             atomic_json(path,report)
+
+
+
+def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None):
+    """Bounded human-started refresh; any transport/API failure ends the session."""
+    require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
+    require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
+    collect_fn=collect_fn or collect;sleep_fn=sleep_fn or time.sleep
+    root=private_root(root)
+    fd=os.open(root/'.session.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        reference=root/'account-reference.json'
+        require(not reference.is_symlink(),'KRAKEN_ACCOUNT_EXPORT_SYMLINK')
+        if reference.exists():
+            require(load_json_without_duplicate_keys(reference.read_bytes())=={
+                'account_ref_sha256':client.account_ref_sha256},'KRAKEN_ACCOUNT_NAMESPACE_CHANGED')
+        completed=0;failures=0;stop_reason='CYCLE_LIMIT';status=None
+        for index in range(cycles):
+            if index:sleep_fn(poll_seconds)
+            report=collect_fn(client)
+            require(report.get('account_ref_sha256')==client.account_ref_sha256,'KRAKEN_ACCOUNT_NAMESPACE_CHANGED')
+            require(report.get('status') in ('OBSERVED_STABLE','UNRESOLVED','STALE','FAILED'),'KRAKEN_ACCOUNT_SESSION_STATUS')
+            save(root,report);completed+=1;status=report['status'];failures+=status!='OBSERVED_STABLE'
+            if on_report is not None:
+                on_report({'cycle':completed,'status':status,'report':str(root/'latest.json'),
+                           'result_hash':report['result_hash'],'submission_enabled':False})
+            if status=='FAILED':
+                stop_reason='ACCOUNT_READ_FAILED';break
+        return {'cycles_completed':completed,'non_stable_cycles':failures,'last_status':status,
+                'stop_reason':stop_reason,'submission_enabled':False}
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-root',required=True,type=Path)
+    parser.add_argument('--cycles',type=int,default=1)
+    parser.add_argument('--poll-seconds',type=int,default=60)
     args=parser.parse_args(argv)
+    require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
     print('仅查询余额与挂单；不下单、不撤单、不转账。凭证仅保留在本进程内存。')
     key=getpass.getpass('Kraken API public key（不回显）: ')
     secret=getpass.getpass('Kraken API secret（不回显）: ')
     client=ReadOnlyClient(key,secret,root);key=secret=None
-    report=collect(client);save(root,report)
-    print(json.dumps({'status':report['status'],'report':str(root/'latest.json'),'submission_enabled':False}))
-    return 0 if report['status']=='OBSERVED_STABLE' else 3
+    result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
+        on_report=lambda event:print(json.dumps(event),flush=True))
+    print(json.dumps(result),flush=True)
+    return 0 if result['non_stable_cycles']==0 else 3
 
 
 if __name__=='__main__':
     try:raise SystemExit(main())
+    except KeyboardInterrupt:
+        print('ACCOUNT_SESSION_STOPPED',file=sys.stderr)
+        raise SystemExit(130)
     except (OSError,ValueError,TypeError):
         print('ACCOUNT_EXPORT_FAILED: check input format, private state permissions and read-only API access.',file=sys.stderr)
         raise SystemExit(3)

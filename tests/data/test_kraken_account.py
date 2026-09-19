@@ -27,6 +27,7 @@ def test_existing_holdings_locked_amounts_and_remaining_orders_are_exact():
     assert r['balances']['AAPLx.T']['balance']=='2.123456789012345678'
     assert r['balances']['ZUSD']['available']=='750.00000001'
     assert r['open_orders'][0]['remaining']=='1'
+    assert r['open_orders'][0]['canonical_state']=='PARTIALLY_FILLED'
     assert r['cost_basis_status']=='UNKNOWN' and not r['submission_enabled']
     assert r['atomic_snapshot'] is False and r['quantity_basis']=='base'
 

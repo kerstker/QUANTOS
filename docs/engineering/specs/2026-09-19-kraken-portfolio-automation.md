@@ -145,3 +145,20 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 
 
 隔离实跑：`/home/kerstker/quantos-dev-output/kraken-automation-20260919/review-runtime/status.json`。有限一轮结束退出码3，generation=1、market_status=CAPTURED、status=WAITING_ACCOUNT、execution_status=DISABLED；结果哈希 `f2f1409d4de08e5ade4728e56db7413672c42984f5311ff7cd0c23a9d1ee2233`。账户导出和 `managed-policy.json` 均未创建；退出码3代表输入未齐，不是公开采集失败。该进程已结束，不是常驻自动管理服务。
+
+
+## 第八批 账户连续刷新与订单状态接入
+
+用户再次明确“优先把闭环补齐”。后续优先级固定为目标仓位→受控订单提交/状态恢复→成交与费用→现金/持仓对账→下一轮决策；暂停扩展展示功能。现有公开轮询、估值、草案和 REVIEW_ONLY 均不视为闭环完成。
+
+本批收尾账户新鲜度缺口：原人工只读工具新增 `--cycles`（1–1440，默认1）与 `--poll-seconds`（60–3600，默认60），人工一次隐藏输入后，凭证只留进程内存，按周期刷新两轮 BalanceEx/OpenOrders。会话排它锁、开始前账户身份校验，接口/网络首次失败即留存并结束，避免连续重试失效凭证；UNRESOLVED/STALE 仍保留，退出码反映本次是否有不稳定轮次。Ctrl-C结束，不自动重启。未增加私有端点或真实凭证访问，未启动真实会话。
+
+修复同毫秒失败遮蔽：原保存逻辑只接受严格较新时间，导致与上一成功同时间的失败不能更新 latest。新增回归先复现，再改为同时间失败优先，重放同时间成功不能覆盖失败。
+
+闭环核心开始接线：新增 `services/data/kraken_order_state.py`，复用 `quantos.contracts.order` canonical OMS，无另建状态机。Kraken pending/open/closed/canceled/expired 与成交量联合校验，open可分未成交/部分成交；未知状态、open但全成交、closed但未全成交和pending已成交均拒绝。成交量不能倒退，终态不能改写；撤销/过期保留已成交量，不代表费用与现金对账完成。现有账户挂单归一化已使用该映射输出 canonical_state；订单终态查询、成交归档、现金核算和执行恢复尚未接通。
+
+复用核查：`live/execution/position_ledger.py` 的数量与价格为 SQLite REAL，`live/execution/reconciliation.py` 为浮点仓位比较；MEXC现货适配器不能直接充当 Kraken xStocks 的精确现金/费用账本。后续须接明确单位的成交及现金证据，不借旧模型宣称完成。
+
+验证：账户连续采集回归3项先失败，同时间失败覆盖回归先失败，订单映射新模块先缺失；实现后订单状态/账户工具/账户模型/组合周期/原OMS状态/依赖图联合 **98 passed**。未跑完整发布门，未部署、读取真实凭证或下单。已冻结的9208995d8人工单次导出入口保持原样，本批会话功能尚未替换该入口。
+
+订单格式依据：[Kraken Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)。下一步优先处理订单身份、部分成交、手续费、断点恢复和逐资产现金对账，再贯通执行；不继续堆叠显示功能。

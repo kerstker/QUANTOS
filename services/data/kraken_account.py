@@ -9,6 +9,7 @@ import json
 import re
 
 from services.data.kraken_public import require
+from services.data.kraken_order_state import state as order_state
 from services.governance.json_integrity import load_json_without_duplicate_keys
 
 MAX_BYTES=4*1024*1024
@@ -63,6 +64,7 @@ def orders(body):
         volume=number(row.get('vol'));filled=number(row.get('vol_exec'))
         require(volume>0 and 0<=filled<=volume,'KRAKEN_ORDER_VOLUME')
         output.append({'order_id':oid,'status':row['status'],'pair':descr['pair'],'side':descr['type'],
+                       'canonical_state':order_state(row['status'],volume,filled).value,
                        'order_type':descr['ordertype'],'price':canonical(number(descr.get('price'))),
                        'price2':canonical(number(descr.get('price2'))),'leverage':descr['leverage'],
                        'volume':canonical(volume),'filled':canonical(filled),'remaining':canonical(volume-filled)})
