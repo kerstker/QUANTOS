@@ -1,4 +1,4 @@
-"""Offline whole-batch funding review; creates no reservation and cannot submit orders."""
+"""Offline batch review with optional local budget reservation; cannot submit orders."""
 import argparse
 import json
 import os
@@ -36,9 +36,18 @@ def main(argv=None):
     parser.add_argument('--requirements', type=Path, required=True)
     parser.add_argument('--drafts', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--reservation-root', type=Path, help='Private development ledger for local debit claims')
+    parser.add_argument('--batch-id', help='Stable 32-hex identifier, required with reservation root')
     args = parser.parse_args(argv)
-    result = build(load(args.account), load(args.requirements), load(args.drafts),
-                   as_of_ms=time.time_ns()//1_000_000)
+    require((args.reservation_root is None) == (args.batch_id is None), 'KRAKEN_RESERVATION_ARGUMENTS')
+    if args.output.exists() or args.output.is_symlink(): raise FileExistsError(args.output)
+    account, requirements, drafts = load(args.account), load(args.requirements), load(args.drafts)
+    now = time.time_ns()//1_000_000
+    if args.reservation_root is None:
+        result = build(account, requirements, drafts, as_of_ms=now)
+    else:
+        from tools.kraken_funding_reservations import reserve
+        result = reserve(args.reservation_root, account, requirements, drafts, batch_id=args.batch_id, as_of_ms=now)
     fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as stream:
         json.dump(result, stream, sort_keys=True, allow_nan=False)

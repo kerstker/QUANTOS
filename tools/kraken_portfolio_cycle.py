@@ -78,7 +78,7 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                 'config_sha256':capture.digest(binding),'execution_status':'DISABLED',
                 'portfolio_management_ready':False,'submission_enabled':False,'authoritative':False,
                 'order_recovery_status':'NOT_CONNECTED','trade_reconciliation_status':'NOT_CONNECTED','cash_reconciliation_status':'NOT_CONNECTED',
-                'fee_observation_status':'NOT_CONNECTED','blockers':[]}
+                'fee_observation_status':'NOT_CONNECTED','funding_reservation_status':'NOT_CONNECTED','blockers':[]}
         try:
             market=inventory.sealed(observe(root/'market',config))
             require(read(root/'market'/'status.json')==market,'KRAKEN_CYCLE_MARKET_PUBLICATION')
@@ -100,6 +100,21 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
                 cash=None;recovery=None
+                from tools import kraken_funding_reservations as funding
+                funding_required=root/'funding-reservations-required.json'
+                require(not funding_required.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
+                funding_paths=[account_path.parent/name for name in
+                               ('funding-reservations.sqlite','funding-reservations-head.json')]
+                if any(p.exists() or p.is_symlink() for p in funding_paths):bind(funding_required,{'required':True})
+                if funding_required.exists():
+                    require(read(funding_required)=={'required':True},'KRAKEN_CYCLE_FUNDING_BINDING')
+                    report['funding_reservation_status']='UNRESOLVED'
+                    reservations=funding.status(account_path.parent,account['account_ref_sha256'])
+                    report['funding_reservations']=reservations
+                    if reservations['reserved_debits']:
+                        report['funding_reservation_status']='OUTSTANDING_LOCAL_CLAIMS'
+                        report['blockers'].append('FUNDING_RESERVATIONS_REQUIRE_SETTLEMENT')
+                    else:report['funding_reservation_status']='NO_LOCAL_CLAIMS'
                 from tools import kraken_fee_cycle as fee_cycle
                 fee_required=root/'fee-observation-required.json'
                 require(not fee_required.is_symlink(),'KRAKEN_CYCLE_SYMLINK')

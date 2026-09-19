@@ -32,6 +32,22 @@ def write_inputs(args):
     args['policy_path'].write_text(json.dumps(inputs()[1]))
 
 
+def test_local_reserved_budget_blocks_new_allocation_and_cannot_disappear(tmp_path):
+    from tests.tools.test_kraken_funding_reservations import reserve
+    args=setup(tmp_path);write_inputs(args)
+    assert cycle.run_once(**args)['status']=='REVIEW_ONLY'
+    reserve(tmp_path)
+    result=cycle.run_once(**args)
+    assert result['status']=='BLOCKED'
+    assert result['funding_reservation_status']=='OUTSTANDING_LOCAL_CLAIMS'
+    assert 'allocation_review' not in result['inventory']
+    assert 'FUNDING_RESERVATIONS_REQUIRE_SETTLEMENT' in result['blockers']
+    (tmp_path/'funding-reservations.sqlite').unlink()
+    (tmp_path/'funding-reservations-head.json').unlink()
+    result=cycle.run_once(**args)
+    assert result['status']=='INPUT_REJECTED' and result['inventory'] is None
+
+
 def test_missing_inputs_publish_waiting_and_market_capture_continues(tmp_path):
     args=setup(tmp_path)
     first=cycle.run_once(**args)
