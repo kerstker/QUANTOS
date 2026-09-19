@@ -6,6 +6,7 @@ not a live adapter, credential installer, or trading-approval mechanism.
 """
 import argparse
 import base64
+from decimal import Context, localcontext
 import fcntl
 import getpass
 import hashlib
@@ -253,8 +254,9 @@ def cash_order_hints(client, root, cash, *, clock_ms):
             bridge['status']=='BALANCE_MOVEMENTS_MATCHED' and
             0<=clock_ms()-bridge['as_of_ms']<=120000,'KRAKEN_CASH_DISCOVERY_SOURCE')
     start,end=bridge['movement_start_exclusive_ms'],bridge['movement_end_exclusive_ms']
-    ids=sorted({row['refid'] for row in bridge['ledger_entries'] if row['type']=='trade' and
-                start<model.number(row['time_seconds'])*1000<end})
+    with localcontext(Context(prec=160)):
+        ids=sorted({row['refid'] for row in bridge['ledger_entries'] if row['type']=='trade' and
+                    start<model.number(row['time_seconds'])*1000<end})
     require(len(ids)<=1000,'KRAKEN_CASH_DISCOVERY_LIMIT')
     archive=root/'cash-order-discovery'
     require(not archive.is_symlink(),'KRAKEN_CASH_DISCOVERY_SYMLINK')
@@ -292,6 +294,10 @@ def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
     fd=os.open(root/'.order-query.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        from tools.kraken_settlement_checkpoint import load as checkpoint_state
+        checkpoint=checkpoint_state(root,client.account_ref_sha256)
+        retired=set(checkpoint['retired_ids']) if checkpoint else set()
+        require(not retired&{row['order_id'] for row in open_orders},'KRAKEN_CHECKPOINT_RETIRED_ORDER_REAPPEARED')
         for name in ('order-tracking.json','order-query-latest.json','order-recovery.json','order-queries'):
             require(not (root/name).is_symlink(),'KRAKEN_ORDER_TRACKING_SYMLINK')
         path=root/'order-tracking.json';ids=set()
@@ -307,6 +313,7 @@ def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
             require(prior['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_ORDER_TRACKING_ACCOUNT')
             ids.update(prior['order_ids'])
         ids.update(row['order_id'] for row in open_orders)
+        ids.difference_update(retired)
         ordered=sorted(ids)
         if ordered:order_query.identifiers(','.join(ordered))
         result={'schema':'KRAKEN_ORDER_RECOVERY_V1','account_ref_sha256':client.account_ref_sha256,
@@ -323,6 +330,7 @@ def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
         if cash is not None:
             try:
                 for discovered in cash_order_hints(client,root,cash,clock_ms=clock_ms):
+                    require(not retired&discovered,'KRAKEN_CHECKPOINT_RETIRED_ORDER_REAPPEARED')
                     ids.update(discovered);ordered=sorted(ids)
                     result.update(order_ids=ordered,status='UNRESOLVED')
                     pending={**result,'failure':{'error_type':'REFRESH_IN_PROGRESS'}}
@@ -351,7 +359,10 @@ def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
                 else:atomic_json(target,evidence)
                 result['query_hash']=query_hash
                 latest=root/'order-query-latest.json'
-                if latest.exists():order_query.check_progress(load_json_without_duplicate_keys(latest.read_bytes()),report)
+                if latest.exists():
+                    previous=load_json_without_duplicate_keys(latest.read_bytes())
+                    previous={**previous,'orders':[o for o in previous['orders'] if o['order_id'] not in retired]}
+                    order_query.check_progress(previous,report)
                 atomic_json(latest,report)
                 trade_hash,trades=query_trades(client,root,report,clock_ms=clock_ms)
                 result.update(status='ORDERS_OBSERVED',observed_at_ms=trades['as_of_ms'],
@@ -373,12 +384,18 @@ def validate_cash_opening(opening, account_ref):
 
 
 def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None,
-                track_known_orders=False, ledger_opening=None, clock_ms=None, auto_cash=False):
+                track_known_orders=False, ledger_opening=None, clock_ms=None, auto_cash=False,
+                settlement_market_root=None):
     """Bounded human-started refresh; any transport/API failure ends the session."""
     require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
     require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
     collect_fn=collect_fn or collect;sleep_fn=sleep_fn or time.sleep
     require(type(auto_cash) is bool and not (auto_cash and ledger_opening is not None),'KRAKEN_CASH_SESSION_MODE')
+    require(settlement_market_root is None or auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
+    if settlement_market_root is not None:
+        settlement_market_root=Path(settlement_market_root).absolute()
+        require(settlement_market_root.resolve()==settlement_market_root and settlement_market_root.is_dir(),
+                'KRAKEN_CHECKPOINT_MARKET_ROOT')
     track_known_orders=track_known_orders or auto_cash
     if ledger_opening is not None:
         validate_cash_opening(ledger_opening,client.account_ref_sha256)
@@ -400,9 +417,17 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
         elif auto_cash:
             require(not (root/'cash-reconciliation.json').exists() and not (root/'cash-reconciliation.json').is_symlink(),
                     'KRAKEN_CASH_BASELINE_MISSING')
+        from tools import kraken_settlement_checkpoint as checkpoints
+        checkpoints.recover(root)
+        if ledger_opening is not None and settlement_market_root is not None:
+            checkpoints.initialise(root,ledger_opening,market_root=settlement_market_root)
+        checkpoint=checkpoints.load(root,client.account_ref_sha256)
+        require(checkpoint is None or auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
         completed=0;failures=0;stop_reason='CYCLE_LIMIT';status=None;bridge_status='NOT_REQUESTED'
         for index in range(cycles):
             if index:sleep_fn(poll_seconds)
+            checkpoint=checkpoints.load(root,client.account_ref_sha256)
+            if checkpoint is not None:ledger_opening=checkpoint['opening']
             report=collect_fn(client)
             require(report.get('account_ref_sha256')==client.account_ref_sha256,'KRAKEN_ACCOUNT_NAMESPACE_CHANGED')
             require(report.get('status') in ('OBSERVED_STABLE','UNRESOLVED','STALE','FAILED'),'KRAKEN_ACCOUNT_SESSION_STATUS')
@@ -425,6 +450,8 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                         'trade_linkage_verified':False}
                     atomic_json(root/'cash-reconciliation.json',{**pending,'result_hash':digest(pending)})
                     bridge_status='BASELINE_ONLY'
+                    if settlement_market_root is not None:
+                        checkpoints.initialise(root,report,market_root=settlement_market_root)
                 else:
                     failures+=status=='OBSERVED_STABLE' and stop_reason!='ORDER_QUERY_UNRESOLVED'
                     stop_reason='CASH_BASELINE_REQUIRES_SETTLED_ACCOUNT'
@@ -439,6 +466,13 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                         recovery=track_orders(client,root,report['open_orders'],clock_ms=clock_ms,cash=bridge)
                         if recovery['status']=='UNRESOLVED':
                             failures+=1;stop_reason='ORDER_QUERY_UNRESOLVED'
+                        elif checkpoint is not None and not report['open_orders'] and (
+                                recovery['order_ids'] or report['observed_at_ms']-ledger_opening['observed_at_ms']>=3600000):
+                            point=checkpoints.refresh(root,bridge,recovery,market_root=checkpoint['market_root'],
+                                as_of_ms=clock_ms() if clock_ms else time.time_ns()//1_000_000)
+                            if point is None:
+                                failures+=1;stop_reason='SETTLEMENT_CHECKPOINT_UNRESOLVED'
+                                bridge_status='UNRESOLVED'
                 elif status!='FAILED' and stop_reason!='ORDER_QUERY_UNRESOLVED':
                     stop_reason='CASH_ACCOUNT_UNSTABLE'
             if on_report is not None:
@@ -446,7 +480,8 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                            'result_hash':report['result_hash'],'order_recovery_status':recovery['status'] if recovery else 'NOT_REQUESTED',
                            'balance_bridge_status':bridge_status,
                            'submission_enabled':False})
-            if stop_reason in ('CASH_QUERY_UNRESOLVED','CASH_ACCOUNT_UNSTABLE','CASH_BASELINE_REQUIRES_SETTLED_ACCOUNT'):break
+            if stop_reason in ('CASH_QUERY_UNRESOLVED','CASH_ACCOUNT_UNSTABLE','CASH_BASELINE_REQUIRES_SETTLED_ACCOUNT',
+                               'SETTLEMENT_CHECKPOINT_UNRESOLVED'):break
             if recovery is not None and recovery['status']=='UNRESOLVED':break
             if status=='FAILED':
                 stop_reason='ACCOUNT_READ_FAILED';break
@@ -462,9 +497,12 @@ def main(argv=None):
     parser.add_argument('--track-orders',action='store_true',help='Query and retain observed order IDs across restarts')
     parser.add_argument('--ledger-opening',type=Path,help='Fixed earlier account checkpoint; reconcile each cycle, stop on mismatch (24h maximum window)')
     parser.add_argument('--auto-cash',action='store_true',help='Persist first stable no-order checkpoint and reconcile subsequent cycles (24h maximum window)')
+    parser.add_argument('--settlement-market-root',type=Path,
+        help='With --auto-cash, use archived public market evidence to advance settled checkpoints and retire known orders')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(not (args.auto_cash and args.ledger_opening is not None),'KRAKEN_CASH_SESSION_MODE')
+    require(args.settlement_market_root is None or args.auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
     opening=load_json_without_duplicate_keys(args.ledger_opening.read_bytes()) if args.ledger_opening is not None else None
@@ -474,7 +512,7 @@ def main(argv=None):
     client=ReadOnlyClient(key,secret,root);key=secret=None
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
         on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders,
-        ledger_opening=opening,auto_cash=args.auto_cash)
+        ledger_opening=opening,auto_cash=args.auto_cash,settlement_market_root=args.settlement_market_root)
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

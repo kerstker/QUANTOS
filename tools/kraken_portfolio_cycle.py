@@ -99,6 +99,8 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
                 cash=None;recovery=None
+                from tools.kraken_settlement_checkpoint import load as load_checkpoint
+                checkpoint=load_checkpoint(account_path.parent,account['account_ref_sha256'])
                 cash_path=account_path.parent/'cash-reconciliation.json'
                 cash_required=root/'cash-reconciliation-required.json'
                 require(not cash_required.is_symlink() and not cash_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
@@ -116,6 +118,8 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                         report['blockers'].append('CASH_RECONCILIATION_UNRESOLVED')
                     else:
                         bridge=replay_cash(account_path.parent,cash)
+                        if checkpoint is not None and bridge['opening_account_hash']!=checkpoint['opening']['result_hash']:
+                            report['blockers'].append('CHECKPOINT_REFRESH_REQUIRED')
                         if bridge['ledger_entries']:
                             report['blockers'].append('CASH_MOVEMENT_LINKAGE_REQUIRED')
                 elif cash_required.exists():

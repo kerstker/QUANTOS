@@ -94,6 +94,15 @@ def test_stale_cash_cannot_start_discovery_requests(tmp_path):
     assert result['status']=='UNRESOLVED' and reader.calls==[]
 
 
+def test_cash_order_discovery_is_independent_of_callers_decimal_precision(tmp_path):
+    from decimal import localcontext
+    reader,cash,_,_=setup(tmp_path)
+    with localcontext() as context:
+        context.prec=6
+        recovered=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+63000,cash=cash)
+    assert recovered['status']=='ORDERS_OBSERVED' and recovered['order_ids']==['ORDER-1']
+
+
 def test_empty_cash_window_needs_no_trade_or_order_lookup(tmp_path):
     from copy import deepcopy
     _,_,opening,_=setup(tmp_path)
