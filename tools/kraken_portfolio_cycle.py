@@ -97,6 +97,16 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     require(policy['account_ref_sha256']==account['account_ref_sha256'],'KRAKEN_CYCLE_POLICY_ACCOUNT')
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
+                cash_path=account_path.parent/'cash-reconciliation.json'
+                if cash_path.exists():
+                    cash=inventory.sealed(read(cash_path));now=clock_ms()
+                    require(cash.get('schema')=='KRAKEN_BALANCE_BRIDGE_V1' and
+                            cash['account_ref_sha256']==account['account_ref_sha256'],'KRAKEN_CYCLE_CASH_ACCOUNT')
+                    report['cash_reconciliation_status']=cash['status']
+                    if cash.get('closing_account_hash')!=account['result_hash'] or type(cash.get('as_of_ms')) is not int or not 0<=now-cash['as_of_ms']<=120000:
+                        report['cash_reconciliation_status']='STALE_OR_DIFFERENT_ACCOUNT_SNAPSHOT'
+                    # Matching observed balance changes alone does not prove trade linkage,
+                    # full wallet scope, or execution permission. Existing blockers remain.
                 recovery_path=account_path.parent/'order-recovery.json'
                 required_path=root/'order-recovery-required.json'
                 require(not required_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')

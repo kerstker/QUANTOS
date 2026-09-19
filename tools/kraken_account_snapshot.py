@@ -23,11 +23,12 @@ import urllib.request
 from services.data import kraken_account as model
 from services.data import kraken_order_query as order_query
 from services.data import kraken_trade_query as trade_query
+from services.data import kraken_cash_reconciliation as cash_model
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools.kraken_public_capture import NoRedirect, atomic_json, digest
 
-ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades')
+ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades','Ledgers')
 
 
 def private_root(root):
@@ -59,7 +60,14 @@ class ReadOnlyClient:
         self._clock=clock_ms or (lambda:time.time_ns()//1_000_000)
 
     def read(self,endpoint,params):
-        if endpoint in ('QueryOrders','QueryTrades'):
+        if endpoint=='Ledgers':
+            require(set(params)=={'asset','aclass','type','start','end','ofs','rebase_multiplier'} and
+                    params['asset']=='all' and params['aclass'] in ('currency','tokenized_asset') and
+                    params['type']=='all' and params['rebase_multiplier']=='base','KRAKEN_LEDGER_SCOPE')
+            require(all(type(params[k]) is int for k in ('start','end','ofs')) and
+                    0<params['start']<params['end']<=params['start']+86401 and
+                    0<=params['ofs']<5000 and params['ofs']%50==0,'KRAKEN_LEDGER_BOUNDS')
+        elif endpoint in ('QueryOrders','QueryTrades'):
             require(set(params)=={'txid','trades','rebase_multiplier'} and params['trades']==('true' if endpoint=='QueryOrders' else 'false') and
                     params['rebase_multiplier']=='base','KRAKEN_READ_ONLY_ENDPOINT')
             ids=order_query.identifiers(params['txid'])
@@ -136,6 +144,51 @@ def save(root,report):
 
 
 
+
+
+
+
+def collect_cash_bridge(client, root, opening, closing, *, clock_ms=None, sleep_fn=None):
+    root=private_root(root)
+    fd=os.open(root/'.cash.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        return _collect_cash_bridge(client,root,opening,closing,clock_ms=clock_ms,sleep_fn=sleep_fn)
+
+
+def _collect_cash_bridge(client, root, opening, closing, *, clock_ms=None, sleep_fn=None):
+    clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000);sleep_fn=sleep_fn or time.sleep
+    require(opening['account_ref_sha256']==closing['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_CASH_ACCOUNT_CHANGED')
+    start=opening['reads'][0]['requested_at_ms']//1000;end=(closing['observed_at_ms']+999)//1000
+    require(0<start<end<=start+86401,'KRAKEN_CASH_WINDOW')
+    delay=end*1000-clock_ms()
+    if delay>0:
+        require(delay<=1000,'KRAKEN_CASH_FUTURE_SNAPSHOT');sleep_fn(delay/1000)
+    reads=[]
+    for cls in ('currency','tokenized_asset'):
+        offset=0
+        while True:
+            params={'asset':'all','aclass':cls,'type':'all','start':start,'end':end,'ofs':offset,'rebase_multiplier':'base'}
+            sent=clock_ms();body=client.read('Ledgers',params);received=clock_ms()
+            require(isinstance(body,bytes) and len(body)<=model.MAX_BYTES,'KRAKEN_LEDGER_SIZE')
+            value=model.payload(body.decode('utf-8'));count=value.get('count')
+            require(type(count) is int and 0<=count<=5000,'KRAKEN_LEDGER_COUNT')
+            reads.append({'endpoint':'Ledgers','params':params,'requested_at_ms':sent,'received_at_ms':received,
+                          'account_ref_sha256':client.account_ref_sha256,'body':body.decode('utf-8')})
+            offset+=50
+            if offset>=count:break
+    report=cash_model.reconcile(opening,closing,reads,as_of_ms=clock_ms())
+    report.update(opening_account_hash=opening['result_hash'],closing_account_hash=closing['result_hash'])
+    evidence={'opening':opening,'closing':closing,'reads':reads,'report':report};key=digest(evidence)
+    root=private_root(root);directory=root/'cash-windows'
+    require(not directory.is_symlink() and not (root/'cash-reconciliation.json').is_symlink(),'KRAKEN_CASH_SYMLINK')
+    directory.mkdir(mode=0o700,exist_ok=True);target=directory/(key+'.json')
+    require(not target.is_symlink(),'KRAKEN_CASH_SYMLINK')
+    if target.exists():require(load_json_without_duplicate_keys(target.read_bytes())==evidence,'KRAKEN_CASH_CONFLICT')
+    else:atomic_json(target,evidence)
+    report['evidence_hash']=key;report['result_hash']=digest(report)
+    atomic_json(root/'cash-reconciliation.json',report)
+    return report
 
 
 def query_trades(client, root, orders, *, clock_ms):
@@ -260,6 +313,7 @@ def main(argv=None):
     parser.add_argument('--cycles',type=int,default=1)
     parser.add_argument('--poll-seconds',type=int,default=60)
     parser.add_argument('--track-orders',action='store_true',help='Query and retain observed order IDs across restarts')
+    parser.add_argument('--ledger-opening',type=Path,help='Earlier exported account snapshot for a bounded ledger balance bridge')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
@@ -270,6 +324,14 @@ def main(argv=None):
     client=ReadOnlyClient(key,secret,root);key=secret=None
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
         on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders)
+    if args.ledger_opening is not None and result['non_stable_cycles']==0:
+        opening=load_json_without_duplicate_keys(args.ledger_opening.read_bytes())
+        closing=load_json_without_duplicate_keys((root/'latest.json').read_bytes())
+        for item in (opening,closing):
+            require(item.get('result_hash')==digest({k:v for k,v in item.items() if k!='result_hash'}),'KRAKEN_CASH_INPUT_HASH')
+        bridge=collect_cash_bridge(client,root,opening,closing)
+        result['balance_bridge_status']=bridge['status']
+        if bridge['status']!='BALANCE_MOVEMENTS_MATCHED':result['non_stable_cycles']+=1
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

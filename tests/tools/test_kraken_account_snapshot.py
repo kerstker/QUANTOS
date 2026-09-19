@@ -205,3 +205,20 @@ def test_trade_query_signing_has_separate_twenty_id_limit(tmp_path):
     with pytest.raises(ValueError):client.read('QueryTrades',{
         'txid':','.join('T-'+str(i) for i in range(21)),'trades':'false','rebase_multiplier':'base'})
     assert len(calls)==1
+
+
+def test_bounded_ledger_collection_includes_both_asset_classes(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,pages=samples()
+    for item in (opening,closing):item['result_hash']=tool.digest(item)
+    calls=[]
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,endpoint,params):
+            calls.append((endpoint,params))
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    result=tool.collect_cash_bridge(Reader(),tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    assert result['status']=='BALANCE_MOVEMENTS_MATCHED'
+    assert [p['aclass'] for _,p in calls]==['currency','tokenized_asset']
+    assert result['next_cycle_allowed'] is False
+    assert json.loads((tmp_path/'cash-reconciliation.json').read_text())['closing_account_hash']==closing['result_hash']

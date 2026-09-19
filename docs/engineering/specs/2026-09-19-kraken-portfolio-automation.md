@@ -190,3 +190,18 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 验证：新模型先RED（模块缺失），实现后成交/订单查询/人工工具/组合周期/依赖图联合 **46 passed**。覆盖漏笔、重复、串单、费用/金额/数量不符、未来时间、保证金成交、跨查询幂等与同ID冲突、20笔请求上限。全部模拟响应，未读真实凭证或查询私有API；未运行完整发布门、未部署。下一重点是逐资产账目与费用币种、现金/持仓余额衔接，以及受控执行的恢复闭环。
 
 协议依据：[Query Trades Info](https://docs.kraken.com/api-reference/account-data/query-trades-info)。原冻结人工入口仍未替换，新功能未投入真实会话。
+
+
+## 第十一批 账目分页与前后余额衔接
+
+新增 `services/data/kraken_cash_reconciliation.py`。以两个稳定 base 口径账户快照为边界，读取 currency、tokenized_asset 两类全部账目（type=all，asset=all），验证范围、账户身份、每页50条/末页数量、连续offset、各类固定count、全局无重复ID及完整覆盖。窗口最长24小时、每类至多5000条；采集开始须在闭合窗口结束之后。start-exclusive/end-inclusive依官方接口语义，不把默认currency查询当成包含xStocks。
+
+逐资产计算 `amount-fee`，核对每条账目后的余额及账户期末余额；费用保留在流水实际asset内，可处理资产内返还的负费用，不把base币费用硬扣成USD。保留账目ID/refid/type/时间便于下一步成交关联。相同资产同一时刻多条无法确定次序、账户快照采集期间有账目活动、缺页、计数变动或余额漂移均不通过。快照边界外的已查询账目保留但不计入两快照间变化。
+
+人工工具新增 `--ledger-opening /absolute/earlier-account-snapshot.json`：本次账户采集结束后，以指定旧快照和新快照进行有限范围Ledgers查询及核对。不是自动选择期初或自动滚动现金账本；失败不伪造配平。签名白名单加入该只读端点，账户保持同一命名空间，范围/类别/分页参数固定校验；窗口及前后快照私有留存，独立锁避免并发写入。
+
+组合周期读取 `cash-reconciliation.json`，核对账户、期末快照内容哈希和时效，显示 `BALANCE_MOVEMENTS_MATCHED` 或未解决/旧快照。该状态只证明观察到的默认钱包余额变化能由所取流水解释，未证明成交与流水逐笔关联、全钱包覆盖或执行授权；既有下一轮阻断保持。当前 `trade_linkage_verified=false`、`next_cycle_allowed=false`，不因为数学配平自动放行。
+
+验证：新增回归先RED，账目/账户工具/组合周期/依赖图联合 **39 passed**；随后追加base资产扣费及多页正向重建两项通过（账目模块总10项）。未读取凭证、真实私有API或部署，未跑完整发布门。实际窗口边界、返佣/公司行动和真实账户数据尚需验证，成交refid关联是下一断点。
+
+协议依据：[Get Ledgers Info](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)。原冻结人工入口未替换，新账目参数尚未在真实账户运行。
