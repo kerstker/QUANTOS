@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 55,
+  "edge_count": 54,
   "edges": [
     {
       "references": [
@@ -739,17 +739,6 @@
       ],
       "source": "console",
       "target": "validation"
-    },
-    {
-      "references": [
-        {
-          "line": 13,
-          "module": "services.governance.json_integrity",
-          "path": "services/data/kraken_account.py"
-        }
-      ],
-      "source": "data",
-      "target": "governance"
     },
     {
       "references": [
@@ -2035,7 +2024,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "fec817588b9d31d0482fea29c77c06b12487496aed249fad2c16803d0c557412",
+  "graph_sha256": "0bc4c000fdccc67cea923876b159ba7270159bb487b519f8b687eb6ad2bd54d8",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

@@ -7,9 +7,15 @@ from datetime import datetime, timezone
 from decimal import Context, localcontext
 import hashlib
 import re
-import urllib.parse
 
 from services.data.kraken_public import decimal, require
+
+
+def _form_component(value):
+    # Pure UTF-8 form encoding: importing a networking package is unnecessary
+    # for this offline byte protocol. Space uses '+', other bytes use '%HH'.
+    return ''.join(chr(b) if 65<=b<=90 or 97<=b<=122 or 48<=b<=57 or b in (45,46,95,126)
+                   else '+' if b==32 else f'%{b:02X}' for b in value.encode('utf-8'))
 
 
 def prepare(order, *, spec, now_ms, nonce):
@@ -40,6 +46,6 @@ def prepare(order, *, spec, now_ms, nonce):
             'pair':spec['altname'],'price':order['limit_price'],'cl_ord_id':order['client_order_id'],
             'timeinforce':'IOC','oflags':'fciq','deadline':deadline_text,'validate':'true'}
     if spec['asset_class']=='tokenized_asset':params['asset_class']='tokenized_asset'
-    body=urllib.parse.urlencode(params).encode('ascii')
+    body='&'.join(_form_component(k)+'='+_form_component(v) for k,v in params.items()).encode('ascii')
     return {'body':body,'body_sha256':hashlib.sha256(body).hexdigest(),'execution_eligible':False,
             'quantity_semantics_verified':False,'scope':'OFFLINE_VENUE_VALIDATION_PAYLOAD_ONLY'}

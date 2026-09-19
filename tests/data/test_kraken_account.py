@@ -9,6 +9,20 @@ from services.data import kraken_account as account
 NOW=1800000000000
 
 
+@pytest.mark.parametrize('fragment',[
+    '"v":NaN','"v":Infinity','"v":-Infinity','"v":1e9999',
+    '"nested":{"a":1,"a":2}','"v":"\\ud800"','"\\udfff":1',
+])
+def test_private_payload_rejects_ambiguous_nonfinite_and_surrogate_values(fragment):
+    with pytest.raises(ValueError):account.payload('{"error":[],"result":{'+fragment+'}}')
+
+
+def test_private_numeric_json_preserves_original_decimal_precision():
+    from decimal import Decimal
+    parsed=account.payload('{"error":[],"result":{"time":1800000000.123456789012345678}}')
+    assert parsed['time']==Decimal('1800000000.123456789012345678')
+
+
 def observations():
     balances={'error':[],'result':{'ZUSD':{'balance':'1000.00000001','hold_trade':'250'},
         'AAPLx.T':{'balance':'2.123456789012345678','hold_trade':'0.1'}}}

@@ -21,6 +21,16 @@ def test_exact_wire_values_and_fixed_spot_limits():
     assert result['execution_eligible'] is False
 
 
+def test_wire_bytes_preserve_form_encoding_and_decimal_lexemes():
+    import hashlib
+    now=1700000000000;o=order();o['deadline_ms']=now+10000
+    result=wire.prepare(o,spec=capture()[0]['instrument'],now_ms=now,nonce=12345)
+    expected=(b'nonce=12345&ordertype=limit&type=buy&volume=0.12345678&pair=AAPLxUSD'
+        b'&price=100.01&cl_ord_id=0123456789abcdef0123456789abcdef&timeinforce=IOC'
+        b'&oflags=fciq&deadline=2023-11-14T22%3A13%3A30.000Z&validate=true&asset_class=tokenized_asset')
+    assert result['body']==expected and result['body_sha256']==hashlib.sha256(expected).hexdigest()
+
+
 @pytest.mark.parametrize('case',['float','precision','min_cost','tick','identity','deadline','extra','client_id'])
 def test_invalid_or_unbounded_order_is_rejected(case):
     o=order()

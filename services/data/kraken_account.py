@@ -6,11 +6,11 @@ A stable observation never grants account authority or order permission.
 from decimal import Context, Decimal, localcontext
 import hashlib
 import json
+import math
 import re
 
 from services.data.kraken_public import require
 from services.data.kraken_order_state import state as order_state
-from services.governance.json_integrity import load_json_without_duplicate_keys
 
 MAX_BYTES=4*1024*1024
 
@@ -31,10 +31,27 @@ def canonical(value):
 
 def payload(body):
     require(isinstance(body,str) and len(body.encode())<=MAX_BYTES,'KRAKEN_ACCOUNT_BODY')
-    load_json_without_duplicate_keys(body)
-    # The first parse rejects duplicate keys/non-finite numbers. Preserve numeric
-    # JSON decimals from their original lexical representation on this parse.
-    value=json.loads(body,parse_float=Decimal)
+    def pairs(items):
+        result={}
+        for key,value in items:
+            require(key not in result,'KRAKEN_ACCOUNT_DUPLICATE_JSON_KEY')
+            result[key]=value
+        return result
+    def exact_number(text):
+        # Preserve the existing finite-number bound without rounding the value
+        # that is returned to accounting. JSON decimals are parsed only once.
+        require(math.isfinite(float(text)),'KRAKEN_ACCOUNT_NONFINITE_JSON_NUMBER')
+        return Decimal(text)
+    def constant(_):
+        raise ValueError('KRAKEN_ACCOUNT_NONSTANDARD_JSON_CONSTANT')
+    value=json.loads(body,object_pairs_hook=pairs,parse_float=exact_number,parse_constant=constant)
+    pending=[value]
+    while pending:
+        item=pending.pop()
+        if isinstance(item,dict):pending.extend(item.keys());pending.extend(item.values())
+        elif isinstance(item,list):pending.extend(item)
+        elif isinstance(item,str):
+            require(not any(0xD800<=ord(c)<=0xDFFF for c in item),'KRAKEN_ACCOUNT_JSON_SURROGATE')
     require(isinstance(value,dict) and value.get('error')==[] and isinstance(value.get('result'),dict),'KRAKEN_ACCOUNT_RESPONSE')
     return value['result']
 
