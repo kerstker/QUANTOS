@@ -162,3 +162,16 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 验证：账户连续采集回归3项先失败，同时间失败覆盖回归先失败，订单映射新模块先缺失；实现后订单状态/账户工具/账户模型/组合周期/原OMS状态/依赖图联合 **98 passed**。未跑完整发布门，未部署、读取真实凭证或下单。已冻结的9208995d8人工单次导出入口保持原样，本批会话功能尚未替换该入口。
 
 订单格式依据：[Kraken Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)。下一步优先处理订单身份、部分成交、手续费、断点恢复和逐资产现金对账，再贯通执行；不继续堆叠显示功能。
+
+
+## 第九批 已知订单恢复与下一轮阻断
+
+新增 `services/data/kraken_order_query.py`：固定 QueryOrders 的 `trades=true`、`rebase_multiplier=base`，精确匹配请求订单集合，保留累计成交量/成交额/费用及成交编号。响应缺单、时间失效、重复编号、状态数量不一致拒绝。跨观察检查同一账户、单调时间、订单产品/方向/类型/原始数量一致、成交数量/金额/费用不倒退、终态不改写；改单或费用修订暂按未解决拒绝，需要专门证据处理。
+
+人工账户采集工具新增可选 `--track-orders`，私有端点白名单扩至 BalanceEx、OpenOrders、QueryOrders，仍无下单/撤单路径。订单ID先保存，再查询；下一次即使订单从挂单列表消失，仍查询原ID。私有目录保存查询原文及标准化结果、最后成功观察和当前恢复状态；失败不抹掉已知订单，当前状态改为 UNRESOLVED，启用跟踪的会话停止重试。一次最多50个已知ID，超限拒绝，尚未做历史全量回补/分批归档；仅跟踪首次观察以来见过的挂单，不宣称观察了完整账户订单历史。
+
+`tools/kraken_portfolio_cycle.py` 已消费账户目录下的 `order-recovery.json`。已接过该证据后若文件消失或过期，会阻止后续配置草案。只要有已跟踪订单，尚无成交/费用/现金核对就明确 `TRADE_AND_CASH_RECONCILIATION_REQUIRED`，即使订单已全成交或撤销也不生成下一轮配置草案。`cash_reconciliation_status=NOT_CONNECTED`，查询订单不是资金对账完成；无成交明细时不会把累计量创造为一笔 fill。未确定费用币种时 `fee_asset_status=UNKNOWN`。
+
+验证：新增查询回归先 RED，完成后查询/OMS映射/账户工具/组合周期/服务依赖图联合 **46 passed**。覆盖已见挂单→撤单→重启后仍查询、漏单不归零、数量/金额倒退、订单身份变更、失败停会话，以及终态后仍阻止下一轮、删除恢复证据不能绕过阻断。全部使用模拟响应，未查询真实订单或读取凭证；未运行完整发布门、未部署。
+
+本批完成已知订单恢复接线，成交与费用归档、逐资产现金/持仓对账仍未实现，是后续优先工作。原冻结9208995d8入口不包含新增 QueryOrders 能力，未被替换；新权限/入口仍需按独立人工流程接续。协议依据：[Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)。

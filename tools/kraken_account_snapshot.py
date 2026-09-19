@@ -1,7 +1,7 @@
 """Human-operated Kraken balance/open-order export; never run by an AI with real keys.
 
 Credentials are entered through getpass, held in memory, never exported. The
-transport is structurally limited to two read-only account endpoints. This is
+transport is structurally limited to allowlisted read-only account endpoints. This is
 not a live adapter, credential installer, or trading-approval mechanism.
 """
 import argparse
@@ -21,11 +21,12 @@ import urllib.parse
 import urllib.request
 
 from services.data import kraken_account as model
+from services.data import kraken_order_query as order_query
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools.kraken_public_capture import NoRedirect, atomic_json, digest
 
-ENDPOINTS=('BalanceEx','OpenOrders')
+ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders')
 
 
 def private_root(root):
@@ -57,7 +58,12 @@ class ReadOnlyClient:
         self._clock=clock_ms or (lambda:time.time_ns()//1_000_000)
 
     def read(self,endpoint,params):
-        require(endpoint in ENDPOINTS and params=={'rebase_multiplier':'base'},'KRAKEN_READ_ONLY_ENDPOINT')
+        if endpoint=='QueryOrders':
+            require(set(params)=={'txid','trades','rebase_multiplier'} and params['trades']=='true' and
+                    params['rebase_multiplier']=='base','KRAKEN_READ_ONLY_ENDPOINT')
+            order_query.identifiers(params['txid'])
+        else:
+            require(endpoint in ('BalanceEx','OpenOrders') and params=={'rebase_multiplier':'base'},'KRAKEN_READ_ONLY_ENDPOINT')
         # Serialize allocation AND request dispatch, not only nonce increment.
         lock_path=self.root/(self.account_ref_sha256+'.lock')
         fd=os.open(lock_path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
@@ -128,7 +134,55 @@ def save(root,report):
 
 
 
-def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None):
+
+def track_orders(client, root, open_orders, *, clock_ms=None):
+    """Retain known IDs before querying; unknown/missing orders never become empty."""
+    root=private_root(root);clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
+    fd=os.open(root/'.order-query.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        for name in ('order-tracking.json','order-query-latest.json','order-recovery.json','order-queries'):
+            require(not (root/name).is_symlink(),'KRAKEN_ORDER_TRACKING_SYMLINK')
+        path=root/'order-tracking.json';ids=set()
+        if path.exists():
+            prior=load_json_without_duplicate_keys(path.read_bytes())
+            require(prior['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_ORDER_TRACKING_ACCOUNT')
+            ids.update(prior['order_ids'])
+        ids.update(row['order_id'] for row in open_orders)
+        ordered=sorted(ids)
+        if ordered:order_query.identifiers(','.join(ordered))
+        atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
+        result={'schema':'KRAKEN_ORDER_RECOVERY_V1','account_ref_sha256':client.account_ref_sha256,
+                'status':'NO_TRACKED_ORDERS' if not ids else 'UNRESOLVED','order_ids':ordered,
+                'observed_at_ms':clock_ms(),'query_hash':None,'failure':None,'cash_reconciled':False,
+                'full_history_observed':False,'next_cycle_allowed':False,'submission_enabled':False,'authoritative':False}
+        if ids:
+            try:
+                params={'txid':','.join(ordered),'trades':'true','rebase_multiplier':'base'}
+                sent=clock_ms();body=client.read('QueryOrders',params);received=clock_ms()
+                require(isinstance(body,bytes) and len(body)<=model.MAX_BYTES,'KRAKEN_ORDER_QUERY_SIZE')
+                read={'endpoint':'QueryOrders','params':params,'requested_at_ms':sent,'received_at_ms':received,
+                      'account_ref_sha256':client.account_ref_sha256,'body':body.decode('utf-8')}
+                report=order_query.assess(read,as_of_ms=clock_ms())
+                archive=root/'order-queries';archive.mkdir(mode=0o700,exist_ok=True)
+                evidence={'read':read,'report':report};query_hash=digest(evidence)
+                target=archive/(query_hash+'.json')
+                require(not target.is_symlink(),'KRAKEN_ORDER_TRACKING_SYMLINK')
+                if target.exists():require(load_json_without_duplicate_keys(target.read_bytes())==evidence,'KRAKEN_ORDER_QUERY_CONFLICT')
+                else:atomic_json(target,evidence)
+                result['query_hash']=query_hash
+                latest=root/'order-query-latest.json'
+                if latest.exists():order_query.check_progress(load_json_without_duplicate_keys(latest.read_bytes()),report)
+                atomic_json(latest,report)
+                result.update(status='ORDERS_OBSERVED',observed_at_ms=report['observed_at_ms'])
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                result['failure']={'error_type':type(exc).__name__}
+        result['result_hash']=digest(result)
+        atomic_json(root/'order-recovery.json',result)
+        return result
+
+
+def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None, track_known_orders=False):
     """Bounded human-started refresh; any transport/API failure ends the session."""
     require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
     require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
@@ -149,9 +203,16 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
             require(report.get('account_ref_sha256')==client.account_ref_sha256,'KRAKEN_ACCOUNT_NAMESPACE_CHANGED')
             require(report.get('status') in ('OBSERVED_STABLE','UNRESOLVED','STALE','FAILED'),'KRAKEN_ACCOUNT_SESSION_STATUS')
             save(root,report);completed+=1;status=report['status'];failures+=status!='OBSERVED_STABLE'
+            recovery=None
+            if track_known_orders and status!='FAILED':
+                recovery=track_orders(client,root,report['open_orders'])
+                if recovery['status']=='UNRESOLVED':
+                    failures+=status=='OBSERVED_STABLE';stop_reason='ORDER_QUERY_UNRESOLVED'
             if on_report is not None:
                 on_report({'cycle':completed,'status':status,'report':str(root/'latest.json'),
-                           'result_hash':report['result_hash'],'submission_enabled':False})
+                           'result_hash':report['result_hash'],'order_recovery_status':recovery['status'] if recovery else 'NOT_REQUESTED',
+                           'submission_enabled':False})
+            if recovery is not None and recovery['status']=='UNRESOLVED':break
             if status=='FAILED':
                 stop_reason='ACCOUNT_READ_FAILED';break
         return {'cycles_completed':completed,'non_stable_cycles':failures,'last_status':status,
@@ -163,6 +224,7 @@ def main(argv=None):
     parser.add_argument('--state-root',required=True,type=Path)
     parser.add_argument('--cycles',type=int,default=1)
     parser.add_argument('--poll-seconds',type=int,default=60)
+    parser.add_argument('--track-orders',action='store_true',help='Query and retain observed order IDs across restarts')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
@@ -172,7 +234,7 @@ def main(argv=None):
     secret=getpass.getpass('Kraken API secret（不回显）: ')
     client=ReadOnlyClient(key,secret,root);key=secret=None
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
-        on_report=lambda event:print(json.dumps(event),flush=True))
+        on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders)
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

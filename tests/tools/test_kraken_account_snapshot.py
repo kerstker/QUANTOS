@@ -126,3 +126,46 @@ def test_failure_at_same_timestamp_supersedes_success_and_cannot_be_hidden(tmp_p
     assert json.loads((tmp_path/'latest.json').read_text())['status']=='FAILED'
     tool.save(tmp_path,stable)
     assert json.loads((tmp_path/'latest.json').read_text())['status']=='FAILED'
+
+
+def test_order_tracking_survives_restart_and_missing_order_never_becomes_complete(tmp_path):
+    from tests.data.test_kraken_order_query import body
+    class Reader:
+        account_ref_sha256='a'*64
+        response=body()
+        def read(self,endpoint,params):
+            assert endpoint=='QueryOrders' and params['txid']=='ORDER-1'
+            return self.response.encode()
+    reader=Reader()
+    first=tool.track_orders(reader,tmp_path,[{'order_id':'ORDER-1'}],clock_ms=lambda:NOW)
+    assert first['status']=='ORDERS_OBSERVED'
+    reader.response=body('canceled')
+    second=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+1000)
+    assert second['order_ids']==['ORDER-1'] and second['status']=='ORDERS_OBSERVED'
+    assert second['cash_reconciled'] is False and second['next_cycle_allowed'] is False
+    reader.response='{"error":[],"result":{}}'
+    failed=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+2000)
+    assert failed['status']=='UNRESOLVED' and failed['order_ids']==['ORDER-1']
+    assert json.loads((tmp_path/'order-query-latest.json').read_text())['orders'][0]['status']=='canceled'
+
+
+def test_query_orders_signer_accepts_only_bounded_read_scope(tmp_path):
+    calls=[]
+    key=base64.b64encode(b'public fixture only').decode();secret=base64.b64encode(b'non-secret fixture only').decode()
+    client=tool.ReadOnlyClient(key,secret,tmp_path,transport=lambda *args:calls.append(args),clock_ms=lambda:NOW)
+    client.read('QueryOrders',{'txid':'ORDER-1','trades':'true','rebase_multiplier':'base'})
+    for ids in ['','ORDER-1,ORDER-1',','.join('ORDER-'+str(i) for i in range(51))]:
+        with pytest.raises(ValueError):client.read('QueryOrders',{'txid':ids,'trades':'true','rebase_multiplier':'base'})
+    assert len(calls)==1
+
+
+def test_enabled_session_stops_after_unresolved_order_query(tmp_path,monkeypatch):
+    from services.data.kraken_account import assess
+    class Reader:account_ref_sha256='a'*64
+    report=assess(observations(),as_of_ms=NOW+500)
+    report['result_hash']=tool.digest(report)
+    monkeypatch.setattr(tool,'track_orders',lambda *_:{'status':'UNRESOLVED'})
+    result=tool.run_session(Reader(),tmp_path,cycles=5,poll_seconds=60,track_known_orders=True,
+        collect_fn=lambda _:report,sleep_fn=lambda _:pytest.fail('must stop'))
+    assert result['cycles_completed']==1 and result['non_stable_cycles']==1
+    assert result['stop_reason']=='ORDER_QUERY_UNRESOLVED'

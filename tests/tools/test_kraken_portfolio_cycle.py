@@ -94,3 +94,19 @@ def test_overlapping_process_and_changed_config_cannot_start_cycle(tmp_path):
         with pytest.raises(BlockingIOError):cycle.run_once(**args)
     args['config']=dict(args['config'],poll_seconds=120)
     with pytest.raises(ValueError):cycle.run_once(**args)
+
+
+def test_terminal_order_observation_is_not_cash_reconciliation(tmp_path):
+    args=setup(tmp_path);write_inputs(args)
+    recovery={'schema':'KRAKEN_ORDER_RECOVERY_V1','account_ref_sha256':'a'*64,'status':'ORDERS_OBSERVED',
+        'observed_at_ms':NOW+600,'order_ids':['ORDER-1'],'cash_reconciled':False,
+        'next_cycle_allowed':False,'submission_enabled':False,'authoritative':False}
+    recovery['result_hash']=capture.digest(recovery)
+    (args['account_path'].parent/'order-recovery.json').write_text(json.dumps(recovery))
+    report=cycle.run_once(**args)
+    assert report['status']=='BLOCKED'
+    assert 'TRADE_AND_CASH_RECONCILIATION_REQUIRED' in report['blockers']
+    assert 'allocation_review' not in report['inventory']
+    (args['account_path'].parent/'order-recovery.json').unlink()
+    again=cycle.run_once(**args)
+    assert again['status']=='BLOCKED' and 'ORDER_RECOVERY_MISSING' in again['blockers']
