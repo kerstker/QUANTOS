@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-19 SPYx与XAUT公开研究输入接通**：用户确认SPY xStock、其他待选xStocks与XAUT，策略共同研究。新增两资产公开观察配置，真实公开采集均CAPTURED，各720根小时线及报价/单位元数据；未指定目标权重或调仓限额，未访问真实账户、未部署。见[范围与证据](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第三十五批-spyx与xaut公开研究范围接线)。
+
 > **2026-09-19 闭环第三十四批：普通订单跟踪重启接续**：已有order-tracking或order-recovery记录时，即使重启未重复传跟踪参数，也自动查询原订单；未知结果停止会话。两项回归先复现漏查，再通过修复；相关联合92项通过。未重新全量验收或部署，冻结2be6dda39观察入口未变，见[实现记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第三十四批-普通订单跟踪的重启自动接续)。
 
 > **2026-09-19 冻结2be6dda39第二轮完整验收PASS**：会话30943已终态exit 0；`canonical-retry-1/canonical-report.json`绑定完整源码`2be6dda3994e973a01ce09ff38136b6475d430dd`，ALL 28/28通过、0失败/错误/超时，耗时2930.158秒。后端8519通过/19跳过，执行与工具4579通过/2跳过，前端79文件460测试与构建通过。新版人工账户观察入口已绑定本轮报告，`--check`通过且未访问账户；原失败报告保留。备份检查内部因缺配置跳过，成熟度仍NOT_TOP_TIER（14/22），不是实盘闭环完成或部署授权。见[最终记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39第二轮完整验收通过)。

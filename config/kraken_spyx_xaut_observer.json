@@ -1,0 +1,9 @@
+{
+  "schema": "KRAKEN_OBSERVER_CONFIG_V1",
+  "interval": 60,
+  "poll_seconds": 60,
+  "instruments": [
+    {"pair": "SPYx/USD", "asset_class": "tokenized_asset"},
+    {"pair": "XAUT/USD", "asset_class": "currency"}
+  ]
+}
