@@ -24,3 +24,6 @@ __all__ = ["app"]
 
 from services.console.api.ai_factory import router as ai_factory_router
 app.include_router(ai_factory_router)
+
+from services.console.api.kraken_views import router as kraken_portfolio_router
+app.include_router(kraken_portfolio_router)

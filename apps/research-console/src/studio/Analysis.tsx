@@ -5,6 +5,7 @@ import {CONSOLE_MODULES} from '@/workbench/module-registry';
 import type {RunsState} from './Research';
 import type {ServiceHealth} from '@/lib/types/research';
 import {OperationalHealth} from './OperationalHealth';
+import {KrakenPortfolio} from './KrakenPortfolio';
 import {Chart,Heatmap,type ChartRow} from './Charts';
 import {analyzeEquity,correlation,histogram} from './analytics';
 import {Badge,Empty,ErrorNote,Header,Loading,Metric,Panel} from './components';
@@ -70,6 +71,7 @@ export function Operations({runs}:{runs:RunsState}) {
  const chartEvents:ChartRow[]=Object.entries(events??{}).filter(([,n])=>typeof n==='number').map(([label,value])=>({label,value:value as number}));
  return <><Header eyebrow="OPERATIONS / CONTINUOUS RESEARCH" title="运行监控" action={<button className="s-button" onClick={result.refresh}>刷新状态</button>}>服务、公开采集、任务队列和异常原因；每15秒更新。</Header><ErrorNote error={result.error??runs.error} retry={()=>{result.refresh();runs.refresh();}}/>
  <OperationalHealth services={services}/>
+ <KrakenPortfolio/>
  <div className="s-analytics-grid"><Chart title="研究任务状态" rows={runs.available?['queued','running','done','error','cancelled'].map(status=>({label:status,value:runs.rows.filter(r=>r.status===status).length})):[]} series={[{key:'value',label:'登记数量'}]} kind="bar"/><Chart title="研究类型分布" rows={runs.available?Object.entries(KIND_LABELS).map(([kind,label])=>({label,value:runs.rows.filter(r=>r.kind===kind).length})):[]} series={[{key:'value',label:'运行数'}]} kind="bar"/>
  <Chart title="公开流事件累计" rows={result.error?[]:chartEvents} series={[{key:'value',label:'事件数'}]} kind="bar" note="来自采集器计数；不是成交量或下单数"/><Panel title="公开数据新鲜度"><dl className="s-facts"><div><dt>流连接</dt><dd>{stream?.effective_streaming===true?'正常':'未确认'}</dd></div><div><dt>快照年龄</dt><dd>{fmt(stream?.age_ms,0)} ms</dd></div><div><dt>端到端延迟</dt><dd>{fmt(stream?.lag_ms,0)} ms</dd></div><div><dt>拒绝帧</dt><dd>{fmt(stream?.rejected_frames,0)}</dd></div></dl><Link className="s-text-link s-pad" to="/studio/modules/data-catalog">查看完整数据源诊断 →</Link></Panel></div>
  <div className="s-controls"><Link className="s-button" to="/studio/modules/agents">研究 Agent 状态</Link><Link className="s-button" to="/studio/modules/events">审计事件</Link><Link className="s-button" to="/studio/modules/incident-response">异常处理</Link><Link className="s-button" to="/studio/system">连接设置</Link></div>

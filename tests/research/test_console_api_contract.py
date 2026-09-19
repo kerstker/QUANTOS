@@ -454,6 +454,7 @@ SNAPSHOT_STATUSES = {
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
 # exported *Payload interfaces). Base markers are checked separately for all.
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "/api/v1/console/kraken-portfolio": ("", ("session_status", "portfolio_status", "observed_at_ms", "stages", "blockers", "submission_enabled", "authoritative")),
     "/api/v1/console/binance-demo": ("", ("environment", "rest_base", "observed_at_ms", "as_of_ms", "age_ms", "max_age_ms", "public", "account", "submission_enabled", "authoritative", "execution_reason", "order_stream_status", "ledger_reconciliation_status", "execution", "order_recovery", "private_checks", "account_baseline", "statement", "user_stream", "cash_window", "execution_origin", "canonical_cash", "oms_status", "cancellation_status", "resident_status", "cash_chain", "executor_observation", "issuer_status", "market_inputs", "backup_status", "functional_cycle")),
     "/api/v1/console/ai-factory-lifecycle": ("", ("workspace", "workspaces", "models", "comparisons", "campaigns", "rounds", "sources", "capabilities", "scheduler_enabled", "worker", "errors")),
     "/api/v1/console/ai-factory": ("", ("workspace", "workspaces", "sessions", "selected", "trials", "events", "provider", "errors", "forward", "assessment", "verification", "pipeline", "comparison", "resident", "workflow", "source_capture", "profitability", "forward_profitability")),
@@ -625,6 +626,7 @@ BACKEND_ONLY_ROUTES = {
 # marker. They still must be read-only snapshots; only the honesty label differs.
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
+    "/api/v1/console/kraken-portfolio": "KRAKEN_READ_ONLY_SESSION",
     "/api/v1/console/binance-demo": "DEMO_CONNECTIVITY_DIAGNOSTIC",
     "/api/v1/console/ai-factory": "REAL_AI_FACTORY_DIAGNOSTIC",
     "/api/v1/console/ai-factory-lifecycle": "REAL_AI_FACTORY_DIAGNOSTIC",
@@ -2663,3 +2665,58 @@ def test_demo_console_opening_assessment_preserves_incomplete_inventory_and_read
     assert report['reconciliation'] is None and report['position_quantity'] is None
     assert path.read_bytes() == before
     assert views.build_execution_snapshot(path=path, as_of_ms=89)['status'] == 'DATA_BLOCKED'
+
+
+def test_kraken_session_console_requires_fresh_matching_report(tmp_path, monkeypatch):
+    from services.console.api import kraken_views as views
+    from tools.kraken_public_capture import atomic_json, digest
+    now = 1800000000000
+    monkeypatch.setattr(views, '_session_directory', lambda: tmp_path)
+    monkeypatch.setattr(views.time, 'time_ns', lambda: now * 1000000)
+    endpoint = '/api/v1/console/kraken-portfolio'
+    empty = client.get(endpoint).json()
+    assert empty['snapshot_status'] == 'NO_SNAPSHOT' and empty['stages'] == []
+    assert empty['submission_enabled'] is False
+    def save(name, data):
+        value = {**data, 'result_hash': digest(data)}
+        atomic_json(tmp_path/name, value)
+        return value
+    account = save('latest.json', {'schema':'KRAKEN_ACCOUNT_OBSERVATION_V1',
+        'account_ref_sha256':'a'*64, 'submission_enabled':False, 'authoritative':False})
+    (tmp_path/'portfolio').mkdir()
+    portfolio = save('portfolio/status.json', {'schema':'KRAKEN_REVIEW_CYCLE_V1',
+        'status':'WAITING_POLICY','market_status':'CAPTURED','order_recovery_status':'NO_TRACKED_ORDERS',
+        'cash_reconciliation_status':'BALANCE_MOVEMENTS_MATCHED','fee_observation_status':'OBSERVED_FEE_SCHEDULES',
+        'completed_at_ms':now,'inventory':{'account_source_hash':account['result_hash']},
+        'blockers':[],'submission_enabled':False,'authoritative':False})
+    session = {'schema':'KRAKEN_PORTFOLIO_SESSION_V1','status':'OBSERVATION_COMPLETE','as_of_ms':now,
+        'account_ref_sha256':'a'*64,'portfolio_status':'WAITING_POLICY','portfolio_hash':portfolio['result_hash'],
+        'account_hash':account['result_hash'],'submission_enabled':False,'authoritative':False}
+    save('portfolio-session-status.json', session)
+    ready = client.get(endpoint).json()
+    assert ready['snapshot_status'] == 'REAL'
+    assert ready['portfolio_status'] == 'WAITING_POLICY'
+    assert len(ready['stages']) == 5
+    assert ready['authoritative'] is False
+    now += 120001
+    assert client.get(endpoint).json()['snapshot_status'] == 'STALE'
+    now -= 120001
+    save('portfolio-session-status.json', {**session,'portfolio_hash':'f'*64})
+    rejected = client.get(endpoint).json()
+    assert rejected['snapshot_status'] == 'DATA_BLOCKED' and rejected['stages'] == []
+
+
+def test_kraken_console_reads_actual_integrated_session_output(tmp_path, monkeypatch):
+    from services.console.api import kraken_views as views
+    from tests.tools.test_kraken_portfolio_session import inputs
+    from tools.kraken_portfolio_session import run_session
+    args, _ = inputs(tmp_path)
+    run_session(**args)
+    monkeypatch.setattr(views, '_session_directory', lambda: args['root'])
+    monkeypatch.setattr(views.time, 'time_ns', lambda: 1800000000700 * 1000000)
+    data = client.get('/api/v1/console/kraken-portfolio').json()
+    assert data['snapshot_status'] == 'REAL'
+    assert data['portfolio_status'] == 'BLOCKED'
+    assert {'id':'cash','status':'BASELINE_ONLY'} in data['stages']
+    assert data['blockers'] == ['CASH_RECONCILIATION_UNRESOLVED']
+    assert 'balances' not in data and 'account_ref_sha256' not in data
