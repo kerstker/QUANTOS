@@ -182,3 +182,49 @@ def status(root, account_ref):
                     'submission_enabled': False, 'authoritative': False}
     except (sqlite3.Error, KeyError, TypeError, IndexError) as exc:
         raise ValueError('KRAKEN_RESERVATION_STORE_INVALID') from exc
+
+
+def review_orders(root, *, batch_id, market_captures, as_of_ms):
+    """Read-only identity review against the verified local batch and raw archives.
+
+    Matching is necessary but insufficient for releasing any reservation. Source
+    snapshots have local integrity, not an independently signed issuer identity.
+    """
+    from services.data.kraken_order_identity import match
+    from services.data.kraken_order_query import assess
+    from tools.kraken_public_capture import validate
+    from tools.kraken_settlement_review import archive
+    require(type(as_of_ms) is int and as_of_ms>0,'KRAKEN_RESERVED_IDENTITY_CLOCK')
+    require(isinstance(batch_id,str) and re.fullmatch('[a-f0-9]{32}',batch_id),'KRAKEN_RESERVATION_BATCH_ID')
+    require(isinstance(market_captures,list) and 1<=len(market_captures)<=32,'KRAKEN_RESERVED_IDENTITY_MARKETS')
+    with _locked(root) as (db,marker):
+        require(db.is_file(),'KRAKEN_RESERVATION_DATABASE_MISSING')
+        recovery_path=Path(root)/'order-recovery.json'
+        require(not recovery_path.is_symlink(),'KRAKEN_RESERVATION_SYMLINK')
+        recovery=sealed(load(recovery_path));ref=recovery['account_ref_sha256']
+        require(recovery.get('schema')=='KRAKEN_ORDER_RECOVERY_V1' and recovery['status']=='ORDERS_OBSERVED' and
+                type(recovery.get('observed_at_ms')) is int and 0<=as_of_ms-recovery['observed_at_ms']<=120000,
+                'KRAKEN_RESERVED_IDENTITY_RECOVERY')
+        try:
+            with closing(sqlite3.connect(db.as_uri()+'?mode=rw',uri=True)) as conn:
+                _,records,_,_,_=_read(conn,marker,ref)
+        except (sqlite3.Error,KeyError,TypeError,IndexError) as exc:
+            raise ValueError('KRAKEN_RESERVATION_STORE_INVALID') from exc
+        records=[r for r in records if r['batch_id']==batch_id]
+        require(len(records)==1,'KRAKEN_RESERVED_IDENTITY_BATCH_MISSING')
+        record=records[0]
+        evidence=archive(Path(root).absolute(),'order-queries',recovery['query_hash'])
+        observed=assess(evidence['read'],as_of_ms=evidence['read']['received_at_ms'])
+        require(observed==evidence['report'] and observed['account_ref_sha256']==ref and
+                observed['observed_at_ms']<=recovery['observed_at_ms'] and
+                sorted(o['order_id'] for o in observed['orders'])==recovery['order_ids'],
+                'KRAKEN_RESERVED_IDENTITY_QUERY_REPLAY')
+        markets=[validate(raw) for raw in market_captures]
+        require(all(raw['status']=='CAPTURED' and 0<=as_of_ms-raw['completed_at_ms']<=120000 for raw in markets),
+                'KRAKEN_RESERVED_IDENTITY_MARKET_TIME')
+        result=match(evidence['read'],record['drafts'],[raw['instrument'] for raw in markets],
+                     account_ref=ref,not_before_ms=record['as_of_ms'],as_of_ms=as_of_ms)
+        result.update(reservation_hash=record['result_hash'],batch_id=batch_id,query_hash=recovery['query_hash'],
+                      recovery_hash=recovery['result_hash'],market_hashes=[raw['result_hash'] for raw in markets])
+        result['result_hash']=digest(result)
+        return result

@@ -160,3 +160,31 @@ def test_newer_observation_does_not_forget_prior_debits(tmp_path):
     account['result_hash']=digest({k:v for k,v in account.items() if k!='result_hash'})
     assert reserve(tmp_path,2,(account,requirements,drafts))['status']=='BLOCKED'
     assert book.status(tmp_path,'a'*64)['reserved_debits']=={'ZUSD':'401'}
+
+
+def test_reserved_identity_replays_original_query_and_does_not_release(tmp_path):
+    from services.data.kraken_order_query import assess
+    from tests.data.test_kraken_order_identity import inputs
+    from tests.tools.test_kraken_public_capture import capture
+    from tools.kraken_public_capture import atomic_json
+    saved=reserve(tmp_path)
+    source,_,_=inputs();draft=saved['drafts'][0]
+    raw=json.loads(source['body']);row=raw['result']['ORDER-1']
+    row.update(cl_ord_id=draft['client_order_id'],opentm='1800000000.61')
+    source.update(body=json.dumps(raw),requested_at_ms=NOW+620,received_at_ms=NOW+630)
+    evidence={'read':source,'report':assess(source,as_of_ms=NOW+630)}
+    query_hash=digest(evidence);archive=tmp_path/'order-queries';archive.mkdir(mode=0o700)
+    atomic_json(archive/(query_hash+'.json'),evidence)
+    recovery={'schema':'KRAKEN_ORDER_RECOVERY_V1','status':'ORDERS_OBSERVED','account_ref_sha256':'a'*64,
+              'observed_at_ms':NOW+630,'query_hash':query_hash,'order_ids':['ORDER-1'],
+              'submission_enabled':False,'authoritative':False}
+    recovery['result_hash']=digest(recovery);atomic_json(tmp_path/'order-recovery.json',recovery)
+    result=book.review_orders(tmp_path,batch_id='1'.zfill(32),market_captures=[capture()[0]],as_of_ms=NOW+640)
+    assert result['status']=='OBSERVED_ORDER_IDENTITIES_MATCHED'
+    assert result['reservation_hash']==saved['result_hash'] and result['query_hash']==query_hash
+    assert book.status(tmp_path,'a'*64)['reserved_debits']=={'ZUSD':'401'}
+    assert result['release_allowed'] is False
+    evidence['report']['orders'][0]['volume']='100'
+    atomic_json(archive/(query_hash+'.json'),evidence)
+    with pytest.raises(ValueError):
+        book.review_orders(tmp_path,batch_id='1'.zfill(32),market_captures=[capture()[0]],as_of_ms=NOW+640)
