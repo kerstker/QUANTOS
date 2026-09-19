@@ -449,3 +449,42 @@ def test_auto_cash_checkpoint_cannot_be_modified_or_bypassed(tmp_path,case):
     if case=='explicit_opening':kwargs['ledger_opening']=opening
     with pytest.raises(ValueError):
         tool.run_session(Reader(),tmp_path,collect_fn=lambda _:pytest.fail('must reject before reads'),**kwargs)
+
+
+@pytest.mark.parametrize('retained', ['order-tracking.json', 'order-recovery.json'])
+def test_session_resumes_persisted_orders_without_repeating_tracking_flag(tmp_path, retained):
+    from services.data.kraken_account import assess
+    from tests.data.test_kraken_order_query import body
+    from tests.data.test_kraken_trade_query import trade_body
+
+    class Reader:
+        account_ref_sha256 = 'a' * 64
+        missing = False
+        queries = 0
+
+        def read(self, endpoint, params):
+            if endpoint == 'QueryOrders':
+                self.queries += 1
+                assert params['txid'] == 'ORDER-1'
+                return b'{"error":[],"result":{}}' if self.missing else body().encode()
+            assert endpoint == 'QueryTrades'
+            return json.dumps(trade_body()).encode()
+
+    reader = Reader()
+    tool.track_orders(reader, tmp_path, [{'order_id': 'ORDER-1'}], clock_ms=lambda: NOW)
+    # Retain either durable source, including interruption before tracking publication.
+    other = 'order-recovery.json' if retained == 'order-tracking.json' else 'order-tracking.json'
+    (tmp_path / other).unlink()
+    report = assess(observations(), as_of_ms=NOW + 500)
+    report['open_orders'] = []
+    report.pop('result_hash', None)
+    report['result_hash'] = tool.digest(report)
+    reader.missing = True
+    events = []
+    result = tool.run_session(reader, tmp_path, cycles=1, collect_fn=lambda _: report,
+                              clock_ms=lambda: NOW + 1000, on_report=events.append)
+    assert reader.queries == 2
+    assert result['stop_reason'] == 'ORDER_QUERY_UNRESOLVED'
+    assert result['non_stable_cycles'] == 1
+    assert events[0]['order_recovery_status'] == 'UNRESOLVED'
+    assert json.loads((tmp_path / 'order-recovery.json').read_text())['order_ids'] == ['ORDER-1']

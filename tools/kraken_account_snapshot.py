@@ -431,7 +431,8 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
         validate_cash_opening(ledger_opening,client.account_ref_sha256)
     root=private_root(root)
     track_known_orders=track_known_orders or any((root/name).exists() or (root/name).is_symlink() for name in
-        ('client-order-requests.json','client-order-recovery-required.json','client-order-resolutions'))
+        ('order-tracking.json','order-recovery.json',
+         'client-order-requests.json','client-order-recovery-required.json','client-order-resolutions'))
     fd=os.open(root/'.session.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)

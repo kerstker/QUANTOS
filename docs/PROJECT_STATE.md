@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-19 闭环第三十四批：普通订单跟踪重启接续**：已有order-tracking或order-recovery记录时，即使重启未重复传跟踪参数，也自动查询原订单；未知结果停止会话。两项回归先复现漏查，再通过修复；相关联合92项通过。未重新全量验收或部署，冻结2be6dda39观察入口未变，见[实现记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第三十四批-普通订单跟踪的重启自动接续)。
+
 > **2026-09-19 冻结2be6dda39第二轮完整验收PASS**：会话30943已终态exit 0；`canonical-retry-1/canonical-report.json`绑定完整源码`2be6dda3994e973a01ce09ff38136b6475d430dd`，ALL 28/28通过、0失败/错误/超时，耗时2930.158秒。后端8519通过/19跳过，执行与工具4579通过/2跳过，前端79文件460测试与构建通过。新版人工账户观察入口已绑定本轮报告，`--check`通过且未访问账户；原失败报告保留。备份检查内部因缺配置跳过，成熟度仍NOT_TOP_TIER（14/22），不是实盘闭环完成或部署授权。见[最终记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39第二轮完整验收通过)。
 
 > **2026-09-19 前端依赖修复验证通过，第二轮全量验收已启动**：冻结2be6dda39前端typecheck、eslint、460项测试和生产构建全部通过；完整重验会话30943、父PID2791704，输出位于`acceptance-2be6dda39/canonical-retry-1`。复用相同源码已通过的ARM64证据，重新运行全部canonical检查；首轮24/28失败报告保留。此时第二轮尚未完成，不是完整PASS，未部署。
