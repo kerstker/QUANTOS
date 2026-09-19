@@ -540,3 +540,9 @@ CLI重启省略portfolio-config时，原实现会退回单账户会话，未继�
 运行监控页新增Kraken xStocks/XAUT面板，每15秒独立轮询，展示公开行情、订单恢复、现金对账、费用和组合规划，翻译等待策略与首轮现金基线状态；明确自动交易未接通。接口与TypeScript合同及完整Console端点清单同时更新。默认从运行状态根data/kraken/account读取，部署时可显式配置QUANTOS_KRAKEN_SESSION_ROOT指向人工管理的会话目录；本批未设置驻留服务环境或部署。
 
 回归覆盖缺失、有效、过期、错误哈希绑定，以及真实工具生成的首轮BLOCKED报告；前端覆盖等待策略和过期隐藏旧成功，原运行监控测试保持通过。Console合同与服务依赖图检查通过（新增路由导致的端点清单/依赖图漂移已修复），前端typecheck、eslint、生产build及2文件3测试通过。不是浏览器端到端或实盘验收；尚未重新完整验收。
+
+## 冻结a91146c59连续会话与控制台整合验收
+
+冻结完整源码a91146c59644a54213416004799a5cb7aff83f02，包含第三十四至三十七批；独立干净worktree位于开发输出kraken-automation-20260919/acceptance-a91146c59/source。沿用已审阅的ARM64/完整门驱动，改为先npm ci及确认tsc/eslint/vitest/vite存在，再进入ARM64双冷构建、扫描、隔离冒烟与全部canonical检查；不覆盖旧2be6dda39通过/失败证据。
+
+新任务会话71906、父PID2916151；锁定前端依赖已安装456包，进入ARM64_CAPTURE。最终结果写入该目录acceptance-result.json、canonical-report.json；尚无终态。续接应轮询71906或真实进程，不能仅因日志静默重复启动。临时构建代理仅绑定回环18089，匿名Docker配置，不接触生产凭证或驻留服务。源码通过不等于账户/策略/实盘授权完成，冻结2be6dda39人工入口未替换。
