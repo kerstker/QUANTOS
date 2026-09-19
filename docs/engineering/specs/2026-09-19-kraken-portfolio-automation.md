@@ -124,3 +124,24 @@ python -m tools.kraken_inventory_report --account /absolute/account-observation/
 端到端工具从归档账户、产品、报价重新计算估值与目标，并记录配置内容哈希。CLI 输出分列库存、估值和配置草案状态，任一阻塞返回非零。模拟资金配置用于验证，不能解释为用户选择或投资建议。
 
 验证：先新增回归得到模块缺失 RED，完成后资金约束/报告/估值/库存/依赖图联合 **30 passed**。覆盖预算、冻结现金、授信、账户错配、配置缺项/超重、挂单、过期、新产品、冻结持仓以及端到端配置关联。未运行完整发布门，未部署、读取凭证或发单。真实管理范围、策略证据、价格单位核准、费用/成本现金流与订单恢复仍未完成。
+
+
+## 第七批 可续跑的组合审阅周期
+
+新增 `tools/kraken_portfolio_cycle.py`，按公开市场采集→固定账户导出→明确资金配置→库存/估值/目标审阅顺序运行，可指定有限轮数。它消费人工账户快照，不查询私有 API、读取密钥或提交订单；尚不是自动账户采集或自动交易控制器。
+
+- 公开采集可在账户/配置未到位时继续。每轮明确显示 `WAITING_ACCOUNT`、`WAITING_POLICY`、`MARKET_FAILED`、`INPUT_REJECTED`、`BLOCKED` 或 `REVIEW_ONLY`，并记录当前阶段；执行始终 DISABLED。
+- 私有根目录要求当前用户所有及0700，账户/配置快照和周期记录为0600。状态目录绑定公开配置、账户路径、配置路径、计价币；首个账户身份和策略配置哈希固定，发生变化不自动切换。未配置文件可以在后续自然到位。
+- 每轮重算库存时效，保存独立结果，不复用旧成功草案。账户读到后先存成固定内容快照再计算，减少文件更新导致读取不一致。配置原文也归档；内容哈希不代表外部签名或交易授权。
+- 跨进程排它锁避免重叠；周期记录含递增序号及前轮哈希。先保存周期再发布状态，启动时可接续已归档但未发布的周期；损坏记录、身份切换或时钟回退拒绝。尚未宣称断电持久性或远端灾备已验收。
+
+示例入口（使用 DGX 已验证 Python；不存在的 policy 路径表示等待输入，不生成默认参数）：
+
+```bash
+python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json --account /absolute/account-observation/latest.json --policy /absolute/managed-policy.json --state-root /absolute/private/review-runtime --valuation-quote ZUSD --cycles 1
+```
+
+验证：新模块先 RED，之后周期/报告/观察器/配置联合 **27 passed**，覆盖缺失输入后到位、归档后状态指针丢失恢复、配置与账户变化、市场失败不沿用旧结果、账户过期、私有权限、并发锁及固定配置。未安装驻留服务、未运行完整发布门。下一步需实际账户与配置到位、账户持续采集隔离、成本/成交/现金流和执行恢复等闭环。
+
+
+隔离实跑：`/home/kerstker/quantos-dev-output/kraken-automation-20260919/review-runtime/status.json`。有限一轮结束退出码3，generation=1、market_status=CAPTURED、status=WAITING_ACCOUNT、execution_status=DISABLED；结果哈希 `f2f1409d4de08e5ade4728e56db7413672c42984f5311ff7cd0c23a9d1ee2233`。账户导出和 `managed-policy.json` 均未创建；退出码3代表输入未齐，不是公开采集失败。该进程已结束，不是常驻自动管理服务。
