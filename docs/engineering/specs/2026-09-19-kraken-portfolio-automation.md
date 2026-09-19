@@ -60,3 +60,16 @@
 测试：账户与工具新增15项通过（先复现模块缺失和拒绝后重复请求，再修复）；上批公开观察18项曾在本轮联合检查中通过。服务依赖图检查发现新增模块导致产物过期，已用原生成器重建，9项图检查通过、无循环。没有真实账户读取、凭证访问或下单；人工读取后仍须核对实际字段与持仓范围。主网执行、金额/风险限额和持仓管理范围仍需现有操作员流程明确，不能用只读导出代替。
 
 官方依据：[BalanceEx可用额与数量口径](https://docs.kraken.com/api-reference/account-data/get-extended-balance)、[OpenOrders数量口径](https://docs.kraken.com/api-reference/account-data/get-open-orders)、[REST签名与nonce](https://docs.kraken.com/exchange/guides/rest/authentication)。
+
+
+## 第三批 xStocks 数量口径与公开乘数接线
+
+新增 `services/data/kraken_units.py`，保留 base 代币数量，按观测时刻乘数精确计算对应股票份数；独立 Decimal 精度避免受调用方上下文影响。XAUT 保留原生资产单位，不标成股票。这里只提供当前数量展示，不提供历史估值、收益、订单数量舍入或执行授权。
+
+公开传输新增 Assets 白名单。既有组合观察器升级到 `KRAKEN_PORTFOLIO_OBSERVER_V2`，每项保存 Assets 请求、接收时间、原文和 SHA256，以及校验后的单位元数据。产品类别、资产身份、状态或乘数不符合要求时明确失败；缺失乘数不默认成 1。元数据有效期 120 秒，周期结束再检查一次，超时整体报告 PARTIAL。V1 行情原始记录合同保持，公开采集仍不代表账户权限。
+
+隔离实采路径：`/home/kerstker/quantos-dev-output/kraken-automation-20260919/observer-units/status.json`。一轮三项 CAPTURED，各写入 720 根已闭合小时线；AAPLx 乘数 `1.0032690125398187`，NVDAx `1.001701196801074`，XAUT 原生数量乘数 1。这些数值仅代表本次接收时刻，不回填历史。
+
+验证：先运行新增换算回归得到缺少模块的 RED，再实现；单位、公开数据、公开采集、观察器与服务依赖图联合 **37 passed**。未运行完整发布门，未切换服务、未读取真实账户或提交订单。账户只读导出、管理资产池与资金上限仍待人工输入；随后接账户数量映射、估值及受约束调仓准备。
+
+口径参考：[Kraken xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)、[Assets API](https://docs.kraken.com/api-reference/market-data/get-asset-info)。乘数随公司行动变化，不能将本次元数据用作此前时刻证据。

@@ -1,6 +1,6 @@
 """Bounded public Kraken observation, append-only evidence and restart-safe PIT ingestion.
 
-Only two public GET endpoints; no account, credentials, order or transfer surface.
+Only allowlisted public GET endpoints; no account, credentials, order or transfer surface.
 """
 import argparse
 import fcntl
@@ -31,7 +31,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def public_get(endpoint, params):
-    allowed={'AssetPairs': {'pair','aclass_base'}, 'OHLC': {'pair','interval','asset_class'}}
+    allowed={'AssetPairs': {'pair','aclass_base'}, 'OHLC': {'pair','interval','asset_class'}, 'Assets': {'asset','aclass'}}
     model.require(endpoint in allowed and set(params)<=allowed[endpoint], 'KRAKEN_PUBLIC_ENDPOINT_ONLY')
     url=BASE+endpoint+'?'+urllib.parse.urlencode(params)
     request=urllib.request.Request(url,headers={'Accept':'application/json','User-Agent':'QUANTOS-public-research/1'},method='GET')

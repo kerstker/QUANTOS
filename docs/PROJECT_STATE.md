@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-19 Kraken 数量口径第三批（开发验证）**：现有多资产观察器接入 Assets 原文/时刻/乘数，新增 xStocks base→股票份数精确换算，缺失或过期失败；AAPLx/NVDAx/XAUT 一轮实采通过，相关37项通过。仅当前公开数量口径，不是估值或交易；账户导出和资产/资金范围仍待输入。见[第三批记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第三批-xstocks-数量口径与公开乘数接线)。
+
 > **2026-09-19 Kraken已有账户接线第二批（未实采）**：新增两轮余额/挂单比较、base数量口径与Decimal精确校验，以及仅人工运行的两个查询端点导出工具；隐藏输入凭证、nonce续接、拒绝后停止，账户/工具15项与依赖图9项通过。尚未读取真实账户、接通调仓或交易；持仓池和资金上限待用户明确。见[账户只读观察](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第二批已有账户只读观察未实际读取)。
 
 > **2026-09-19 Kraken组合自动化首批（开发验证）**：用户指定xStocks实盘、XAUT，声明已有授权/持仓。新增公开产品与行情校验、原始留存/PIT续接及多资产轮询；AAPLx/NVDAx/XAUT两轮各720条实采通过，联合48项通过。账户、策略、执行与现金尚未接通，不等于自动组合管理；见[实现与下一断点](engineering/specs/2026-09-19-kraken-portfolio-automation.md)。
