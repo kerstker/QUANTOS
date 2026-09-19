@@ -2024,7 +2024,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "0bc4c000fdccc67cea923876b159ba7270159bb487b519f8b687eb6ad2bd54d8",
+  "graph_sha256": "3d82de81582bd8db6bdc2593a6d8bbcad4c775b0d58072f641085acde7087ef2",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2062,7 +2062,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 602,
+  "source_file_count": 603,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

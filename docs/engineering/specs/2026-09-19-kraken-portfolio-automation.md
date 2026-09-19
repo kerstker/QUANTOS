@@ -352,3 +352,15 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 验证覆盖倒置ID的两笔同时间流水、跨两页51笔同时间流水、调用方Decimal精度6、相同余额多分支、断链和不同时间戳禁止倒序。现金桥→成交/费用关联→允许下一轮审阅场景通过，实际费用仍为AAPLx.T 0、ZUSD 0.04；执行和next_cycle_allowed仍关闭。现金、结算、检查点、成交发现、组合周期及域边界/依赖图联合90项通过。首轮相关65项通过包含于后续结果，不重复计数。
 
 此改动没有解决基础资产费用与交易摘要之间的换算语义，BASE_FEE_SUMMARY_UNIT_UNVERIFIED仍保留；未改下单、凭证、人工授权或经济权威门。未真实账户验证、部署或重新运行完整验收。f54deac34的28/28报告及冻结人工入口继续保持原版本，不将旧完整通过归属于本次新代码。
+
+## 第二十四批 账户费率观察与订单预检接线
+
+核对[Kraken TradeVolume官方接口](https://docs.kraken.com/api-reference/account-data/get-trade-volume)：费率按产品返回，普通字符串产品按forex解释，非forex必须使用包含asset/aclass的对象列表。新增`services/data/kraken_fees.py`，一次查询一个明确产品，currency映射forex、tokenized_asset映射equity_pair，固定rebase_multiplier=base、fee_schedule=false。原始fees与可选fees_maker分别保存，不为缺失的maker表编造折扣；缺少产品/费率、错误类别、重复JSON键、异常范围、账户标识不合法或超过120秒的新鲜度限制均拒绝。
+
+人工ReadOnlyClient仅增加TradeVolume读取端点，严格校验参数后使用JSON传输类别对象，nonce与现有查询共享同一持久锁和递增序列，签名绑定实际发送的JSON字节。其他五个读取端点继续使用原表单编码，订单/撤单/转账接口仍不允许。以公开测试常量验证签名，不读取真实凭证。官方所需权限为Funds Query，不是创建订单权限。
+
+新增`tools/kraken_fee_observation.py`人工单产品入口，输入新鲜的公开原始capture、私有nonce目录及不可覆盖输出路径；只执行一次费率查询，不重试失败请求。输出保留响应原文、账户摘要、查询时间、公开capture摘要和解析结果，文件权限0600；异常仅打印错误类型。重放必须重新校验公开capture和原始费率响应，并比较原解析结果，重新计算摘要不能掩盖伪造派生费率。过期公开来源在私有查询前拒绝；本次没有真实查询。
+
+`tools/kraken_order_preflight.py`增加可选`--fee-evidence`与`--account-ref`，两者必须同时提供。重放核对后将observed_fee_schedule和证据摘要加入预检。这里的账户参数只绑定费率证据，不证明当前可用余额；ACCOUNT_FEE_AND_FUNDS_NOT_BOUND等阻断保持。官方[AddOrder说明](https://docs.kraken.com/api-reference/trading/add-order)将fciq定义为优先使用计价币扣费，不能当作实际扣费币种保证。因此fee_asset_status仍UNKNOWN，未进行费用金额/基础资产换算或资金预留，也不授予下单权。
+
+验证先复现缺少费率模块、客户端拒绝费率查询、预检缺少接线三项断点，随后完成实现。联合检查初次98通过/1失败，失败为新增模块导致生成依赖图漂移；用原生成器更新后99通过，20域54边零环。补充类型与缺失费率边界后，全部Kraken测试、服务依赖图、域/执行边界及Console合同联合354通过、1跳过、1既有Starlette弃用警告，49.47秒。未修改Console载荷合同，未调整经济权威或交易开关。尚未重新完整验收，已交付的冻结f54deac34人工账户入口未替换。

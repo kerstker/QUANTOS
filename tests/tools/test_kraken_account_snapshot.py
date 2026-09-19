@@ -7,6 +7,32 @@ from tools import kraken_account_snapshot as tool
 from tests.data.test_kraken_account import observations, NOW
 
 
+def test_fee_query_encodes_class_qualified_json_and_signs_exact_body(tmp_path):
+    import hashlib
+    import hmac
+    calls=[]
+    key=base64.b64encode(b'public fixture only').decode()
+    secret_bytes=b'non-secret fixture only'
+    def transport(url,body,headers):
+        calls.append((url,body,headers));return b'{"error":[],"result":{}}'
+    client=tool.ReadOnlyClient(key,base64.b64encode(secret_bytes).decode(),tmp_path,
+                              transport=transport,clock_ms=lambda:NOW)
+    params={'pair':[{'asset':'AAPLx/USD','aclass':'equity_pair'}],
+            'fee_schedule':False,'rebase_multiplier':'base'}
+    client.read('TradeVolume',params)
+    url,body,headers=calls[0]
+    assert url=='https://api.kraken.com/0/private/TradeVolume'
+    assert json.loads(body)=={'nonce':NOW,**params}
+    assert headers['Content-Type']=='application/json'
+    expected=base64.b64encode(hmac.new(secret_bytes,b'/0/private/TradeVolume'+
+        hashlib.sha256(str(NOW).encode()+body).digest(),hashlib.sha512).digest()).decode()
+    assert headers['API-Sign']==expected
+    for invalid in ({'pair':'AAPLxUSD'},dict(params,pair=[{'asset':'AAPLx/USD','aclass':'derivatives'}]),
+                    dict(params,fee_schedule=True),dict(params,nonce=1)):
+        with pytest.raises(ValueError):client.read('TradeVolume',invalid)
+    assert len(calls)==1
+
+
 def test_only_readonly_signed_requests_and_monotonic_nonce_survive_restart(tmp_path):
     calls=[]
     def transport(url,body,headers):calls.append((url,body,headers));return b'{"error":[],"result":{}}'

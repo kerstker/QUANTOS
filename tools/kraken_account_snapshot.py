@@ -25,11 +25,12 @@ from services.data import kraken_account as model
 from services.data import kraken_order_query as order_query
 from services.data import kraken_trade_query as trade_query
 from services.data import kraken_cash_reconciliation as cash_model
+from services.data import kraken_fees as fee_model
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools.kraken_public_capture import NoRedirect, atomic_json, digest
 
-ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades','Ledgers')
+ENDPOINTS=('BalanceEx','OpenOrders','QueryOrders','QueryTrades','Ledgers','TradeVolume')
 
 
 def private_root(root):
@@ -61,7 +62,10 @@ class ReadOnlyClient:
         self._clock=clock_ms or (lambda:time.time_ns()//1_000_000)
 
     def read(self,endpoint,params):
-        if endpoint=='Ledgers':
+        if endpoint=='TradeVolume':
+            fee_model.validate_params(params)
+            params=json.loads(json.dumps(params,allow_nan=False))
+        elif endpoint=='Ledgers':
             require(set(params)=={'asset','aclass','type','start','end','ofs','rebase_multiplier'} and
                     params['asset']=='all' and params['aclass'] in ('currency','tokenized_asset') and
                     params['type']=='all' and params['rebase_multiplier']=='base','KRAKEN_LEDGER_SCOPE')
@@ -91,12 +95,17 @@ class ReadOnlyClient:
             now=self._clock();require(type(now) is int and 0<now<2**63,'KRAKEN_NONCE_CLOCK')
             nonce=max(previous+1,now);require(0<nonce<2**63,'KRAKEN_NONCE_RANGE')
             atomic_json(path,{'nonce':nonce})
-            body=urllib.parse.urlencode({'nonce':str(nonce),**params}).encode()
+            if endpoint=='TradeVolume':
+                body=json.dumps({'nonce':nonce,**params},separators=(',',':'),allow_nan=False).encode()
+                content_type='application/json'
+            else:
+                body=urllib.parse.urlencode({'nonce':str(nonce),**params}).encode()
+                content_type='application/x-www-form-urlencoded'
             uri='/0/private/'+endpoint
             message=uri.encode()+hashlib.sha256(str(nonce).encode()+body).digest()
             signature=base64.b64encode(hmac.new(self._secret,message,hashlib.sha512).digest()).decode()
             return self._transport('https://api.kraken.com'+uri,body,
-                {'API-Key':self._key,'API-Sign':signature,'Content-Type':'application/x-www-form-urlencoded',
+                {'API-Key':self._key,'API-Sign':signature,'Content-Type':content_type,
                  'Accept':'application/json','User-Agent':'QUANTOS-account-observation/1'})
 
 
