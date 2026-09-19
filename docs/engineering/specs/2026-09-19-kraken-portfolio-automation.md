@@ -256,3 +256,11 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 抽出 `replay_cash`，每次采用现金成功状态前从原始窗口归档重算余额并核对指针；不再只有订单关联分支才重算。无账目变动且余额重算一致可继续审阅；查询返回账目时必须完成成交/结算关联才解除新增阻断，不能仅靠净余额配平忽略资金事件。当前对查询范围内账目统一要求关联，未分类非交易现金流仍不能自动放行。原有完整成交关联成功路径保持通过。
 
 验证：四类现金错误、损坏成功归档、存在交易账目但无订单关联共六个回归先失败；修复后组合周期、账户工具及结算模型联合 **44 passed**。覆盖正常无变动审阅、证据删除阻断、真实模拟归档重算及既有部分成交→撤单→对账→再规划。全部离线；未运行完整发布门、部署或访问真实账户。仍缺长期结算检查点推进与实盘受控执行。
+
+## 第十七批 全部Kraken模块联合回归与单位协议复核
+
+在源码 `6efd7c51a` 上一次性运行 `tests/data/test_kraken_*.py`、`tests/tools/test_kraken_*.py`、`tests/live/test_kraken_wire.py` 和服务依赖图测试，共 **169 passed in 11.28s**。覆盖目前全部Kraken专用测试文件，不是整个系统canonical发布门，也不包含真实账户或实际交易验证。前十六批不再只有各自局部通过记录；仍不能据此宣称完整自动组合管理完成。
+
+2026-09-19重新核对官方资料：[xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)说明订单数量通过乘数换算为链上数量，并给出8位数量示例；[Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)明确base为SPV token、rebased为底层股票数量；[Add Order](https://docs.kraken.com/api-reference/trading/add-order)仅将volume定义为基础资产数量，未在该字段说明与前述查询口径的精确对应，也未列出rebase_multiplier参数。FAQ示例与一般“round”描述不足以单独确定REST所有舍入行为。因此本次没有将数量语义标记为已核准，或把估值数量直接用于发送。
+
+实际前置条件再次核查：预定只读导出位置 `quantos-dev-output/kraken-automation-20260919/account-observation/latest.json` 尚不存在；没有查询凭证或私有接口来代替人工导出。管理资产池、资金限额及实际账户证据仍待接入。下一步开发应集中结算检查点生命周期与精确执行适配；实际验收还需要账户证据、数量/费用语义确认、独立人工授权风控签发和完整发布门。现有冻结人工入口未更新，常驻系统未切换。
