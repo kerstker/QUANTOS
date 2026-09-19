@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-09-19 冻结2be6dda39的ARM64验收已通过，全量门运行中**：两轮冷构建分别591.971秒、584.219秒，Trivy离线扫描和network=none只读冒烟通过，证据发布任务exit 0；同一会话7562已自动进入CANONICAL。此为构建阶段结果，不是全部测试通过或真实账户验收。未部署，后续须核实最终acceptance-result及canonical-report，见[接续记录](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39整合验收接续)。
+
 > **2026-09-19 第三十三批整合源码已启动完整验收**：冻结`2be6dda3994e973a01ce09ff38136b6475d430dd`，独立检出位于开发输出`kraken-automation-20260919/acceptance-2be6dda39/source`。已启动ARM64双冷构建/扫描/隔离冒烟，通过后自动运行3600秒阶段预算的canonical全量门；启动时会话7562、父PID2665758，仍需以实际进程和最终报告判断，不能把启动记录当作通过。未切换服务，未进行真实账户或交易操作；见[整合验收接续](engineering/specs/2026-09-19-kraken-portfolio-automation.md#冻结2be6dda39整合验收接续)。
 
 > **2026-09-19 闭环第三十三批：买卖顺序审阅接线**：数量报告与组合周期明确先减仓、对账后重新规划，不复用旧买入数量；买入现金不足时等待资金，低于规划最小量/零数量不进入步骤。全部Kraken及相关边界、Console合同480通过、1跳过。仅审阅阶段，费用/下单口径及受控执行仍未贯通，未部署或重新完整验收，见[第三十三批](engineering/specs/2026-09-19-kraken-portfolio-automation.md#第三十三批-买卖顺序与结算后重新规划)。

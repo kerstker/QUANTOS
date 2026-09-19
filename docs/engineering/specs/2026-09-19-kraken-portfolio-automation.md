@@ -484,3 +484,5 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 已启动会话7562、父进程2665758，首阶段ARM64_CAPTURE；外部命令日志记录开始/终态及独立输出。最终结果预期写入acceptance-result.json与canonical-report.json，尚未生成结果时不声称通过；续接时先轮询同一会话或核实真实进程，不因静默/暂时观察超时重新启动。即使全量软件验收通过，也仍须单独完成真实账户验证、数量/费用核准和受控执行，不能将其视为自动实盘已完成。
 
 新人工入口已单独准备在开发输出`run-account-observation-2be6dda39.sh`，绑定独立干净检出`account-source-2be6dda39`与本轮完整验收结果；旧f54deac34入口未替换。仅执行`--check`，在完整报告缺失时实际返回3并输出ACCOUNT_OBSERVER_NOT_READY，未提示凭证或读取账户。后续必须等待本轮最终PASS后再检查，不提供跳过验收选项。范围仍为旧入口的60轮/60秒只读观察与自动现金起点，未配置公开目录的费用/结算接续，不能把这个预备入口当作完整自动化部署。
+
+阶段更新：同一任务完成两轮冷构建（591.971秒、584.219秒）、Trivy离线扫描及network=none只读启动，EVIDENCE_PUBLISH_PASS，ARM64_CAPTURE_EXIT 0；result.json记录构建阶段PASS。随后自动进入CANONICAL，父进程和会话未更换，canonical.log已产生全量门输出。尚无完整验收终态，不将构建PASS或旧报告用于解锁新人工入口。真实账户导出latest.json在本轮等待期间再次核对仍不存在。
