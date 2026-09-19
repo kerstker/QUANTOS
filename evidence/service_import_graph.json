@@ -1155,6 +1155,16 @@
           "path": "services/portfolio/kraken_allocation.py"
         },
         {
+          "line": 11,
+          "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_funding.py"
+        },
+        {
+          "line": 12,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_funding.py"
+        },
+        {
           "line": 5,
           "module": "services.data.kraken_account",
           "path": "services/portfolio/kraken_valuation.py"
@@ -2024,7 +2034,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "3d82de81582bd8db6bdc2593a6d8bbcad4c775b0d58072f641085acde7087ef2",
+  "graph_sha256": "60a208c8fc71b1ef99993d9fb82c5834926ef46d8e23383d8b8a77431881a546",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2062,7 +2072,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 603,
+  "source_file_count": 604,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
