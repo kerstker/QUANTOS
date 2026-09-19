@@ -486,3 +486,9 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 新人工入口已单独准备在开发输出`run-account-observation-2be6dda39.sh`，绑定独立干净检出`account-source-2be6dda39`与本轮完整验收结果；旧f54deac34入口未替换。仅执行`--check`，在完整报告缺失时实际返回3并输出ACCOUNT_OBSERVER_NOT_READY，未提示凭证或读取账户。后续必须等待本轮最终PASS后再检查，不提供跳过验收选项。范围仍为旧入口的60轮/60秒只读观察与自动现金起点，未配置公开目录的费用/结算接续，不能把这个预备入口当作完整自动化部署。
 
 阶段更新：同一任务完成两轮冷构建（591.971秒、584.219秒）、Trivy离线扫描及network=none只读启动，EVIDENCE_PUBLISH_PASS，ARM64_CAPTURE_EXIT 0；result.json记录构建阶段PASS。随后自动进入CANONICAL，父进程和会话未更换，canonical.log已产生全量门输出。尚无完整验收终态，不将构建PASS或旧报告用于解锁新人工入口。真实账户导出latest.json在本轮等待期间再次核对仍不存在。
+
+### 冻结2be6dda39首轮完整验收失败与依赖修复
+
+首轮会话7562已结束，acceptance-result.json记录FAIL、exit 1、4067.735秒；canonical-report.json为ALL 28项、24通过、4失败、0错误/超时。后端8519通过/19跳过，执行与工具4579通过/2跳过。四项失败均来自新独立检出未执行前端依赖安装，原错误分别为tsc、eslint、vitest找不到，构建也缺tsc；不是已经证明存在四个源码缺陷。启动验收前漏掉依赖准备是本轮流程问题，完整失败结果保留。
+
+随后在该隔离检出按package-lock执行npm ci --no-audit --no-fund，安装456包，未更改锁文件或生产环境；通过原canonical入口单独运行frontend选择，输出frontend-repair.log/frontend-repair-report.json。预备run_canonical_retry.py要求前端修复验证PASS、相同冻结HEAD、源码无修改（仅允许上一轮生成证据）、已有同源ARM64 PASS和工具存在，才可启动下一次完整门；新结果放canonical-retry-1，不覆盖原失败报告。前端专项成功也不能拼接为ALL通过。人工入口保持拒绝，未真实账户验证、下单或部署。
