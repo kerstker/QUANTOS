@@ -146,3 +146,64 @@ def test_terminal_trade_cash_replay_returns_to_review_without_execution(tmp_path
     archive.write_text(json.dumps(data))
     failed=cycle.run_once(**args)
     assert failed['status']=='INPUT_REJECTED' and failed['inventory'] is None
+
+
+@pytest.mark.parametrize('case',['unresolved','stale','different_snapshot','unknown'])
+def test_cash_failure_blocks_planning_even_without_tracked_orders(tmp_path,case):
+    args=setup(tmp_path);write_inputs(args)
+    assert cycle.run_once(**args)['status']=='REVIEW_ONLY'
+    account=json.loads(args['account_path'].read_text())
+    cash={'schema':'KRAKEN_BALANCE_BRIDGE_V1','account_ref_sha256':'a'*64,
+        'status':'BALANCE_MOVEMENTS_MATCHED','closing_account_hash':account['result_hash'],
+        'as_of_ms':NOW+600,'submission_enabled':False,'authoritative':False}
+    if case=='unresolved':cash['status']='UNRESOLVED'
+    if case=='stale':cash['as_of_ms']=NOW-130000
+    if case=='different_snapshot':cash['closing_account_hash']='b'*64
+    if case=='unknown':cash['status']='UNRECOGNIZED'
+    cash['result_hash']=capture.digest(cash)
+    path=args['account_path'].parent/'cash-reconciliation.json';path.write_text(json.dumps(cash))
+    report=cycle.run_once(**args)
+    assert report['status']=='BLOCKED'
+    assert 'CASH_RECONCILIATION_UNRESOLVED' in report['blockers']
+    assert 'allocation_review' not in report['inventory']
+    path.unlink()
+    missing=cycle.run_once(**args)
+    assert missing['status']=='BLOCKED' and 'CASH_RECONCILIATION_MISSING' in missing['blockers']
+    assert 'allocation_review' not in missing['inventory']
+
+
+def test_cash_without_orders_replays_raw_evidence_before_review(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    from tools import kraken_account_snapshot as account_tool
+    args=setup(tmp_path);write_inputs(args)
+    opening,closing,_=samples()
+    closing['balances']=opening['balances'];closing['open_orders']=[]
+    for item in (opening,closing):item['result_hash']=capture.digest(item)
+    args['account_path'].write_text(json.dumps(closing));args['clock_ms']=lambda:NOW+64000
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,*_):return b'{"error":[],"result":{"count":0,"ledger":{}}}'
+    cash=account_tool.collect_cash_bridge(Reader(),tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    assert cycle.run_once(**args)['status']=='REVIEW_ONLY'
+    archive=tmp_path/'cash-windows'/(cash['evidence_hash']+'.json')
+    data=json.loads(archive.read_text());data['reads'][0]['body']='{}'
+    archive.write_text(json.dumps(data))
+    failed=cycle.run_once(**args)
+    assert failed['status']=='INPUT_REJECTED' and failed['inventory'] is None
+
+
+def test_balance_matched_trade_movements_without_order_linkage_block_review(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    from tools import kraken_account_snapshot as account_tool
+    args=setup(tmp_path);write_inputs(args)
+    opening,closing,pages=samples();closing['open_orders']=[]
+    for item in (opening,closing):item['result_hash']=capture.digest(item)
+    args['account_path'].write_text(json.dumps(closing));args['clock_ms']=lambda:NOW+64000
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,endpoint,params):
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    account_tool.collect_cash_bridge(Reader(),tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    report=cycle.run_once(**args)
+    assert report['status']=='BLOCKED' and 'CASH_MOVEMENT_LINKAGE_REQUIRED' in report['blockers']
+    assert 'allocation_review' not in report['inventory']

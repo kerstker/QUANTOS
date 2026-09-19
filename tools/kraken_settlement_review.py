@@ -20,10 +20,9 @@ def archive(root, directory, key):
     return value
 
 
-def build(root, cash, recovery, specs, *, as_of_ms):
-    inventory.sealed(cash);inventory.sealed(recovery)
-    require(recovery['status']=='ORDERS_OBSERVED' and recovery.get('trade_status')=='TRADE_TOTALS_MATCHED',
-            'KRAKEN_SETTLEMENT_RECOVERY_UNRESOLVED')
+def replay_cash(root, cash):
+    """Recompute balance evidence even when no tracked order recovery exists."""
+    inventory.sealed(cash)
     window=archive(root,'cash-windows',cash['evidence_hash'])
     opening=inventory.sealed(window['opening']);closing=inventory.sealed(window['closing'])
     bridge=cash_model.reconcile(opening,closing,window['reads'],as_of_ms=window['report']['as_of_ms'])
@@ -31,6 +30,14 @@ def build(root, cash, recovery, specs, *, as_of_ms):
     require(bridge==window['report'],'KRAKEN_SETTLEMENT_BALANCE_REPLAY')
     require({k:v for k,v in cash.items() if k not in ('result_hash','evidence_hash')}==bridge,
             'KRAKEN_SETTLEMENT_BALANCE_POINTER')
+    return bridge
+
+
+def build(root, cash, recovery, specs, *, as_of_ms):
+    inventory.sealed(recovery)
+    require(recovery['status']=='ORDERS_OBSERVED' and recovery.get('trade_status')=='TRADE_TOTALS_MATCHED',
+            'KRAKEN_SETTLEMENT_RECOVERY_UNRESOLVED')
+    bridge=replay_cash(root,cash)
     order_source=archive(root,'order-queries',recovery['query_hash'])
     orders=order_model.assess(order_source['read'],as_of_ms=order_source['read']['received_at_ms'])
     require(orders==order_source['report'] and orders['account_ref_sha256']==recovery['account_ref_sha256'] and
@@ -40,6 +47,6 @@ def build(root, cash, recovery, specs, *, as_of_ms):
     require(fills==trade_source['report'],'KRAKEN_SETTLEMENT_TRADE_REPLAY')
     result=link(bridge,orders,fills,specs,as_of_ms=as_of_ms)
     result.update(cash_source_hash=cash['result_hash'],recovery_source_hash=recovery['result_hash'],
-                  closing_account_hash=closing['result_hash'])
+                  closing_account_hash=bridge['closing_account_hash'])
     result['result_hash']=digest(result)
     return result

@@ -12,7 +12,7 @@ import time
 
 from services.data.kraken_public import require
 from services.portfolio.kraken_allocation import validate_policy, prepare as prepare_allocation
-from tools.kraken_settlement_review import build as build_settlement
+from tools.kraken_settlement_review import build as build_settlement, replay_cash
 from tools import kraken_inventory_report as inventory
 from tools import kraken_portfolio_observer as observer
 from tools import kraken_public_capture as capture
@@ -100,15 +100,28 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
                 cash=None;recovery=None
                 cash_path=account_path.parent/'cash-reconciliation.json'
+                cash_required=root/'cash-reconciliation-required.json'
+                require(not cash_required.is_symlink() and not cash_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
                 if cash_path.exists():
+                    bind(cash_required,{'required':True})
                     cash=inventory.sealed(read(cash_path));now=clock_ms()
                     require(cash.get('schema')=='KRAKEN_BALANCE_BRIDGE_V1' and
-                            cash['account_ref_sha256']==account['account_ref_sha256'],'KRAKEN_CYCLE_CASH_ACCOUNT')
+                            cash['account_ref_sha256']==account['account_ref_sha256'] and
+                            cash.get('submission_enabled') is False and cash.get('authoritative') is False,
+                            'KRAKEN_CYCLE_CASH_ACCOUNT')
                     report['cash_reconciliation_status']=cash['status']
                     if cash.get('closing_account_hash')!=account['result_hash'] or type(cash.get('as_of_ms')) is not int or not 0<=now-cash['as_of_ms']<=120000:
                         report['cash_reconciliation_status']='STALE_OR_DIFFERENT_ACCOUNT_SNAPSHOT'
-                    # Matching observed balance changes alone does not prove trade linkage,
-                    # full wallet scope, or execution permission. Existing blockers remain.
+                    if report['cash_reconciliation_status']!='BALANCE_MOVEMENTS_MATCHED':
+                        report['blockers'].append('CASH_RECONCILIATION_UNRESOLVED')
+                    else:
+                        bridge=replay_cash(account_path.parent,cash)
+                        if bridge['ledger_entries']:
+                            report['blockers'].append('CASH_MOVEMENT_LINKAGE_REQUIRED')
+                elif cash_required.exists():
+                    require(read(cash_required)=={'required':True},'KRAKEN_CYCLE_CASH_BINDING')
+                    report['cash_reconciliation_status']='MISSING'
+                    report['blockers'].append('CASH_RECONCILIATION_MISSING')
                 recovery_path=account_path.parent/'order-recovery.json'
                 required_path=root/'order-recovery-required.json'
                 require(not required_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
@@ -135,7 +148,8 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     settlement=build_settlement(account_path.parent,cash,recovery,result['instrument_specs'],as_of_ms=clock_ms())
                     report['settlement_review']=settlement
                     if settlement['next_review_allowed']:
-                        report['blockers']=[b for b in report['blockers'] if b!='CASH_RECONCILIATION_REQUIRED']
+                        report['blockers']=[b for b in report['blockers'] if b not in
+                            ('CASH_RECONCILIATION_REQUIRED','CASH_MOVEMENT_LINKAGE_REQUIRED')]
                         if not report['blockers'] and policy is not None:
                             result['allocation_review']=prepare_allocation(result,policy,as_of_ms=clock_ms())
                             result['allocation_policy_sha256']=capture.digest(policy)
