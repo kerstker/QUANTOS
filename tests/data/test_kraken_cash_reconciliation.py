@@ -1,5 +1,6 @@
 import json
 from copy import deepcopy
+from decimal import Decimal, localcontext
 import pytest
 from services.data import kraken_cash_reconciliation as cash
 from services.data.kraken_account import assess
@@ -80,3 +81,57 @@ def test_multiple_pages_reconstruct_chronology_independent_of_response_order():
     second['body']=json.dumps({'error':[],'result':{'count':51,'ledger':dict(pairs[50:])}})
     result=cash.reconcile(before,after,[first,second,pages[1]],as_of_ms=NOW+63000)
     assert result['status']=='BALANCE_MOVEMENTS_MATCHED' and len(result['ledger_entries'])==52
+
+
+def tied_cash_rows():
+    before,after,pages=samples()
+    p=json.loads(pages[0]['body']);row=next(iter(p['result']['ledger'].values()))
+    first=dict(row,amount='-20',fee='0.02',balance='979.98000001')
+    second=dict(row,amount='-20',fee='0.02',balance='959.96000001')
+    p['result']={'count':2,'ledger':{'A-second':second,'Z-first':first}}
+    pages[0]['body']=json.dumps(p)
+    return before,after,pages
+
+
+def test_equal_timestamps_use_unique_exact_balance_chain_not_ledger_id_order():
+    before,after,pages=tied_cash_rows()
+    report=cash.reconcile(before,after,pages,as_of_ms=NOW+63000)
+    assert report['status']=='BALANCE_MOVEMENTS_MATCHED'
+    assert report['assets']['ZUSD']['fees']=='0.04'
+    assert report['assets']['ZUSD']['drift']=='0'
+    assert report['next_cycle_allowed'] is False
+
+
+@pytest.mark.parametrize('case',['ambiguous','broken','earlier_timestamp'])
+def test_tied_chain_cannot_guess_or_reorder_across_timestamps(case):
+    before,after,pages=tied_cash_rows()
+    p=json.loads(pages[0]['body']);rows=p['result']['ledger']
+    if case=='ambiguous':
+        # Two identical zero movements can both precede the first cash debit.
+        for lid in ('ZERO-A','ZERO-B'):
+            rows[lid]=dict(rows['Z-first'],amount='0',fee='0',balance=before['balances']['ZUSD']['balance'])
+        p['result']['count']=4
+    if case=='broken':rows['Z-first']['balance']='980'
+    if case=='earlier_timestamp':rows['A-second']['time']=str(NOW//1000+29)
+    pages[0]['body']=json.dumps(p)
+    report=cash.reconcile(before,after,pages,as_of_ms=NOW+63000)
+    assert report['status']=='UNRESOLVED'
+    assert report['next_cycle_allowed'] is False
+
+
+def test_equal_timestamp_chain_crosses_pages_with_low_caller_precision():
+    before,after,pages=samples()
+    original=json.loads(pages[0]['body']);row=next(iter(original['result']['ledger'].values()))
+    initial=Decimal(before['balances']['ZUSD']['balance'])
+    entries={f'L-{51-i:03d}':dict(row,amount='-1',fee='0',balance=str(initial-i)) for i in range(1,52)}
+    pairs=list(reversed(list(entries.items())))
+    first=deepcopy(pages[0]);second=deepcopy(pages[0]);second['params']['ofs']=50
+    for page,part in ((first,pairs[:50]),(second,pairs[50:])):
+        page['body']=json.dumps({'error':[],'result':{'count':51,'ledger':dict(part)}})
+    after['balances']['ZUSD']['balance']=str(initial-51)
+    with localcontext() as ctx:
+        ctx.prec=6
+        report=cash.reconcile(before,after,[first,second,pages[1]],as_of_ms=NOW+63000)
+    assert report['status']=='BALANCE_MOVEMENTS_MATCHED'
+    assert report['assets']['ZUSD']['expected_closing']=='949.00000001'
+    assert len(report['ledger_entries'])==52

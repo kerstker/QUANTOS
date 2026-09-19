@@ -1,9 +1,29 @@
 """Exact balance bridge over a complete bounded ledger query, not trading authority."""
 from decimal import Context, Decimal, localcontext
+from itertools import groupby
 import re
 
 from services.data.kraken_account import payload, number, canonical
 from services.data.kraken_public import require
+
+
+def _unique_balance_order(rows, opening):
+    """Resolve one timestamp only; never guess between competing balance edges.
+
+    Caller holds the exact Decimal context. Each entry states its post-balance,
+    so amount and actual-asset fee determine its required pre-balance.
+    """
+    edges={}
+    for row in rows:
+        before=number(row['balance'],signed=True)-number(row['amount'],signed=True)+number(row['fee'],signed=True)
+        edges.setdefault(before,[]).append(row)
+    ordered=[];balance=opening
+    while len(ordered)<len(rows):
+        candidates=edges.pop(balance,[])
+        if len(candidates)!=1:return None
+        row=candidates[0];ordered.append(row)
+        balance=number(row['balance'],signed=True)
+    return ordered
 
 
 def reconcile(opening, closing, pages, *, as_of_ms):
@@ -62,13 +82,18 @@ def reconcile(opening, closing, pages, *, as_of_ms):
             for account_balance in (begin,finish):
                 require(number(account_balance.get('credit_used','0'))==0,'KRAKEN_CASH_CREDIT')
             initial=number(begin.get('balance','0'),signed=True);actual=number(finish.get('balance','0'),signed=True)
-            expected=initial;fees=Decimal(0);prior_time=None
-            for row in sorted(grouped.get(asset,[]),key=lambda r:(number(r['time_seconds']),r['ledger_id'])):
-                at=number(row['time_seconds'])
-                if at==prior_time:issues.append('AMBIGUOUS_LEDGER_ORDER:'+asset)
-                prior_time=at;fee=number(row['fee'],signed=True);fees+=fee
-                expected+=number(row['amount'],signed=True)-fee
-                if expected!=number(row['balance'],signed=True):issues.append('LEDGER_BALANCE_CHAIN_MISMATCH:'+row['ledger_id'])
+            expected=initial;fees=Decimal(0)
+            chronology=sorted(grouped.get(asset,[]),key=lambda r:(number(r['time_seconds']),r['ledger_id']))
+            for _,bucket in groupby(chronology,key=lambda r:number(r['time_seconds'])):
+                batch=list(bucket)
+                if len(batch)>1:
+                    ordered=_unique_balance_order(batch,expected)
+                    if ordered is None:issues.append('AMBIGUOUS_LEDGER_ORDER:'+asset)
+                    else:batch=ordered
+                for row in batch:
+                    fee=number(row['fee'],signed=True);fees+=fee
+                    expected+=number(row['amount'],signed=True)-fee
+                    if expected!=number(row['balance'],signed=True):issues.append('LEDGER_BALANCE_CHAIN_MISMATCH:'+row['ledger_id'])
             drift=actual-expected
             if drift!=0:issues.append('BALANCE_DRIFT:'+asset)
             assets[asset]={'opening':canonical(initial),'expected_closing':canonical(expected),'observed_closing':canonical(actual),

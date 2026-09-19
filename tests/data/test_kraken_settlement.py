@@ -28,6 +28,19 @@ def test_partial_fill_then_cancel_links_both_legs_and_cash_fee():
     assert report['submission_enabled'] is False and report['next_cycle_allowed'] is False
 
 
+def test_same_timestamp_cash_chain_returns_to_review_after_trade_linkage():
+    from tests.data.test_kraken_cash_reconciliation import tied_cash_rows
+    before,after,pages=tied_cash_rows()
+    bridge=cash.reconcile(before,after,pages,as_of_ms=NOW+63000)
+    _,order,fills,specs=inputs()
+    report=settlement.link(bridge,order,fills,specs,as_of_ms=NOW+63100)
+    assert report['status']=='OBSERVED_SETTLEMENT_MATCHED'
+    assert report['trades'][0]['actual_fees']=={'AAPLx.T':'0','ZUSD':'0.04'}
+    assert len(report['trades'][0]['ledger_ids'])==3
+    assert report['next_review_allowed'] is True
+    assert report['next_cycle_allowed'] is False and report['submission_enabled'] is False
+
+
 @pytest.mark.parametrize('case',['open','missing_leg','unknown_ref','wrong_amount','fee','old_fill','account'])
 def test_incomplete_settlement_cannot_pass(case):
     bridge,order,fills,specs=inputs()
