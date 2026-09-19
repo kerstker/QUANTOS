@@ -550,3 +550,9 @@ CLI重启省略portfolio-config时，原实现会退回单账户会话，未继�
 首轮71906已终态FAIL（117.354秒），不得继续轮询。第020命令docker buildx inspect --bootstrap返回exit 0但正文为Docker容器inspect context deadline exceeded，缺失Status/BuildKit/Platforms；校验器拒绝为正确行为。第二构建器正常running/v0.26.2/linux-arm64。尚未进入冷构建或canonical。临时构建器和代理已清理，原始stdout/stderr及失败result全部保留。
 
 确认端口空闲和无残留临时容器后，以相同a91146c59源码在acceptance-a91146c59/retry-1新建独立worktree并原样重试，未修改身份校验或依赖版本；当前会话79143、父PID2921410，先准备前端依赖。后续仅轮询79143及retry-1日志，最终结果也在retry-1，原始首轮失败不覆盖。
+
+### 2026-09-20 组合观测入口预备
+
+retry-1已完成两次ARM64冷构建（605.360秒、752.999秒）、扫描及隔离冒烟；canonical完整门仍在会话79143运行，尚无最终通过报告。等待期间在开发输出创建独立干净检出account-source-a91146c59，以及run-portfolio-observation-a91146c59.py/.sh。入口固定完整源码a91146c59644a54213416004799a5cb7aff83f02，必须核对retry-1完整ALL 28/28报告、干净源码及指定Python/ARM64/AnyIO环境后才能运行。
+
+入口使用仓库SPYx/XAUT公开配置、ZUSD估值、60轮人工启动的只读组合会话；沿用account-observation状态根，不迁移或清除已有订单/现金记录，绑定冲突仍由原校验拒绝。未指定策略，不生成默认权重。仅运行--check，按预期exit 3 / PORTFOLIO_OBSERVER_NOT_READY，证明验收未完成时入口拒绝；未访问账户、读取凭证或启动驻留服务。完整通过后须重新运行--check，当前不能作为可用入口交付。
