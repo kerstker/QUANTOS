@@ -154,6 +154,57 @@ def test_order_tracking_survives_restart_and_missing_order_never_becomes_complet
     assert json.loads((tmp_path/'order-query-latest.json').read_text())['orders'][0]['status']=='canceled'
 
 
+@pytest.mark.parametrize('interrupted_endpoint',['QueryOrders','QueryTrades'])
+def test_interrupted_refresh_invalidates_old_success_and_can_resume(tmp_path,interrupted_endpoint):
+    from tests.data.test_kraken_order_query import body
+    from tests.data.test_kraken_trade_query import trade_body
+    class Reader:
+        account_ref_sha256='a'*64
+        interrupt=False
+        def read(self,endpoint,params):
+            if self.interrupt and endpoint==interrupted_endpoint:
+                raise KeyboardInterrupt()
+            return body().encode() if endpoint=='QueryOrders' else json.dumps(trade_body()).encode()
+    reader=Reader()
+    first=tool.track_orders(reader,tmp_path,[{'order_id':'ORDER-1'}],clock_ms=lambda:NOW)
+    assert first['status']=='ORDERS_OBSERVED'
+    reader.interrupt=True
+    with pytest.raises(KeyboardInterrupt):
+        tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+1000)
+    pending=json.loads((tmp_path/'order-recovery.json').read_text())
+    assert pending['status']=='UNRESOLVED'
+    assert pending['failure']=={'error_type':'REFRESH_IN_PROGRESS'}
+    assert pending['order_ids']==['ORDER-1'] and pending['query_hash'] is None
+    assert pending['result_hash']==tool.digest({k:v for k,v in pending.items() if k!='result_hash'})
+    reader.interrupt=False
+    resumed=tool.track_orders(reader,tmp_path,[],clock_ms=lambda:NOW+2000)
+    assert resumed['status']=='ORDERS_OBSERVED' and resumed['failure'] is None
+    assert resumed['result_hash']==tool.digest({k:v for k,v in resumed.items() if k!='result_hash'})
+
+
+def test_interruption_between_recovery_and_tracking_write_retains_new_ids(tmp_path,monkeypatch):
+    from tests.data.test_kraken_order_query import body
+    from tests.data.test_kraken_trade_query import trade_body
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,endpoint,params):
+            if endpoint=='QueryOrders':
+                assert params['txid']=='ORDER-1'
+                return body().encode()
+            return json.dumps(trade_body()).encode()
+    original=tool.atomic_json
+    def interrupted(path,value):
+        if path.name=='order-tracking.json':raise KeyboardInterrupt()
+        original(path,value)
+    monkeypatch.setattr(tool,'atomic_json',interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        tool.track_orders(Reader(),tmp_path,[{'order_id':'ORDER-1'}],clock_ms=lambda:NOW)
+    assert not (tmp_path/'order-tracking.json').exists()
+    monkeypatch.setattr(tool,'atomic_json',original)
+    resumed=tool.track_orders(Reader(),tmp_path,[],clock_ms=lambda:NOW+1000)
+    assert resumed['status']=='ORDERS_OBSERVED' and resumed['order_ids']==['ORDER-1']
+
+
 def test_query_orders_signer_accepts_only_bounded_read_scope(tmp_path):
     calls=[]
     key=base64.b64encode(b'public fixture only').decode();secret=base64.b64encode(b'non-secret fixture only').decode()

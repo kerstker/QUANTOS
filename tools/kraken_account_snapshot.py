@@ -233,15 +233,27 @@ def track_orders(client, root, open_orders, *, clock_ms=None):
             prior=load_json_without_duplicate_keys(path.read_bytes())
             require(prior['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_ORDER_TRACKING_ACCOUNT')
             ids.update(prior['order_ids'])
+        recovery_path=root/'order-recovery.json'
+        if recovery_path.exists():
+            prior=load_json_without_duplicate_keys(recovery_path.read_bytes())
+            require(prior.get('result_hash')==digest({k:v for k,v in prior.items() if k!='result_hash'}),
+                    'KRAKEN_ORDER_RECOVERY_HASH')
+            require(prior['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_ORDER_TRACKING_ACCOUNT')
+            ids.update(prior['order_ids'])
         ids.update(row['order_id'] for row in open_orders)
         ordered=sorted(ids)
         if ordered:order_query.identifiers(','.join(ordered))
-        atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
         result={'schema':'KRAKEN_ORDER_RECOVERY_V1','account_ref_sha256':client.account_ref_sha256,
                 'status':'NO_TRACKED_ORDERS' if not ids else 'UNRESOLVED','order_ids':ordered,
                 'observed_at_ms':clock_ms(),'query_hash':None,'failure':None,'cash_reconciled':False,
                 'trade_status':'NOT_OBSERVED','trade_query_hash':None,
                 'full_history_observed':False,'next_cycle_allowed':False,'submission_enabled':False,'authoritative':False}
+        # Invalidate previous success before any archive mutation or remote read.
+        # A killed process must leave a visible unresolved refresh, not fresh old success.
+        pending={**result,'status':'UNRESOLVED','failure':{'error_type':'REFRESH_IN_PROGRESS'}}
+        pending['result_hash']=digest(pending)
+        atomic_json(root/'order-recovery.json',pending)
+        atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
         if ids:
             try:
                 params={'txid':','.join(ordered),'trades':'true','rebase_multiplier':'base'}
