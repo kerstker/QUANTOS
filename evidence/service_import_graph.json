@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 53,
+  "edge_count": 54,
   "edges": [
     {
       "references": [
@@ -739,6 +739,17 @@
       ],
       "source": "console",
       "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/data/kraken_account.py"
+        }
+      ],
+      "source": "data",
+      "target": "governance"
     },
     {
       "references": [
@@ -1998,7 +2009,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "ab4239a0301a41d19bc2627a8a7bbeda9ec676c9b30798d851f871d85b9e573e",
+  "graph_sha256": "be4b8d7f530ce02a7a54a9bfedb93c80bde8e2ecc5efd97314df0bc02318ba36",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2036,7 +2047,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 590,
+  "source_file_count": 592,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

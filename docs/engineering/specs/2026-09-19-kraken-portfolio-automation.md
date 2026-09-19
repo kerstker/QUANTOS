@@ -50,3 +50,13 @@
 - [xStocks产品说明](https://www.kraken.com/xstocks)
 
 验证：新模块先复现缺失失败；真实721条/零量响应和旧捕获回放回退问题也先复现，再修复。新行为及既有PIT/摄入联合48项通过，治理扫描通过。三资产两轮实采均CAPTURED，每产品首轮720条、第二轮未重复新增。未运行完整canonical门禁，不继承旧版本完整发布验收。
+
+## 第二批：已有账户只读观察（未实际读取）
+
+新增 `services/data/kraken_account.py` 与人工入口 `tools/kraken_account_snapshot.py`。两轮按 BalanceEx→OpenOrders 读取，固定 `rebase_multiplier=base`，比较余额与挂单变化；保留资产原名，包括 `.T` 后缀，不自动映射普通股或合并奖励余额。使用独立80位Decimal上下文计算报告可用额、剩余挂单量；授信/借款、负可用额、杠杆挂单及变动分别标阻塞。稳定仅代表两次观察相同，不是原子快照、完整账户权威、成本基已知或交易许可。
+
+人工工具只允许两个查询端点。交互隐藏输入API公钥/secret，签名和凭证不导出，响应仅保存白名单化的财务字段、时间与原文摘要；文件0600、目录0700。nonce按凭证命名空间加锁，先持久化后发送，重启/时钟回退不复用；应使用该工具专用的查询凭证，不能保证其他程序共享同一key的nonce顺序。首个API拒绝立即停止，不重复四次无效请求。当前未实现API二次验证口令输入；不要求用户关闭安全设置，若现有查询凭证需要该能力则另补支持。
+
+测试：账户与工具新增15项通过（先复现模块缺失和拒绝后重复请求，再修复）；上批公开观察18项曾在本轮联合检查中通过。服务依赖图检查发现新增模块导致产物过期，已用原生成器重建，9项图检查通过、无循环。没有真实账户读取、凭证访问或下单；人工读取后仍须核对实际字段与持仓范围。主网执行、金额/风险限额和持仓管理范围仍需现有操作员流程明确，不能用只读导出代替。
+
+官方依据：[BalanceEx可用额与数量口径](https://docs.kraken.com/api-reference/account-data/get-extended-balance)、[OpenOrders数量口径](https://docs.kraken.com/api-reference/account-data/get-open-orders)、[REST签名与nonce](https://docs.kraken.com/exchange/guides/rest/authentication)。
