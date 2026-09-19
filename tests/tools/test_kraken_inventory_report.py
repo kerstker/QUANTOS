@@ -60,3 +60,20 @@ def test_indicative_valuation_replays_quote_raw_body(tmp_path):
     report=tool.build(path,root,as_of_ms=NOW+700,valuation_quote='ZUSD')
     assert report['indicative_valuation']['status']=='INCOMPLETE'
     assert report['indicative_valuation']['observed_spot_mid_value'] is None
+
+
+def test_policy_flows_through_archived_account_prices_and_budget(tmp_path):
+    from tests.data.test_kraken_allocation import inputs
+    path,root=fixture(tmp_path)
+    _,policy=inputs()
+    blocked=tool.build(path,root,as_of_ms=NOW+700,policy=policy)
+    assert blocked['allocation_review']['status']=='BLOCKED'
+    assert 'OPEN_ORDERS_REQUIRE_RECONCILIATION' in blocked['allocation_review']['issues']
+    account=json.loads(path.read_text());account['open_orders']=[]
+    account['result_hash']=capture.digest({k:v for k,v in account.items() if k!='result_hash'})
+    path.write_text(json.dumps(account))
+    result=tool.build(path,root,as_of_ms=NOW+700,policy=policy)
+    assert result['allocation_review']['status']=='REVIEW_ONLY'
+    assert result['allocation_review']['targets'][0]['target_value']=='200'
+    assert result['allocation_policy_sha256']==capture.digest(policy)
+    assert result['submission_enabled'] is False

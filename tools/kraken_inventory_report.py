@@ -10,6 +10,7 @@ import time
 from services.data.kraken_inventory import reconcile
 from services.data.kraken_quotes import parse as parse_quote
 from services.portfolio.kraken_valuation import value as value_inventory
+from services.portfolio.kraken_allocation import prepare as prepare_allocation, validate_policy
 from services.data.kraken_public import require
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools import kraken_public_capture as capture
@@ -29,7 +30,11 @@ def sealed(report):
     return report
 
 
-def build(account_path, observer_root, *, as_of_ms, valuation_quote=None):
+def build(account_path, observer_root, *, as_of_ms, valuation_quote=None, policy=None):
+    if policy is not None:
+        validate_policy(policy)
+        require(valuation_quote is None or valuation_quote==policy['quote_asset'],'KRAKEN_POLICY_QUOTE_MISMATCH')
+        valuation_quote=policy['quote_asset']
     account=sealed(load(account_path));root=Path(observer_root)
     observer=sealed(load(root/'status.json'))
     require(observer.get('schema') in ('KRAKEN_PORTFOLIO_OBSERVER_V2','KRAKEN_PORTFOLIO_OBSERVER_V3'),'KRAKEN_INVENTORY_OBSERVER_VERSION')
@@ -77,6 +82,10 @@ def build(account_path, observer_root, *, as_of_ms, valuation_quote=None):
             valuation['issues']=sorted(set(valuation['issues']+quote_issues))
             valuation.update(status='INCOMPLETE',observed_spot_mid_value=None,observed_spot_bid_value=None)
         report['indicative_valuation']=valuation
+        report['planning_quotes']=quotes
+    if policy is not None:
+        report['allocation_review']=prepare_allocation(report,policy,as_of_ms=as_of_ms)
+        report['allocation_policy_sha256']=capture.digest(policy)
     report['result_hash']=capture.digest(report)
     return report
 
@@ -87,16 +96,18 @@ def main(argv=None):
     parser.add_argument('--observer-root',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--valuation-quote',help='Exact Kraken quote asset identifier, e.g. ZUSD')
+    parser.add_argument('--policy',type=Path,help='Explicit allocation policy; no defaults or execution permission')
     args=parser.parse_args(argv)
-    report=build(args.account,args.observer_root,as_of_ms=time.time_ns()//1_000_000,valuation_quote=args.valuation_quote)
+    report=build(args.account,args.observer_root,as_of_ms=time.time_ns()//1_000_000,valuation_quote=args.valuation_quote,policy=load(args.policy) if args.policy else None)
     # No replacement of earlier evidence; exported balances are private.
     fd=os.open(args.output,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as stream:
         json.dump(report,stream,sort_keys=True,allow_nan=False);stream.write('\n');stream.flush();os.fsync(stream.fileno())
     print(json.dumps({'status':report['status'],'valuation_status':report.get('indicative_valuation',{}).get('status'),
+                      'allocation_status':report.get('allocation_review',{}).get('status'),
                       'issues':report['issues'],'output':str(args.output),
                       'submission_enabled':False}))
-    return 0 if report['status']=='INVENTORY_MAPPED' and report.get('indicative_valuation',{}).get('status','INDICATIVE')=='INDICATIVE' else 3
+    return 0 if report['status']=='INVENTORY_MAPPED' and report.get('indicative_valuation',{}).get('status','INDICATIVE')=='INDICATIVE' and report.get('allocation_review',{}).get('status','REVIEW_ONLY')=='REVIEW_ONLY' else 3
 
 
 if __name__=='__main__':raise SystemExit(main())
