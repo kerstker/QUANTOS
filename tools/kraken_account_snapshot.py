@@ -150,15 +150,40 @@ def save(root,report):
 
 def collect_cash_bridge(client, root, opening, closing, *, clock_ms=None, sleep_fn=None):
     root=private_root(root)
+    clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
     fd=os.open(root/'.cash.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        return _collect_cash_bridge(client,root,opening,closing,clock_ms=clock_ms,sleep_fn=sleep_fn)
+        for item in (opening,closing):
+            require(item.get('result_hash')==digest({k:v for k,v in item.items() if k!='result_hash'}),'KRAKEN_CASH_INPUT_HASH')
+            require(item['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_CASH_ACCOUNT_CHANGED')
+        path=root/'cash-reconciliation.json'
+        require(not path.is_symlink(),'KRAKEN_CASH_SYMLINK')
+        pending={'schema':'KRAKEN_BALANCE_BRIDGE_V1','status':'UNRESOLVED',
+            'account_ref_sha256':client.account_ref_sha256,'as_of_ms':clock_ms(),
+            'opening_account_hash':opening['result_hash'],'closing_account_hash':closing['result_hash'],
+            'failure':{'error_type':'REFRESH_IN_PROGRESS'},'submission_enabled':False,'authoritative':False,
+            'next_cycle_allowed':False,'trade_linkage_verified':False}
+        atomic_json(path,{**pending,'result_hash':digest(pending)})
+        try:
+            return _collect_cash_bridge(client,root,opening,closing,clock_ms=clock_ms,sleep_fn=sleep_fn)
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            pending.update(as_of_ms=clock_ms(),failure={'error_type':type(exc).__name__})
+            pending['result_hash']=digest(pending)
+            atomic_json(path,pending)
+            return pending
 
 
 def _collect_cash_bridge(client, root, opening, closing, *, clock_ms=None, sleep_fn=None):
     clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000);sleep_fn=sleep_fn or time.sleep
     require(opening['account_ref_sha256']==closing['account_ref_sha256']==client.account_ref_sha256,'KRAKEN_CASH_ACCOUNT_CHANGED')
+    for item in (opening,closing):
+        require(item.get('schema')=='KRAKEN_ACCOUNT_OBSERVATION_V1' and item.get('status')=='OBSERVED_STABLE' and
+                item.get('quantity_basis')=='base' and not item['issues'] and item.get('submission_enabled') is False and
+                item.get('authoritative') is False,'KRAKEN_CASH_ACCOUNT')
+    require(opening['reads'][0]['requested_at_ms']<=opening['observed_at_ms']<closing['reads'][0]['requested_at_ms'] and
+            closing['reads'][0]['requested_at_ms']<=closing['observed_at_ms']<=clock_ms() and
+            closing['observed_at_ms']-opening['reads'][0]['requested_at_ms']<=86400000,'KRAKEN_CASH_WINDOW')
     start=opening['reads'][0]['requested_at_ms']//1000;end=(closing['observed_at_ms']+999)//1000
     require(0<start<end<=start+86401,'KRAKEN_CASH_WINDOW')
     delay=end*1000-clock_ms()
@@ -282,11 +307,18 @@ def track_orders(client, root, open_orders, *, clock_ms=None):
         return result
 
 
-def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None, track_known_orders=False):
+def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None,
+                track_known_orders=False, ledger_opening=None, clock_ms=None):
     """Bounded human-started refresh; any transport/API failure ends the session."""
     require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
     require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
     collect_fn=collect_fn or collect;sleep_fn=sleep_fn or time.sleep
+    if ledger_opening is not None:
+        require(ledger_opening.get('result_hash')==digest({k:v for k,v in ledger_opening.items() if k!='result_hash'}),
+                'KRAKEN_CASH_INPUT_HASH')
+        require(ledger_opening.get('account_ref_sha256')==client.account_ref_sha256 and
+                ledger_opening.get('status')=='OBSERVED_STABLE' and not ledger_opening.get('issues') and
+                ledger_opening.get('quantity_basis')=='base','KRAKEN_CASH_ACCOUNT')
     root=private_root(root)
     fd=os.open(root/'.session.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w') as lock:
@@ -296,7 +328,7 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
         if reference.exists():
             require(load_json_without_duplicate_keys(reference.read_bytes())=={
                 'account_ref_sha256':client.account_ref_sha256},'KRAKEN_ACCOUNT_NAMESPACE_CHANGED')
-        completed=0;failures=0;stop_reason='CYCLE_LIMIT';status=None
+        completed=0;failures=0;stop_reason='CYCLE_LIMIT';status=None;bridge_status='NOT_REQUESTED'
         for index in range(cycles):
             if index:sleep_fn(poll_seconds)
             report=collect_fn(client)
@@ -308,15 +340,26 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                 recovery=track_orders(client,root,report['open_orders'])
                 if recovery['status']=='UNRESOLVED':
                     failures+=status=='OBSERVED_STABLE';stop_reason='ORDER_QUERY_UNRESOLVED'
+            if ledger_opening is not None:
+                bridge_status='NOT_OBSERVED'
+                if status=='OBSERVED_STABLE' and (recovery is None or recovery['status']!='UNRESOLVED'):
+                    bridge=collect_cash_bridge(client,root,ledger_opening,report,clock_ms=clock_ms)
+                    bridge_status=bridge['status']
+                    if bridge_status!='BALANCE_MOVEMENTS_MATCHED':
+                        failures+=1;stop_reason='CASH_QUERY_UNRESOLVED'
+                elif status!='FAILED' and stop_reason!='ORDER_QUERY_UNRESOLVED':
+                    stop_reason='CASH_ACCOUNT_UNSTABLE'
             if on_report is not None:
                 on_report({'cycle':completed,'status':status,'report':str(root/'latest.json'),
                            'result_hash':report['result_hash'],'order_recovery_status':recovery['status'] if recovery else 'NOT_REQUESTED',
+                           'balance_bridge_status':bridge_status,
                            'submission_enabled':False})
+            if stop_reason in ('CASH_QUERY_UNRESOLVED','CASH_ACCOUNT_UNSTABLE'):break
             if recovery is not None and recovery['status']=='UNRESOLVED':break
             if status=='FAILED':
                 stop_reason='ACCOUNT_READ_FAILED';break
         return {'cycles_completed':completed,'non_stable_cycles':failures,'last_status':status,
-                'stop_reason':stop_reason,'submission_enabled':False}
+                'stop_reason':stop_reason,'balance_bridge_status':bridge_status,'submission_enabled':False}
 
 
 def main(argv=None):
@@ -325,25 +368,19 @@ def main(argv=None):
     parser.add_argument('--cycles',type=int,default=1)
     parser.add_argument('--poll-seconds',type=int,default=60)
     parser.add_argument('--track-orders',action='store_true',help='Query and retain observed order IDs across restarts')
-    parser.add_argument('--ledger-opening',type=Path,help='Earlier exported account snapshot for a bounded ledger balance bridge')
+    parser.add_argument('--ledger-opening',type=Path,help='Fixed earlier account checkpoint; reconcile each cycle, stop on mismatch (24h maximum window)')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
+    opening=load_json_without_duplicate_keys(args.ledger_opening.read_bytes()) if args.ledger_opening is not None else None
     print('仅查询账户、订单与成交；不下单、不撤单、不转账。凭证仅保留在本进程内存。')
     key=getpass.getpass('Kraken API public key（不回显）: ')
     secret=getpass.getpass('Kraken API secret（不回显）: ')
     client=ReadOnlyClient(key,secret,root);key=secret=None
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
-        on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders)
-    if args.ledger_opening is not None and result['non_stable_cycles']==0:
-        opening=load_json_without_duplicate_keys(args.ledger_opening.read_bytes())
-        closing=load_json_without_duplicate_keys((root/'latest.json').read_bytes())
-        for item in (opening,closing):
-            require(item.get('result_hash')==digest({k:v for k,v in item.items() if k!='result_hash'}),'KRAKEN_CASH_INPUT_HASH')
-        bridge=collect_cash_bridge(client,root,opening,closing)
-        result['balance_bridge_status']=bridge['status']
-        if bridge['status']!='BALANCE_MOVEMENTS_MATCHED':result['non_stable_cycles']+=1
+        on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders,
+        ledger_opening=opening)
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

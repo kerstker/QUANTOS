@@ -273,3 +273,82 @@ def test_bounded_ledger_collection_includes_both_asset_classes(tmp_path):
     assert [p['aclass'] for _,p in calls]==['currency','tokenized_asset']
     assert result['next_cycle_allowed'] is False
     assert json.loads((tmp_path/'cash-reconciliation.json').read_text())['closing_account_hash']==closing['result_hash']
+
+
+def test_session_reconciles_every_cycle_against_same_checkpoint(tmp_path):
+    from copy import deepcopy
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,pages=samples()
+    opening['result_hash']=tool.digest(opening)
+    calls=[];events=[];counter=[0];clock=[NOW+63000]
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,endpoint,params):
+            assert endpoint=='Ledgers'
+            calls.append(params)
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    def collect(_):
+        row=deepcopy(closing);offset=counter[0]*60000;counter[0]+=1
+        row['observed_at_ms']+=offset
+        for read in row['reads']:
+            read['requested_at_ms']+=offset;read['received_at_ms']+=offset
+        row['result_hash']=tool.digest(row);clock[0]=NOW+63000+offset
+        return row
+    result=tool.run_session(Reader(),tmp_path,cycles=2,collect_fn=collect,sleep_fn=lambda _:None,
+        ledger_opening=opening,clock_ms=lambda:clock[0],on_report=events.append)
+    assert result['non_stable_cycles']==0 and len(calls)==4
+    assert {p['start'] for p in calls}=={NOW//1000}
+    assert [e['balance_bridge_status'] for e in events]==['BALANCE_MOVEMENTS_MATCHED']*2
+    assert len(list((tmp_path/'cash-windows').glob('*.json')))==2
+
+
+def test_session_stops_when_automatic_cash_query_fails(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,_=samples()
+    for row in (opening,closing):row['result_hash']=tool.digest(row)
+    class Reader:
+        account_ref_sha256='a'*64
+        calls=0
+        def read(self,*_):self.calls+=1;raise OSError('private transport detail')
+    reader=Reader();events=[]
+    result=tool.run_session(reader,tmp_path,cycles=3,collect_fn=lambda _:closing,
+        sleep_fn=lambda _:pytest.fail('failure must stop'),ledger_opening=opening,
+        clock_ms=lambda:NOW+63000,on_report=events.append)
+    assert result['stop_reason']=='CASH_QUERY_UNRESOLVED' and result['cycles_completed']==1
+    assert result['non_stable_cycles']==1 and reader.calls==1
+    assert events[0]['balance_bridge_status']=='UNRESOLVED'
+    report=json.loads((tmp_path/'cash-reconciliation.json').read_text())
+    assert report['status']=='UNRESOLVED' and 'private transport detail' not in json.dumps(report)
+
+
+def test_cash_checkpoint_expiry_stops_before_remote_read(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,_=samples()
+    closing['observed_at_ms']+=86400000
+    for row in (opening,closing):row['result_hash']=tool.digest(row)
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,*_):pytest.fail('expired checkpoint must not query')
+    result=tool.run_session(Reader(),tmp_path,ledger_opening=opening,collect_fn=lambda _:closing,
+        clock_ms=lambda:NOW+86463000)
+    assert result['stop_reason']=='CASH_QUERY_UNRESOLVED'
+
+
+def test_cash_interruption_leaves_unresolved_current_pointer(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,pages=samples()
+    for row in (opening,closing):row['result_hash']=tool.digest(row)
+    class Reader:
+        account_ref_sha256='a'*64
+        interrupt=False
+        def read(self,endpoint,params):
+            if self.interrupt:raise KeyboardInterrupt()
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    reader=Reader()
+    tool.collect_cash_bridge(reader,tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    reader.interrupt=True
+    with pytest.raises(KeyboardInterrupt):
+        tool.collect_cash_bridge(reader,tmp_path,opening,closing,clock_ms=lambda:NOW+64000)
+    report=json.loads((tmp_path/'cash-reconciliation.json').read_text())
+    assert report['status']=='UNRESOLVED' and report['failure']['error_type']=='REFRESH_IN_PROGRESS'
+    assert report['result_hash']==tool.digest({k:v for k,v in report.items() if k!='result_hash'})
