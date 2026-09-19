@@ -2,7 +2,7 @@
 
 日期：2026-09-19。状态：公开数据自动观察首批实现，未完成账户管理或实盘执行。
 
-最新接续见第三十二批：首次组合周期的订单恢复依赖。首批及下列各批描述保留各自历史时点，不能作为当前完整自动化已完成的声明。
+最新接续见第三十三批：买卖顺序与结算后重新规划。首批及下列各批描述保留各自历史时点，不能作为当前完整自动化已完成的声明。
 
 用户明确目标为自动管理完整组合，股票采用 Kraken xStocks，黄金使用 XAUT；用户声明已具备产品授权且已有 xStocks 持仓。不再要求地区信息，不将其持仓当作接口已验证事实。账户授权声明与程序内签名、风控、人工 mandate、账本及执行权限分别处理；本批不读取凭证、不修改实盘开关、不提交订单。
 
@@ -466,3 +466,11 @@ batch_id为稳定32位十六进制编号；同批精确重试返回原记录，�
 组合周期现在发现任一订单跟踪、查询归档或客户端恢复配置即持久登记恢复依赖；缺失报告输出ORDER_RECOVERY_MISSING与order_recovery_status=MISSING，不生成配置草案。此后删除遗留记录也不能解除已经登记的依赖。相关路径的软链接（包括悬空链接）拒绝，拒绝前保留必需标记。无订单状态的正常首次配置以及完整结算后的原有推进流程仍沿用既有合同。
 
 专项覆盖首次启动、未知订单查询后报告丢失、重启及删除残留记录、悬空链接，以及原资金预留和结算检查点流程；结果见项目状态。本批仅修复开发态规划的恢复约束，未新增真实提交、凭证读取、部署或完整发布验收。
+
+## 第三十三批 买卖顺序与结算后重新规划
+
+数量规划原来仅输出买入现金缺口布尔值，未表达混合买卖组合的先后约束。现在quantity_review新增sequencing_review：有可审阅减仓时只列REVIEW_REDUCTIONS及RECONCILE_AND_REPLAN，当前买入产品列为deferred，禁止复用当前买入数量；下一轮仍须由既有结算闭环生成新账户和新规划。只有买入时按ask指示成本与实际可用现金比较，超额返回WAITING_FOR_FUNDS且步骤为空，不抵扣未来卖出收入。现金够用时仍只是BUYS_REQUIRE_PREFLIGHT，费用预算尚未验证。
+
+零数量返回NO_ACTION_WITHIN_PLANNING_GRID；正数量但低于规划基准最小量/金额的产品单列，全部如此则BELOW_PLANNING_MINIMUM，不进入审阅步骤。这里的基准沿用第三十批明确的规划假设，不把REST数量口径推断升级成交易准入。输入缺失/失败时sequencing_review为null，不生成阶段。现有持仓报告与组合周期消费同一数量规划函数，因此同时获得顺序说明；没有新增执行器或改变Console API合同。
+
+本次重新检查[AddOrder文档](https://docs.kraken.com/api-reference/trading/add-order)、[Ticker定义](https://docs.kraken.com/api-reference/market-data/get-ticker-information)及[xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)，尚不足以核准当前xStocks报价、数量与费用的完整生产换算。本批仍execution_eligible=false、fee_budget_verified=false，无请求草案、真实查询、订单提交或部署。新增回归先证明顺序信息缺失，再覆盖混合买卖、减仓后重算、只有买入、价差导致现金不足、规划最小量及零数量，并核对组合周期输出。专项44项通过，最终联合结果见项目状态；未重新完整发布验收。

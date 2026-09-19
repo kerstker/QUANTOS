@@ -96,3 +96,56 @@ def test_ask_cost_can_exceed_mid_budget_without_crediting_planned_sales():
     assert result['allocation_review']['requires_completed_sales_before_buys'] is False
     assert result['requires_settled_cash_before_buys'] is True
     assert Decimal(result['indicative_buy_cost_before_fees'])>Decimal(result['allocation_review']['cash_available_after_reserve'])
+    sequence=result['sequencing_review']
+    assert sequence['status']=='WAITING_FOR_FUNDS'
+    assert sequence['steps']==[] and sequence['submission_enabled'] is False
+
+
+def test_reduction_sequence_requires_new_plan_after_settlement():
+    inventory,policy=fixture()
+    result=prepare(inventory,policy,as_of_ms=NOW+800)
+    sequence=result['sequencing_review']
+    assert sequence['status']=='REDUCTIONS_FIRST'
+    assert sequence['steps']==[
+        {'kind':'REVIEW_REDUCTIONS','instrument_ids':[KEY]},
+        {'kind':'RECONCILE_AND_REPLAN','reuse_current_buy_quantities':False},
+    ]
+    assert sequence['execution_eligible'] is False
+
+
+def test_mixed_rebalance_never_schedules_old_buys_after_reductions():
+    inventory,policy=fixture();second='KRAKEN:tokenized_asset:NVDAxUSD'
+    for field in ('instrument_specs','planning_units','planning_quotes'):
+        item=deepcopy(inventory[field][0]);item.update(instrument_id=second,base='NVDAx')
+        inventory[field].append(item)
+    policy['target_weights']={KEY:'0.2',second:'0.2'}
+    result=prepare(inventory,policy,as_of_ms=NOW+800)
+    assert {r['side'] for r in result['quantities']}=={'buy','sell'}
+    sequence=result['sequencing_review']
+    assert sequence['status']=='REDUCTIONS_FIRST'
+    assert sequence['deferred_buy_instrument_ids']==[second]
+    assert [step['kind'] for step in sequence['steps']]==['REVIEW_REDUCTIONS','RECONCILE_AND_REPLAN']
+
+
+def test_buy_only_sequence_is_reviewable_with_observed_cash():
+    inventory,policy=fixture()
+    inventory['balances']=[r for r in inventory['balances'] if r['role']!='BASE_ASSET']
+    inventory['indicative_valuation']['rows']=[r for r in inventory['indicative_valuation']['rows'] if r['account_asset']=='ZUSD']
+    result=prepare(inventory,policy,as_of_ms=NOW+800)
+    assert result['sequencing_review']['status']=='BUYS_REQUIRE_PREFLIGHT'
+    assert result['sequencing_review']['steps']==[{'kind':'REVIEW_BUYS','instrument_ids':[KEY]}]
+    assert result['sequencing_review']['fee_budget_verified'] is False
+
+
+def test_subminimum_and_zero_grid_quantities_never_become_submission_steps():
+    inventory,policy=fixture()
+    inventory['balances']=[r for r in inventory['balances'] if r['role']!='BASE_ASSET']
+    inventory['indicative_valuation']['rows']=[r for r in inventory['indicative_valuation']['rows'] if r['account_asset']=='ZUSD']
+    policy['capital_limit']='0.01'
+    result=prepare(inventory,policy,as_of_ms=NOW+800)
+    assert result['sequencing_review']['status']=='BELOW_PLANNING_MINIMUM'
+    assert result['sequencing_review']['steps']==[]
+    policy['capital_limit']='0.000000000000000001'
+    result=prepare(inventory,policy,as_of_ms=NOW+800)
+    assert result['sequencing_review']['status']=='NO_ACTION_WITHIN_PLANNING_GRID'
+    assert result['sequencing_review']['steps']==[]

@@ -7,12 +7,34 @@ from services.data.kraken_public import require
 from services.portfolio.kraken_allocation import prepare as allocate, amount
 
 
+def _sequence(quantities, *, available_cash):
+    """Review stages only; settled reductions always require a fresh plan."""
+    active=[row for row in quantities if amount(row['base_quantity'])>0]
+    skipped=[row['instrument_id'] for row in active if row['below_declared_minimum_on_planning_basis']]
+    eligible=[row for row in active if not row['below_declared_minimum_on_planning_basis']]
+    sells=[row['instrument_id'] for row in eligible if row['side']=='sell']
+    buys=[row['instrument_id'] for row in eligible if row['side']=='buy']
+    cost=sum((amount(row['indicative_quote_notional']) for row in eligible if row['side']=='buy'),Decimal(0))
+    result={'status':'NO_ACTION_WITHIN_PLANNING_GRID','steps':[],
+            'below_minimum_instrument_ids':skipped,'deferred_buy_instrument_ids':[],
+            'fee_budget_verified':False,'execution_eligible':False,'submission_enabled':False,'authoritative':False}
+    if sells:
+        result.update(status='REDUCTIONS_FIRST',deferred_buy_instrument_ids=buys,steps=[
+            {'kind':'REVIEW_REDUCTIONS','instrument_ids':sells},
+            {'kind':'RECONCILE_AND_REPLAN','reuse_current_buy_quantities':False}])
+    elif buys:
+        if cost>available_cash:result.update(status='WAITING_FOR_FUNDS',deferred_buy_instrument_ids=buys)
+        else:result.update(status='BUYS_REQUIRE_PREFLIGHT',steps=[{'kind':'REVIEW_BUYS','instrument_ids':buys}])
+    elif skipped:result['status']='BELOW_PLANNING_MINIMUM'
+    return result
+
+
 def prepare(inventory, policy, *, as_of_ms):
     allocation=allocate(inventory,policy,as_of_ms=as_of_ms)
     result={'schema':'KRAKEN_QUANTITY_REVIEW_V1','as_of_ms':as_of_ms,'status':'BLOCKED','quantities':[],
             'allocation_review':allocation,'indicative_buy_cost_before_fees':None,
             'indicative_sell_proceeds_before_fees':None,'requires_settled_cash_before_buys':None,
-            'issues':list(allocation['issues']),'drafts':[],'submission_enabled':False,'authoritative':False,
+            'issues':list(allocation['issues']),'drafts':[],'sequencing_review':None,'submission_enabled':False,'authoritative':False,
             'blockers':['ORDER_QUANTITY_SEMANTICS_UNVERIFIED','FEE_DEBITS_NOT_SIZED','LIVE_ISSUER_NOT_CONNECTED']}
     if allocation['status']!='REVIEW_ONLY':return result
     indexed=[]
@@ -77,5 +99,6 @@ def prepare(inventory, policy, *, as_of_ms):
         if not result['issues']:
             result.update(status='INDICATIVE_QUANTITIES',quantities=quantities,
                 indicative_buy_cost_before_fees=canonical(buys),indicative_sell_proceeds_before_fees=canonical(sales),
-                requires_settled_cash_before_buys=buys>amount(allocation['cash_available_after_reserve']))
+                requires_settled_cash_before_buys=buys>amount(allocation['cash_available_after_reserve']),
+                sequencing_review=_sequence(quantities,available_cash=amount(allocation['cash_available_after_reserve'])))
     return result
