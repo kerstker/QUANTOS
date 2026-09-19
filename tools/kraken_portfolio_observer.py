@@ -10,6 +10,7 @@ import time
 
 from services.data.kraken_public import INTERVALS, require
 from services.data.kraken_units import asset_units
+from services.data.kraken_quotes import parse as parse_quote
 from services.governance.json_integrity import load_json_without_duplicate_keys
 from tools import kraken_public_capture as capture
 
@@ -30,7 +31,7 @@ def validate_config(config):
     return config
 
 
-def run_once(root, config, *, collect=None, clock_ms=None, metadata_get=None):
+def run_once(root, config, *, collect=None, clock_ms=None, metadata_get=None, quote_get=None):
     validate_config(config);collect=collect or capture.collect
     clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
     root=Path(root).absolute();require(root.resolve()==root,'KRAKEN_OBSERVER_SYMLINK')
@@ -45,6 +46,7 @@ def run_once(root, config, *, collect=None, clock_ms=None, metadata_get=None):
         else:capture.atomic_json(path,config)
         started=clock_ms();records=[]
         metadata_get=metadata_get or capture.public_get
+        quote_get=quote_get or capture.public_get
         for item in config['instruments']:
             record=dict(item,status='FAILED',failure=None,bars_observed=0,bars_inserted=0)
             try:
@@ -62,6 +64,16 @@ def run_once(root, config, *, collect=None, clock_ms=None, metadata_get=None):
                         'body_sha256':hashlib.sha256(body).hexdigest()}
                     record['units']=asset_units(load_json_without_duplicate_keys(body),spec=spec,
                         received_at_ms=received,as_of_ms=clock_ms())
+                    params={'pair':spec['altname']}
+                    if spec['asset_class']=='tokenized_asset':params['asset_class']='tokenized_asset'
+                    sent=clock_ms();body=quote_get('Ticker',params);received=clock_ms()
+                    require(isinstance(body,bytes) and len(body)<=capture.MAX_BYTES,'KRAKEN_QUOTE_SIZE')
+                    require(started<=sent<=received,'KRAKEN_QUOTE_CLOCK')
+                    record['quote_read']={'endpoint':'Ticker','params':params,'requested_at_ms':sent,
+                        'received_at_ms':received,'body':body.decode('utf-8'),
+                        'body_sha256':hashlib.sha256(body).hexdigest()}
+                    record['quote']=parse_quote(load_json_without_duplicate_keys(body),spec=spec,
+                        received_at_ms=received,as_of_ms=clock_ms())
                     at=clock_ms();last_close=max(r['event_time'] for r in raw['rows'])+config['interval']*60000
                     record.update(last_closed_at_ms=last_close,market_status=raw['instrument']['status'],
                                   instrument_id=raw['instrument']['instrument_id'])
@@ -73,14 +85,14 @@ def run_once(root, config, *, collect=None, clock_ms=None, metadata_get=None):
             records.append(record)
         completed=clock_ms();require(completed>=started,'KRAKEN_OBSERVER_CLOCK')
         for record in records:
-            if record['status']=='CAPTURED' and not 0<=completed-record['units']['received_at_ms']<=120000:
+            if record['status']=='CAPTURED' and not all(0<=completed-record[k]['received_at_ms']<=120000 for k in ('units','quote')):
                 record['status']='STALE'
         path=root/'status.json';generation=1
         if path.exists():
             previous=load_json_without_duplicate_keys(path.read_bytes())
             require(completed>=previous['observed_at_ms'],'KRAKEN_OBSERVER_CLOCK_ROLLBACK')
             generation=previous['generation']+1
-        report={'schema':'KRAKEN_PORTFOLIO_OBSERVER_V2','generation':generation,'started_at_ms':started,
+        report={'schema':'KRAKEN_PORTFOLIO_OBSERVER_V3','generation':generation,'started_at_ms':started,
                 'observed_at_ms':completed,'config_sha256':capture.digest(config),'instruments':records,
                 'status':'CAPTURED' if all(r['status']=='CAPTURED' for r in records) else 'PARTIAL',
                 'scope':'PUBLIC_MARKET_OBSERVATION_ONLY','account_status':'NOT_CONNECTED',

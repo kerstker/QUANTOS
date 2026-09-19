@@ -10,6 +10,8 @@ from tests.tools.test_kraken_public_capture import capture as sample
 @pytest.fixture(autouse=True)
 def public_metadata(monkeypatch):
     def get(endpoint, params):
+        if endpoint == "Ticker":
+            return json.dumps({"error":[],"result":{params['pair']:{'a':['102','1','1'],'b':['100','1','1']}}}).encode()
         assert endpoint == "Assets"
         return json.dumps({"error": [], "result": {params["asset"]: {
             "aclass": params["aclass"], "decimals": 8, "display_decimals": 8,
@@ -69,6 +71,16 @@ def test_missing_multiplier_is_partial_and_raw_metadata_retained(tmp_path):
 
 def test_units_expiring_before_cycle_completion_are_stale(tmp_path):
     c=config();c['instruments']=c['instruments'][:1]
-    times=iter([1800000000100]*5+[1800000120101])
+    times=iter([1800000000100]*8+[1800000120101])
     report=observer.run_once(tmp_path,c,collect=lambda **_:sample()[0],clock_ms=lambda:next(times))
     assert report['status']=='PARTIAL' and report['instruments'][0]['status']=='STALE'
+
+
+def test_ticker_rejection_is_a_partial_cycle_with_raw_failure_evidence(tmp_path):
+    c=config();c['instruments']=c['instruments'][:1]
+    body=b'{"error":["EGeneral:Unavailable"],"result":{}}'
+    report=observer.run_once(tmp_path,c,collect=lambda **_:sample()[0],
+        clock_ms=lambda:1800000000100,quote_get=lambda *_:body)
+    assert report['status']=='PARTIAL'
+    assert report['instruments'][0]['quote_read']['body']==body.decode()
+    assert 'quote' not in report['instruments'][0]

@@ -95,3 +95,18 @@ python -m tools.kraken_inventory_report --account /absolute/account-observation/
 验证：新增回归先 RED（模块缺失），实现后账户/单位/观察/依赖图联合 **40 passed**。模拟账户归档完成端到端关联，篡改哈希、跨产品乘数、路径穿越和过期均拒绝或明确未解决。实际账户导出尚不存在，未读取真实持仓、未执行估值或调仓、未运行完整发布门。后续接实时价格及价格数量单位验证、组合估值、明确资产/资金约束和调仓准备。
 
 账户后缀依据：[Kraken Extended Balance 文档](https://docs-legacy.kraken.com/api/docs/rest-api/get-extended-balance/)。
+
+
+## 第五批 买卖报价与指示性现货估值
+
+新增 `services/data/kraken_quotes.py` 与 `services/portfolio/kraken_valuation.py`。公开 GET 白名单加入 Ticker，观察报告升级 V3：每项保存报价请求、原文、哈希、接收时间及 Decimal 买卖价/中间价。要求精确产品身份、正价/正数量、非倒挂盘口，过期或接口错误使该项失败，原文仍留存；周期结束再次检查报价和乘数有效期。REST Ticker 未提供源事件时间，接收时间不冒充交易所事件时间。
+
+已有 `tools/kraken_inventory_report.py` 新增可选 `--valuation-quote ZUSD`；消费 V2 时仍可完成数量关联，但不能凭空提供报价。消费 V3 时从报价原文重算，不信任报告中可编辑的派生价格。估值按指定的实际 quote 标识计算，不把 USDT/USDC 自动当 USD，不在无汇率数据时跨币种加总。
+
+估值保留余额完整数量；冻结金额不重复扣减，挂单名义额不再次加到资产上。xStocks 用对应股票份数，XAUT 用原生数量，得到中间价/买一价的指示性现货总值；未知资产、缺价、重复映射、数量/币种不符或过期均令完整合计为 null。费用、市场冲击与历史成本未纳入，`net_asset_value` 仍为 null，执行资格 false。
+
+价格口径限制：官方 [xStocks FAQ](https://support.kraken.com/articles/xstocks-faq) 描述股价和乘数关系，但 [Ticker 文档](https://docs.kraken.com/api-reference/market-data/get-ticker-information) 未单独声明 xStocks 价格分母。当前 xStocks 报价的股票份数口径明确标记 `INFERRED_FROM_KRAKEN_XSTOCKS_FAQ`，仅用于指示性展示，不能冒充已核准订单或会计合同。后续需进一步确认该口径及公司行动时的一致性。
+
+隔离真实公开验证：`/home/kerstker/quantos-dev-output/kraken-automation-20260919/observer-quotes/status.json`，一轮 AAPLx、NVDAx、XAUT 均 CAPTURED，各720根闭合小时线，三项 Ticker 有效；结果哈希 `a5260e12e3a2ecccecd9d3c364174641459c8ae581570d81cd9e4e697d23d003`。这些是本次公开观测，不是账户交易或历史收益。
+
+验证：报价与估值新模块先 RED 后实现；报价/估值/库存/报告/观察器/公开采集/依赖图联合 **37 passed**。端到端估值使用模拟账户，未读取真实账户。实际 pre-commit 钩子另行执行，未运行完整发布门，未切换驻留服务。下一步仍包括账户实接、成本与现金流、已明确资产/资金约束下的调仓准备、执行恢复及完整验收。
