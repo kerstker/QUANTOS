@@ -546,3 +546,7 @@ CLI重启省略portfolio-config时，原实现会退回单账户会话，未继�
 冻结完整源码a91146c59644a54213416004799a5cb7aff83f02，包含第三十四至三十七批；独立干净worktree位于开发输出kraken-automation-20260919/acceptance-a91146c59/source。沿用已审阅的ARM64/完整门驱动，改为先npm ci及确认tsc/eslint/vitest/vite存在，再进入ARM64双冷构建、扫描、隔离冒烟与全部canonical检查；不覆盖旧2be6dda39通过/失败证据。
 
 新任务会话71906、父PID2916151；锁定前端依赖已安装456包，进入ARM64_CAPTURE。最终结果写入该目录acceptance-result.json、canonical-report.json；尚无终态。续接应轮询71906或真实进程，不能仅因日志静默重复启动。临时构建代理仅绑定回环18089，匿名Docker配置，不接触生产凭证或驻留服务。源码通过不等于账户/策略/实盘授权完成，冻结2be6dda39人工入口未替换。
+
+首轮71906已终态FAIL（117.354秒），不得继续轮询。第020命令docker buildx inspect --bootstrap返回exit 0但正文为Docker容器inspect context deadline exceeded，缺失Status/BuildKit/Platforms；校验器拒绝为正确行为。第二构建器正常running/v0.26.2/linux-arm64。尚未进入冷构建或canonical。临时构建器和代理已清理，原始stdout/stderr及失败result全部保留。
+
+确认端口空闲和无残留临时容器后，以相同a91146c59源码在acceptance-a91146c59/retry-1新建独立worktree并原样重试，未修改身份校验或依赖版本；当前会话79143、父PID2921410，先准备前端依赖。后续仅轮询79143及retry-1日志，最终结果也在retry-1，原始首轮失败不覆盖。
