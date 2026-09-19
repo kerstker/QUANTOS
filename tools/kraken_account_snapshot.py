@@ -245,7 +245,48 @@ def query_trades(client, root, orders, *, clock_ms):
     return key,report
 
 
-def track_orders(client, root, open_orders, *, clock_ms=None):
+def cash_order_hints(client, root, cash, *, clock_ms):
+    """Discover IDs only; QueryOrders/QueryTrades still verify all financial fields."""
+    from tools.kraken_settlement_review import replay_cash
+    bridge=replay_cash(root,cash)
+    require(bridge['account_ref_sha256']==client.account_ref_sha256 and
+            bridge['status']=='BALANCE_MOVEMENTS_MATCHED' and
+            0<=clock_ms()-bridge['as_of_ms']<=120000,'KRAKEN_CASH_DISCOVERY_SOURCE')
+    start,end=bridge['movement_start_exclusive_ms'],bridge['movement_end_exclusive_ms']
+    ids=sorted({row['refid'] for row in bridge['ledger_entries'] if row['type']=='trade' and
+                start<model.number(row['time_seconds'])*1000<end})
+    require(len(ids)<=1000,'KRAKEN_CASH_DISCOVERY_LIMIT')
+    archive=root/'cash-order-discovery'
+    require(not archive.is_symlink(),'KRAKEN_CASH_DISCOVERY_SYMLINK')
+    archive.mkdir(mode=0o700,exist_ok=True)
+    previous=bridge['as_of_ms']
+    for offset in range(0,len(ids),20):
+        batch=ids[offset:offset+20];order_query.identifiers(','.join(batch))
+        params={'txid':','.join(batch),'trades':'false','rebase_multiplier':'base'}
+        sent=clock_ms();body=client.read('QueryTrades',params);received=clock_ms()
+        require(previous<=sent<=received and received-sent<=30000 and
+                received-bridge['as_of_ms']<=120000,'KRAKEN_CASH_DISCOVERY_TIME')
+        previous=received
+        require(isinstance(body,bytes) and len(body)<=model.MAX_BYTES,'KRAKEN_CASH_DISCOVERY_SIZE')
+        rows=model.payload(body.decode('utf-8'))
+        require(set(rows)==set(batch),'KRAKEN_CASH_DISCOVERY_MISSING')
+        discovered=set()
+        for row in rows.values():
+            oid=row['ordertxid']
+            require(isinstance(oid,str) and re.fullmatch(r'[A-Za-z0-9-]{1,80}',oid),
+                    'KRAKEN_CASH_DISCOVERY_ORDER_ID')
+            discovered.add(oid)
+        evidence={'account_ref_sha256':client.account_ref_sha256,'cash_source_hash':cash['result_hash'],
+            'endpoint':'QueryTrades','params':params,'requested_at_ms':sent,'received_at_ms':received,
+            'body':body.decode('utf-8')}
+        target=archive/(digest(evidence)+'.json')
+        require(not target.is_symlink(),'KRAKEN_CASH_DISCOVERY_SYMLINK')
+        if target.exists():require(load_json_without_duplicate_keys(target.read_bytes())==evidence,'KRAKEN_CASH_DISCOVERY_CONFLICT')
+        else:atomic_json(target,evidence)
+        yield discovered
+
+
+def track_orders(client, root, open_orders, *, clock_ms=None, cash=None):
     """Retain known IDs before querying; unknown/missing orders never become empty."""
     root=private_root(root);clock_ms=clock_ms or (lambda:time.time_ns()//1_000_000)
     fd=os.open(root/'.order-query.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
@@ -279,6 +320,21 @@ def track_orders(client, root, open_orders, *, clock_ms=None):
         pending['result_hash']=digest(pending)
         atomic_json(root/'order-recovery.json',pending)
         atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
+        if cash is not None:
+            try:
+                for discovered in cash_order_hints(client,root,cash,clock_ms=clock_ms):
+                    ids.update(discovered);ordered=sorted(ids)
+                    result.update(order_ids=ordered,status='UNRESOLVED')
+                    pending={**result,'failure':{'error_type':'REFRESH_IN_PROGRESS'}}
+                    pending['result_hash']=digest(pending)
+                    atomic_json(root/'order-recovery.json',pending)
+                    atomic_json(path,{'account_ref_sha256':client.account_ref_sha256,'order_ids':ordered})
+                    order_query.identifiers(','.join(ordered))
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                result.update(status='UNRESOLVED',failure={'error_type':type(exc).__name__})
+                result['result_hash']=digest(result)
+                atomic_json(root/'order-recovery.json',result)
+                return result
         if ids:
             try:
                 params={'txid':','.join(ordered),'trades':'true','rebase_multiplier':'base'}
@@ -354,7 +410,7 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
             recovery=None
             bootstrap_blocked=auto_cash and ledger_opening is None and (status!='OBSERVED_STABLE' or report['open_orders'])
             if track_known_orders and status!='FAILED' and not bootstrap_blocked:
-                recovery=track_orders(client,root,report['open_orders'])
+                recovery=track_orders(client,root,report['open_orders'],clock_ms=clock_ms)
                 if recovery['status']=='UNRESOLVED':
                     failures+=status=='OBSERVED_STABLE';stop_reason='ORDER_QUERY_UNRESOLVED'
             if auto_cash and ledger_opening is None:
@@ -379,6 +435,10 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                     bridge_status=bridge['status']
                     if bridge_status!='BALANCE_MOVEMENTS_MATCHED':
                         failures+=1;stop_reason='CASH_QUERY_UNRESOLVED'
+                    elif auto_cash:
+                        recovery=track_orders(client,root,report['open_orders'],clock_ms=clock_ms,cash=bridge)
+                        if recovery['status']=='UNRESOLVED':
+                            failures+=1;stop_reason='ORDER_QUERY_UNRESOLVED'
                 elif status!='FAILED' and stop_reason!='ORDER_QUERY_UNRESOLVED':
                     stop_reason='CASH_ACCOUNT_UNSTABLE'
             if on_report is not None:

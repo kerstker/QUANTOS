@@ -220,7 +220,7 @@ def test_enabled_session_stops_after_unresolved_order_query(tmp_path,monkeypatch
     class Reader:account_ref_sha256='a'*64
     report=assess(observations(),as_of_ms=NOW+500)
     report['result_hash']=tool.digest(report)
-    monkeypatch.setattr(tool,'track_orders',lambda *_:{'status':'UNRESOLVED'})
+    monkeypatch.setattr(tool,'track_orders',lambda *_,**kwargs:{'status':'UNRESOLVED'})
     result=tool.run_session(Reader(),tmp_path,cycles=5,poll_seconds=60,track_known_orders=True,
         collect_fn=lambda _:report,sleep_fn=lambda _:pytest.fail('must stop'))
     assert result['cycles_completed']==1 and result['non_stable_cycles']==1
@@ -356,6 +356,8 @@ def test_cash_interruption_leaves_unresolved_current_pointer(tmp_path):
 
 def test_auto_cash_bootstrap_then_restart_reuses_checkpoint(tmp_path):
     from tests.data.test_kraken_cash_reconciliation import samples
+    from tests.data.test_kraken_order_query import body
+    from tests.data.test_kraken_trade_query import trade_body
     opening,closing,pages=samples();opening['open_orders']=[];closing['open_orders']=[]
     for row in (opening,closing):row['result_hash']=tool.digest(row)
     class Reader:
@@ -363,6 +365,10 @@ def test_auto_cash_bootstrap_then_restart_reuses_checkpoint(tmp_path):
         calls=0
         def read(self,endpoint,params):
             self.calls+=1
+            if endpoint=='QueryOrders':return body('canceled').encode()
+            if endpoint=='QueryTrades':
+                row=trade_body();row['result']['TRADE-1']['time']=str(NOW//1000+30)
+                return json.dumps(row).encode()
             assert endpoint=='Ledgers' and params['start']==NOW//1000
             return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
     reader=Reader()
@@ -370,7 +376,8 @@ def test_auto_cash_bootstrap_then_restart_reuses_checkpoint(tmp_path):
     assert first['balance_bridge_status']=='BASELINE_ONLY' and reader.calls==0
     baseline=(tmp_path/'cash-baseline.json').read_bytes()
     second=tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:closing,clock_ms=lambda:NOW+63000)
-    assert second['balance_bridge_status']=='BALANCE_MOVEMENTS_MATCHED' and reader.calls==2
+    assert second['balance_bridge_status']=='BALANCE_MOVEMENTS_MATCHED' and reader.calls==5
+    assert json.loads((tmp_path/'order-recovery.json').read_text())['order_ids']==['ORDER-1']
     assert (tmp_path/'cash-baseline.json').read_bytes()==baseline
     (tmp_path/'cash-baseline.json').unlink()
     with pytest.raises(ValueError,match='BASELINE_MISSING'):

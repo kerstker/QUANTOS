@@ -118,7 +118,7 @@ def test_terminal_trade_cash_replay_returns_to_review_without_execution(tmp_path
     from tests.data.test_kraken_order_query import body
     from tools import kraken_account_snapshot as account_tool
     args=setup(tmp_path);write_inputs(args)
-    opening,closing,pages=samples();closing['open_orders']=[]
+    opening,closing,pages=samples();opening['open_orders']=[];closing['open_orders']=[]
     for item in (opening,closing):item['result_hash']=capture.digest(item)
     args['account_path'].write_text(json.dumps(closing))
     class Reader:
@@ -131,8 +131,12 @@ def test_terminal_trade_cash_replay_returns_to_review_without_execution(tmp_path
             assert endpoint=='Ledgers'
             return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
     reader=Reader()
-    account_tool.track_orders(reader,tmp_path,[{'order_id':'ORDER-1'}],clock_ms=lambda:NOW+62000)
-    account_tool.collect_cash_bridge(reader,tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    # The order opened and completed between observations: neither snapshot
+    # exposes its ID. Cash evidence must discover it without manual seeding.
+    account_tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:opening,clock_ms=lambda:NOW+500)
+    account_tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:closing,clock_ms=lambda:NOW+63000)
+    recovered=json.loads((tmp_path/'order-recovery.json').read_text())
+    assert recovered['order_ids']==['ORDER-1']
     args['clock_ms']=lambda:NOW+64000
     report=cycle.run_once(**args)
     assert report['status']=='REVIEW_ONLY' and report['blockers']==[]
