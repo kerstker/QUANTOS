@@ -11,7 +11,8 @@ import re
 import time
 
 from services.data.kraken_public import require
-from services.portfolio.kraken_allocation import validate_policy
+from services.portfolio.kraken_allocation import validate_policy, prepare as prepare_allocation
+from tools.kraken_settlement_review import build as build_settlement
 from tools import kraken_inventory_report as inventory
 from tools import kraken_portfolio_observer as observer
 from tools import kraken_public_capture as capture
@@ -97,6 +98,7 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     require(policy['account_ref_sha256']==account['account_ref_sha256'],'KRAKEN_CYCLE_POLICY_ACCOUNT')
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
+                cash=None;recovery=None
                 cash_path=account_path.parent/'cash-reconciliation.json'
                 if cash_path.exists():
                     cash=inventory.sealed(read(cash_path));now=clock_ms()
@@ -129,6 +131,16 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                 result=inventory.build(snapshot,root/'market',as_of_ms=clock_ms(),
                     valuation_quote=valuation_quote or (policy['quote_asset'] if policy else None),
                     policy=None if report['blockers'] else policy)
+                if cash is not None and recovery is not None and report['cash_reconciliation_status']=='BALANCE_MOVEMENTS_MATCHED' and recovery.get('trade_status')=='TRADE_TOTALS_MATCHED':
+                    settlement=build_settlement(account_path.parent,cash,recovery,result['instrument_specs'],as_of_ms=clock_ms())
+                    report['settlement_review']=settlement
+                    if settlement['next_review_allowed']:
+                        report['blockers']=[b for b in report['blockers'] if b!='CASH_RECONCILIATION_REQUIRED']
+                        if not report['blockers'] and policy is not None:
+                            result['allocation_review']=prepare_allocation(result,policy,as_of_ms=clock_ms())
+                            result['allocation_policy_sha256']=capture.digest(policy)
+                            result['result_hash']=capture.digest({k:v for k,v in result.items() if k!='result_hash'})
+                    else:report['blockers'].append('SETTLEMENT_LINKAGE_UNRESOLVED')
                 report['inventory']=result
                 blocked=result['status']!='INVENTORY_MAPPED' or result.get('indicative_valuation',{}).get('status','INDICATIVE')!='INDICATIVE'
                 if blocked or report['blockers']:report['status']='BLOCKED'

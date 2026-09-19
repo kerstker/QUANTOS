@@ -110,3 +110,39 @@ def test_terminal_order_observation_is_not_cash_reconciliation(tmp_path):
     (args['account_path'].parent/'order-recovery.json').unlink()
     again=cycle.run_once(**args)
     assert again['status']=='BLOCKED' and 'ORDER_RECOVERY_MISSING' in again['blockers']
+
+
+def test_terminal_trade_cash_replay_returns_to_review_without_execution(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    from tests.data.test_kraken_trade_query import trade_body
+    from tests.data.test_kraken_order_query import body
+    from tools import kraken_account_snapshot as account_tool
+    args=setup(tmp_path);write_inputs(args)
+    opening,closing,pages=samples();closing['open_orders']=[]
+    for item in (opening,closing):item['result_hash']=capture.digest(item)
+    args['account_path'].write_text(json.dumps(closing))
+    class Reader:
+        account_ref_sha256='a'*64
+        def read(self,endpoint,params):
+            if endpoint=='QueryOrders':return body('canceled').encode()
+            if endpoint=='QueryTrades':
+                p=trade_body();p['result']['TRADE-1']['time']=str(NOW//1000+30)
+                return json.dumps(p).encode()
+            assert endpoint=='Ledgers'
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    reader=Reader()
+    account_tool.track_orders(reader,tmp_path,[{'order_id':'ORDER-1'}],clock_ms=lambda:NOW+62000)
+    account_tool.collect_cash_bridge(reader,tmp_path,opening,closing,clock_ms=lambda:NOW+63000)
+    args['clock_ms']=lambda:NOW+64000
+    report=cycle.run_once(**args)
+    assert report['status']=='REVIEW_ONLY' and report['blockers']==[]
+    assert report['settlement_review']['status']=='OBSERVED_SETTLEMENT_MATCHED'
+    assert report['inventory']['allocation_review']['targets'][0]['target_value']=='200'
+    assert report['execution_status']=='DISABLED' and report['submission_enabled'] is False
+    # Pointer hashes alone cannot substitute for replay of retained source evidence.
+    cash=json.loads((tmp_path/'cash-reconciliation.json').read_text())
+    archive=tmp_path/'cash-windows'/(cash['evidence_hash']+'.json')
+    data=json.loads(archive.read_text());data['report']['assets']['ZUSD']['fees']='0'
+    archive.write_text(json.dumps(data))
+    failed=cycle.run_once(**args)
+    assert failed['status']=='INPUT_REJECTED' and failed['inventory'] is None

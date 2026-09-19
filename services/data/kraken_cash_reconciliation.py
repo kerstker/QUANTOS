@@ -74,6 +74,8 @@ def reconcile(opening, closing, pages, *, as_of_ms):
             assets[asset]={'opening':canonical(initial),'expected_closing':canonical(expected),'observed_closing':canonical(actual),
                            'movement':canonical(expected-initial),'fees':canonical(fees),'drift':canonical(drift)}
     return {'schema':'KRAKEN_BALANCE_BRIDGE_V1','status':'UNRESOLVED' if issues else 'BALANCE_MOVEMENTS_MATCHED',
+        'movement_start_exclusive_ms':opening['observed_at_ms'],
+        'movement_end_exclusive_ms':closing['reads'][0]['requested_at_ms'],
         'account_ref_sha256':ref,'start_seconds':start,'end_seconds':end,'as_of_ms':as_of_ms,
         'quantity_basis':'base','assets':assets,'ledger_entries':[rows[k] for k in sorted(rows)],'issues':sorted(set(issues)),
         'scope':'OBSERVED_DEFAULT_WALLET_BALANCE_MOVEMENTS','full_account_scope_verified':False,

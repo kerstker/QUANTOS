@@ -75,7 +75,8 @@ def build(account_path, observer_root, *, as_of_ms, valuation_quote=None, policy
     report=reconcile(account,markets,as_of_ms=as_of_ms)
     report['issues']=sorted(set(report['issues']+issues))
     if report['issues']:report['status']='UNRESOLVED'
-    report.update(account_source_hash=account['result_hash'],observer_source_hash=observer['result_hash'])
+    report.update(account_source_hash=account['result_hash'],observer_source_hash=observer['result_hash'],
+                  instrument_specs=[market['spec'] for market in markets])
     if valuation_quote is not None:
         valuation=value_inventory(report,quotes,quote_asset=valuation_quote,as_of_ms=as_of_ms)
         if quote_issues:
