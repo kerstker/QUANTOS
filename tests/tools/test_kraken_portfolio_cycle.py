@@ -48,6 +48,50 @@ def test_local_reserved_budget_blocks_new_allocation_and_cannot_disappear(tmp_pa
     assert result['status']=='INPUT_REJECTED' and result['inventory'] is None
 
 
+@pytest.mark.parametrize('artifact',[
+    'client-order-requests.json','client-order-recovery-required.json',
+    'client-order-resolutions','order-tracking.json','order-query-latest.json','order-queries',
+])
+def test_first_cycle_requires_recovery_when_order_state_already_exists(tmp_path,artifact):
+    args=setup(tmp_path);write_inputs(args)
+    path=tmp_path/artifact
+    if artifact in ('client-order-resolutions','order-queries'):path.mkdir()
+    else:path.write_text('{}')
+    result=cycle.run_once(**args)
+    assert result['status']=='BLOCKED'
+    assert 'ORDER_RECOVERY_MISSING' in result['blockers']
+    assert result['order_recovery_status']=='MISSING'
+    assert 'allocation_review' not in result['inventory']
+    if path.is_dir():path.rmdir()
+    else:path.unlink()
+    restarted=cycle.run_once(**args)
+    assert restarted['status']=='BLOCKED'
+    assert 'ORDER_RECOVERY_MISSING' in restarted['blockers']
+
+
+def test_missing_recovery_after_unresolved_client_lookup_blocks_first_cycle(tmp_path):
+    from tools import kraken_account_snapshot as account
+    from tests.tools.test_kraken_client_order_lookup import Reader, REQUEST
+    args=setup(tmp_path);write_inputs(args)
+    result=account.track_orders(Reader('empty'),tmp_path,[],client_order_requests=[REQUEST],
+                                clock_ms=lambda:NOW+21000)
+    assert result['status']=='UNRESOLVED'
+    (tmp_path/'order-recovery.json').unlink()
+    result=cycle.run_once(**args)
+    assert result['status']=='BLOCKED' and 'ORDER_RECOVERY_MISSING' in result['blockers']
+
+
+@pytest.mark.parametrize('artifact',['order-recovery.json','client-order-requests.json','client-order-resolutions'])
+def test_dangling_order_state_link_is_rejected_and_remembered(tmp_path,artifact):
+    args=setup(tmp_path);write_inputs(args)
+    path=tmp_path/artifact;path.symlink_to(tmp_path/'missing-target')
+    result=cycle.run_once(**args)
+    assert result['status']=='INPUT_REJECTED' and result['inventory'] is None
+    path.unlink()
+    result=cycle.run_once(**args)
+    assert result['status']=='BLOCKED' and result['order_recovery_status']=='MISSING'
+
+
 def test_missing_inputs_publish_waiting_and_market_capture_continues(tmp_path):
     args=setup(tmp_path)
     first=cycle.run_once(**args)

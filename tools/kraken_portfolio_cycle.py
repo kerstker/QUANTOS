@@ -101,6 +101,16 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
                 cash=None;recovery=None
+                recovery_path=account_path.parent/'order-recovery.json'
+                required_path=root/'order-recovery-required.json'
+                require(not required_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
+                order_paths=[account_path.parent/name for name in (
+                    'order-recovery.json','order-tracking.json','order-query-latest.json','order-queries',
+                    'client-order-requests.json','client-order-recovery-required.json','client-order-resolutions')]
+                # A new cycle directory has no prior recovery marker. Register
+                # existing state before other readers can reject damaged paths.
+                if any(p.exists() or p.is_symlink() for p in order_paths):bind(required_path,{'required':True})
+                require(not any(p.is_symlink() for p in order_paths),'KRAKEN_CYCLE_SYMLINK')
                 from tools import kraken_funding_reservations as funding
                 funding_required=root/'funding-reservations-required.json'
                 require(not funding_required.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
@@ -158,9 +168,6 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     require(read(cash_required)=={'required':True},'KRAKEN_CYCLE_CASH_BINDING')
                     report['cash_reconciliation_status']='MISSING'
                     report['blockers'].append('CASH_RECONCILIATION_MISSING')
-                recovery_path=account_path.parent/'order-recovery.json'
-                required_path=root/'order-recovery-required.json'
-                require(not required_path.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
                 if recovery_path.exists():
                     bind(required_path,{'required':True})
                     recovery=inventory.sealed(read(recovery_path));now=clock_ms()
@@ -175,6 +182,7 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                         report['blockers'].append('CASH_RECONCILIATION_REQUIRED' if recovery.get('trade_status')=='TRADE_TOTALS_MATCHED' else 'TRADE_AND_CASH_RECONCILIATION_REQUIRED')
                 elif required_path.exists():
                     require(read(required_path)=={'required':True},'KRAKEN_CYCLE_RECOVERY_BINDING')
+                    report['order_recovery_status']='MISSING'
                     report['blockers'].append('ORDER_RECOVERY_MISSING')
                 report['stage']='INVENTORY'
                 result=inventory.build(snapshot,root/'market',as_of_ms=clock_ms(),
