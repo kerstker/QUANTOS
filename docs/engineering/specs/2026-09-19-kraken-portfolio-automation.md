@@ -73,3 +73,25 @@
 验证：先运行新增换算回归得到缺少模块的 RED，再实现；单位、公开数据、公开采集、观察器与服务依赖图联合 **37 passed**。未运行完整发布门，未切换服务、未读取真实账户或提交订单。账户只读导出、管理资产池与资金上限仍待人工输入；随后接账户数量映射、估值及受约束调仓准备。
 
 口径参考：[Kraken xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)、[Assets API](https://docs.kraken.com/api-reference/market-data/get-asset-info)。乘数随公司行动变化，不能将本次元数据用作此前时刻证据。
+
+
+## 第四批 账户与市场归档关联（离线验证）
+
+新增 `services/data/kraken_inventory.py` 和 `tools/kraken_inventory_report.py`。工具读取人工导出的账户快照及 V2 公开观察目录，核对内容哈希、捕获原文、产品身份、乘数请求和时间，然后关联余额与挂单。哈希只提供本地内容一致性，不是外部签名或经济授权。
+
+- xStocks 的 `.T` 账户后缀仅映射到明确的 tokenized_asset 产品；不对 `.F/.S` 等其他后缀猜测归并。保留账户原始键，多个余额键映射同一资产时标歧义，不求和。
+- 现金按产品目录的实际 quote 标识关联，保留余额、冻结、授信、已用授信、可用数量；不把可用额度或所有现金自动当成管理资金。
+- 每项挂单保留未成交量并映射产品；未知余额、未知订单、信用敞口和旧账户/乘数明确列入 issues。当前轮询报告不能掩盖较早的账户扫描时间。
+- 乘数从留存 Assets 原文重新解析，数量保持 Decimal 精度。输出 `INVENTORY_MAPPED` 只表示数量关联完成；NAV 为 null、成本未知、保证金持仓未观察、账户全范围未经核实、组合管理与下单均为 false。
+
+调用方式（无网络、无凭证；输出文件必须不存在）：
+
+```bash
+python -m tools.kraken_inventory_report --account /absolute/account-observation/latest.json --observer-root /absolute/observer-units --output /absolute/private/inventory.json
+```
+
+需使用 DGX 已验证解释器；默认以执行时刻重新检查时效，旧导出会产生 UNRESOLVED，而不是当前完整组合。输出文件权限 0600。未修改既有人工账户导出冻结副本。
+
+验证：新增回归先 RED（模块缺失），实现后账户/单位/观察/依赖图联合 **40 passed**。模拟账户归档完成端到端关联，篡改哈希、跨产品乘数、路径穿越和过期均拒绝或明确未解决。实际账户导出尚不存在，未读取真实持仓、未执行估值或调仓、未运行完整发布门。后续接实时价格及价格数量单位验证、组合估值、明确资产/资金约束和调仓准备。
+
+账户后缀依据：[Kraken Extended Balance 文档](https://docs-legacy.kraken.com/api/docs/rest-api/get-extended-balance/)。
