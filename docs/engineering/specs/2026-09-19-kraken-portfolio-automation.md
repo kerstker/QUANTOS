@@ -264,3 +264,11 @@ python -m tools.kraken_portfolio_cycle --config /absolute/observer-config.json -
 2026-09-19重新核对官方资料：[xStocks FAQ](https://support.kraken.com/articles/xstocks-faq)说明订单数量通过乘数换算为链上数量，并给出8位数量示例；[Query Orders Info](https://docs.kraken.com/api-reference/account-data/query-orders-info)明确base为SPV token、rebased为底层股票数量；[Add Order](https://docs.kraken.com/api-reference/trading/add-order)仅将volume定义为基础资产数量，未在该字段说明与前述查询口径的精确对应，也未列出rebase_multiplier参数。FAQ示例与一般“round”描述不足以单独确定REST所有舍入行为。因此本次没有将数量语义标记为已核准，或把估值数量直接用于发送。
 
 实际前置条件再次核查：预定只读导出位置 `quantos-dev-output/kraken-automation-20260919/account-observation/latest.json` 尚不存在；没有查询凭证或私有接口来代替人工导出。管理资产池、资金限额及实际账户证据仍待接入。下一步开发应集中结算检查点生命周期与精确执行适配；实际验收还需要账户证据、数量/费用语义确认、独立人工授权风控签发和完整发布门。现有冻结人工入口未更新，常驻系统未切换。
+
+## 第十八批 自动建立现金起点与重启续接
+
+只读账户工具新增 `--auto-cash`，与显式 `--ledger-opening` 互斥，并启用现有订单跟踪。第一次稳定且无挂单、无已跟踪订单的观察会私有保存为 `cash-baseline.json`；发布 `BASELINE_ONLY`，组合周期据此阻断，不能把建立起点当成已经核对资金。随后各轮使用同一起点自动查询账目与核对，重启从原文件恢复，不要求操作员手工找期初文件。初次有挂单或已跟踪订单时停止，需要先处理旧订单的结算范围，不会忽略起点以前的部分成交。
+
+基线绑定账户、内容摘要和base数量口径；已有基线不能通过关闭自动模式或传入其他起点切换。基线删除而现金指针仍存在时拒绝重新初始化；基线损坏在读取账户之前拒绝。此为本机内容完整性和操作恢复约束，不是防御能够修改所有文件的受信代码。整个流程仍无交易写端点。
+
+验证：自动建档/重启回归先RED；账户工具与组合周期联合 **41 passed**，覆盖首次不查询账目且不宣称完成、次次沿用同一起点核对、删除/篡改/模式切换拒绝以及有挂单不建立基线。未读取真实凭证、部署或运行完整发布门。24小时上限不变，本批不是结算后自动推进检查点或长期运行验收；已冻结人工入口也尚未替换。

@@ -352,3 +352,52 @@ def test_cash_interruption_leaves_unresolved_current_pointer(tmp_path):
     report=json.loads((tmp_path/'cash-reconciliation.json').read_text())
     assert report['status']=='UNRESOLVED' and report['failure']['error_type']=='REFRESH_IN_PROGRESS'
     assert report['result_hash']==tool.digest({k:v for k,v in report.items() if k!='result_hash'})
+
+
+def test_auto_cash_bootstrap_then_restart_reuses_checkpoint(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,closing,pages=samples();opening['open_orders']=[];closing['open_orders']=[]
+    for row in (opening,closing):row['result_hash']=tool.digest(row)
+    class Reader:
+        account_ref_sha256='a'*64
+        calls=0
+        def read(self,endpoint,params):
+            self.calls+=1
+            assert endpoint=='Ledgers' and params['start']==NOW//1000
+            return next(p['body'].encode() for p in pages if p['params']['aclass']==params['aclass'])
+    reader=Reader()
+    first=tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:opening,clock_ms=lambda:NOW+1000)
+    assert first['balance_bridge_status']=='BASELINE_ONLY' and reader.calls==0
+    baseline=(tmp_path/'cash-baseline.json').read_bytes()
+    second=tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:closing,clock_ms=lambda:NOW+63000)
+    assert second['balance_bridge_status']=='BALANCE_MOVEMENTS_MATCHED' and reader.calls==2
+    assert (tmp_path/'cash-baseline.json').read_bytes()==baseline
+    (tmp_path/'cash-baseline.json').unlink()
+    with pytest.raises(ValueError,match='BASELINE_MISSING'):
+        tool.run_session(reader,tmp_path,auto_cash=True,collect_fn=lambda _:pytest.fail('do not reset baseline'))
+
+
+def test_auto_cash_does_not_establish_checkpoint_over_existing_orders(tmp_path):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,_,_=samples();opening['result_hash']=tool.digest(opening)
+    class Reader:account_ref_sha256='a'*64
+    result=tool.run_session(Reader(),tmp_path,auto_cash=True,cycles=2,collect_fn=lambda _:opening,
+        sleep_fn=lambda _:pytest.fail('must stop'))
+    assert result['stop_reason']=='CASH_BASELINE_REQUIRES_SETTLED_ACCOUNT'
+    assert result['non_stable_cycles']==1 and not (tmp_path/'cash-baseline.json').exists()
+
+
+@pytest.mark.parametrize('case',['modified','mode_disabled','explicit_opening'])
+def test_auto_cash_checkpoint_cannot_be_modified_or_bypassed(tmp_path,case):
+    from tests.data.test_kraken_cash_reconciliation import samples
+    opening,_,_=samples();opening['open_orders']=[];opening['result_hash']=tool.digest(opening)
+    class Reader:account_ref_sha256='a'*64
+    tool.run_session(Reader(),tmp_path,auto_cash=True,collect_fn=lambda _:opening)
+    kwargs={'auto_cash':True}
+    if case=='modified':
+        changed=dict(opening,observed_at_ms=NOW+600)
+        (tmp_path/'cash-baseline.json').write_text(json.dumps(changed))
+    if case=='mode_disabled':kwargs['auto_cash']=False
+    if case=='explicit_opening':kwargs['ledger_opening']=opening
+    with pytest.raises(ValueError):
+        tool.run_session(Reader(),tmp_path,collect_fn=lambda _:pytest.fail('must reject before reads'),**kwargs)
