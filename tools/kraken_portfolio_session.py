@@ -21,11 +21,26 @@ def prepare(root, config, *, policy_path=None, valuation_quote=None):
     binding = {'market': config, 'policy_path': str(policy_path) if policy_path else None,
                'policy_hash': capture.digest(policy) if policy is not None else None,
                'valuation_quote': valuation_quote}
+    require((root / 'portfolio-session-config.json').exists() or not any(
+        (root / name).exists() or (root / name).is_symlink()
+        for name in ('portfolio', 'portfolio-session-status.json')), 'KRAKEN_PORTFOLIO_CONFIG_MISSING')
     cycle.bind(root / 'portfolio-session-config.json', binding)
     portfolio = cycle.private_directory(root / 'portfolio')
     cycle.private_directory(portfolio / 'market')
     require(not (root / 'portfolio-session-status.json').is_symlink(), 'KRAKEN_SESSION_SYMLINK')
     return root, portfolio, policy_path
+
+
+def restore(root):
+    root = account.private_root(root)
+    path = root / 'portfolio-session-config.json'
+    require(path.exists() or path.is_symlink(), 'KRAKEN_PORTFOLIO_CONFIG_MISSING')
+    binding = cycle.read(path)
+    require(isinstance(binding, dict) and set(binding) == {
+        'market', 'policy_path', 'policy_hash', 'valuation_quote'}, 'KRAKEN_PORTFOLIO_CONFIG_FIELDS')
+    prepare(root, binding['market'], policy_path=binding['policy_path'],
+            valuation_quote=binding['valuation_quote'])
+    return binding
 
 
 def run_session(client, root, config, *, cycles=1, policy_path=None, valuation_quote=None,

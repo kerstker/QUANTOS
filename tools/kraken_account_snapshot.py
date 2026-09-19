@@ -571,6 +571,15 @@ def main(argv=None):
         from tools.kraken_inventory_report import load
         portfolio_config=load(args.portfolio_config)
         portfolio_session.prepare(root,portfolio_config,policy_path=args.portfolio_policy,valuation_quote=args.valuation_quote)
+    elif any((root/name).exists() or (root/name).is_symlink() for name in
+             ('portfolio-session-config.json','portfolio-session-status.json','portfolio')):
+        require(args.ledger_opening is None and args.settlement_market_root is None and args.fee_market_root is None,
+                'KRAKEN_PORTFOLIO_SESSION_SCOPE')
+        from tools import kraken_portfolio_session as portfolio_session
+        binding=portfolio_session.restore(root)
+        portfolio_config=binding['market']
+        args.portfolio_policy=binding['policy_path']
+        args.valuation_quote=binding['valuation_quote']
     client_requests=None
     if args.client_order_requests is not None:
         from tools.kraken_inventory_report import load

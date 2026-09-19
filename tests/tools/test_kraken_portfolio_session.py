@@ -139,3 +139,34 @@ def test_cli_selects_integrated_session_with_configured_policy_scope(tmp_path, m
     assert calls[0][2] == args['config']
     assert calls[0][3]['cycles'] == 2
     assert calls[0][3]['valuation_quote'] == 'ZUSD'
+
+
+def test_cli_restart_restores_bound_portfolio_without_original_config_file(tmp_path, monkeypatch):
+    from tools import kraken_account_snapshot as account
+    tool = importlib.import_module('tools.kraken_portfolio_session')
+    args, _ = inputs(tmp_path)
+    tool.prepare(args['root'], args['config'], valuation_quote='ZUSD')
+    monkeypatch.setattr(account.sys.stdin, 'isatty', lambda: True)
+    monkeypatch.setattr(account.getpass, 'getpass', lambda *_:'synthetic fixture')
+    monkeypatch.setattr(account, 'ReadOnlyClient', lambda *_:args['client'])
+    monkeypatch.setattr(account, 'run_session', lambda *_,**__:pytest.fail('must not fall back to account-only'))
+    calls = []
+    def run(client, root, config, **kwargs):
+        calls.append((config, kwargs))
+        return {'non_stable_cycles':0, 'portfolio_status':'WAITING_POLICY'}
+    monkeypatch.setattr(tool, 'run_session', run)
+    assert account.main(['--state-root',str(args['root'])]) == 0
+    assert calls[0][0] == args['config']
+    assert calls[0][1]['valuation_quote'] == 'ZUSD'
+
+
+def test_cli_missing_portfolio_binding_cannot_silently_downgrade(tmp_path, monkeypatch):
+    from tools import kraken_account_snapshot as account
+    tool = importlib.import_module('tools.kraken_portfolio_session')
+    args, _ = inputs(tmp_path)
+    tool.prepare(args['root'], args['config'])
+    (args['root'] / 'portfolio-session-config.json').unlink()
+    monkeypatch.setattr(account.sys.stdin, 'isatty', lambda: True)
+    monkeypatch.setattr(account.getpass, 'getpass', lambda *_:pytest.fail('no credential prompt'))
+    with pytest.raises(ValueError, match='PORTFOLIO_CONFIG_MISSING'):
+        account.main(['--state-root',str(args['root'])])
