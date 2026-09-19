@@ -394,7 +394,7 @@ def validate_cash_opening(opening, account_ref):
 
 def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sleep_fn=None, on_report=None,
                 track_known_orders=False, ledger_opening=None, clock_ms=None, auto_cash=False,
-                settlement_market_root=None):
+                settlement_market_root=None, fee_market_root=None):
     """Bounded human-started refresh; any transport/API failure ends the session."""
     require(type(cycles) is int and 1<=cycles<=1440,'KRAKEN_ACCOUNT_CYCLE_LIMIT')
     require(type(poll_seconds) is int and 60<=poll_seconds<=3600,'KRAKEN_ACCOUNT_POLL_INTERVAL')
@@ -432,9 +432,16 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
             checkpoints.initialise(root,ledger_opening,market_root=settlement_market_root)
         checkpoint=checkpoints.load(root,client.account_ref_sha256)
         require(checkpoint is None or auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
+        from tools import kraken_fee_cycle as fee_cycle
+        fee_config=fee_cycle.configure(root,client.account_ref_sha256,fee_market_root)
+        fee_clock=clock_ms or (lambda:time.time_ns()//1_000_000)
+        fee_status='NOT_REQUESTED'
         completed=0;failures=0;stop_reason='CYCLE_LIMIT';status=None;bridge_status='NOT_REQUESTED'
         for index in range(cycles):
             if index:sleep_fn(poll_seconds)
+            if fee_config is not None:
+                fee_cycle.pending(root,client.account_ref_sha256,as_of_ms=fee_clock())
+                fee_status='UNRESOLVED'
             checkpoint=checkpoints.load(root,client.account_ref_sha256)
             if checkpoint is not None:ledger_opening=checkpoint['opening']
             report=collect_fn(client)
@@ -484,18 +491,28 @@ def run_session(client, root, *, cycles=1, poll_seconds=60, collect_fn=None, sle
                                 bridge_status='UNRESOLVED'
                 elif status!='FAILED' and stop_reason!='ORDER_QUERY_UNRESOLVED':
                     stop_reason='CASH_ACCOUNT_UNSTABLE'
+            if fee_config is not None and stop_reason=='CYCLE_LIMIT':
+                if status=='OBSERVED_STABLE' and (recovery is None or recovery['status']!='UNRESOLVED'):
+                    try:
+                        fee_status=fee_cycle.refresh(client,root,fee_config,report,clock_ms=fee_clock)['status']
+                    except (OSError,ValueError,KeyError,TypeError):
+                        failures+=1;stop_reason='FEE_QUERY_UNRESOLVED'
+                else:
+                    stop_reason='ACCOUNT_READ_FAILED' if status=='FAILED' else 'FEE_ACCOUNT_UNRESOLVED'
             if on_report is not None:
                 on_report({'cycle':completed,'status':status,'report':str(root/'latest.json'),
                            'result_hash':report['result_hash'],'order_recovery_status':recovery['status'] if recovery else 'NOT_REQUESTED',
                            'balance_bridge_status':bridge_status,
+                           'fee_observation_status':fee_status,
                            'submission_enabled':False})
             if stop_reason in ('CASH_QUERY_UNRESOLVED','CASH_ACCOUNT_UNSTABLE','CASH_BASELINE_REQUIRES_SETTLED_ACCOUNT',
-                               'SETTLEMENT_CHECKPOINT_UNRESOLVED'):break
+                               'SETTLEMENT_CHECKPOINT_UNRESOLVED','FEE_QUERY_UNRESOLVED','FEE_ACCOUNT_UNRESOLVED'):break
             if recovery is not None and recovery['status']=='UNRESOLVED':break
             if status=='FAILED':
                 stop_reason='ACCOUNT_READ_FAILED';break
         return {'cycles_completed':completed,'non_stable_cycles':failures,'last_status':status,
-                'stop_reason':stop_reason,'balance_bridge_status':bridge_status,'submission_enabled':False}
+                'stop_reason':stop_reason,'balance_bridge_status':bridge_status,
+                'fee_observation_status':fee_status,'submission_enabled':False}
 
 
 def main(argv=None):
@@ -508,6 +525,7 @@ def main(argv=None):
     parser.add_argument('--auto-cash',action='store_true',help='Persist first stable no-order checkpoint and reconcile subsequent cycles (24h maximum window)')
     parser.add_argument('--settlement-market-root',type=Path,
         help='With --auto-cash, use archived public market evidence to advance settled checkpoints and retire known orders')
+    parser.add_argument('--fee-market-root',type=Path,help='Persist public observer directory and refresh account fee evidence each cycle')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(not (args.auto_cash and args.ledger_opening is not None),'KRAKEN_CASH_SESSION_MODE')
@@ -521,7 +539,8 @@ def main(argv=None):
     client=ReadOnlyClient(key,secret,root);key=secret=None
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
         on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders,
-        ledger_opening=opening,auto_cash=args.auto_cash,settlement_market_root=args.settlement_market_root)
+        ledger_opening=opening,auto_cash=args.auto_cash,settlement_market_root=args.settlement_market_root,
+        fee_market_root=args.fee_market_root)
     print(json.dumps(result),flush=True)
     return 0 if result['non_stable_cycles']==0 else 3
 

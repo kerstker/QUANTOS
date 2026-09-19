@@ -77,7 +77,8 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                 'stage':'MARKET','status':'MARKET_FAILED','market_status':'FAILED','market_hash':None,'inventory':None,'failure':None,
                 'config_sha256':capture.digest(binding),'execution_status':'DISABLED',
                 'portfolio_management_ready':False,'submission_enabled':False,'authoritative':False,
-                'order_recovery_status':'NOT_CONNECTED','trade_reconciliation_status':'NOT_CONNECTED','cash_reconciliation_status':'NOT_CONNECTED','blockers':[]}
+                'order_recovery_status':'NOT_CONNECTED','trade_reconciliation_status':'NOT_CONNECTED','cash_reconciliation_status':'NOT_CONNECTED',
+                'fee_observation_status':'NOT_CONNECTED','blockers':[]}
         try:
             market=inventory.sealed(observe(root/'market',config))
             require(read(root/'market'/'status.json')==market,'KRAKEN_CYCLE_MARKET_PUBLICATION')
@@ -99,6 +100,20 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     bind(root/'policy-binding.json',{'sha256':capture.digest(policy)})
                     bind(root/'policies'/(capture.digest(policy)+'.json'),policy)
                 cash=None;recovery=None
+                from tools import kraken_fee_cycle as fee_cycle
+                fee_required=root/'fee-observation-required.json'
+                require(not fee_required.is_symlink(),'KRAKEN_CYCLE_SYMLINK')
+                fee_paths=[account_path.parent/name for name in ('fee-observation-config.json','fee-observation.json','fee-queries')]
+                if any(p.exists() or p.is_symlink() for p in fee_paths):bind(fee_required,{'required':True})
+                if fee_required.exists():
+                    require(read(fee_required)=={'required':True},'KRAKEN_CYCLE_FEE_BINDING')
+                    report['fee_observation_status']='UNRESOLVED'
+                    fees=fee_cycle.review(account_path.parent,account,as_of_ms=clock_ms())
+                    require(fees is not None,'KRAKEN_CYCLE_FEE_MISSING')
+                    require(policy is None or set(policy['target_weights'])<=set(fees['evidence_hashes']),
+                            'KRAKEN_CYCLE_FEE_UNIVERSE')
+                    report['fee_observation_status']=fees['status']
+                    report['fee_observation_hash']=fees['result_hash']
                 from tools.kraken_settlement_checkpoint import load as load_checkpoint
                 checkpoint=load_checkpoint(account_path.parent,account['account_ref_sha256'])
                 cash_path=account_path.parent/'cash-reconciliation.json'
