@@ -552,12 +552,25 @@ def main(argv=None):
         help='With --auto-cash, use archived public market evidence to advance settled checkpoints and retire known orders')
     parser.add_argument('--fee-market-root',type=Path,help='Persist public observer directory and refresh account fee evidence each cycle')
     parser.add_argument('--client-order-requests',type=Path,help='Register bounded client-ID recovery requests; never resubmit missing orders')
+    parser.add_argument('--portfolio-config',type=Path,help='Refresh public markets, account, fees and portfolio review in one read-only session')
+    parser.add_argument('--portfolio-policy',type=Path,help='Optional explicit portfolio policy; requires --portfolio-config')
+    parser.add_argument('--valuation-quote',help='Optional portfolio valuation quote; requires --portfolio-config')
     args=parser.parse_args(argv)
     require(1<=args.cycles<=1440 and 60<=args.poll_seconds<=3600,'KRAKEN_ACCOUNT_SESSION_LIMIT')
     require(not (args.auto_cash and args.ledger_opening is not None),'KRAKEN_CASH_SESSION_MODE')
     require(args.settlement_market_root is None or args.auto_cash,'KRAKEN_CHECKPOINT_REQUIRES_AUTO_CASH')
+    require(args.portfolio_config is not None or (args.portfolio_policy is None and args.valuation_quote is None),
+            'KRAKEN_PORTFOLIO_CONFIG_REQUIRED')
+    require(args.portfolio_config is None or (args.ledger_opening is None and args.settlement_market_root is None and args.fee_market_root is None),
+            'KRAKEN_PORTFOLIO_SESSION_SCOPE')
     require(sys.stdin.isatty(),'INTERACTIVE_OPERATOR_REQUIRED')
     root=private_root(args.state_root)
+    portfolio_config=None
+    if args.portfolio_config is not None:
+        from tools import kraken_portfolio_session as portfolio_session
+        from tools.kraken_inventory_report import load
+        portfolio_config=load(args.portfolio_config)
+        portfolio_session.prepare(root,portfolio_config,policy_path=args.portfolio_policy,valuation_quote=args.valuation_quote)
     client_requests=None
     if args.client_order_requests is not None:
         from tools.kraken_inventory_report import load
@@ -569,6 +582,12 @@ def main(argv=None):
     key=getpass.getpass('Kraken API public key（不回显）: ')
     secret=getpass.getpass('Kraken API secret（不回显）: ')
     client=ReadOnlyClient(key,secret,root);key=secret=None
+    if portfolio_config is not None:
+        result=portfolio_session.run_session(client,root,portfolio_config,cycles=args.cycles,
+            policy_path=args.portfolio_policy,valuation_quote=args.valuation_quote,
+            on_report=lambda event:print(json.dumps(event),flush=True),client_order_requests=client_requests)
+        print(json.dumps(result),flush=True)
+        return 0 if result['non_stable_cycles']==0 and result['portfolio_status'] in ('WAITING_POLICY','REVIEW_ONLY') else 3
     result=run_session(client,root,cycles=args.cycles,poll_seconds=args.poll_seconds,
         on_report=lambda event:print(json.dumps(event),flush=True),track_known_orders=args.track_orders,
         ledger_opening=opening,auto_cash=args.auto_cash,settlement_market_root=args.settlement_market_root,
