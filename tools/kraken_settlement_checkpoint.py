@@ -152,7 +152,7 @@ def _pending(cash, error='CHECKPOINT_REFRESH_IN_PROGRESS'):
     return value
 
 
-def catalog_specs(market_root, *, as_of_ms):
+def catalog_captures(market_root, *, as_of_ms):
     """Settlement needs fresh product identity, not a fresh trading candle."""
     root=Path(market_root).absolute()
     require(root.resolve()==root,'KRAKEN_CHECKPOINT_MARKET_ROOT')
@@ -162,7 +162,7 @@ def catalog_specs(market_root, *, as_of_ms):
     require(observer['schema'] in ('KRAKEN_PORTFOLIO_OBSERVER_V2','KRAKEN_PORTFOLIO_OBSERVER_V3') and
             type(as_of_ms) is int and type(observer['observed_at_ms']) is int and
             0<=as_of_ms-observer['observed_at_ms']<=120000,'KRAKEN_CHECKPOINT_CATALOG_STALE')
-    specs=[]
+    captures=[]
     for item in observer['instruments']:
         require(item['status'] in ('CAPTURED','STALE'),'KRAKEN_CHECKPOINT_CATALOG_UNAVAILABLE')
         key=item['result_hash'];identity={k:item[k] for k in ('pair','asset_class')}
@@ -175,8 +175,12 @@ def catalog_specs(market_root, *, as_of_ms):
                 all(raw[k]==v for k,v in identity.items()) and raw['completed_at_ms']<=observer['observed_at_ms'] and
                 type(raw['reads'][0]['received_at_ms']) is int and
                 0<=as_of_ms-raw['reads'][0]['received_at_ms']<=120000,'KRAKEN_CHECKPOINT_CATALOG_BINDING')
-        specs.append(raw['instrument'])
-    return specs
+        captures.append(raw)
+    return captures
+
+
+def catalog_specs(market_root, *, as_of_ms):
+    return [raw['instrument'] for raw in catalog_captures(market_root,as_of_ms=as_of_ms)]
 
 
 def advance(root, cash, recovery, specs, *, as_of_ms):
@@ -213,7 +217,15 @@ def refresh(root, cash, recovery, *, market_root, as_of_ms):
             inventory.load(root/'order-recovery.json')==recovery,'KRAKEN_CHECKPOINT_SOURCE_CHANGED')
     atomic_json(root/'cash-reconciliation.json',_pending(cash))
     try:
-        specs=catalog_specs(market_root,as_of_ms=as_of_ms) if recovery['order_ids'] else []
+        captures=catalog_captures(market_root,as_of_ms=as_of_ms) if recovery['order_ids'] else []
+        specs=[raw['instrument'] for raw in captures]
+        from tools import kraken_funding_reservations as funding
+        if any((root/name).exists() or (root/name).is_symlink() for name in
+               ('funding-reservations.sqlite','funding-reservations-head.json')):
+            claims=funding.status(root,cash['account_ref_sha256'])
+            for batch_id in claims['pending_batch_ids']:
+                funding.settle(root,batch_id=batch_id,cash=cash,recovery=recovery,
+                               market_captures=captures,as_of_ms=as_of_ms)
         record=advance(root,cash,recovery,specs,as_of_ms=as_of_ms)
     except (OSError,ValueError,KeyError,TypeError,sqlite3.Error) as exc:
         atomic_json(root/'cash-reconciliation.json',_pending(cash,type(exc).__name__))

@@ -110,6 +110,7 @@ def run_once(root, config, *, account_path, policy_path=None, valuation_quote=No
                     require(read(funding_required)=={'required':True},'KRAKEN_CYCLE_FUNDING_BINDING')
                     report['funding_reservation_status']='UNRESOLVED'
                     reservations=funding.status(account_path.parent,account['account_ref_sha256'])
+                    funding.require_settled_account(account,reservations['settled_account_floor'])
                     report['funding_reservations']=reservations
                     if reservations['reserved_debits']:
                         report['funding_reservation_status']='OUTSTANDING_LOCAL_CLAIMS'

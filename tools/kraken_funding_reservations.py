@@ -1,7 +1,7 @@
-"""Private local budget reservations. No venue reservation, issuer or release path.
+"""Private local budget reservations and replayed observed-settlement releases.
 
-All accepted debit claims remain held until a future reviewed settlement bridge
-can prove their disposition. Timestamps, process exit and retries never release
+All accepted debit claims remain held until the settlement bridge replays their
+complete disposition. Timestamps, process exit and retries never release
 claims. A local reservation is not proof of venue costs or trading permission.
 """
 from contextlib import closing, contextmanager
@@ -80,6 +80,42 @@ def _record(metadata, records, batch_id, account, requirements, drafts, budget, 
     return value
 
 
+SETTLED='KRAKEN_LOCAL_RESERVATION_SETTLEMENT_V1'
+
+
+def _floor(records):
+    for record in reversed(records):
+        if record['schema']==SETTLED:
+            account=record['account']
+            return {'result_hash':account['result_hash'],'observed_at_ms':account['observed_at_ms']}
+    return None
+
+
+def require_settled_account(account, floor):
+    if floor is None:return
+    reads=account.get('reads')
+    first=reads[0].get('requested_at_ms') if isinstance(reads,list) and reads and isinstance(reads[0],dict) else None
+    observed=account.get('observed_at_ms')
+    require(account.get('result_hash')==floor['result_hash'] or
+            (type(observed) is int and type(first) is int and observed>=floor['observed_at_ms'] and first>=floor['observed_at_ms']),
+            'KRAKEN_RESERVATION_PRE_SETTLEMENT_ACCOUNT')
+
+
+def _settled_record(root, metadata, records, reservation, proof, as_of_ms):
+    from tools.kraken_reserved_settlement import prove
+    result=prove(root,reservation,proof,as_of_ms=as_of_ms)
+    require(type(as_of_ms) is int and as_of_ms>=records[-1]['as_of_ms'] and
+            result['account']['observed_at_ms']>=records[-1]['account']['observed_at_ms'],
+            'KRAKEN_RESERVATION_TIME_REGRESSION')
+    value={'schema':SETTLED,'generation':len(records)+1,'previous_hash':records[-1]['result_hash'],
+           'metadata_hash':digest(metadata),'batch_id':reservation['batch_id'],
+           'reservation_hash':reservation['result_hash'],'as_of_ms':as_of_ms,'proof':proof,**result,
+           'status':'LOCAL_RESERVATION_SETTLED','submission_enabled':False,'authoritative':False,
+           'scope':'OBSERVED_LOCAL_CLAIM_SETTLEMENT_ONLY'}
+    value['result_hash']=digest(value)
+    return value
+
+
 def _read(conn, marker, account_ref):
     require(marker.is_file(), 'KRAKEN_RESERVATION_MARKER_MISSING')
     metadata = decode(conn.execute('SELECT document FROM metadata WHERE id=1').fetchone()[0])
@@ -88,10 +124,25 @@ def _read(conn, marker, account_ref):
             metadata['account_ref_sha256'] == account_ref, 'KRAKEN_RESERVATION_ACCOUNT_BINDING')
     binding = load(marker)
     require(binding.get('metadata_hash') == digest(metadata), 'KRAKEN_RESERVATION_METADATA')
-    records = []; held = {}; order_ids = set(); batch_ids = set(); hashes = [None]
+    records = []; held = {}; order_ids = set(); batch_ids = set(); hashes = [None]; released=set()
     for generation, document in conn.execute('SELECT generation,document FROM reservations ORDER BY generation'):
         record = sealed(decode(document))
+        if record['schema']==SETTLED:
+            batch=record['batch_id']
+            require(batch in batch_ids and batch not in released,'KRAKEN_RESERVATION_RELEASE_REUSED')
+            original=next(r for r in records if r['batch_id']==batch and r['schema']!=SETTLED)
+            require(generation==len(records)+1 and record==_settled_record(marker.parent,metadata,records,
+                    original,record['proof'],record['as_of_ms']),'KRAKEN_RESERVATION_SETTLEMENT_REPLAY')
+            with localcontext(Context(prec=100)):
+                for asset,row in original['budget_review']['assets'].items():
+                    debit=Decimal(row['new_debits'])
+                    if debit:
+                        require(held.get(asset,Decimal(0))>=debit,'KRAKEN_RESERVATION_RELEASE_BALANCE')
+                        held[asset]-=debit
+                        if held[asset]==0:del held[asset]
+            released.add(batch);records.append(record);hashes.append(record['result_hash']);continue
         account = record['account']; requirements = record['requirements']; drafts = record['drafts']
+        require_settled_account(account,_floor(records))
         batch_id = record['batch_id']
         require(isinstance(batch_id, str) and re.fullmatch('[a-f0-9]{32}', batch_id) and
                 batch_id not in batch_ids, 'KRAKEN_RESERVATION_BATCH_REUSED')
@@ -151,8 +202,9 @@ def reserve(root, account, requirements, drafts, *, batch_id, as_of_ms):
                         if record['batch_id'] == batch_id:
                             require(record['account'] == account and record['requirements'] == requirements and
                                     record['drafts'] == drafts, 'KRAKEN_RESERVATION_RETRY_CHANGED')
-                            return record
+                            return next((r for r in records if r['schema']==SETTLED and r['batch_id']==batch_id),record)
                     require(not ids & {o['client_order_id'] for o in requirements['orders']}, 'KRAKEN_RESERVATION_ORDER_REUSED')
+                    require_settled_account(account,_floor(records))
                     if records:
                         require(as_of_ms >= records[-1]['as_of_ms'] and
                                 account['observed_at_ms'] >= records[-1]['account']['observed_at_ms'],
@@ -179,6 +231,9 @@ def status(root, account_ref):
             return {'schema': 'KRAKEN_LOCAL_RESERVATION_STATUS_V1', 'account_ref_sha256': account_ref,
                     'generation': len(records), 'head_hash': records[-1]['result_hash'] if records else None,
                     'reserved_debits': {asset: canonical(value) for asset, value in sorted(held.items())},
+                    'settled_account_floor':_floor(records),
+                    'pending_batch_ids':sorted({r['batch_id'] for r in records if r['schema']!=SETTLED}-
+                                               {r['batch_id'] for r in records if r['schema']==SETTLED}),
                     'submission_enabled': False, 'authoritative': False}
     except (sqlite3.Error, KeyError, TypeError, IndexError) as exc:
         raise ValueError('KRAKEN_RESERVATION_STORE_INVALID') from exc
@@ -210,7 +265,7 @@ def review_orders(root, *, batch_id, market_captures, as_of_ms):
                 _,records,_,_,_=_read(conn,marker,ref)
         except (sqlite3.Error,KeyError,TypeError,IndexError) as exc:
             raise ValueError('KRAKEN_RESERVATION_STORE_INVALID') from exc
-        records=[r for r in records if r['batch_id']==batch_id]
+        records=[r for r in records if r['batch_id']==batch_id and r['schema']!=SETTLED]
         require(len(records)==1,'KRAKEN_RESERVED_IDENTITY_BATCH_MISSING')
         record=records[0]
         evidence=archive(Path(root).absolute(),'order-queries',recovery['query_hash'])
@@ -228,3 +283,30 @@ def review_orders(root, *, batch_id, market_captures, as_of_ms):
                       recovery_hash=recovery['result_hash'],market_hashes=[raw['result_hash'] for raw in markets])
         result['result_hash']=digest(result)
         return result
+
+
+def settle(root, *, batch_id, cash, recovery, market_captures, as_of_ms):
+    """Release only local claims after replaying their entire observed settlement."""
+    require(isinstance(batch_id,str) and re.fullmatch('[a-f0-9]{32}',batch_id),'KRAKEN_RESERVATION_BATCH_ID')
+    proof=deepcopy({'cash':cash,'recovery':recovery,'market_captures':market_captures})
+    sealed(cash);sealed(recovery)
+    try:
+        with _locked(root) as (db,marker):
+            require(db.is_file(),'KRAKEN_RESERVATION_DATABASE_MISSING')
+            with closing(sqlite3.connect(db.as_uri()+'?mode=rw',uri=True)) as conn:
+                conn.execute('PRAGMA synchronous=FULL')
+                with conn:
+                    conn.execute('BEGIN IMMEDIATE')
+                    metadata,records,_,_,lagging=_read(conn,marker,cash['account_ref_sha256'])
+                    if lagging:_write_marker(marker,metadata,records)
+                    prior=[r for r in records if r['batch_id']==batch_id]
+                    require(bool(prior),'KRAKEN_RESERVED_SETTLEMENT_BATCH_MISSING')
+                    if prior[-1]['schema']==SETTLED:
+                        require(prior[-1]['proof']==proof,'KRAKEN_RESERVED_SETTLEMENT_RETRY_CHANGED')
+                        return prior[-1]
+                    record=_settled_record(marker.parent,metadata,records,prior[0],proof,as_of_ms)
+                    _append(conn,record)
+                _write_marker(marker,metadata,[*records,record])
+                return record
+    except (sqlite3.Error,KeyError,TypeError,IndexError) as exc:
+        raise ValueError('KRAKEN_RESERVATION_STORE_INVALID') from exc
