@@ -550,9 +550,18 @@ ALPHA_METHODS: tuple[AlphaMethodSpec, ...] = (
         ("1d", "7d"),
         ("data licensing", "bot activity", "crowding", "turnover"),
         ("price-only control", "random timestamp control", "source outage regime"),
-        ("backfilled search trends", "article publication time", "revised attention series"),
-        ("services/data", "services/research/alpha_expression.py"),
-        "NEW_EXPERIMENT_GAP",
+        (
+            "backfilled search trends",
+            "article publication time",
+            "revised attention series",
+            "frozen forward outcomes stay locked until 2027-08-31 and 252 independent "
+            "one-day outcomes exist after the 28-day attention warm-up",
+        ),
+        (
+            "services/research/attention_momentum.py",
+            "tools/attention_momentum_preregistration.py",
+        ),
+        "EXISTING_BLOCKED_IMPLEMENTATION",
         (EconomicPayer.SLOW_INFORMATION_REACTOR, EconomicPayer.PASSIVE_RULE_BASED_FLOW),
         "Attention shocks and rule-based flows recur while information incorporation remains uneven.",
         "one locked attention innovation with a disjoint forward return horizon",

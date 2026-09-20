@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from services.research.alpha_methodology import (
@@ -288,4 +290,42 @@ def test_borrow_pressure_method_is_forward_only_and_mechanism_bound() -> None:
     assert method.system_modules == (
         "tools/okx_borrow_fetch.py",
         "tools/borrow_pressure_preregistration.py",
+    )
+
+
+def test_crypto_attention_is_an_existing_implementation_not_a_new_gap() -> None:
+    root = Path(__file__).resolve().parents[2]
+    method = next(
+        item for item in ALPHA_METHODS
+        if item.method_id == "crypto_attention_momentum"
+    )
+
+    assert method.portability == "DIRECT_CRYPTO"
+    assert method.system_disposition == "EXISTING_BLOCKED_IMPLEMENTATION"
+    assert method.system_modules == (
+        "services/research/attention_momentum.py",
+        "tools/attention_momentum_preregistration.py",
+    )
+    for module_path in method.system_modules:
+        assert (root / module_path).is_file()
+
+    frozen_lock = " ".join(method.leakage_risks)
+    assert "2027-08-31" in frozen_lock
+    assert "252" in frozen_lock
+    assert "28-day attention warm-up" in frozen_lock
+
+
+def test_diagnostic_attention_channel_requires_forward_protocol() -> None:
+    rows = {
+        row.method_id: row
+        for row in audit_methodology(
+            {
+                "binance_usdm_price": "REAL_HISTORY",
+                "crypto_attention": "REAL_DIAGNOSTIC",
+            }
+        )
+    }
+
+    assert rows["crypto_attention_momentum"].readiness is (
+        MethodReadiness.FORWARD_PREREG_REQUIRED
     )

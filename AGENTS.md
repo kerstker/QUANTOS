@@ -66,6 +66,14 @@ catalog access is for human-controlled workflows and is not an agent API.
 
 ## Current work and context
 
+- **2026-09-20 research-first authorization:** Current delivery priority is the
+  [DGX research-first decision](docs/engineering/specs/2026-09-20-dgx-research-first.md).
+  Defer institutional off-host recovery, external backup and identity infrastructure
+  as prerequisites for local research. Retain PIT, realistic costs/risk, locked OOS,
+  trial history and existing trading authorization boundaries. Codex owns architecture,
+  research design and review; Claude Code may implement bounded, file-disjoint tasks.
+  The new research assessment view is pending implementation; never relabel deferred
+  TOP22 requirements or unprofitable strategies as PASS.
 - The user authorized implementation of the September 5 DGX roadmap. Read the
   [current roadmap](docs/engineering/plans/2026-09-05-dgx-engine-foundation-roadmap-review.md),
   its opening execution note, the

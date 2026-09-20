@@ -1,5 +1,16 @@
 # Binance USDT-M 期货 mainnet 实盘 runbook(人工首单路径)
 
+> **2026-09-19 状态纠正：本手册下方为 2026-07 历史流程，当前不可用于启动实盘。**
+> 2026-08-29 RED/P0 隔离决定覆盖下文的“human-ready”、研究干跑、paper-track
+> 及人工覆盖接线路径。当前普通提交入口
+> [`submit_live_batch`](../../live/pipeline.py) 在任何提交协作者之前调用
+> [`require_live_submission_authority`](../../services/validation/live_submission_authority.py)
+> 并拒绝；手写 mandate、human_override 或 `--arm-live` 均不能解除该边界。
+> 新的独立签发与精确执行组件仅限 Demo，不能通过替换主网地址复用其授权。
+> **不要执行下方首单 checklist，也不要重跑其中已隔离的旧研究入口。**
+> 下文保留用于历史追溯，不是现行操作授权。当前源码核验、平台差异与待完成条件见
+> [首期实盘路径核验](../engineering/specs/2026-09-19-first-live-route-assessment.md)。
+
 状态:human-ready 代码面已就绪(2026-07 Binance mainnet 接线,镜像 MEXC 对接 Part 1)。
 与 MEXC 不同,Binance **有期货 testnet**(`--venue binance`,已联调在跑)——mainnet
 是同一适配器类换 `MAINNET_BASE` + 人工多步门。毕业路径 = 干跑 → 前向 paper-track →

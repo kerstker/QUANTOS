@@ -556,3 +556,11 @@ CLI重启省略portfolio-config时，原实现会退回单账户会话，未继�
 retry-1已完成两次ARM64冷构建（605.360秒、752.999秒）、扫描及隔离冒烟；canonical完整门仍在会话79143运行，尚无最终通过报告。等待期间在开发输出创建独立干净检出account-source-a91146c59，以及run-portfolio-observation-a91146c59.py/.sh。入口固定完整源码a91146c59644a54213416004799a5cb7aff83f02，必须核对retry-1完整ALL 28/28报告、干净源码及指定Python/ARM64/AnyIO环境后才能运行。
 
 入口使用仓库SPYx/XAUT公开配置、ZUSD估值、60轮人工启动的只读组合会话；沿用account-observation状态根，不迁移或清除已有订单/现金记录，绑定冲突仍由原校验拒绝。未指定策略，不生成默认权重。仅运行--check，按预期exit 3 / PORTFOLIO_OBSERVER_NOT_READY，证明验收未完成时入口拒绝；未访问账户、读取凭证或启动驻留服务。完整通过后须重新运行--check，当前不能作为可用入口交付。
+
+### 2026-09-20 a91146c59完整验收通过
+
+会话79143已终态exit 0，不再轮询。retry-1/acceptance-result.json记录PASS、总耗时4392.965秒、services_installed=false；canonical-report.json为相同完整源码a91146c59644a54213416004799a5cb7aff83f02、selection_scope=ALL，28项全部通过，零失败、错误与超时。后端8521通过/19跳过/10警告（2041.36秒），执行与工具4590通过/2跳过/1警告（462.15秒）；前端80文件462项测试、类型、lint及生产构建全部通过。原首轮构建器启动失败报告保留，未拼接旧版本测试结果。
+
+再次执行run-portfolio-observation-a91146c59.sh --check，exit 0 / PORTFOLIO_OBSERVER_ACCEPTANCE_CHECK_PASSED；检查未读取账户或凭证。account-observation/latest.json及portfolio-session-config.json仍不存在，已请用户在本机运行该人工只读入口。不可由代理代输凭证。首轮现金基线与待定策略仍按原逻辑阻断规划/执行；未部署控制台或安装驻留任务。
+
+该结果证明当前源码通过完整软件门，不证明完整实盘自动管理。备份检查内部缺配置跳过、成熟度NOT_TOP_TIER（14/22），Phase 13的trial ledger仍BLOCKED，alpha生命周期等准备度仍NOT_READY；真实账户验证、策略约定、xStocks生产数量/价格/费用口径、独立授权签发及实际执行接线尚未完成。
