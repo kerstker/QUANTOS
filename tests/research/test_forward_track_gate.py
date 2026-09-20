@@ -3,6 +3,11 @@
 import json
 import os
 
+# 2026-09-20 审计 P2-12:下面 lambda 里用了 pytest.fail,但本文件从未导入 pytest。
+# 该导入缺失只在"竞争 worker 竟然跑了"这条失败路径上才炸成 NameError,把本应
+# 清晰的诊断信息换成一条无关错误。ruff 的 F 规则本可捕获。
+import pytest
+
 import tools.forward_track_advance as forward_track
 from services.data.admission_store import DataQualityAdmissionStore
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef

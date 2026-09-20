@@ -37,7 +37,6 @@ from services.data.available_time import fetch_bars_for_event_decisions
 from services.research import alpha_expression as ax
 from services.research import exit_policies as ep
 from services.execution.backtest_authority import quarantine_legacy_backtest
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -47,6 +46,7 @@ from tools.cache_io import atomic_write_json
 from tools.crypto_oi_research import build_panel, _legs, QUANTILE
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.dry_run_btc_spot_multi import _signal_series_hysteresis
+from tools.research_dry_run_profile import research_dry_run_limits
 
 _DB_FUNDING = os.path.join("data", "cache", "crypto_funding.db")
 _DB_MEXC = os.path.join("data", "cache", "crypto_mexc.db")
@@ -176,12 +176,7 @@ def build_btc_book(db_path: str = _DB_MEXC) -> LabBook:
 def _make_gate_and_ctx(book: LabBook):
     """与两个 canonical 驱动器同构的宽限门(实验室要测的是退出策略,不是门限)。"""
     ks = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset(book.bars_by_instrument), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset(book.bars_by_instrument))
     gate = PreTradeRiskGate(limits, kill_switch=ks)
 
     def ctx_factory(intent, prices, period):

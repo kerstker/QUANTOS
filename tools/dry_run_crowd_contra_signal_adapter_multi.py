@@ -37,7 +37,6 @@ from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_por
 from services.research import alpha_expression as ax
 from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
 from services.risk.research_risk.domain.models import RiskConfig
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -54,6 +53,7 @@ _WEEKLY_RISK_PROVENANCE = "RISK_CONFIG_WEEKLY_PPY_52_DURATION_UNCALIBRATED"
 # _crowding_rank 是纯排名数学(零 _legs()/实盘耦合)——直接复用基准驱动器的实现,避免两份
 # 逻辑漂移;两个驱动器的对照实验唯一变量应只是分仓方法本身。
 from tools.dry_run_crowd_contra_multi import _crowding_rank
+from tools.research_dry_run_profile import research_dry_run_limits
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
@@ -130,12 +130,7 @@ def main() -> None:
         return sum(-rates.get(i, 0.0) * q * prices.get(i, 0.0) for i, q in held.items())
 
     ks = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset(held_names))
     gate = PreTradeRiskGate(limits, kill_switch=ks)
 
     def ctx_factory(intent, prices, period):

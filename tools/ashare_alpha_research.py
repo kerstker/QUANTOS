@@ -34,7 +34,6 @@ from services.research.equity_alpha import hygiene as hy
 from services.research.equity_alpha import ic_eval as ev
 from services.research.equity_alpha import panel as eq_panel
 from services.alpha.multiple_testing import benjamini_hochberg, bonferroni_tstat_threshold
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -44,6 +43,7 @@ from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
+from tools.research_dry_run_profile import research_dry_run_limits
 
 _DB = os.path.join("data", "stocks", "research.db")   # research COPY of data/stocks/stocks.db
 _UNIVERSE = os.path.join("data", "stocks", "universe.json")
@@ -287,12 +287,8 @@ def main() -> None:
         # RESEARCH OVERRIDE: 仅参与率/单名集中度是真实研究级限额(0.10/0.10);其余宽松占位,
         # 非生产风控参数(见模块 docstring)。账户 equity=AUM 使单名限额承重。
         def _make_gate_and_ctx(strategy_id, names):
-            limits = RiskLimits(
-                allowed_instruments=frozenset(names), allowed_accounts=frozenset({"paper"}),
-                default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-                max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7,
-                max_single_name_pct=0.10, max_turnover=1e7, max_participation_rate=0.10,
-                max_instrument_vol=5.0, daily_loss_limit=1e14, max_drawdown=1.0)
+            limits = research_dry_run_limits(frozenset(names), max_participation_rate=0.10,
+                                              max_single_name_pct=0.10)
             gate = PreTradeRiskGate(limits, kill_switch=KillSwitch())
 
             def ctx_factory(intent, prices, period):

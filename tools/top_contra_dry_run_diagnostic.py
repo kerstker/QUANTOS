@@ -20,7 +20,6 @@ from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.research import alpha_expression as ax
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (
     AccountRiskState,
     MarketContext,
@@ -33,6 +32,7 @@ from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from tools.cache_io import atomic_write_json
 from tools.crypto_oi_research import QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import TOP_CONTRA
+from tools.research_dry_run_profile import research_dry_run_limits
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore
 
 
@@ -150,22 +150,7 @@ def main() -> None:
                    for name, quantity in held.items())
 
     kill_switch = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names),
-        allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10**13,
-        max_order_notional=1e14,
-        fat_finger_qty=10**13,
-        max_gross_exposure=1e14,
-        max_net_exposure=1e14,
-        max_leverage=1e7,
-        max_single_name_pct=1e7,
-        max_turnover=1e7,
-        max_participation_rate=1e7,
-        max_instrument_vol=5.0,
-        daily_loss_limit=1e14,
-        max_drawdown=1.0,
-    )
+    limits = research_dry_run_limits(frozenset(held_names))
     gate = PreTradeRiskGate(limits, kill_switch=kill_switch)
 
     def ctx_factory(intent, prices, period):

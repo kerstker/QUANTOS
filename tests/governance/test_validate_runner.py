@@ -28,13 +28,54 @@ def test_validate_script_starts_from_outside_repo():
     assert "validation_report.json" in result.stdout
 
 
-def _load_validate_module():
+def _load_validate_module(repo_root=None):
     path = ROOT / "scripts" / "validate.py"
     spec = importlib.util.spec_from_file_location("quantos_validate_runner", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    if repo_root is not None:
+        module.REPO = str(repo_root)
     return module
+
+
+@pytest.fixture
+def clean_validation_repo(tmp_path):
+    """Real Git identity for synthetic full-run tests, not the developer checkout."""
+    repo = tmp_path / "source"
+    repo.mkdir()
+    for args in (
+        ["init", "--quiet"],
+        ["-c", "user.name=Validation Test", "-c", "user.email=validation@example.invalid",
+         "-c", "commit.gpgsign=false",
+         "commit", "--quiet", "--allow-empty", "-m", "Synthetic validation source"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, timeout=10)
+    return repo
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_full_run_still_rejects_dirty_source_before_executing(
+    tmp_path, clean_validation_repo, staged,
+):
+    validate = _load_validate_module(clean_validation_repo)
+    dirty = clean_validation_repo / "unreviewed.py"
+    dirty.write_text("VALUE = 1\n", encoding="utf-8")
+    if staged:
+        subprocess.run(["git", "add", "unreviewed.py"], cwd=clean_validation_repo,
+                       check=True, capture_output=True, timeout=10)
+    marker = tmp_path / "executed.txt"
+    report = tmp_path / "validation.json"
+    command = [sys.executable, "-c",
+               "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(marker)]
+    with pytest.raises(ValueError, match="dirty path"):
+        validate.run(
+            json_report=str(report), checks=[("synthetic", command, str(tmp_path))],
+            derived_refresh_checks=[], phase13_refresh_checks=_fake_phase13(tmp_path),
+            timeout_seconds=2,
+        )
+    assert not marker.exists()
+    assert not report.exists()
 
 
 def _fake_phase13(tmp_path):
@@ -76,6 +117,9 @@ def test_selected_stage_writes_machine_report(tmp_path):
         "failed": 0,
         "timed_out": 0,
         "errored": 0,
+        # 2026-09-20 审计 P0-3:汇总新增 skip 计数,使"诚实 skip"与"整体没跑"
+        # 在机器报告里可区分(本用例是非 pytest 命令,故为 0)。
+        "skipped": 0,
     }
     assert report["results"][0]["status"] == "PASS"
 
@@ -242,8 +286,8 @@ def test_stage_timeout_is_reported_and_fails_closed(tmp_path):
     assert timeout_result["stuck_process"]["pid"] > 0
 
 
-def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_path):
-    validate = _load_validate_module()
+def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     marker = tmp_path / "phase13-marker.txt"
     primary = (
@@ -297,6 +341,8 @@ def test_full_validation_refreshes_phase13_after_publishing_primary_report(tmp_p
         "failed": 0,
         "timed_out": 0,
         "errored": 0,
+        # 2026-09-20 审计 P0-3:见上,汇总新增 skip 计数。
+        "skipped": 0,
     }
 
 
@@ -369,8 +415,8 @@ def test_canonical_release_evidence_publication_failure_fails_closed(
     assert result == 1
 
 
-def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path):
-    validate = _load_validate_module()
+def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     supply = tmp_path / "supply.txt"
     top_tier = tmp_path / "top-tier.txt"
@@ -459,8 +505,8 @@ def test_full_validation_converges_derived_evidence_in_dependency_order(tmp_path
     assert report["summary"]["passed"] == 8
 
 
-def test_evidence_consumers_run_after_derived_refresh(tmp_path):
-    validate = _load_validate_module()
+def test_evidence_consumers_run_after_derived_refresh(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     supply = tmp_path / "supply.txt"
     checks = [
@@ -524,8 +570,8 @@ def test_evidence_consumers_run_after_derived_refresh(tmp_path):
     ]
 
 
-def test_failed_primary_check_never_rewrites_derived_evidence(tmp_path):
-    validate = _load_validate_module()
+def test_failed_primary_check_never_rewrites_derived_evidence(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     marker = tmp_path / "must-not-exist.txt"
     checks = [
@@ -577,8 +623,8 @@ def test_failed_primary_check_never_rewrites_derived_evidence(tmp_path):
     ]
 
 
-def test_failed_derived_refresh_blocks_downstream_rewrite(tmp_path):
-    validate = _load_validate_module()
+def test_failed_derived_refresh_blocks_downstream_rewrite(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     downstream_marker = tmp_path / "must-not-exist.txt"
     checks = [
@@ -747,8 +793,8 @@ def test_full_run_uses_stable_anchor_after_artifact_only_head(tmp_path, monkeypa
     assert report["validation"]["source_commit"] == anchor
 
 
-def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path, monkeypatch):
-    validate = _load_validate_module()
+def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path, monkeypatch, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     monkeypatch.setattr(validate.time, "time", lambda: 1000.0)
     checks = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
@@ -771,8 +817,8 @@ def test_repeated_full_run_preserves_timing_only_report_changes(tmp_path, monkey
     assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
 
 
-def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path):
-    validate = _load_validate_module()
+def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     passing = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
     failing = [("fake-pass", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
@@ -794,8 +840,8 @@ def test_pre_phase13_failure_rewrites_fail_closed_report(tmp_path):
     assert after.st_mtime_ns != before.st_mtime_ns
 
 
-def test_phase13_failure_rewrites_fail_closed_report(tmp_path):
-    validate = _load_validate_module()
+def test_phase13_failure_rewrites_fail_closed_report(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     primary = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
     passing_phase13 = _fake_phase13(tmp_path)
@@ -821,8 +867,8 @@ def test_phase13_failure_rewrites_fail_closed_report(tmp_path):
     assert after.st_mtime_ns != before.st_mtime_ns
 
 
-def test_nonvolatile_report_change_rewrites_report(tmp_path):
-    validate = _load_validate_module()
+def test_nonvolatile_report_change_rewrites_report(tmp_path, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     passing = [("fake-pass", [sys.executable, "-c", "pass"], str(tmp_path))]
     failing = [("fake-pass", [sys.executable, "-c", "raise SystemExit(1)"], str(tmp_path))]
@@ -844,8 +890,8 @@ def test_nonvolatile_report_change_rewrites_report(tmp_path):
 
 
 
-def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path, monkeypatch):
-    validate = _load_validate_module()
+def test_repeated_full_run_reuses_started_at_for_phase13_children(tmp_path, monkeypatch, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     marker = tmp_path / "started.txt"
     monkeypatch.setattr(validate.time, "time", lambda: 1000.0)
@@ -908,7 +954,10 @@ def test_canonical_started_at_reuse_rejects_identity_or_failed_report(tmp_path):
         "phase13_manifest_sha256": "p",
         "validate_script_sha256": "d",
         "started_at_ms": 123,
-        "summary": {"selected": 3, "passed": 3, "failed": 0, "timed_out": 0, "errored": 0},
+        # 2026-09-20 审计 P0-3:_summary 新增 skip 计数后,canonical 报告的 summary
+        # 必须含该键才能被 _canonical_started_at_ms 认作可复用(旧 schema 的报告
+        # 不再匹配 —— 这是有意的:身份变了就不该复用旧的 run identity)。
+        "summary": {"selected": 3, "passed": 3, "failed": 0, "timed_out": 0, "errored": 0, "skipped": 0},
         "validation": {"current": True, "run_id": "e", "source_commit": "a", "generated_at": 123},
     }
     report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -979,8 +1028,8 @@ def test_canonical_report_rejects_malformed_or_inconsistent_results(tmp_path):
     ) is None
 
 
-def test_future_canonical_timing_is_not_reused_by_default_dag(tmp_path, monkeypatch):
-    validate = _load_validate_module()
+def test_future_canonical_timing_is_not_reused_by_default_dag(tmp_path, monkeypatch, clean_validation_repo):
+    validate = _load_validate_module(clean_validation_repo)
     report_path = tmp_path / "validation.json"
     marker = tmp_path / "started.txt"
     monkeypatch.setattr(validate.time, "time", lambda: 1000.0)

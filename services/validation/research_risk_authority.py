@@ -26,9 +26,17 @@ FULL_RESEARCH_RISK_ENGINES = frozenset(
 
 
 def full_research_risk_approved(result: Mapping[str, Any]) -> bool:
-    """Return whether ``result`` satisfies the exact full 9/9 contract."""
+    """Return whether ``result`` satisfies the exact full 9/9 contract.
+
+    The label alone is never enough: the retained ``reports`` must also carry the
+    stress engine's own real-historical-replay provenance.  A book whose history
+    does not cover a crisis legitimately skips that scenario, so ``scenarios_skipped``
+    is deliberately not constrained.
+    """
 
     engines_run = result.get("engines_run")
+    reports = result.get("reports")
+    stress = reports.get("stress") if isinstance(reports, Mapping) else None
     return bool(
         result.get("decision") == "RISK_APPROVED"
         and result.get("status") == "APPROVED"
@@ -40,6 +48,8 @@ def full_research_risk_approved(result: Mapping[str, Any]) -> bool:
         and all(value is True for value in engines_run.values())
         and result.get("engines_skipped") == {}
         and result.get("engines_pending") == {}
+        and isinstance(stress, Mapping)
+        and stress.get("provenance") == "REAL_HISTORICAL_REPLAY"
     )
 
 

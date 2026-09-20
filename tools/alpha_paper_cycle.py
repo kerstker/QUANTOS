@@ -286,7 +286,7 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
                 "sharpe": _num(canonical_pnl.get("sharpe")),
                 "max_drawdown": _num(canonical_pnl.get("max_drawdown")),
                 "total_return": _num(canonical_pnl.get("total_return")),
-                "authoritative": True,
+                "authoritative": authority_valid,
                 "evidence_class": canonical.get("evidence_class"),
                 "run_id": canonical.get("run_id"),
             }

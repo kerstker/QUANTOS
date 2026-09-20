@@ -79,6 +79,10 @@ def _full_research_risk() -> dict:
         "engines_skipped": {},
         "engines_pending": {},
         "provenance": "REAL_RESEARCH_RISK_FULL",
+        # 2026-09-20 审计 P0-4-D:full_research_risk_approved 现在要求保留的 reports
+        # 里带有 stress 引擎**自己**的真实历史回放 provenance。仅凭 REAL_RESEARCH_RISK_FULL
+        # 这个字符串不再足以成为九引擎全量结论——手写 fixture 必须给出该证据。
+        "reports": {"stress": {"provenance": "REAL_HISTORICAL_REPLAY"}},
     }
 
 

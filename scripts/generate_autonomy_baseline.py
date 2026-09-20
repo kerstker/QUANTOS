@@ -480,12 +480,56 @@ def write_outputs(
     return baseline
 
 
+def check_retained_baseline(*, output_path: Path = DEFAULT_OUTPUT) -> tuple[int, str]:
+    """回读已提交的 baseline 并与当前重建结果逐字段比对(2026-09-20 审计 P0-2-F)。
+
+    此前这个生成器**只有** ``--output`` / ``--gap-report`` / ``--now-ms``,没有任何
+    只读校验入口,而 ``tests/governance/test_autonomy_baseline.py`` 只把新结果写进
+    临时目录再断言其文本——**从不与已提交的 artifact 比对**。于是 artifact 漂移
+    (generator_sha256、commit、以及 alpha_paper_cycle 条目的 sha256/size_bytes
+    都对不上)在门禁里完全看不见。
+
+    ``generated_at_ms`` 是唯一的时间戳字段,因此用**已保留的那个值**重建,其余
+    每个字段都必须逐一相等;任何差异都如实列出,不做乐观取值。
+    """
+    path = Path(output_path)
+    try:
+        retained = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return 1, f"retained autonomy baseline is unreadable: {type(exc).__name__}"
+    if not isinstance(retained, dict):
+        return 1, "retained autonomy baseline is not a JSON object"
+
+    now_ms = retained.get("generated_at_ms")
+    if isinstance(now_ms, bool) or not isinstance(now_ms, int):
+        return 1, "retained autonomy baseline has no integer generated_at_ms"
+
+    expected = build_baseline(now_ms=now_ms)
+    drift = sorted(
+        key
+        for key in set(retained) | set(expected)
+        if retained.get(key) != expected.get(key)
+    )
+    if drift:
+        return 1, "retained autonomy baseline has drifted on: " + ", ".join(drift)
+    return 0, f"autonomy baseline: current; generated_at_ms={now_ms}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--gap-report", default=str(DEFAULT_GAP_REPORT))
     parser.add_argument("--now-ms", type=int)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="只读校验已提交的 baseline 是否与当前重建结果一致;不写任何文件",
+    )
     args = parser.parse_args(argv)
+    if args.check:
+        code, message = check_retained_baseline(output_path=Path(args.output))
+        print(message)
+        return code
     baseline = write_outputs(
         output_path=Path(args.output),
         gap_report_path=Path(args.gap_report),

@@ -347,7 +347,12 @@ def _pipeline(ks=None, event_bus=None):
          marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
 
 
-def _full_research_risk_inputs(n_periods):
+def _weekly_axis(n_periods):
+    """One strictly increasing PIT timestamp per period (the bundle's declared axis)."""
+    return [1_700_000_000_000 + index * 7 * 86_400_000 for index in range(n_periods)]
+
+
+def _full_research_risk_inputs(n_periods, timestamps):
     return DryRunResearchRiskInputs(
         capacity_cny={"BTC": 1.0e12, "ETH": 1.0e12},
         daily_volume_cny=1.0e12,
@@ -377,6 +382,7 @@ def _full_research_risk_inputs(n_periods):
                 "leakage_flag": False,
             },
         ],
+        timestamps=timestamps,
     )
 
 
@@ -389,7 +395,7 @@ def test_single_pipeline_persists_full_research_risk_and_publishes_canonical_eve
         ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
         adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
         marks={"BTC": 101.0, "ETH": 49.0}, event_bus=bus,
-        research_risk_inputs=_full_research_risk_inputs(1),
+        research_risk_inputs=_full_research_risk_inputs(1, timestamps=[1000]),
     )
     risk = run.detail["research_risk"]
     assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
@@ -415,7 +421,8 @@ def test_single_pipeline_persists_full_research_risk_and_publishes_canonical_eve
 
 def test_single_pipeline_accepts_explicit_aligned_research_risk_history():
     periods = 8
-    inputs = _full_research_risk_inputs(periods)
+    axis = _weekly_axis(periods)
+    inputs = _full_research_risk_inputs(periods, axis)
     returns = [0.001 for _ in range(periods)]
     equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
     run = run_dry_run_pipeline(
@@ -432,11 +439,13 @@ def test_single_pipeline_accepts_explicit_aligned_research_risk_history():
         research_risk_inputs=inputs,
         research_risk_returns=returns,
         research_risk_equity_curve=equity,
+        research_risk_timestamps=axis,
     )
 
     risk = run.detail["research_risk"]
     assert risk["series"] == "aligned_pit_history"
     assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["reports"]["stress"]["provenance"] == "REAL_HISTORICAL_REPLAY"
     assert risk["gates_run"] == 9
     assert risk["decision"] == "RISK_APPROVED"
     assert risk["scope"] == "PRE_FILL_RESEARCH_EVIDENCE"
@@ -446,7 +455,8 @@ def test_single_pipeline_accepts_explicit_aligned_research_risk_history():
 
 def test_single_pipeline_rejected_explicit_full_risk_has_zero_fills():
     periods = 8
-    inputs = _full_research_risk_inputs(periods)
+    axis = _weekly_axis(periods)
+    inputs = _full_research_risk_inputs(periods, axis)
     returns = [0.001 for _ in range(periods)]
     equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
     run = run_dry_run_pipeline(
@@ -463,6 +473,7 @@ def test_single_pipeline_rejected_explicit_full_risk_has_zero_fills():
         research_risk_inputs=inputs,
         research_risk_returns=returns,
         research_risk_equity_curve=equity,
+        research_risk_timestamps=axis,
     )
 
     assert run.detail["research_risk"]["decision"] == "RISK_REJECTED"
@@ -499,11 +510,14 @@ def test_multi_period_persists_full_research_risk_against_aligned_curve():
         periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX,
         gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(),
         strategy_id="carry", aum=1e6, cost_bps=5.0,
-        research_risk_inputs=_full_research_risk_inputs(len(_PERIODS)),
+        research_risk_inputs=_full_research_risk_inputs(
+            len(_PERIODS), timestamps=_PERIODS
+        ),
     )
     risk = run.detail["research_risk"]
     assert risk["series"] == "multi_period"
     assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["reports"]["stress"]["provenance"] == "REAL_HISTORICAL_REPLAY"
     assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
     assert risk["gates_run"] == 9
     assert set(risk["engines_run"]) == {

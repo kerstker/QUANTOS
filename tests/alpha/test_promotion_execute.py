@@ -43,6 +43,9 @@ def _full_risk_result():
         "engines_run": engines,
         "engines_skipped": {},
         "engines_pending": {},
+        # the full label is admitted only with the stress engine's own real-replay
+        # provenance retained alongside it
+        "reports": {"stress": {"provenance": "REAL_HISTORICAL_REPLAY"}},
     }
 
 

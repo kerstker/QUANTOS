@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 try:
@@ -208,6 +209,21 @@ CHECKS = [
         REPO,
     ),
     (
+        # 2026-09-20 审计 P1-9:.importlinter 有契约却**从来没有 runner**,
+        # 所以 research→alpha 的 29 条违规、以及 tools/ 完全不在依赖图里,
+        # 一直是文件里的口头约定。这里把它接进门禁。
+        # 必须用 `-c` 形式调用:`python -m importlinter.cli` 会以 0 退出且
+        # **完全没有输出**(该模块没有 __main__ 守卫),那正是我们要消灭的
+        # 静默假绿。已验证:契约破裂时该命令退出 1。
+        "import-graph-contracts",
+        [
+            sys.executable,
+            "-c",
+            "from importlinter.cli import lint_imports_command; lint_imports_command()",
+        ],
+        REPO,
+    ),
+    (
         "pytest: all suites (contracts, governance, research, trading)",
         [
             sys.executable, "-m", "pytest", "-q",
@@ -246,6 +262,10 @@ CHECKS = [
             "services/research/factor_engine/tests/test_model_compile.py",
             "services/trading/dry_run_adapters/tests/test_dry_run.py",
             "tests/integration/test_dry_run_all.py",
+            # 2026-09-20 审计 P0-3:这两个集成测试文件存在且全绿(18 tests),但从未进入
+            # 这张表——canonical 门禁只在手动调用时跑到它们,回归抓不到。hourly alpha→paper
+            # 恢复路径与 MFT testnet 执行矩阵都属于最安全关键的端到端证据,必须常驻门禁。
+            "tests/integration/test_hourly_alpha_to_paper.py",
         ],
         REPO,
     ),
@@ -261,6 +281,8 @@ CHECKS = [
             "tests/live",
             "tests/trading",
             "tests/tools",
+            # 2026-09-20 审计 P0-3:同上的漏测——testnet 执行矩阵此前只在手动调用时跑。
+            "tests/integration/test_mft_testnet_execution.py",
         ],
         REPO,
     ),
@@ -343,6 +365,115 @@ def _is_pytest_command(command) -> bool:
     )
 
 
+# 2026-09-20 审计 P0-3:下列测试文件是端到端最安全关键的证据,必须真的**执行**。
+# 门禁此前只看退出码,pytest 退出码 0 同时覆盖"全部执行并通过"与"整个文件被 skip 掉",
+# 于是缺失 artifact / 缺失 adapter / pytest.skip 都能伪装成 PASS。策略按**文件**判定
+# 而不是按阶段:仓库没有 data/cache artifact 时 tests/reproducibility 的 skip 是
+# 文档化的诚实设计(见 tests/reproducibility/test_evidence_snapshots.py),按阶段判定
+# 会把它误打成红色,按文件判定则两者都能正确区分。
+NO_SKIP_TEST_PATHS = (
+    "tests/integration/test_dry_run_all.py",
+    "tests/integration/test_hourly_alpha_to_paper.py",
+    "tests/integration/test_mft_testnet_execution.py",
+)
+
+
+def _normalise_test_path(value) -> str:
+    """仓库内路径归一为 posix 相对路径;仓库外保留绝对路径。"""
+    text = str(value).replace("\\", "/").strip()
+    if not text:
+        return ""
+    try:
+        relative = os.path.relpath(os.path.abspath(text), REPO).replace(os.sep, "/")
+    except (OSError, ValueError):
+        return text
+    if relative.startswith("../"):
+        return os.path.abspath(text).replace(os.sep, "/")
+    return relative
+
+
+def _paths_denote_same_test(left: str, right: str) -> bool:
+    """同一测试文件的两种写法(相对/绝对)判等;同名不同目录不得误判。
+
+    尾部两个路径分量都相同才算同一文件——`test_all_skipped.py` 与
+    `/tmp/pytest-xxx/test_all_skipped.py` 判等,而 tests/live/test_pipeline.py
+    与 tests/research/test_pipeline.py 不会互相误配。
+    """
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    left_parts = [part for part in left.split("/") if part]
+    right_parts = [part for part in right.split("/") if part]
+    if not left_parts or not right_parts:
+        return False
+    tail = min(len(left_parts), len(right_parts), 2)
+    return left_parts[-tail:] == right_parts[-tail:]
+
+
+def _read_pytest_counts(path: str) -> dict | None:
+    """回读 pytest junitxml 的真实计数;缺失或不可解析一律返回 None(fail-closed)。"""
+    try:
+        root = xml.etree.ElementTree.parse(path).getroot()
+    except (OSError, xml.etree.ElementTree.ParseError, ValueError):
+        return None
+    suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+    if not suites:
+        return None
+    totals = {"tests": 0, "skipped": 0, "failed": 0, "errors": 0}
+    skipped_files: set[str] = set()
+    for suite in suites:
+        for key, attribute in (
+            ("tests", "tests"),
+            ("skipped", "skipped"),
+            ("failed", "failures"),
+            ("errors", "errors"),
+        ):
+            try:
+                totals[key] += int(suite.get(attribute) or 0)
+            except (TypeError, ValueError):
+                return None
+        for case in suite.iter("testcase"):
+            if case.find("skipped") is None:
+                continue
+            file_attribute = case.get("file")
+            if file_attribute:
+                skipped_files.add(_normalise_test_path(file_attribute))
+    totals["skipped_files"] = sorted(skipped_files)
+    return totals
+
+
+def _load_bearing_verdict(argv, counts: dict | None) -> str | None:
+    """返回 load-bearing 测试未真正执行的失败原因;不涉及 load-bearing 时返回 None。"""
+    if not _is_pytest_command(argv):
+        return None
+    declared = [_normalise_test_path(item) for item in argv]
+    matched = [
+        _normalise_test_path(path)
+        for path in NO_SKIP_TEST_PATHS
+        if any(_paths_denote_same_test(item, _normalise_test_path(path)) for item in declared)
+    ]
+    if not matched:
+        return None
+    if counts is None:
+        return (
+            "load-bearing test counts could not be read (missing or unparseable "
+            "pytest junit report): " + ", ".join(matched)
+        )
+    executed = int(counts.get("tests") or 0) - int(counts.get("skipped") or 0)
+    if executed <= 0:
+        return "load-bearing stage executed zero tests: " + ", ".join(matched)
+    skipped_files = counts.get("skipped_files") or ()
+    skipped_load_bearing = [
+        path
+        for path in matched
+        if any(_paths_denote_same_test(value, path) for value in skipped_files)
+    ]
+    if skipped_load_bearing:
+        return "load-bearing tests were skipped: " + ", ".join(skipped_load_bearing)
+    return None
+
+
 _PHASE13_CANONICAL_ENV_STAGES = frozenset({
     "phase13-readiness:refresh",
     "phase13-readiness:current",
@@ -366,6 +497,12 @@ def _summary(results: list[dict]) -> dict[str, int]:
         "failed": sum(result["status"] == "FAIL" for result in results),
         "timed_out": sum(result["status"] == "TIMEOUT" for result in results),
         "errored": sum(result["status"] == "ERROR" for result in results),
+        # 2026-09-20 审计 P0-3:pytest 的 skip 数量必须进机器报告,否则"诚实 skip"
+        # 与"整体没跑"在证据里无法区分。策略判定见 _load_bearing_verdict。
+        "skipped": sum(
+            int((result.get("pytest_counts") or {}).get("skipped") or 0)
+            for result in results
+        ),
     }
 
 
@@ -801,6 +938,27 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
     started = time.monotonic()
     command = [str(item) for item in argv]
     absolute_cwd = os.path.abspath(cwd)
+    # 2026-09-20 审计 P0-3:pytest 阶段额外挂一个 junitxml 报告以回读真实计数。
+    # 报告路径是宿主临时的,绝不能进 `command`——`command` 会写进被哈希的证据报告,
+    # 注入临时路径会让同一棵树两次运行的报告不同。`executed` 才是真正跑的命令。
+    executed = list(command)
+    counts: dict | None = None
+    junit_path: str | None = None
+    if _is_pytest_command(command) and not any(
+        str(item).startswith("--junitxml") for item in command
+    ):
+        try:
+            junit_fd, junit_path = tempfile.mkstemp(
+                prefix=".validate-junit-", suffix=".xml"
+            )
+            os.close(junit_fd)
+        except OSError:
+            junit_path = None
+        if junit_path is not None:
+            # xunit2 omits testcase.file, so a required-file skip can hide
+            # behind an unrelated passing test. Keep file identity available
+            # to the per-file no-skip policy, regardless of project defaults.
+            executed = command + [f"--junitxml={junit_path}", "-o", "junit_family=xunit1"]
     print(
         f"\n{'=' * 70}\n[validate] START {name}\n"
         f"  cwd: {absolute_cwd}\n  timeout: {timeout_seconds:.1f}s\n"
@@ -823,7 +981,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
         # pipes — the gate must not depend on the host console at all.
         preserve_canonical = name in _PHASE13_CANONICAL_ENV_STAGES
         try:
-            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command, preserve_canonical=preserve_canonical))
+            process = subprocess.Popen(executed, cwd=absolute_cwd, stdin=subprocess.DEVNULL, env=_child_env(command, preserve_canonical=preserve_canonical))
         except OSError as exc:
             # ASCII-only, locale-independent detail: the report is hashed
             # evidence, and localized OS error text (e.g. GBK WinError text)
@@ -834,7 +992,7 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
                 "child output captured instead of streamed"
             )
             process = subprocess.Popen(
-                command,
+                executed,
                 cwd=absolute_cwd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -863,6 +1021,18 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
     except OSError as exc:
         detail = f"{type(exc).__name__}: {exc}"
 
+    if junit_path is not None:
+        counts = _read_pytest_counts(junit_path)
+        try:
+            os.unlink(junit_path)
+        except OSError:
+            pass
+    if status == "PASS":
+        # 退出码 0 只说明 pytest 没报错,不说明测试真的执行了。
+        load_bearing = _load_bearing_verdict(command, counts)
+        if load_bearing is not None:
+            status, detail = "FAIL", load_bearing
+
     duration_ms = int((time.monotonic() - started) * 1000)
     result = {
         "stage": name,
@@ -875,6 +1045,8 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
     }
     if detail:
         result["detail"] = detail
+    if counts is not None:
+        result["pytest_counts"] = counts
     if captured_tail and status != "PASS":
         # Keep a bounded failure tail in the machine report so a degraded-host
         # run remains diagnosable without the live console stream.

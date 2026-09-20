@@ -29,6 +29,23 @@ RUN mkdir -p "${TMPDIR}" \
         linux-headers=7.0.0-r1 \
         openblas-dev=0.3.30-r2
 
+# 2026-09-20 审计 P2-11(哈希锁定依赖)——**未修复,原因是硬约束,不是疏忽**。
+# 本镜像基于 Alpine(musl)。对 musllinux_1_2_aarch64 + --only-binary=:all: 实测
+# 失败:`pydantic-core==2.46.4` 在 PyPI 上没有 musllinux aarch64 wheel
+# (Rust 扩展),numpy/scipy/cryptography 同理。这正是下面要装 build-base /
+# gfortran / openblas-dev 并从源码编译的原因。
+# 因此 requirements-ci.lock 与 requirements-ci-linux-aarch64.lock 都不可用于此处:
+#   * 二者是 manylinux(glibc)平台标签,在 musl 上无解;
+#   * 二者由 requirements-dev.txt 生成,会把 pytest / pip-audit / import-linter
+#     等测试工具装进生产镜像。
+# 可行的两条路都需要单独评审,都不能当作"一行改动":
+#   (a) 换成 glibc/manylinux 基础镜像 —— 会改变镜像身份,使
+#       services/governance/arm64_console_evidence.py 与
+#       cross_host_container_reproducibility.py 所校验的已提交容器证据失效;
+#   (b) 改为对 **sdist** 做哈希锁定(需要 pin pydantic-core/numpy/scipy 等的
+#       sdist 摘要并重构这里的 --no-build-isolation 构建步骤)。
+# 在那之前,不要把这个 COPY 换成 requirements-ci*.lock —— 那会让镜像构建失败,
+# 而不是让它更安全。
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir --upgrade "pip==${PIP_VERSION}" \
     && python -m pip install --no-cache-dir \

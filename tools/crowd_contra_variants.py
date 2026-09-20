@@ -53,7 +53,6 @@ from services.research.factor_set import incremental_ir
 from services.research.ic_panel import (aggregate_ic_series, compute_horizon_ic_series,
                                         compute_period_ic_series)
 from services.research.realism.capacity_curve import capacity_band
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -67,6 +66,7 @@ from tools.capacity_research import _adv, _AUM_GRID, _COEF_LO_HI, _HORIZON_GRID,
 from tools.crypto_oi_research import CARRY, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA, _per_year
 from tools.dry_run_crowd_contra_multi import _MAX_CROWDING_Z, _crowding_rank
+from tools.research_dry_run_profile import research_dry_run_limits
 from tools.search_trial_registry import (field_panel_dataset_version, make_search_id,
                                          production_experiment_registry)
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 与干跑驱动器同一实现
@@ -466,12 +466,7 @@ def candidate_dry_run(panel, spec, sig, *, event_bus=None):
         rates = rate_by_period.get(period, {})
         return sum(-rates.get(i, 0.0) * q_ * prices.get(i, 0.0) for i, q_ in held.items())
 
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset(held_names))
     gate = PreTradeRiskGate(limits, kill_switch=KillSwitch())
 
     def ctx_factory(intent, prices, period):

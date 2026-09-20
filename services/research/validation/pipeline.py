@@ -3,6 +3,8 @@
 The pipeline runs every candidate through sequential OOS windows, retains the
 exact CSCV/PBO matrix, writes the exact OOS return series into the authoritative
 alpha catalog, and consumes the catalog's replayable Deflated-Sharpe evidence.
+Candidates are ranked on the walk-forward TRAIN halves only: the single OOS
+report belongs to the locked candidate and never feeds the selection.
 Raw trial-count or variance overrides are intentionally not part of this API.
 """
 
@@ -26,11 +28,31 @@ from services.validation.pbo_evidence import create_batch_pbo_evidence
 from services.validation.walk_forward import walk_forward_splits
 
 
+def _realising_event_times(window_bars, equity_curve, period_returns):
+    """Event time of the bar that closes each realized return.
+
+    A return produced between two equity observations is knowable only at the bar
+    that closes it, so it is stamped with that bar.  ``returns_from_equity`` skips a
+    pair whose base equity is zero; the same skip keeps the two axes in step instead
+    of sliding an event time onto the wrong bar.
+    """
+
+    event_times = [
+        bar.event_time
+        for base, bar in zip(equity_curve, window_bars[1:])
+        if base != 0
+    ]
+    if len(event_times) != len(period_returns):
+        raise ValueError("per-bar returns must align with their realising bars")
+    return event_times
+
+
 def _oos(backtest, bars, targets, splits, cost):
-    """Return concatenated per-bar OOS returns plus one return per fold."""
+    """Return concatenated per-bar OOS returns, one return per fold, and their event times."""
 
     per_bar: list[float] = []
     per_fold: list[float] = []
+    event_times: list[int] = []
     for _train, test in splits:
         test_bars = [bars[index] for index in test]
         test_targets = [targets[index] for index in test]
@@ -39,9 +61,23 @@ def _oos(backtest, bars, targets, splits, cost):
             raise TypeError("backtest must return BacktestOutcome")
         if len(result.equity_curve) != len(test_bars):
             raise ValueError("backtest equity_curve must align with OOS bars")
-        per_bar.extend(returns_from_equity(result.equity_curve))
+        period_returns = returns_from_equity(result.equity_curve)
+        per_bar.extend(period_returns)
+        event_times.extend(
+            _realising_event_times(test_bars, result.equity_curve, period_returns)
+        )
         per_fold.append(result.total_pnl / result.initial_capital)
-    return per_bar, per_fold
+    return per_bar, per_fold, event_times
+
+
+def _train_returns(backtest, bars, targets, splits, cost):
+    """Score the same windows on their TRAIN halves; reuse ``_oos`` rather than fork it.
+
+    Candidate selection must not see the folds that are later reported as the
+    out-of-sample evidence, so the selection key is computed on ``(train, train)``.
+    """
+
+    return _oos(backtest, bars, targets, [(train, train) for train, _ in splits], cost)
 
 
 def run_research_validation(
@@ -63,8 +99,9 @@ def run_research_validation(
 
     ``leakage_ok`` remains a required computed input.  ``candidate_ids`` must
     identify already-registered catalog definitions in the same order as
-    ``candidate_targets``.  The caller must name the objectively selected best
-    candidate as ``subject_id``; a mismatch fails rather than relabeling results.
+    ``candidate_targets``.  The caller must name the candidate selected on the
+    walk-forward TRAIN halves as ``subject_id``; a mismatch fails rather than
+    relabeling results, and the OOS folds are reported once, for that candidate.
     """
 
     gate = gate or ValidationGate()
@@ -88,13 +125,18 @@ def run_research_validation(
         )
 
     candidate_per_bar: list[list[float]] = []
-    candidate_per_fold: list[list[float]] = []
+    candidate_per_bar_events: list[list[int]] = []
+    candidate_train_per_fold: list[list[float]] = []
     for targets in candidate_targets:
         if len(targets) != len(bars):
             raise ValueError("each candidate's targets must align with bars")
-        per_bar, per_fold = _oos(backtest, bars, targets, splits, cost)
+        per_bar, _oos_per_fold, event_times = _oos(backtest, bars, targets, splits, cost)
+        _train_per_bar, train_per_fold, _train_events = _train_returns(
+            backtest, bars, targets, splits, cost
+        )
         candidate_per_bar.append(per_bar)
-        candidate_per_fold.append(per_fold)
+        candidate_per_bar_events.append(event_times)
+        candidate_train_per_fold.append(train_per_fold)
 
     definition_hashes = tuple(
         catalog.get(candidate_id).definition_hash
@@ -105,16 +147,26 @@ def run_research_validation(
             "candidate definitions are absent from the catalog ledger"
         )
 
+    # Each OOS return carries the event time of its OWN bar (the bar that realises
+    # it), never the head of the full sample, which is train-heavy and shorter than
+    # the walk-forward windows allow.
     pbo_evidence = create_batch_pbo_evidence(
         return_series_by_definition={
-            definition_hash: tuple((bar.event_time, float(value)) for bar, value in zip(bars, candidate_returns))
-            for definition_hash, candidate_returns in zip(definition_hashes, candidate_per_bar)
+            definition_hash: tuple(
+                (event_time, float(value))
+                for event_time, value in zip(event_times, candidate_returns)
+            )
+            for definition_hash, candidate_returns, event_times in zip(
+                definition_hashes, candidate_per_bar, candidate_per_bar_events
+            )
         },
     )
 
+    # Selection (and therefore the caller's ``subject_id``) is decided on the TRAIN
+    # halves only.  The OOS stream below is reported once, for the locked candidate.
     best = max(
         range(len(candidate_ids)),
-        key=lambda candidate: sum(candidate_per_fold[candidate]),
+        key=lambda candidate: sum(candidate_train_per_fold[candidate]),
     )
     if candidate_ids[best] != subject_id:
         raise ValueError(

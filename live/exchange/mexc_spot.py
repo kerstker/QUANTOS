@@ -29,6 +29,13 @@ timestamp+recvWindow 参数、错误 JSON `{"code":..., "msg":...}`。
 /api/v3/time 拉取服务器时间、计算本机偏移(ms)修正签名 timestamp——fail-soft(查询失败
 保留旧偏移,不打断流程),默认偏移为 0。
 
+**时钟同步失败可见性(2026-09-20,镜像 `bybit_futures.py` 的 2026-07-09 修复):** 此前
+`sync_clock()` 的失败被裸 `except Exception: pass` 完全吞掉,失败现场不留下任何记录。现在结果
+记进公开只读属性 `last_clock_sync_ok`/`last_clock_sync_error`(调用方按既有 `getattr` 惯例探测,
+`tools/live_risk_sentinel.py::log_clock_sync_status` 已按该属性写告警台账),失败原因经
+`_try_sync_clock_once()` 返回字符串——**不改 fail-soft 语义、不改返回的 int 偏移量契约、不加
+外层重试(调用/重试次数与之前逐位相同)**。
+
 诚实标注:响应字段名(orderId/executedQty/cummulativeQuoteQty/balances[].free、
 openOrders/allOrders 的 origQty/transactTime、myTrades 的 isBuyer/quoteQty/commissionAsset、
 exchangeInfo 的 makerCommission/takerCommission 等)依
@@ -195,18 +202,38 @@ class MexcSpotAdapter:
         self._retry_base_delay = retry_base_delay
         self._sleep = sleep or time.sleep
         self._clock_offset_ms = 0
+        # 时钟同步可见性(2026-09-20,P2-14):None=从未同步过;True/False=最近一次尝试的结果。
+        # 与 bybit_futures.py 同款——此前裸 except Exception: pass 把失败现场完全吞掉。
+        self.last_clock_sync_ok: Optional[bool] = None
+        self.last_clock_sync_error: Optional[str] = None
 
     def sync_clock(self) -> int:
         """拉取交易所服务器时间,计算本机时钟相对服务器的偏移(ms),修正往后所有签名请求的
         timestamp(与 binance_futures 同法)。公开端点,不签名;失败 fail-soft(保留旧偏移,
-        不让一次网络抖动打断整个流程)。"""
+        不让一次网络抖动打断整个流程),但结果记进公开只读属性
+        `last_clock_sync_ok`/`last_clock_sync_error`(2026-09-20 加固,镜像
+        bybit_futures.py::sync_clock 的 2026-07-09 修复)——此前失败被裸 except 完全吞掉,运维
+        看不到任何记录。返回值(int 偏移量)语义不变;本 venue 不引入 bybit 那层外层重试,
+        调用/重试次数保持逐位不变。"""
+        error = self._try_sync_clock_once()
+        self.last_clock_sync_ok = error is None
+        self.last_clock_sync_error = error
+        return self._clock_offset_ms
+
+    def _try_sync_clock_once(self) -> Optional[str]:
+        """一次时钟同步尝试。成功更新 `self._clock_offset_ms` 并返回 `None`;失败**不抛异常**,
+        返回人类可读的失败原因字符串——调用方(`sync_clock`)据此记录可见性状态(与
+        bybit_futures.py::_try_sync_clock_once 同型)。整个解析仍在 try 内:响应形状异常
+        (含 serverTime 不可转 int)同样只记成失败原因,绝不让一次同步抖动变成抛异常打断整体
+        fail-soft 流程。"""
         try:
             status, data = self._get("/api/v3/time", signed=False)
-            if 200 <= status < 300 and isinstance(data, dict) and "serverTime" in data:
-                self._clock_offset_ms = int(data["serverTime"]) - int(self._clock() * 1000)
-        except Exception:
-            pass
-        return self._clock_offset_ms
+            if not (200 <= status < 300) or not isinstance(data, dict) or "serverTime" not in data:
+                return f"unexpected /api/v3/time response (status={status}, body={data!r})"
+            self._clock_offset_ms = int(data["serverTime"]) - int(self._clock() * 1000)
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+        return None
 
     # --- 签名核心 ---
 

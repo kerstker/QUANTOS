@@ -57,6 +57,46 @@ dev = [
     "coverage==7.13.5",
 ]
 
+[tool.pytest.ini_options]
+# 2026-09-20 审计 P0-3:`pytest.mark.slow` 此前从未注册,pytest 每次都发
+# PytestUnknownMarkWarning(tests/integration/test_hourly_alpha_to_paper.py:402)
+# 却继续执行。未注册的标记一旦将来被 `-m "not slow"` 之类过滤使用,会静默丢掉
+# 安全关键用例,而阶段仍然报 PASS——与本次审计要消灭的假绿色同源。显式注册使
+# 选择成为有意行为;若将来真的引入 `-m` 过滤,必须同时断言期望收集数,而不是
+# 只依赖退出码。
+markers = [
+    "slow: long-running acceptance smoke",
+]
+
+# ---------------------------------------------------------------------------
+# 2026-09-20 审计 P2-12:下面的 ruff / mypy 配置**目前不被任何门禁执行**。
+#
+# 证据:`scripts/validate.py` 的 CHECKS 里没有任何 ruff/mypy 阶段;两个 CI 锁
+# (requirements-ci.lock / requirements-ci-linux-aarch64.lock)里也没有 ruff 或 mypy
+# 的 pin(已核实——import-linter 在锁里,ruff/mypy 不在)。因此把配置摆在这里而
+# 无人运行它,只会给出一个"我们有 lint 门禁"的假信号。
+#
+# 为什么这次没有顺手开启:开启必须先把 ruff/mypy 加进 requirements-dev.txt 并重新
+# 生成两个锁。本机重生成**不是逐字节可复现的**(实测:重生成得到 71 个包/149 行,
+# 而已提交的锁是 72 个包/151 行,但同一份生成器的 `--check` 又坚称已提交的锁是
+# "current")。在一个带 `# source-sha256:` 头的、被 tests/governance/
+# test_ci_reproducibility.py 复算哈希的已提交锁上,做一次无法复现的重写,正是本仓库
+# 治理规则禁止的那类"看起来合理但不可验证"的改动。所以这里只把话说清楚,不动锁。
+#
+# 现状与后续(按价值排序):
+#  1. 全仓 `ruff --select F821,E9`(未定义名 + 语法/运行时错误)现已**全绿**——
+#     2026-09-20 这一批真的修掉了它抓出的 3 个未定义名:
+#       * tools/passive_market_capture.py  main() 每次都 NameError(被 runbook
+#         记录在案的操作命令),根因是漏导入 SYMBOLS;
+#       * tests/research/test_forward_track_gate.py 用了 pytest.fail 却没导入 pytest;
+#       * services/research/experiment_registry/registry.py 的 TrialProvenance 注解
+#         从未导入(future annotations 掩盖了它)。
+#     只要 ruff 进了 CI 锁,这一步可以直接作为门禁阶段接入,改动很小。
+#  2. 全仓 `ruff --select F` 仍有 444 条(多为 F401 未使用导入),`--select` 默认集
+#     更是 8000+ 条:这是一次独立的迁移,不应混进安全修复批次。
+#  3. mypy 目前只在个别文件上验证过能过,全仓未做 triage。
+# 在 1 落地之前,请不要引用这两个块作为"lint 已执行"的证据。
+# ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 120
 target-version = "py311"

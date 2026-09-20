@@ -24,7 +24,6 @@ from services.execution.impact_calibration import (
     scenario_impact,
 )
 from services.research import alpha_expression as ax
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (
     AccountRiskState,
     MarketContext,
@@ -40,6 +39,7 @@ from tools.cache_io import atomic_write_json
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
 from tools.crypto_carry_stress import _slip_bps
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
+from tools.research_dry_run_profile import research_dry_run_limits
 
 
 _DB = os.path.join("data", "cache", "crypto_funding.db")
@@ -233,22 +233,7 @@ def main() -> None:
         )
 
     gate = PreTradeRiskGate(
-        RiskLimits(
-            allowed_instruments=frozenset(held_names),
-            allowed_accounts=frozenset({"paper"}),
-            default_max_position_qty=10**13,
-            max_order_notional=1e14,
-            fat_finger_qty=10**13,
-            max_gross_exposure=1e14,
-            max_net_exposure=1e14,
-            max_leverage=1e7,
-            max_single_name_pct=1e7,
-            max_turnover=1e7,
-            max_participation_rate=_MAX_PARTICIPATION,
-            max_instrument_vol=5.0,
-            daily_loss_limit=1e14,
-            max_drawdown=1.0,
-        ),
+        research_dry_run_limits(frozenset(held_names), max_participation_rate=_MAX_PARTICIPATION),
         kill_switch=KillSwitch(),
     )
 

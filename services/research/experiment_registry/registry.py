@@ -20,6 +20,11 @@ from services.alpha.evaluation_evidence import (
     bind_evaluation_reproducibility,
     verify_evaluation_reproducibility,
 )
+# 2026-09-20 审计 P2-12:record_trial_provenance 的注解引用了从未导入的
+# TrialProvenance。因为本模块有 `from __future__ import annotations`,注解不会被求值,
+# 所以这不是运行时崩溃——但它让类型检查器无法校验这个边界,而且一旦有人去掉 future
+# 导入就会立刻变成 NameError。导入本身无环:trial_provenance 只依赖 quantos.contracts。
+from services.research.trial_provenance import TrialProvenance
 from services.lifecycle import (
     DeploymentState,
     HealthReason,

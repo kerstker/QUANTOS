@@ -9,7 +9,9 @@ never an admission decision.
 When ``require_full_inputs=True`` (the paper-order path), missing or malformed
 evidence produces an explicit ``PENDING``/``RISK_REJECTED`` result and zero
 fills. Only a real nine-engine ``REAL_RESEARCH_RISK_FULL`` result can satisfy
-the paper execution contract; this module never fabricates missing inputs.
+the paper execution contract, and that label additionally requires the stress
+leg to have replayed real history on the aligned PIT timestamp axis; this module
+never fabricates missing inputs.
 """
 from __future__ import annotations
 
@@ -40,7 +42,9 @@ class DryRunResearchRiskInputs:
     values are a pending risk decision, never synthetic data or an implicit pass.
     ``capacity_cny`` is keyed by the same alpha/instrument identifiers as
     ``weights``; ``alpha_returns`` and ``regime_labels`` are period-aligned with
-    ``returns``.
+    ``returns``.  ``timestamps`` is the bundle's declared PIT axis for those same
+    periods and must equal the axis handed to the engines, otherwise the stress
+    leg cannot be presented as a real historical replay.
     """
 
     capacity_cny: Mapping[str, float]
@@ -58,6 +62,23 @@ def _finite_number(value: object) -> bool:
         and not isinstance(value, bool)
         and math.isfinite(float(value))
     )
+
+
+def _stress_axis_reason(axis, expected_len: int) -> Optional[str]:
+    """Return why ``axis`` cannot drive a real historical stress replay, else None.
+
+    A replay-capable axis is a finite, period-aligned, strictly increasing time
+    axis; anything else would silently downgrade the stress leg to synthetic data.
+    """
+    if not isinstance(axis, Sequence) or isinstance(axis, (str, bytes)):
+        return "stress_timestamps_invalid"
+    if len(axis) != expected_len:
+        return "stress_timestamps_length"
+    if any(not _finite_number(value) for value in axis):
+        return "stress_timestamps_non_finite"
+    if any(right <= left for left, right in zip(axis, axis[1:])):
+        return "stress_timestamps_not_strictly_increasing"
+    return None
 
 
 def _validate_full_inputs(
@@ -110,6 +131,21 @@ def _validate_full_inputs(
             reasons.append("timestamps_length")
         elif any(not _finite_number(value) for value in timestamps):
             reasons.append("timestamps_non_finite")
+
+    # Stress replay alignment: a full nine-engine claim rests on the stress engine
+    # having replayed REAL history, which needs both the bundle's declared PIT axis
+    # and the axis actually handed to the engines, describing the same periods.
+    declared = inputs.timestamps
+    if timestamps is None or declared is None:
+        reasons.append("stress_timestamps_missing")
+    else:
+        defect = _stress_axis_reason(
+            declared, expected_len
+        ) or _stress_axis_reason(timestamps, expected_len)
+        if defect is not None:
+            reasons.append(defect)
+        elif list(declared) != list(timestamps):
+            reasons.append("stress_timestamps_not_aligned")
 
     if not isinstance(inputs.capacity_cny, Mapping):
         reasons.append("capacity_cny_missing")
@@ -297,6 +333,26 @@ def evaluate_dry_run_risk(returns: List[float], weights: Dict[str, float], equit
             total_aum=float(full_inputs.total_aum),
             timestamps=timestamps,
         )
+        # The nine-engine label is an ADMISSION claim, so the run's own stress report
+        # decides it: a stress leg that fell back to the (honestly labeled) synthetic
+        # multipliers is not real historical replay and cannot carry the full label,
+        # however many engines passed.  Fail closed to the pending shape instead.
+        stress_report = run.gate_reports.get("stress")
+        if getattr(stress_report, "provenance", "") != "REAL_HISTORICAL_REPLAY":
+            pending = {"stress": "STRESS_REPLAY_REQUIRED"}
+            return {
+                "decision": "RISK_REJECTED",
+                "status": "PENDING",
+                "gates_passed": 0,
+                "gates_run": 0,
+                "engines_run": {},
+                "engines_skipped": pending,
+                "engines_pending": pending,
+                "reports": {},
+                "reasons": ["stress_replay_required"],
+                "provenance": "REAL_RESEARCH_RISK_FULL_PENDING",
+                "config_provenance": config.compute_hash(),
+            }
         reports = {
             name: _summary(name, report)
             for name, report in sorted(run.gate_reports.items())

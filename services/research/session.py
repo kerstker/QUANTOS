@@ -172,6 +172,17 @@ def _derive_dataset_version(
     instruments: Sequence[str],
     event_times: Sequence[int],
 ) -> str:
+    """Dataset identity persisted with this run's registry artifacts (review P1-7).
+
+    A bare content fingerprint does not bind the instrument set, the event grid or the
+    knowledge clock, so two runs over different data contracts would share one accounting
+    identity (multiple-testing / bandit state). The data layer owns that identity
+    (`PITResearchDataAdapter.dataset_identity`), so prefer it when the port can supply one;
+    a port that cannot keeps its previous `dataset_version` behaviour (nothing is invented
+    here; this module must not import the data-layer implementation)."""
+    identity = getattr(store, "dataset_identity", None)
+    if callable(identity):
+        return identity(instruments, event_times)
     return store.dataset_version(instruments, event_times)
 
 

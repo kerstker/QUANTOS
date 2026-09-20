@@ -16,6 +16,36 @@ class RiskDecision(str, Enum):
     REJECTED_CAPACITY_RISK="REJECTED_CAPACITY_RISK"; REJECTED_MODEL_ALPHA_RISK="REJECTED_MODEL_ALPHA_RISK"
 
 
+def _finite_number(name: str, value, *, non_negative: bool = True) -> None:
+    """P0-1: a threshold that cannot be compared is a check that cannot fire.
+
+    Each engine below compares a computed metric against its threshold, so a NaN
+    (or negative) threshold makes the rejection condition False and the engine
+    always passes. Exact contract: bool is not a number, ints are always finite,
+    floats must be finite.
+    """
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or (isinstance(value, float) and not math.isfinite(value))):
+        raise ValueError(f"{name} must be a finite number")
+    if non_negative and value < 0:
+        raise ValueError(f"{name} must be non-negative")
+
+
+# Thresholds compared against computed metrics; all must be finite and >= 0
+# (0 = fail-closed tight threshold, never "unlimited"). periods_per_year has its
+# own positive rule below; min_capacity/seed are finite-checked but sign-permissive.
+_NON_NEGATIVE_THRESHOLDS = (
+    "max_portfolio_volatility", "max_var_95", "max_cvar_95", "max_drawdown",
+    "max_drawdown_duration", "max_single_alpha_weight", "max_cluster_weight",
+    "max_pairwise_correlation", "max_average_correlation", "max_liquidity_usage",
+    "max_participation_rate", "max_liquidation_days", "max_leverage", "max_turnover",
+    "max_cost_drag", "min_effective_number_of_bets", "max_capacity_usage",
+    "max_worst_regime_loss", "max_stress_loss", "min_validation_confidence",
+    "min_paper_confidence",
+)
+_SIGN_PERMISSIVE_SCALARS = ("min_capacity", "seed")
+
+
 @dataclass
 class RiskConfig:
     """Fully configurable risk thresholds. Nothing hardcoded."""
@@ -43,9 +73,19 @@ class RiskConfig:
                 or not math.isfinite(float(self.periods_per_year))
                 or self.periods_per_year <= 0):
             raise ValueError("periods_per_year must be a positive finite number")
+        for name in _NON_NEGATIVE_THRESHOLDS:
+            _finite_number(name, getattr(self, name))
+        for name in _SIGN_PERMISSIVE_SCALARS:
+            _finite_number(name, getattr(self, name), non_negative=False)
 
     def compute_hash(self) -> str:
-        return hashlib.sha256(json.dumps(self.__dict__, sort_keys=True).encode()).hexdigest()[:16]
+        # allow_nan=False: json.dumps emits the bare NaN/Infinity literals by default,
+        # so without it a non-finite threshold would be silently hashed into the
+        # provenance string instead of failing here. Local to this method —
+        # quantos/contracts/hashing.py has real producers of inf and stays untouched.
+        return hashlib.sha256(
+            json.dumps(self.__dict__, sort_keys=True, allow_nan=False).encode()
+        ).hexdigest()[:16]
 
 
 @dataclass

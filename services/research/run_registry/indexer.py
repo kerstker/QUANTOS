@@ -45,7 +45,7 @@ def adapt_carry(j: dict) -> dict:
             {"label": "price", "value": j.get("sharpe_price_only")},
             {"label": "+funding", "value": j.get("sharpe_price_plus_funding")},
             {"label": "@5bps", "value": j.get("sharpe_net_5bps")}]},
-        "verdict": "DEPLOYABLE",
+        "verdict": "DIAGNOSTIC_ONLY",
         "caveats": _CARRY_CAVEATS,
         "provenance": "tools/crypto_carry_strategy.py",
     }

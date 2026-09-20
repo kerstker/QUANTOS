@@ -3,6 +3,8 @@ from copy import deepcopy
 from dataclasses import replace
 from decimal import localcontext
 
+import pytest
+
 from live.execution import demo_batch_risk as risk
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import StrategyApproval
@@ -69,13 +71,26 @@ def test_strategy_freshness_loss_and_liquidity_keep_original_gate_rejections():
 
 
 def test_inexact_quantity_future_market_and_cross_quote_inputs_are_rejected():
-    for change in ('quantity','future','quote','nan_limit'):
+    for change in ('quantity','future','quote'):
         orders=material()[2];values=inputs()
         if change=='quantity':orders[0]['quantity']='0.0000001'
         elif change=='future':values['market']['observed_at_ms']=NOW+1
-        elif change=='quote':values['account']['positions']=[{'symbol':'BTCUSDT','quantity':'0.001','mark_price':'60000'}]
-        else:values['native_limits']=replace(values['native_limits'],max_order_notional=float('nan'))
+        else:values['account']['positions']=[{'symbol':'BTCUSDT','quantity':'0.001','mark_price':'60000'}]
         assert risk.screen(orders,**values)['status']=='REJECTED'
+
+
+def test_non_finite_limit_cannot_even_be_constructed():
+    """2026-09-20 审计 P0-1:NaN 限额此前**能构造成功**,只靠 demo_batch_risk
+    _scaled_limits 的外部兜底才在 screen 阶段被拒——限额本身是 fail-open 的,任何
+    绕过那条兜底的调用方都会拿到一个静默失效的护栏(`notional > NaN` 恒为 False)。
+
+    RiskLimits.__post_init__ 现在直接拒绝非有限值,失败位置更早、也更靠近源头:
+    连一个带 NaN 限额的 gate 都构造不出来,而不是先构造出一个再指望下游发现。
+    这个断言比原来的 'screen 返回 REJECTED' **更强**,不是放宽。
+    """
+    values=inputs()
+    with pytest.raises(ValueError):
+        replace(values['native_limits'],max_order_notional=float('nan'))
 
 
 def test_result_identity_binds_limits_and_exact_order_bytes():

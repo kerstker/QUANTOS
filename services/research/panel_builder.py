@@ -2,10 +2,25 @@
 
 For each period timestamp t, the cross-sectional signal uses ONLY bars knowable by
 t (store.as_of -> no lookahead); the forward return is the realized outcome between
-t and t+fwd_horizon. Instruments lacking enough history / a forward close are
-dropped from that cross-section (fail-soft); a period with <2 survivors is not
-emitted (the long/short panel needs both legs). Deterministic. This is what lets
-GuidedSearchLoop / AlphaFactory run on the real persisted data substrate."""
+t and t+fwd_horizon, measured from the bar AT t. Instruments lacking enough history /
+a bar at t / a forward close are dropped from that cross-section (fail-soft); a period
+with <2 survivors is not emitted (the long/short panel needs both legs). Deterministic.
+This is what lets GuidedSearchLoop / AlphaFactory run on the real persisted data
+substrate.
+
+The knowledge clock is explicit: with the default decision_lag=0 /
+minimum_knowledge_lag=0 the own-event-time PIT read contract (as_of(t)) is used,
+unchanged.  With explicit lags the decision clock of an event t is t+decision_lag and a
+vintage is admissible only inside [t+minimum_knowledge_lag, t+decision_lag] - the same
+policy as services.data.available_time.fetch_bars_for_event_decisions.
+
+One deliberate behaviour change applies in BOTH branches (review P1-6): the
+decision-moment bar must BE the bar at t (`now_bar.event_time != t` drops the
+instrument). Previously a stale `latest_as_of` bar was accepted as the current price
+and as the forward-return base, so the realized return for [t, t+h] was measured from
+an earlier date. The own-event-time READ policy is unchanged; what changed is that an
+instrument without a bar exactly at t is now dropped instead of being silently
+measured from a stale bar."""
 from __future__ import annotations
 
 from datetime import date as _date
@@ -29,13 +44,39 @@ def _iso(event_time: int) -> str:
     return f"{y:04d}-{m:02d}-{d:02d}"
 
 
+def _admissible(rows, *, decision_lag: int, minimum_knowledge_lag: int) -> list:
+    """Vintages admissible under the explicit knowledge clock: an event's own close must be
+    knowable inside [event_time+minimum_knowledge_lag, event_time+decision_lag]. Same
+    admissibility predicate as services/data/available_time.fetch_bars_for_event_decisions
+    (which stays the bulk-window implementation of this policy)."""
+    return [b for b in rows
+            if b.event_time + minimum_knowledge_lag <= b.knowledge_time <= b.event_time + decision_lag]
+
+
+def _vintage_at(rows, event_time: int):
+    """Latest admissible vintage of `event_time` (highest knowledge_time), or None."""
+    best = None
+    for b in rows:
+        if b.event_time == event_time and (best is None or b.knowledge_time > best.knowledge_time):
+            best = b
+    return best
+
+
 def build_panel_periods(store: PointInTimeMarketDataPort, instruments: Sequence[str], *, event_times: Sequence[int],
                         fwd_horizon: int, signal_fn: Callable = None, universe=None,
-                        volume_signal_fn: Callable = None) -> list:
+                        volume_signal_fn: Callable = None,
+                        decision_lag: int = 0, minimum_knowledge_lag: int = 0) -> list:
     if fwd_horizon < 1:
         raise ValueError("fwd_horizon must be >= 1 (a forward return looks AHEAD)")
     if (signal_fn is None) == (volume_signal_fn is None):
         raise ValueError("pass exactly one of signal_fn (price) or volume_signal_fn (volume)")
+    # explicit knowledge clock (same guards as services.data.available_time): a vintage is
+    # admissible only inside [event_time+minimum_knowledge_lag, event_time+decision_lag]
+    if decision_lag < 0 or minimum_knowledge_lag < 0:
+        raise ValueError("knowledge lags must be non-negative")
+    if decision_lag < minimum_knowledge_lag:
+        raise ValueError("decision_lag cannot be shorter than minimum_knowledge_lag")
+    aware_clock = bool(decision_lag or minimum_knowledge_lag)
     insts = sorted(instruments)
     ets = sorted(event_times)
     periods = []
@@ -52,7 +93,21 @@ def build_panel_periods(store: PointInTimeMarketDataPort, instruments: Sequence[
             # return over [t, t+h] is still realized even if the name later leaves).
             if universe is not None and not universe.is_member_as_of(inst, iso_t):
                 continue
-            hist = store.as_of(inst, t)              # PIT: bars knowable by t
+            if aware_clock:
+                # decision clock = t+decision_lag; reject legacy backdated vintages and
+                # pick the latest vintage knowable at that decision (two-lag policy)
+                hist = _admissible(store.as_of(inst, t + decision_lag),
+                                   decision_lag=decision_lag,
+                                   minimum_knowledge_lag=minimum_knowledge_lag)
+                now_bar = _vintage_at(hist, t)
+                fwd_bar = _vintage_at(_admissible(
+                    store.as_of(inst, t_fwd + decision_lag),
+                    decision_lag=decision_lag,
+                    minimum_knowledge_lag=minimum_knowledge_lag), t_fwd)
+            else:
+                hist = store.as_of(inst, t)          # PIT: bars knowable by t
+                now_bar = store.latest_as_of(inst, t)
+                fwd_bar = store.latest_as_of(inst, t_fwd)
             # collapse restatements to ONE bar per event_time (latest knowledge), so a
             # revision does not duplicate an event_time and corrupt the window op
             by_close, by_vol = {}, {}
@@ -66,12 +121,15 @@ def build_panel_periods(store: PointInTimeMarketDataPort, instruments: Sequence[
                 sig = volume_signal_fn(closes, volumes) if closes else None
             else:
                 sig = signal_fn(closes) if closes else None
-            now_bar = store.latest_as_of(inst, t)
-            fwd_bar = store.latest_as_of(inst, t_fwd)
             # require a GENUINE later observation for the forward return — else the
             # instrument is delisted/halted and latest_as_of returns a stale bar that
             # would fabricate a 0% return (review: skip it instead)
+            # ALSO require the decision-moment bar to BE the bar at t: with an interior
+            # gap (or a delisting) latest_as_of hands back an older bar, and using it as
+            # the base measures the realized return from the wrong date while stamping it
+            # as the [t, t+h] outcome (review P1-6). Fail-soft: drop the instrument.
             if (sig is None or now_bar is None or fwd_bar is None or now_bar.close == 0
+                    or now_bar.event_time != t
                     or fwd_bar.event_time <= now_bar.event_time):
                 continue
             sig_insts.append(inst)
@@ -85,17 +143,21 @@ def build_panel_periods(store: PointInTimeMarketDataPort, instruments: Sequence[
 
 
 def make_data_periods_provider(store: PointInTimeMarketDataPort, instruments: Sequence[str], *,
-                               event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
+                               event_times: Sequence[int], fwd_horizon: int, universe=None,
+                               decision_lag: int = 0, minimum_knowledge_lag: int = 0) -> Callable:
     """Adapt an AlphaDefinition (params operator/window) to a periods provider that
     builds PanelPeriods from the persisted store — pass to GuidedSearchLoop.search.
-    With a PITUniverse, panel building is survivorship-bias-free."""
+    With a PITUniverse, panel building is survivorship-bias-free. decision_lag /
+    minimum_knowledge_lag default to the own-event-time contract (0, 0)."""
     def provider(defn):
         op = defn.params["operator"]
         window = int(defn.params["window"])
         fn = SIGNAL_OPS[op]
         return build_panel_periods(store, instruments, event_times=event_times,
                                    fwd_horizon=fwd_horizon,
-                                   signal_fn=lambda closes: fn(closes, window), universe=universe)
+                                   signal_fn=lambda closes: fn(closes, window), universe=universe,
+                                   decision_lag=decision_lag,
+                                   minimum_knowledge_lag=minimum_knowledge_lag)
 
     def _leakage_ok(defn):
         # 断点1 (方案A): this provider DOES hold the raw PIT bars + the op, so it can run the real leakage
@@ -115,10 +177,12 @@ def make_data_periods_provider(store: PointInTimeMarketDataPort, instruments: Se
 
 
 def make_volume_periods_provider(store: PointInTimeMarketDataPort, instruments: Sequence[str], *,
-                                 event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
+                                 event_times: Sequence[int], fwd_horizon: int, universe=None,
+                                 decision_lag: int = 0, minimum_knowledge_lag: int = 0) -> Callable:
     """Volume/liquidity factor provider: an AlphaDefinition (params operator/window, family
     'volume') -> PanelPeriods whose signal is a VOLUME_OPS operator over the per-instrument
-    price+volume history. Same PIT / survivorship-free guarantees as the price provider."""
+    price+volume history. Same PIT / survivorship-free guarantees as the price provider
+    (including the explicit decision_lag / minimum_knowledge_lag knowledge clock)."""
     from .volume_signals import VOLUME_OPS
 
     def provider(defn):
@@ -126,7 +190,9 @@ def make_volume_periods_provider(store: PointInTimeMarketDataPort, instruments: 
         window = int(defn.params["window"])
         fn = VOLUME_OPS[op]
         return build_panel_periods(store, instruments, event_times=event_times, fwd_horizon=fwd_horizon,
-                                   volume_signal_fn=lambda c, v: fn(c, v, window), universe=universe)
+                                   volume_signal_fn=lambda c, v: fn(c, v, window), universe=universe,
+                                   decision_lag=decision_lag,
+                                   minimum_knowledge_lag=minimum_knowledge_lag)
 
     def _leakage_ok(defn):
         # 断点1 (方案A): real leakage detection for a VOLUME factor over the bounded recent bar slice.

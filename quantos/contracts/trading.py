@@ -14,6 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .order import OrderState
 from .rejection import RejectionReason
 
+# Same finite guard as quantos/contracts/data.py (review P1-8): the `gt=0`/`ge=0`
+# constraints below reject NaN only incidentally and let +inf through, e.g. a
+# LIMIT intent's limit_price or a fill's price.
+_FROZEN_FINITE = ConfigDict(frozen=True, allow_inf_nan=False)
+
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -28,7 +33,7 @@ class OrderType(str, Enum):
 class OrderIntent(BaseModel):
     """A strategy's desired action (intent only — never an instruction to a
     broker). Risk decides permission separately (blueprint §5.3)."""
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     instrument_id: str = Field(min_length=1)
     side: OrderSide
@@ -47,7 +52,7 @@ class OrderIntent(BaseModel):
 
 
 class Order(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     order_id: str = Field(min_length=1)
     intent: OrderIntent
@@ -63,7 +68,7 @@ class Order(BaseModel):
 
 
 class Fill(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     fill_id: str = Field(min_length=1)
     order_id: str = Field(min_length=1)
@@ -73,7 +78,7 @@ class Fill(BaseModel):
 
 
 class ExecutionReport(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     report_id: str = Field(min_length=1)
     order_id: str = Field(min_length=1)

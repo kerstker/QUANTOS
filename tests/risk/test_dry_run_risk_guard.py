@@ -113,7 +113,7 @@ def test_risk_config_rejects_invalid_annualisation_basis(periods_per_year):
         RiskConfig(periods_per_year=periods_per_year)
 
 
-def _full_inputs(returns, weights):
+def _full_inputs(returns, weights, timestamps):
     return DryRunResearchRiskInputs(
         capacity_cny={name: 1.0e9 for name in weights},
         daily_volume_cny=1.0e9,
@@ -146,6 +146,7 @@ def _full_inputs(returns, weights):
                 "leakage_flag": False,
             },
         ],
+        timestamps=timestamps,
     )
 
 
@@ -165,7 +166,7 @@ def test_strict_full_contract_without_inputs_is_pending_and_fail_closed():
 
 def test_strict_full_contract_invalid_alignment_stays_pending():
     returns, weights, equity, ts = _benign()
-    inputs = _full_inputs(returns, weights)
+    inputs = _full_inputs(returns, weights, ts)
     invalid = DryRunResearchRiskInputs(
         capacity_cny=inputs.capacity_cny,
         daily_volume_cny=inputs.daily_volume_cny,
@@ -174,6 +175,7 @@ def test_strict_full_contract_invalid_alignment_stays_pending():
                        "alpha_b": list(inputs.alpha_returns["alpha_b"])},
         regime_labels=inputs.regime_labels,
         alpha_metadata=inputs.alpha_metadata,
+        timestamps=inputs.timestamps,
     )
     d = evaluate_dry_run_risk(
         returns, weights, equity, timestamps=ts,
@@ -187,7 +189,7 @@ def test_strict_full_contract_runs_all_nine_engines_from_real_inputs():
     returns, weights, equity, ts = _benign()
     d = evaluate_dry_run_risk(
         returns, weights, equity, timestamps=ts,
-        full_inputs=_full_inputs(returns, weights), require_full_inputs=True,
+        full_inputs=_full_inputs(returns, weights, ts), require_full_inputs=True,
     )
     assert d["status"] == "APPROVED"
     assert d["decision"] == "RISK_APPROVED"
@@ -204,7 +206,7 @@ def test_strict_full_contract_preserves_engine_rejection_reason():
     returns, weights, equity, ts = _benign()
     # Every individual capacity is too small for the supplied AUM, so the real
     # capacity engine rejects; no fallback to the four-engine subset is allowed.
-    inputs = _full_inputs(returns, weights)
+    inputs = _full_inputs(returns, weights, ts)
     constrained = DryRunResearchRiskInputs(
         capacity_cny={name: 1.0 for name in weights},
         daily_volume_cny=inputs.daily_volume_cny,
@@ -212,6 +214,7 @@ def test_strict_full_contract_preserves_engine_rejection_reason():
         alpha_returns=inputs.alpha_returns,
         regime_labels=inputs.regime_labels,
         alpha_metadata=inputs.alpha_metadata,
+        timestamps=inputs.timestamps,
     )
     d = evaluate_dry_run_risk(
         returns, weights, equity, timestamps=ts,

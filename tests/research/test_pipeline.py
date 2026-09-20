@@ -90,10 +90,16 @@ def test_pipeline_flags_overfit_candidate_set():
     candidate_ids = tuple(
         f"overfit-{index}" for index in range(candidate_count)
     )
-    # The first segment is partly consumed by training; segment 1 is the first
-    # full OOS winner under deterministic tie-breaking.
+    # 2026-09-20 审计 P0-4:选择键已从 OOS 折改为**训练折**——这正是本次修复的要点,
+    # 而且本用例恰好是最好的例证:两个键选出的赢家**不是同一个候选**。
+    #   train 折收益和: overfit-0=0.002197  overfit-1=0.002829
+    #                   overfit-2=0.003004  overfit-3=0.000328  -> 训练折选 overfit-2
+    #   OOS   折收益和: overfit-0=0.000230  overfit-1=0.000777
+    #                   overfit-2=0.000601  overfit-3=0.000676  -> 旧 OOS 键选 overfit-1
+    # 此前 subject_id="overfit-1" 之所以成立,是因为选择就在被报告的 OOS 折上做的。
+    # 现在必须命名训练折选出的 overfit-2,否则契约会抛错而不是悄悄放宽。
     result = run_research_validation(
-        "overfit-1",
+        "overfit-2",
         bars,
         candidates,
         candidate_ids=candidate_ids,
@@ -207,8 +213,15 @@ def test_pipeline_executes_every_oos_fold_through_the_injected_port():
     )
 
     assert isinstance(port, BacktestExecutionPort)
-    assert len(port.calls) == 8
-    assert all(len(call[0]) == len(call[1]) == 3 for call in port.calls)
+    # 2026-09-20 审计 P0-4:候选现在必须先在 **训练折** 上打分才能被选中,所以每个
+    # 候选会在 OOS 折之外额外走一遍 train 窗口(长度 train_size=6)。本用例原本要
+    # 保证的"每个 OOS 折都经由注入端口执行"依然成立,只是现在多了 train 那一遍。
+    oos_lengths = [len(call[0]) for call in port.calls if len(call[0]) == 3]
+    train_lengths = [len(call[0]) for call in port.calls if len(call[0]) == 6]
+    assert len(port.calls) == 16
+    assert len(oos_lengths) == 8        # 2 个候选 × 4 个 OOS 折
+    assert len(train_lengths) == 8      # 2 个候选 × 4 个训练折
+    assert all(len(call[0]) == len(call[1]) for call in port.calls)
 
 
 def test_pipeline_rejects_non_contract_backtest_output():

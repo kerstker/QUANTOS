@@ -41,7 +41,6 @@ from services.data.caching_store import CachingPITStore
 from services.research.backtest_engine.metrics import sharpe
 from services.research.paper_trading.advance import advance_paper_track
 from services.research.paper_trading.store import PaperTrackStore
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -51,6 +50,7 @@ from services.execution.backtest_authority import quarantine_legacy_backtest
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
+from tools.research_dry_run_profile import research_dry_run_limits
 
 _DB_MEXC = os.path.join("data", "cache", "crypto_mexc.db")
 _DB_COINGECKO = os.path.join("data", "cache", "crypto_funding.db")
@@ -121,12 +121,7 @@ def _build_periods(store, hysteresis: bool = False) -> tuple[list, dict, dict, d
 
 def _make_gate_and_ctx(vol_by_period):
     ks = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset({_INST}), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset({_INST}))
     gate = PreTradeRiskGate(limits, kill_switch=ks)
 
     def ctx_factory(intent, prices, period):

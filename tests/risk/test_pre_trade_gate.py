@@ -102,8 +102,43 @@ def test_daily_loss_rejects_at_limit():
 def test_non_finite_inputs_rejected_at_construction():
     with pytest.raises(Exception):
         MarketContext(instrument_id="AAA", reference_price=float("nan"))
+    # LIMIT (not MARKET): a MARKET order carrying limit_price is rejected by the
+    # structural rule "MARKET order must not carry a limit_price", not by the
+    # price itself — the assertion would then pass for the wrong reason.
     with pytest.raises(Exception):
-        OrderIntent(instrument_id="AAA", side=OrderSide.BUY, quantity=10, limit_price=float("inf"))
+        OrderIntent(instrument_id="AAA", side=OrderSide.BUY, quantity=10,
+                    order_type=OrderType.LIMIT, limit_price=float("nan"))
+
+
+def test_non_finite_gross_exposure_limit_cannot_approve_over_limit_exposure():
+    # P0-1: a NaN/inf max_gross_exposure makes `g > limits.max_gross_exposure` False,
+    # silently approving the 250k gross the finite limit below rejects.
+    acct = _account(positions=(Position(instrument_id="BBB", quantity=1500, avg_cost=100, market_value=150_000.0),))
+    with pytest.raises(ValueError):
+        _limits(max_gross_exposure=float("nan"))
+    with pytest.raises(ValueError):
+        _limits(max_gross_exposure=float("inf"))
+    d = _gate(limits=_limits(max_gross_exposure=200_000.0)).evaluate(
+        _intent(quantity=1000), _ctx(account=acct))
+    assert R.POSITION_LIMIT_EXCEEDED in d.reasons
+
+
+def test_nan_or_non_positive_rate_window_cannot_skip_the_turnover_guard():
+    recent = tuple(range(941, 1001))              # 60 orders inside the default 60s window (> 50)
+    for bad in (float("nan"), -1):
+        with pytest.raises(ValueError):
+            _limits(rate_window_ms=bad)
+    d = _gate().evaluate(_intent(), _ctx(recent_timestamps=recent))
+    assert R.TURNOVER_LIMIT_EXCEEDED in d.reasons
+
+
+def test_negative_or_nan_cash_buffer_cannot_skip_the_cash_check():
+    # 1000 notional vs 500 cash; cash_buffer_pct=-1 makes `cash < notional * 0` False
+    for bad in (-1, float("nan")):
+        with pytest.raises(ValueError):
+            _limits(cash_buffer_pct=bad)
+    d = _gate().evaluate(_intent(quantity=10), _ctx(account=_account(cash=500.0)))
+    assert R.INSUFFICIENT_CASH in d.reasons
 
 
 def test_sell_flip_through_short_cap_rejected():

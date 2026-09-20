@@ -56,7 +56,9 @@ from typing import Optional, Sequence
 import numpy as np
 
 from quantos.contracts.alpha import AlphaCluster
-from services.alpha.cluster import cluster_alphas
+# 2026-09-20 审计 P1-9:聚类原语已下沉为中立的 quantos.analytics.cluster,
+# research 层不再需要从 alpha 包导入它(消除了基线里的一条 research→alpha 违规)。
+from quantos.analytics.cluster import cluster_alphas
 
 _PERIODS_PER_YEAR = 52          # 策略收益为 ISO 周频
 _TRADING_DAYS = 365             # crypto 7×24,已实现波动年化基数

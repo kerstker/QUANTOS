@@ -712,13 +712,13 @@ def _cpu_replay_candidate(candidate: CandidateSpec, stress: StressSpec, bundle: 
         return {"status": "BLOCK", "reasons": ["cpu_periods_missing"], "candidate_hash": candidate_config_hash(candidate), "stress": stress.as_dict()}
     from services.execution.dry_run_pipeline import run_multi_period_dry_run
     from services.execution.impact_calibration import default_crypto_impact_calibration, scenario_impact
-    from services.risk.pre_trade.config import RiskLimits
     from services.risk.pre_trade.context import AccountRiskState, MarketContext, RiskContext, StrategyApproval
     from services.risk.pre_trade.gate import PreTradeRiskGate
     from services.risk.pre_trade.kill_switch import KillSwitch
     from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
     from services.risk.research_risk.domain.models import RiskConfig
     from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+    from tools.research_dry_run_profile import research_dry_run_limits
 
     weights_by_period: dict[int, dict[str, float]] = {}
     for timestamp in periods:
@@ -750,13 +750,12 @@ def _cpu_replay_candidate(candidate: CandidateSpec, stress: StressSpec, bundle: 
         return {"status": "BLOCK", "reasons": ["cpu_pit_marks_or_funding_missing"], "missing": missing_inputs[:20], "candidate_hash": candidate_config_hash(candidate), "stress": stress.as_dict()}
 
     kill_switch = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10**13, max_order_notional=1e14, fat_finger_qty=10**13,
-        max_gross_exposure=1e14, max_net_exposure=1e14,
-        max_leverage=float(candidate.leverage_cap), max_single_name_pct=1.0,
-        max_turnover=1e7, max_participation_rate=float(stress.participation_rate),
-        max_instrument_vol=5.0, daily_loss_limit=1e14, max_drawdown=float(candidate.dd_threshold),
+    limits = research_dry_run_limits(
+        frozenset(held_names),
+        max_participation_rate=float(stress.participation_rate),
+        max_leverage=float(candidate.leverage_cap),
+        max_single_name_pct=1.0,
+        max_drawdown=float(candidate.dd_threshold),
     )
     gate = PreTradeRiskGate(limits, kill_switch=kill_switch)
 

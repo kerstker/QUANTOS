@@ -210,8 +210,15 @@ def log_clock_sync_status(venue_name: str, venue, *, now: int) -> None:
     失败了"这个事实写进哨兵本来就在维护的告警台账(`tools/alert_sink.py::emit` ->
     `data/cache/alerts.jsonl`),不新开外部告警通道。**只在失败时写**(与其它哨兵告警的惯例
     一致,成功是常态不需要噪音)。`last_clock_sync_ok` 为 `True` 或 `None`(适配器不支持这个
-    属性,如当前的 binance 适配器——本次加固刻意只动 bybit,不越界改 binance)都不告警,只有
-    显式 `False` 才算数——绝不因为属性缺失而误报。"""
+    属性)都不告警,只有显式 `False` 才算数——绝不因为属性缺失而误报。
+
+    2026-09-20 审计 P2-14 更新:该属性**不再只有 bybit 暴露**。binance
+    (`live/exchange/binance_futures.py::sync_clock`)与 mexc
+    (`live/exchange/mexc_spot.py::sync_clock`)此前用裸 `except Exception: pass`
+    把同步失败整个吞掉,现在也都设置 `last_clock_sync_ok` / `last_clock_sync_error`。
+    因此这三个场所的时钟同步失败都会真正进入告警台账,而不是静默回退到旧偏移量。
+    本函数的 `getattr(..., None) is not False` 探测逻辑无需改动——它对新增场所自动生效,
+    对任何仍不支持该属性的适配器继续保持"不误报"。"""
     if getattr(venue, "last_clock_sync_ok", None) is not False:
         return
     reason = getattr(venue, "last_clock_sync_error", None) or "unknown reason"

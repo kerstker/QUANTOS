@@ -56,7 +56,9 @@ def test_cancel_rate_does_not_block_proven_exposure_reduction():
     [
         {"max_cancel_rate": -0.01},
         {"max_cancel_rate": 1.01},
+        {"max_cancel_rate": float("nan")},
         {"min_cancel_rate_samples": 0},
+        {"min_cancel_rate_samples": float("nan")},   # NaN < 1 is False -> old floor bypassed
     ],
 )
 def test_cancel_rate_limits_reject_invalid_configuration(kwargs):

@@ -32,6 +32,15 @@ class VenueOrderResult:
     avg_price: float = 0.0
     raw: dict = field(default_factory=dict)   # venue 原始响应,便于排障(不做字段承诺)
 
+    def __post_init__(self) -> None:
+        # P1-8:成交数量/均价的有限性守卫。0.0 合法(未成交、以及 PREVIEW 路径
+        # tools/live_track_advance.py::PreviewVenue 如实报 0.0);inf/nan 或负值不是
+        # "venue 报了什么"的合法读数,记进账本会污染后续求和与名义额比较。
+        for name in ("filled_qty", "avg_price"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative, got {value!r}")
+
 
 @dataclass(frozen=True)
 class VenuePosition:
@@ -182,3 +191,20 @@ class LiveOrderRequest:
                 raise ValueError(
                     "MARKET order must not carry limit_price/post_only "
                     f"(got limit_price={self.limit_price!r}, post_only={self.post_only!r})")
+        # P1-8 身份守卫:这是 venue 提交货币,构造期 fail-closed 比适配器更前沿——
+        #   - side 必须是 OrderSide 枚举(字符串 "BUY" 会在适配器取 .value 时才炸);
+        #   - quantity 必须是真实 int/float(bool 是 int 子类,显式排除;Decimal/str
+        #     会在下游 round_to_step/格式化的 math 运算里炸),且有限且 >0——nan 让
+        #     `qty > min_qty` 恒 False,inf 让名义额比较失去意义;
+        #   - 两个 ID 去空白后必须非空(空 ID 到交易所只会变成不可对账的孤儿单)。
+        if not isinstance(self.side, OrderSide):
+            raise ValueError(f"side must be an OrderSide, got {self.side!r}")
+        if isinstance(self.quantity, bool) or not isinstance(self.quantity, (int, float)):
+            raise ValueError("quantity must be a real number (int/float, not bool), got "
+                             f"{type(self.quantity).__name__}: {self.quantity!r}")
+        if not math.isfinite(self.quantity) or self.quantity <= 0:
+            raise ValueError(f"quantity must be finite and positive, got {self.quantity!r}")
+        for name in ("instrument_id", "client_order_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string, got {value!r}")

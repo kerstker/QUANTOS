@@ -235,17 +235,21 @@ async def run(
     # Best-effort trigger record on the durable governance chain. The authoritative accountability is
     # the operator persisted on the run row. Each canonical invocation has one durable identity (a retry
     # resolves the same row), so an audit database hiccup must not alias or fail the persisted run.
+    # 但 best-effort 不等于静默(P2-15):故障必须留痕(同 :129-130 模式)。同一 run_id 的幂等重试
+    # 命中 event_id 唯一约束是"已记账"而非故障,故先查后写,不让异常充当控制流。
+    event_id = f"run.{run_id}"
     try:
-        _audit.append(
-            event_id=f"run.{run_id}",
-            actor=operator,
-            action="research.run.triggered",
-            timestamp=now,
-            target=run_id,
-            metadata={"kind": req.kind, "purpose": policy.purpose.value},
-        )
+        if not any(ev.event_id == event_id for ev in _audit.events):
+            _audit.append(
+                event_id=event_id,
+                actor=operator,
+                action="research.run.triggered",
+                timestamp=now,
+                target=run_id,
+                metadata={"kind": req.kind, "purpose": policy.purpose.value},
+            )
     except Exception:
-        pass
+        _LOG.exception("failed to audit research run trigger %s", run_id)
     return {
         "run_id": run_id,
         "status": "queued",
@@ -268,12 +272,16 @@ async def cancel(req: CancelRequest, operator: str = Depends(require_operator)) 
     # (那是 Phase 14 的范畴)。
     # soft cancel: mark the run cancelled and drop its result (a running tool is not force-killed)
     cancelled = _queue.cancel(req.run_id)
+    # 同样 best-effort、同样不得静默(P2-15)。event_id 带秒级时间戳:同一秒内的重放视为"已记账"
+    # 而跳过;跨秒的再次撤销各记一条(撤销本身不是幂等动作,不能只记第一次)。
+    event_id = f"cancel.{req.run_id}.{int(time.time())}"
     try:
-        _audit.append(event_id=f"cancel.{req.run_id}.{int(time.time())}", actor=operator,
-                     action="research.run.cancelled", timestamp=int(time.time()),
-                     target=req.run_id, metadata={"cancelled": str(cancelled)})
+        if not any(ev.event_id == event_id for ev in _audit.events):
+            _audit.append(event_id=event_id, actor=operator,
+                         action="research.run.cancelled", timestamp=int(time.time()),
+                         target=req.run_id, metadata={"cancelled": str(cancelled)})
     except Exception:
-        pass
+        _LOG.exception("failed to audit research run cancellation %s", req.run_id)
     return {"run_id": req.run_id, "cancelled": cancelled, "operator": operator}
 
 

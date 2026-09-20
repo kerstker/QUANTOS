@@ -13,7 +13,6 @@ from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_g
 from services.research import alpha_expression as ax
 from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
 from services.risk.research_risk.domain.models import RiskConfig
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -27,6 +26,7 @@ from live.execution.crowding_score import crowding_zscore as _crowding_zscore  #
 from tools.crypto_oi_research import build_panel, _legs, QUANTILE
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
+from tools.research_dry_run_profile import research_dry_run_limits
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _REPORT = os.path.join("data", "cache", "crowd_contra_dry_run.json")
@@ -193,12 +193,7 @@ def main() -> None:
         return sum(-rates.get(i, 0.0) * q * prices.get(i, 0.0) for i, q in held.items())
 
     ks = KillSwitch()
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset(held_names))
     gate = PreTradeRiskGate(limits, kill_switch=ks)
 
     def ctx_factory(intent, prices, period):

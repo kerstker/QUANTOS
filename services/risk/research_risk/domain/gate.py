@@ -6,7 +6,11 @@ import time, hashlib, json
 from typing import Dict, List
 from .models import *
 from .risk_modules import *
-from services.alpha.cluster import cluster_alphas
+# 2026-09-20 审计 P1-9:此处原先 `from services.alpha.cluster import cluster_alphas`,
+# 让**风险层反向依赖 alpha 层**——import-linter 的 research→alpha 契约因此出现一条
+# 经由 execution → risk 绕回 alpha 的间接违规链。该聚类实现已下沉为中立的
+# quantos.analytics.cluster,风险层从此只依赖中立层。
+from quantos.analytics.cluster import cluster_alphas
 
 
 class RiskApprovalGate:

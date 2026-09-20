@@ -72,7 +72,6 @@ from services.research.ic_panel import (aggregate_ic_series, compute_horizon_ic_
                                         compute_period_ic_series)
 from services.research.realism.capacity_curve import capacity_band
 from services.research.research_budget import ResearchBudget
-from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
@@ -88,6 +87,7 @@ from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE
 from tools.crypto_oi_research import _legs
 from tools.crypto_oi_verify import _per_year
 from tools.ic_panel_registry import _build as _pit_build, _load_json
+from tools.research_dry_run_profile import research_dry_run_limits
 from tools.search_trial_registry import (field_panel_dataset_version, make_search_id,
                                          production_experiment_registry)
 
@@ -421,12 +421,7 @@ def stage_dry_run(panel, spec, sig):
                                if close[r][i] and close[r][i] > 0}
 
     held_names = sorted({n for w in weights_by_period.values() for n in w})
-    limits = RiskLimits(
-        allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
-        default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
-        max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+    limits = research_dry_run_limits(frozenset(held_names))
     gate = PreTradeRiskGate(limits, kill_switch=KillSwitch())
 
     def ctx_factory(intent, prices, period):

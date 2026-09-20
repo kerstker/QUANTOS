@@ -1,7 +1,9 @@
 """Data domain entities (blueprint §6.1).
 
 Market data primitives + dataset versioning. Price bars and ticks are
-bitemporal (no-lookahead by construction). All models are frozen and validated.
+bitemporal (no-lookahead by construction). All models are frozen, validated and
+NON-FINITE-REJECTING (review P1-8). Deliberately NOT strict: stored payloads are
+read back through model_validate, so legitimate round-trips must keep validating.
 """
 from __future__ import annotations
 
@@ -10,6 +12,12 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .temporal import BitemporalRecord
+
+# The `gt=0`/`ge=0` Field constraints below only reject NaN — incidentally, since
+# every comparison against NaN is False — and let +inf through outright. A stored
+# inf then reaches downstream comparisons where `value > limit` silently
+# evaluates False (same rationale as services/risk/pre_trade/context.py).
+_FROZEN_FINITE = ConfigDict(frozen=True, allow_inf_nan=False)
 
 
 class AssetClass(str, Enum):
@@ -42,7 +50,7 @@ class CorporateActionType(str, Enum):
 
 
 class Instrument(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     instrument_id: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
@@ -54,7 +62,7 @@ class Instrument(BaseModel):
 
 
 class TradingCalendar(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     calendar_id: str = Field(min_length=1)
     timezone: str = "Asia/Shanghai"
@@ -65,6 +73,8 @@ class TradingCalendar(BaseModel):
 
 
 class Bar(BitemporalRecord):
+    model_config = _FROZEN_FINITE
+
     instrument_id: str = Field(min_length=1)
     open: float = Field(gt=0)
     high: float = Field(gt=0)
@@ -82,6 +92,8 @@ class Bar(BitemporalRecord):
 
 
 class Tick(BitemporalRecord):
+    model_config = _FROZEN_FINITE
+
     instrument_id: str = Field(min_length=1)
     price: float = Field(gt=0)
     size: float = Field(default=0.0, ge=0)
@@ -95,7 +107,7 @@ class CorporateAction(BaseModel):
     (`event_time`), so the knowledge>=event invariant deliberately does not
     apply here. PIT-correctness is enforced at adjustment time by only applying
     actions whose knowledge_time <= the query's as_of."""
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     instrument_id: str = Field(min_length=1)
     action_type: CorporateActionType
@@ -107,7 +119,7 @@ class CorporateAction(BaseModel):
 
 
 class DatasetVersion(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     dataset_id: str = Field(min_length=1)
     version: str = Field(min_length=1)
@@ -126,7 +138,7 @@ class DataQualityCheck(BaseModel):
 
 
 class DataQualityReport(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
 
     dataset_id: str = Field(min_length=1)
     version: str = ""

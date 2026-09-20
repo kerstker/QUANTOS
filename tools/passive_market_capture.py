@@ -21,7 +21,13 @@ from tools.perpetual_replay_research import source_identity
 from tools.profitability_study import write_new
 
 from services.execution.passive_execution_input import (
-    SCHEMA, MAX_RAW_BYTES, MAX_MESSAGE_BYTES, stream_urls, analyze,
+    # 2026-09-20 审计 P2-12:main() 的 argparse `choices=sorted(SYMBOLS)` 引用了
+    # 一个本模块从未导入的名字,于是这个被 docs/runbooks/profitability-validation.md
+    # 明确记录的操作命令**每次调用都会立刻 NameError 崩掉**。SYMBOLS 早已在
+    # services.execution.binance_execution_tape 定义并由 passive_execution_input
+    # 转出(stream_urls 也用它校验),所以正确修法是导入它——不是在本文件里另写一份
+    # 符号表(那会制造第二个真相来源)。
+    SCHEMA, MAX_RAW_BYTES, MAX_MESSAGE_BYTES, SYMBOLS, stream_urls, analyze,
 )
 
 def now_ms():

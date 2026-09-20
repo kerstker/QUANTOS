@@ -1,8 +1,11 @@
 [importlinter]
+# 2026-09-20 审计 P1-9:`tools` 此前不在 root_packages 里,所以 tools/ 的调用方
+# 从来不进依赖图——"隔离"只是文件里的声明,没有任何机器在检查。现在纳入。
 root_packages =
     quantos
     services
     live
+    tools
 include_external_packages = False
 
 [importlinter:contract:research-alpha-independence]
@@ -12,6 +15,48 @@ source_modules =
     services.research
 forbidden_modules =
     services.alpha
+# 2026-09-20 审计 P1-9:以下是**存量欠债的精确登记**(29 条直连 + 1 条经由
+# execution/risk 的间接链)。刻意不用 `services.research.* -> services.alpha.*`
+# 这类通配符:通配符会把未来新加的违规一并盖住,基线就不再是"只能收缩"的。
+# 每消除一条就删除对应行;新出现的边会立刻让门禁变红。
+ignore_imports =
+    services.research.alpha_expression -> services.alpha.panel_backtest
+    services.research.alpha_factory -> services.alpha.catalog
+    services.research.alpha_factory -> services.alpha.factor_set
+    services.research.alpha_pipeline -> services.alpha.catalog
+    services.research.alpha_pipeline -> services.alpha.evaluator
+    services.research.alpha_pipeline -> services.alpha.lineage
+    services.research.alpha_pipeline -> services.alpha.population_optimizer
+    services.research.alpha_pipeline -> services.alpha.registry
+    services.research.carry_pnl -> services.alpha.panel_backtest
+    services.research.experiment_registry.registry -> services.alpha.catalog
+    services.research.experiment_registry.registry -> services.alpha.evaluation_evidence
+    services.research.factor_set -> services.alpha.factor_set
+    services.research.fundamental_factors -> services.alpha.panel_backtest
+    services.research.funding_settlement -> services.alpha.panel_backtest
+    services.research.idiosyncratic_volatility -> services.alpha.panel_backtest
+    services.research.interaction_factors -> services.alpha.panel_backtest
+    services.research.liquidity_premium -> services.alpha.panel_backtest
+    services.research.ml.feature_panel -> services.alpha.panel_backtest
+    services.research.pairs_relative_value -> services.alpha.panel_backtest
+    services.research.panel_builder -> services.alpha.panel_backtest
+    services.research.portfolio_evidence -> services.alpha.executable_value
+    services.research.portfolio_evidence -> services.alpha.family_testing
+    services.research.profitability_inputs -> services.execution.perpetual_public_replay
+    services.research.session -> services.alpha.catalog
+    services.research.session -> services.alpha.config
+    services.research.session -> services.alpha.factor_set
+    services.research.validation_dag -> services.alpha.family_testing
+    services.research.validation_dag -> services.alpha.multiple_testing
+    # 间接链(已在本批次消除,故此处不再登记):research 曾经由 execution(回放/
+    # 权威回测)与 risk(dry-run guard → domain.gate → services.alpha.cluster)
+    # 绕回 alpha。关键一跳 gate.py 的 `from services.alpha.cluster import
+    # cluster_alphas` 是风险层反向依赖 alpha 层的方向性倒置。审计 P1-9 把那两个
+    # 纯函数原语下沉到了中立的 quantos.analytics(cluster/correlation),
+    # services/alpha/* 保留兼容转发,因此:
+    #   * gate.py(风险层)不再依赖 alpha;
+    #   * factor_decomp.py(研究层)不再依赖 alpha;
+    # 整条间接链随之消失,对应的基线行也已一并删除。若该链重新出现,门禁会变红。
 
 [importlinter:contract:live-unidirectional]
 name = Live can import but cannot be imported
@@ -29,16 +74,30 @@ forbidden_modules =
 [importlinter:contract:quantos-contracts-clean]
 name = Contracts should not import from services
 type = forbidden
+# 2026-09-20 审计 P1-9:契约原先只覆盖 quantos.contracts。新下沉的中立包
+# quantos.analytics 与既有的 quantos.runtime_paths / quantos.scenario 同样必须
+# 保持中立(它们被 services 与 live 依赖,若反过来依赖 services 就成了环)。
+# 已核实整个 quantos 包当前不 import services/live,故把 source 放宽到 quantos。
 source_modules =
-    quantos.contracts
+    quantos
 forbidden_modules =
     services
     live
 
-[importlinter:contract:research-alpha-no-circular]
-name = Research and Alpha should avoid circular dependency
+[importlinter:contract:tools-isolation]
+name = Tools is a leaf boundary: the runtime must not import tools
 type = forbidden
 source_modules =
-    services.research
+    quantos
+    services
+    live
 forbidden_modules =
-    services.alpha
+    tools
+# 2026-09-20 审计 P1-9:CLAUDE.md 规定 `services/` 是确定性且无网络的,公开数据
+# 联网只允许出现在受保护的 tools/ 边界。因此 services 反向 import tools 是方向
+# 倒置。现存 2 个文件、3 条惰性 import 是存量欠债,先精确登记(shrink-only),
+# 目标是把它们下沉到中立模块后删除本节。
+ignore_imports =
+    services.research.demo_statement -> tools.cache_io
+    services.research_runner.main -> tools.cache_io
+    services.research_runner.main -> tools.btc_factory_research
