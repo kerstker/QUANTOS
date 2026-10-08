@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 52,
+  "edge_count": 53,
   "edges": [
     {
       "references": [
@@ -1881,6 +1881,17 @@
     {
       "references": [
         {
+          "line": 23,
+          "module": "services.risk.research_risk.gold_research_replay",
+          "path": "services/research/gold_native_source_reader.py"
+        }
+      ],
+      "source": "research",
+      "target": "risk"
+    },
+    {
+      "references": [
+        {
           "line": 33,
           "module": "services.validation.performance",
           "path": "services/research/alpha_factory.py"
@@ -2385,6 +2396,11 @@
           "line": 27,
           "module": "services.validation.research_risk_authority",
           "path": "services/risk/research_risk/dry_run_guard.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.gold_account_risk_inputs",
+          "path": "services/risk/research_risk/gold_research_replay.py"
         }
       ],
       "source": "risk",
@@ -2392,7 +2408,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "3646bde7a5c3b03db191c5feed0ba6625a9f9a4c4084d16332dcd779c77a07f8",
+  "graph_sha256": "c61b6918acc69bfebf41cd22f3f3c8a3fd0dd2df07e9df96219f9613135b0979",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2430,7 +2446,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 697,
+  "source_file_count": 698,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

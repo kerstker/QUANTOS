@@ -156,9 +156,14 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
         is_net=plans[0]['forward_design']['selection']['candidate_id']=='net_portfolio'
         is_capacity=plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
         is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7')
-        assert projected['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V11' if is_capacity else
-            'QUANTOS_PROJECT_RESEARCH_FACTS_V10' if is_market else
-            'QUANTOS_PROJECT_RESEARCH_FACTS_V9' if is_net else 'QUANTOS_PROJECT_RESEARCH_FACTS_V8')
+        assert projected['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V12'
+        replay=projected['execution_risk_review']['nine_engine_replay']
+        assert replay['schema']=='QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1'
+        assert replay['engines_configured']==9 and replay['engine_replay_completed'] is False
+        assert replay['engines']['model_alpha']['status']=='INSUFFICIENT'
+        assert replay['engines']['model_alpha']['invocations']==0
+        assert replay['full_research_risk_9_of_9'] is replay['economic_authority'] is False
+        assert 'NINE_ENGINE_RISK_REPLAY_NOT_IMPLEMENTED' not in projected['execution_risk_review']['limitations']
         risk=projected['execution_risk_review']['account_risk_inputs']
         assert risk['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if is_capacity else
             'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if is_market else
@@ -170,6 +175,9 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
             assert capacity['original_snapshot_count']>0 and capacity['missing_intervals']>0
             assert capacity['capacity_history_policy']=='GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1'
             assert capacity['original_execution_policy_changed'] is False
+            assert capacity['schema']=='QUANTOS_GOLD_CAPACITY_INPUTS_V2'
+            assert capacity['atomic_observation_count']>0
+            assert capacity['atomic_observations_sha256'] is not None
             assert risk['source_groups']['capacity_and_aum']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
         if is_market:
             states=risk['market_states']

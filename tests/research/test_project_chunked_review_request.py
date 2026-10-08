@@ -326,27 +326,32 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
             verified = authority.verify_project_evidence(snapshot, now_ms=f['clock'][0], reports=reports)
             assert verified['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
             assert verified['qualification'] == 'INSUFFICIENT'
-            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
+            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11','QUANTOS_PROJECT_RESEARCH_FACTS_V12'):
                 projected=verified['projection']['execution_risk_review']['account_risk_inputs']
                 assert projected['source_groups']['risk_config']['status']=='AVAILABLE'
-                if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
+                if 'net_attribution' in projected:
                     assert projected['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if 'capacity_inputs' in projected else
                         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if 'market_states' in projected
                         else 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4')
                     assert projected['net_attribution']['cash_conservation_residual']=='0'
                     assert projected['net_attribution']['independent_strategy_pnl'] is False
                     assert projected['net_attribution']['status']=='UNAVAILABLE_SAMPLE_COVERAGE'
-                if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
+                if 'market_states' in projected:
                     assert projected['market_states']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
                     assert projected['market_states']['label_values_sha256'] is None
                     assert projected['source_groups']['regime_labels']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
-                if verified['projection']['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V11':
+                if 'capacity_inputs' in projected:
                     capacity=projected['capacity_inputs']
                     assert capacity['status']=='UNAVAILABLE_ACCOUNT_SERIES'
                     assert capacity['engine_inputs_sha256'] is None
                     assert capacity['original_snapshot_count']>0
                     assert capacity['currency']=='USDT' and capacity['original_execution_policy_changed'] is False
                     assert projected['source_groups']['capacity_and_aum']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
+                replay=verified['projection']['execution_risk_review']['nine_engine_replay']
+                assert replay['engines_configured']==9
+                assert replay['engines']['model_alpha']['status']=='INSUFFICIENT'
+                assert replay['engine_replay_completed'] is replay['full_research_risk_9_of_9'] is False
+                assert replay['native_result_hash']==projected['native_result_hash']
                 assert projected['risk_policy']['preregistration_time_authority'] is False
                 assert projected['full_research_risk_ready'] is False
             assert 'STATISTICAL_REVIEW_REQUIRES_COMPLETE_PROJECT_CUT' not in verified['reasons']

@@ -2705,10 +2705,33 @@ export interface GoldResearchRiskPolicy {
   economic_authority: false;
   submission_enabled: false;
 }
+export interface GoldNineEngineReplay {
+  schema: 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1';
+  status: 'PASS' | 'REJECTED' | 'INSUFFICIENT';
+  native_result_hash: string; account_inputs_sha256: string; policy_sha256: string | null;
+  currency: 'USDT'; sample: {start_ms: number; end_ms: number; frequency_ms: number};
+  engines: Record<'capacity' | 'concentration' | 'correlation' | 'drawdown' |
+    'liquidity' | 'market' | 'model_alpha' | 'regime' | 'stress', {
+      status: 'PASS' | 'FAIL' | 'INSUFFICIENT'; invocations: number;
+      original_report: Record<string, unknown> | null; reasons: string[];
+      original_receipt?: Record<string, string | number | null>;
+      original_duration_report?: Record<string, unknown>;
+      duration_unit?: 'DECLARED_RETURN_INTERVALS';
+      component_ids?: string[]; independent_strategy_pnl?: false;
+      shared_instrument_effective_bets_upper_bound?: number;
+      exposure_observation_count?: number; closed_book_observations?: number;
+    }>;
+  engines_configured: 9; engines_executed: number; engines_passed: number;
+  missing_engines: string[]; failed_engines: string[]; engine_replay_completed: boolean;
+  full_research_risk_9_of_9: boolean; mathematical_independence: false;
+  limitations: string[]; replay_sha256: string;
+  economic_authority: false; promotion_approved: false; submission_enabled: false;
+}
 export interface RegisteredReviewProjection extends Record<string, unknown> {
   schema?: string;
   execution_risk_review?: {
     schema: string;
+    nine_engine_replay?: GoldNineEngineReplay;
     account_risk_inputs?: {
       schema: 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V1' |
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' |
@@ -2717,7 +2740,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
       source_groups: Record<string, {status: string; count: number; value_sha256: string | null}>;
       missing_groups: string[];
       capacity_inputs?: {
-        schema: 'QUANTOS_GOLD_CAPACITY_INPUTS_V1';
+        schema: 'QUANTOS_GOLD_CAPACITY_INPUTS_V1' | 'QUANTOS_GOLD_CAPACITY_INPUTS_V2';
         status: string; sample: {start_ms: number; end_ms: number; frequency_ms: number};
         currency: 'USDT'; policy_sha256: string;
         capacity_history_policy: 'GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1';
@@ -2726,6 +2749,9 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
         observation_sha256: string; engine_inputs_sha256: string | null;
         interval_count: number; observation_count: number; missing_intervals: number;
         status_counts: Record<string, number>;
+        atomic_observations_sha256?: string | null; atomic_observation_count?: number;
+        atomic_status_counts?: Record<string, number>;
+        atomic_capacity_clock?: 'ORIGINAL_ATOMIC_ALLOCATION_RECEIPT_AVAILABLE';
         aum_kind: 'ORIGINAL_SIMULATED_NET_ACCOUNT_RECEIPT_AVAILABLE_EQUITY';
         capacity_clock: 'RETURN_INTERVAL_START_ORIGINAL_RECEIPT_AND_INGESTION_AVAILABLE';
         shared_capacity_pool: 'XAUUSDT'; original_execution_policy_changed: false;

@@ -247,7 +247,9 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
             reasons.add('STATISTICAL_REVIEW_' + value['report']['statistical_decision'])
         facts['limitations'] = sorted(reasons)
     if execution_risk is not None:
-        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V11'
+        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V12'
+                           if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V9' else
+                           'QUANTOS_PROJECT_RESEARCH_FACTS_V11'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V8' else
                            'QUANTOS_PROJECT_RESEARCH_FACTS_V10'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V7' else
@@ -369,6 +371,7 @@ def verify_project_evidence(snapshot, *, now_ms, reports=None):
     reasons = set(projected['limitations'])
     rejected = result['review_verdict'] == 'REJECTED'
     rejected |= (projected.get('risk_replay') or {}).get('status') == 'REJECTED'
+    rejected |= (projected.get('execution_risk_review') or {}).get('status') == 'REJECTED'
     rejected |= (projected.get('statistical_review') or {}).get('statistical_decision') == 'FAIL'
     if result['review_verdict'] != 'PASS':
         reasons.add('INDEPENDENT_REVIEW_' + result['review_verdict'])

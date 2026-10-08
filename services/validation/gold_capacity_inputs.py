@@ -19,7 +19,7 @@ from quantos.streaming_identity import StreamArray, exact_stream_identity_hash a
 from services.validation.gold_net_attribution import partition, exact_sum
 
 HISTORY_POLICY = "GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1"
-SCHEMA = "QUANTOS_GOLD_CAPACITY_INPUTS_V1"
+SCHEMA = "QUANTOS_GOLD_CAPACITY_INPUTS_V2"
 DAY = 86400000
 
 
@@ -198,6 +198,7 @@ class CapacityInputs:
     projection: dict
     observations: StreamArray
     engine_inputs: tuple[dict, ...] | None
+    atomic_observations: StreamArray | None = None
 
 
 def build_capacity_inputs(
@@ -323,6 +324,33 @@ def build_capacity_inputs(
             yield observation(decision, current_cap, current_account, current_allocation)
 
     stream = StreamArray(observations)
+    def atomic_observations():
+        # Reuse the original pool partition at every actual allocation receipt.
+        # The declared return grid cannot erase a position opened and closed
+        # between two samples. No extra fill or cash ledger is constructed.
+        caps = iter(snapshots(capacity_history))
+        next_cap = next(caps, None)
+        current_cap = None
+        accounts = iter(account_rows(account_observations, maximum_points))
+        for assigned in allocation_rows(allocation_observations, maximum_points):
+            current_account = next(accounts, None)
+            require(current_account is not None, 'ATOMIC_ACCOUNT_COVERAGE')
+            known = assigned['available_at_ms']
+            require(known <= end, 'ATOMIC_SAMPLE_END')
+            while next_cap is not None and next_cap['ingestion_time'] <= known:
+                current_cap = next_cap
+                next_cap = next(caps, None)
+            row = observation(known, current_cap, current_account, assigned)
+            row.pop('return_end_ms')
+            row.update(original_timestamp=assigned['timestamp'], signed_weights=assigned['signed_weights'])
+            yield row
+    atomic = StreamArray(atomic_observations) if allocation_observations is not None else None
+    atomic_statuses = Counter()
+    def counted_atomic():
+        for row in atomic.items():
+            atomic_statuses[row['status']] += 1
+            yield row
+    atomic_hash = None if atomic is None else digest(StreamArray(counted_atomic))
     rows = []
     statuses = Counter()
     for row in stream.items():
@@ -352,6 +380,10 @@ def build_capacity_inputs(
         observation_count=len(rows),
         missing_intervals=missing,
         status_counts=dict(sorted(statuses.items())),
+        atomic_observations_sha256=atomic_hash,
+        atomic_observation_count=sum(atomic_statuses.values()),
+        atomic_status_counts=dict(sorted(atomic_statuses.items())),
+        atomic_capacity_clock='ORIGINAL_ATOMIC_ALLOCATION_RECEIPT_AVAILABLE',
         aum_kind="ORIGINAL_SIMULATED_NET_ACCOUNT_RECEIPT_AVAILABLE_EQUITY",
         capacity_clock=POLICY["capacity_clock"],
         shared_capacity_pool="XAUUSDT",
@@ -368,4 +400,4 @@ def build_capacity_inputs(
         economic_authority=False,
         submission_enabled=False,
     )
-    return CapacityInputs(projection, stream, inputs)
+    return CapacityInputs(projection, stream, inputs, atomic)

@@ -17,6 +17,12 @@ class SourceReports(dict):
     def close_inputs(self):
         self.closed = True
 
+    def review_gold_risk(self, inputs):
+        """Trusted composition under the same original-material read lease."""
+        shape.require(not self.closed, 'RISK_CONTEXT_CLOSED')
+        from services.risk.research_risk.gold_research_replay import review_gold_account
+        return review_gold_account(inputs)
+
     def prepare_report_views(self, cut):
         """Verify complete immutable indexes once; never cache across leases."""
         from quantos.contracts.project_chunked_results import PreparedGoldReport

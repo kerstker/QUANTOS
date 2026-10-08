@@ -9,7 +9,7 @@ import math
 from decimal import Decimal
 from collections.abc import Mapping
 import statistics
-from itertools import combinations
+from itertools import combinations, chain
 from typing import Dict, Iterable, List, Optional, Sequence
 
 # Real historical crisis replay (realism engine RE-2) — shared pure stdlib functions,
@@ -231,27 +231,36 @@ class CorrelationRiskEngine:
 
 class DrawdownRiskEngine:
     def evaluate(self, equity_curve: List[float], config: RiskConfig) -> DrawdownRiskReport:
-        curve = _clean(equity_curve)
-        if not curve:
+        return self.evaluate_stream(iter(_clean(equity_curve)), config)
+
+    def evaluate_stream(self, equity_curve: Iterable[float], config: RiskConfig) -> DrawdownRiskReport:
+        """Same original math over a validated one-pass receipt equity stream."""
+        iterator = iter(equity_curve)
+        first = next(iterator, None)
+        if first is None:
             return DrawdownRiskReport(passed=False)
-        peak = curve[0]
-        max_drawdown = 0.0
-        current_duration = 0
-        max_duration = 0
-        drawdowns = []
-        for value in curve:
-            if value >= peak:
-                peak = value
-                current_duration = 0
-            else:
-                current_duration += 1
-            drawdown = (peak - value) / peak if peak else 0.0
-            drawdowns.append(drawdown)
-            max_drawdown = max(max_drawdown, drawdown)
-            max_duration = max(max_duration, current_duration)
-        average_drawdown = statistics.fmean(drawdowns) if drawdowns else 0.0
+        peak = first
+        max_drawdown = total = 0.0
+        current_duration = max_duration = count = 0
+        def drawdowns():
+            nonlocal peak, max_drawdown, total, current_duration, max_duration, count
+            for value in chain((first,), iterator):
+                if isinstance(value, bool) or not math.isfinite(value):
+                    raise ValueError('drawdown equity must be finite numeric')
+                if value >= peak:
+                    peak = value
+                    current_duration = 0
+                else:
+                    current_duration += 1
+                drawdown = (peak - value) / peak if peak else 0.0
+                max_drawdown = max(max_drawdown, drawdown)
+                max_duration = max(max_duration, current_duration)
+                total += drawdown
+                count += 1
+                yield drawdown
+        average_drawdown = statistics.fmean(drawdowns())
         recovery_days = max_duration
-        pain_index = sum(drawdowns) / len(drawdowns) if drawdowns else 0.0
+        pain_index = total / count
         passed = max_drawdown <= config.max_drawdown and max_duration <= config.max_drawdown_duration
         return DrawdownRiskReport(
             passed=passed,
@@ -394,14 +403,23 @@ class CapacityRiskEngine:
 
 class ModelAlphaRiskEngine:
     def evaluate(self, alpha_metadata: List[Dict], config: RiskConfig) -> ModelAlphaRiskReport:
-        if not alpha_metadata:
+        numbers = ('age_days', 'validation_confidence', 'paper_confidence')
+        flags = ('decay_flag', 'overfit_flag', 'leakage_flag')
+        if (not isinstance(alpha_metadata, Sequence) or isinstance(alpha_metadata, (str, bytes))
+                or not alpha_metadata or any(not isinstance(item, Mapping)
+                    or not set((*numbers, *flags)) <= set(item)
+                    or any(not _money_number(item[name]) for name in numbers)
+                    or float(item['age_days']) < 0
+                    or any(not 0 <= float(item[name]) <= 1 for name in numbers[1:])
+                    or any(type(item[name]) is not bool for name in flags)
+                    for item in alpha_metadata)):
             return ModelAlphaRiskReport(passed=False)
-        ages = [float(item.get("age_days", 0.0)) for item in alpha_metadata]
-        validation_conf = [float(item.get("validation_confidence", 0.0)) for item in alpha_metadata]
-        paper_conf = [float(item.get("paper_confidence", 0.0)) for item in alpha_metadata]
-        decay = sum(1 for item in alpha_metadata if item.get("decay_flag"))
-        overfit = sum(1 for item in alpha_metadata if item.get("overfit_flag"))
-        leakage = sum(1 for item in alpha_metadata if item.get("leakage_flag"))
+        ages = [float(item['age_days']) for item in alpha_metadata]
+        validation_conf = [float(item['validation_confidence']) for item in alpha_metadata]
+        paper_conf = [float(item['paper_confidence']) for item in alpha_metadata]
+        decay = sum(item['decay_flag'] for item in alpha_metadata)
+        overfit = sum(item['overfit_flag'] for item in alpha_metadata)
+        leakage = sum(item['leakage_flag'] for item in alpha_metadata)
         min_validation = min(validation_conf) if validation_conf else 0.0
         min_paper = min(paper_conf) if paper_conf else 0.0
         passed = (

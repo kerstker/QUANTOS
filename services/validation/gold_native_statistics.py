@@ -424,6 +424,17 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                           if 'risk_policy' in account_inputs.projection else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V4'
                           if account_inputs.position_history is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V3',
                           account_risk_inputs=account_inputs.projection)
+        risk_port = getattr(reports, 'review_gold_risk', None)
+        if 'risk_policy' in account_inputs.projection and callable(risk_port):
+            replay = risk_port(account_inputs)
+            diagnostic.update(schema='QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V9', nine_engine_replay=replay,
+                status='REJECTED' if replay['status'] == 'REJECTED' else diagnostic['status'],
+                full_research_risk_9_of_9=replay['full_research_risk_9_of_9'])
+            diagnostic['limitations'].remove('NINE_ENGINE_RISK_REPLAY_NOT_IMPLEMENTED')
+            diagnostic['limitations'].extend(replay['limitations'])
+            if not replay['engine_replay_completed']:
+                diagnostic['limitations'].append('NINE_ENGINE_RISK_INPUTS_INCOMPLETE')
+            diagnostic['limitations'] = sorted(set(diagnostic['limitations']))
         return (*result, diagnostic)
     return result
 
