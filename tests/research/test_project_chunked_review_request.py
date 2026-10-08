@@ -25,18 +25,19 @@ def exported(registered_case, monkeypatch, request):
     source = source_identity()
     source_variant = getattr(request, 'param', '') or ''
     root = collection_request(f['root'], monkeypatch, {'release_identity':source}, declared=True, funding=True,
-                              long_declared=source_variant in ('source-long-declared','source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted'))
+                              long_declared=source_variant in ('source-long-declared','source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'))
     f['arguments'] = read_arguments(root, original_source=source)
     f['clock'][0] = time.time_ns() // 1_000_000
     design = json.loads((root/'plan.json').read_bytes())['forward_design']
-    if source_variant in ('source-net-risk-budgeted','source-net-market-budgeted'):
+    if source_variant in ('source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'):
         portfolio_plan = dict(quantities={n:'0.1' for n in ('channel','trend','reversion')}, max_notional='100')
         design['configuration']['portfolio_plan'] = portfolio_plan
         f['arguments']['portfolio_plan'] = dict(quantities=dict(portfolio_plan['quantities']), max_notional='100')
-    if source_variant in ('source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted'):
+    if source_variant in ('source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'):
         from quantos.contracts.gold_forward_evaluation_design import declare
         from tests.validation.test_gold_research_risk_policy import policy
         from tests.validation.test_gold_market_states import policy as market_policy
+        from tests.validation.test_gold_capacity_inputs import policy as capacity_policy
         risk_policy=policy(start=design['metrics']['start_ms'],end=design['metrics']['end_ms'],
             frequency=design['metrics']['frequency_ms'],declared=design['declared_at_ms'])
         design=declare(program_id=design['program_id'],attempt=design['attempt'],
@@ -48,7 +49,10 @@ def exported(registered_case, monkeypatch, request):
             market_state_policy=market_policy(dict(start_ms=design['metrics']['start_ms'],
                 end_ms=design['metrics']['end_ms'],frequency_ms=design['metrics']['frequency_ms']),
                 declared=design['declared_at_ms'])
-                if source_variant == 'source-net-market-budgeted' else None)
+                if source_variant in ('source-net-market-budgeted','source-net-capacity-budgeted') else None,
+            capacity_policy=capacity_policy(dict(start_ms=design['metrics']['start_ms'],
+                end_ms=design['metrics']['end_ms'],frequency_ms=design['metrics']['frequency_ms']),
+                declared=design['declared_at_ms']) if source_variant=='source-net-capacity-budgeted' else None)
     monkeypatch.setattr(producer, 'workspace_paths', lambda: (f['root']/'project', f['root']/'registry.db'))
     source_mode = source_variant.startswith('source')
     if source_mode:
@@ -69,7 +73,7 @@ def exported(registered_case, monkeypatch, request):
             from tools.registered_gold_chunked_job import prepare_source_run
             source_storage = dict(schema='QUANTOS_GOLD_NATIVE_SOURCE_STORAGE_V1', maximum_bytes=32_000_000,
                                   maximum_preparation_bytes=64_000_000)
-            if source_variant in ('source-budgeted','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted'):
+            if source_variant in ('source-budgeted','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'):
                 source_storage.update(schema='QUANTOS_GOLD_NATIVE_SOURCE_STORAGE_V2',
                     replay_budget=dict(schema='LINEAR_PERPETUAL_REPLAY_BUDGET_V1',
                         maximum_environment_segments=2, maximum_elapsed_ms=30 * 86_400_000))
@@ -296,7 +300,7 @@ def test_archive_http_exports_all_originals_and_refuses_a_corrupt_nonselected_ru
     assert metadata['review_request'] is None and metadata['material_status'] == 'INVALID'
 
 
-@pytest.mark.parametrize('exported', ['', 'source-risk-declared', 'source-net-risk-budgeted','source-net-market-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', ['', 'source-risk-declared', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'], indirect=True)
 def test_exported_originals_support_signed_statistical_replay_without_native_paths(exported):
     from tests.research.test_registered_research_review_job import independent_response
     from services.research.project_research_review_request import open_request
@@ -322,19 +326,27 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
             verified = authority.verify_project_evidence(snapshot, now_ms=f['clock'][0], reports=reports)
             assert verified['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
             assert verified['qualification'] == 'INSUFFICIENT'
-            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10'):
+            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
                 projected=verified['projection']['execution_risk_review']['account_risk_inputs']
                 assert projected['source_groups']['risk_config']['status']=='AVAILABLE'
-                if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10'):
-                    assert projected['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if 'market_states' in projected
+                if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
+                    assert projected['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if 'capacity_inputs' in projected else
+                        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if 'market_states' in projected
                         else 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4')
                     assert projected['net_attribution']['cash_conservation_residual']=='0'
                     assert projected['net_attribution']['independent_strategy_pnl'] is False
                     assert projected['net_attribution']['status']=='UNAVAILABLE_SAMPLE_COVERAGE'
-                if verified['projection']['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V10':
+                if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11'):
                     assert projected['market_states']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
                     assert projected['market_states']['label_values_sha256'] is None
                     assert projected['source_groups']['regime_labels']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
+                if verified['projection']['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V11':
+                    capacity=projected['capacity_inputs']
+                    assert capacity['status']=='UNAVAILABLE_ACCOUNT_SERIES'
+                    assert capacity['engine_inputs_sha256'] is None
+                    assert capacity['original_snapshot_count']>0
+                    assert capacity['currency']=='USDT' and capacity['original_execution_policy_changed'] is False
+                    assert projected['source_groups']['capacity_and_aum']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
                 assert projected['risk_policy']['preregistration_time_authority'] is False
                 assert projected['full_research_risk_ready'] is False
             assert 'STATISTICAL_REVIEW_REQUIRES_COMPLETE_PROJECT_CUT' not in verified['reasons']

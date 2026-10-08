@@ -131,7 +131,7 @@ def test_review_archive_missing_or_bad_identity_creates_no_state(tmp_path, monke
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'], indirect=True)
 def test_source_review_payload_and_archive_share_the_complete_input_contract(exported, monkeypatch):
     import io
     import shutil
@@ -151,15 +151,26 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
     assert payload['material_status'] == 'VALID' and payload['review_request'] == packet
     if plans[0]['schema'] == 'QUANTOS_REGISTERED_GOLD_CHUNKED_FORWARD_RUN_V4':
         assert all(plan['source_storage']['replay_budget']['maximum_environment_segments'] == 2 for plan in plans)
-    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6'):
+    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'):
         projected=payload['review_request']['projection']
         is_net=plans[0]['forward_design']['selection']['candidate_id']=='net_portfolio'
-        is_market=plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6'
-        assert projected['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V10' if is_market else
+        is_capacity=plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
+        is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7')
+        assert projected['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V11' if is_capacity else
+            'QUANTOS_PROJECT_RESEARCH_FACTS_V10' if is_market else
             'QUANTOS_PROJECT_RESEARCH_FACTS_V9' if is_net else 'QUANTOS_PROJECT_RESEARCH_FACTS_V8')
         risk=projected['execution_risk_review']['account_risk_inputs']
-        assert risk['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if is_market else
+        assert risk['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if is_capacity else
+            'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if is_market else
             'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' if is_net else 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3')
+        if is_capacity:
+            capacity=risk['capacity_inputs']
+            assert capacity['status']=='UNAVAILABLE_ACCOUNT_SERIES'
+            assert capacity['currency']=='USDT' and capacity['engine_inputs_sha256'] is None
+            assert capacity['original_snapshot_count']>0 and capacity['missing_intervals']>0
+            assert capacity['capacity_history_policy']=='GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1'
+            assert capacity['original_execution_policy_changed'] is False
+            assert risk['source_groups']['capacity_and_aum']['status']=='UNAVAILABLE_ACCOUNT_SERIES'
         if is_market:
             states=risk['market_states']
             assert states['status']=='UNAVAILABLE_ACCOUNT_SERIES'

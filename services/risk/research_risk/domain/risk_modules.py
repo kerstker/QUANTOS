@@ -6,6 +6,8 @@ deterministic and has no trading side effects.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
+from collections.abc import Mapping
 import statistics
 from itertools import combinations
 from typing import Dict, Iterable, List, Optional, Sequence
@@ -102,6 +104,26 @@ class MarketRiskEngine:
         )
 
 
+def _money_number(value, *, positive=False):
+    if isinstance(value,bool) or not isinstance(value,(int,float,Decimal)):
+        return False
+    try:
+        converted=float(value)
+        return math.isfinite(converted) and (not positive or converted>0)
+    except (ValueError,OverflowError):
+        return False
+
+
+def _capacity_book_valid(weights,capacities,aum):
+    return (isinstance(weights,Mapping) and bool(weights) and isinstance(capacities,Mapping)
+        and _money_number(aum,positive=True)
+        and all(type(k) is str and bool(k.strip()) and _money_number(v) for k,v in weights.items())
+        and set(weights)<=set(capacities)
+        and all(_money_number(v,positive=True) for v in capacities.values())
+        and math.isfinite(sum(abs(float(v)) for v in weights.values()))
+        and sum(abs(float(v)) for v in weights.values())>0)
+
+
 class LiquidityRiskEngine:
     def evaluate(
         self,
@@ -111,19 +133,21 @@ class LiquidityRiskEngine:
         total_aum: float,
         config: RiskConfig,
     ) -> LiquidityRiskReport:
-        if not weights:
-            return LiquidityRiskReport(passed=False)   # no book -> not evaluable, fail closed
-        gross = sum(abs(value) for value in weights.values())
-        gross_notional = gross * max(float(total_aum), 0.0)
-        avg_daily_volume_usage = gross_notional / max(float(daily_volume_cny), 1.0)
+        if not _capacity_book_valid(weights,capacity_cny,total_aum) or not _money_number(daily_volume_cny,positive=True):
+            return LiquidityRiskReport(passed=False)
+        gross = sum(abs(float(value)) for value in weights.values())
+        gross_notional = gross * float(total_aum)
+        avg_daily_volume_usage = gross_notional / float(daily_volume_cny)
         # ``capacity_cny`` is the producer's 10%-of-ADV executable daily
         # capacity.  Recover per-name ADV from that explicit contract instead
         # of treating portfolio weights as participation rates.
         usages = {
-            key: abs(weight) * float(total_aum) / max(float(capacity_cny.get(key, 0.0)), 1.0)
+            key: abs(float(weight)) * float(total_aum) / float(capacity_cny[key])
             for key, weight in weights.items()
         }
-        capacity_usage = max(usages.values(), default=0.0)
+        if not math.isfinite(avg_daily_volume_usage) or not all(math.isfinite(v) for v in usages.values()):
+            return LiquidityRiskReport(passed=False)
+        capacity_usage = max(usages.values())
         participation_rate = min(1.0, 0.10 * capacity_usage)
         liquidation_days = int(math.ceil(capacity_usage)) if gross else 0
         cost_to_liquidate_bps = participation_rate * 100
@@ -349,13 +373,15 @@ class CapacityRiskEngine:
         total_aum: float,
         config: RiskConfig,
     ) -> CapacityRiskReport:
-        if not weights:
-            return CapacityRiskReport(passed=False)   # no book -> fail closed
+        if not _capacity_book_valid(weights,capacity_cny,total_aum):
+            return CapacityRiskReport(passed=False)
         usages = {
-            key: abs(weight) * total_aum / max(capacity_cny.get(key, config.min_capacity), 1.0)
+            key: abs(float(weight)) * float(total_aum) / float(capacity_cny[key])
             for key, weight in weights.items()
         }
-        bottleneck = max(usages, key=usages.get) if usages else ""
+        if not all(math.isfinite(v) for v in usages.values()):
+            return CapacityRiskReport(passed=False)
+        bottleneck = max(usages, key=usages.get)
         capacity_usage = usages.get(bottleneck, 0.0)
         capacity_adjusted_sharpe = max(0.0, 1.0 - capacity_usage)
         return CapacityRiskReport(

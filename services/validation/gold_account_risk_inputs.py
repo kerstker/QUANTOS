@@ -12,6 +12,7 @@ from decimal import Decimal
 from quantos.contracts.decimal_arithmetic import canonical_decimal, ledger_decimal_context
 from services.validation.gold_net_attribution import NetAttribution
 from services.validation.gold_market_states import MarketStateInputs
+from services.validation.gold_capacity_inputs import CapacityInputs
 from quantos.contracts.gold_chunked_source import MAX_PARTS
 from quantos.contracts.research_statistics import DAY_MS, fixed_frequency_equity
 from quantos.streaming_identity import StreamArray, exact_stream_identity_hash as exact_identity_hash
@@ -72,6 +73,7 @@ class GoldAccountRiskInputs:
     position_history: StreamArray | None = field(default=None, compare=False, repr=False)
     net_attribution: NetAttribution | None = field(default=None, compare=False, repr=False)
     market_states: MarketStateInputs | None = field(default=None, compare=False, repr=False)
+    capacity_inputs: CapacityInputs | None = field(default=None, compare=False, repr=False)
 
 
 @ledger_decimal_context()
@@ -156,7 +158,8 @@ def build_account_risk_inputs(simulation, *, sample, settlements, account_curren
                               target_currency=None, streamed=False,
                               maximum_points=100_000, maximum_events=100_000, grid_budget=None,
                               research_risk_policy=None, portfolio=None, market_state_policy=None,
-                              market_bars=None, market_history_policy=None):
+                              market_bars=None, market_history_policy=None, capacity_policy=None,
+                              capacity_history=None, capacity_history_policy=None):
     """Consume original equity on the receipt-available clock, preserving losses.
 
     Malformed originals raise. Nonpositive equity or an uncovered window produces
@@ -278,9 +281,23 @@ def build_account_risk_inputs(simulation, *, sample, settlements, account_curren
         groups['regime_labels'] = dict(status=market_states.projection['status'],
             count=0 if market_states.labels is None else len(market_states.labels),
             value_sha256=market_states.projection['label_values_sha256'])
+    capacity_inputs = None
+    if capacity_policy is not None:
+        _require(account_currency == 'USDT', 'CAPACITY_UNIT')
+        from services.validation.gold_capacity_inputs import build_capacity_inputs
+        capacity_inputs = build_capacity_inputs(capacity_policy,
+            capacity_history=capacity_history, capacity_history_policy=capacity_history_policy,
+            sample=dict(sample), account_observations=StreamArray(observations),
+            allocation_observations=None if attribution is None else attribution.history,
+            account_returns_available=returns is not None, maximum_snapshots=maximum_events,
+            maximum_intervals=intervals, maximum_points=maximum_points)
+        groups['capacity_and_aum'] = dict(status=capacity_inputs.projection['status'],
+            count=capacity_inputs.projection['observation_count'],
+            value_sha256=capacity_inputs.projection['engine_inputs_sha256'])
     missing = sorted(k for k, value in groups.items() if value['status'] != 'AVAILABLE')
     periods = Decimal(365 * DAY_MS) / frequency
-    projection = dict(schema='QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if market_states is not None else
+    projection = dict(schema='QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if capacity_inputs is not None else
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if market_states is not None else
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' if attribution is not None else
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' if bound_policy is not None else
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' if position_history is not None else SCHEMA,
@@ -314,5 +331,8 @@ def build_account_risk_inputs(simulation, *, sample, settlements, account_curren
     if market_states is not None:
         projection['market_states'] = market_states.projection
         projection['limitations'].extend(market_states.projection['limitations'])
+    if capacity_inputs is not None:
+        projection['capacity_inputs'] = capacity_inputs.projection
+        projection['limitations'].extend(capacity_inputs.projection['limitations'])
     return GoldAccountRiskInputs(returns, curve, axis, initial, first, account_currency, periods,
-                                projection, position_history, attribution, market_states)
+                                projection, position_history, attribution, market_states, capacity_inputs)

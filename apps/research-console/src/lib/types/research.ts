@@ -2712,9 +2712,26 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
     account_risk_inputs?: {
       schema: 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V1' |
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' |
-        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5';
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' |
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6';
       source_groups: Record<string, {status: string; count: number; value_sha256: string | null}>;
       missing_groups: string[];
+      capacity_inputs?: {
+        schema: 'QUANTOS_GOLD_CAPACITY_INPUTS_V1';
+        status: string; sample: {start_ms: number; end_ms: number; frequency_ms: number};
+        currency: 'USDT'; policy_sha256: string;
+        capacity_history_policy: 'GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1';
+        original_snapshot_count: number; original_snapshots_sha256: string;
+        account_observations_sha256: string; allocation_observations_sha256: string | null;
+        observation_sha256: string; engine_inputs_sha256: string | null;
+        interval_count: number; observation_count: number; missing_intervals: number;
+        status_counts: Record<string, number>;
+        aum_kind: 'ORIGINAL_SIMULATED_NET_ACCOUNT_RECEIPT_AVAILABLE_EQUITY';
+        capacity_clock: 'RETURN_INTERVAL_START_ORIGINAL_RECEIPT_AND_INGESTION_AVAILABLE';
+        shared_capacity_pool: 'XAUUSDT'; original_execution_policy_changed: false;
+        independent_verification: false; limitations: string[];
+        economic_authority: false; submission_enabled: false;
+      };
       market_states?: {
         schema: 'QUANTOS_GOLD_MARKET_STATE_INPUTS_V1';
         status: string; sample: {start_ms: number; end_ms: number; frequency_ms: number};

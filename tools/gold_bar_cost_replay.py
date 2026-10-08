@@ -5,6 +5,7 @@ or backdates candle receipts; it is not a historical OOS performance evaluation.
 """
 import hashlib
 from decimal import Decimal
+from collections.abc import Sequence
 
 from services.execution.backtest_authority import exact_identity_hash
 from services.execution.perpetual_public_replay import prepare_public_replay
@@ -16,6 +17,47 @@ from services.research.gold_bar_dataset import load_bars
 from services.research.gold_bar_v2_strategy import GoldBarV2Strategy
 from services.research.gold_loss_control import GoldResearchLossControl
 from services.research.gold_tape_execution import execute
+
+
+
+class _CapacityHistory(Sequence):
+    """Repeat original snapshots once per actual receipt; never store every frame."""
+    def __init__(self, frames):
+        self.frames = frames
+        self._length = None
+
+    def __iter__(self):
+        previous_object = previous = None
+        for frame in self.frames:
+            for original in frame.capacity_snapshots:
+                if original is previous_object:
+                    continue
+                previous_object = original
+                row = original.as_canonical_dict()
+                if row == previous:
+                    continue
+                if (row['instrument_id'] != 'XAUUSDT' or previous is not None
+                        and row['ingestion_time'] <= previous['ingestion_time']):
+                    raise ValueError('GOLD_ORIGINAL_CAPACITY_HISTORY_ORDER_OR_SCOPE')
+                previous = row
+                yield row
+
+    def __len__(self):
+        if self._length is None:
+            self._length = sum(1 for _ in self)
+        return self._length
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return list(self)[index]
+        if index < 0:
+            index += len(self)
+        if index < 0:
+            raise IndexError(index)
+        for offset, row in enumerate(self):
+            if offset == index:
+                return row
+        raise IndexError(index)
 
 
 def compare_public(*, raw_bars, bar_receipt, capture, release_identity,
@@ -96,6 +138,8 @@ def _compare_bars(*, bars, prepared, dataset_identity, release_identity,
     from services.research.gold_net_portfolio import _BarIdentity
     result = dict(schema='GOLD_BAR_PUBLIC_COMPARISON_V1', trials=trials, cash_baseline=baseline,
         market_bars=list(_BarIdentity(bars)) if history is None else _BarIdentity(bars), market_history_policy='GOLD_ORIGINAL_RECEIPT_AVAILABLE_BARS_V1',
+        capacity_history=list(_CapacityHistory(prepared['frames'])) if history is None else _CapacityHistory(prepared['frames']),
+        capacity_history_policy='GOLD_ORIGINAL_PUBLIC_ADV_CAPACITY_SNAPSHOTS_V1',
         release_identity=release_identity, dataset_identity=common['dataset_identity'],
         fee_policy='EXPLICIT_UNCALIBRATED_SIMULATION_RATE', fee_rate=str(fee_rate),
         winner=None, economic_eligible=False, authoritative=False, submission_enabled=False,
