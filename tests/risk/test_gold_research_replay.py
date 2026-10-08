@@ -110,6 +110,26 @@ def test_original_read_port_expires_and_cannot_be_serialized_as_an_input(monkeyp
         port.review_gold_risk(value)
 
 
+def test_retained_original_population_keeps_risk_port_and_owner_lease(monkeypatch):
+    from services.research.gold_native_source_reader import SourceReports
+    from services.validation.project_research_evidence_artifact import retained_reports
+    from quantos.contracts.registered_research_run import CHUNKED_GOLD_SCHEMAS
+    value, _ = account(monkeypatch)
+    owner = SourceReports()
+    owner['historical'] = object()
+    owner['newer'] = object()
+    cut = dict(runs={'historical': dict(plan=dict(schema=next(iter(CHUNKED_GOLD_SCHEMAS))),
+        result_material=dict(status='COMPLETE'), input_material=dict(status='INCOMPLETE'))})
+    retained = retained_reports(cut, owner)
+    assert set(retained) == {'historical'}
+    assert retained.review_gold_risk(value) == owner.review_gold_risk(value)
+    twice = retained_reports(cut, retained)
+    owner.close_inputs()
+    for port in (retained, twice):
+        with pytest.raises(ValueError, match='CONTEXT_CLOSED'):
+            port.review_gold_risk(value)
+
+
 def capacity_account(value, *, adv='0.01', delay=None):
     from services.validation.gold_capacity_inputs import build_capacity_inputs
     from tests.validation.test_gold_capacity_inputs import policy as capacity_policy, snapshots

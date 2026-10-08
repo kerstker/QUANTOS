@@ -67,6 +67,11 @@ def retained_reports(cut, reports):
     if (expected or inputs) and isinstance(reports, Mapping):
         require(expected <= set(reports), 'PROJECT_CHUNKED_MATERIAL_REQUIRED')
         result = _RetainedReports((key, reports[key]) for key in expected)
+        risk_port = getattr(reports, 'review_gold_risk', None)
+        if callable(risk_port):
+            # Keep the owning callable, not a new engine/lease or a serialized
+            # assertion. Nested historical subsets expire with their owner.
+            result.review_gold_risk = risk_port
         if inputs:
             originals = getattr(reports, 'source_inputs', None)
             require(isinstance(originals, Mapping) and inputs <= set(originals),
