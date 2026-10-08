@@ -241,14 +241,25 @@ class DrawdownRiskEngine:
 
 class RegimeRiskEngine:
     def evaluate(self, returns: List[float], regime_labels: List[str], config: RiskConfig) -> RegimeRiskReport:
-        series = _clean(returns)
-        if not series:
+        if (not isinstance(returns, Sequence) or not isinstance(regime_labels, Sequence)
+                or isinstance(returns, (str, bytes)) or isinstance(regime_labels, (str, bytes))
+                or not returns or len(returns) != len(regime_labels)
+                or any(type(label) is not str or not label.strip() for label in regime_labels)
+                or any(value is None or isinstance(value, (bool, str, bytes)) for value in returns)):
             return RegimeRiskReport(passed=False)
-        labels = regime_labels[: len(series)] or ["default"] * len(series)
+        try:
+            series = [float(value) for value in returns]
+        except (TypeError, ValueError, OverflowError):
+            return RegimeRiskReport(passed=False)
+        if not all(math.isfinite(value) for value in series):
+            return RegimeRiskReport(passed=False)
+        labels = regime_labels
         buckets: Dict[str, List[float]] = {}
         for label, value in zip(labels, series):
             buckets.setdefault(label, []).append(value)
         totals = {label: sum(values) for label, values in buckets.items()}
+        if not all(math.isfinite(value) for value in totals.values()):
+            return RegimeRiskReport(passed=False)
         worst_regime = min(totals, key=totals.get)
         best_regime = max(totals, key=totals.get)
         worst_loss = abs(min(0.0, totals[worst_regime]))

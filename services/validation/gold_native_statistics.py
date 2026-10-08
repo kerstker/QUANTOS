@@ -412,8 +412,11 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
             maximum_events=100_000_000 if streamed else 100_000,
             grid_budget=run['plan']['forward_design']['statistical_policy'].get('computation_budget'),
             research_risk_policy=run['plan']['forward_design']['risk_policy'].get('research_risk_policy'),
-            portfolio=selected if trial['candidate_id'] == 'net_portfolio' else None)
-        diagnostic.update(schema='QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V6'
+            portfolio=selected if trial['candidate_id'] == 'net_portfolio' else None,
+            market_state_policy=run['plan']['forward_design']['risk_policy'].get('market_state_policy'),
+            market_bars=report.get('market_bars'), market_history_policy=report.get('market_history_policy'))
+        diagnostic.update(schema='QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V7'
+                          if account_inputs.market_states is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V6'
                           if account_inputs.net_attribution is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V5'
                           if 'risk_policy' in account_inputs.projection else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V4'
                           if account_inputs.position_history is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V3',

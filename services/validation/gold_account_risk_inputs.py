@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from quantos.contracts.decimal_arithmetic import canonical_decimal, ledger_decimal_context
 from services.validation.gold_net_attribution import NetAttribution
+from services.validation.gold_market_states import MarketStateInputs
 from quantos.contracts.gold_chunked_source import MAX_PARTS
 from quantos.contracts.research_statistics import DAY_MS, fixed_frequency_equity
 from quantos.streaming_identity import StreamArray, exact_stream_identity_hash as exact_identity_hash
@@ -70,6 +71,7 @@ class GoldAccountRiskInputs:
     projection: dict
     position_history: StreamArray | None = field(default=None, compare=False, repr=False)
     net_attribution: NetAttribution | None = field(default=None, compare=False, repr=False)
+    market_states: MarketStateInputs | None = field(default=None, compare=False, repr=False)
 
 
 @ledger_decimal_context()
@@ -153,7 +155,8 @@ def _position_inputs(simulation, history, observations, *, end, currency, covere
 def build_account_risk_inputs(simulation, *, sample, settlements, account_currency,
                               target_currency=None, streamed=False,
                               maximum_points=100_000, maximum_events=100_000, grid_budget=None,
-                              research_risk_policy=None, portfolio=None):
+                              research_risk_policy=None, portfolio=None, market_state_policy=None,
+                              market_bars=None, market_history_policy=None):
     """Consume original equity on the receipt-available clock, preserving losses.
 
     Malformed originals raise. Nonpositive equity or an uncovered window produces
@@ -265,9 +268,20 @@ def build_account_risk_inputs(simulation, *, sample, settlements, account_curren
             groups[name] = dict(status=status, count=0 if data is None else len(data),
                 value_sha256=None if data is None else (attribution.projection['history_sha256']
                     if name == 'weights' else attribution.projection['contribution_returns_sha256']))
+    market_states = None
+    if market_state_policy is not None:
+        from services.validation.gold_market_states import build_market_state_inputs
+        market_states = build_market_state_inputs(market_state_policy, market_bars=market_bars,
+            market_history_policy=market_history_policy, sample=dict(sample),
+            account_returns_available=returns is not None, maximum_bars=maximum_points,
+            maximum_intervals=intervals)
+        groups['regime_labels'] = dict(status=market_states.projection['status'],
+            count=0 if market_states.labels is None else len(market_states.labels),
+            value_sha256=market_states.projection['label_values_sha256'])
     missing = sorted(k for k, value in groups.items() if value['status'] != 'AVAILABLE')
     periods = Decimal(365 * DAY_MS) / frequency
-    projection = dict(schema='QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' if attribution is not None else
+    projection = dict(schema='QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if market_states is not None else
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' if attribution is not None else
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' if bound_policy is not None else
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' if position_history is not None else SCHEMA,
         status='PARTIAL_INPUTS_AVAILABLE',
@@ -297,5 +311,8 @@ def build_account_risk_inputs(simulation, *, sample, settlements, account_curren
         projection['risk_policy'] = dict(policy_sha256=policy_sha256(bound_policy), policy=bound_policy,
             preregistration_time_authority=False, source='ORIGINAL_FORWARD_DECLARATION',
             engine_replay_completed=False)
+    if market_states is not None:
+        projection['market_states'] = market_states.projection
+        projection['limitations'].extend(market_states.projection['limitations'])
     return GoldAccountRiskInputs(returns, curve, axis, initial, first, account_currency, periods,
-                                projection, position_history, attribution)
+                                projection, position_history, attribution, market_states)

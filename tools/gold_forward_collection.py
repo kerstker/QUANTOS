@@ -77,14 +77,14 @@ def _validate(value):
 
 def prepare(directory, *, program_id, attempt, first_close_ms, window_bars, configuration,
             selected_candidate, proposal_sha256,
-            collection_budget, result_storage, history_storage, source_storage, research_risk_policy=None):
+            collection_budget, result_storage, history_storage, source_storage, research_risk_policy=None, market_state_policy=None):
     _require(type(configuration) is dict and 'settlement_window_ms' in configuration, 'FUNDING_WINDOW_REQUIRED')
     source = source_identity()
     declaration = design.declare(program_id=program_id, attempt=attempt, source_identity=source,
         configuration=configuration, first_close_ms=first_close_ms, window_bars=window_bars,
         declared_at_ms=_now(), long_window=True,
         selected_candidate=selected_candidate, proposal_sha256=proposal_sha256,
-        research_risk_policy=research_risk_policy)
+        research_risk_policy=research_risk_policy, market_state_policy=market_state_policy)
     value = dict(schema=SCHEMA, source=source, forward_design=declaration,
         seconds=window_bars * design.INTERVAL // 1000 + 40, interval_seconds=10, segment_samples=120,
         collection_budget=copy.deepcopy(collection_budget), result_storage=copy.deepcopy(result_storage),

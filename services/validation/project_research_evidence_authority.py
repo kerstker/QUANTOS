@@ -247,7 +247,9 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
             reasons.add('STATISTICAL_REVIEW_' + value['report']['statistical_decision'])
         facts['limitations'] = sorted(reasons)
     if execution_risk is not None:
-        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V9'
+        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V10'
+                           if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V7' else
+                           'QUANTOS_PROJECT_RESEARCH_FACTS_V9'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V6' else
                            'QUANTOS_PROJECT_RESEARCH_FACTS_V8'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V5' else

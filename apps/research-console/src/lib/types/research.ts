@@ -2712,9 +2712,21 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
     account_risk_inputs?: {
       schema: 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V1' |
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' |
-        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4';
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5';
       source_groups: Record<string, {status: string; count: number; value_sha256: string | null}>;
       missing_groups: string[];
+      market_states?: {
+        schema: 'QUANTOS_GOLD_MARKET_STATE_INPUTS_V1';
+        status: string; sample: {start_ms: number; end_ms: number; frequency_ms: number};
+        label_clock: 'RETURN_INTERVAL_START_RECEIPT_AVAILABLE';
+        policy_sha256: string; original_bars_sha256: string; observation_sha256: string;
+        market_history_policy: 'GOLD_ORIGINAL_RECEIPT_AVAILABLE_BARS_V1';
+        original_bar_count: number; interval_count: number; observation_count: number;
+        missing_intervals: number; status_counts: Record<string, number>;
+        label_values_sha256: string | null; observed_labels: string[];
+        independent_verification: false; limitations: string[];
+        economic_authority: false; submission_enabled: false;
+      };
       net_attribution?: {
         schema: 'QUANTOS_GOLD_NET_ACCOUNT_ATTRIBUTION_V1';
         status: string; weights_status: string; observation_count: number;

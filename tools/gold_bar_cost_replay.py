@@ -93,7 +93,9 @@ def _compare_bars(*, bars, prepared, dataset_identity, release_identity,
                            signal_observations=strategy.observations,
                            strategy_events=strategy.events, simulation=engine,
                            loss_control=control.report(engine)))
+    from services.research.gold_net_portfolio import _BarIdentity
     result = dict(schema='GOLD_BAR_PUBLIC_COMPARISON_V1', trials=trials, cash_baseline=baseline,
+        market_bars=list(_BarIdentity(bars)) if history is None else _BarIdentity(bars), market_history_policy='GOLD_ORIGINAL_RECEIPT_AVAILABLE_BARS_V1',
         release_identity=release_identity, dataset_identity=common['dataset_identity'],
         fee_policy='EXPLICIT_UNCALIBRATED_SIMULATION_RATE', fee_rate=str(fee_rate),
         winner=None, economic_eligible=False, authoritative=False, submission_enabled=False,
