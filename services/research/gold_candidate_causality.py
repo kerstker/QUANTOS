@@ -5,6 +5,7 @@ leakage, model maturity, independent source/time, or trade authorization.
 Future probe bars are adversarial inputs only, never market or P&L evidence.
 """
 from dataclasses import asdict
+from collections.abc import Mapping
 from decimal import Decimal
 import re
 
@@ -29,7 +30,7 @@ def bar(value):
     if type(value) is signals.Bar:
         value.validate()
         return value
-    require(type(value) is dict and set(value) == set(signals.Bar.__dataclass_fields__), 'BAR_FIELDS')
+    require(isinstance(value, Mapping) and set(value) == set(signals.Bar.__dataclass_fields__), 'BAR_FIELDS')
     require(all(type(value[k]) is str for k in ('open','high','low','close')), 'BAR_PRICES')
     result = signals.Bar(**{k:Decimal(v) if k in ('open','high','low','close') else v for k,v in value.items()})
     result.validate()
@@ -61,7 +62,7 @@ def assess_candidate(*, bars, decision_rows, candidate_id, policy, subject, nati
     def rows():
         previous = None
         for index,row in enumerate(items(decision_rows)):
-            require(index < budget['maximum_decisions'] and type(row) is dict, 'DECISION_BUDGET_OR_FIELDS')
+            require(index < budget['maximum_decisions'] and isinstance(row, Mapping), 'DECISION_BUDGET_OR_FIELDS')
             t = row['timestamp']
             require(type(t) is int and 0 <= t < 2**63 and (previous is None or previous < t), 'DECISION_CLOCK')
             previous = t

@@ -148,6 +148,14 @@ def test_original_report_bar_dictionary_path_preserves_identity():
     assert assess(dictionaries, rows) == assess(values, rows)
 
 
+def test_read_only_original_report_views_preserve_bars_and_decision_identity():
+    from types import MappingProxyType
+    values,rows=inputs()
+    dictionaries=[MappingProxyType({k:str(v) if isinstance(v,D) else v for k,v in asdict(b).items()}) for b in values]
+    readonly_rows=[MappingProxyType(row) for row in rows]
+    assert assess(dictionaries,readonly_rows)==assess(values,rows)
+
+
 def test_original_causality_port_and_nested_historical_ports_expire_with_owner():
     from services.research.gold_native_source_reader import SourceReports
     from services.validation.project_research_evidence_artifact import retained_reports
