@@ -17,6 +17,9 @@ from services.execution import authoritative_perpetual_backtest as native
 from services.execution import perpetual_ledger_v2 as ledger_native
 from services.risk.research_risk.domain.models import RiskConfig
 from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
+# Original Gold research math is composed at this existing offline execution
+# boundary. Research report leases consume this port without importing risk.
+from services.risk.research_risk.gold_research_replay import review_gold_account as review_gold_account
 
 
 # Explicit static imports only. A tagged research object can never select a module.

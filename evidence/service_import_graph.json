@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 53,
+  "edge_count": 52,
   "edges": [
     {
       "references": [
@@ -950,6 +950,11 @@
           "line": 19,
           "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/execution/research_risk_replay.py"
+        },
+        {
+          "line": 22,
+          "module": "services.risk.research_risk.gold_research_replay",
+          "path": "services/execution/research_risk_replay.py"
         }
       ],
       "source": "execution",
@@ -1606,6 +1611,11 @@
           "path": "services/research/gold_loss_control.py"
         },
         {
+          "line": 27,
+          "module": "services.execution.research_risk_replay",
+          "path": "services/research/gold_native_source_reader.py"
+        },
+        {
           "line": 13,
           "module": "services.execution.backtest_authority",
           "path": "services/research/gold_net_portfolio.py"
@@ -1877,17 +1887,6 @@
       ],
       "source": "research",
       "target": "portfolio"
-    },
-    {
-      "references": [
-        {
-          "line": 27,
-          "module": "services.risk.research_risk.gold_research_replay",
-          "path": "services/research/gold_native_source_reader.py"
-        }
-      ],
-      "source": "research",
-      "target": "risk"
     },
     {
       "references": [
@@ -2433,7 +2432,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "04ab855dc969e55a6f38620160a4270446a433a22a9f3868d9bac5e325ccdb0e",
+  "graph_sha256": "6932fb5741b47414a3c3f70020a3085ebc157ba997df82f3c5bf580a86fe81b8",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
