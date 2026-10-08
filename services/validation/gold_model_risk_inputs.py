@@ -69,7 +69,8 @@ class GoldModelRiskInputs:
 
 @ledger_decimal_context()
 def from_verified_statistics(*, project_cut, subject, candidate_id, verified_statistics,
-                             checked_at_ms, native_result_hash, causality_policy=None, causality_review=None):
+                             checked_at_ms, native_result_hash, causality_policy=None, causality_review=None,
+                             net_forward_policy=None, net_forward_review=None):
     """Internal seam; source caller must first recompute the statistical evidence."""
     hashed(native_result_hash)
     selected = {k: hashed(subject[k]) for k in IDENTITY}
@@ -134,9 +135,25 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             sources['leakage_flag']='ORIGINAL_SIGNAL_CAUSALITY_PLUS_OOS_AND_SEARCH_SELECTION_REQUIRED'
     else:
         require(causality_review is None, 'CAUSALITY_POLICY_REQUIRED')
+    net_forward_hash = None
+    if net_forward_policy is not None:
+        from quantos.contracts.gold_net_forward_policy import policy_sha256 as forward_hash, validate_review
+        net_forward_hash=forward_hash(net_forward_policy)
+        require(net_forward_policy['series']['candidate_id']==candidate_id,'FORWARD_CANDIDATE')
+        if net_forward_review is not None:
+            require(as_of is not None,'FORWARD_ORIGINAL_SNAPSHOT_REQUIRED')
+            review=validate_review(net_forward_review,policy=net_forward_policy,subject=subject,
+                candidate_id=candidate_id,native_result_hash=native_result_hash,
+                project_cut_sha256=project_cut['cut_sha256'],snapshot_as_of_ms=as_of)
+            if review['status']=='MATURE':
+                values['paper_confidence']=review['paper_confidence']
+            sources['paper_confidence']='ORIGINAL_COST_NET_EIGHT_WEEK_FORWARD_MATURITY_NOT_PROFIT_PROBABILITY'
+    else:
+        require(net_forward_review is None,'FORWARD_POLICY_REQUIRED')
     facts = {k: dict(status='UNAVAILABLE' if values[k] is None else 'AVAILABLE', value=values[k],
                     source=sources[k]) for k in FIELDS}
-    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' if causality_policy is not None else SCHEMA, status='PARTIAL_ORIGINAL_FACTS',
+    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' if net_forward_policy is not None else
+        'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' if causality_policy is not None else SCHEMA, status='PARTIAL_ORIGINAL_FACTS',
         **selected, candidate_id=candidate_id, native_result_hash=native_result_hash,
         project_cut_sha256=hashed(project_cut['cut_sha256']),
         statistical_report_sha256=report_hash, statistical_evidence_sha256=evidence_hash,
@@ -159,6 +176,17 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             value['limitations'].extend(causality_review['limitations'])
         else:
             value['limitations'].append('NATIVE_CAUSALITY_PORT_OR_ORIGINALS_UNAVAILABLE')
+        value['limitations']=sorted(set(value['limitations']))
+    if net_forward_policy is not None:
+        value.update(net_forward_policy_sha256=net_forward_hash,net_forward_review=net_forward_review)
+        if net_forward_review is None:
+            value['limitations'].append('NET_FORWARD_PORT_OR_ORIGINALS_UNAVAILABLE')
+        else:
+            value['limitations'].extend(net_forward_review['limitations'])
+            value['limitations'].extend(net_forward_review['reasons'])
+            if net_forward_review['status']=='MATURE':
+                value['limitations'].remove('FORWARD_AND_CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND')
+                value['limitations'].append('CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND')
         value['limitations']=sorted(set(value['limitations']))
     value['projection_sha256'] = digest(value)
     return GoldModelRiskInputs(value)

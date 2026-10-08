@@ -52,3 +52,43 @@ def test_recipe_time_scope_budget_and_version_cannot_be_rewritten_as_a_pass(dama
         value['schema']='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
     with pytest.raises(ValueError):
         validate(value)
+
+
+def net_design():
+    from quantos.contracts.gold_forward_evaluation_design import declare
+    from quantos.contracts.gold_net_forward_policy import declare as forward
+    old=design()
+    candidate='channel';proposal='a'*64
+    definition=next(r['strategy_definition_sha256'] for r in old['cohort'] if r['candidate_id']==candidate)
+    risk=old['risk_policy']
+    return declare(program_id=old['program_id'],attempt=old['attempt'],source_identity=dict(synthetic=True),
+        configuration=old['configuration'],first_close_ms=old['metrics']['start_ms'],window_bars=2,
+        declared_at_ms=old['declared_at_ms'],long_window=True,selected_candidate=candidate,proposal_sha256=proposal,
+        research_risk_policy=risk['research_risk_policy'],market_state_policy=risk['market_state_policy'],
+        capacity_policy=risk['capacity_policy'],causality_policy=risk['causality_policy'],
+        net_forward_policy=forward(sample={k:old['metrics'][k] for k in ('start_ms','end_ms','frequency_ms')},
+            declared_at_ms=old['declared_at_ms'],series=dict(start_ms=old['metrics']['start_ms'],
+                declared_at_ms=old['declared_at_ms'],candidate_id=candidate,
+                strategy_definition_sha256=definition,proposal_sha256=proposal)))
+
+
+def test_cost_net_forward_series_is_selected_before_observation_in_v9_only():
+    from quantos.contracts.gold_forward_evaluation_design import validate
+    value=net_design()
+    assert value['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9'
+    assert validate(value)==value
+    assert design()['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8'
+
+
+@pytest.mark.parametrize('damage',['late','axis','candidate','proposal','definition','compare_all','legacy'])
+def test_forward_series_cannot_replace_a_predeclared_candidate_after_seeing_results(damage):
+    from quantos.contracts.gold_forward_evaluation_design import validate
+    value=deepcopy(net_design());p=value['risk_policy']['net_forward_policy']
+    if damage=='late':p['declared_at_ms']=value['declared_at_ms']+1
+    elif damage=='axis':p['sample']['end_ms']+=10_000
+    elif damage=='candidate':p['series']['candidate_id']='trend'
+    elif damage=='proposal':p['series']['proposal_sha256']='b'*64
+    elif damage=='definition':p['series']['strategy_definition_sha256']='b'*64
+    elif damage=='compare_all':value['selection']=dict(method='COMPARE_ALL_WITHOUT_SELECTION',candidate_id=None,proposal_sha256=None)
+    else:value['schema']='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8'
+    with pytest.raises(ValueError):validate(value)

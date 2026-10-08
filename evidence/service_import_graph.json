@@ -2067,6 +2067,11 @@
           "path": "services/research/factor_engine/domain/model.py"
         },
         {
+          "line": 43,
+          "module": "services.validation.gold_native_statistics",
+          "path": "services/research/gold_native_source_reader.py"
+        },
+        {
           "line": 20,
           "module": "services.validation.performance",
           "path": "services/research/oos_validation.py"
@@ -2408,7 +2413,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "f85e942e683254faaa6a36dc055c0fa72c6d93b544937e27b3700f52f9ee295e",
+  "graph_sha256": "583e18e326642942fdfe86f5f376fd760d60bdc44d135436d815c529c9242e02",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2446,7 +2451,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 701,
+  "source_file_count": 702,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

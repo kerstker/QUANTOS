@@ -34,6 +34,17 @@ class SourceReports(dict):
         shape.require(not self.closed, 'CAUSALITY_CONTEXT_CLOSED')
         return result
 
+    def review_gold_net_forward(self, **arguments):
+        """Consume only original episodes in this exact historical cut and lease."""
+        shape.require(not self.closed,'NET_FORWARD_CONTEXT_CLOSED')
+        invocation=arguments['subject']['invocation_id']
+        shape.require(invocation in self.source_inputs and len(self.source_inputs[invocation])>0,
+            'NET_FORWARD_ORIGINAL_SOURCE_REQUIRED')
+        from services.validation.gold_native_statistics import review_gold_net_forward_series
+        result=review_gold_net_forward_series(reports=self,**arguments)
+        shape.require(not self.closed,'NET_FORWARD_CONTEXT_CLOSED')
+        return result
+
     def prepare_report_views(self, cut):
         """Verify complete immutable indexes once; never cache across leases."""
         from quantos.contracts.project_chunked_results import PreparedGoldReport

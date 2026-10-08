@@ -439,8 +439,19 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                 causality_review=causality_port(bars=report['market_bars'],decision_rows=rows,
                     candidate_id=trial['candidate_id'],policy=causality_policy,subject=model_context['subject'],
                     native_result_hash=simulation['result_hash'],market_history_policy=report.get('market_history_policy'))
+            net_forward_policy=run['plan']['forward_design']['risk_policy'].get('net_forward_policy')
+            net_forward_review=None
+            forward_port=getattr(reports,'review_gold_net_forward',None)
+            original_snapshot=(None if model_context['verified_statistics'] is None else
+                model_context['verified_statistics']['report']['as_of_ms'])
+            if net_forward_policy is not None and original_snapshot is not None and callable(forward_port):
+                net_forward_review=forward_port(project_cut=model_context['project_cut'],
+                    subject=model_context['subject'],candidate_id=trial['candidate_id'],policy=net_forward_policy,
+                    native_result_hash=simulation['result_hash'],snapshot_as_of_ms=original_snapshot,
+                    selected_account=account_inputs)
             model_inputs = from_verified_statistics(**model_context, candidate_id=trial['candidate_id'],
-                native_result_hash=simulation['result_hash'],causality_policy=causality_policy,causality_review=causality_review)
+                native_result_hash=simulation['result_hash'],causality_policy=causality_policy,causality_review=causality_review,
+                net_forward_policy=net_forward_policy,net_forward_review=net_forward_review)
             account_inputs.projection['model_inputs'] = model_inputs.projection
             account_inputs.projection['schema'] = 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
             account_inputs.projection['source_groups']['alpha_metadata'] = dict(status='PARTIAL_ORIGINAL_FACTS',
@@ -461,9 +472,70 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                 diagnostic['limitations'].append('NINE_ENGINE_RISK_INPUTS_INCOMPLETE')
             diagnostic['limitations'] = sorted(set(diagnostic['limitations']))
             if account_inputs.model_inputs is not None:
-                diagnostic['schema'] = 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10'
+                diagnostic['schema'] = ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V11' if net_forward_policy is not None else
+                    'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10')
         return (*result, diagnostic)
     return result
+
+
+def review_gold_net_forward_series(*, reports, project_cut, subject, candidate_id, policy,
+                                  native_result_hash, snapshot_as_of_ms, selected_account=None):
+    """Verify each original native run before exposing its cost-net account.
+
+    The series spans bounded capture episodes without increasing one-run replay
+    budgets, inventing cash continuity, or changing the statistical population.
+    """
+    from quantos.contracts.gold_net_forward_policy import series_sha256, validate
+    from quantos.contracts.gold_forward_evaluation_design import validate as validate_design
+    from services.validation.gold_net_forward_review import NetForwardEpisode, assess_net_forward
+    from services.validation.gold_account_risk_inputs import build_account_risk_inputs, currency_from_dataset
+    require(validate(policy)['series']['candidate_id']==candidate_id,'NET_FORWARD_CANDIDATE')
+    expected=series_sha256(policy)
+    incomplete=[]
+    def episodes():
+        count=0
+        for invocation,run in sorted(project_cut['runs'].items()):
+            plan=run['plan']
+            if plan['schema'] not in native.FORWARD_GOLD_SCHEMAS:
+                continue
+            design=plan['forward_design']
+            declared=design['risk_policy'].get('net_forward_policy')
+            if declared is None or series_sha256(declared)!=expected:
+                continue
+            count+=1
+            require(count<=policy['budget']['maximum_episodes'],'NET_FORWARD_EPISODE_BUDGET')
+            validate_design(design)
+            require(plan['invocation_id']==invocation and plan['search']['search_kind']=='FORWARD',
+                'NET_FORWARD_PROSPECTIVE_SOURCE')
+            trial=next(t for t in plan['trials'] if t['candidate_id']==candidate_id)
+            identity=dict(invocation_id=invocation,**{k:trial[k] for k in ('native_trial_id','config_hash')})
+            if (run['partial'] or invocation in project_cut['unfinished_runs']
+                    or run['input_material']['status']!='COMPLETE' or run['result_material']['status']!='COMPLETE'):
+                incomplete.append(invocation)
+                continue
+            parts=getattr(reports,'source_inputs',{}).get(invocation)
+            require(isinstance(parts,Sequence) and len(parts)>0,'NET_FORWARD_ORIGINAL_SOURCE_REQUIRED')
+            report,document=_report(run,reports=reports)
+            simulation=_simulation(report,candidate_id,streamed=plan['schema'] in native.CHUNKED_GOLD_SCHEMAS)
+            sample={k:design['metrics'][k] for k in ('start_ms','end_ms','frequency_ms')}
+            if identity=={k:subject[k] for k in ('invocation_id','native_trial_id','config_hash')} and selected_account is not None:
+                account=selected_account
+                require(account.projection['native_result_hash']==simulation['result_hash'],'NET_FORWARD_SELECTED_ACCOUNT')
+            else:
+                dataset=_plain_dataset(report['dataset_identity']) if plan['schema'] in native.CHUNKED_GOLD_SCHEMAS else report['dataset_identity']
+                settlements=funding_settlements(document,dataset,source_parts=parts)
+                streamed=plan['schema'] in native.CHUNKED_GOLD_SCHEMAS
+                account=build_account_risk_inputs(simulation,sample=sample,settlements=settlements,
+                    account_currency=currency_from_dataset(dataset),streamed=streamed,
+                    maximum_points=100_000_000 if streamed else 100_000,
+                    maximum_events=100_000_000 if streamed else 100_000,
+                    grid_budget=design['statistical_policy'].get('computation_budget'))
+            definition=next(t['strategy_definition_sha256'] for t in design['cohort'] if t['candidate_id']==candidate_id)
+            yield NetForwardEpisode(subject=identity,policy=declared,account=account,
+                strategy_definition_sha256=definition,proposal_sha256=design['selection']['proposal_sha256'])
+    return assess_net_forward(episodes=episodes(),policy=policy,subject=subject,
+        native_result_hash=native_result_hash,project_cut_sha256=project_cut['cut_sha256'],
+        snapshot_as_of_ms=snapshot_as_of_ms,incomplete_invocations=incomplete)
 
 
 @ledger_decimal_context()
