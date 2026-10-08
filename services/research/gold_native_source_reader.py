@@ -13,9 +13,11 @@ class SourceReports(dict):
         super().__init__()
         self.source_inputs = {}
         self.closed = False
+        self._issued_net_forward_reviews = set()
 
     def close_inputs(self):
         self.closed = True
+        self._issued_net_forward_reviews.clear()
 
     def review_gold_risk(self, inputs):
         """Trusted composition under the same original-material read lease."""
@@ -43,6 +45,20 @@ class SourceReports(dict):
         from services.validation.gold_native_statistics import review_gold_net_forward_series
         result=review_gold_net_forward_series(reports=self,**arguments)
         shape.require(not self.closed,'NET_FORWARD_CONTEXT_CLOSED')
+        self._issued_net_forward_reviews.add(result['review_sha256'])
+        return result
+
+    def review_gold_maintenance(self, **arguments):
+        """Only a forward review actually produced by this owning read lease."""
+        shape.require(not self.closed,'MAINTENANCE_CONTEXT_CLOSED')
+        invocation=arguments['subject']['invocation_id']
+        shape.require(invocation in self.source_inputs and len(self.source_inputs[invocation])>0,
+            'MAINTENANCE_ORIGINAL_SOURCE_REQUIRED')
+        shape.require(arguments['net_forward_review']['review_sha256'] in self._issued_net_forward_reviews,
+            'MAINTENANCE_ORIGINAL_FORWARD_NOT_ISSUED')
+        from services.validation.gold_native_statistics import review_gold_maintenance_series
+        result=review_gold_maintenance_series(reports=self,**arguments)
+        shape.require(not self.closed,'MAINTENANCE_CONTEXT_CLOSED')
         return result
 
     def prepare_report_views(self, cut):

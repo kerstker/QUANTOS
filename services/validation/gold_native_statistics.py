@@ -449,9 +449,18 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                     subject=model_context['subject'],candidate_id=trial['candidate_id'],policy=net_forward_policy,
                     native_result_hash=simulation['result_hash'],snapshot_as_of_ms=original_snapshot,
                     selected_account=account_inputs)
+            maintenance_policy=run['plan']['forward_design']['risk_policy'].get('maintenance_policy')
+            maintenance_review=None
+            maintenance_port=getattr(reports,'review_gold_maintenance',None)
+            if maintenance_policy is not None and net_forward_review is not None and callable(maintenance_port):
+                maintenance_review=maintenance_port(project_cut=model_context['project_cut'],
+                    subject=model_context['subject'],candidate_id=trial['candidate_id'],policy=maintenance_policy,
+                    net_forward_policy=net_forward_policy,net_forward_review=net_forward_review,
+                    native_result_hash=simulation['result_hash'],snapshot_as_of_ms=original_snapshot)
             model_inputs = from_verified_statistics(**model_context, candidate_id=trial['candidate_id'],
                 native_result_hash=simulation['result_hash'],causality_policy=causality_policy,causality_review=causality_review,
-                net_forward_policy=net_forward_policy,net_forward_review=net_forward_review)
+                net_forward_policy=net_forward_policy,net_forward_review=net_forward_review,
+                maintenance_policy=maintenance_policy,maintenance_review=maintenance_review)
             account_inputs.projection['model_inputs'] = model_inputs.projection
             account_inputs.projection['schema'] = 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
             account_inputs.projection['source_groups']['alpha_metadata'] = dict(status='PARTIAL_ORIGINAL_FACTS',
@@ -472,7 +481,8 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                 diagnostic['limitations'].append('NINE_ENGINE_RISK_INPUTS_INCOMPLETE')
             diagnostic['limitations'] = sorted(set(diagnostic['limitations']))
             if account_inputs.model_inputs is not None:
-                diagnostic['schema'] = ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V11' if net_forward_policy is not None else
+                diagnostic['schema'] = ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V12' if maintenance_policy is not None else
+                    'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V11' if net_forward_policy is not None else
                     'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10')
         return (*result, diagnostic)
     return result
@@ -538,6 +548,68 @@ def review_gold_net_forward_series(*, reports, project_cut, subject, candidate_i
         snapshot_as_of_ms=snapshot_as_of_ms,incomplete_invocations=incomplete)
 
 
+def review_gold_maintenance_series(
+    *,
+    reports,
+    project_cut,
+    subject,
+    candidate_id,
+    policy,
+    net_forward_policy,
+    net_forward_review,
+    native_result_hash,
+    snapshot_as_of_ms,
+):
+    """Bind maintenance to the original pre-observation designs of every episode."""
+    from quantos.contracts import gold_net_maintenance_policy as maintenance
+    from quantos.contracts.gold_forward_evaluation_design import validate as validate_design
+    from quantos.contracts.gold_net_forward_policy import policy_sha256 as forward_hash
+    from quantos.contracts.registered_research_run import digest as declaration_hash
+    from services.validation.gold_net_maintenance_review import assess_maintenance
+
+    rows = []
+    for receipt in net_forward_review["episodes"]:
+        invocation = receipt["invocation_id"]
+        require(invocation in project_cut["runs"], "MAINTENANCE_ORIGINAL_RUN_REQUIRED")
+        run = project_cut["runs"][invocation]
+        plan = run["plan"]
+        require(
+            plan["schema"] in native.FORWARD_GOLD_SCHEMAS and plan["invocation_id"] == invocation,
+            "MAINTENANCE_PROSPECTIVE_SOURCE",
+        )
+        parts = getattr(reports, "source_inputs", {}).get(invocation)
+        require(isinstance(parts, Sequence) and len(parts) > 0, "MAINTENANCE_ORIGINAL_INPUT_REQUIRED")
+        design = validate_design(plan["forward_design"])
+        trial = next(t for t in plan["trials"] if t["candidate_id"] == candidate_id)
+        require(all(trial[k] == receipt[k] for k in ("native_trial_id", "config_hash")), "MAINTENANCE_ORIGINAL_TRIAL")
+        fp = design["risk_policy"].get("net_forward_policy")
+        require(fp is not None and forward_hash(fp) == receipt["policy_sha256"], "MAINTENANCE_FORWARD_DECLARATION")
+        mp = design["risk_policy"].get("maintenance_policy")
+        if mp is not None:
+            maintenance.validate(mp, net_forward_policy=fp)
+        rows.append(
+            dict(
+                **{k: receipt[k] for k in ("invocation_id", "native_trial_id", "config_hash")},
+                available=mp is not None,
+                sample={k: design["metrics"][k] for k in ("start_ms", "end_ms", "frequency_ms")},
+                forward_policy_sha256=forward_hash(fp),
+                policy_sha256=None if mp is None else declaration_hash(mp),
+                series_sha256=None if mp is None else mp["series_sha256"],
+                declared_at_ms=design["declared_at_ms"],
+                design_sha256=declaration_hash(design),
+            )
+        )
+    return assess_maintenance(
+        net_forward_review=net_forward_review,
+        net_forward_policy=net_forward_policy,
+        policy=policy,
+        subject=subject,
+        candidate_id=candidate_id,
+        native_result_hash=native_result_hash,
+        project_cut_sha256=project_cut["cut_sha256"],
+        snapshot_as_of_ms=snapshot_as_of_ms,
+        declarations=rows,
+    )
 @ledger_decimal_context()
 def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_as_of_ms, streamed,
                          evaluation_policy=None):

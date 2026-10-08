@@ -145,7 +145,7 @@ def assert_original_model_binding(facts, cut, statistics, candidate_id):
     assert gate['invocations'] == 0 and gate['original_report'] is None
     assert gate['missing_fields'] == model['missing_fields']
     assert model['economic_authority'] is model['submission_enabled'] is False
-    if model['schema'] in ('QUANTOS_GOLD_MODEL_RISK_INPUTS_V2','QUANTOS_GOLD_MODEL_RISK_INPUTS_V3'):
+    if model['schema'] in ('QUANTOS_GOLD_MODEL_RISK_INPUTS_V2','QUANTOS_GOLD_MODEL_RISK_INPUTS_V3','QUANTOS_GOLD_MODEL_RISK_INPUTS_V4'):
         causal=model['causality_review']
         assert causal['native_result_hash']==model['native_result_hash']
         assert causal['policy_sha256']==model['causality_policy_sha256']
@@ -156,9 +156,9 @@ def assert_original_model_binding(facts, cut, statistics, candidate_id):
         assert model['facts']['leakage_flag']['value'] is None
         assert 'OOS_AND_SEARCH_SELECTION_LEAKAGE_NOT_YET_ASSESSED' in model['limitations']
 
-    if model['schema']=='QUANTOS_GOLD_MODEL_RISK_INPUTS_V3':
+    if model['schema'] in ('QUANTOS_GOLD_MODEL_RISK_INPUTS_V3','QUANTOS_GOLD_MODEL_RISK_INPUTS_V4'):
         forward=model['net_forward_review']
-        assert facts['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V16'
+        assert facts['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V17' if model['schema']=='QUANTOS_GOLD_MODEL_RISK_INPUTS_V4' else 'QUANTOS_PROJECT_RESEARCH_FACTS_V16')
         assert forward['status']=='INSUFFICIENT' and forward['paper_confidence'] is None
         assert forward['project_cut_sha256']==cut['cut_sha256']
         assert forward['snapshot_as_of_ms']==report['as_of_ms']

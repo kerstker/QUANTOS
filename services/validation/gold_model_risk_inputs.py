@@ -70,7 +70,7 @@ class GoldModelRiskInputs:
 @ledger_decimal_context()
 def from_verified_statistics(*, project_cut, subject, candidate_id, verified_statistics,
                              checked_at_ms, native_result_hash, causality_policy=None, causality_review=None,
-                             net_forward_policy=None, net_forward_review=None):
+                             net_forward_policy=None, net_forward_review=None, maintenance_policy=None, maintenance_review=None):
     """Internal seam; source caller must first recompute the statistical evidence."""
     hashed(native_result_hash)
     selected = {k: hashed(subject[k]) for k in IDENTITY}
@@ -150,9 +150,24 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             sources['paper_confidence']='ORIGINAL_COST_NET_EIGHT_WEEK_FORWARD_MATURITY_NOT_PROFIT_PROBABILITY'
     else:
         require(net_forward_review is None,'FORWARD_POLICY_REQUIRED')
+    maintenance_hash=None
+    if maintenance_policy is not None:
+        from quantos.contracts.gold_net_maintenance_policy import policy_sha256 as maintenance_digest, validate_review as validate_maintenance
+        require(net_forward_policy is not None,'MAINTENANCE_FORWARD_POLICY_REQUIRED')
+        maintenance_hash=maintenance_digest(maintenance_policy,net_forward_policy=net_forward_policy)
+        if maintenance_review is not None:
+            require(net_forward_review is not None and as_of is not None,'MAINTENANCE_ORIGINAL_FORWARD_REQUIRED')
+            review=validate_maintenance(maintenance_review,policy=maintenance_policy,net_forward_policy=net_forward_policy,
+                net_forward_review=net_forward_review,subject=subject,candidate_id=candidate_id,
+                native_result_hash=native_result_hash,project_cut_sha256=project_cut['cut_sha256'],snapshot_as_of_ms=as_of)
+            values['decay_flag']=review['decay_flag']
+            sources['decay_flag']='ORIGINAL_PREDECLARED_COST_NET_WEEKLY_PERFORMANCE_MAINTENANCE_NOT_IC'
+    else:
+        require(maintenance_review is None,'MAINTENANCE_POLICY_REQUIRED')
     facts = {k: dict(status='UNAVAILABLE' if values[k] is None else 'AVAILABLE', value=values[k],
                     source=sources[k]) for k in FIELDS}
-    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' if net_forward_policy is not None else
+    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V4' if maintenance_policy is not None else
+        'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' if net_forward_policy is not None else
         'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' if causality_policy is not None else SCHEMA, status='PARTIAL_ORIGINAL_FACTS',
         **selected, candidate_id=candidate_id, native_result_hash=native_result_hash,
         project_cut_sha256=hashed(project_cut['cut_sha256']),
@@ -161,7 +176,7 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
         attempt_count=project_cut['attempt_count'], unique_definition_count=project_cut['unique_definition_count'],
         facts=facts, known_fields=sorted(k for k in FIELDS if values[k] is not None),
         missing_fields=sorted(k for k in FIELDS if values[k] is None),
-        known_failure_fields=sorted(k for k in ('overfit_flag','leakage_flag') if values[k] is True),
+        known_failure_fields=sorted(k for k in ('decay_flag','overfit_flag','leakage_flag') if values[k] is True),
         metadata_kind='ONE_SELECTED_CANDIDATE_NOT_REPLICATED_COMPONENT_CONFIDENCE',
         independent_verification=False, limitations=[
             'NO_INDEPENDENT_POLICY_SOURCE_OR_TIME_AUTHORITY',
@@ -187,6 +202,21 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             if net_forward_review['status']=='MATURE':
                 value['limitations'].remove('FORWARD_AND_CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND')
                 value['limitations'].append('CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND')
+        value['limitations']=sorted(set(value['limitations']))
+    if maintenance_policy is not None:
+        value.update(maintenance_policy_sha256=maintenance_hash,maintenance_review=maintenance_review)
+        if maintenance_review is None:
+            value['limitations'].append('NET_MAINTENANCE_PORT_OR_ORIGINALS_UNAVAILABLE')
+        else:
+            value['limitations'].extend(maintenance_review['limitations'])
+            value['limitations'].extend(maintenance_review['reasons'])
+            if maintenance_review['decay_flag'] is not None:
+                for missing in ('FORWARD_AND_CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND',
+                                'CANDIDATE_MAINTENANCE_ORIGINALS_NOT_YET_BOUND'):
+                    if missing in value['limitations']:
+                        value['limitations'].remove(missing)
+                if values['paper_confidence'] is None:
+                    value['limitations'].append('ORIGINAL_EIGHT_WEEK_FORWARD_MATURITY_REQUIRED')
         value['limitations']=sorted(set(value['limitations']))
     value['projection_sha256'] = digest(value)
     return GoldModelRiskInputs(value)

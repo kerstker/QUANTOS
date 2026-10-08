@@ -1881,7 +1881,7 @@
     {
       "references": [
         {
-          "line": 23,
+          "line": 25,
           "module": "services.risk.research_risk.gold_research_replay",
           "path": "services/research/gold_native_source_reader.py"
         }
@@ -2067,7 +2067,12 @@
           "path": "services/research/factor_engine/domain/model.py"
         },
         {
-          "line": 43,
+          "line": 45,
+          "module": "services.validation.gold_native_statistics",
+          "path": "services/research/gold_native_source_reader.py"
+        },
+        {
+          "line": 59,
           "module": "services.validation.gold_native_statistics",
           "path": "services/research/gold_native_source_reader.py"
         },
@@ -2413,7 +2418,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "583e18e326642942fdfe86f5f376fd760d60bdc44d135436d815c529c9242e02",
+  "graph_sha256": "a55555f0fd11b036121f98df50ce990477e51615d1de6c47211c2c028ee4a966",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2451,7 +2456,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 702,
+  "source_file_count": 703,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -10,7 +10,7 @@ from tests.tools.test_registered_research_run import registered_case as register
 from tests.research.test_registered_research_review_job import independent_response
 
 
-@pytest.mark.parametrize('exported', [None, 'source', 'source-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', [None, 'source', 'source-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'], indirect=True)
 def test_production_signed_consumer_recovery_and_cold_read_use_all_original_reports(exported, monkeypatch):
     from tools import registered_research_review_job as review
     from tools import registered_research_job as producer
@@ -49,9 +49,13 @@ def test_production_signed_consumer_recovery_and_cold_read_use_all_original_repo
             retained=json.loads(cold_row['evaluation_json'])['assessment']['projection']
             model=retained['execution_risk_review']['account_risk_inputs']['model_inputs']
             expected=packet['projection']['execution_risk_review']['account_risk_inputs']['model_inputs']
-            assert retained['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V16'
+            assert retained['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V17' if 'maintenance_policy' in plans[0]['forward_design']['risk_policy'] else 'QUANTOS_PROJECT_RESEARCH_FACTS_V16')
             assert model==expected and model['net_forward_review']['status']=='INSUFFICIENT'
             assert model['facts']['paper_confidence']['value'] is None
+            if 'maintenance_policy' in plans[0]['forward_design']['risk_policy']:
+                assert model['maintenance_review']['status']=='INSUFFICIENT'
+                assert model['facts']['decay_flag']['value'] is None
+                assert model['maintenance_review']['lifecycle_changed'] is False
         assert cold._conn.execute('SELECT count(*) FROM evaluations').fetchone()[0] == 1
         assert cold._conn.execute('SELECT count(*) FROM evaluation_audit_outbox').fetchone()[0] == 1
         assert cold._conn.execute('SELECT count(*) FROM search_evaluations').fetchone()[0] == 0

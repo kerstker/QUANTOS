@@ -25,15 +25,15 @@ def exported(registered_case, monkeypatch, request):
     source = source_identity()
     source_variant = getattr(request, 'param', '') or ''
     root = collection_request(f['root'], monkeypatch, {'release_identity':source}, declared=True, funding=True,
-                              long_declared=source_variant in ('source-long-declared','source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'))
+                              long_declared=source_variant in ('source-long-declared','source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'))
     f['arguments'] = read_arguments(root, original_source=source)
     f['clock'][0] = time.time_ns() // 1_000_000
     design = json.loads((root/'plan.json').read_bytes())['forward_design']
-    if source_variant in ('source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'):
+    if source_variant in ('source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'):
         portfolio_plan = dict(quantities={n:'0.1' for n in ('channel','trend','reversion')}, max_notional='100')
         design['configuration']['portfolio_plan'] = portfolio_plan
         f['arguments']['portfolio_plan'] = dict(quantities=dict(portfolio_plan['quantities']), max_notional='100')
-    if source_variant in ('source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'):
+    if source_variant in ('source-risk-declared','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'):
         from quantos.contracts.gold_forward_evaluation_design import declare
         from tests.validation.test_gold_research_risk_policy import policy
         from tests.validation.test_gold_market_states import policy as market_policy
@@ -50,14 +50,14 @@ def exported(registered_case, monkeypatch, request):
             market_state_policy=market_policy(dict(start_ms=design['metrics']['start_ms'],
                 end_ms=design['metrics']['end_ms'],frequency_ms=design['metrics']['frequency_ms']),
                 declared=design['declared_at_ms'])
-                if source_variant in ('source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted') else None,
+                if source_variant in ('source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted') else None,
             capacity_policy=capacity_policy(dict(start_ms=design['metrics']['start_ms'],
                 end_ms=design['metrics']['end_ms'],frequency_ms=design['metrics']['frequency_ms']),
-                declared=design['declared_at_ms']) if source_variant in ('source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted') else None,
+                declared=design['declared_at_ms']) if source_variant in ('source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted') else None,
             causality_policy=causality_policy(
                 sample={k:design['metrics'][k] for k in ('start_ms','end_ms','frequency_ms')},
-                declared_at_ms=design['declared_at_ms']) if source_variant in ('source-net-causality-budgeted','source-net-forward-budgeted') else None)
-    if source_variant=='source-net-forward-budgeted':
+                declared_at_ms=design['declared_at_ms']) if source_variant in ('source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted') else None)
+    if source_variant in ('source-net-forward-budgeted','source-net-maintenance-budgeted'):
         from quantos.contracts.gold_forward_evaluation_design import NET_FORWARD_REVIEW_SCHEMA, validate
         from quantos.contracts.gold_net_forward_policy import declare as forward_policy
         design['schema']=NET_FORWARD_REVIEW_SCHEMA
@@ -69,6 +69,12 @@ def exported(registered_case, monkeypatch, request):
                 declared_at_ms=design['declared_at_ms'],candidate_id=candidate,
                 strategy_definition_sha256=definition,proposal_sha256=design['selection']['proposal_sha256']))
         validate(design)
+        if source_variant=='source-net-maintenance-budgeted':
+            from quantos.contracts.gold_forward_evaluation_design import MAINTENANCE_REVIEW_SCHEMA
+            from quantos.contracts.gold_net_maintenance_policy import declare as maintenance_policy
+            design['schema']=MAINTENANCE_REVIEW_SCHEMA
+            design['risk_policy']['maintenance_policy']=maintenance_policy(net_forward_policy=design['risk_policy']['net_forward_policy'])
+            validate(design)
     monkeypatch.setattr(producer, 'workspace_paths', lambda: (f['root']/'project', f['root']/'registry.db'))
     source_mode = source_variant.startswith('source')
     if source_mode:
@@ -89,7 +95,7 @@ def exported(registered_case, monkeypatch, request):
             from tools.registered_gold_chunked_job import prepare_source_run
             source_storage = dict(schema='QUANTOS_GOLD_NATIVE_SOURCE_STORAGE_V1', maximum_bytes=32_000_000,
                                   maximum_preparation_bytes=64_000_000)
-            if source_variant in ('source-budgeted','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'):
+            if source_variant in ('source-budgeted','source-risk-budgeted','source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'):
                 source_storage.update(schema='QUANTOS_GOLD_NATIVE_SOURCE_STORAGE_V2',
                     replay_budget=dict(schema='LINEAR_PERPETUAL_REPLAY_BUDGET_V1',
                         maximum_environment_segments=2, maximum_elapsed_ms=30 * 86_400_000))
@@ -316,7 +322,7 @@ def test_archive_http_exports_all_originals_and_refuses_a_corrupt_nonselected_ru
     assert metadata['review_request'] is None and metadata['material_status'] == 'INVALID'
 
 
-@pytest.mark.parametrize('exported', ['', 'source-risk-declared', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', ['', 'source-risk-declared', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'], indirect=True)
 def test_exported_originals_support_signed_statistical_replay_without_native_paths(exported):
     from tests.research.test_registered_research_review_job import independent_response
     from services.research.project_research_review_request import open_request
@@ -342,7 +348,7 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
             verified = authority.verify_project_evidence(snapshot, now_ms=f['clock'][0], reports=reports)
             assert verified['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
             assert verified['qualification'] == 'INSUFFICIENT'
-            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11','QUANTOS_PROJECT_RESEARCH_FACTS_V12','QUANTOS_PROJECT_RESEARCH_FACTS_V13','QUANTOS_PROJECT_RESEARCH_FACTS_V16'):
+            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11','QUANTOS_PROJECT_RESEARCH_FACTS_V12','QUANTOS_PROJECT_RESEARCH_FACTS_V13','QUANTOS_PROJECT_RESEARCH_FACTS_V16','QUANTOS_PROJECT_RESEARCH_FACTS_V17'):
                 projected=verified['projection']['execution_risk_review']['account_risk_inputs']
                 assert projected['source_groups']['risk_config']['status']=='AVAILABLE'
                 if 'net_attribution' in projected:
@@ -388,7 +394,7 @@ def test_long_declared_transport_recomputes_with_synthetic_signatures_and_keeps_
     test_exported_originals_support_signed_statistical_replay_without_native_paths(exported)
 
 
-@pytest.mark.parametrize('exported',['source-net-forward-budgeted'],indirect=True)
+@pytest.mark.parametrize('exported',['source-net-forward-budgeted','source-net-maintenance-budgeted'],indirect=True)
 def test_original_net_forward_port_and_nested_historical_port_expire_with_their_source(exported):
     from services.research.project_research_review_request import open_request
     from services.validation.project_research_evidence_artifact import retained_reports
@@ -428,3 +434,35 @@ def test_source_rewrite_before_ready_publication_leaves_no_ready_marker(exported
             review._publish(parent, request, documents, project_root=f['root']/'project',
                 reads=reads)
     assert not (parent/packet['request']['review_request_id']/'request.json').exists()
+
+
+@pytest.mark.parametrize("exported", ["source-net-maintenance-budgeted"], indirect=True)
+def test_original_maintenance_and_nested_ports_expire_with_their_source(exported):
+    from services.research.project_research_review_request import open_request
+    from services.validation.project_research_evidence_artifact import retained_reports
+
+    _, plans, _, packet, directory = exported
+    cut = packet["project_cut"]
+    model = packet["projection"]["execution_risk_review"]["account_risk_inputs"]["model_inputs"]
+    risk = plans[0]["forward_design"]["risk_policy"]
+    assert packet["projection"]["schema"] == "QUANTOS_PROJECT_RESEARCH_FACTS_V17"
+    assert model["schema"] == "QUANTOS_GOLD_MODEL_RISK_INPUTS_V4"
+    assert model["maintenance_review"]["status"] == "INSUFFICIENT" and model["facts"]["decay_flag"]["value"] is None
+    arguments = dict(
+        project_cut=cut,
+        subject=packet["subject"],
+        candidate_id=model["candidate_id"],
+        policy=risk["maintenance_policy"],
+        net_forward_policy=risk["net_forward_policy"],
+        net_forward_review=model["net_forward_review"],
+        native_result_hash=model["native_result_hash"],
+        snapshot_as_of_ms=model["snapshot_as_of_ms"],
+    )
+    with open_request(directory, request_id=directory.name) as (_, owner):
+        first = retained_reports(cut, owner)
+        second = retained_reports(cut, first)
+        for port in (owner, first, second):
+            assert port.review_gold_maintenance(**arguments) == model["maintenance_review"]
+    for port in (owner, first, second):
+        with pytest.raises(ValueError, match="CONTEXT_CLOSED"):
+            port.review_gold_maintenance(**arguments)

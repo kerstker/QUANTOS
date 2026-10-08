@@ -144,7 +144,7 @@ def test_review_archive_missing_or_bad_identity_creates_no_state(tmp_path, monke
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted','source-net-forward-budgeted','source-net-maintenance-budgeted'], indirect=True)
 def test_source_review_payload_and_archive_share_the_complete_input_contract(exported, monkeypatch):
     import io
     import shutil
@@ -164,12 +164,14 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
     assert payload['material_status'] == 'VALID' and payload['review_request'] == packet
     if plans[0]['schema'] == 'QUANTOS_REGISTERED_GOLD_CHUNKED_FORWARD_RUN_V4':
         assert all(plan['source_storage']['replay_budget']['maximum_environment_segments'] == 2 for plan in plans)
-    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9'):
+    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V10'):
         projected=payload['review_request']['projection']
         is_net=plans[0]['forward_design']['selection']['candidate_id']=='net_portfolio'
-        is_capacity=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9')
-        is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9')
-        assert projected['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V16'
+        is_capacity=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V10')
+        is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V10')
+        assert projected['schema']==('QUANTOS_PROJECT_RESEARCH_FACTS_V17'
+            if plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V10'
+            else 'QUANTOS_PROJECT_RESEARCH_FACTS_V16'
             if plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V9'
             else 'QUANTOS_PROJECT_RESEARCH_FACTS_V13')
         replay=projected['execution_risk_review']['nine_engine_replay']
@@ -184,6 +186,12 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
         from tests.validation.test_gold_model_risk_inputs import assert_original_model_binding
         assert_original_model_binding(projected, packet['project_cut'], packet['statistical_evidence'],
             plans[0]['forward_design']['selection']['candidate_id'])
+        if 'maintenance_policy' in plans[0]['forward_design']['risk_policy']:
+            model=risk['model_inputs'];maintenance=model['maintenance_review']
+            assert model['schema']=='QUANTOS_GOLD_MODEL_RISK_INPUTS_V4'
+            assert maintenance['status']=='INSUFFICIENT' and maintenance['decay_flag'] is None
+            assert maintenance['net_forward_review_sha256']==model['net_forward_review']['review_sha256']
+            assert maintenance['lifecycle_changed'] is maintenance['economic_authority'] is False
         if is_capacity:
             capacity=risk['capacity_inputs']
             assert capacity['status']=='UNAVAILABLE_ACCOUNT_SERIES'

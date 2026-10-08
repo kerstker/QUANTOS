@@ -78,6 +78,9 @@ def retained_reports(cut, reports):
         forward_port=getattr(reports,'review_gold_net_forward',None)
         if callable(forward_port):
             result.review_gold_net_forward=forward_port
+        maintenance_port=getattr(reports,'review_gold_maintenance',None)
+        if callable(maintenance_port):
+            result.review_gold_maintenance=maintenance_port
         if inputs:
             originals = getattr(reports, 'source_inputs', None)
             require(isinstance(originals, Mapping) and inputs <= set(originals),

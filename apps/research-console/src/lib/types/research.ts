@@ -2815,6 +2815,26 @@ export interface GoldNetForwardReview {
   maturity_is_profit_probability: false; independent_verification: false;
   economic_authority: false; submission_enabled: false;
 }
+export interface GoldNetMaintenanceReview {
+  schema: 'QUANTOS_GOLD_NET_MAINTENANCE_REVIEW_V1';
+  scope: 'ORIGINAL_COST_NET_PERFORMANCE_DECAY_NOT_IC_OR_LIFECYCLE_AUTHORITY';
+  invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
+  native_result_hash: string; project_cut_sha256: string; snapshot_as_of_ms: number;
+  policy_sha256: string; series_sha256: string; net_forward_review_sha256: string; review_sha256: string;
+  status: 'PASS' | 'FAIL' | 'INSUFFICIENT'; decay_flag: boolean | null;
+  baseline_period_indices: number[]; baseline_mean_net_return: string | null;
+  recent_period_indices: number[]; recent_mean_net_return: string | null;
+  first_confirmed_decay_period_indices: number[];
+  period_assessments: Array<{index: number; original_period_sha256: string; performance_gap: string | null; breached: boolean | null}>;
+  declarations: Array<{
+    invocation_id: string; native_trial_id: string; config_hash: string; available: boolean;
+    sample: {start_ms: number; end_ms: number; frequency_ms: number};
+    policy_sha256: string | null; series_sha256: string | null; forward_policy_sha256: string;
+    declared_at_ms: number; design_sha256: string;
+  }>;
+  reasons: string[]; limitations: string[]; invented_ic: false; lifecycle_changed: false;
+  independent_verification: false; economic_authority: false; submission_enabled: false;
+}
 export interface RegisteredReviewProjection extends Record<string, unknown> {
   schema?: string;
   oos_material?: GoldOOSOriginalMaterial;
@@ -2830,7 +2850,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
       missing_groups: string[];
       model_inputs?: {
         schema: 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V1' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' |
-          'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3'; status: 'PARTIAL_ORIGINAL_FACTS';
+          'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V4'; status: 'PARTIAL_ORIGINAL_FACTS';
         invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
         native_result_hash: string; project_cut_sha256: string;
         statistical_report_sha256: string | null; statistical_evidence_sha256: string | null;
@@ -2845,6 +2865,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
         independent_verification: false; limitations: string[]; projection_sha256: string;
         causality_policy_sha256?: string; causality_review?: GoldCandidateCausalityReview | null;
         net_forward_policy_sha256?: string; net_forward_review?: GoldNetForwardReview | null;
+        maintenance_policy_sha256?: string; maintenance_review?: GoldNetMaintenanceReview | null;
         economic_authority: false; submission_enabled: false;
       };
       capacity_inputs?: {
