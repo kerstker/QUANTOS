@@ -6,6 +6,7 @@ from pathlib import Path
 import platform
 import subprocess
 from decimal import Decimal, ROUND_CEILING
+from quantos.runtime_paths import runtime_state_root
 from services.execution.backtest_authority import exact_identity_hash
 from services.execution.perpetual_public_replay import prepare_public_replay, unique_json_object
 from services.execution.perpetual_results import fixed_frequency_equity
@@ -61,12 +62,15 @@ def replay_capture(capture, *, release_identity, strategy_id=1, frequency_ms=100
 
 def run_replay(params):
     if set(params)-{'strategy_id','frequency_ms'}: raise ValueError('unknown replay parameters')
-    if CAPTURE.is_symlink() or CAPTURE.stat().st_size>10_000_000: raise ValueError('invalid frozen capture file')
-    capture=json.loads(CAPTURE.read_text(),object_pairs_hook=unique_json_object)
+    state=runtime_state_root()
+    capture_path=state/CAPTURE
+    output_path=state/OUTPUT
+    if capture_path.is_symlink() or capture_path.stat().st_size>10_000_000: raise ValueError('invalid frozen capture file')
+    capture=json.loads(capture_path.read_text(),object_pairs_hook=unique_json_object)
     result=replay_capture(capture,release_identity=source_identity(),**params)
     encoded=json.dumps(result,sort_keys=True,allow_nan=False,indent=2)+'\n'
-    OUTPUT.mkdir(parents=True,exist_ok=True)
-    artifact=OUTPUT/(result['result_hash']+'.json')
+    output_path.mkdir(parents=True,exist_ok=True)
+    artifact=output_path/(result['result_hash']+'.json')
     try:
         with artifact.open('x') as handle: handle.write(encoded)
     except FileExistsError:
