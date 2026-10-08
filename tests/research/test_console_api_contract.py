@@ -37,7 +37,7 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
-@pytest.mark.parametrize('oos_material', [False, True])
+@pytest.mark.parametrize('oos_material', [False, True, 'review'])
 def test_gold_backtest_unsigned_review_http_keeps_complete_statistics_without_authority(older_source, monkeypatch, oos_material):
     import shutil
     from tests.validation.test_gold_reanalysis_statistics import export_backtest
@@ -66,12 +66,16 @@ def test_gold_backtest_unsigned_review_http_keeps_complete_statistics_without_au
         ('independent_oos_verified', 'promotion_approved', 'submission_enabled', 'economic_authority'))
     if oos_material:
         material = payload['review_request']['projection']['oos_material']
-        assert payload['review_request']['projection']['schema'] == 'QUANTOS_PROJECT_RESEARCH_FACTS_V14'
+        assert payload['review_request']['projection']['schema'] == (
+            'QUANTOS_PROJECT_RESEARCH_FACTS_V15' if oos_material == 'review' else 'QUANTOS_PROJECT_RESEARCH_FACTS_V14')
         assert material == packet['projection']['oos_material']
         assert material['candidate']['window']['sample_count'] == 2
         assert material['benchmark']['window']['net_return'] == '0'
         assert material['oos_status'] == 'UNKNOWN' and material['statistical_decision'] == 'NOT_EVALUATED'
         assert material['independent_oos_verified'] is material['economic_authority'] is material['submission_enabled'] is False
+        if oos_material == 'review':
+            assert material['economic_review']['economic_decision'] == material['economic_review']['oos_decision'] == 'FAIL'
+            assert material['economic_review']['checks']['observations'] == 'INSUFFICIENT'
 
 @pytest.mark.parametrize('kind', ['registered_review_request', 'registered_review', 'registered_review_recover'])
 def test_registered_review_queue_report_is_readonly_and_bound_to_request(tmp_path, monkeypatch, kind):

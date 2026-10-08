@@ -19,7 +19,9 @@ from quantos.contracts.registered_research_run import canonical
 SCHEMA = 'QUANTOS_RESEARCH_EVALUATION_CORE_V2'
 GOLD_REANALYSIS_SCHEMA = 'QUANTOS_GOLD_REANALYSIS_EVALUATION_CORE_V1'
 GOLD_REANALYSIS_OOS_SCHEMA = 'QUANTOS_GOLD_REANALYSIS_EVALUATION_CORE_V2'
-GOLD_REANALYSIS_SCHEMAS = (GOLD_REANALYSIS_SCHEMA, GOLD_REANALYSIS_OOS_SCHEMA)
+GOLD_REANALYSIS_OOS_REVIEW_SCHEMA = 'QUANTOS_GOLD_REANALYSIS_EVALUATION_CORE_V3'
+GOLD_REANALYSIS_OOS_SCHEMAS = (GOLD_REANALYSIS_OOS_SCHEMA, GOLD_REANALYSIS_OOS_REVIEW_SCHEMA)
+GOLD_REANALYSIS_SCHEMAS = (GOLD_REANALYSIS_SCHEMA, *GOLD_REANALYSIS_OOS_SCHEMAS)
 GOLD_OOS_MATERIAL_METHOD = 'ORIGINAL_RECEIPT_AVAILABLE_NET_ACCOUNT_AND_CASH_BASELINE_GRID_V1'
 STATUS_SCHEMA = 'QUANTOS_RESEARCH_EVALUATION_CORE_STATUS_V2'
 MAX_BYTES = 65_536
@@ -56,8 +58,10 @@ def _hash(value):
 def validate_core(value):
     """Validate declarations only; preserve the caller's original bytes and time."""
     _require(type(value) is dict, 'FIELDS')
-    oos_material = value.get('schema') == GOLD_REANALYSIS_OOS_SCHEMA
-    _fields(value, FIELDS | ({'oos_material_method'} if oos_material else set()), 'FIELDS')
+    oos_material = value.get('schema') in GOLD_REANALYSIS_OOS_SCHEMAS
+    oos_review = value.get('schema') == GOLD_REANALYSIS_OOS_REVIEW_SCHEMA
+    _fields(value, FIELDS | ({'oos_material_method'} if oos_material else set())
+        | ({'oos_evaluation_policy'} if oos_review else set()), 'FIELDS')
     canonical(value, maximum=MAX_BYTES)
     gold_reanalysis = value['schema'] in GOLD_REANALYSIS_SCHEMAS
     _require(type(value['native_adapter']) is str and type(value['evidence_kind']) is str
@@ -148,6 +152,9 @@ def validate_core(value):
         _require(value['oos_material_method'] == GOLD_OOS_MATERIAL_METHOD
             and value['splits']['locked_oos'] is not None
             and value['selection']['method'] == 'PREDECLARED_CANDIDATE', 'GOLD_OOS_MATERIAL')
+    if oos_review:
+        from quantos.contracts.gold_oos_evaluation import validate
+        validate(value['oos_evaluation_policy'])
     return value
 
 

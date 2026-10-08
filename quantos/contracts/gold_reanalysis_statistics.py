@@ -40,4 +40,7 @@ def bind_core(policy, core):
     common.require(policy['split_policy']['maximum_information_horizon_ms'] >=
         core['sample']['end_ms']-core['sample']['start_ms']+core['sample']['frequency_ms'],
         'GOLD_BACKTEST_INFORMATION_HORIZON')
+    if 'oos_evaluation_policy' in core:
+        from quantos.contracts.gold_oos_evaluation import bind_statistical_policy
+        bind_statistical_policy(core['oos_evaluation_policy'], policy)
     return policy

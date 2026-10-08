@@ -199,7 +199,7 @@ def export_backtest(case, monkeypatch, *, oos_material=False):
     return f, plan, policy, original_native, request, packet
 
 
-@pytest.mark.parametrize('oos_material', [False, True])
+@pytest.mark.parametrize('oos_material', [False, True, 'review'])
 def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(older_source, monkeypatch, oos_material):
     from tools import registered_research_review_job as review
     from tests.research.test_registered_research_review_job import independent_response
@@ -217,6 +217,9 @@ def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(
         assert actual['material_status'] == 'AVAILABLE' and actual['oos_status'] == 'UNKNOWN'
         assert actual['candidate']['window']['sample_count'] == 2
         assert actual['statistical_decision'] == 'NOT_EVALUATED' and actual['independent_oos_verified'] is False
+        if oos_material == 'review':
+            assert actual['economic_review']['economic_decision'] == 'FAIL'
+            assert actual['economic_review']['policy_sha256'] == digest(plan['evaluation_core']['oos_evaluation_policy'])
     trust = f['root']/'synthetic-review/trust.json'
     independent_response(packet, review.response_directory(request), trust)
     registry = json.loads(trust.read_bytes())
@@ -231,20 +234,37 @@ def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(
         monkeypatch.setattr(time, 'time_ns', lambda: later)
     result = review.consume_review(dict(review_request_id=request))
     assert result['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
-    assert result['qualification'] in ('FAIL', 'INSUFFICIENT')
+    assert result['qualification'] in (('REJECTED',) if oos_material == 'review' else ('FAIL', 'INSUFFICIENT'))
     assert result['economic_authority'] is result['promotion_approved'] is result['submission_enabled'] is False
     monkeypatch.setattr(f['run'].gold, '_execute', lambda *a, **kw: pytest.fail('review cold cannot execute'))
     assert review.recover_review(dict(review_request_id=request))['review_id'] == result['review_id']
     cold = SqliteExperimentStore(str(f['root']/'registry.db'), create=False, read_only=True,
         project_result_reader=ProjectResultMaterialReader(f['root']/'project'))
     try:
-        assert cold.get_project_research_evidence(result['review_id'])['verdict'] in ('FAIL', 'INSUFFICIENT')
+        assert cold.get_project_research_evidence(result['review_id'])['verdict'] in (
+            ('REJECTED',) if oos_material == 'review' else ('FAIL', 'INSUFFICIENT'))
         assert cold._conn.execute('SELECT count(*) FROM evaluations').fetchone()[0] == 1
         assert cold._conn.execute('SELECT count(*) FROM evaluation_audit_outbox').fetchone()[0] == 1
         assert cold._conn.execute('SELECT count(*) FROM search_evaluations').fetchone()[0] == 0
     finally:
         cold.close()
     assert physical(f['root']/'project') == original_native
+
+
+@pytest.mark.parametrize('floor', ['minimum_net_return', 'minimum_benchmark_excess',
+    'minimum_observations', 'minimum_duration_ms', 'maximum_drawdown'])
+def test_oos_policy_cannot_relax_bound_training_economics_before_execution(older_source, monkeypatch, floor):
+    from tests.tools.test_gold_reanalysis_evaluation import historical_oos_clock
+    historical_oos_clock(older_source, monkeypatch)
+    core, policy = declared(older_source, oos_material='review')
+    tightened = {'minimum_net_return': '0.1', 'minimum_benchmark_excess': '0.1',
+        'minimum_observations': 31, 'minimum_duration_ms': 31*86_400_000, 'maximum_drawdown': '0.04'}
+    policy['economic_checks'][floor] = tightened[floor]
+    core['selection']['validation_policy_sha256'] = digest(policy)
+    before = physical(older_source[0]['root'])
+    with pytest.raises(ValueError, match='GOLD_OOS_RELAXED'):
+        prepare(older_source, core, policy)
+    assert physical(older_source[0]['root']) == before
 
 
 def test_core_geometry_cannot_shorten_the_actual_native_information_episode(older_source):

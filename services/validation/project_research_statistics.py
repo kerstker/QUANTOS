@@ -20,7 +20,6 @@ from services.validation.project_research_population import validate_project_cut
 from services.validation.project_research_evidence_artifact import last_project_fact_ms
 from services.validation.catalog_evidence import _observed_sr, _VAR_SR_FLOOR
 from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
-from services.validation.performance import max_drawdown
 from services.validation.cpcv import cpcv_summary, cpcv_oos_distribution, _quantile
 
 require=contract.require
@@ -314,7 +313,11 @@ def review_native_economics(points, baseline_points, policy):
     ):
         reasons.add("SAMPLE_TOO_SHORT")
     net = equity[-1] / equity[0] - 1
-    drawdown = Decimal(str(max_drawdown([float(v) for v in equity])))
+    peak, drawdown = equity[0], Decimal(0)
+    for value in equity:
+        peak = max(peak, value)
+        if peak > 0:
+            drawdown = max(drawdown, (peak-value)/peak)
     metrics.update(sample_net_return=canonical_decimal(net), maximum_drawdown=canonical_decimal(drawdown))
     test("net_return", net, Decimal(policy["minimum_net_return"]))
     test("drawdown", drawdown, Decimal(policy["maximum_drawdown"]), False)

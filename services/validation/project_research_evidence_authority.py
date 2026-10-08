@@ -277,8 +277,8 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
         facts['execution_risk_review'] = execution_risk
         reasons.update(execution_risk['limitations'])
         facts['limitations'] = sorted(reasons)
-    from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_SCHEMA
-    if core is not None and core['schema'] == GOLD_REANALYSIS_OOS_SCHEMA:
+    from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_SCHEMAS
+    if core is not None and core['schema'] in GOLD_REANALYSIS_OOS_SCHEMAS:
         from services.validation.gold_native_statistics import project_gold_oos_material
         if validated_statistics is not None:
             snapshot_at = validated_statistics['report']['as_of_ms']
@@ -293,6 +293,12 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
         facts.update(schema='QUANTOS_PROJECT_RESEARCH_FACTS_V14', oos_material=material)
         reasons.update(material['limitations'])
         reasons.add('GOLD_OOS_MATERIAL_' + material['material_status'])
+        if 'economic_review' in material:
+            facts['schema'] = 'QUANTOS_PROJECT_RESEARCH_FACTS_V15'
+            economic_review = material['economic_review']
+            reasons.update(economic_review['reasons'])
+            reasons.update(economic_review['limitations'])
+            reasons.add('GOLD_OOS_ECONOMIC_' + economic_review['economic_decision'])
         facts['limitations'] = sorted(reasons)
     return facts
 
@@ -403,6 +409,7 @@ def verify_project_evidence(snapshot, *, now_ms, reports=None):
     rejected |= (projected.get('risk_replay') or {}).get('status') == 'REJECTED'
     rejected |= (projected.get('execution_risk_review') or {}).get('status') == 'REJECTED'
     rejected |= (projected.get('statistical_review') or {}).get('statistical_decision') == 'FAIL'
+    rejected |= ((projected.get('oos_material') or {}).get('economic_review') or {}).get('economic_decision') == 'FAIL'
     if result['review_verdict'] != 'PASS':
         reasons.add('INDEPENDENT_REVIEW_' + result['review_verdict'])
     for name in ('source_envelope', 'result_envelope'):

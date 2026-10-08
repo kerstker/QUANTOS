@@ -54,6 +54,10 @@ def declaration(case, *, oos_material=False):
     if oos_material:
         from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_SCHEMA, GOLD_OOS_MATERIAL_METHOD
         value.update(schema=GOLD_REANALYSIS_OOS_SCHEMA, oos_material_method=GOLD_OOS_MATERIAL_METHOD)
+    if oos_material == 'review':
+        from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_REVIEW_SCHEMA
+        from tests.validation.test_gold_oos_economic_review import policy
+        value.update(schema=GOLD_REANALYSIS_OOS_REVIEW_SCHEMA, oos_evaluation_policy=policy())
     return value
 
 
@@ -65,7 +69,7 @@ def prepare(case, evaluation):
 
 
 @pytest.mark.parametrize('budgeted', [False, True])
-@pytest.mark.parametrize('oos_material', [False, True])
+@pytest.mark.parametrize('oos_material', [False, True, 'review'])
 def test_original_queue_commits_gold_splits_in_registry_and_ledger_before_execution(
         older_source, monkeypatch, budgeted, oos_material):
     from services.validation import gold_native_statistics as statistics
@@ -159,6 +163,13 @@ def test_original_queue_commits_gold_splits_in_registry_and_ledger_before_execut
             assert actual['candidate']['window'] is not None
             assert actual['candidate']['full_run_cash_identity']['reconciliation_residual'] == '0'
             assert actual['independent_oos_verified'] is False
+            if oos_material == 'review':
+                assert facts['schema'] == 'QUANTOS_PROJECT_RESEARCH_FACTS_V15'
+                review = actual['economic_review']
+                assert review['economic_decision'] == review['oos_decision'] == 'FAIL'
+                assert review['checks']['observations'] == review['checks']['duration'] == 'INSUFFICIENT'
+                assert review['candidate_grid_sha256'] == actual['candidate']['grid_sha256']
+                assert review['policy_sha256'] == native.digest(committed['oos_evaluation_policy'])
         else:
             assert samples == [(statistical, 'BACKTEST')] and 'oos_material' not in facts
         assert facts['promotion_approved'] is facts['submission_enabled'] is False

@@ -2757,8 +2757,23 @@ export interface GoldOOSAccountMaterial {
     fees: string; funding: string; reconciliation_residual: string;
   };
 }
+export interface GoldOOSEconomicReview {
+  schema: 'QUANTOS_GOLD_OOS_ECONOMIC_REVIEW_V1'; policy_sha256: string;
+  sample: {start_ms: number; end_ms: number; frequency_ms: number};
+  candidate_grid_sha256: string | null; benchmark_grid_sha256: string | null;
+  economic_decision: 'PASS' | 'FAIL' | 'INSUFFICIENT'; oos_decision: 'FAIL' | 'INSUFFICIENT';
+  metrics: {
+    sample_net_return: string | null; benchmark_net_return: string | null;
+    benchmark_excess: string | null; maximum_drawdown: string | null;
+  };
+  checks: Record<'coverage' | 'positive_equity' | 'observations' | 'duration' |
+    'net_return' | 'benchmark_excess' | 'drawdown', 'PASS' | 'FAIL' | 'INSUFFICIENT'>;
+  reasons: string[]; limitations: string[]; review_sha256: string;
+  scope: 'ORIGINAL_HOLDOUT_GRID_ECONOMICS_NOT_INDEPENDENT_OOS_OR_FULL_RISK';
+  independent_oos_verified: false; economic_authority: false; submission_enabled: false;
+}
 export interface GoldOOSOriginalMaterial {
-  schema: 'QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1';
+  schema: 'QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1' | 'QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V2';
   method: 'ORIGINAL_RECEIPT_AVAILABLE_NET_ACCOUNT_AND_CASH_BASELINE_GRID_V1';
   material_status: 'AVAILABLE' | 'INSUFFICIENT';
   sample: {start_ms: number; end_ms: number; frequency_ms: number}; snapshot_as_of_ms: number;
@@ -2772,6 +2787,7 @@ export interface GoldOOSOriginalMaterial {
   statistical_decision: 'NOT_EVALUATED'; independent_oos_verified: false;
   scope: 'DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS';
   limitations: string[]; material_sha256: string; economic_authority: false; submission_enabled: false;
+  economic_review?: GoldOOSEconomicReview;
 }
 export interface RegisteredReviewProjection extends Record<string, unknown> {
   schema?: string;

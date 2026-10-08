@@ -86,6 +86,29 @@ def test_two_real_ledgers_and_pending_attempts_cannot_be_relabelled_eligible(pro
     assert result['promotion_approved'] is result['submission_enabled'] is False
 
 
+def test_known_oos_economic_failure_dominates_valid_pass_signatures(registered_case, monkeypatch):
+    from services.validation import project_research_evidence_authority as auth
+    from services.research.project_research_evidence_reader import ProjectResearchEvidenceReader
+    from tests.validation.test_gold_oos_economic_review import review
+    f = registered_case
+    plan = f['prepare']('holdout-rejection')
+    execute(f, 'holdout-rejection')
+    reader = ProjectResearchEvidenceReader(f['root']/'project', registry_database=f['root']/'registry.db')
+    original = auth.project_facts
+    # Isolate qualification propagation. Actual original Gold extraction is
+    # exercised separately through the registered queue and cold signed reader.
+    def with_known_failure(*args, **kwargs):
+        value = original(*args, **kwargs)
+        value['oos_material'] = dict(economic_review=review([100, 99]))
+        return value
+    monkeypatch.setattr(auth, 'project_facts', with_known_failure)
+    snapshot, _ = signed_project(reader(), plan['invocation_id'], now=f['clock'][0])
+    result = verify(snapshot, f['clock'][0])
+    assert result['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
+    assert result['qualification'] == 'REJECTED'
+    assert result['promotion_approved'] is result['submission_enabled'] is False
+
+
 @pytest.mark.parametrize('damage', ['drop-run', 'count', 'select-other', 'source', 'domain', 'revoked', 'expiry'])
 def test_original_population_source_selection_and_signature_changes_reject(project_review, damage):
     f, _, original, _ = project_review

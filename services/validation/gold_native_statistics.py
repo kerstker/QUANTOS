@@ -467,11 +467,12 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
 
 
 @ledger_decimal_context()
-def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_as_of_ms, streamed):
+def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_as_of_ms, streamed,
+                         evaluation_policy=None):
     """Read the declared holdout grid from continuous original cash accounts.
 
-    This internal computation neither grades a strategy nor authenticates an
-    unseen boundary. The owning original reader verifies the source and result.
+    Optional preregistered economics do not authenticate an unseen boundary or
+    grant strategy qualification. The owning reader verifies source and result.
     Whole-run cash and window returns remain separately labelled.
     """
     from quantos.contracts.decimal_arithmetic import canonical_decimal
@@ -482,7 +483,7 @@ def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_
     require(frequency > 0 and start <= end and (end - start) % frequency == 0, 'OOS_SAMPLE_GRID')
     require(end <= _time(snapshot_as_of_ms), 'OOS_FUTURE_SNAPSHOT')
     require(type(streamed) is bool, 'OOS_STREAM_MODE')
-    summaries = []
+    summaries, grids = [], []
     for account in (simulation, baseline):
         history = receipt_available_history_stream(account, settlements,
             maximum_points=100_000_000, maximum_events=100_000_000) if streamed else receipt_available_history(account, settlements)
@@ -493,6 +494,7 @@ def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_
         value, _, _ = _series(account, sample, settlements, streamed=streamed, reviewed=True,
                               evidence_kind='BACKTEST')
         grid = value['grid']
+        grids.append(grid)
         window = None
         if grid is not None:
             points = grid['points']
@@ -528,21 +530,26 @@ def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_
         independent_oos_verified=False, economic_authority=False, submission_enabled=False,
         scope='DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS',
         limitations=sorted(limitations))
+    if evaluation_policy is not None:
+        from services.validation.gold_oos_economic_review import review_grids
+        value.update(schema='QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V2',
+            economic_review=review_grids(evaluation_policy, sample=sample,
+                candidate_grid=grids[0], benchmark_grid=grids[1], coverage_complete=complete))
     value['material_sha256'] = native.digest(value)
     return value
 
 
 def project_gold_oos_material(run, trial, *, project_cut_sha256, snapshot_as_of_ms, reports=None):
-    """Consume only the explicitly committed V2 OOS method and original accounts."""
+    """Consume committed V2/V3 OOS methods and original accounts."""
     from quantos.contracts.research_evaluation_plan import (
-        GOLD_REANALYSIS_OOS_SCHEMA, validate_core, core_sha256, core_status)
+        GOLD_REANALYSIS_OOS_SCHEMAS, validate_core, core_sha256, core_status)
     from services.validation.project_research_evidence_authority import _original
     from quantos.contracts.project_chunked_results import report_for
     from quantos.contracts.gold_native_source import bind_plan
     plan = run['plan']
     core = validate_core(plan['evaluation_core'])
     require(plan['schema'] in native.EVALUATED_SOURCE_REANALYSIS_SCHEMAS
-        and core['schema'] == GOLD_REANALYSIS_OOS_SCHEMA, 'OOS_PREDECLARED_METHOD')
+        and core['schema'] in GOLD_REANALYSIS_OOS_SCHEMAS, 'OOS_PREDECLARED_METHOD')
     require(trial['candidate_id'] == core['selection']['candidate_id'], 'OOS_PREDECLARED_CANDIDATE')
     if run['partial'] or not {'archive/report.json', 'archive/manifest.json'} <= set(run['originals']):
         value = dict(schema='QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1',
@@ -554,6 +561,11 @@ def project_gold_oos_material(run, trial, *, project_cut_sha256, snapshot_as_of_
             scope='DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS',
             limitations=['OOS_NATIVE_ATTEMPT_NOT_COMPLETE', 'OOS_LOCK_AND_ACCESS_NOT_INDEPENDENTLY_VERIFIED'],
             independent_oos_verified=False, economic_authority=False, submission_enabled=False)
+        if 'oos_evaluation_policy' in core:
+            from services.validation.gold_oos_economic_review import review_grids
+            value.update(schema='QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V2',
+                economic_review=review_grids(core['oos_evaluation_policy'], sample=value['sample'],
+                    candidate_grid=None, benchmark_grid=None, coverage_complete=False))
     else:
         document = _original(run, 'input.json')
         bind_plan(plan, document)
@@ -564,7 +576,8 @@ def project_gold_oos_material(run, trial, *, project_cut_sha256, snapshot_as_of_
         value = oos_account_material(_simulation(report, trial['candidate_id'], streamed=True),
             _simulation(report, None, streamed=True), sample=dict(core['splits']['locked_oos'],
                 frequency_ms=core['sample']['frequency_ms']), settlements=settlements,
-            snapshot_as_of_ms=snapshot_as_of_ms, streamed=True)
+            snapshot_as_of_ms=snapshot_as_of_ms, streamed=True,
+            evaluation_policy=core.get('oos_evaluation_policy'))
         del value['material_sha256']
         from services.validation.gold_account_risk_inputs import currency_from_dataset
         value['currency'] = currency_from_dataset(dataset)
