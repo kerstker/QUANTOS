@@ -325,7 +325,12 @@ def test_native_manifest_material_helper_is_same_original_identity(monkeypatch):
     monkeypatch.setattr(fixture,'run_authoritative_linear_perpetual_v2',run)
     record=fixture._run()
     assert record['run_id']=='9098434783ec4cc04e42026724b01cc742670220dc6b36be2c6ebeda1d431171'
-    assert record['detail']['result_hash']=='3f0a3561e4490fe663440683864e29289a86e75df5c2f38dfbbaa13523e95fe3'
+    assert record['detail']['result_hash']=='d519cdb5df58ff770391600c65a908a0d0e50cf067b87c9dbb3bdcc514ce03d0'
+    payload=record['detail']['result_hash_payload']
+    assert payload['engine_policy']['capacity_flow_policy']=='MAX_CURRENT_TARGET_ORDER_NOTIONAL_V1'
+    for context in (payload['decision_contexts'][0],payload['execution_risk_contexts'][0]):
+        assert context['capacity_flow']['capacity_notionals']=={'BTCUSDT':'10'}
+        assert context['capacity_flow']['order_quantities']=={'BTCUSDT':'0.1'}
     value=producer.research_manifest_inputs(**{k:inputs[k] for k in
         ('release_identity','dataset_identity','universe_snapshot','decisions','market_events','contract_rules')})
     assert exact_identity_hash(value)==exact_identity_hash(captured)

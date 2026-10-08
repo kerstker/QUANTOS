@@ -212,7 +212,8 @@ def test_whole_native_source_reaches_original_queue_review_and_cold_recovery(
         from quantos.contracts import gold_research_risk_policy as risk_shape
         packet=reviews.read_request(result['review_request_id'])
         facts=packet['projection']
-        assert facts['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V8'
+        assert facts['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V13'
+        assert facts['execution_risk_review']['schema']=='QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10'
         risk_inputs=facts['execution_risk_review']['account_risk_inputs']
         assert risk_inputs['risk_policy']['policy']==policy_options['research_risk_policy']
         assert risk_inputs['source_groups']['risk_config']['value_sha256']==risk_shape.policy_sha256(

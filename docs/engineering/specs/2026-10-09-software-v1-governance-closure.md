@@ -60,4 +60,49 @@ Git 拒绝，和该合并实际成立前误命名 green 的五项失败运行均
 独立历史后才取得上述真实通过。4f 的在建发行轮仅中断自有 Docker build CLI，
 原失败／清理和退出留存，不运行一个已知必然失败的完整验收副本。
 
+## 既有采集端到端合同的版本更新
+
+55f 后续 tools 阶段还发现原
+`test_whole_native_source_reaches_original_queue_review_and_cold_recovery[True]`
+仍要求早期 `QUANTOS_PROJECT_RESEARCH_FACTS_V8`。53ed 同样实际复现：1 FAIL，
+7.50 秒，`original-forward-collection-contract-red.log`。原生产选择逻辑对此种
+采集输入明确返回 `QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10` 和相应
+`QUANTOS_PROJECT_RESEARCH_FACTS_V13`；它不使用新净前向／冻结验证输入的 V18。
+
+仅将这条原断言迁移到精确 V13，并增加精确 V10 风险审查断言；原政策／哈希、
+缺样本覆盖、未完整风险就绪、零经济与提交权限、单次执行和完整冷恢复断言保留。
+整个原采集模块 18 PASS，15.78 秒：`original-forward-collection-contract-module-green.log`。
+没有生产软件、输入窗口、样本量、策略或风险门变化。
+
+53ed 同版两次实际 ARM64 冷构建、Trivy 运行镜像零已知漏洞和无网络只读冒烟
+全部通过，保留于 `attempt-08-history-release/`。该版本已启动 ALL 时才完成上述
+原失败定位；仅中断它自有的 QA 子进程，原日志／退出／源码与构建结果保留。
+不能据此声明完整软件门或安装通过；新版需完成同版验收。
+
+## 原完整门终态和容量结果固定值迁移
+
+55f 原 ALL 完整终结：32 阶段中 30 PASS、2 FAIL、零 TIMEOUT；两个失败阶段为
+后端（11535 PASS/4 FAIL/19 SKIP）和 live/trading/tools（9440 PASS/7 FAIL/52 SKIP）。
+整轮约 11072 秒，原输入、断言和生产预算保持。其余前端、构建、治理及证据阶段
+全部通过。原结果完整保留于 `attempt-06-complete-execution/software-gate/`。
+
+最后一个失败为原 `test_native_manifest_material_helper_is_same_original_identity`
+固定了容量流量接线前的结果哈希。修正前再次真实复现失败。
+分别从容量增量 1294f0ac 的真实父版 81cd6b12 和当前版执行同一小型原回放，
+结果哈希分别为 `3f0a3561e4490fe663440683864e29289a86e75df5c2f38dfbbaa13523e95fe3`
+与 `d519cdb5df58ff770391600c65a908a0d0e50cf067b87c9dbb3bdcc514ce03d0`。
+run_id、现金对账、持仓状态和全部账本事件逐项完全相同。完整 payload 仅多三项：
+引擎容量政策、决策容量流量、执行容量流量；对应原已评审增量，生产计算未改。
+原件和差异见 `before-reviewed-capacity-flow-golden.json`、
+`current-reviewed-capacity-flow-golden.json`、`native-manifest-result-hash-diff.json`。
+
+将原固定结果哈希迁移到当前容量合同，固定 run_id／manifest 原身份比较保持，
+并增补精确政策、两个时点的容量金额 `10` 和订单数量 `0.1` 断言。原登记模块和
+完整 V2 引擎合同合计 103 PASS，17.66 秒：
+`original-native-manifest-and-ledger-contracts-green.log`。没有删除或弱化原风险、
+篡改拒绝、现金和冷恢复断言，也不把本版虚构成原旧结果。
+
+至此原完整门的 11 个失败均已定位并经相关回归关闭；仍须最终候选实际完成
+同版完整门、构建和安装验证，不能将 30 个旧版阶段或专项通过合成为新版 PASS。
+
 不切换现场服务、不修改保护状态、不安装真实信任、不读私钥或交易凭据、不下单。
