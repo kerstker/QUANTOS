@@ -7,6 +7,7 @@ from services.research.leakage_evidence import (
     signal_leakage_ok, volume_leakage_ok,
 )
 from services.research.alpha_expression import FieldPanel
+import pytest
 
 
 def _bars(closes, inst="BTC"):
@@ -79,3 +80,37 @@ def test_peeking_panel_evaluator_is_caught():
     assert panel_expression_leakage_ok(
         ("field", "funding"), panel, [3, 4, 5], evaluate_fn=peeking,
     ) is False
+
+
+def test_missing_feature_at_one_requested_time_keeps_whole_signal_review_unassessed():
+    bars = _bars([10, 11, 12, 13, 14, 15, 16, 17])
+    # Early warmup emits no feature; a later valid point cannot cover it.
+    assert signal_leakage_ok('momentum',3,bars,target_times=[0,5]) is None
+
+
+def test_failed_requested_time_is_not_skipped_inside_otherwise_passing_signal_review(monkeypatch):
+    import services.research.leakage_evidence as source
+    original=source.detect_leakage
+    def fail_one(*args,**kwargs):
+        if kwargs['target_event_time']==4:raise ArithmeticError('synthetic unavailable point')
+        return original(*args,**kwargs)
+    monkeypatch.setattr(source,'detect_leakage',fail_one)
+    assert signal_leakage_ok('momentum',3,_bars([10,11,12,13,14,15,16]),[4,5]) is None
+
+
+@pytest.mark.parametrize('invalid',[True,4.5,'4'])
+def test_invalid_requested_time_cannot_be_coerced_or_skipped(invalid):
+    assert signal_leakage_ok('momentum',3,_bars([10,11,12,13,14,15,16]),[invalid,5]) is None
+
+
+def test_unassessable_panel_row_is_not_skipped_inside_otherwise_passing_review():
+    panel=FieldPanel(('BTC','ETH'),tuple(range(8)),{'funding':[[float(i),float(i+1)] for i in range(8)]})
+    assert panel_expression_leakage_ok(('field','funding'),panel,[3,80]) is None
+
+
+def test_known_panel_leak_still_wins_over_an_invalid_requested_row():
+    panel=FieldPanel(('BTC','ETH'),tuple(range(8)),{'funding':[[float(i),float(i+1)] for i in range(8)]})
+    def future(_expr,p):
+        matrix=p.matrices['funding']
+        return [matrix[min(i+1,len(matrix)-1)] for i in range(len(matrix))]
+    assert panel_expression_leakage_ok(('field','funding'),panel,[3,80],evaluate_fn=future) is False

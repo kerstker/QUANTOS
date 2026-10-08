@@ -10,7 +10,7 @@ from tests.tools.test_registered_research_run import registered_case as register
 from tests.research.test_registered_research_review_job import independent_response
 
 
-@pytest.mark.parametrize('exported', [None, 'source', 'source-budgeted','source-net-capacity-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', [None, 'source', 'source-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted'], indirect=True)
 def test_production_signed_consumer_recovery_and_cold_read_use_all_original_reports(exported, monkeypatch):
     from tools import registered_research_review_job as review
     from tools import registered_research_job as producer

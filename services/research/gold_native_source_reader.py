@@ -23,6 +23,17 @@ class SourceReports(dict):
         from services.risk.research_risk.gold_research_replay import review_gold_account
         return review_gold_account(inputs)
 
+    def review_gold_causality(self, **arguments):
+        """Original signal review under the same complete input/result lease."""
+        shape.require(not self.closed, 'CAUSALITY_CONTEXT_CLOSED')
+        invocation=arguments['subject']['invocation_id']
+        shape.require(invocation in self.source_inputs and len(self.source_inputs[invocation]) > 0,
+                      'CAUSALITY_ORIGINAL_SOURCE_REQUIRED')
+        from services.research.gold_candidate_causality import assess_candidate
+        result=assess_candidate(**arguments)
+        shape.require(not self.closed, 'CAUSALITY_CONTEXT_CLOSED')
+        return result
+
     def prepare_report_views(self, cut):
         """Verify complete immutable indexes once; never cache across leases."""
         from quantos.contracts.project_chunked_results import PreparedGoldReport

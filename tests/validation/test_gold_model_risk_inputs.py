@@ -145,3 +145,72 @@ def assert_original_model_binding(facts, cut, statistics, candidate_id):
     assert gate['invocations'] == 0 and gate['original_report'] is None
     assert gate['missing_fields'] == model['missing_fields']
     assert model['economic_authority'] is model['submission_enabled'] is False
+    if model['schema']=='QUANTOS_GOLD_MODEL_RISK_INPUTS_V2':
+        causal=model['causality_review']
+        assert causal['native_result_hash']==model['native_result_hash']
+        assert causal['policy_sha256']==model['causality_policy_sha256']
+        assert causal['decision_count']==causal['assessed_decisions']>0
+        assert causal['component_evaluations']==causal['decision_count']*(3 if candidate_id=='net_portfolio' else 1)
+        assert causal['unassessed_components']==0 and causal['status']=='PASS'
+        assert causal['synthetic_future_probes_are_market_evidence'] is False
+        assert model['facts']['leakage_flag']['value'] is None
+        assert 'OOS_AND_SEARCH_SELECTION_LEAKAGE_NOT_YET_ASSESSED' in model['limitations']
+
+
+def causal_context():
+    from tests.research.test_gold_candidate_causality import inputs, policy
+    from services.research.gold_candidate_causality import assess_candidate
+    cut, subject, statistics, native = context()
+    values, rows = inputs()
+    declared = policy()
+    review = assess_candidate(bars=values,decision_rows=rows,candidate_id='net_portfolio',
+        policy=declared,subject=subject,native_result_hash=native,
+        market_history_policy='GOLD_ORIGINAL_RECEIPT_AVAILABLE_BARS_V1')
+    statistics['report']['as_of_ms']=rows[-1]['timestamp']+1
+    return dict(project_cut=cut,subject=subject,candidate_id='net_portfolio',
+        verified_statistics=statistics,checked_at_ms=statistics['report']['as_of_ms'],
+        native_result_hash=native,causality_policy=declared,causality_review=review)
+
+
+def test_signal_causality_pass_does_not_claim_selection_or_oos_leakage_is_clear():
+    from services.validation.gold_model_risk_inputs import from_verified_statistics
+    arguments=causal_context()
+    result=from_verified_statistics(**arguments)
+    p=result.projection
+    assert p['schema']=='QUANTOS_GOLD_MODEL_RISK_INPUTS_V2'
+    assert p['causality_review']==arguments['causality_review']
+    assert p['facts']['leakage_flag']['value'] is None
+    assert 'OOS_AND_SEARCH_SELECTION_LEAKAGE_NOT_YET_ASSESSED' in p['limitations']
+    assert result.engine_metadata is None
+
+
+def test_native_future_leak_is_known_failure_even_without_forward_or_maintenance(monkeypatch):
+    from services.research.gold_bar_candidates import CausalGoldBarEvaluator
+    from services.validation.gold_model_risk_inputs import from_verified_statistics
+    original=CausalGoldBarEvaluator.evaluate
+    def future(self, *, candidate, as_of_ms):
+        value=original(self,candidate=candidate,as_of_ms=as_of_ms)
+        if self._pending:value['entry_side']='BUY'
+        return value
+    monkeypatch.setattr(CausalGoldBarEvaluator,'evaluate',future)
+    result=from_verified_statistics(**causal_context())
+    assert result.projection['facts']['leakage_flag']['value'] is True
+    assert result.projection['known_failure_fields']==['leakage_flag']
+    assert result.engine_metadata is None
+
+
+@pytest.mark.parametrize('damage',['native','candidate','trial','hash','policy','future'])
+def test_causality_originals_cannot_be_substituted_or_backdated(damage):
+    from services.validation.gold_model_risk_inputs import from_verified_statistics
+    from quantos.streaming_identity import exact_stream_identity_hash
+    arguments=causal_context()
+    report=arguments['causality_review']
+    if damage=='native':report['native_result_hash']='f'*64
+    elif damage=='candidate':report['candidate_id']='channel'
+    elif damage=='trial':report['native_trial_id']='f'*64
+    elif damage=='policy':report['policy_sha256']='f'*64
+    elif damage=='future':arguments['checked_at_ms']=report['actual_last_decision_ms']-1
+    else:report['decision_count']+=1
+    if damage!='hash':
+        report['review_sha256']=exact_stream_identity_hash({k:v for k,v in report.items() if k!='review_sha256'})
+    with pytest.raises(ValueError):from_verified_statistics(**arguments)

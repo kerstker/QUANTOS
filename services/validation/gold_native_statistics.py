@@ -431,8 +431,16 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
             require(model_context['subject']['invocation_id'] == run['plan']['invocation_id']
                 and all(model_context['subject'][k] == trial[k]
                         for k in ('native_trial_id', 'config_hash')), 'MODEL_SUBJECT')
+            causality_policy=run['plan']['forward_design']['risk_policy'].get('causality_policy')
+            causality_review=None
+            causality_port=getattr(reports,'review_gold_causality',None)
+            if causality_policy is not None and callable(causality_port):
+                rows=selected['target_trace'] if trial['candidate_id']=='net_portfolio' else selected['signal_observations']
+                causality_review=causality_port(bars=report['market_bars'],decision_rows=rows,
+                    candidate_id=trial['candidate_id'],policy=causality_policy,subject=model_context['subject'],
+                    native_result_hash=simulation['result_hash'],market_history_policy=report.get('market_history_policy'))
             model_inputs = from_verified_statistics(**model_context, candidate_id=trial['candidate_id'],
-                native_result_hash=simulation['result_hash'])
+                native_result_hash=simulation['result_hash'],causality_policy=causality_policy,causality_review=causality_review)
             account_inputs.projection['model_inputs'] = model_inputs.projection
             account_inputs.projection['schema'] = 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
             account_inputs.projection['source_groups']['alpha_metadata'] = dict(status='PARTIAL_ORIGINAL_FACTS',

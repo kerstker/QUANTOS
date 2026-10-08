@@ -72,6 +72,9 @@ def retained_reports(cut, reports):
             # Keep the owning callable, not a new engine/lease or a serialized
             # assertion. Nested historical subsets expire with their owner.
             result.review_gold_risk = risk_port
+        causality_port = getattr(reports, 'review_gold_causality', None)
+        if callable(causality_port):
+            result.review_gold_causality = causality_port
         if inputs:
             originals = getattr(reports, 'source_inputs', None)
             require(isinstance(originals, Mapping) and inputs <= set(originals),

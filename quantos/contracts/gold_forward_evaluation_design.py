@@ -20,7 +20,8 @@ LONG_REVIEW_SCHEMA = 'QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V4'
 RISK_REVIEW_SCHEMA = 'QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5'
 MARKET_REVIEW_SCHEMA = 'QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6'
 CAPACITY_REVIEW_SCHEMA = 'QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
-LONG_REVIEW_SCHEMAS = (LONG_REVIEW_SCHEMA, RISK_REVIEW_SCHEMA, MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA)
+CAUSALITY_REVIEW_SCHEMA = 'QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8'
+LONG_REVIEW_SCHEMAS = (LONG_REVIEW_SCHEMA, RISK_REVIEW_SCHEMA, MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA, CAUSALITY_REVIEW_SCHEMA)
 SCOPED_REVIEW_SCHEMAS = (SCOPED_REVIEW_SCHEMA, *LONG_REVIEW_SCHEMAS)
 FULL_REVIEW_SCHEMAS = (REVIEW_SCHEMA, *SCOPED_REVIEW_SCHEMAS)
 INTERVAL = 900_000
@@ -159,23 +160,29 @@ def validate(value):
         calendar='ELAPSED_UTC_MILLISECONDS_365_DAY_YEAR', frequency_ms=10_000,
         start_ms=closes[0], end_ms=closes[-1]+10_000), 'METRICS')
     expected_risk = copy.deepcopy(RISK)
-    if value['schema'] in (RISK_REVIEW_SCHEMA, MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA):
+    if value['schema'] in (RISK_REVIEW_SCHEMA, MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA, CAUSALITY_REVIEW_SCHEMA):
         require(type(value['risk_policy']) is dict, 'RESEARCH_RISK_POLICY')
         from quantos.contracts.gold_research_risk_policy import validate as risk_policy
         expected_risk['research_risk_policy'] = risk_policy(
             value['risk_policy'].get('research_risk_policy'),
             sample={k: value['metrics'][k] for k in ('start_ms', 'end_ms', 'frequency_ms')},
             declared_at_ms=value['declared_at_ms'])
-    if value['schema'] in (MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA):
+    if value['schema'] in (MARKET_REVIEW_SCHEMA, CAPACITY_REVIEW_SCHEMA, CAUSALITY_REVIEW_SCHEMA):
         from quantos.contracts.gold_market_state_policy import validate as market_policy
         expected_risk['market_state_policy'] = market_policy(
             value['risk_policy'].get('market_state_policy'),
             sample={k: value['metrics'][k] for k in ('start_ms', 'end_ms', 'frequency_ms')},
             declared_at_ms=value['declared_at_ms'])
-    if value['schema'] == CAPACITY_REVIEW_SCHEMA:
+    if value['schema'] in (CAPACITY_REVIEW_SCHEMA, CAUSALITY_REVIEW_SCHEMA):
         from quantos.contracts.gold_market_capacity_policy import validate as capacity_policy
         expected_risk['capacity_policy'] = capacity_policy(
             value['risk_policy'].get('capacity_policy'),
+            sample={k: value['metrics'][k] for k in ('start_ms', 'end_ms', 'frequency_ms')},
+            declared_at_ms=value['declared_at_ms'])
+    if value['schema'] == CAUSALITY_REVIEW_SCHEMA:
+        from quantos.contracts.gold_causality_policy import validate as causality_policy
+        expected_risk['causality_policy'] = causality_policy(
+            value['risk_policy'].get('causality_policy'),
             sample={k: value['metrics'][k] for k in ('start_ms', 'end_ms', 'frequency_ms')},
             declared_at_ms=value['declared_at_ms'])
     require(all(run.canonical(value[key]) == run.canonical(expected) for key, expected in (
@@ -190,7 +197,7 @@ def validate(value):
 
 def declare(*, program_id, attempt, source_identity, configuration, first_close_ms, window_bars,
             declared_at_ms, selected_candidate=None, proposal_sha256=None, legacy=False,
-            comparison_scope='DECLARATION', long_window=False, research_risk_policy=None, market_state_policy=None, capacity_policy=None):
+            comparison_scope='DECLARATION', long_window=False, research_risk_policy=None, market_state_policy=None, capacity_policy=None, causality_policy=None):
     require(type(legacy) is bool, 'LEGACY_MODE')
     require(type(long_window) is bool and (not long_window or not legacy), 'LONG_MODE')
     require(comparison_scope in ('DECLARATION', 'COMPLETE_PROJECT'), 'COMPARISON_SCOPE')
@@ -204,7 +211,8 @@ def declare(*, program_id, attempt, source_identity, configuration, first_close_
     require(market_state_policy is None or (long_window and research_risk_policy is not None), 'MARKET_RISK_MODE')
     require(capacity_policy is None or (long_window and research_risk_policy is not None
         and market_state_policy is not None), 'CAPACITY_RISK_MODE')
-    schema = CAPACITY_REVIEW_SCHEMA if capacity_policy is not None else MARKET_REVIEW_SCHEMA if market_state_policy is not None else RISK_REVIEW_SCHEMA if research_risk_policy is not None else LONG_REVIEW_SCHEMA if long_window else (
+    require(causality_policy is None or capacity_policy is not None, 'CAUSALITY_MODE')
+    schema = CAUSALITY_REVIEW_SCHEMA if causality_policy is not None else CAPACITY_REVIEW_SCHEMA if capacity_policy is not None else MARKET_REVIEW_SCHEMA if market_state_policy is not None else RISK_REVIEW_SCHEMA if research_risk_policy is not None else LONG_REVIEW_SCHEMA if long_window else (
         SCHEMA if legacy else (SCOPED_REVIEW_SCHEMA if comparison_scope == 'DECLARATION' else REVIEW_SCHEMA))
     registered_risk = copy.deepcopy(RISK)
     if research_risk_policy is not None:
@@ -213,6 +221,8 @@ def declare(*, program_id, attempt, source_identity, configuration, first_close_
         registered_risk['market_state_policy'] = copy.deepcopy(market_state_policy)
     if capacity_policy is not None:
         registered_risk['capacity_policy'] = copy.deepcopy(capacity_policy)
+    if causality_policy is not None:
+        registered_risk['causality_policy'] = copy.deepcopy(causality_policy)
     return validate(dict(schema=schema, program_id=program_id, attempt=attempt,
         declared_at_ms=declared_at_ms, source_identity_sha256=source, configuration=config,
         window=dict(market='XAUUSDT',interval_ms=INTERVAL,observation_start_ms=first_close_ms-INTERVAL,

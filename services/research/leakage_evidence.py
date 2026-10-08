@@ -66,15 +66,23 @@ def leakage_ok_over_times(compute: ComputeFn, bars: Sequence[Bar], target_times:
     """Run the REAL detect_leakage at each target decision time. Returns True iff every assessable time is
     PIT-safe, False as soon as one leaks, None if nothing was assessable (-> evaluator stays fail-closed)."""
     assessed = False
+    unassessed = False
     for t in target_times:
+        if type(t) is not int:
+            unassessed = True
+            continue
         try:
-            res = detect_leakage(feature_id, compute, bars, target_event_time=int(t))
+            if not any(value.event_time == t for value in compute(bars)):
+                unassessed = True
+                continue
+            res = detect_leakage(feature_id, compute, bars, target_event_time=t)
         except Exception:
+            unassessed = True
             continue
         assessed = True
         if not res.passed:
             return False
-    return True if assessed else None
+    return True if assessed and not unassessed else None
 
 
 def signal_leakage_ok(op: str, window: int, bars: Sequence[Bar], target_times: Sequence[int]) -> Optional[bool]:
@@ -143,10 +151,13 @@ def panel_expression_leakage_ok(
     except Exception:
         return None
     assessed = False
-    for raw_row in sorted(set(target_rows)):
+    unassessed = False
+    for raw_row in target_rows:
         if isinstance(raw_row, bool) or not isinstance(raw_row, int):
+            unassessed = True
             continue
         if raw_row < 0 or raw_row >= len(panel.event_times):
+            unassessed = True
             continue
         prefix = ax.FieldPanel(
             panel.instruments,
@@ -160,6 +171,7 @@ def panel_expression_leakage_ok(
             prefix_row = evaluator(expr, prefix)[-1]
             full_row = full[raw_row]
         except Exception:
+            unassessed = True
             continue
         if len(prefix_row) != len(full_row):
             return False
@@ -177,4 +189,4 @@ def panel_expression_leakage_ok(
                 return False
             if abs(left - right) > tolerance:
                 return False
-    return True if assessed else None
+    return True if assessed and not unassessed else None

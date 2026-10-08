@@ -2728,6 +2728,22 @@ export interface GoldNineEngineReplay {
   limitations: string[]; replay_sha256: string;
   economic_authority: false; promotion_approved: false; submission_enabled: false;
 }
+export interface GoldCandidateCausalityReview {
+  schema: 'QUANTOS_GOLD_CANDIDATE_CAUSALITY_REVIEW_V1';
+  invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
+  native_result_hash: string; policy_sha256: string;
+  declared_sample: {start_ms: number; end_ms: number; frequency_ms: number};
+  original_bars_sha256: string; original_decisions_sha256: string; original_bar_count: number;
+  decision_count: number; actual_first_decision_ms: number | null; actual_last_decision_ms: number | null;
+  component_ids: string[]; runtime_path: 'ORIGINAL_CAUSAL_EVALUATOR' | 'ORIGINAL_FULL_HISTORY';
+  status: 'PASS' | 'FAIL' | 'INSUFFICIENT'; leakage_flag: boolean | null;
+  assessed_decisions: number; component_evaluations: number; failed_components: number;
+  unassessed_components: number; fallback_bar_reads: number; reasons: string[]; proof_sha256: string | null;
+  synthetic_future_probes_are_market_evidence: false;
+  scope: 'ACTUAL_NATIVE_SIGNAL_AND_RECEIPT_CAUSALITY_NOT_OOS_OR_SEARCH_SELECTION';
+  independent_verification: false; limitations: string[]; review_sha256: string;
+  economic_authority: false; submission_enabled: false;
+}
 export interface RegisteredReviewProjection extends Record<string, unknown> {
   schema?: string;
   execution_risk_review?: {
@@ -2741,7 +2757,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
       source_groups: Record<string, {status: string; count: number; value_sha256: string | null}>;
       missing_groups: string[];
       model_inputs?: {
-        schema: 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V1'; status: 'PARTIAL_ORIGINAL_FACTS';
+        schema: 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V1' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2'; status: 'PARTIAL_ORIGINAL_FACTS';
         invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
         native_result_hash: string; project_cut_sha256: string;
         statistical_report_sha256: string | null; statistical_evidence_sha256: string | null;
@@ -2754,6 +2770,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
         known_fields: string[]; missing_fields: string[]; known_failure_fields: string[];
         metadata_kind: 'ONE_SELECTED_CANDIDATE_NOT_REPLICATED_COMPONENT_CONFIDENCE';
         independent_verification: false; limitations: string[]; projection_sha256: string;
+        causality_policy_sha256?: string; causality_review?: GoldCandidateCausalityReview | null;
         economic_authority: false; submission_enabled: false;
       };
       capacity_inputs?: {

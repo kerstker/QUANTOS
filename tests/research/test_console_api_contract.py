@@ -131,7 +131,7 @@ def test_review_archive_missing_or_bad_identity_creates_no_state(tmp_path, monke
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted'], indirect=True)
+@pytest.mark.parametrize('exported', ['source', 'source-budgeted', 'source-risk-budgeted', 'source-net-risk-budgeted','source-net-market-budgeted','source-net-capacity-budgeted','source-net-causality-budgeted'], indirect=True)
 def test_source_review_payload_and_archive_share_the_complete_input_contract(exported, monkeypatch):
     import io
     import shutil
@@ -151,11 +151,11 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
     assert payload['material_status'] == 'VALID' and payload['review_request'] == packet
     if plans[0]['schema'] == 'QUANTOS_REGISTERED_GOLD_CHUNKED_FORWARD_RUN_V4':
         assert all(plan['source_storage']['replay_budget']['maximum_environment_segments'] == 2 for plan in plans)
-    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'):
+    if plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V5','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8'):
         projected=payload['review_request']['projection']
         is_net=plans[0]['forward_design']['selection']['candidate_id']=='net_portfolio'
-        is_capacity=plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
-        is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7')
+        is_capacity=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8')
+        is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V8')
         assert projected['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V13'
         replay=projected['execution_risk_review']['nine_engine_replay']
         assert replay['schema']=='QUANTOS_GOLD_NINE_ENGINE_REPLAY_V2'
