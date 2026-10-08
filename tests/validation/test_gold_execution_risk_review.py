@@ -187,8 +187,13 @@ def test_declared_original_candidate_and_portfolio_risk_enter_project_facts(
         subject = authority.project_subject(cut, invocation_id=invocation, native_trial_id=trial['native_trial_id'])
         facts = authority.project_facts(cut, subject)
         diagnostic = facts['execution_risk_review']
-        assert facts['schema'] == 'QUANTOS_PROJECT_RESEARCH_FACTS_V7'
-        assert diagnostic['schema'] == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V4'
+        net=trial['candidate_id']=='net_portfolio'
+        assert facts['schema'] == ('QUANTOS_PROJECT_RESEARCH_FACTS_V9' if net else 'QUANTOS_PROJECT_RESEARCH_FACTS_V7')
+        assert diagnostic['schema'] == ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V6' if net else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V4')
+        if net:
+            attribution=diagnostic['account_risk_inputs']['net_attribution']
+            assert attribution['cash_conservation_residual']=='0'
+            assert attribution['independent_strategy_pnl'] is False
         assert diagnostic['native_result_hash'] == facts['native_result_hash']
         assert diagnostic['loss_control']['policy_preregistered'] is True
         assert diagnostic['projected_fill_checks']['status'] == 'CONSISTENT'
