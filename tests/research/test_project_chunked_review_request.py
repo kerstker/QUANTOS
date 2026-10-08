@@ -459,6 +459,18 @@ def test_original_maintenance_and_nested_ports_expire_with_their_source(exported
         snapshot_as_of_ms=model["snapshot_as_of_ms"],
     )
     with open_request(directory, request_id=directory.name) as (_, owner):
+        with pytest.raises(ValueError, match="ORIGINAL_FORWARD_NOT_ISSUED"):
+            owner.review_gold_maintenance(**arguments)
+        forward = owner.review_gold_net_forward(
+            project_cut=cut,
+            subject=packet["subject"],
+            candidate_id=model["candidate_id"],
+            policy=risk["net_forward_policy"],
+            native_result_hash=model["native_result_hash"],
+            snapshot_as_of_ms=model["snapshot_as_of_ms"],
+        )
+        assert forward == model["net_forward_review"]
+        arguments["net_forward_review"] = forward
         first = retained_reports(cut, owner)
         second = retained_reports(cut, first)
         for port in (owner, first, second):
