@@ -5,6 +5,7 @@ lifetime. It never restores account state, allocates trials or grants authority.
 The reader verifies original manifests, blobs and result identities separately.
 """
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -18,6 +19,17 @@ from quantos.streaming_identity import StreamArray, StreamObject, key_order
 from services.research.research_evidence_reader import _open, _identity
 
 require = shape.require
+
+
+@lru_cache(maxsize=4096)
+def _short_scalar(raw):
+    return decode(raw)
+
+
+def _scalar(raw):
+    if type(raw) is bytes and len(raw) <= 1024 and raw.lstrip()[:1] not in (b'{', b'['):
+        return _short_scalar(raw)
+    return decode(raw)
 
 
 class _Object(StreamObject, Mapping):
@@ -37,16 +49,18 @@ class _Object(StreamObject, Mapping):
     def __getitem__(self, key):
         if type(key) is not str:
             raise KeyError(key)
-        row = self.index.connection().execute('SELECT child FROM edges WHERE parent=? AND key=?',
-                                             (self.node, key)).fetchone()
+        row = self.index.connection().execute(
+            'SELECT n.id,n.kind,n.raw,n.count FROM edges e LEFT JOIN nodes n ON n.id=e.child '
+            'WHERE e.parent=? AND e.key=?', (self.node, key)).fetchone()
         if row is None:
             raise KeyError(key)
-        return self.index.value(row[0])
+        return self.index._value_row(row)
 
     def _items(self):
-        for key, child in self.index.connection().execute(
-                'SELECT key,child FROM edges WHERE parent=? ORDER BY sort_key COLLATE BINARY', (self.node,)):
-            yield key, self.index.value(child)
+        for row in self.index.connection().execute(
+                'SELECT e.key,n.id,n.kind,n.raw,n.count FROM edges e LEFT JOIN nodes n ON n.id=e.child '
+                'WHERE e.parent=? ORDER BY e.sort_key COLLATE BINARY', (self.node,)):
+            yield row[0], self.index._value_row(row[1:])
 
 
 class _Array(StreamArray, Sequence):
@@ -65,18 +79,19 @@ class _Array(StreamArray, Sequence):
             ordinal += len(self)
         if not 0 <= ordinal < len(self):
             raise IndexError(ordinal)
-        row = self.index.connection().execute('SELECT child FROM edges WHERE parent=? AND ordinal=?',
-                                             (self.node, ordinal)).fetchone()
-        require(row is not None, 'INDEX_ROW')
-        return self.index.value(row[0])
+        row = self.index.connection().execute(
+            'SELECT n.id,n.kind,n.raw,n.count FROM edges e LEFT JOIN nodes n ON n.id=e.child '
+            'WHERE e.parent=? AND e.ordinal=?', (self.node, ordinal)).fetchone()
+        return self.index._value_row(row)
 
     def __iter__(self):
         yield from self._items()
 
     def _items(self):
-        for (child,) in self.index.connection().execute(
-                'SELECT child FROM edges WHERE parent=? ORDER BY ordinal', (self.node,)):
-            yield self.index.value(child)
+        for row in self.index.connection().execute(
+                'SELECT n.id,n.kind,n.raw,n.count FROM edges e LEFT JOIN nodes n ON n.id=e.child '
+                'WHERE e.parent=? ORDER BY e.ordinal', (self.node,)):
+            yield self.index._value_row(row)
 
 
 class _Index:
@@ -133,11 +148,14 @@ class _Index:
         self.db.execute('UPDATE nodes SET count=? WHERE id=?', (count,node))
 
     def value(self, node):
-        row=self.connection().execute('SELECT kind,raw,count FROM nodes WHERE id=?', (node,)).fetchone()
-        require(row is not None, 'INDEX_ROW')
-        kind,raw,count=row
+        return self._value_row(self.connection().execute('SELECT id,kind,raw,count FROM nodes WHERE id=?', (node,)).fetchone())
+
+    def _value_row(self, row):
+        self.connection()
+        require(row is not None and row[0] is not None, 'INDEX_ROW')
+        node,kind,raw,count=row
         if kind=='scalar':
-            return decode(raw)
+            return _scalar(raw)
         require(kind in ('object','array'), 'INDEX_TYPE')
         return (_Object if kind=='object' else _Array)(self,node,count)
 

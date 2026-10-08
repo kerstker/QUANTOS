@@ -21,7 +21,7 @@ from tools import demo_operator_setup as setup
 
 # The archive must use the reviewed current bar semantics. The old BTC source
 # remains separately pinned below and its original records are never rebased.
-PARENT = '6c57f740556fbec656d349fb9d2c2e6d06cc7083'
+PARENT = '254aedb841d642223e1a76bb065a82de111a01b7'
 OLD_SOURCE = '4673bc0a785a67b13d35402dd801e7984c69f363'
 
 

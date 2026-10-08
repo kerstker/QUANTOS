@@ -1,12 +1,33 @@
 """Repeatable lazy views and the unchanged exact identity wire, emitted in pieces."""
 
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 import hashlib
 import json
 
 from quantos.contracts.backtest_identity import _canonical_identity
 
 MAX_BYTES = 32 * 1024**3
+_SHORT_SCALAR_TYPES = (str, int, bool, type(None))
+_SCALAR_CACHE_ENTRIES = 4096
+
+
+@lru_cache(maxsize=_SCALAR_CACHE_ENTRIES)
+def _short_identity(kind, value):
+    # The type is part of the key: bool and int compare equal in Python.
+    return _json(_canonical_identity(value, name="streamed_identity"))
+
+
+@lru_cache(maxsize=_SCALAR_CACHE_ENTRIES)
+def _short_transport(kind, value):
+    return _json(value)
+
+
+def _short_scalar(value):
+    kind = type(value)
+    return kind in _SHORT_SCALAR_TYPES and (kind is not str or len(value) <= 128) and (
+        kind is not int or value.bit_length() <= 128
+    )
 
 
 class StreamArray:
@@ -26,6 +47,8 @@ class StreamObject:
 
 
 def key_order(key):
+    if type(key) is str and len(key) <= 128:
+        return _short_identity(str, key).decode()
     return json.dumps(_canonical_identity(key, name="key"), ensure_ascii=False, separators=(",", ":"))
 
 
@@ -51,6 +74,9 @@ def _items(value):
 def _identity(value, depth=0):
     if depth > 256:
         raise ValueError("STREAM_DEPTH")
+    if _short_scalar(value):
+        yield _short_identity(type(value), value)
+        return
     if isinstance(value, (Mapping, StreamObject)):
         yield b'["mapping",['
         for index, (key, item) in enumerate(_items(value)):
@@ -76,6 +102,9 @@ def _identity(value, depth=0):
 def _transport(value, depth=0):
     if depth > 256:
         raise ValueError("STREAM_DEPTH")
+    if _short_scalar(value):
+        yield _short_transport(type(value), value)
+        return
     if isinstance(value, (Mapping, StreamObject)):
         yield b"{"
         for index, (key, item) in enumerate(_items(value)):

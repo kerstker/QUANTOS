@@ -24,6 +24,7 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
 
 RUN mkdir -p "${TMPDIR}" \
     && apk add --no-cache \
+        zlib=1.3.2-r1 \
         build-base=0.5-r4 \
         gfortran=15.2.0-r5 \
         linux-headers=7.0.0-r1 \
@@ -46,6 +47,7 @@ RUN test "${TARGETARCH}" = "arm64"
 WORKDIR /app
 
 RUN apk add --no-cache \
+        zlib=1.3.2-r1 \
         libcrypto3=3.5.9-r0 \
         libgomp=15.2.0-r5 \
         libssl3=3.5.9-r0 \
