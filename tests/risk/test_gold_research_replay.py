@@ -232,3 +232,84 @@ def test_model_engine_rejects_nonfinite_negative_age_and_out_of_range_confidence
         decay_flag=False, overfit_flag=False, leakage_flag=False)
     item[field] = value
     assert ModelAlphaRiskEngine().evaluate([item], RiskConfig()).passed is False
+
+
+def model_account(value, *, validation='0.8', pbo='0.2', complete=False):
+    from services.validation.gold_model_risk_inputs import from_verified_statistics, GoldModelRiskInputs
+    from tests.validation.test_gold_model_risk_inputs import context
+    from quantos.streaming_identity import exact_stream_identity_hash
+    cut, subject, statistics, _ = context()
+    statistics['report']['metrics'].update(dsr=validation, pbo=pbo)
+    model = from_verified_statistics(project_cut=cut, subject=subject, candidate_id='net_portfolio',
+        verified_statistics=statistics, checked_at_ms=1000,
+        native_result_hash=value.projection['native_result_hash'])
+    if complete:
+        # Explicit synthetic unit seam for a future complete source port;
+        # these values are never installed as original research evidence.
+        projection = deepcopy(model.projection)
+        for name, item in dict(paper_confidence='0.8', decay_flag=False, leakage_flag=False).items():
+            projection['facts'][name].update(status='AVAILABLE', value=item)
+        projection['missing_fields'] = []
+        projection['known_fields'] = sorted(projection['facts'])
+        projection['projection_sha256'] = exact_stream_identity_hash(
+            {k: v for k, v in projection.items() if k != 'projection_sha256'})
+        model = GoldModelRiskInputs(projection)
+    return replace(value, model_inputs=model)
+
+
+@pytest.mark.parametrize('validation,pbo,reason', [
+    ('0.8', '0.7', 'ORIGINAL_OVERFIT_FINDING'),
+    ('0.1', '0.2', 'ORIGINAL_VALIDATION_CONFIDENCE_BELOW_POLICY'),
+])
+def test_known_model_failure_is_retained_without_inventing_missing_facts(monkeypatch, validation, pbo, reason):
+    value, _ = account(monkeypatch)
+    result = review(model_account(value, validation=validation, pbo=pbo))
+    model = result['engines']['model_alpha']
+    assert model['status'] == 'FAIL' and model['invocations'] == 0
+    assert reason in model['reasons']
+    assert model['missing_fields'] == ['decay_flag', 'leakage_flag', 'paper_confidence']
+    assert model['original_report'] is None
+    assert result['status'] == 'REJECTED' and result['full_research_risk_9_of_9'] is False
+
+
+def test_partial_model_facts_never_execute_original_engine_or_claim_complete_review(monkeypatch):
+    value, _ = account(monkeypatch)
+    result = review(model_account(value))
+    model = result['engines']['model_alpha']
+    assert model['status'] == 'INSUFFICIENT' and model['invocations'] == 0
+    assert result['schema'] == 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V2'
+    assert result['engine_replay_completed'] is False
+
+
+def test_complete_unit_port_invokes_original_model_once_for_selected_candidate(monkeypatch):
+    from services.risk.research_risk.domain.risk_modules import ModelAlphaRiskEngine
+    value, _ = account(monkeypatch)
+    calls = []
+    evaluate = ModelAlphaRiskEngine.evaluate
+
+    def observe(self, metadata, config):
+        calls.append(deepcopy(metadata))
+        return evaluate(self, metadata, config)
+
+    monkeypatch.setattr(ModelAlphaRiskEngine, 'evaluate', observe)
+    result = review(model_account(value, complete=True))
+    assert len(calls) == 1 and len(calls[0]) == 1
+    assert calls[0][0]['candidate_id'] == 'net_portfolio'
+    model = result['engines']['model_alpha']
+    assert model['invocations'] == 1 and model['original_report']['passed'] is True
+    assert model['status'] == 'INSUFFICIENT'
+    assert 'FULL_RUN_SAMPLE_COVERAGE_INCOMPLETE' in model['reasons']
+    assert model['original_report']['min_validation_confidence'] == .8
+    assert result['economic_authority'] is result['promotion_approved'] is result['submission_enabled'] is False
+
+
+@pytest.mark.parametrize('damage', ['native_result_hash', 'facts'])
+def test_changed_model_or_wrong_native_result_is_rejected_before_original_model(monkeypatch, damage):
+    value, _ = account(monkeypatch)
+    value = model_account(value)
+    if damage == 'native_result_hash':
+        value.model_inputs.projection['native_result_hash'] = 'f' * 64
+    else:
+        value.model_inputs.projection['facts']['paper_confidence']['value'] = '0.9'
+    with pytest.raises(ValueError, match='MODEL_NATIVE_BINDING|FACTS_CHANGED'):
+        review(value)

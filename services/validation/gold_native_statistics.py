@@ -380,7 +380,7 @@ def _series(simulation, sample, settlements, *, reviewed=False, streamed=False, 
     return value, risk, limitations | reasons
 
 
-def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False):
+def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False, model_context=None):
     """Independent consumer reads the same declared original candidate/account."""
     report, document = _report(run, reports=reports)
     sample = {k: run["plan"]["forward_design"]["metrics"][k] for k in ("start_ms", "end_ms", "frequency_ms")}
@@ -425,6 +425,23 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                           if account_inputs.position_history is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V3',
                           account_risk_inputs=account_inputs.projection)
         risk_port = getattr(reports, 'review_gold_risk', None)
+        if 'risk_policy' in account_inputs.projection and model_context is not None:
+            from dataclasses import replace
+            from services.validation.gold_model_risk_inputs import from_verified_statistics
+            require(model_context['subject']['invocation_id'] == run['plan']['invocation_id']
+                and all(model_context['subject'][k] == trial[k]
+                        for k in ('native_trial_id', 'config_hash')), 'MODEL_SUBJECT')
+            model_inputs = from_verified_statistics(**model_context, candidate_id=trial['candidate_id'],
+                native_result_hash=simulation['result_hash'])
+            account_inputs.projection['model_inputs'] = model_inputs.projection
+            account_inputs.projection['schema'] = 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
+            account_inputs.projection['source_groups']['alpha_metadata'] = dict(status='PARTIAL_ORIGINAL_FACTS',
+                count=len(model_inputs.projection['known_fields']),
+                value_sha256=model_inputs.projection['projection_sha256'])
+            account_inputs.projection['limitations'] = sorted(set(account_inputs.projection['limitations'])
+                | set(model_inputs.projection['limitations']))
+            diagnostic['limitations'].extend(model_inputs.projection['limitations'])
+            account_inputs = replace(account_inputs, model_inputs=model_inputs)
         if 'risk_policy' in account_inputs.projection and callable(risk_port):
             replay = risk_port(account_inputs)
             diagnostic.update(schema='QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V9', nine_engine_replay=replay,
@@ -435,6 +452,8 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
             if not replay['engine_replay_completed']:
                 diagnostic['limitations'].append('NINE_ENGINE_RISK_INPUTS_INCOMPLETE')
             diagnostic['limitations'] = sorted(set(diagnostic['limitations']))
+            if account_inputs.model_inputs is not None:
+                diagnostic['schema'] = 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10'
         return (*result, diagnostic)
     return result
 

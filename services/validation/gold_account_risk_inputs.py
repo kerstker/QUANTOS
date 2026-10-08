@@ -13,6 +13,7 @@ from quantos.contracts.decimal_arithmetic import canonical_decimal, ledger_decim
 from services.validation.gold_net_attribution import NetAttribution
 from services.validation.gold_market_states import MarketStateInputs
 from services.validation.gold_capacity_inputs import CapacityInputs
+from services.validation.gold_model_risk_inputs import GoldModelRiskInputs
 from quantos.contracts.gold_chunked_source import MAX_PARTS
 from quantos.contracts.research_statistics import DAY_MS, fixed_frequency_equity
 from quantos.streaming_identity import StreamArray, exact_stream_identity_hash as exact_identity_hash
@@ -74,6 +75,7 @@ class GoldAccountRiskInputs:
     net_attribution: NetAttribution | None = field(default=None, compare=False, repr=False)
     market_states: MarketStateInputs | None = field(default=None, compare=False, repr=False)
     capacity_inputs: CapacityInputs | None = field(default=None, compare=False, repr=False)
+    model_inputs: GoldModelRiskInputs | None = field(default=None, compare=False, repr=False)
 
 
 @ledger_decimal_context()

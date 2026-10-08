@@ -305,7 +305,7 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
     from tests.research.test_registered_research_review_job import independent_response
     from services.research.project_research_review_request import open_request
     from services.validation import project_research_evidence_authority as authority
-    f, _, _, packet, directory = exported
+    f, plans, _, packet, directory = exported
     material = f['root']/'synthetic-independent-reply'
     trust = f['root']/'synthetic-governance/trust.json'
     independent_response(packet, material, trust)
@@ -326,11 +326,12 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
             verified = authority.verify_project_evidence(snapshot, now_ms=f['clock'][0], reports=reports)
             assert verified['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
             assert verified['qualification'] == 'INSUFFICIENT'
-            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11','QUANTOS_PROJECT_RESEARCH_FACTS_V12'):
+            if verified['projection']['schema'] in ('QUANTOS_PROJECT_RESEARCH_FACTS_V8','QUANTOS_PROJECT_RESEARCH_FACTS_V9','QUANTOS_PROJECT_RESEARCH_FACTS_V10','QUANTOS_PROJECT_RESEARCH_FACTS_V11','QUANTOS_PROJECT_RESEARCH_FACTS_V12','QUANTOS_PROJECT_RESEARCH_FACTS_V13'):
                 projected=verified['projection']['execution_risk_review']['account_risk_inputs']
                 assert projected['source_groups']['risk_config']['status']=='AVAILABLE'
                 if 'net_attribution' in projected:
-                    assert projected['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if 'capacity_inputs' in projected else
+                    assert projected['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7' if 'model_inputs' in projected else
+                        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if 'capacity_inputs' in projected else
                         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if 'market_states' in projected
                         else 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4')
                     assert projected['net_attribution']['cash_conservation_residual']=='0'
@@ -354,6 +355,10 @@ def test_exported_originals_support_signed_statistical_replay_without_native_pat
                 assert replay['native_result_hash']==projected['native_result_hash']
                 assert projected['risk_policy']['preregistration_time_authority'] is False
                 assert projected['full_research_risk_ready'] is False
+                if 'model_inputs' in projected:
+                    from tests.validation.test_gold_model_risk_inputs import assert_original_model_binding
+                    assert_original_model_binding(verified['projection'], packet['project_cut'],
+                        packet['statistical_evidence'], plans[0]['forward_design']['selection']['candidate_id'])
             assert 'STATISTICAL_REVIEW_REQUIRES_COMPLETE_PROJECT_CUT' not in verified['reasons']
             assert verified['promotion_approved'] is verified['submission_enabled'] is False
             with pytest.raises(ValueError, match='MATERIAL_REQUIRED'):

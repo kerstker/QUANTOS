@@ -18,7 +18,7 @@ from services.validation.gold_account_risk_inputs import GoldAccountRiskInputs
 from .domain.models import RiskConfig
 from .domain.risk_modules import (
     CapacityRiskEngine, ConcentrationRiskEngine, CorrelationRiskEngine, DrawdownRiskEngine,
-    LiquidityRiskEngine, MarketRiskEngine, RegimeRiskEngine, StressTestEngine,
+    LiquidityRiskEngine, MarketRiskEngine, ModelAlphaRiskEngine, RegimeRiskEngine, StressTestEngine,
 )
 
 SCHEMA = 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1'
@@ -84,7 +84,8 @@ def review_gold_account(inputs, *, maximum_atomic_points=100_000_000, maximum_in
     failed = [name for name, value in gates.items() if value['status'] == 'FAIL']
     unavailable = [name for name, value in gates.items() if value['status'] == 'INSUFFICIENT']
     executed = sum(value['invocations'] > 0 for value in gates.values())
-    value = dict(schema=SCHEMA, status='REJECTED' if failed else 'INSUFFICIENT' if unavailable else 'PASS',
+    value = dict(schema='QUANTOS_GOLD_NINE_ENGINE_REPLAY_V2' if inputs.model_inputs is not None else SCHEMA,
+        status='REJECTED' if failed else 'INSUFFICIENT' if unavailable else 'PASS',
         native_result_hash=inputs.projection['native_result_hash'],
         account_inputs_sha256=digest(inputs.projection),
         policy_sha256=None if policy is None else policy_sha256(policy),
@@ -220,3 +221,32 @@ def _evaluate(inputs, policy, config, gates, maximum_points, maximum_intervals):
                 if gates[name]['status'] != 'FAIL':
                     gates[name]['status'] = 'INSUFFICIENT'
     gates['model_alpha'] = missing('BOUND_ORIGINAL_TRIAL_MODEL_FACTS_MISSING')
+    if inputs.model_inputs is not None:
+        model = inputs.model_inputs
+        gates['model_alpha'] = missing('ORIGINAL_MODEL_FIELDS_INCOMPLETE')
+        require(model.projection['native_result_hash'] == inputs.projection['native_result_hash'], 'MODEL_NATIVE_BINDING')
+        metadata = model.engine_metadata
+        if metadata is not None:
+            gates['model_alpha'] = recorded(ModelAlphaRiskEngine().evaluate(list(metadata), config))
+        else:
+            facts = model.projection['facts']
+            findings = []
+            for name, reason in (('overfit_flag', 'ORIGINAL_OVERFIT_FINDING'),
+                                 ('decay_flag', 'ORIGINAL_DECAY_FINDING'),
+                                 ('leakage_flag', 'ORIGINAL_LEAKAGE_FINDING')):
+                if facts[name]['status'] == 'AVAILABLE' and facts[name]['value'] is True:
+                    findings.append(reason)
+            for name, minimum, reason in (
+                ('validation_confidence', config.min_validation_confidence,
+                 'ORIGINAL_VALIDATION_CONFIDENCE_BELOW_POLICY'),
+                ('paper_confidence', config.min_paper_confidence,
+                 'ORIGINAL_PAPER_CONFIDENCE_BELOW_POLICY'),
+            ):
+                if (facts[name]['status'] == 'AVAILABLE'
+                        and number(Decimal(facts[name]['value'])) < minimum):
+                    findings.append(reason)
+            if findings:
+                gates['model_alpha']['status'] = 'FAIL'
+                gates['model_alpha']['reasons'].extend(findings)
+        gates['model_alpha'].update(model_inputs_sha256=model.projection['projection_sha256'],
+            known_fields=list(model.projection['known_fields']), missing_fields=list(model.projection['missing_fields']))

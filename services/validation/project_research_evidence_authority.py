@@ -111,7 +111,7 @@ def material_hashes(cut, source_manifest, *, statistical_evidence=None):
     return result
 
 
-def _native_projection(run, trial, subject, *, reports=None):
+def _native_projection(run, trial, subject, *, reports=None, model_context=None):
     if not {'archive/report.json', 'archive/manifest.json'} <= set(run['originals']):
         return None, None, None, set(), None
     from quantos.contracts import registered_research_run as native
@@ -136,7 +136,8 @@ def _native_projection(run, trial, subject, *, reports=None):
                 {k:v for k,v in report.items() if k != 'result_hash'}, name='gold_bar_public_comparison'), 'GOLD_RESULT')
         if 'forward_design' in run['plan'] and not run['partial']:
             from services.validation.gold_native_statistics import project_gold_trial
-            return project_gold_trial(run, trial, reports=reports, include_execution_risk=True)
+            return project_gold_trial(run, trial, reports=reports, include_execution_risk=True,
+                                      model_context=model_context)
         if run['plan']['schema'] in plan_contract.EVALUATED_SOURCE_REANALYSIS_SCHEMAS and not run['partial']:
             from services.validation.gold_native_statistics import project_gold_reanalysis_trial
             return project_gold_reanalysis_trial(run, trial, reports=reports)
@@ -193,7 +194,17 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
         reasons.add('PROJECT_RUNS_UNFINISHED')
     if attempt['status'] != 'PASSED' or run['partial']:
         reasons.add('SELECTED_NATIVE_ATTEMPT_NOT_FINALIZED')
-    result_hash, metrics, risk, limitations, execution_risk = _native_projection(run, trial, subject, reports=reports)
+    validated_statistics = None
+    if statistical_evidence is not None:
+        from services.validation import project_research_statistical_evidence as statistics
+        validated_statistics = statistics.validate(statistical_evidence, project_cut=cut, as_of_ms=as_of_ms, reports=reports)
+        selected = validated_statistics['cohort']['selected_attempt']
+        require(selected is not None and all(selected[key] == subject[key]
+            for key in ('invocation_id', 'native_trial_id', 'config_hash')), 'STATISTICAL_SUBJECT_BINDING')
+    model_context = dict(project_cut=cut, subject=subject, verified_statistics=validated_statistics,
+                         checked_at_ms=as_of_ms)
+    result_hash, metrics, risk, limitations, execution_risk = _native_projection(run, trial, subject,
+        reports=reports, model_context=model_context)
     reasons.update(limitations)
     if metrics is not None:
         reasons.discard('PROJECT_NATIVE_RESULT_PROJECTION_UNAVAILABLE')
@@ -230,7 +241,7 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
         facts['limitations']=sorted(reasons)
     if statistical_evidence is not None:
         from services.validation import project_research_statistical_evidence as statistics
-        value = statistics.validate(statistical_evidence, project_cut=cut, as_of_ms=as_of_ms, reports=reports)
+        value = validated_statistics
         selected = value['cohort']['selected_attempt']
         require(selected is not None and all(selected[key] == subject[key] for key in ('invocation_id', 'native_trial_id', 'config_hash')),
             'STATISTICAL_SUBJECT_BINDING')
@@ -247,7 +258,9 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
             reasons.add('STATISTICAL_REVIEW_' + value['report']['statistical_decision'])
         facts['limitations'] = sorted(reasons)
     if execution_risk is not None:
-        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V12'
+        facts['schema'] = ('QUANTOS_PROJECT_RESEARCH_FACTS_V13'
+                           if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10' else
+                           'QUANTOS_PROJECT_RESEARCH_FACTS_V12'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V9' else
                            'QUANTOS_PROJECT_RESEARCH_FACTS_V11'
                            if execution_risk.get('schema') == 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V8' else

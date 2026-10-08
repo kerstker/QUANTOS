@@ -2706,7 +2706,7 @@ export interface GoldResearchRiskPolicy {
   submission_enabled: false;
 }
 export interface GoldNineEngineReplay {
-  schema: 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1';
+  schema: 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1' | 'QUANTOS_GOLD_NINE_ENGINE_REPLAY_V2';
   status: 'PASS' | 'REJECTED' | 'INSUFFICIENT';
   native_result_hash: string; account_inputs_sha256: string; policy_sha256: string | null;
   currency: 'USDT'; sample: {start_ms: number; end_ms: number; frequency_ms: number};
@@ -2720,6 +2720,7 @@ export interface GoldNineEngineReplay {
       component_ids?: string[]; independent_strategy_pnl?: false;
       shared_instrument_effective_bets_upper_bound?: number;
       exposure_observation_count?: number; closed_book_observations?: number;
+      model_inputs_sha256?: string; known_fields?: string[]; missing_fields?: string[];
     }>;
   engines_configured: 9; engines_executed: number; engines_passed: number;
   missing_engines: string[]; failed_engines: string[]; engine_replay_completed: boolean;
@@ -2736,9 +2737,25 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
       schema: 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V1' |
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V2' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3' |
         'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' |
-        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6';
+        'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' | 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7';
       source_groups: Record<string, {status: string; count: number; value_sha256: string | null}>;
       missing_groups: string[];
+      model_inputs?: {
+        schema: 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V1'; status: 'PARTIAL_ORIGINAL_FACTS';
+        invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
+        native_result_hash: string; project_cut_sha256: string;
+        statistical_report_sha256: string | null; statistical_evidence_sha256: string | null;
+        snapshot_as_of_ms: number | null; scope: 'CANDIDATE_SNAPSHOT_REVIEW_ONLY_NOT_PAST_PRETRADE';
+        attempt_count: number; unique_definition_count: number;
+        facts: Record<'age_days' | 'validation_confidence' | 'paper_confidence' |
+          'decay_flag' | 'overfit_flag' | 'leakage_flag', {
+            status: 'AVAILABLE' | 'UNAVAILABLE'; value: string | boolean | null; source: string;
+          }>;
+        known_fields: string[]; missing_fields: string[]; known_failure_fields: string[];
+        metadata_kind: 'ONE_SELECTED_CANDIDATE_NOT_REPLICATED_COMPONENT_CONFIDENCE';
+        independent_verification: false; limitations: string[]; projection_sha256: string;
+        economic_authority: false; submission_enabled: false;
+      };
       capacity_inputs?: {
         schema: 'QUANTOS_GOLD_CAPACITY_INPUTS_V1' | 'QUANTOS_GOLD_CAPACITY_INPUTS_V2';
         status: string; sample: {start_ms: number; end_ms: number; frequency_ms: number};

@@ -156,18 +156,19 @@ def test_source_review_payload_and_archive_share_the_complete_input_contract(exp
         is_net=plans[0]['forward_design']['selection']['candidate_id']=='net_portfolio'
         is_capacity=plans[0]['forward_design']['schema']=='QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7'
         is_market=plans[0]['forward_design']['schema'] in ('QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V6','QUANTOS_GOLD_FORWARD_EVALUATION_DESIGN_V7')
-        assert projected['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V12'
+        assert projected['schema']=='QUANTOS_PROJECT_RESEARCH_FACTS_V13'
         replay=projected['execution_risk_review']['nine_engine_replay']
-        assert replay['schema']=='QUANTOS_GOLD_NINE_ENGINE_REPLAY_V1'
+        assert replay['schema']=='QUANTOS_GOLD_NINE_ENGINE_REPLAY_V2'
         assert replay['engines_configured']==9 and replay['engine_replay_completed'] is False
         assert replay['engines']['model_alpha']['status']=='INSUFFICIENT'
         assert replay['engines']['model_alpha']['invocations']==0
         assert replay['full_research_risk_9_of_9'] is replay['economic_authority'] is False
         assert 'NINE_ENGINE_RISK_REPLAY_NOT_IMPLEMENTED' not in projected['execution_risk_review']['limitations']
         risk=projected['execution_risk_review']['account_risk_inputs']
-        assert risk['schema']==('QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V6' if is_capacity else
-            'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V5' if is_market else
-            'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V4' if is_net else 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V3')
+        assert risk['schema']=='QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
+        from tests.validation.test_gold_model_risk_inputs import assert_original_model_binding
+        assert_original_model_binding(projected, packet['project_cut'], packet['statistical_evidence'],
+            plans[0]['forward_design']['selection']['candidate_id'])
         if is_capacity:
             capacity=risk['capacity_inputs']
             assert capacity['status']=='UNAVAILABLE_ACCOUNT_SERIES'
