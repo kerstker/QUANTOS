@@ -20,7 +20,7 @@ Reviewed V2 scope:
 * an explicit variable settlement schedule, with no omitted funding events;
 * load-bearing reject-on-breach capacity and point-in-time cost calibration;
 * nine-engine research risk computed inside this runner from actual current
-  ledger equity, positions, and conservatively valued target exposure; the
+  ledger equity, positions, conservatively valued target and actual order exposure; the
   historical returns path remains caller-supplied causal evidence and is
   explicitly barred from authority until independently replayed from ledger
   checkpoints;
@@ -44,6 +44,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
+from quantos.contracts.research_capacity_flow import POLICY as CAPACITY_FLOW_POLICY, build_capacity_flow
 from services.execution.backtest_authority import (
     CANONICAL_ENGINE_SEMANTICS,
     build_run_manifest_v2,
@@ -1355,6 +1356,7 @@ def run_authoritative_linear_perpetual_v2(
             name: ZERO if position is None else position.quantity
             for name, position in positions.items()
         }
+        current_quantities = dict(quantities)
         quantities[execution.instrument_id] += execution.quantity_delta
         names = {name for name, quantity in quantities.items() if quantity != ZERO}
         names.add(execution.instrument_id)
@@ -1378,17 +1380,26 @@ def run_authoritative_linear_perpetual_v2(
                         * rules_by_instrument[name].spec.contract_multiplier / risk_equity)
             for name in sorted(names)
         }
+        capacity_flow = build_capacity_flow(
+            current_quantities={name: current_quantities[name] for name in sorted(names)},
+            target_quantities={name: quantities[name] for name in sorted(names)},
+            valuation_prices=prices,
+            contract_multipliers={name: rules_by_instrument[name].spec.contract_multiplier for name in sorted(names)},
+            risk_equity=risk_equity,
+        )
         result = evaluate_dry_run_risk(
             list(evidence.returns), weights, list(evidence.equity_curve),
             timestamps=list(evidence.timestamps), config=evidence.config,
             full_inputs=replace(evidence.full_inputs, total_aum=float(risk_equity)),
             require_full_inputs=True,
+            capacity_flow_weights={name: float(value) for name, value in capacity_flow["capacity_flow_weights"].items()},
         )
         execution_risk_contexts.append({
             "execution_id": execution.execution_id,
             "execution_time_ms": execution.timestamp,
             "risk_equity": canonical_decimal(risk_equity),
             "target_weights": weights,
+            "capacity_flow": capacity_flow,
             "research_risk": result,
         })
         if not full_research_risk_approved(result):
@@ -1566,8 +1577,8 @@ def run_authoritative_linear_perpetual_v2(
             for instrument_id, quantity in prospective_quantities.items()
             if quantity != ZERO
         }
-        # Preserve the closing leg as a zero target so the full risk contract
-        # remains evaluable and its capacity evidence stays load bearing.
+        # Keep the explicit closing target. Liquidity/capacity separately value
+        # the original held book and actual order, including a zero final target.
         risk_instruments.add(execution.instrument_id)
         if set(capacities) != risk_instruments:
             raise AuthoritativeBacktestInputError(
@@ -1686,6 +1697,14 @@ def run_authoritative_linear_perpetual_v2(
         target_weights = {
             key: float(value) for key, value in target_weights_decimal.items()
         }
+        capacity_flow = build_capacity_flow(
+            current_quantities={name: ZERO if current_positions[name] is None else current_positions[name].quantity
+                for name in sorted(risk_instruments)},
+            target_quantities={name: prospective_quantities[name] for name in sorted(risk_instruments)},
+            valuation_prices=risk_valuation_price_values,
+            contract_multipliers={name: rules_by_instrument[name].spec.contract_multiplier for name in sorted(risk_instruments)},
+            risk_equity=risk_equity,
+        )
         risk_result = evaluate_dry_run_risk(
             list(evidence.returns),
             target_weights,
@@ -1694,6 +1713,7 @@ def run_authoritative_linear_perpetual_v2(
             config=evidence.config,
             full_inputs=evidence.full_inputs,
             require_full_inputs=True,
+            capacity_flow_weights={name: float(value) for name, value in capacity_flow["capacity_flow_weights"].items()},
         )
         if not full_research_risk_approved(risk_result):
             raise AuthoritativeBacktestInputError(
@@ -1732,6 +1752,7 @@ def run_authoritative_linear_perpetual_v2(
                 key: canonical_decimal(target_weights_decimal[key])
                 for key in sorted(target_weights_decimal)
             },
+            "capacity_flow": capacity_flow,
             "risk_input_hash": exact_identity_hash(
                 evidence.as_canonical_dict(), name="research_risk_input"
             ),
@@ -1849,6 +1870,7 @@ def run_authoritative_linear_perpetual_v2(
             "risk_equity_policy_version": RISK_EQUITY_POLICY_VERSION,
             "risk_equity_denominator": RISK_EQUITY_DENOMINATOR_POLICY,
             "risk_history_policy": RISK_HISTORY_POLICY,
+            "capacity_flow_policy": CAPACITY_FLOW_POLICY,
         },
         "reconciliation": reconciliation.as_canonical_dict(),
         "ending_state": ledger.state_as_canonical_dict(),

@@ -277,16 +277,20 @@ def evaluate_dry_run_risk(returns: List[float], weights: Dict[str, float], equit
                           *, timestamps: Optional[List[int]] = None,
                           config: Optional[RiskConfig] = None,
                           full_inputs: Optional[DryRunResearchRiskInputs] = None,
-                          require_full_inputs: bool = False) -> dict:
+                          require_full_inputs: bool = False,
+                          capacity_flow_weights: Optional[Dict[str, float]] = None) -> dict:
     """Run the four honestly-feedable research-risk engines fail-closed over a dry-run book's
     realized series. Returns a decision dict (never raises for a normal risk failure — a failed
-    engine is a REJECT, an engine ERROR is fail-closed to not-passed)."""
+    engine is a REJECT, an engine ERROR is fail-closed to not-passed).
+    Explicit capacity flow requests the complete contract even when the caller
+    omitted require_full_inputs. Only liquidity/capacity consume those weights.
+    """
     config = config or RiskConfig()
 
     # The opt-in strict path is the only path that may claim all nine engines ran.
     # A missing bundle is explicitly pending/rejected; it can never be represented
     # as a four-engine approval when the caller requested the full contract.
-    if require_full_inputs:
+    if require_full_inputs or capacity_flow_weights is not None:
         if full_inputs is None:
             pending = {engine: "MISSING_REQUIRED_INPUTS" for engine in _SKIPPED}
             return {
@@ -337,6 +341,7 @@ def evaluate_dry_run_risk(returns: List[float], weights: Dict[str, float], equit
             daily_volume_cny=float(full_inputs.daily_volume_cny),
             total_aum=float(full_inputs.total_aum),
             timestamps=timestamps,
+            capacity_flow_weights=capacity_flow_weights,
         )
         # The nine-engine label is an ADMISSION claim, so the run's own stress report
         # decides it: a stress leg that fell back to the (honestly labeled) synthetic

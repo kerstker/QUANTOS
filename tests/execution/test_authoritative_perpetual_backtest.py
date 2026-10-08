@@ -506,6 +506,7 @@ def test_runner_produces_non_authoritative_decimal_perpetual_validation_record()
             "risk_history_policy": (
                 "CALLER_SUPPLIED_CAUSAL_SERIES_NOT_LEDGER_REPLAYED"
             ),
+            "capacity_flow_policy": "MAX_CURRENT_TARGET_ORDER_NOTIONAL_V1",
     }
     assert payload["ending_state"]["positions"]["BTCUSDT"]["quantity"] == "0.1"
     assert payload["reconciliation"]["funding"] == "-0.0101"

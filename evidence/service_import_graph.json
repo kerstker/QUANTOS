@@ -917,12 +917,12 @@
     {
       "references": [
         {
-          "line": 68,
+          "line": 69,
           "module": "services.risk.research_risk.domain.models",
           "path": "services/execution/authoritative_perpetual_backtest.py"
         },
         {
-          "line": 69,
+          "line": 70,
           "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/execution/authoritative_perpetual_backtest.py"
         },
@@ -2408,7 +2408,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "ee41a030005c7cb824c720d30a46d4165331472ae42a78c3acc2e1486c30dab0",
+  "graph_sha256": "f85e942e683254faaa6a36dc055c0fa72c6d93b544937e27b3700f52f9ee295e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

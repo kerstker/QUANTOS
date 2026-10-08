@@ -11,6 +11,7 @@ from .risk_modules import *
 # 经由 execution → risk 绕回 alpha 的间接违规链。该聚类实现已下沉为中立的
 # quantos.analytics.cluster,风险层从此只依赖中立层。
 from quantos.analytics.cluster import cluster_alphas
+from quantos.contracts.research_capacity_flow import validated_capacity_weights
 
 
 class RiskApprovalGate:
@@ -35,7 +36,8 @@ class RiskApprovalGate:
                  alpha_returns: Dict[str, List[float]], regime_labels: List[str] = None,
                  alpha_metadata: List[Dict] = None, daily_volume_cny: float = 1e9,
                  total_aum: float = 100_000_000,
-                 timestamps: List[int] = None) -> ResearchRiskDecision:
+                 timestamps: List[int] = None,
+                 capacity_flow_weights: Dict[str, float] = None) -> ResearchRiskDecision:
         # timestamps (per-period, ms, aligned to `returns`) unlock the stress engine's REAL
         # historical crisis replay; without them stress falls back to the labeled synthetic
         # multipliers (provenance on the report either way — Rank #7).
@@ -66,11 +68,15 @@ class RiskApprovalGate:
         # as the pre-trade gate (audit P1). Combined with the engines' empty-input
         # fail-closed guards, missing/degenerate data can no longer inflate
         # gates_passed or reach RISK_APPROVED.
+        # Actual held/target/order flow is load bearing for the two money engines.
+        # Invalid supplied flow raises inside each engine thunk, never falling
+        # back to target weights. Other engines keep the original target book.
         specs = (
             ("market", lambda: self._engines["market"].evaluate(returns, config),
              lambda r: f"Market risk: vol={r.volatility:.3f}, VaR={r.var_95:.4f}, CVaR={r.cvar_95:.4f}"),
             ("liquidity", lambda: self._engines["liquidity"].evaluate(
-                weights, capacity_cny, daily_volume_cny, total_aum, config
+                validated_capacity_weights(weights, capacity_flow_weights),
+                capacity_cny, daily_volume_cny, total_aum, config
             ),
              lambda r: f"Liquidity: usage={r.avg_daily_volume_usage:.4f}, liq_days={r.liquidation_days}"),
             ("concentration", lambda: self._engines["concentration"].evaluate(weights, clusters, config),
@@ -83,7 +89,8 @@ class RiskApprovalGate:
              lambda r: f"Regime: worst={r.worst_regime} loss={r.worst_regime_loss:.3f}"),
             ("stress", lambda: self._engines["stress"].evaluate(returns, config, timestamps),
              lambda r: f"Stress: {r.scenarios_survived}/{r.total_scenarios} survived"),
-            ("capacity", lambda: self._engines["capacity"].evaluate(weights, capacity_cny, total_aum, config),
+            ("capacity", lambda: self._engines["capacity"].evaluate(
+                validated_capacity_weights(weights, capacity_flow_weights), capacity_cny, total_aum, config),
              lambda r: f"Capacity: usage={r.capacity_usage:.2f}"),
             ("model_alpha", lambda: self._engines["model_alpha"].evaluate(alpha_metadata or [], config),
              lambda r: (
