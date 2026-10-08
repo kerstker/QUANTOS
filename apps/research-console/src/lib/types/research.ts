@@ -2850,7 +2850,7 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
       missing_groups: string[];
       model_inputs?: {
         schema: 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V1' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' |
-          'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V4'; status: 'PARTIAL_ORIGINAL_FACTS';
+          'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V4' | 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V5'; status: 'PARTIAL_ORIGINAL_FACTS';
         invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
         native_result_hash: string; project_cut_sha256: string;
         statistical_report_sha256: string | null; statistical_evidence_sha256: string | null;
@@ -2866,6 +2866,20 @@ export interface RegisteredReviewProjection extends Record<string, unknown> {
         causality_policy_sha256?: string; causality_review?: GoldCandidateCausalityReview | null;
         net_forward_policy_sha256?: string; net_forward_review?: GoldNetForwardReview | null;
         maintenance_policy_sha256?: string; maintenance_review?: GoldNetMaintenanceReview | null;
+        frozen_validation_policy_sha256?: string;
+        frozen_validation_review?: {
+          schema: 'QUANTOS_GOLD_FROZEN_VALIDATION_REVIEW_V1'; status: 'AVAILABLE';
+          policy_sha256: string; reference: Record<string, string | number>;
+          invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
+          native_result_hash: string; project_cut_sha256: string; snapshot_as_of_ms: number;
+          validation_as_of_ms: number; validation_confidence: string | number | null; pbo: string | number | null;
+          explicit_overfit: boolean; statistical_decision: string; statistical_reasons: string[];
+          frozen_attempt_count: number; frozen_unique_definition_count: number;
+          current_attempt_count: number; current_unique_definition_count: number;
+          selection_history_status: 'COMPLETE_RETAINED_PREFIX'; independent_oos_verified: false;
+          limitations: string[]; economic_authority: false; submission_enabled: false;
+          promotion_approved: false; review_sha256: string;
+        } | null;
         economic_authority: false; submission_enabled: false;
       };
       capacity_inputs?: {

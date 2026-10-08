@@ -457,10 +457,21 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                     subject=model_context['subject'],candidate_id=trial['candidate_id'],policy=maintenance_policy,
                     net_forward_policy=net_forward_policy,net_forward_review=net_forward_review,
                     native_result_hash=simulation['result_hash'],snapshot_as_of_ms=original_snapshot)
+            frozen_validation_policy=run['plan']['forward_design']['risk_policy'].get('frozen_validation_policy')
+            frozen_validation_review=None
+            frozen_port=getattr(reports,'review_gold_frozen_validation',None)
+            if frozen_validation_policy is not None and original_snapshot is not None and callable(frozen_port):
+                frozen_validation_review=frozen_port(project_cut=model_context['project_cut'],
+                    subject=model_context['subject'],candidate_id=trial['candidate_id'],policy=frozen_validation_policy,
+                    native_result_hash=simulation['result_hash'],snapshot_as_of_ms=original_snapshot)
+                if frozen_validation_review['statistical_decision']=='FAIL':
+                    diagnostic['status']='REJECTED'
+                    diagnostic['limitations'].append('ORIGINAL_FROZEN_VALIDATION_STATISTICAL_FAIL')
             model_inputs = from_verified_statistics(**model_context, candidate_id=trial['candidate_id'],
                 native_result_hash=simulation['result_hash'],causality_policy=causality_policy,causality_review=causality_review,
                 net_forward_policy=net_forward_policy,net_forward_review=net_forward_review,
-                maintenance_policy=maintenance_policy,maintenance_review=maintenance_review)
+                maintenance_policy=maintenance_policy,maintenance_review=maintenance_review,
+                frozen_validation_policy=frozen_validation_policy,frozen_validation_review=frozen_validation_review)
             account_inputs.projection['model_inputs'] = model_inputs.projection
             account_inputs.projection['schema'] = 'QUANTOS_GOLD_ACCOUNT_RISK_INPUTS_V7'
             account_inputs.projection['source_groups']['alpha_metadata'] = dict(status='PARTIAL_ORIGINAL_FACTS',
@@ -481,7 +492,7 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
                 diagnostic['limitations'].append('NINE_ENGINE_RISK_INPUTS_INCOMPLETE')
             diagnostic['limitations'] = sorted(set(diagnostic['limitations']))
             if account_inputs.model_inputs is not None:
-                diagnostic['schema'] = ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V12' if maintenance_policy is not None else
+                diagnostic['schema'] = ('QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V13' if frozen_validation_policy is not None else 'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V12' if maintenance_policy is not None else
                     'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V11' if net_forward_policy is not None else
                     'QUANTOS_GOLD_EXECUTION_RISK_REVIEW_V10')
         return (*result, diagnostic)

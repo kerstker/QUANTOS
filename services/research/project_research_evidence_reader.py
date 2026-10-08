@@ -340,6 +340,8 @@ class ProjectResearchEvidenceReader:
                         require(count <= MAX_ROWS*3, 'REGISTRY_ROWS')
                     population = store.research_evidence_population()
                     history = _registry_history(store)
+                    if reports is not None:
+                        reports.original_review_rows=store._frozen_validation_rows_locked(runs)
                     attempts, unmapped = _bind(runs, population, history, ExperimentRegistry(store))
         else:
             # Only the original store's active write lease provides this native
@@ -350,6 +352,10 @@ class ProjectResearchEvidenceReader:
             view = registry_view_for(self.registry)
             require(type(view) is dict and set(view) == {'population', 'history'}, 'REGISTRY_LEASE_VIEW')
             population, history = view['population'], view['history']
+            if reports is not None:
+                port=getattr(registry_view_for,'frozen_rows_for',None)
+                if callable(port):
+                    reports.original_review_rows=port(runs)
             registry = _registry(population, history)
             attempts, unmapped = _bind(runs, population, history, registry)
 

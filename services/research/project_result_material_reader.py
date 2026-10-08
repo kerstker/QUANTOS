@@ -27,7 +27,7 @@ class ProjectResultMaterialReader:
         self.project = _path(str(project_root))
 
     @contextmanager
-    def reports(self, cut):
+    def reports(self, cut, *, review_rows=None):
         validate_project_cut(cut)
         materials = {key:run['result_material'] for key, run in cut['runs'].items()
             if run['plan']['schema'] in native.CHUNKED_GOLD_SCHEMAS
@@ -35,6 +35,7 @@ class ProjectResultMaterialReader:
         reads = _ProjectReads()
         from services.research.gold_native_source_reader import SourceReports, SourceParts
         reports = SourceReports()
+        reports.original_review_rows = {} if review_rows is None else dict(review_rows)
         with ExitStack() as stack:
             source_runs = {key: run for key, run in cut['runs'].items()
                            if run['plan']['schema'] in native.SOURCE_GOLD_SCHEMAS}

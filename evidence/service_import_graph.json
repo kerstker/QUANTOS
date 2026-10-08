@@ -1881,7 +1881,7 @@
     {
       "references": [
         {
-          "line": 25,
+          "line": 27,
           "module": "services.risk.research_risk.gold_research_replay",
           "path": "services/research/gold_native_source_reader.py"
         }
@@ -2042,22 +2042,32 @@
           "path": "services/research/experiment_registry/store.py"
         },
         {
-          "line": 2606,
+          "line": 2594,
           "module": "services.validation",
           "path": "services/research/experiment_registry/store.py"
         },
         {
-          "line": 2623,
+          "line": 2608,
           "module": "services.validation",
           "path": "services/research/experiment_registry/store.py"
         },
         {
-          "line": 2644,
+          "line": 2626,
           "module": "services.validation",
           "path": "services/research/experiment_registry/store.py"
         },
         {
-          "line": 2659,
+          "line": 2643,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2664,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2679,
           "module": "services.validation",
           "path": "services/research/experiment_registry/store.py"
         },
@@ -2067,13 +2077,18 @@
           "path": "services/research/factor_engine/domain/model.py"
         },
         {
-          "line": 45,
+          "line": 47,
           "module": "services.validation.gold_native_statistics",
           "path": "services/research/gold_native_source_reader.py"
         },
         {
-          "line": 59,
+          "line": 61,
           "module": "services.validation.gold_native_statistics",
+          "path": "services/research/gold_native_source_reader.py"
+        },
+        {
+          "line": 68,
+          "module": "services.validation.gold_frozen_validation",
           "path": "services/research/gold_native_source_reader.py"
         },
         {
@@ -2097,7 +2112,7 @@
           "path": "services/research/project_research_evidence_reader.py"
         },
         {
-          "line": 348,
+          "line": 350,
           "module": "services.validation.project_research_population",
           "path": "services/research/project_research_evidence_reader.py"
         },
@@ -2418,7 +2433,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "a55555f0fd11b036121f98df50ce990477e51615d1de6c47211c2c028ee4a966",
+  "graph_sha256": "04ab855dc969e55a6f38620160a4270446a433a22a9f3868d9bac5e325ccdb0e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -2456,7 +2471,7 @@
   "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 703,
+  "source_file_count": 704,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

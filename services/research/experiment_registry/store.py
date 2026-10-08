@@ -2587,6 +2587,11 @@ class SqliteExperimentStore:
         with self.project_research_result_materials(decoded['snapshot']['project_cut']) as reports:
             value = artifact.validate_row(row, reports=reports)
         artifact.verify_registry_prefix(value, population=population, history=history)
+        self._validate_project_review_custody_locked(row, value)
+        return value
+
+    def _validate_project_review_custody_locked(self, row, value):
+        from services.validation import project_research_evidence_artifact as artifact
         artifact.require(artifact.canonical(self.search_identity(value['search_identity']['search_id']))
             == artifact.canonical(value['search_identity']), 'SEARCH_IDENTITY')
         artifact.require(not self._conn.execute(
@@ -2599,6 +2604,21 @@ class SqliteExperimentStore:
             and audits[0]['evaluation_content_hash'] == row['content_hash'], 'PROJECT_REVIEW_AUDIT')
         return value
 
+    def _frozen_validation_rows_locked(self, runs):
+        from services.validation import project_research_evidence_artifact as artifact
+        refs={p['forward_design']['risk_policy']['frozen_validation_policy']['reference']['review_id']
+            for run in runs.values() for p in (run['plan'],)
+            if 'frozen_validation_policy' in p.get('forward_design',{}).get('risk_policy',{})}
+        rows={}
+        for key in sorted(refs):
+            row=self._conn.execute('SELECT * FROM evaluations WHERE run_id=?',(key,)).fetchone()
+            artifact.require(row is not None, 'FROZEN_VALIDATION_ROW_REQUIRED')
+            rows[key]=dict(row)
+            value=artifact.decode(row['evaluation_json'].encode())
+            self._validate_project_review_custody_locked(rows[key],value)
+        artifact.canonical(rows)
+        return rows
+
     @contextmanager
     def project_research_result_materials(self, cut):
         """All original reports for a cut, using only bootstrap configuration."""
@@ -2610,7 +2630,7 @@ class SqliteExperimentStore:
             yield None
             return
         artifact.require(self._project_result_reader is not None, 'PROJECT_CHUNKED_MATERIAL_REQUIRED')
-        with self._project_result_reader.reports(cut) as reports:
+        with self._project_result_reader.reports(cut, review_rows=self._frozen_validation_rows_locked(cut["runs"])) as reports:
             yield reports
 
     def project_research_registry_view(self):
@@ -2682,6 +2702,10 @@ class SqliteExperimentStore:
 
             # This short-lived callable is created only inside the real writer
             # lease. Public read_project_research_review_rows has no capability.
+            def frozen_rows_for(runs):
+                self._require_write_lock(conn, lease)
+                return self._frozen_validation_rows_locked(runs)
+            registry_view_for.frozen_rows_for=frozen_rows_for
             read_rows.registry_view_for = registry_view_for
             write = prepare(artifact.decode(artifact.canonical(before)), read_rows)
             self._validate_project_research_write(write)

@@ -1,5 +1,7 @@
 # QUANTOS — Full Development Program Plan
 
+2026-10-08 **软件先发行V1，冻结验证软件交接已专项验证**：按用户最新指令，真实样本、八周、独立核验与现场运行不再阻塞首次软件发行，按[固定五项收工条件](engineering/plans/2026-10-08-software-first-release-v1.md)推进。新前向V11绑定选定候选时的原BACKTEST核验行、完整历史和实际策略定义，模型V5/执行V13/事实V18与前端同步；前向成绩不替代冻结验证，原失败保持拒绝。核心219 PASS、原登记核验/HTTP/持久化恢复冷读3 PASS、原登记库兼容45 PASS；均为隔离合成软件验证。首次失败留存，完整同版发行门和软件包尚待完成。真实经济与交易权限不变，完整目标ACTIVE。
+
 > **2026-10-07 C2净账户归因接口增量**：[实际策略分配与原现金贡献](engineering/specs/2026-10-07-gold-net-account-attribution.md)最终693a4072已精准整合；完整新净组合接通weights/alpha贡献，账户V4/复核V6/事实V9及API/TS同步。不能作为独立策略PnL、有效下注数或九风险通过；其余三组外部输入、九引擎/OOS/资格交接及C1–C6和多资产范围继续，未部署。
 
 > **2026-10-07 C2完整政策接口增量**：[执行前完整风险政策及核验材料/控制台合同](engineering/specs/2026-10-07-gold-preregistered-full-risk-policy.md)最终冻结4249d481并整合；冻结同版27 PASS、主行为61 PASS。新计划risk_config已接线，旧声明保留未知，另外五类外部风险输入、九引擎/OOS及资格交接继续；六包和原多资产范围保持开放，未部署。

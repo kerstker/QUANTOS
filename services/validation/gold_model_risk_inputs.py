@@ -70,7 +70,7 @@ class GoldModelRiskInputs:
 @ledger_decimal_context()
 def from_verified_statistics(*, project_cut, subject, candidate_id, verified_statistics,
                              checked_at_ms, native_result_hash, causality_policy=None, causality_review=None,
-                             net_forward_policy=None, net_forward_review=None, maintenance_policy=None, maintenance_review=None):
+                             net_forward_policy=None, net_forward_review=None, maintenance_policy=None, maintenance_review=None, frozen_validation_policy=None, frozen_validation_review=None):
     """Internal seam; source caller must first recompute the statistical evidence."""
     hashed(native_result_hash)
     selected = {k: hashed(subject[k]) for k in IDENTITY}
@@ -164,9 +164,38 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             sources['decay_flag']='ORIGINAL_PREDECLARED_COST_NET_WEEKLY_PERFORMANCE_MAINTENANCE_NOT_IC'
     else:
         require(maintenance_review is None,'MAINTENANCE_POLICY_REQUIRED')
+    frozen_hash=None
+    if frozen_validation_policy is not None:
+        from quantos.contracts.gold_frozen_validation_policy import policy_sha256 as frozen_digest, validate_review as frozen_review
+        frozen_hash=frozen_digest(frozen_validation_policy)
+        require(frozen_validation_policy['candidate_id']==candidate_id,'FROZEN_CANDIDATE')
+        # The current forward report remains separately bound above. It cannot
+        # supply original validation confidence or age for this new policy.
+        current_overfit=values['overfit_flag']
+        values['age_days']=values['validation_confidence']=values['overfit_flag']=None
+        if current_overfit is True:
+            values['overfit_flag']=True
+        sources.update(age_days='AGE_OF_ORIGINAL_FROZEN_VALIDATION_AT_CURRENT_SNAPSHOT',
+            validation_confidence='ORIGINAL_FROZEN_BACKTEST_GLOBAL_DSR',
+            overfit_flag='ORIGINAL_FROZEN_BACKTEST_AND_CURRENT_KNOWN_OVERFIT')
+        if frozen_validation_review is not None:
+            require(as_of is not None,'FROZEN_CURRENT_SNAPSHOT_REQUIRED')
+            review=frozen_review(frozen_validation_review,policy=frozen_validation_policy,subject=subject,
+                candidate_id=candidate_id,native_result_hash=native_result_hash,
+                project_cut_sha256=project_cut['cut_sha256'],snapshot_as_of_ms=as_of)
+            confidence=probability(review['validation_confidence'])
+            pbo=probability(review['pbo'])
+            values['age_days']=canonical_decimal(Decimal(as_of-review['validation_as_of_ms'])/Decimal(86_400_000))
+            values['validation_confidence']=None if confidence is None else canonical_decimal(confidence)
+            require(type(review['explicit_overfit']) is bool,'FROZEN_OVERFIT')
+            frozen_overfit=True if review['explicit_overfit'] else None if pbo is None else pbo>Decimal('0.50')
+            if current_overfit is not True:
+                values['overfit_flag']=frozen_overfit
+    else:
+        require(frozen_validation_review is None,'FROZEN_POLICY_REQUIRED')
     facts = {k: dict(status='UNAVAILABLE' if values[k] is None else 'AVAILABLE', value=values[k],
                     source=sources[k]) for k in FIELDS}
-    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V4' if maintenance_policy is not None else
+    value = dict(schema='QUANTOS_GOLD_MODEL_RISK_INPUTS_V5' if frozen_validation_policy is not None else 'QUANTOS_GOLD_MODEL_RISK_INPUTS_V4' if maintenance_policy is not None else
         'QUANTOS_GOLD_MODEL_RISK_INPUTS_V3' if net_forward_policy is not None else
         'QUANTOS_GOLD_MODEL_RISK_INPUTS_V2' if causality_policy is not None else SCHEMA, status='PARTIAL_ORIGINAL_FACTS',
         **selected, candidate_id=candidate_id, native_result_hash=native_result_hash,
@@ -184,6 +213,14 @@ def from_verified_statistics(*, project_cut, subject, candidate_id, verified_sta
             'NO_ORIGINAL_CANDIDATE_LEAKAGE_ASSESSMENT',
             'REVIEW_SNAPSHOT_MODEL_FACTS_DO_NOT_AUTHORIZE_PAST_PRETRADE'],
         economic_authority=False, submission_enabled=False)
+    if frozen_validation_policy is not None:
+        value.update(frozen_validation_policy_sha256=frozen_hash,frozen_validation_review=frozen_validation_review)
+        if frozen_validation_review is None:
+            value['limitations'].append('FROZEN_VALIDATION_ORIGINAL_PORT_UNAVAILABLE')
+        else:
+            value['limitations'].extend(frozen_validation_review['limitations'])
+            value['limitations'].extend(frozen_validation_review['statistical_reasons'])
+        value['limitations']=sorted(set(value['limitations']))
     if causality_policy is not None:
         value.update(causality_policy_sha256=causality_hash,causality_review=causality_review)
         value['limitations'].append('OOS_AND_SEARCH_SELECTION_LEAKAGE_NOT_YET_ASSESSED')

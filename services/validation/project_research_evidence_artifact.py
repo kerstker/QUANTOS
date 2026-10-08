@@ -81,6 +81,9 @@ def retained_reports(cut, reports):
         maintenance_port=getattr(reports,'review_gold_maintenance',None)
         if callable(maintenance_port):
             result.review_gold_maintenance=maintenance_port
+        frozen_port=getattr(reports,'review_gold_frozen_validation',None)
+        if callable(frozen_port):
+            result.review_gold_frozen_validation=frozen_port
         if inputs:
             originals = getattr(reports, 'source_inputs', None)
             require(isinstance(originals, Mapping) and inputs <= set(originals),

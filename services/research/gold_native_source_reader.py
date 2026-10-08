@@ -14,10 +14,12 @@ class SourceReports(dict):
         self.source_inputs = {}
         self.closed = False
         self._issued_net_forward_reviews = set()
+        self.original_review_rows = {}
 
     def close_inputs(self):
         self.closed = True
         self._issued_net_forward_reviews.clear()
+        self.original_review_rows.clear()
 
     def review_gold_risk(self, inputs):
         """Trusted composition under the same original-material read lease."""
@@ -59,6 +61,13 @@ class SourceReports(dict):
         from services.validation.gold_native_statistics import review_gold_maintenance_series
         result=review_gold_maintenance_series(reports=self,**arguments)
         shape.require(not self.closed,'MAINTENANCE_CONTEXT_CLOSED')
+        return result
+
+    def review_gold_frozen_validation(self, **arguments):
+        shape.require(not self.closed, 'FROZEN_VALIDATION_CONTEXT_CLOSED')
+        from services.validation.gold_frozen_validation import review_original
+        result=review_original(reports=self, **arguments)
+        shape.require(not self.closed, 'FROZEN_VALIDATION_CONTEXT_CLOSED')
         return result
 
     def prepare_report_views(self, cut):
