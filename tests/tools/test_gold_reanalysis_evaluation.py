@@ -14,7 +14,17 @@ from tests.validation.test_research_evaluation_plan import core
 GOLD_CORE = 'QUANTOS_GOLD_REANALYSIS_EVALUATION_CORE_V1'
 
 
-def declaration(case):
+def historical_oos_clock(case, monkeypatch):
+    # The two-segment collector fixture pins its clock before its synthetic
+    # quotes arrive. Register this new BACKTEST scenario after both exist.
+    f, _, options, _, _ = case
+    registered = options['registered_at_ms'] + 86_400_000
+    options['registered_at_ms'] = registered
+    f['clock'][0] = registered
+    monkeypatch.setattr(time, 'time_ns', lambda: registered * 1_000_000)
+
+
+def declaration(case, *, oos_material=False):
     from tools import gold_chunked_source as carrier
     from quantos.contracts import registered_research_run as native
     f, root, options, collector, consumer = case
@@ -41,6 +51,9 @@ def declaration(case):
             validation=dict(start_ms=start+2000, end_ms=start+3000),
             locked_oos=dict(start_ms=start+4000, end_ms=start+6000)))
     value['selection']['candidate_id'] = cohort[0]['candidate_id']
+    if oos_material:
+        from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_SCHEMA, GOLD_OOS_MATERIAL_METHOD
+        value.update(schema=GOLD_REANALYSIS_OOS_SCHEMA, oos_material_method=GOLD_OOS_MATERIAL_METHOD)
     return value
 
 
@@ -52,8 +65,9 @@ def prepare(case, evaluation):
 
 
 @pytest.mark.parametrize('budgeted', [False, True])
+@pytest.mark.parametrize('oos_material', [False, True])
 def test_original_queue_commits_gold_splits_in_registry_and_ledger_before_execution(
-        older_source, monkeypatch, budgeted):
+        older_source, monkeypatch, budgeted, oos_material):
     from services.validation import gold_native_statistics as statistics
     from tests.research.test_registered_research_job import queued
     from services.research.experiment_registry.store import SqliteExperimentStore
@@ -66,12 +80,14 @@ def test_original_queue_commits_gold_splits_in_registry_and_ledger_before_execut
     from quantos.contracts.research_evaluation_plan import core_sha256
     from quantos.contracts import registered_research_run as native
     f, root, options, _, _ = older_source
+    if oos_material:
+        historical_oos_clock(older_source, monkeypatch)
     if budgeted:
         options['source_storage'].update(schema='QUANTOS_GOLD_NATIVE_SOURCE_STORAGE_V2',
             replay_budget=dict(schema='LINEAR_PERPETUAL_REPLAY_BUDGET_V1',
                 maximum_environment_segments=2, maximum_elapsed_ms=30*86_400_000))
     before = physical(root)
-    evaluation = declaration(older_source)
+    evaluation = declaration(older_source, oos_material=oos_material)
     committed = copy.deepcopy(evaluation)
     plan = prepare(older_source, evaluation)
     assert plan['schema'] == ('QUANTOS_REGISTERED_GOLD_REANALYSIS_RUN_V4' if budgeted
@@ -129,8 +145,22 @@ def test_original_queue_commits_gold_splits_in_registry_and_ledger_before_execut
         assert 'EVALUATION_PLAN_NOT_PREREGISTERED' not in facts['limitations']
         assert 'FORWARD_NOT_HISTORICAL_OOS' not in facts['limitations']
         assert facts['metrics']['reconciliation_residual'] == '0'
-        assert samples == [(dict(start_ms=committed['splits']['train']['start_ms'],
-            end_ms=committed['splits']['validation']['end_ms'], frequency_ms=1000), 'BACKTEST')]
+        statistical = dict(start_ms=committed['splits']['train']['start_ms'],
+            end_ms=committed['splits']['validation']['end_ms'], frequency_ms=1000)
+        assert samples[0] == (statistical, 'BACKTEST')
+        if oos_material:
+            expected_oos = dict(committed['splits']['locked_oos'], frequency_ms=1000)
+            assert samples == [(statistical, 'BACKTEST'), (expected_oos, 'BACKTEST'), (expected_oos, 'BACKTEST')]
+            actual = facts['oos_material']
+            assert actual['sample'] == expected_oos
+            assert actual['invocation_id'] == plan['invocation_id']
+            assert actual['evaluation_core_sha256'] == expected
+            assert actual['oos_status'] == 'UNKNOWN' and actual['statistical_decision'] == 'NOT_EVALUATED'
+            assert actual['candidate']['window'] is not None
+            assert actual['candidate']['full_run_cash_identity']['reconciliation_residual'] == '0'
+            assert actual['independent_oos_verified'] is False
+        else:
+            assert samples == [(statistical, 'BACKTEST')] and 'oos_material' not in facts
         assert facts['promotion_approved'] is facts['submission_enabled'] is False
         attempt = next(a for a in cut['attempts'] if a['native_trial_id'] == plan['trials'][0]['native_trial_id'])
         series = project_native_series(project_cut=cut, attempt=_identity(attempt),

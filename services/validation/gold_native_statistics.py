@@ -466,6 +466,121 @@ def project_gold_trial(run, trial, *, reports=None, include_execution_risk=False
     return result
 
 
+@ledger_decimal_context()
+def oos_account_material(simulation, baseline, *, sample, settlements, snapshot_as_of_ms, streamed):
+    """Read the declared holdout grid from continuous original cash accounts.
+
+    This internal computation neither grades a strategy nor authenticates an
+    unseen boundary. The owning original reader verifies the source and result.
+    Whole-run cash and window returns remain separately labelled.
+    """
+    from quantos.contracts.decimal_arithmetic import canonical_decimal
+    from quantos.contracts.research_evaluation_plan import GOLD_OOS_MATERIAL_METHOD
+    require(type(sample) is dict and set(sample) == {'start_ms', 'end_ms', 'frequency_ms'},
+            'OOS_SAMPLE_FIELDS')
+    start, end, frequency = (_time(sample[key]) for key in ('start_ms', 'end_ms', 'frequency_ms'))
+    require(frequency > 0 and start <= end and (end - start) % frequency == 0, 'OOS_SAMPLE_GRID')
+    require(end <= _time(snapshot_as_of_ms), 'OOS_FUTURE_SNAPSHOT')
+    require(type(streamed) is bool, 'OOS_STREAM_MODE')
+    summaries = []
+    for account in (simulation, baseline):
+        history = receipt_available_history_stream(account, settlements,
+            maximum_points=100_000_000, maximum_events=100_000_000) if streamed else receipt_available_history(account, settlements)
+        last = None
+        for last in history.items() if streamed else history:
+            pass
+        require(last is not None and last['timestamp'] <= snapshot_as_of_ms, 'OOS_FUTURE_ORIGINAL')
+        value, _, _ = _series(account, sample, settlements, streamed=streamed, reviewed=True,
+                              evidence_kind='BACKTEST')
+        grid = value['grid']
+        window = None
+        if grid is not None:
+            points = grid['points']
+            initial, ending = (Decimal(point['equity']) for point in (points[0], points[-1]))
+            window = dict(initial_equity=points[0]['equity'], ending_equity=points[-1]['equity'],
+                net_equity_change=canonical_decimal(ending - initial),
+                net_return=None if initial <= 0 else canonical_decimal(ending / initial - 1),
+                point_count=len(points), sample_count=len(points) - 1,
+                annualized_sharpe=grid['annualized_sharpe'], statistics_status=grid['statistics_status'])
+        summaries.append(dict(native_result_hash=value['native_result_sha256'],
+            available_history_sha256=value['available_history_sha256'],
+            grid_sha256=None if grid is None else native.digest(grid), window=window,
+            full_run_cash_identity={key: value['metrics'][key] for key in
+                ('initial_equity', 'ending_equity', 'net_equity_change', 'fees', 'funding', 'reconciliation_residual')}))
+    candidate, cash = summaries
+    require(candidate['full_run_cash_identity']['initial_equity'] == cash['full_run_cash_identity']['initial_equity'],
+            'OOS_BASELINE_ACCOUNT')
+    late = sum(row['settlement_at_ms'] <= end < row['available_at_ms'] for row in settlements)
+    complete = all(row['window'] is not None for row in summaries) and late == 0
+    limitations = ['OOS_LOCK_AND_ACCESS_NOT_INDEPENDENTLY_VERIFIED',
+        'OOS_MATERIAL_EXTRACTION_IS_NOT_A_STATISTICAL_DECISION', 'ACCOUNT_COSTS_NOT_CALIBRATED',
+        'CONTINUOUS_ORIGINAL_ACCOUNT_NO_WINDOW_RESET']
+    if late:
+        limitations.append('OOS_REQUIRED_CASH_RECEIPTS_AFTER_WINDOW')
+    if any(row['window'] is None for row in summaries):
+        limitations.append('OOS_ORIGINAL_WINDOW_COVERAGE_INCOMPLETE')
+    returns = [None if row['window'] is None else row['window']['net_return'] for row in summaries]
+    value = dict(schema='QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1', method=GOLD_OOS_MATERIAL_METHOD,
+        material_status='AVAILABLE' if complete else 'INSUFFICIENT', sample=dict(sample),
+        snapshot_as_of_ms=snapshot_as_of_ms, candidate=candidate, benchmark=cash,
+        benchmark_excess_net_return=None if None in returns else canonical_decimal(Decimal(returns[0]) - Decimal(returns[1])),
+        late_receipts_at_window_end=late, statistical_decision='NOT_EVALUATED',
+        independent_oos_verified=False, economic_authority=False, submission_enabled=False,
+        scope='DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS',
+        limitations=sorted(limitations))
+    value['material_sha256'] = native.digest(value)
+    return value
+
+
+def project_gold_oos_material(run, trial, *, project_cut_sha256, snapshot_as_of_ms, reports=None):
+    """Consume only the explicitly committed V2 OOS method and original accounts."""
+    from quantos.contracts.research_evaluation_plan import (
+        GOLD_REANALYSIS_OOS_SCHEMA, validate_core, core_sha256, core_status)
+    from services.validation.project_research_evidence_authority import _original
+    from quantos.contracts.project_chunked_results import report_for
+    from quantos.contracts.gold_native_source import bind_plan
+    plan = run['plan']
+    core = validate_core(plan['evaluation_core'])
+    require(plan['schema'] in native.EVALUATED_SOURCE_REANALYSIS_SCHEMAS
+        and core['schema'] == GOLD_REANALYSIS_OOS_SCHEMA, 'OOS_PREDECLARED_METHOD')
+    require(trial['candidate_id'] == core['selection']['candidate_id'], 'OOS_PREDECLARED_CANDIDATE')
+    if run['partial'] or not {'archive/report.json', 'archive/manifest.json'} <= set(run['originals']):
+        value = dict(schema='QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1',
+            method=core['oos_material_method'], material_status='INSUFFICIENT',
+            sample=dict(core['splits']['locked_oos'], frequency_ms=core['sample']['frequency_ms']),
+            snapshot_as_of_ms=snapshot_as_of_ms, candidate=None, benchmark=None, currency=None,
+            benchmark_excess_net_return=None, late_receipts_at_window_end=None,
+            statistical_decision='NOT_EVALUATED',
+            scope='DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS',
+            limitations=['OOS_NATIVE_ATTEMPT_NOT_COMPLETE', 'OOS_LOCK_AND_ACCESS_NOT_INDEPENDENTLY_VERIFIED'],
+            independent_oos_verified=False, economic_authority=False, submission_enabled=False)
+    else:
+        document = _original(run, 'input.json')
+        bind_plan(plan, document)
+        report = report_for(run, reports)
+        dataset = _plain_dataset(report['dataset_identity'])
+        settlements = funding_settlements(document, dataset,
+            source_parts=getattr(reports, 'source_inputs', {}).get(plan['invocation_id']))
+        value = oos_account_material(_simulation(report, trial['candidate_id'], streamed=True),
+            _simulation(report, None, streamed=True), sample=dict(core['splits']['locked_oos'],
+                frequency_ms=core['sample']['frequency_ms']), settlements=settlements,
+            snapshot_as_of_ms=snapshot_as_of_ms, streamed=True)
+        del value['material_sha256']
+        from services.validation.gold_account_risk_inputs import currency_from_dataset
+        value['currency'] = currency_from_dataset(dataset)
+        if value['currency'] is None:
+            value['material_status'] = 'INSUFFICIENT'
+            value['limitations'].append('OOS_ACCOUNT_CURRENCY_UNAVAILABLE')
+    value.update(invocation_id=plan['invocation_id'], native_trial_id=trial['native_trial_id'],
+        config_hash=trial['config_hash'], candidate_id=trial['candidate_id'],
+        project_cut_sha256=project_cut_sha256, evaluation_core_sha256=core_sha256(core),
+        input_sha256=plan['input_sha256'], declared_benchmark=dict(core['benchmark']),
+        oos_access_declaration=dict(core['oos_access']), oos_status=core_status(core)['oos_status'])
+    value['limitations'] = sorted(set(value['limitations']))
+    value['material_sha256'] = native.digest(value)
+    return value
+
+
 def project_gold_reanalysis_trial(run, trial, *, reports=None):
     """Declared train/validation statistics from originals; never OOS proof."""
     from services.validation.project_research_evidence_authority import _original

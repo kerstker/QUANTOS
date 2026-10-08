@@ -1,6 +1,6 @@
 """Historical Gold study declarations; no independently locked OOS or authority."""
 from quantos.contracts import research_statistical_review as common
-from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_SCHEMA, statistical_sample, validate_core
+from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_SCHEMAS, statistical_sample, validate_core
 
 SCHEMA = 'QUANTOS_GOLD_REANALYSIS_STATISTICAL_POLICY_V1'
 METHOD = 'NATIVE_GOLD_RECEIPT_AVAILABLE_EQUITY_GRID_V1'
@@ -25,7 +25,7 @@ def benchmark(core):
 def bind_core(policy, core):
     policy = validate(policy)
     validate_core(core)
-    common.require(core['schema'] == GOLD_REANALYSIS_SCHEMA
+    common.require(core['schema'] in GOLD_REANALYSIS_SCHEMAS
         and core['selection']['method'] == 'PREDECLARED_CANDIDATE'
         and core['selection']['validation_policy_sha256'] == common.digest(policy), 'GOLD_BACKTEST_CORE_POLICY')
     common.require(core['source_identity_sha256'] == policy['source_identity_sha256']

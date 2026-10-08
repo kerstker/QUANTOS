@@ -15,8 +15,8 @@ SCHEMA = 'QUANTOS_GOLD_REANALYSIS_STATISTICAL_POLICY_V1'
 METHOD = 'NATIVE_GOLD_RECEIPT_AVAILABLE_EQUITY_GRID_V1'
 
 
-def declared(case):
-    core = declaration(case)
+def declared(case, *, oos_material=False):
+    core = declaration(case, oos_material=oos_material)
     baseline = dict(schema='QUANTOS_GOLD_EMBEDDED_CASH_BENCHMARK_V1',
         id='GOLD_NO_ORDER_ORIGINAL_ACCOUNT_V1', native_adapter='GOLD_BAR_FORWARD_V1',
         source_identity_sha256=core['source_identity_sha256'],
@@ -171,17 +171,20 @@ def test_gold_policy_cannot_be_added_after_an_existing_core_plan(older_source):
     assert physical(directory) == before
 
 
-def export_backtest(case, monkeypatch):
+def export_backtest(case, monkeypatch, *, oos_material=False):
     from tools import gold_chunked_source as carrier
     from tools import registered_gold_chunked_job as job
     from tools import registered_research_review_job as review
     from tools.perpetual_replay_research import source_identity
     f, original, options, collector, _ = case
+    if oos_material:
+        from tests.tools.test_gold_reanalysis_evaluation import historical_oos_clock
+        historical_oos_clock(case, monkeypatch)
     actual_source = source_identity()
     monkeypatch.setattr(carrier, 'source_identity', lambda: actual_source)
     monkeypatch.setattr(f['run'].gold, 'source_identity', lambda: actual_source)
     case = f, original, options, collector, actual_source
-    core, policy = declared(case)
+    core, policy = declared(case, oos_material=oos_material)
     plan = prepare(case, core, policy)
     job.run_research(dict(native_invocation_id=plan['invocation_id']))
     original_native = physical(f['root']/'project')
@@ -196,17 +199,24 @@ def export_backtest(case, monkeypatch):
     return f, plan, policy, original_native, request, packet
 
 
-def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(older_source, monkeypatch):
+@pytest.mark.parametrize('oos_material', [False, True])
+def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(older_source, monkeypatch, oos_material):
     from tools import registered_research_review_job as review
     from tests.research.test_registered_research_review_job import independent_response
     from services.research.experiment_registry.store import SqliteExperimentStore
     from services.research.project_result_material_reader import ProjectResultMaterialReader
     from quantos.contracts.research_evidence_json import canonical
-    f, _, policy, original_native, request, packet = export_backtest(older_source, monkeypatch)
+    f, plan, policy, original_native, request, packet = export_backtest(older_source, monkeypatch, oos_material=oos_material)
     assert packet['request']['schema'] == 'QUANTOS_INDEPENDENT_PROJECT_REVIEW_REQUEST_V3'
     assert packet['subject']['evidence_kind'] == 'BACKTEST'
     assert packet['statistical_evidence']['policy'] == policy
     assert 'STATISTICAL_REVIEW_NOT_IMPLEMENTED' not in packet['projection']['limitations']
+    if oos_material:
+        actual = packet['projection']['oos_material']
+        assert actual['invocation_id'] == plan['invocation_id']
+        assert actual['material_status'] == 'AVAILABLE' and actual['oos_status'] == 'UNKNOWN'
+        assert actual['candidate']['window']['sample_count'] == 2
+        assert actual['statistical_decision'] == 'NOT_EVALUATED' and actual['independent_oos_verified'] is False
     trust = f['root']/'synthetic-review/trust.json'
     independent_response(packet, review.response_directory(request), trust)
     registry = json.loads(trust.read_bytes())
@@ -216,6 +226,9 @@ def test_actual_gold_backtest_unsigned_export_signed_consumer_and_cold_registry(
     monkeypatch.setenv('QUANTOS_PROJECT_REVIEW_TRUST_FILE', str(trust))
     monkeypatch.setenv('QUANTOS_PROJECT_REVIEW_TRUST_SHA256', digest(trust.read_bytes()))
     monkeypatch.setenv('QUANTOS_PROJECT_REVIEW_MIN_GENERATION', '1')
+    if oos_material:
+        later = time.time_ns() + 1_000_000
+        monkeypatch.setattr(time, 'time_ns', lambda: later)
     result = review.consume_review(dict(review_request_id=request))
     assert result['authentication'] == 'VERIFIED_SOURCE_AND_RESULT'
     assert result['qualification'] in ('FAIL', 'INSUFFICIENT')

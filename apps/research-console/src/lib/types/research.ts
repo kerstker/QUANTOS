@@ -2744,8 +2744,38 @@ export interface GoldCandidateCausalityReview {
   independent_verification: false; limitations: string[]; review_sha256: string;
   economic_authority: false; submission_enabled: false;
 }
+export interface GoldOOSWindowMetrics {
+  initial_equity: string; ending_equity: string; net_equity_change: string;
+  net_return: string | null; point_count: number; sample_count: number;
+  annualized_sharpe: string | null; statistics_status: string;
+}
+export interface GoldOOSAccountMaterial {
+  native_result_hash: string; available_history_sha256: string; grid_sha256: string | null;
+  window: GoldOOSWindowMetrics | null;
+  full_run_cash_identity: {
+    initial_equity: string; ending_equity: string; net_equity_change: string;
+    fees: string; funding: string; reconciliation_residual: string;
+  };
+}
+export interface GoldOOSOriginalMaterial {
+  schema: 'QUANTOS_GOLD_OOS_ORIGINAL_MATERIAL_V1';
+  method: 'ORIGINAL_RECEIPT_AVAILABLE_NET_ACCOUNT_AND_CASH_BASELINE_GRID_V1';
+  material_status: 'AVAILABLE' | 'INSUFFICIENT';
+  sample: {start_ms: number; end_ms: number; frequency_ms: number}; snapshot_as_of_ms: number;
+  invocation_id: string; native_trial_id: string; config_hash: string; candidate_id: string;
+  project_cut_sha256: string; evaluation_core_sha256: string; input_sha256: string;
+  declared_benchmark: {id: string; definition_sha256: string; input_sha256: string};
+  oos_access_declaration: {boundary_id: string | null; history_sha256: string | null; viewed_boundary_ids: string[]};
+  oos_status: 'UNKNOWN' | 'INSUFFICIENT'; currency: string | null;
+  candidate: GoldOOSAccountMaterial | null; benchmark: GoldOOSAccountMaterial | null;
+  benchmark_excess_net_return: string | null; late_receipts_at_window_end: number | null;
+  statistical_decision: 'NOT_EVALUATED'; independent_oos_verified: false;
+  scope: 'DECLARED_OOS_ORIGINAL_MATERIAL_NOT_INDEPENDENT_LOCK_OR_STATISTICAL_PASS';
+  limitations: string[]; material_sha256: string; economic_authority: false; submission_enabled: false;
+}
 export interface RegisteredReviewProjection extends Record<string, unknown> {
   schema?: string;
+  oos_material?: GoldOOSOriginalMaterial;
   execution_risk_review?: {
     schema: string;
     nine_engine_replay?: GoldNineEngineReplay;

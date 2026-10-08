@@ -277,6 +277,23 @@ def project_facts(cut, subject, *, statistical_evidence=None, as_of_ms=None, rep
         facts['execution_risk_review'] = execution_risk
         reasons.update(execution_risk['limitations'])
         facts['limitations'] = sorted(reasons)
+    from quantos.contracts.research_evaluation_plan import GOLD_REANALYSIS_OOS_SCHEMA
+    if core is not None and core['schema'] == GOLD_REANALYSIS_OOS_SCHEMA:
+        from services.validation.gold_native_statistics import project_gold_oos_material
+        if validated_statistics is not None:
+            snapshot_at = validated_statistics['report']['as_of_ms']
+        else:
+            from services.validation.project_research_evidence_artifact import last_project_fact_ms
+            snapshot_at = last_project_fact_ms(cut)
+        if as_of_ms is not None:
+            shape._integer(as_of_ms)
+            require(as_of_ms >= snapshot_at, 'OOS_FUTURE_RETAINED_SNAPSHOT')
+        material = project_gold_oos_material(run, trial, project_cut_sha256=cut['cut_sha256'],
+            snapshot_as_of_ms=snapshot_at, reports=reports)
+        facts.update(schema='QUANTOS_PROJECT_RESEARCH_FACTS_V14', oos_material=material)
+        reasons.update(material['limitations'])
+        reasons.add('GOLD_OOS_MATERIAL_' + material['material_status'])
+        facts['limitations'] = sorted(reasons)
     return facts
 
 

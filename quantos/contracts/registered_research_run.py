@@ -210,11 +210,11 @@ def validate_plan(value):
         from quantos.contracts.gold_forward_evaluation_design import bind_plan
         bind_plan(value['forward_design'], value)
     if evaluated:
-        from quantos.contracts.research_evaluation_plan import validate_core, core_sha256, GOLD_REANALYSIS_SCHEMA
+        from quantos.contracts.research_evaluation_plan import validate_core, core_sha256, GOLD_REANALYSIS_SCHEMAS
         core = validate_core(value['evaluation_core'])
         gold_evaluated = value['schema'] in EVALUATED_SOURCE_REANALYSIS_SCHEMAS
         require(value['adapter'] == (GOLD if gold_evaluated else TECHNICAL)
-            and (not gold_evaluated or core['schema'] == GOLD_REANALYSIS_SCHEMA), 'EVALUATION_ADAPTER')
+            and (not gold_evaluated or core['schema'] in GOLD_REANALYSIS_SCHEMAS), 'EVALUATION_ADAPTER')
         require(core['native_adapter'] == value['adapter']
             and core['evidence_kind'] == search['search_kind']
             and core['registered_at_ms'] == search['recorded_at_ms']

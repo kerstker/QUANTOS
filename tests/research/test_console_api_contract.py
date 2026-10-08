@@ -37,11 +37,12 @@ from services.console.api import ashare_views
 client = TestClient(app)
 
 
-def test_gold_backtest_unsigned_review_http_keeps_complete_statistics_without_authority(older_source, monkeypatch):
+@pytest.mark.parametrize('oos_material', [False, True])
+def test_gold_backtest_unsigned_review_http_keeps_complete_statistics_without_authority(older_source, monkeypatch, oos_material):
     import shutil
     from tests.validation.test_gold_reanalysis_statistics import export_backtest
     from services.console.api import research_run_views as views
-    f, plan, policy, _, request, packet = export_backtest(older_source, monkeypatch)
+    f, plan, policy, _, request, packet = export_backtest(older_source, monkeypatch, oos_material=oos_material)
     # An original exported public packet, at the console's real fixed path.
     state = f['root']/'console-reader'
     target = state/'data/cache/registered_research/review_requests'/request
@@ -63,6 +64,14 @@ def test_gold_backtest_unsigned_review_http_keeps_complete_statistics_without_au
     assert actual['report']['benchmark_attempt']['id'] == 'GOLD_NO_ORDER_ORIGINAL_ACCOUNT_V1'
     assert all(actual['report'][key] is False for key in
         ('independent_oos_verified', 'promotion_approved', 'submission_enabled', 'economic_authority'))
+    if oos_material:
+        material = payload['review_request']['projection']['oos_material']
+        assert payload['review_request']['projection']['schema'] == 'QUANTOS_PROJECT_RESEARCH_FACTS_V14'
+        assert material == packet['projection']['oos_material']
+        assert material['candidate']['window']['sample_count'] == 2
+        assert material['benchmark']['window']['net_return'] == '0'
+        assert material['oos_status'] == 'UNKNOWN' and material['statistical_decision'] == 'NOT_EVALUATED'
+        assert material['independent_oos_verified'] is material['economic_authority'] is material['submission_enabled'] is False
 
 @pytest.mark.parametrize('kind', ['registered_review_request', 'registered_review', 'registered_review_recover'])
 def test_registered_review_queue_report_is_readonly_and_bound_to_request(tmp_path, monkeypatch, kind):
