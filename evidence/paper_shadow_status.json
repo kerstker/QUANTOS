@@ -1,0 +1,122 @@
+{
+  "artifact": "QUANTOS_727_PAPER_SHADOW_STATUS",
+  "blockers": [
+    "PAPER_EVIDENCE_MALFORMED",
+    "INVALIDATED_PERP_LEDGER_V1"
+  ],
+  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generated_at_ms": 1789176209284,
+  "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
+  "honesty_note": "Shadow readiness is not fill or paper proof. Legacy paper-cycle, three-alpha, continuous-paper, and health artifacts remain hash-audited diagnostic history and cannot become paper evidence through retention.",
+  "input_hash": "771b60877ac187b1556f182c17d79b52a4113fa7c29f7c6c3858ab7f8588439e",
+  "inputs": {
+    "data/cache/binance_usdt_continuous_paper.json": {
+      "exists": false,
+      "kind": "file",
+      "sha256": null,
+      "size_bytes": null
+    },
+    "data/cache/paper_health_10k.json": {
+      "exists": false,
+      "kind": "file",
+      "sha256": null,
+      "size_bytes": null
+    },
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "docs/engineering/specs/2026-07-27-shadow-phase7-design.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "f9ac960a7a11a56863778a23f6724d6dd72e948752281e2f9402e5114ffd1750",
+      "size_bytes": 22476
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "603b84e517d386d75bb2a2a49c02ee374c5c148ab4cb06b02215a5632126fc0c",
+      "size_bytes": 7855
+    },
+    "evidence/shadow_status.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "6bdbeb50c8bfa13846c8973c5543297306a4b740b3458b0f3086222a4ec18f5c",
+      "size_bytes": 1216
+    },
+    "evidence/three_alpha_paper_flow.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "f1d9b710a916418613837a73fa76b309b6ef1a68efe2f3f890163e8e54e183f1",
+      "size_bytes": 22822
+    },
+    "tests/live": {
+      "exists": true,
+      "file_count": 69,
+      "files_sha256": "71bd1bff853a9c132315107c0d089ebe3b7bdbc50bc0aead2568abeea780fe4a",
+      "kind": "python_directory"
+    },
+    "tests/research": {
+      "exists": true,
+      "file_count": 274,
+      "files_sha256": "c87e7e49bfd86b697c925f6a01eadbc947e1e7de6c913c80936fed04af257cf2",
+      "kind": "python_directory"
+    }
+  },
+  "paper": {
+    "authoritative_backtest": {
+      "counted_as_completion_evidence": false,
+      "independently_admitted": false,
+      "record_present": false,
+      "required_field": "authoritative_backtest_record",
+      "source_path": "data/cache/paper_health_10k.json",
+      "status": "INVALIDATED_PERP_LEDGER_V1"
+    },
+    "blockers": [
+      "PAPER_EVIDENCE_MALFORMED",
+      "INVALIDATED_PERP_LEDGER_V1"
+    ],
+    "forward_evidence": {},
+    "paper_mark_ready": false,
+    "paper_preview_ready": false,
+    "paper_ready": false,
+    "retained_forward_evidence_present": false,
+    "status": "NOT_READY"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "shadow": {
+    "chain_valid": true,
+    "observation_count": 14,
+    "outbox_chain_valid": true,
+    "safety": {
+      "credentials_accessed": false,
+      "order_path_touched": false,
+      "public_market_data_only": true
+    },
+    "shadow_ready": true,
+    "status": "READY_FOR_SHADOW"
+  },
+  "status": "NOT_READY",
+  "validation": {
+    "current": true,
+    "head_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "overall_status": "PASS",
+    "reported_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
+  },
+  "working_tree_dirty": false
+}

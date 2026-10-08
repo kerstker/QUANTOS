@@ -1,0 +1,1203 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RESEARCH_CLUSTER_PREREGISTERED",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at_ms": 1786394292917,
+  "pre_registration": {
+    "family": "hyperliquid_three_venue_funding_v1",
+    "registered_before_evaluation": true,
+    "date": "2026-08-11",
+    "trial_count_planned": 6,
+    "verdict_bar": {
+      "min_t_stat": 2.5,
+      "t_stat_horizon": "weekly_non_overlapping_h7",
+      "min_falsification_passes": 4,
+      "min_vt_sharpe": 1.0,
+      "max_drawdown_vt": 0.2
+    },
+    "parent_hypothesis": "A decentralized perpetual venue contains an independent leverage-demand signal: its funding and impact premium relative to Binance and Bybit may reveal crowding, exhaustion or venue-consensus carry after costs.",
+    "search_space": "Exactly six weekly q=0.30 variants: spread 20d z reversal and continuation, raw spread reversal, seven-day spread-delta reversal, three-venue mean carry, and Hyperliquid premium 20d z reversal. No post-result direction or window selection.",
+    "variants": [
+      {
+        "id": "hl_cex_spread_z_rev",
+        "kind": "hyperliquid_cex_funding_spread_reversal",
+        "expression": "(cs_rank (neg (div (sub (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) (ts_mean (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)) (ts_std (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "A Hyperliquid funding premium versus the two CEX venues is crowded leverage that mean-reverts cross-sectionally."
+      },
+      {
+        "id": "hl_cex_spread_z_mom",
+        "kind": "hyperliquid_cex_funding_spread_continuation_control",
+        "expression": "(cs_rank (div (sub (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) (ts_mean (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)) (ts_std (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "The opposite direction is fixed as a control: venue-specific leverage demand may continue rather than mean-revert."
+      },
+      {
+        "id": "hl_cex_spread_level_rev",
+        "kind": "hyperliquid_cex_funding_level_reversal",
+        "expression": "(cs_rank (neg (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0)))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "Raw venue funding dislocation may contain the edge without a fitted trailing window."
+      },
+      {
+        "id": "hl_cex_spread_delta_rev",
+        "kind": "hyperliquid_cex_funding_acceleration_reversal",
+        "expression": "(cs_rank (neg (ts_delta (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 7)))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "A rapid seven-day widening of the DEX-versus-CEX funding gap may mark leverage exhaustion."
+      },
+      {
+        "id": "three_venue_consensus_carry",
+        "kind": "three_venue_consensus_carry",
+        "expression": "(cs_rank (neg (div (add (add (field funding) (field xfunding)) (field hlfunding)) (const 3.0))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "Funding agreed across Binance, Bybit and Hyperliquid is less venue-specific and may identify persistent cross-sectional carry."
+      },
+      {
+        "id": "hl_premium_z_rev",
+        "kind": "hyperliquid_impact_premium_reversal",
+        "expression": "(cs_rank (neg (div (sub (field hlpremium) (ts_mean (field hlpremium) 20)) (ts_std (field hlpremium) 20))))",
+        "fields": [
+          "hlpremium"
+        ],
+        "rationale": "Hyperliquid's impact-price premium directly measures local book pressure and may reverse even when settlement funding is capped or smoothed."
+      }
+    ]
+  },
+  "dataset": {
+    "source": "crypto_funding.db+bybit_perp.db+hyperliquid_public_market.json",
+    "source_snapshot": "H:\\QUANTOS_STATE\\data\\cache\\hyperliquid_public_market.json",
+    "instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "ETH",
+      "FIL",
+      "ICP",
+      "INJ",
+      "LINK",
+      "LTC",
+      "NEAR",
+      "OP",
+      "SOL",
+      "TRX",
+      "UNI",
+      "XLM",
+      "XRP"
+    ],
+    "instrument_count": 24,
+    "coverage": {
+      "eligible_days": 365,
+      "first_event_time_ms": 1754784000000,
+      "last_event_time_ms": 1786233600000,
+      "minimum_cross_section": 14,
+      "maximum_cross_section": 14,
+      "requested_minimum_cross_section": 10,
+      "source_errors": {}
+    },
+    "dataset_version": "e900a56cabc388f7986ebb3b9416ec06e8658d7129260f87c4dffcd54147f511"
+  },
+  "trial_registration": {
+    "dataset_version": "e900a56cabc388f7986ebb3b9416ec06e8658d7129260f87c4dffcd54147f511",
+    "search_id": "search-e71b9cc6102c9cbe9befa5bc",
+    "trial_count_before": 2763,
+    "trial_count_after": 2763,
+    "trial_count_delta": 0,
+    "budget_declaration": {
+      "budget": {
+        "max_trials": 6,
+        "max_compute_hours": null,
+        "max_feature_count": 3,
+        "max_parameter_dimensions": 5,
+        "locked_oos_period": null,
+        "allowed_data_sources": [
+          "crypto_funding.db+bybit_perp.db+hyperliquid_public_market.json"
+        ],
+        "stopping_rules": null
+      },
+      "parent_hypothesis": "A decentralized perpetual venue contains an independent leverage-demand signal: its funding and impact premium relative to Binance and Bybit may reveal crowding, exhaustion or venue-consensus carry after costs.",
+      "search_space": "Exactly six weekly q=0.30 variants: spread 20d z reversal and continuation, raw spread reversal, seven-day spread-delta reversal, three-venue mean carry, and Hyperliquid premium 20d z reversal. No post-result direction or window selection.",
+      "data_source": "crypto_funding.db+bybit_perp.db+hyperliquid_public_market.json",
+      "uses_locked_oos": null,
+      "usage": {
+        "trials_used": 6,
+        "feature_count": 3,
+        "parameter_dimensions": 5
+      },
+      "check": {
+        "exhausted": false,
+        "dimensions": [
+          {
+            "dimension": "trials",
+            "status": "OK",
+            "usage": 6,
+            "limit": 6,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "compute_hours",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "feature_count",
+            "status": "OK",
+            "usage": 3,
+            "limit": 3,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "parameter_dimensions",
+            "status": "OK",
+            "usage": 5,
+            "limit": 5,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "locked_oos",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "data_source",
+            "status": "OK",
+            "usage": "crypto_funding.db+bybit_perp.db+hyperliquid_public_market.json",
+            "limit": [
+              "crypto_funding.db+bybit_perp.db+hyperliquid_public_market.json"
+            ],
+            "reason_code": "",
+            "reason": ""
+          }
+        ],
+        "reasons": []
+      }
+    },
+    "evaluations": {
+      "hl_cex_spread_z_rev": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.01<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "OOS_SHARPE_BELOW_MIN (0.11<0.5)",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 0.009370783878969523,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": 0.3672430590001837,
+        "net_sharpe": 0.11488952666743447,
+        "mean_breadth": 14.0,
+        "n_periods": 47
+      },
+      "hl_cex_spread_z_mom": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.00<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "WALK_FORWARD_FAILED",
+          "OOS_SHARPE_BELOW_MIN (-0.36<0.5)",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 0.0026109823808665666,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": -0.3672430590001837,
+        "net_sharpe": -0.35711985462456686,
+        "mean_breadth": 14.0,
+        "n_periods": 47
+      },
+      "hl_cex_spread_level_rev": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.02<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 0.02419161208491645,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": 0.026258045987234385,
+        "net_sharpe": 0.5775091688942701,
+        "mean_breadth": 14.0,
+        "n_periods": 50
+      },
+      "hl_cex_spread_delta_rev": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.00<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "OOS_SHARPE_BELOW_MIN (-0.08<0.5)",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 0.004778327531145479,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": 0.14506144757596703,
+        "net_sharpe": -0.08309354337833177,
+        "mean_breadth": 14.0,
+        "n_periods": 49
+      },
+      "three_venue_consensus_carry": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.00<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "OOS_SHARPE_BELOW_MIN (-0.05<0.5)",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 0.004826265349740759,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": -0.5877063780791443,
+        "net_sharpe": -0.05183293095717674,
+        "mean_breadth": 14.0,
+        "n_periods": 50
+      },
+      "hl_premium_z_rev": {
+        "evaluator_verdict": "FAIL",
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.00<0.6); multiple-testing",
+          "PBO_TOO_HIGH (0.66>0.5); overfit",
+          "REGIME_UNSTABLE (0.00<0.5)",
+          "WALK_FORWARD_FAILED",
+          "OOS_SHARPE_BELOW_MIN (-1.64<0.5)",
+          "HIGH_TRIAL_COUNT (2763); review overfitting risk"
+        ],
+        "state": "REJECTED",
+        "deflated_sharpe": 3.288430055342279e-05,
+        "pbo": 0.6571428571428571,
+        "pbo_evidence_retained": true,
+        "ic_tstat": -1.1614977491043221,
+        "net_sharpe": -1.6375143272360153,
+        "mean_breadth": 14.0,
+        "n_periods": 48
+      }
+    },
+    "recorded_run_ids": [
+      "97a41bcebc8d52b5",
+      "99571c221d0af654",
+      "bf2f70b4fa520416",
+      "2885060b688978fe",
+      "e0b6ef2386c9c314",
+      "c68f77b76d7ad383"
+    ],
+    "promotion_eligible": false,
+    "live_allowed": false
+  },
+  "results": {
+    "hl_cex_spread_z_rev": {
+      "spec": {
+        "id": "hl_cex_spread_z_rev",
+        "kind": "hyperliquid_cex_funding_spread_reversal",
+        "expression": "(cs_rank (neg (div (sub (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) (ts_mean (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)) (ts_std (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "A Hyperliquid funding premium versus the two CEX venues is crowded leverage that mean-reverts cross-sectionally."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0295,
+            "ic_std": 0.3154,
+            "icir": -0.0936,
+            "hit_rate": 0.5182,
+            "t_stat": -1.7001,
+            "n_periods": 330,
+            "per_year": {
+              "2025": -0.0552,
+              "2026": -0.0139
+            }
+          },
+          "h7": {
+            "mean_ic": -0.08,
+            "ic_std": 0.275,
+            "icir": -0.291,
+            "hit_rate": 0.617,
+            "t_stat": -1.9949,
+            "n_periods": 47,
+            "per_year": {
+              "2025": -0.1189,
+              "2026": -0.0559
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.193,
+            "econ_sharpe": -0.175,
+            "avg_turnover_per_day": 0.1751,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": -0.13,
+            "2026": -0.25
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.277,
+            "5": -0.403,
+            "10": -0.61,
+            "20": -1.018
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.193,
+            "1": 0.123,
+            "2": 0.123
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": -0.821
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": -1.551
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": -1.13
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": 0.155
+            }
+          },
+          "incremental_ir_vs_carry": -0.618,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 46,
+          "gross_sharpe": -0.214,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 47,
+          "n_intents": 633,
+          "n_approved": 633,
+          "n_rejected": 0,
+          "total_return": -0.082613,
+          "reconciliation_residual": 0.0,
+          "sharpe_raw": -0.2807,
+          "max_drawdown_raw": 0.2027,
+          "sharpe_vt": -0.9675,
+          "max_drawdown_vt": 0.2003,
+          "pipeline_sharpe_ppy52": -0.2807,
+          "pipeline_sharpe_vt_ppy52": -0.9675,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe",
+          "max_drawdown"
+        ]
+      }
+    },
+    "hl_cex_spread_z_mom": {
+      "spec": {
+        "id": "hl_cex_spread_z_mom",
+        "kind": "hyperliquid_cex_funding_spread_continuation_control",
+        "expression": "(cs_rank (div (sub (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) (ts_mean (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)) (ts_std (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 20)))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "The opposite direction is fixed as a control: venue-specific leverage demand may continue rather than mean-revert."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0295,
+            "ic_std": 0.3154,
+            "icir": 0.0936,
+            "hit_rate": 0.5182,
+            "t_stat": 1.7001,
+            "n_periods": 330,
+            "per_year": {
+              "2025": 0.0552,
+              "2026": 0.0139
+            }
+          },
+          "h7": {
+            "mean_ic": 0.08,
+            "ic_std": 0.275,
+            "icir": 0.291,
+            "hit_rate": 0.617,
+            "t_stat": 1.9949,
+            "n_periods": 47,
+            "per_year": {
+              "2025": 0.1189,
+              "2026": 0.0559
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.193,
+            "econ_sharpe": 0.175,
+            "avg_turnover_per_day": 0.1751,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": 0.13,
+            "2026": 0.25
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.11,
+            "5": -0.017,
+            "10": -0.227,
+            "20": -0.644
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.193,
+            "1": -0.123,
+            "2": -0.123
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": 0.821
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": 1.551
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": 1.13
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": -0.155
+            }
+          },
+          "incremental_ir_vs_carry": 0.618,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": true,
+            "survives_subsets": false,
+            "adds_to_carry": true
+          },
+          "n_pass": 2
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 46,
+          "gross_sharpe": 0.199,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 47,
+          "n_intents": 633,
+          "n_approved": 633,
+          "n_rejected": 0,
+          "total_return": -0.006874,
+          "reconciliation_residual": 0.0,
+          "sharpe_raw": 0.0692,
+          "max_drawdown_raw": 0.1424,
+          "sharpe_vt": 0.5753,
+          "max_drawdown_vt": 0.0783,
+          "pipeline_sharpe_ppy52": 0.0692,
+          "pipeline_sharpe_vt_ppy52": 0.5753,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe"
+        ]
+      }
+    },
+    "hl_cex_spread_level_rev": {
+      "spec": {
+        "id": "hl_cex_spread_level_rev",
+        "kind": "hyperliquid_cex_funding_level_reversal",
+        "expression": "(cs_rank (neg (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0)))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "Raw venue funding dislocation may contain the edge without a fitted trailing window."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0459,
+            "ic_std": 0.2961,
+            "icir": -0.155,
+            "hit_rate": 0.5645,
+            "t_stat": -2.8962,
+            "n_periods": 349,
+            "per_year": {
+              "2025": -0.0625,
+              "2026": -0.0343
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0656,
+            "ic_std": 0.3182,
+            "icir": -0.2061,
+            "hit_rate": 0.6,
+            "t_stat": -1.4574,
+            "n_periods": 50,
+            "per_year": {
+              "2025": -0.0449,
+              "2026": -0.0806
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -1.063,
+            "econ_sharpe": -0.985,
+            "avg_turnover_per_day": 0.1683,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": -0.96,
+            "2026": -1.21
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -1.138,
+            "5": -1.248,
+            "10": -1.431,
+            "20": -1.786
+          },
+          "price_sharpe_by_lag": {
+            "0": -1.063,
+            "1": -0.407,
+            "2": 0.075
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": -1.193
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": -0.914
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": -1.322
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": -0.095
+            }
+          },
+          "incremental_ir_vs_carry": -1.637,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 49,
+          "gross_sharpe": -1.208,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 50,
+          "n_intents": 679,
+          "n_approved": 679,
+          "n_rejected": 0,
+          "total_return": -0.125612,
+          "reconciliation_residual": 3e-09,
+          "sharpe_raw": -0.5122,
+          "max_drawdown_raw": 0.1882,
+          "sharpe_vt": -0.5908,
+          "max_drawdown_vt": 0.1003,
+          "pipeline_sharpe_ppy52": -0.5122,
+          "pipeline_sharpe_vt_ppy52": -0.5908,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe"
+        ]
+      }
+    },
+    "hl_cex_spread_delta_rev": {
+      "spec": {
+        "id": "hl_cex_spread_delta_rev",
+        "kind": "hyperliquid_cex_funding_acceleration_reversal",
+        "expression": "(cs_rank (neg (ts_delta (sub (field hlfunding) (div (add (field funding) (field xfunding)) (const 2.0))) 7)))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "A rapid seven-day widening of the DEX-versus-CEX funding gap may mark leverage exhaustion."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0153,
+            "ic_std": 0.3204,
+            "icir": -0.0478,
+            "hit_rate": 0.5292,
+            "t_stat": -0.8833,
+            "n_periods": 342,
+            "per_year": {
+              "2025": -0.0258,
+              "2026": -0.0083
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0422,
+            "ic_std": 0.3088,
+            "icir": -0.1367,
+            "hit_rate": 0.5714,
+            "t_stat": -0.9567,
+            "n_periods": 49,
+            "per_year": {
+              "2025": -0.0901,
+              "2026": -0.0092
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.77,
+            "econ_sharpe": -0.766,
+            "avg_turnover_per_day": 0.2335,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": -2.06,
+            "2026": 0.36
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.873,
+            "5": -1.026,
+            "10": -1.28,
+            "20": -1.772
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.77,
+            "1": -0.864,
+            "2": -0.761
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": -0.504
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": 0.206
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": -0.708
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": 0.887
+            }
+          },
+          "incremental_ir_vs_carry": -0.971,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 48,
+          "gross_sharpe": -0.85,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 49,
+          "n_intents": 671,
+          "n_approved": 671,
+          "n_rejected": 0,
+          "total_return": -0.207099,
+          "reconciliation_residual": 1e-09,
+          "sharpe_raw": -0.5908,
+          "max_drawdown_raw": 0.3714,
+          "sharpe_vt": -0.6447,
+          "max_drawdown_vt": 0.1791,
+          "pipeline_sharpe_ppy52": -0.5908,
+          "pipeline_sharpe_vt_ppy52": -0.6447,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe"
+        ]
+      }
+    },
+    "three_venue_consensus_carry": {
+      "spec": {
+        "id": "three_venue_consensus_carry",
+        "kind": "three_venue_consensus_carry",
+        "expression": "(cs_rank (neg (div (add (add (field funding) (field xfunding)) (field hlfunding)) (const 3.0))))",
+        "fields": [
+          "funding",
+          "xfunding",
+          "hlfunding"
+        ],
+        "rationale": "Funding agreed across Binance, Bybit and Hyperliquid is less venue-specific and may identify persistent cross-sectional carry."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0179,
+            "ic_std": 0.299,
+            "icir": -0.0598,
+            "hit_rate": 0.5186,
+            "t_stat": -1.1176,
+            "n_periods": 349,
+            "per_year": {
+              "2025": 0.0139,
+              "2026": -0.0402
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0486,
+            "ic_std": 0.3047,
+            "icir": -0.1596,
+            "hit_rate": 0.58,
+            "t_stat": -1.1282,
+            "n_periods": 50,
+            "per_year": {
+              "2025": -0.0137,
+              "2026": -0.0739
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.202,
+            "econ_sharpe": 0.056,
+            "avg_turnover_per_day": 0.1353,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": 0.25,
+            "2026": -0.65
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.259,
+            "5": -0.345,
+            "10": -0.488,
+            "20": -0.772
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.202,
+            "1": -0.879,
+            "2": -0.583
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": -0.009
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": -0.123
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": 0.003
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": -0.583
+            }
+          },
+          "incremental_ir_vs_carry": -1.081,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 49,
+          "gross_sharpe": -0.21,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 50,
+          "n_intents": 667,
+          "n_approved": 667,
+          "n_rejected": 0,
+          "total_return": 0.022951,
+          "reconciliation_residual": 1e-09,
+          "sharpe_raw": 0.2188,
+          "max_drawdown_raw": 0.1165,
+          "sharpe_vt": -0.0662,
+          "max_drawdown_vt": 0.0662,
+          "pipeline_sharpe_ppy52": 0.2188,
+          "pipeline_sharpe_vt_ppy52": -0.0662,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe"
+        ]
+      }
+    },
+    "hl_premium_z_rev": {
+      "spec": {
+        "id": "hl_premium_z_rev",
+        "kind": "hyperliquid_impact_premium_reversal",
+        "expression": "(cs_rank (neg (div (sub (field hlpremium) (ts_mean (field hlpremium) 20)) (ts_std (field hlpremium) 20))))",
+        "fields": [
+          "hlpremium"
+        ],
+        "rationale": "Hyperliquid's impact-price premium directly measures local book pressure and may reverse even when settlement funding is capped or smoothed."
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0171,
+            "ic_std": 0.291,
+            "icir": -0.0589,
+            "hit_rate": 0.542,
+            "t_stat": -1.0935,
+            "n_periods": 345,
+            "per_year": {
+              "2025": -0.0031,
+              "2026": -0.0251
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0567,
+            "ic_std": 0.2631,
+            "icir": -0.2157,
+            "hit_rate": 0.5714,
+            "t_stat": -1.5098,
+            "n_periods": 49,
+            "per_year": {
+              "2025": -0.0647,
+              "2026": -0.0521
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.882,
+            "econ_sharpe": -0.805,
+            "avg_turnover_per_day": 0.1902,
+            "n_rebalances": 53
+          },
+          "per_year_price": {
+            "2025": -0.89,
+            "2026": -0.89
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.97,
+            "5": -1.101,
+            "10": -1.318,
+            "20": -1.745
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.882,
+            "1": -1.391,
+            "2": -0.531
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 13,
+              "price_sharpe": -0.849
+            },
+            "drop_top4": {
+              "n": 10,
+              "price_sharpe": -0.373
+            },
+            "even_idx": {
+              "n": 7,
+              "price_sharpe": -1.078
+            },
+            "odd_idx": {
+              "n": 7,
+              "price_sharpe": -0.025
+            }
+          },
+          "incremental_ir_vs_carry": -0.971,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 1306756.9746120002,
+          "n_periods": 49,
+          "gross_sharpe": -1.154,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 50,
+          "n_intents": 678,
+          "n_approved": 678,
+          "n_rejected": 0,
+          "total_return": -0.106327,
+          "reconciliation_residual": 2e-09,
+          "sharpe_raw": -0.3437,
+          "max_drawdown_raw": 0.1944,
+          "sharpe_vt": -0.1191,
+          "max_drawdown_vt": 0.1011,
+          "pipeline_sharpe_ppy52": -0.3437,
+          "pipeline_sharpe_vt_ppy52": -0.1191,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null,
+      "verdict": {
+        "verdict": "REJECTED",
+        "failed_bars": [
+          "t_stat",
+          "falsification",
+          "vt_sharpe"
+        ]
+      }
+    }
+  },
+  "candidates": [],
+  "safety": {
+    "paper_only": true,
+    "public_market_data_only": true,
+    "credentials_accessed": false,
+    "account_data_accessed": false,
+    "broker_connectivity": false,
+    "order_submission_allowed": false,
+    "promotion_eligible": false,
+    "live_allowed": false
+  },
+  "honesty": {
+    "historical_research_is_not_forward_evidence": true,
+    "three_venue_execution_not_modeled": true,
+    "testnet_intent_generated": false,
+    "notes": [
+      "Hyperliquid funding history consists of public settlement events; only complete UTC days are used.",
+      "The dry-run prices the book on the existing Binance panel and does not claim simultaneous three-venue execution.",
+      "A historical candidate would still require locked forward evidence, formal validation and capacity admission."
+    ]
+  }
+}

@@ -1,0 +1,347 @@
+"""治理:机器钉死 live/ 执行栈(Stage 1,实盘路线)的 L2 安全边界。镜像
+test_broker_adapter_boundary.py / test_signing_boundary.py 的 AST 检查风格,应用到整棵 live/ 树。
+设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §4/§10。
+
+1) 仅 live/exchange/{binance,bybit}_futures.py 与 live/exchange/mexc_spot.py 可含网络
+   import;live/ 其余文件一律不许;
+2) live/ 全树无交易所/券商 SDK import;
+3) live/ 全树源码不含提幣/划转调用字面量(place_order/submit_order 是本树正当职责,不在禁止清单);
+4) 每个 venue adapter(base_url=MAINNET_BASE)在 L2 默认下必须 raise SafetyViolation;
+5) 源码无硬编码 API key/secret 字面量;
+6) services/ 树任何文件不得 import live/(单向依赖:live/ 依赖 services/,反向禁止);
+7) evaluate_mandate 在 mandate 缺失/过期/venue 不匹配时,对非空 orders 恒 NEEDS_HUMAN_REVIEW
+   (fail-closed 冒烟——完整分支覆盖在 tests/live/test_mandate.py)。
+"""
+import ast
+import os
+import re
+
+import pytest
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_LIVE = os.path.join(_ROOT, "live")
+_SERVICES = os.path.join(_ROOT, "services")
+_VENUE_ADAPTERS = (os.path.join(_LIVE, "exchange", "binance_futures.py"),
+                   os.path.join(_LIVE, "exchange", "bybit_futures.py"))
+_MEXC_SPOT = os.path.join(_LIVE, "exchange", "mexc_spot.py")
+# MEXC 现货适配器若已存在,同样进入网络 import 白名单(文件未创建时不可加入,否则
+# 白名单循环会因读不到文件而崩——届时由下方的 skip 守卫显式报告缺口)。
+if os.path.exists(_MEXC_SPOT):
+    _VENUE_ADAPTERS = _VENUE_ADAPTERS + (_MEXC_SPOT,)
+
+_FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
+                  "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
+_NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket", "websockets",
+                  "ftplib", "telnetlib", "http"}
+# 真红线:把钱转出账户的调用——下单(place_order/submit_order)是本树正当职责,刻意不在此清单
+_FORBIDDEN_TRANSFER_CALLS = [".withdraw(", "create_withdrawal", "transfer(", "sapiPost"]
+
+
+def _all_py_files(root):
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if fn.endswith(".py"):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def _import_roots(path):
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    roots = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                roots.add(a.name.split(".")[0])
+        elif isinstance(n, ast.ImportFrom) and n.module and n.level == 0:
+            roots.add(n.module.split(".")[0])
+    return roots
+
+
+_LIVE_FILES = _all_py_files(_LIVE)
+
+
+_VENUE_ADAPTER_PATHS = {os.path.normpath(p) for p in _VENUE_ADAPTERS}
+
+
+def test_only_venue_adapters_have_network_imports():
+    offenders = []
+    for path in _LIVE_FILES:
+        if os.path.normpath(path) in _VENUE_ADAPTER_PATHS:
+            continue
+        bad = _import_roots(path) & _NETWORK_ROOTS
+        if bad:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {sorted(bad)}")
+    assert not offenders, "network import outside the venue-adapter seam:\n" + "\n".join(offenders)
+
+
+def test_venue_adapters_only_stdlib_network_no_sdk():
+    for adapter in _VENUE_ADAPTERS:
+        roots = _import_roots(adapter)
+        assert not (roots & _FORBIDDEN_SDK), \
+            f"FORBIDDEN exchange SDK in {os.path.relpath(adapter, _ROOT)}: {sorted(roots & _FORBIDDEN_SDK)}"
+        assert roots & _NETWORK_ROOTS, \
+            f"expected {os.path.relpath(adapter, _ROOT)} to use urllib for its signed REST calls"
+
+
+def test_live_tree_has_no_exchange_sdk_anywhere():
+    offenders = []
+    for path in _LIVE_FILES:
+        bad = _import_roots(path) & _FORBIDDEN_SDK
+        if bad:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {sorted(bad)}")
+    assert not offenders, "FORBIDDEN exchange/broker SDK in live/:\n" + "\n".join(offenders)
+
+
+def test_live_tree_has_no_withdraw_or_transfer_calls():
+    offenders = []
+    for path in _LIVE_FILES:
+        src = open(path, encoding="utf-8").read()
+        hits = [w for w in _FORBIDDEN_TRANSFER_CALLS if w in src]
+        if hits:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {hits}")
+    assert not offenders, "FORBIDDEN withdraw/transfer call in live/ (order submission is fine; " \
+                          "moving money OUT of the account is not):\n" + "\n".join(offenders)
+
+
+def test_mainnet_adapters_uninstantiable_at_l2():
+    from live.exchange.binance_futures import BinanceFuturesAdapter
+    from live.exchange.bybit_futures import BybitFuturesAdapter
+    from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyViolation
+    assert RESEARCH_SAFE_DEFAULTS.live_trading_armed is False
+    classes = [BinanceFuturesAdapter, BybitFuturesAdapter]
+    mexc = pytest.importorskip("live.exchange.mexc_spot",
+                               reason="MexcSpotAdapter 尚未由并行任务创建——创建后本测试自动生效")
+    classes.append(mexc.MexcSpotAdapter)
+    for cls in classes:
+        with pytest.raises(SafetyViolation):
+            cls(api_key="k", api_secret="s", base_url=cls.MAINNET_BASE,
+               safety_config=RESEARCH_SAFE_DEFAULTS)
+
+
+
+
+def test_no_hardcoded_api_key_material_in_live_tree():
+    pattern = re.compile(r'(API_KEY|API_SECRET|SECRET_KEY|PRIVATE_KEY)\s*=\s*["\'][A-Za-z0-9]{8,}')
+    offenders = []
+    for path in _LIVE_FILES:
+        src = open(path, encoding="utf-8").read()
+        if pattern.search(src) or "-----BEGIN" in src:
+            offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, f"hardcoded key-like literal found in: {offenders}"
+
+
+def test_services_tree_does_not_import_live():
+    offenders = []
+    for dirpath, _dirs, files in os.walk(_SERVICES):
+        for fn in files:
+            if fn.endswith(".py"):
+                p = os.path.join(dirpath, fn)
+                if "live" in _import_roots(p):
+                    offenders.append(os.path.relpath(p, _ROOT))
+    assert not offenders, "services/ must never depend on live/ (one-way: live/ -> services/ only):\n" \
+                          + "\n".join(offenders)
+
+
+def test_every_production_live_batch_call_requires_validation_attestation():
+    pipeline_path = os.path.join(_LIVE, "pipeline.py")
+    pipeline_tree = ast.parse(open(pipeline_path, encoding="utf-8").read())
+    submit_def = next(
+        node for node in pipeline_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "submit_live_batch"
+    )
+    keyword_names = [arg.arg for arg in submit_def.args.kwonlyargs]
+    index = keyword_names.index("validation_attestation")
+    assert submit_def.args.kw_defaults[index] is None, \
+        "validation_attestation must be a required keyword-only pipeline argument"
+
+    call_sites = []
+    offenders = []
+    for root in (os.path.join(_ROOT, "live"), os.path.join(_ROOT, "services"),
+                 os.path.join(_ROOT, "tools")):
+        for path in _all_py_files(root):
+            tree = ast.parse(open(path, encoding="utf-8").read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = node.func.id if isinstance(node.func, ast.Name) else (
+                    node.func.attr if isinstance(node.func, ast.Attribute) else ""
+                )
+                if name != "submit_live_batch":
+                    continue
+                relative = os.path.relpath(path, _ROOT)
+                call_sites.append(f"{relative}:{node.lineno}")
+                if not any(keyword.arg == "validation_attestation" for keyword in node.keywords):
+                    offenders.append(f"{relative}:{node.lineno}")
+    assert call_sites, "expected at least one production submit_live_batch caller"
+    assert not offenders, \
+        f"production submit_live_batch call missing validation_attestation: {offenders}"
+
+
+def test_public_live_submission_authority_is_the_first_operation():
+    path = os.path.join(_LIVE, "pipeline.py")
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    submit_def = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "submit_live_batch"
+    )
+    body = list(submit_def.body)
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        body = body[1:]
+    first = body[0]
+    assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
+    assert isinstance(first.value.func, ast.Name)
+    assert first.value.func.id == "require_live_submission_authority", \
+        "public submit must deny before audit, venue, ledger, gate, or planning"
+
+
+def test_private_live_technical_seam_has_no_production_caller():
+    private_name = "_submit_live_batch_technical_diagnostic"
+    pipeline_path = os.path.normpath(os.path.join(_LIVE, "pipeline.py"))
+    offenders = []
+    for root in (_LIVE, _SERVICES, os.path.join(_ROOT, "tools")):
+        for path in _all_py_files(root):
+            if os.path.normpath(path) == pipeline_path:
+                continue
+            source = open(path, encoding="utf-8").read()
+            if private_name in source:
+                offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, \
+        f"private live technical seam referenced by production runtime: {offenders}"
+
+
+def test_live_ledger_never_silently_ignores_id_conflicts():
+    path = os.path.join(_LIVE, "execution", "position_ledger.py")
+    source = open(path, encoding="utf-8").read()
+    for table in ("live_orders", "live_fills", "live_tca"):
+        assert f"INSERT OR IGNORE INTO {table}" not in source, \
+            f"{table} must compare duplicate payloads and reject ID collisions"
+    assert "class LiveLedgerConflictError" in source
+
+
+def test_live_pipeline_prejournal_failure_is_fail_closed():
+    path = os.path.join(_LIVE, "pipeline.py")
+    source = open(path, encoding="utf-8").read()
+    assert "action=\"LIVE_PREJOURNAL_FAILED\"" in source
+
+    tree = ast.parse(source)
+    submit_def = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_submit_live_batch_technical_diagnostic"
+    )
+    record_line = min(
+        node.lineno for node in ast.walk(submit_def)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "record_submission"
+    )
+    place_line = min(
+        node.lineno for node in ast.walk(submit_def)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "place_order"
+    )
+    assert record_line < place_line, "PENDING_NEW journal must precede venue placement"
+
+
+def test_emergency_channel_is_structurally_independent_of_the_shared_gate():
+    """紧急减仓通道(live/execution/emergency.py)的存在意义 = 不被 kill-switch 挡住,
+    它的安全性因此**必须**来自结构约束而非共用 gate——机器钉死两点:
+    ① 不 import 共用风控门/kill switch(否则"独立"名存实亡);
+    ② 它构造的每一笔订单都强制 reduce_only=True(源码级检查 + 行为级性质测试在
+       tests/live/test_emergency.py 的网格测试)。"""
+    path = os.path.join(_LIVE, "execution", "emergency.py")
+    src = open(path, encoding="utf-8").read()
+    roots_and_modules = set()
+    tree = ast.parse(src)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            roots_and_modules.update(a.name for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            roots_and_modules.add(n.module)
+            roots_and_modules.update(f"{n.module}.{a.name}" for a in n.names)
+    forbidden = [m for m in roots_and_modules
+                 if "pre_trade.gate" in m or "PreTradeRiskGate" in m
+                 or "kill_switch" in m or "KillSwitch" in m]
+    assert not forbidden, \
+        f"emergency channel must not couple to the shared gate/kill-switch: {forbidden}"
+    assert "reduce_only=True" in src, \
+        "emergency channel must force reduce_only=True on every order it constructs"
+    assert "reduce_only=False" not in src
+
+
+def test_emergency_validation_grid_only_reducing_orders_pass():
+    """行为级冒烟(完整网格在 tests/live/test_emergency.py):加仓方向/超量/无持仓全被拒。"""
+    from live.execution.emergency import validate_flatten_order
+    from quantos.contracts.trading import OrderSide
+    assert validate_flatten_order(OrderSide.SELL, 0.5, position=1.0) is None
+    assert validate_flatten_order(OrderSide.BUY, 0.5, position=1.0) is not None
+    assert validate_flatten_order(OrderSide.SELL, 1.5, position=1.0) is not None
+    assert validate_flatten_order(OrderSide.SELL, 0.5, position=0.0) is not None
+
+
+def test_governance_emergency_channel_never_limit():
+    """紧急减仓通道恒 MARKET(2026-07-06 战线②,LIMIT 设计 §0):紧急场景下"不成交"才是危险,
+    emergency.py 绝不构造 LIMIT。源码级钉死构造语义(不是裸子串检查——"order_type=" 这个
+    模式专指关键字参数赋值,未来在 docstring 里写一句"本通道绝不构造 LIMIT" 不会误触发这条
+    测试,因为 docstring 文本不会匹配 `order_type=` 这个赋值形状;同时防"LIMIT" 出现在任何
+    构造语句里)。行为级证明见 `live.contracts.LiveOrderRequest.__post_init__`——emergency.py
+    构造 `LiveOrderRequest` 时从不传 order_type,默认值 "MARKET" 结构性生效。"""
+    path = os.path.join(_LIVE, "execution", "emergency.py")
+    src = open(path, encoding="utf-8").read()
+    assert "order_type=" not in src, \
+        "emergency channel must never construct a non-default order_type (MARKET only)"
+    assert "LIMIT" not in src, \
+        "emergency channel must never reference LIMIT — non-fill risk is the danger in a crisis"
+
+
+def test_evaluate_mandate_fails_closed_without_valid_mandate():
+    from live.contracts import LiveOrderRequest
+    from live.governance.mandate import NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
+    from quantos.contracts.trading import OrderSide
+
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.01,
+                             client_order_id="c1")
+    prices = {"BTC": 60000.0}
+
+    assert evaluate_mandate([order], prices, None, venue="binance_testnet", exchange="binance", now=1).tier \
+        == NEEDS_HUMAN_REVIEW
+
+    expired = Mandate(mandate_id="m", venue="binance_testnet", exchange="binance", allowed_instruments=frozenset({"BTC"}),
+                      max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9,
+                      expires_at=0)
+    assert evaluate_mandate([order], prices, expired, venue="binance_testnet", exchange="binance", now=1).tier \
+        == NEEDS_HUMAN_REVIEW
+
+    valid = Mandate(mandate_id="m", venue="binance_testnet", exchange="binance", allowed_instruments=frozenset({"BTC"}),
+                    max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9)
+    assert evaluate_mandate([order], prices, valid, venue="bybit_testnet", exchange="binance", now=1).tier \
+        == NEEDS_HUMAN_REVIEW
+
+
+def test_all_live_risk_entrypoints_validate_peak_equity_against_history():
+    entrypoints = (
+        (os.path.join(_ROOT, "tools", "live_track_advance.py"), "main"),
+        (os.path.join(_ROOT, "tools", "live_risk_sentinel.py"), "check_venue"),
+    )
+    for path, function_name in entrypoints:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        calls = {
+            node.func.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "record_and_validate_peak_equity" in calls, \
+            f"{os.path.relpath(path, _ROOT)} must validate persisted peak state"
+        assert "_load_peak_equity" not in calls, \
+            f"{os.path.relpath(path, _ROOT)} must not trust the legacy scalar loader"
+        assert "_save_peak_equity" not in calls, \
+            f"{os.path.relpath(path, _ROOT)} must not bypass observation-backed validation"

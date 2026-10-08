@@ -1,0 +1,14 @@
+#!/bin/sh
+# QUANTOS pre-push:推送前跑完整失败关闭门禁(治理扫描 + 全部 pytest)。
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Git exports repository-local variables to hooks.  The validation suite creates
+# temporary repositories, so retaining GIT_DIR/GIT_INDEX_FILE would redirect
+# their commits into this worktree and corrupt the real index.
+unset $(git rev-parse --local-env-vars)
+cd "$ROOT"
+
+echo "推送前运行完整门禁(python scripts/validate.py)…"
+python "$ROOT/scripts/validate.py"
+echo "✓ pre-push:完整门禁全绿"

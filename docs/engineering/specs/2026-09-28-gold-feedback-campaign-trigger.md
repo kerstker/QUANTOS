@@ -1,0 +1,17 @@
+# 黄金执行反馈接入原有界研究调度
+
+## 实现
+
+尚未部署的研究执行身份合同补充base_input_sha256：从已验证模型来源的base_input经原load/dump编码取得，区别于某一候选的selected input摘要。反馈必须属于campaign同一冻结输入，不能用候选选定输入摘要冒充基础输入。
+
+黄金campaign/session允许可选execution_feedback_sha256。调度器从固定execution-feedback/<hash>.json目录读取有界、无符号链接的材料，核对内容摘要、XAU技术范围、候选签名策略归属和可用时间。等待材料或未来时间不预留轮次。执行反馈仍为未认证技术输入，固定摘要不是来源认证。
+
+原FactoryStore在BEGIN IMMEDIATE事务内复核反馈，要求来源attempt在同库COMPLETED，原trial_id/candidate和冻结输入一致。原冷却、暂停、六轮跨campaign总预算和候选排除保持；同一feedback hash在同输入范围只能预留一次，换campaign ID不能再消费。重启verify_campaigns同时检查session pin、trigger key和重复消费。
+
+原gold_factory_research工作进程再次读取并检查固定材料，保存不可覆盖的execution-feedback.json并记录EXECUTION_REVIEW_INPUT事件。材料仅用于触发新研究，不把现金数字、盈亏或完整交易反馈传给模型；原gold_ai_origin的模型空历史/选项摘要合同不变，未悄悄扩大INNER/OOS范围。
+
+## 验证与限制
+
+新增接口缺失回归先失败；五组26项通过，调度器/恢复/跨campaign等四组19项通过，追加重启重复消费检查后三组20项通过。调度器联调使用隔离Queue/Registry stub验证真实Store和固定目录读取、原gold_factory_research提交及session pin。尚未以实际JobQueue完成一次反馈触发的模型实验，不能宣称该端到端已通过。Ruff E9/F821、治理700文件零违规及卫生通过。
+
+新增配置未写入运行库，没有启动服务、真实模型或账户操作。尚需实际队列到模型与正式试验的全链验收、已验证执行反馈导出及安装路径、完整关闭仓位的反馈、跨输入/OOS治理和真实Demo验收。工程技术反馈不授予独立经济资格，工厂整体仍未完成。

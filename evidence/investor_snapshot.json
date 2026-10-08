@@ -1,0 +1,761 @@
+{
+  "artifact": "INVESTOR_SNAPSHOT",
+  "schema_version": 1,
+  "generated_at_ms": 1784932036405,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "data_cutoff_ms": 1784922762704,
+  "report_snapshot_hash": "cd4568aed6ea6c2bc292f4e24af098e9ba31467340e79efdf7ad7e923706e9e19ceee0faceacbdbfae4c3abd32df990317dcb7185cc9776bcca6061c4d26fb7d",
+  "hash_scheme": {
+    "algorithm": "SHA512",
+    "preimage": "canonical JSON of {data_cutoff, ledger_root, strategy_versions} (json.dumps sort_keys=True separators=(',',':') ensure_ascii=True allow_nan=False); strategy_versions 按 strategy_id 稳定排序",
+    "ledger_root": "per-venue SHA256 over canonical stable-field projections of live_orders/live_fills/live_tca rows (sorted by primary key); snapshot root = SHA256 of canonical {venue: root-or-null}",
+    "field_order_independence": "canonicalization(sort_keys + 版本列表排序)使 dict 键序/版本列表序与哈希无关(测试钉死)",
+    "unknown_version_policy": "strategy_version/code_hash UNKNOWN 时以显式 null 入哈希,并点名进 unknown_fields"
+  },
+  "amendment_policy": "append-only amendments only(§13.2):快照本体由驱动器从账本/证据 artifact 机械重生成,同一数据截止点必得同一 report_snapshot_hash(幂等可复核);纠错绝不回改已发布字段,只能向 amendments 追加 {amended_at_ms, field_path, old, new, reason, author} 修订对象(今天恒空)。",
+  "amendments": [],
+  "portfolio_views": {
+    "showcase": {
+      "status": "ABSENT",
+      "reason": "规格 §13.3 的双组合视图(Showcase 低波动/回撤 vs Growth)尚未实例化:今天只有一条 live 轨道(crowd_contra 单策略,testnet/demo),没有第二条真实轨道可以诚实地装进任一视图——标 ABSENT,绝不把同一轨道复制成两个视图伪造。"
+    },
+    "growth": {
+      "status": "ABSENT",
+      "reason": "规格 §13.3 的双组合视图(Showcase 低波动/回撤 vs Growth)尚未实例化:今天只有一条 live 轨道(crowd_contra 单策略,testnet/demo),没有第二条真实轨道可以诚实地装进任一视图——标 ABSENT,绝不把同一轨道复制成两个视图伪造。"
+    }
+  },
+  "summary": {
+    "n_venues": 5,
+    "n_active_venues": 2,
+    "venues_active": [
+      "binance",
+      "bybit_demo"
+    ],
+    "strategies_live": [
+      "crowd_contra"
+    ],
+    "last_nav_by_venue": {
+      "binance": 5135.968145,
+      "bybit_demo": 169721.929044
+    },
+    "total_last_nav": 174857.897189,
+    "worst_max_drawdown_pct": 0.01455049,
+    "live_net_total": 224.644806,
+    "replay_net_total": -32.813314,
+    "kill_switch_tripped_any": null,
+    "reconciliation_all_in_sync": true,
+    "portfolio_views_status": "ABSENT"
+  },
+  "venues": [
+    {
+      "venue": "binance",
+      "mainnet": false,
+      "spot": false,
+      "status": "ACTIVE",
+      "nav": {
+        "basis": "RAW_FLOWS_UNRECORDED",
+        "basis_note": "external_flows 无记录(live 账本不记录 venue 出入金)——风险/NAV 在 raw 权益序列上计算;若有账外充值/提现,NAV 失真。绝不把无记录当零。",
+        "n_days": 10,
+        "first_date": "2026-07-05",
+        "last_date": "2026-07-14",
+        "first_nav": 4950.575455,
+        "last_nav": 5135.968145,
+        "total_return": 0.03744872,
+        "days": [
+          {
+            "day": 20639,
+            "date": "2026-07-05",
+            "ts": 1783278062580,
+            "nav_raw": 4950.575455,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 17
+          },
+          {
+            "day": 20640,
+            "date": "2026-07-06",
+            "ts": 1783375262326,
+            "nav_raw": 4976.38828,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 18
+          },
+          {
+            "day": 20641,
+            "date": "2026-07-07",
+            "ts": 1783425662433,
+            "nav_raw": 5013.22705,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 12
+          },
+          {
+            "day": 20642,
+            "date": "2026-07-08",
+            "ts": 1783551781746,
+            "nav_raw": 5049.068346,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 9
+          },
+          {
+            "day": 20643,
+            "date": "2026-07-09",
+            "ts": 1783638182530,
+            "nav_raw": 5085.079228,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 16
+          },
+          {
+            "day": 20644,
+            "date": "2026-07-10",
+            "ts": 1783724582337,
+            "nav_raw": 5079.609101,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 22
+          },
+          {
+            "day": 20645,
+            "date": "2026-07-11",
+            "ts": 1783810982634,
+            "nav_raw": 5093.475312,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 14
+          },
+          {
+            "day": 20646,
+            "date": "2026-07-12",
+            "ts": 1783897382936,
+            "nav_raw": 5116.767578,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 23
+          },
+          {
+            "day": 20647,
+            "date": "2026-07-13",
+            "ts": 1783983782050,
+            "nav_raw": 5099.811989,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 24
+          },
+          {
+            "day": 20648,
+            "date": "2026-07-14",
+            "ts": 1784030582201,
+            "nav_raw": 5135.968145,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 13
+          }
+        ]
+      },
+      "risk": {
+        "basis": "nav_raw",
+        "max_drawdown": 16.955589,
+        "max_drawdown_pct": 0.00331373,
+        "max_drawdown_peak_date": "2026-07-12",
+        "max_drawdown_trough_date": "2026-07-13",
+        "recovery_days": 1,
+        "recovered": true,
+        "current_drawdown": 0.0,
+        "worst_day": {
+          "date": "2026-07-13",
+          "pnl": -16.955589,
+          "pct": -0.00331373,
+          "previous_date": "2026-07-12"
+        },
+        "worst_week": {
+          "week_ending": "2026-07-14",
+          "pnl": 19.200567,
+          "pct": 0.00375248,
+          "previous_week_ending": "2026-07-12"
+        }
+      },
+      "decomposition": [
+        {
+          "strategy_id": "crowd_contra",
+          "gross": 103.490836,
+          "net": 103.490836,
+          "fee_actual": null,
+          "funding_actual": null,
+          "fee_expected": 8.193318,
+          "funding_expected": 2.453198,
+          "slippage_cost_actual": -15.515325,
+          "slippage_bps_weighted": -33.850639,
+          "n_orders": 29,
+          "n_fills": 39,
+          "net_semantics": "recorded_net:成交价内含真实滑点;venue 手续费/资金费无记录(fee_actual/funding_actual UNKNOWN,绝不估算)"
+        }
+      ],
+      "three_line": [
+        {
+          "strategy_id": "crowd_contra",
+          "window": {
+            "n_days": 20,
+            "mark_end_ts": 1784592000000
+          },
+          "live": {
+            "net": 103.490836,
+            "gross": 103.490836
+          },
+          "paper": null,
+          "paper_reason": "W1 artifact(live_degradation.json)只承载 live 与 replay 两条线;replay 是「记录在案决策权重过模型经济学」的纸面重构,不是前向 paper-track(paper_track.db)本身——paper 线不在本快照的数据源里,ABSENT 而非拿 replay 冒充。",
+          "replay": {
+            "net": -34.974964,
+            "gross": -24.65247,
+            "construction": "W1 replay(记录在案决策权重 × 干跑同款模型经济学)"
+          },
+          "live_degradation_ratio": null,
+          "degradation_ratio_reason": "sign_flip_ratio_meaningless",
+          "daily": [
+            {
+              "t": 1782950400000,
+              "live_equity": 5108.512593,
+              "replay_equity": 5104.304621,
+              "gap": 4.207972
+            },
+            {
+              "t": 1783036800000,
+              "live_equity": 5108.512593,
+              "replay_equity": 5076.331169,
+              "gap": 32.181424
+            },
+            {
+              "t": 1783123200000,
+              "live_equity": 5108.512593,
+              "replay_equity": 5021.348886,
+              "gap": 87.163707
+            },
+            {
+              "t": 1783209600000,
+              "live_equity": 5110.924993,
+              "replay_equity": 4992.310739,
+              "gap": 118.614254
+            },
+            {
+              "t": 1783296000000,
+              "live_equity": 5112.035936,
+              "replay_equity": 5028.80613,
+              "gap": 83.229806
+            },
+            {
+              "t": 1783382400000,
+              "live_equity": 5129.416665,
+              "replay_equity": 5044.324054,
+              "gap": 85.092611
+            },
+            {
+              "t": 1783468800000,
+              "live_equity": 5169.420905,
+              "replay_equity": 5073.849438,
+              "gap": 95.571467
+            },
+            {
+              "t": 1783555200000,
+              "live_equity": 5195.614045,
+              "replay_equity": 5099.497613,
+              "gap": 96.116432
+            },
+            {
+              "t": 1783641600000,
+              "live_equity": 5199.716675,
+              "replay_equity": 5100.049466,
+              "gap": 99.667209
+            },
+            {
+              "t": 1783728000000,
+              "live_equity": 5215.699235,
+              "replay_equity": 5107.997126,
+              "gap": 107.702109
+            },
+            {
+              "t": 1783814400000,
+              "live_equity": 5232.654745,
+              "replay_equity": 5122.602697,
+              "gap": 110.052048
+            },
+            {
+              "t": 1783900800000,
+              "live_equity": 5217.247395,
+              "replay_equity": 5130.015605,
+              "gap": 87.23179
+            },
+            {
+              "t": 1783987200000,
+              "live_equity": 5226.298613,
+              "replay_equity": 5119.04119,
+              "gap": 107.257423
+            },
+            {
+              "t": 1784073600000,
+              "live_equity": 5242.001953,
+              "replay_equity": 5136.408678,
+              "gap": 105.593275
+            },
+            {
+              "t": 1784160000000,
+              "live_equity": 5205.253337,
+              "replay_equity": 5105.256418,
+              "gap": 99.996919
+            },
+            {
+              "t": 1784246400000,
+              "live_equity": 5212.539876,
+              "replay_equity": 5095.4048,
+              "gap": 117.135076
+            },
+            {
+              "t": 1784332800000,
+              "live_equity": 5210.740121,
+              "replay_equity": 5076.253121,
+              "gap": 134.487
+            },
+            {
+              "t": 1784419200000,
+              "live_equity": 5203.265395,
+              "replay_equity": 5053.253939,
+              "gap": 150.011456
+            },
+            {
+              "t": 1784505600000,
+              "live_equity": 5212.447364,
+              "replay_equity": 5045.855281,
+              "gap": 166.592083
+            },
+            {
+              "t": 1784592000000,
+              "live_equity": 5212.003429,
+              "replay_equity": 5073.53763,
+              "gap": 138.465799
+            }
+          ]
+        }
+      ],
+      "reconciliation": {
+        "status": "PRESENT",
+        "provenance": "LIVE_TRACK_STATUS(最后一次驱动器批次的账户级对账,report-only,绝不自动纠正)",
+        "as_of_ms": 1783905000982,
+        "in_sync": true,
+        "max_abs_drift": 0.0,
+        "n_drift_instruments": 13,
+        "n_nonzero_drift": 0,
+        "batch_skipped": null
+      },
+      "versions": [
+        {
+          "strategy_id": "crowd_contra",
+          "strategy_version": null,
+          "code_hash": null,
+          "derived_stage": "LIVE_TRACK",
+          "attestation_kind": "human_override",
+          "attestation_present": true
+        }
+      ],
+      "incidents": {
+        "status": "PRESENT",
+        "provenance": "LEGACY_JSON_MIRROR",
+        "tripped": false,
+        "incident_id": "",
+        "transitions": []
+      },
+      "capacity": {
+        "mandate_present": true,
+        "mandate_expired": false,
+        "max_gross_notional": 10000.0,
+        "max_single_order_notional": 2500.0,
+        "max_net_notional": 3000.0,
+        "n_allowed_instruments": 24,
+        "capacity_safety": null
+      },
+      "ledger_root": "c70499a8f665b029695099976d4f966586d98cb2a1737349c43092a314813153"
+    },
+    {
+      "venue": "binance_mainnet",
+      "mainnet": true,
+      "spot": false,
+      "status": "ABSENT_NO_ACTIVITY",
+      "nav": null,
+      "risk": null,
+      "decomposition": [],
+      "three_line": [],
+      "reconciliation": null,
+      "versions": [],
+      "incidents": null,
+      "capacity": null,
+      "ledger_root": null,
+      "absent_reason": "账本无任何 orders/fills——该 venue 尚未发生真实执行(mainnet 在首单前恒为此态;ABSENT 是诚实状态,绝不合成空指标)"
+    },
+    {
+      "venue": "bybit",
+      "mainnet": false,
+      "spot": false,
+      "status": "ABSENT_NO_ACTIVITY",
+      "nav": null,
+      "risk": null,
+      "decomposition": [],
+      "three_line": [],
+      "reconciliation": null,
+      "versions": [],
+      "incidents": null,
+      "capacity": null,
+      "ledger_root": null,
+      "absent_reason": "账本无任何 orders/fills——该 venue 尚未发生真实执行(mainnet 在首单前恒为此态;ABSENT 是诚实状态,绝不合成空指标)"
+    },
+    {
+      "venue": "bybit_demo",
+      "mainnet": false,
+      "spot": false,
+      "status": "ACTIVE",
+      "nav": {
+        "basis": "RAW_FLOWS_UNRECORDED",
+        "basis_note": "external_flows 无记录(live 账本不记录 venue 出入金)——风险/NAV 在 raw 权益序列上计算;若有账外充值/提现,NAV 失真。绝不把无记录当零。",
+        "n_days": 9,
+        "first_date": "2026-07-05",
+        "last_date": "2026-07-14",
+        "first_nav": 169415.332897,
+        "last_nav": 169721.929044,
+        "total_return": 0.00180973,
+        "days": [
+          {
+            "day": 20639,
+            "date": "2026-07-05",
+            "ts": 1783278062580,
+            "nav_raw": 169415.332897,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 16
+          },
+          {
+            "day": 20640,
+            "date": "2026-07-06",
+            "ts": 1783375262326,
+            "nav_raw": 171213.14556,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 14
+          },
+          {
+            "day": 20641,
+            "date": "2026-07-07",
+            "ts": 1783425662433,
+            "nav_raw": 170169.433024,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 12
+          },
+          {
+            "day": 20642,
+            "date": "2026-07-08",
+            "ts": 1783544581752,
+            "nav_raw": 168861.685914,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 7
+          },
+          {
+            "day": 20643,
+            "date": "2026-07-09",
+            "ts": 1783638182530,
+            "nav_raw": 169992.452547,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 17
+          },
+          {
+            "day": 20644,
+            "date": "2026-07-10",
+            "ts": 1783724582337,
+            "nav_raw": 170821.976639,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 22
+          },
+          {
+            "day": 20645,
+            "date": "2026-07-11",
+            "ts": 1783796582627,
+            "nav_raw": 171131.114526,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 11
+          },
+          {
+            "day": 20647,
+            "date": "2026-07-13",
+            "ts": 1783983782050,
+            "nav_raw": 168721.910202,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 15
+          },
+          {
+            "day": 20648,
+            "date": "2026-07-14",
+            "ts": 1784030582201,
+            "nav_raw": 169721.929044,
+            "cum_flow": null,
+            "nav_adjusted": null,
+            "n_samples": 13
+          }
+        ]
+      },
+      "risk": {
+        "basis": "nav_raw",
+        "max_drawdown": 2491.235358,
+        "max_drawdown_pct": 0.01455049,
+        "max_drawdown_peak_date": "2026-07-06",
+        "max_drawdown_trough_date": "2026-07-13",
+        "recovery_days": null,
+        "recovered": false,
+        "current_drawdown": 1491.216516,
+        "worst_day": {
+          "date": "2026-07-13",
+          "pnl": -2409.204324,
+          "pct": -0.01407812,
+          "previous_date": "2026-07-11"
+        },
+        "worst_week": {
+          "week_ending": "2026-07-14",
+          "pnl": -1409.185482,
+          "pct": -0.00823454,
+          "previous_week_ending": "2026-07-11"
+        }
+      },
+      "decomposition": [
+        {
+          "strategy_id": "crowd_contra",
+          "gross": 121.15397,
+          "net": 121.15397,
+          "fee_actual": null,
+          "funding_actual": null,
+          "fee_expected": 7.053974,
+          "funding_expected": 8.123344,
+          "slippage_cost_actual": -160.60344,
+          "slippage_bps_weighted": -261.578658,
+          "n_orders": 20,
+          "n_fills": 20,
+          "net_semantics": "recorded_net:成交价内含真实滑点;venue 手续费/资金费无记录(fee_actual/funding_actual UNKNOWN,绝不估算)"
+        }
+      ],
+      "three_line": [
+        {
+          "strategy_id": "crowd_contra",
+          "window": {
+            "n_days": 20,
+            "mark_end_ts": 1784592000000
+          },
+          "live": {
+            "net": 121.15397,
+            "gross": 121.15397
+          },
+          "paper": null,
+          "paper_reason": "W1 artifact(live_degradation.json)只承载 live 与 replay 两条线;replay 是「记录在案决策权重过模型经济学」的纸面重构,不是前向 paper-track(paper_track.db)本身——paper 线不在本快照的数据源里,ABSENT 而非拿 replay 冒充。",
+          "replay": {
+            "net": 2.16165,
+            "gross": 19.59812,
+            "construction": "W1 replay(记录在案决策权重 × 干跑同款模型经济学)"
+          },
+          "live_degradation_ratio": null,
+          "degradation_ratio_reason": "replay_net_approx_zero_ratio_meaningless(|replay_net|<9.5=0.1%·aum)",
+          "daily": [
+            {
+              "t": 1782950400000,
+              "live_equity": 9500.0,
+              "replay_equity": 9492.563991,
+              "gap": 7.436009
+            },
+            {
+              "t": 1783036800000,
+              "live_equity": 9500.0,
+              "replay_equity": 9458.976804,
+              "gap": 41.023196
+            },
+            {
+              "t": 1783123200000,
+              "live_equity": 9500.0,
+              "replay_equity": 9360.709141,
+              "gap": 139.290859
+            },
+            {
+              "t": 1783209600000,
+              "live_equity": 9500.0,
+              "replay_equity": 9324.473277,
+              "gap": 175.526723
+            },
+            {
+              "t": 1783296000000,
+              "live_equity": 9554.64648,
+              "replay_equity": 9389.340233,
+              "gap": 165.306247
+            },
+            {
+              "t": 1783382400000,
+              "live_equity": 9587.25604,
+              "replay_equity": 9409.264074,
+              "gap": 177.991966
+            },
+            {
+              "t": 1783468800000,
+              "live_equity": 9634.38629,
+              "replay_equity": 9455.179586,
+              "gap": 179.206704
+            },
+            {
+              "t": 1783555200000,
+              "live_equity": 9636.16187,
+              "replay_equity": 9505.583777,
+              "gap": 130.578093
+            },
+            {
+              "t": 1783641600000,
+              "live_equity": 9615.32766,
+              "replay_equity": 9517.689802,
+              "gap": 97.637858
+            },
+            {
+              "t": 1783728000000,
+              "live_equity": 9617.82443,
+              "replay_equity": 9537.800543,
+              "gap": 80.023887
+            },
+            {
+              "t": 1783814400000,
+              "live_equity": 9654.78106,
+              "replay_equity": 9571.358394,
+              "gap": 83.422666
+            },
+            {
+              "t": 1783900800000,
+              "live_equity": 9661.03691,
+              "replay_equity": 9544.85612,
+              "gap": 116.18079
+            },
+            {
+              "t": 1783987200000,
+              "live_equity": 9651.83125,
+              "replay_equity": 9550.849549,
+              "gap": 100.981701
+            },
+            {
+              "t": 1784073600000,
+              "live_equity": 9730.96017,
+              "replay_equity": 9628.708163,
+              "gap": 102.252007
+            },
+            {
+              "t": 1784160000000,
+              "live_equity": 9686.79288,
+              "replay_equity": 9561.785109,
+              "gap": 125.007771
+            },
+            {
+              "t": 1784246400000,
+              "live_equity": 9671.51468,
+              "replay_equity": 9540.059937,
+              "gap": 131.454743
+            },
+            {
+              "t": 1784332800000,
+              "live_equity": 9634.93929,
+              "replay_equity": 9506.522615,
+              "gap": 128.416675
+            },
+            {
+              "t": 1784419200000,
+              "live_equity": 9636.68249,
+              "replay_equity": 9464.487353,
+              "gap": 172.195137
+            },
+            {
+              "t": 1784505600000,
+              "live_equity": 9653.45967,
+              "replay_equity": 9451.18755,
+              "gap": 202.27212
+            },
+            {
+              "t": 1784592000000,
+              "live_equity": 9621.15397,
+              "replay_equity": 9502.16165,
+              "gap": 118.99232
+            }
+          ]
+        }
+      ],
+      "reconciliation": {
+        "status": "PRESENT",
+        "provenance": "LIVE_TRACK_STATUS(最后一次驱动器批次的账户级对账,report-only,绝不自动纠正)",
+        "as_of_ms": 1783276171406,
+        "in_sync": true,
+        "max_abs_drift": 0.0,
+        "n_drift_instruments": 10,
+        "n_nonzero_drift": 2,
+        "batch_skipped": null
+      },
+      "versions": [
+        {
+          "strategy_id": "crowd_contra",
+          "strategy_version": null,
+          "code_hash": null,
+          "derived_stage": "LIVE_TRACK",
+          "attestation_kind": "human_override",
+          "attestation_present": true
+        }
+      ],
+      "incidents": {
+        "status": "ABSENT",
+        "reason": "该 venue 无 kill-switch 状态文件(从未初始化)"
+      },
+      "capacity": {
+        "mandate_present": true,
+        "mandate_expired": false,
+        "max_gross_notional": 10000.0,
+        "max_single_order_notional": 2500.0,
+        "max_net_notional": 3000.0,
+        "n_allowed_instruments": 24,
+        "capacity_safety": null
+      },
+      "ledger_root": "1a15576cc35c68fc60ea7d93fe1c0f8898b1e3e0add506d225a9b7efe6d39232"
+    },
+    {
+      "venue": "mexc",
+      "mainnet": true,
+      "spot": true,
+      "status": "ABSENT_NO_ACTIVITY",
+      "nav": null,
+      "risk": null,
+      "decomposition": [],
+      "three_line": [],
+      "reconciliation": null,
+      "versions": [],
+      "incidents": null,
+      "capacity": null,
+      "ledger_root": null,
+      "absent_reason": "账本无任何 orders/fills——该 venue 尚未发生真实执行(mainnet 在首单前恒为此态;ABSENT 是诚实状态,绝不合成空指标)"
+    }
+  ],
+  "unknown_fields": [
+    "venue.binance.cluster_contribution",
+    "venue.binance.decomposition.crowd_contra.fee_actual",
+    "venue.binance.decomposition.crowd_contra.funding_actual",
+    "venue.binance.external_flows",
+    "venue.binance.three_line.crowd_contra.paper",
+    "venue.binance.versions.crowd_contra.code_hash",
+    "venue.binance.versions.crowd_contra.strategy_version",
+    "venue.binance_mainnet.nav",
+    "venue.bybit.nav",
+    "venue.bybit_demo.cluster_contribution",
+    "venue.bybit_demo.decomposition.crowd_contra.fee_actual",
+    "venue.bybit_demo.decomposition.crowd_contra.funding_actual",
+    "venue.bybit_demo.external_flows",
+    "venue.bybit_demo.incidents",
+    "venue.bybit_demo.three_line.crowd_contra.paper",
+    "venue.bybit_demo.versions.crowd_contra.code_hash",
+    "venue.bybit_demo.versions.crowd_contra.strategy_version",
+    "venue.mexc.nav"
+  ]
+}

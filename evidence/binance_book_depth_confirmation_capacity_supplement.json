@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786510361534,
+  "status": "PASS",
+  "mode": "L2_CONTRACT_BOUND_CONFIRMATION_CAPACITY_SUPPLEMENT",
+  "study_id": "binance_usdm_book_depth_curve_confirmation_capacity_supplement_v1",
+  "supplement_contract_commit": "831222f363a8b54a25d3b9cb34a5ab0d5d548864",
+  "supplement_implementation_commit": "6ba32f27d96e97829865b035ff29915656d40c4d",
+  "quality_policy_commit": "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30",
+  "runtime_status_sha256": "1aecbda130519e0d506124258c0e97b3c81e94b22f30ee9efbba02a2b94dd6b1",
+  "requested_days": 7,
+  "processed_days": 7,
+  "complete_days": 6,
+  "quality_excluded_day_count": 1,
+  "quality_excluded_days_ms": [1770336000000],
+  "quality_exclusion_reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+  "all_exclusions_checksum_verified": true,
+  "parent_actual_adjacent_24h_decision_count": 79,
+  "combined_actual_adjacent_24h_decision_count": 84,
+  "minimum_combined_decisions": 80,
+  "combined_data_capacity_status": "PASS",
+  "confirmation_return_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "authority": {
+    "dataset_row_count": 60816,
+    "head_seq": 61152,
+    "head_row_hash": "15270ff476d19526369489f6133ff5490b59975e7622fea5ea8a7dd13216cb66",
+    "chain_valid": true
+  },
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

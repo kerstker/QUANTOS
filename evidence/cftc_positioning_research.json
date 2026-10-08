@@ -1,0 +1,1027 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RESEARCH_CLUSTER_PREREGISTERED",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at_ms": 1786393256661,
+  "pre_registration": {
+    "family": "cftc_institutional_positioning_v1",
+    "registered_before_evaluation": true,
+    "date": "2026-08-11",
+    "trial_count_planned": 6,
+    "primary_horizon": "one non-overlapping weekly CFTC observation",
+    "window_weeks": 52,
+    "cost_bps": 10.0,
+    "verdict_bar": {
+      "min_t_stat": 2.5,
+      "min_net_sharpe": 1.0,
+      "min_falsification_passes": 4,
+      "max_drawdown": 0.2
+    },
+    "search_space": "Exactly six fixed level/change/spread variants over CME BTC and ETH TFF percentages; 52-week trailing z-score, one-week primary horizon, no post-result direction/window choice.",
+    "variants": [
+      {
+        "id": "btc_lev_money_level_reversal",
+        "target": "BTC",
+        "feature": "leveraged_money_net_pct",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Extreme leveraged-fund net positioning is crowded and reverses in BTC."
+      },
+      {
+        "id": "btc_lev_money_change_reversal",
+        "target": "BTC",
+        "feature": "leveraged_money_net_pct",
+        "transform": "delta4_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "A rapid four-week leveraged-fund positioning change is exhaustion, not confirmation."
+      },
+      {
+        "id": "btc_asset_manager_level_momentum",
+        "target": "BTC",
+        "feature": "asset_manager_net_pct",
+        "transform": "level_z",
+        "direction": 1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Asset-manager positioning is slower capital and may persist in BTC."
+      },
+      {
+        "id": "btc_asset_vs_leverage_momentum",
+        "target": "BTC",
+        "feature": "asset_minus_leverage",
+        "transform": "level_z",
+        "direction": 1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Asset managers leading leveraged funds may identify a more durable BTC demand regime."
+      },
+      {
+        "id": "eth_lev_money_level_reversal",
+        "target": "ETH",
+        "feature": "leveraged_money_net_pct",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Leveraged-fund crowding may reverse in CME Ether as it does in BTC."
+      },
+      {
+        "id": "eth_btc_lev_diff_reversal",
+        "target": "ETH_BTC_RELATIVE",
+        "feature": "eth_btc_leverage_diff",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Relative leveraged-fund crowding between Ether and Bitcoin may reverse in ETH/BTC."
+      }
+    ]
+  },
+  "dataset": {
+    "source": "cftc_tff_crypto.json+crypto_funding.db",
+    "dataset_version": "3b10222cab40a192153557233267beb9b2d94b531bb8d220db2ac03f4fe0cc5a",
+    "snapshot": "H:\\QUANTOS_STATE\\data\\cache\\cftc_tff_crypto.json",
+    "price_db": "H:\\QUANTOS_STATE\\data\\cache\\crypto_funding.db",
+    "knowledge_time_policy": "REPORT_DATE_PLUS_7_CALENDAR_DAYS_CONSERVATIVE"
+  },
+  "trial_registration": {
+    "search_id": "search-0b723a2b577c1fd6ff511ae0",
+    "trial_count_before": 2757,
+    "trial_count_after": 2763,
+    "trial_count_delta": 6,
+    "budget_declaration": {
+      "budget": {
+        "max_trials": 6,
+        "max_compute_hours": null,
+        "max_feature_count": 2,
+        "max_parameter_dimensions": 7,
+        "locked_oos_period": null,
+        "allowed_data_sources": [
+          "cftc_tff_crypto.json+crypto_funding.db"
+        ],
+        "stopping_rules": null
+      },
+      "parent_hypothesis": "Public CFTC trader categories contain a slower institutional crowding axis independent of crypto-exchange funding and open-interest telemetry.",
+      "search_space": "Exactly six fixed level/change/spread variants over CME BTC and ETH TFF percentages; 52-week trailing z-score, one-week primary horizon, no post-result direction/window choice.",
+      "data_source": "cftc_tff_crypto.json+crypto_funding.db",
+      "uses_locked_oos": null,
+      "usage": {
+        "trials_used": 6,
+        "feature_count": 2,
+        "parameter_dimensions": 7
+      },
+      "check": {
+        "exhausted": false,
+        "dimensions": [
+          {
+            "dimension": "trials",
+            "status": "OK",
+            "usage": 6,
+            "limit": 6,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "compute_hours",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "feature_count",
+            "status": "OK",
+            "usage": 2,
+            "limit": 2,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "parameter_dimensions",
+            "status": "OK",
+            "usage": 7,
+            "limit": 7,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "locked_oos",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "data_source",
+            "status": "OK",
+            "usage": "cftc_tff_crypto.json+crypto_funding.db",
+            "limit": [
+              "cftc_tff_crypto.json+crypto_funding.db"
+            ],
+            "reason_code": "",
+            "reason": ""
+          }
+        ],
+        "reasons": []
+      }
+    },
+    "evaluations": {
+      "btc_lev_money_level_reversal": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": 0.33568762246975714,
+        "deflated_sharpe": 3.8280297080660346e-11,
+        "n_periods": 0
+      },
+      "btc_lev_money_change_reversal": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": -0.329471960140039,
+        "deflated_sharpe": 7.093863498079475e-17,
+        "n_periods": 0
+      },
+      "btc_asset_manager_level_momentum": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": -0.05607925096372112,
+        "deflated_sharpe": 1.8509064476591628e-14,
+        "n_periods": 0
+      },
+      "btc_asset_vs_leverage_momentum": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": 0.06811950632796454,
+        "deflated_sharpe": 2.330534173717292e-13,
+        "n_periods": 0
+      },
+      "eth_lev_money_level_reversal": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": -0.060592865519603904,
+        "deflated_sharpe": 2.8126209844106734e-09,
+        "n_periods": 0
+      },
+      "eth_btc_lev_diff_reversal": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "reasons": [
+          "THIN_COVERAGE"
+        ],
+        "state": "TESTING",
+        "mean_breadth": 2.0,
+        "net_sharpe": -0.4050278827352958,
+        "deflated_sharpe": 3.097616703263608e-11,
+        "n_periods": 0
+      }
+    },
+    "recorded_run_ids": [
+      "016510715fe47db4",
+      "6b2f877f352fa4fb",
+      "25252428ea38c09f",
+      "34e598fad5fd1f53",
+      "8b821952c3913339",
+      "32a109d16dd5e943"
+    ],
+    "promotion_eligible": false,
+    "live_allowed": false
+  },
+  "results": {
+    "btc_lev_money_level_reversal": {
+      "spec": {
+        "id": "btc_lev_money_level_reversal",
+        "target": "BTC",
+        "feature": "leveraged_money_net_pct",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Extreme leveraged-fund net positioning is crowded and reverses in BTC."
+      },
+      "coverage": {
+        "n_periods": 382,
+        "first_entry_time_ms": 1592438400000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 382,
+        "mean_net_return": 0.0024157034889568324,
+        "t_stat": 1.0961776149422662,
+        "net_sharpe": 0.404437036505625,
+        "total_return": 0.7809861013780712,
+        "max_drawdown": 0.5428198241413056,
+        "turnover": 78.51029114628982,
+        "average_turnover": 0.20552432237248644,
+        "total_cost": 0.07851029114628982,
+        "per_year_mean": {
+          "2020": 0.006008222088021882,
+          "2021": 0.006475421725467436,
+          "2022": -0.0018236819493176566,
+          "2023": -0.0034881041533385967,
+          "2024": 0.00815306051715516,
+          "2025": -0.002890225775723071,
+          "2026": 0.0014921429868863885
+        },
+        "side_mean": {
+          "long": 0.005230691494640562,
+          "short": -0.00234202271783257
+        }
+      },
+      "lagged": {
+        "n_periods": 381,
+        "mean_net_return": 0.0011654002842405873,
+        "t_stat": 0.5457498464841538,
+        "net_sharpe": 0.20161962664813773,
+        "total_return": 0.12488601260583376,
+        "max_drawdown": 0.5660399114781591,
+        "turnover": 78.49488674761061,
+        "average_turnover": 0.20602332479687824,
+        "total_cost": 0.07849488674761061,
+        "per_year_mean": {
+          "2020": 0.00497720160710123,
+          "2021": 0.001756502559615025,
+          "2022": 0.001424024122012411,
+          "2023": -0.0041287218238707495,
+          "2024": 0.004709093052395931,
+          "2025": -0.002296083946527648,
+          "2026": -0.002593495950180591
+        },
+        "side_mean": {
+          "long": 0.004153163415736589,
+          "short": -0.0039201539821355855
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 382,
+        "mean_net_return": 0.002210179166584346,
+        "t_stat": 1.0029059844589914,
+        "net_sharpe": 0.3700242722706154,
+        "total_return": 0.6465783058764893,
+        "max_drawdown": 0.5528072160404488,
+        "turnover": 78.51029114628982,
+        "average_turnover": 0.20552432237248644,
+        "total_cost": 0.15702058229257965,
+        "per_year_mean": {
+          "2020": 0.005787132594322811,
+          "2021": 0.006272959330644141,
+          "2022": -0.002021848443891187,
+          "2023": -0.0036275050494534006,
+          "2024": 0.007991998185671577,
+          "2025": -0.003193333259599825,
+          "2026": 0.0012964876372045446
+        },
+        "side_mean": {
+          "long": 0.00503478089139076,
+          "short": -0.002563795579567339
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 382,
+        "mean_net_return": -0.002826752133701806,
+        "t_stat": -1.2826431535727603,
+        "net_sharpe": -0.4732338891562916,
+        "total_return": -0.7652776387711728,
+        "max_drawdown": 0.8433016643274465,
+        "turnover": 78.51029114628982,
+        "average_turnover": 0.20552432237248644,
+        "total_cost": 0.07851029114628982,
+        "per_year_mean": {
+          "2020": -0.006450401075420026,
+          "2021": -0.006880346515114025,
+          "2022": 0.0014273489601705942,
+          "2023": 0.003209302361108988,
+          "2024": -0.008475185180122325,
+          "2025": 0.0022840108079695623,
+          "2026": -0.0018834536862500774
+        },
+        "side_mean": {
+          "long": 0.0018984769943630308,
+          "short": -0.005622512701140167
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": true,
+        "survives_one_report_lag": true,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 3,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "btc_lev_money_change_reversal": {
+      "spec": {
+        "id": "btc_lev_money_change_reversal",
+        "target": "BTC",
+        "feature": "leveraged_money_net_pct",
+        "transform": "delta4_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "A rapid four-week leveraged-fund positioning change is exhaustion, not confirmation."
+      },
+      "coverage": {
+        "n_periods": 378,
+        "first_entry_time_ms": 1592438400000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 378,
+        "mean_net_return": -0.0001642860322562269,
+        "t_stat": -0.10482455959191982,
+        "net_sharpe": -0.03887933413017121,
+        "total_return": -0.20701921803234014,
+        "max_drawdown": 0.5970668288495757,
+        "turnover": 123.57874295946165,
+        "average_turnover": 0.32692789142714723,
+        "total_cost": 0.12357874295946164,
+        "per_year_mean": {
+          "2020": 0.004378510654387308,
+          "2021": 0.003146038757529531,
+          "2022": -0.002131692881087125,
+          "2023": -0.002132084176099343,
+          "2024": -0.006056665460172104,
+          "2025": -0.001684043487733851,
+          "2026": 0.0006430917745484892
+        },
+        "side_mean": {
+          "long": 0.0010277694948978248,
+          "short": -0.0012829842962007985
+        }
+      },
+      "lagged": {
+        "n_periods": 377,
+        "mean_net_return": -0.0009341323044516604,
+        "t_stat": -0.5708592901083642,
+        "net_sharpe": -0.2120118178563689,
+        "total_return": -0.41849223922583667,
+        "max_drawdown": 0.7323609259393533,
+        "turnover": 123.50772007370729,
+        "average_turnover": 0.3276066845456427,
+        "total_cost": 0.12350772007370729,
+        "per_year_mean": {
+          "2020": 0.0057109577475433415,
+          "2021": 0.0018277052618958858,
+          "2022": 0.000993707320930478,
+          "2023": -0.006808490797579891,
+          "2024": -0.004355880317647543,
+          "2025": -0.0040219376038361,
+          "2026": -0.006543790279294482
+        },
+        "side_mean": {
+          "long": 0.0002903045837406813,
+          "short": -0.002076940066764513
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 378,
+        "mean_net_return": -0.000491213923683374,
+        "t_stat": -0.3133138632590395,
+        "net_sharpe": -0.11620782786672396,
+        "total_return": -0.2993876716088132,
+        "max_drawdown": 0.6281769157311239,
+        "turnover": 123.57874295946165,
+        "average_turnover": 0.32692789142714723,
+        "total_cost": 0.24715748591892328,
+        "per_year_mean": {
+          "2020": 0.004084905808921431,
+          "2021": 0.002848208008345957,
+          "2022": -0.002518345856048164,
+          "2023": -0.0024353460930082497,
+          "2024": -0.006285419860168506,
+          "2025": -0.0021157606797820084,
+          "2026": 0.00024655483818908597
+        },
+        "side_mean": {
+          "long": 0.0006992311986740827,
+          "short": -0.0016084008846649874
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 378,
+        "mean_net_return": -0.0004895697505980679,
+        "t_stat": -0.3125255272724058,
+        "net_sharpe": -0.11591543476390065,
+        "total_return": -0.3082943036162402,
+        "max_drawdown": 0.5853238618583481,
+        "turnover": 123.57874295946165,
+        "average_turnover": 0.32692789142714723,
+        "total_cost": 0.12357874295946164,
+        "per_year_mean": {
+          "2020": -0.0049657203453190605,
+          "2021": -0.0037417002558966816,
+          "2022": 0.001358386931165045,
+          "2023": 0.0015255603422815313,
+          "2024": 0.005599156660179299,
+          "2025": 0.0008206091036375358,
+          "2026": -0.0014361656472672965
+        },
+        "side_mean": {
+          "long": 0.0006321511192724203,
+          "short": -0.0016848460873453094
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_report_lag": false,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 1,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "btc_asset_manager_level_momentum": {
+      "spec": {
+        "id": "btc_asset_manager_level_momentum",
+        "target": "BTC",
+        "feature": "asset_manager_net_pct",
+        "transform": "level_z",
+        "direction": 1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Asset-manager positioning is slower capital and may persist in BTC."
+      },
+      "coverage": {
+        "n_periods": 382,
+        "first_entry_time_ms": 1592438400000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 382,
+        "mean_net_return": -0.0004068899809141555,
+        "t_stat": -0.17741737273203448,
+        "net_sharpe": -0.06545851281239409,
+        "total_return": -0.4148896454116342,
+        "max_drawdown": 0.7793799713079909,
+        "turnover": 69.69324889872934,
+        "average_turnover": 0.18244305994431764,
+        "total_cost": 0.06969324889872934,
+        "per_year_mean": {
+          "2020": 0.007400041644257777,
+          "2021": -0.003049855047012837,
+          "2022": -0.0074523213070525895,
+          "2023": 9.654933331250737e-05,
+          "2024": 1.4595969330293734e-05,
+          "2025": -0.0024597016965872917,
+          "2026": -0.005271265258118738
+        },
+        "side_mean": {
+          "long": 0.0006388763329922985,
+          "short": -0.0019721219148002857
+        }
+      },
+      "lagged": {
+        "n_periods": 381,
+        "mean_net_return": -0.00039976701154422194,
+        "t_stat": -0.1710382450188032,
+        "net_sharpe": -0.06318768081274226,
+        "total_return": -0.41908918295710806,
+        "max_drawdown": 0.7976702266800619,
+        "turnover": 69.64555704739159,
+        "average_turnover": 0.18279673765719578,
+        "total_cost": 0.06964555704739159,
+        "per_year_mean": {
+          "2020": 0.007650367006325365,
+          "2021": -0.0008313285436229519,
+          "2022": -0.00536427342224945,
+          "2023": 0.0007137243155788638,
+          "2024": -0.003234089386198423,
+          "2025": -0.0008223487854721929,
+          "2026": -0.011467649681334109
+        },
+        "side_mean": {
+          "long": 0.0005917328743584374,
+          "short": -0.0018935398659633603
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 382,
+        "mean_net_return": -0.0005893330408584733,
+        "t_stat": -0.25708251161168366,
+        "net_sharpe": -0.09485113335317323,
+        "total_return": -0.4541640931047972,
+        "max_drawdown": 0.7878982478976451,
+        "turnover": 69.69324889872934,
+        "average_turnover": 0.18244305994431764,
+        "total_cost": 0.13938649779745868,
+        "per_year_mean": {
+          "2020": 0.007155099925926445,
+          "2021": -0.0032053238501433446,
+          "2022": -0.007582085976945673,
+          "2023": -9.036491409669633e-05,
+          "2024": -0.00014265935585766048,
+          "2025": -0.0026069653824619308,
+          "2026": -0.005500252551683515
+        },
+        "side_mean": {
+          "long": 0.00045317610869379736,
+          "short": -0.002149689872541284
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 382,
+        "mean_net_return": 4.2003861025520425e-05,
+        "t_stat": 0.018297584040617303,
+        "net_sharpe": 0.006750932115129572,
+        "total_return": -0.31418688126986416,
+        "max_drawdown": 0.7430966486595305,
+        "turnover": 69.69324889872934,
+        "average_turnover": 0.18244305994431764,
+        "total_cost": 0.06969324889872934,
+        "per_year_mean": {
+          "2020": -0.007889925080920443,
+          "2021": 0.0027389174407518226,
+          "2022": 0.007192791967266425,
+          "2023": -0.0004703778281309155,
+          "2024": -0.0003291066197062023,
+          "2025": 0.002165174324838014,
+          "2026": 0.004813290670989188
+        },
+        "side_mean": {
+          "long": 0.0016169859993182916,
+          "short": -0.0010102767815893003
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_report_lag": false,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": false
+      },
+      "falsification_passes": 0,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "btc_asset_vs_leverage_momentum": {
+      "spec": {
+        "id": "btc_asset_vs_leverage_momentum",
+        "target": "BTC",
+        "feature": "asset_minus_leverage",
+        "transform": "level_z",
+        "direction": 1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Asset managers leading leveraged funds may identify a more durable BTC demand regime."
+      },
+      "coverage": {
+        "n_periods": 382,
+        "first_entry_time_ms": 1592438400000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 382,
+        "mean_net_return": 0.001011143707492007,
+        "t_stat": 0.42988855056619024,
+        "net_sharpe": 0.1586082848698252,
+        "total_return": -0.007769402278871795,
+        "max_drawdown": 0.7096036524881,
+        "turnover": 73.96436710051913,
+        "average_turnover": 0.19362399764533803,
+        "total_cost": 0.07396436710051912,
+        "per_year_mean": {
+          "2020": 0.008450331525242043,
+          "2021": -0.000239338052113553,
+          "2022": -0.005355986105332819,
+          "2023": -0.002172691211575801,
+          "2024": 0.002236123701701021,
+          "2025": -0.0023765600384218844,
+          "2026": 0.0010297592067326847
+        },
+        "side_mean": {
+          "long": 0.0039036994951424293,
+          "short": -0.0032713414846138127
+        }
+      },
+      "lagged": {
+        "n_periods": 381,
+        "mean_net_return": -0.0005248697335167538,
+        "t_stat": -0.2253200926012314,
+        "net_sharpe": -0.0832413480997711,
+        "total_return": -0.4432605169190629,
+        "max_drawdown": 0.7858523971398589,
+        "turnover": 73.94775718977009,
+        "average_turnover": 0.194088601547953,
+        "total_cost": 0.07394775718977008,
+        "per_year_mean": {
+          "2020": 0.007617038211565202,
+          "2021": -0.00345304254336478,
+          "2022": -0.003902145236580691,
+          "2023": -0.0021787798610543785,
+          "2024": -0.002334380110137999,
+          "2025": -0.001714107918402382,
+          "2026": -0.0059169001592085674
+        },
+        "side_mean": {
+          "long": 0.0029066761404576884,
+          "short": -0.005638545937870824
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 382,
+        "mean_net_return": 0.000817519709846669,
+        "t_stat": 0.34771215358944624,
+        "net_sharpe": 0.1282891303724634,
+        "total_return": -0.07826047078099685,
+        "max_drawdown": 0.7140579191930445,
+        "turnover": 73.96436710051913,
+        "average_turnover": 0.19362399764533803,
+        "total_cost": 0.14792873420103825,
+        "per_year_mean": {
+          "2020": 0.00820626347764779,
+          "2021": -0.00042973920156289967,
+          "2022": -0.005487955559778147,
+          "2023": -0.0023296123730034935,
+          "2024": 0.00206815158775425,
+          "2025": -0.0025969873501244926,
+          "2026": 0.0008159656891590654
+        },
+        "side_mean": {
+          "long": 0.0037146446301703643,
+          "short": -0.0034717301721910094
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 382,
+        "mean_net_return": -0.0013983917027826833,
+        "t_stat": -0.5940048113011053,
+        "net_sharpe": -0.2191593244360814,
+        "total_return": -0.6147424461702924,
+        "max_drawdown": 0.8045155681249119,
+        "turnover": 73.96436710051913,
+        "average_turnover": 0.19362399764533803,
+        "total_cost": 0.07396436710051912,
+        "per_year_mean": {
+          "2020": -0.008938467620430554,
+          "2021": -0.00014146424678514202,
+          "2022": 0.005092047196442165,
+          "2023": 0.0018588488887204152,
+          "2024": -0.0025720679295945636,
+          "2025": 0.0019357054150166684,
+          "2026": -0.0014573462418799202
+        },
+        "side_mean": {
+          "long": 0.0028705641094594198,
+          "short": -0.00428180922508656
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": true,
+        "survives_one_report_lag": false,
+        "broad_across_years": false,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 2,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "eth_lev_money_level_reversal": {
+      "spec": {
+        "id": "eth_lev_money_level_reversal",
+        "target": "ETH",
+        "feature": "leveraged_money_net_pct",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Leveraged-fund crowding may reverse in CME Ether as it does in BTC."
+      },
+      "coverage": {
+        "n_periods": 226,
+        "first_entry_time_ms": 1649203200000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 226,
+        "mean_net_return": 0.00018321749447733603,
+        "t_stat": 0.0499402237037361,
+        "net_sharpe": 0.023955097104451716,
+        "total_return": -0.2744051609205552,
+        "max_drawdown": 0.7079890103463701,
+        "turnover": 52.87506091865374,
+        "average_turnover": 0.23396044654271564,
+        "total_cost": 0.052875060918653745,
+        "per_year_mean": {
+          "2022": -0.003987181591377181,
+          "2023": -0.006585061735577628,
+          "2024": 0.00943129397509119,
+          "2025": 0.0003445432343393478,
+          "2026": 0.0010214122646965756
+        },
+        "side_mean": {
+          "long": 0.0023983252454977846,
+          "short": -0.0018804298974989793
+        }
+      },
+      "lagged": {
+        "n_periods": 225,
+        "mean_net_return": -0.0031834140832094383,
+        "t_stat": -0.9198433655136595,
+        "net_sharpe": -0.4422056559673151,
+        "total_return": -0.6477880073596967,
+        "max_drawdown": 0.7411425913605785,
+        "turnover": 52.57114263233477,
+        "average_turnover": 0.23364952281037676,
+        "total_cost": 0.05257114263233477,
+        "per_year_mean": {
+          "2022": -0.009030086384866928,
+          "2023": -0.00524221994423174,
+          "2024": 0.004282581874887641,
+          "2025": -0.0035769019881662367,
+          "2026": -0.004454930037282556
+        },
+        "side_mean": {
+          "long": -0.000792924238120005,
+          "short": -0.005429650230750371
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 226,
+        "mean_net_return": -5.074295206537994e-05,
+        "t_stat": -0.013839857826466406,
+        "net_sharpe": -0.00663863942844145,
+        "total_return": -0.3115527745865897,
+        "max_drawdown": 0.7126267131466205,
+        "turnover": 52.87506091865374,
+        "average_turnover": 0.23396044654271564,
+        "total_cost": 0.10575012183730749,
+        "per_year_mean": {
+          "2022": -0.004160711892842512,
+          "2023": -0.00679540693248465,
+          "2024": 0.009192743300048729,
+          "2025": 5.671829068474783e-05,
+          "2026": 0.0007710765378152796
+        },
+        "side_mean": {
+          "long": 0.0021621896241287185,
+          "short": -0.0021123638991180018
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 226,
+        "mean_net_return": -0.0006511383875627667,
+        "t_stat": -0.17725482865997444,
+        "net_sharpe": -0.0850247819868091,
+        "total_return": -0.3842187194023934,
+        "max_drawdown": 0.6092791539133564,
+        "turnover": 52.87506091865374,
+        "average_turnover": 0.23396044654271564,
+        "total_cost": 0.052875060918653745,
+        "per_year_mean": {
+          "2022": 0.00364012098844652,
+          "2023": 0.006164371341763581,
+          "2024": -0.009908395325176112,
+          "2025": -0.0009201931216485472,
+          "2026": -0.0015220837184591652
+        },
+        "side_mean": {
+          "long": 0.0014165618942609357,
+          "short": -0.0028705964882359157
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_report_lag": false,
+        "broad_across_years": true,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 2,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    },
+    "eth_btc_lev_diff_reversal": {
+      "spec": {
+        "id": "eth_btc_lev_diff_reversal",
+        "target": "ETH_BTC_RELATIVE",
+        "feature": "eth_btc_leverage_diff",
+        "transform": "level_z",
+        "direction": -1.0,
+        "window_weeks": 52,
+        "horizon_weeks": 1,
+        "rationale": "Relative leveraged-fund crowding between Ether and Bitcoin may reverse in ETH/BTC."
+      },
+      "coverage": {
+        "n_periods": 226,
+        "first_entry_time_ms": 1649203200000,
+        "last_exit_time_ms": 1785888000000
+      },
+      "primary": {
+        "n_periods": 226,
+        "mean_net_return": -0.00014798761502627836,
+        "t_stat": -0.07759133544500027,
+        "net_sharpe": -0.037218655368378234,
+        "total_return": -0.11858006092102635,
+        "max_drawdown": 0.49203910640418425,
+        "turnover": 51.97558466398678,
+        "average_turnover": 0.22998046311498574,
+        "total_cost": 0.051975584663986774,
+        "per_year_mean": {
+          "2022": -0.006953611867026295,
+          "2023": 6.748959040298809e-05,
+          "2024": 0.0012732955852328997,
+          "2025": 0.0036812862913945194,
+          "2026": -0.0009027780252963046
+        },
+        "side_mean": {
+          "long": 0.0005731087007910307,
+          "short": -0.000784956027331568
+        }
+      },
+      "lagged": {
+        "n_periods": 225,
+        "mean_net_return": -0.0023853597823488342,
+        "t_stat": -1.2749134692051949,
+        "net_sharpe": -0.6129021179998679,
+        "total_return": -0.46700193027385384,
+        "max_drawdown": 0.6310503878822842,
+        "turnover": 51.609638873362805,
+        "average_turnover": 0.22937617277050135,
+        "total_cost": 0.051609638873362805,
+        "per_year_mean": {
+          "2022": -0.01024050506949735,
+          "2023": 0.00045078368037210486,
+          "2024": -0.003016257184740055,
+          "2025": 0.0009520812623654097,
+          "2026": -0.0021540814355273945
+        },
+        "side_mean": {
+          "long": -0.0014724367024168492,
+          "short": -0.0031841674772893212
+        }
+      },
+      "cost_20bps": {
+        "n_periods": 226,
+        "mean_net_return": -0.0003779680781412639,
+        "t_stat": -0.19826218313006452,
+        "net_sharpe": -0.09510149328117598,
+        "total_return": -0.16319652939752172,
+        "max_drawdown": 0.508967476957347,
+        "turnover": 51.97558466398678,
+        "average_turnover": 0.22998046311498574,
+        "total_cost": 0.10395116932797355,
+        "per_year_mean": {
+          "2022": -0.00718690135793073,
+          "2023": -0.0002267981819399723,
+          "2024": 0.0010868762166365675,
+          "2025": 0.003454339099265158,
+          "2026": -0.0010978554255301172
+        },
+        "side_mean": {
+          "long": 0.0003344169947243269,
+          "short": -0.0010072415591725358
+        }
+      },
+      "opposite_direction": {
+        "n_periods": 226,
+        "mean_net_return": -0.0003119733112036933,
+        "t_stat": -0.16339845446876375,
+        "net_sharpe": -0.07837822006439547,
+        "total_return": -0.15105974866473748,
+        "max_drawdown": 0.43009606769423614,
+        "turnover": 51.97558466398678,
+        "average_turnover": 0.22998046311498574,
+        "total_cost": 0.051975584663986774,
+        "per_year_mean": {
+          "2022": 0.00648703288521742,
+          "2023": -0.0006560651350889102,
+          "2024": -0.0016461343224255655,
+          "2025": -0.00413518067565324,
+          "2026": 0.0005126232248286791
+        },
+        "side_mean": {
+          "long": 0.0003403849636496308,
+          "short": -0.0010504921129244377
+        }
+      },
+      "falsification_checks": {
+        "survives_20bps": false,
+        "survives_one_report_lag": false,
+        "broad_across_years": true,
+        "both_sides_positive": false,
+        "opposite_direction_loses": true
+      },
+      "falsification_passes": 2,
+      "diagnostic_verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "net_sharpe",
+        "falsification",
+        "max_drawdown"
+      ]
+    }
+  },
+  "promising_diagnostics": [],
+  "candidates": [],
+  "safety": {
+    "public_data_only": true,
+    "credentials_accessed": false,
+    "account_data_accessed": false,
+    "order_submission_allowed": false,
+    "promotion_eligible": false,
+    "live_allowed": false,
+    "testnet_intent_generated": false
+  },
+  "honesty": {
+    "formal_candidate_blocked_by_two_asset_breadth": true,
+    "historical_research_is_not_forward_evidence": true,
+    "notes": [
+      "CFTC report-date rows are delayed seven days before use and enter on a strictly later close.",
+      "The formal evaluator sees the honest two-leg breadth; no synthetic instruments are added.",
+      "Even a promising diagnostic requires an independent forward gate before candidate admission."
+    ]
+  }
+}

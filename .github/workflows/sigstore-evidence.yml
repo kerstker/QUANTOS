@@ -1,0 +1,603 @@
+name: external-sigstore-evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/top-tier-wave0"
+    paths:
+      - ".github/workflows/sigstore-evidence.yml"
+      - ".dockerignore"
+      - "deploy/console.Dockerfile"
+      - "requirements.txt"
+      - "services/**"
+      - "quantos/**"
+      - "scripts/generate_cross_host_container_evidence.py"
+      - "tools/build_reproducible_source_bundle.py"
+
+concurrency:
+  group: external-sigstore-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-ubuntu-22:
+    name: reproduce source bundle (ubuntu-22.04)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Build from immutable Git blobs
+        run: >-
+          python tools/build_reproducible_source_bundle.py
+          --repo-root .
+          --commit "${GITHUB_SHA}"
+          --output build/quantos-source.tar.gz
+          --manifest build/quantos-source.manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quantos-source-ubuntu-22
+          path: build/
+          if-no-files-found: error
+          retention-days: 1
+
+  build-ubuntu-24:
+    name: reproduce source bundle (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Build from immutable Git blobs
+        run: >-
+          python tools/build_reproducible_source_bundle.py
+          --repo-root .
+          --commit "${GITHUB_SHA}"
+          --output build/quantos-source.tar.gz
+          --manifest build/quantos-source.manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quantos-source-ubuntu-24
+          path: build/
+          if-no-files-found: error
+          retention-days: 1
+
+  container-arm64-a:
+    name: reproduce deployable container (native ARM64 runner A)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          name: quantos-cross-host
+          driver: docker-container
+          driver-opts: >-
+            image=moby/buildkit@sha256:2be0a5be7ae3cd9268f6836782e9690cce7bc4124142f7700f1641af5ccca8de
+          buildkitd-flags: --debug
+      - name: Build and inspect a cold OCI archive
+        env:
+          BUILDKIT_IMAGE_REF: >-
+            moby/buildkit@sha256:2be0a5be7ae3cd9268f6836782e9690cce7bc4124142f7700f1641af5ccca8de
+          SETUP_BUILDX_ACTION_SHA: 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+        run: |
+          mkdir -p build
+          docker buildx build \
+            --builder quantos-cross-host \
+            --no-cache \
+            --provenance=false \
+            --platform linux/arm64 \
+            --build-arg SOURCE_DATE_EPOCH=1781569204 \
+            --output "type=oci,dest=${RUNNER_TEMP}/quantos-console.oci.tar,rewrite-timestamp=true" \
+            -f deploy/console.Dockerfile .
+          BUILDX_VERSION="$(docker buildx version)"
+          BUILDKIT_VERSION="$(
+            docker buildx inspect quantos-cross-host --bootstrap |
+              sed -n \
+                's/^[[:space:]]*BuildKit version:[[:space:]]*//p' |
+              head -n 1
+          )"
+          printf 'Observed BuildKit version: %s\n' "${BUILDKIT_VERSION}"
+          test "${BUILDKIT_VERSION}" = "v0.26.2"
+          python scripts/generate_cross_host_container_evidence.py claim \
+            --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \
+            --output build/claim.json \
+            --source-commit "${GITHUB_SHA}" \
+            --runner-label github-arm64-a \
+            --workflow-job container-arm64-a \
+            --setup-buildx-action-sha "${SETUP_BUILDX_ACTION_SHA}" \
+            --buildx-version "${BUILDX_VERSION}" \
+            --buildkit-version "${BUILDKIT_VERSION}" \
+            --buildkit-image-ref "${BUILDKIT_IMAGE_REF}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quantos-console-arm64-a
+          path: build/claim.json
+          if-no-files-found: error
+          retention-days: 1
+
+  container-arm64-b:
+    name: reproduce deployable container (native ARM64 runner B)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          name: quantos-cross-host
+          driver: docker-container
+          driver-opts: >-
+            image=moby/buildkit@sha256:2be0a5be7ae3cd9268f6836782e9690cce7bc4124142f7700f1641af5ccca8de
+          buildkitd-flags: --debug
+      - name: Build and inspect a cold OCI archive
+        env:
+          BUILDKIT_IMAGE_REF: >-
+            moby/buildkit@sha256:2be0a5be7ae3cd9268f6836782e9690cce7bc4124142f7700f1641af5ccca8de
+          SETUP_BUILDX_ACTION_SHA: 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+        run: |
+          mkdir -p build
+          docker buildx build \
+            --builder quantos-cross-host \
+            --no-cache \
+            --provenance=false \
+            --platform linux/arm64 \
+            --build-arg SOURCE_DATE_EPOCH=1781569204 \
+            --output "type=oci,dest=${RUNNER_TEMP}/quantos-console.oci.tar,rewrite-timestamp=true" \
+            -f deploy/console.Dockerfile .
+          BUILDX_VERSION="$(docker buildx version)"
+          BUILDKIT_VERSION="$(
+            docker buildx inspect quantos-cross-host --bootstrap |
+              sed -n \
+                's/^[[:space:]]*BuildKit version:[[:space:]]*//p' |
+              head -n 1
+          )"
+          printf 'Observed BuildKit version: %s\n' "${BUILDKIT_VERSION}"
+          test "${BUILDKIT_VERSION}" = "v0.26.2"
+          python scripts/generate_cross_host_container_evidence.py claim \
+            --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \
+            --output build/claim.json \
+            --source-commit "${GITHUB_SHA}" \
+            --runner-label github-arm64-b \
+            --workflow-job container-arm64-b \
+            --setup-buildx-action-sha "${SETUP_BUILDX_ACTION_SHA}" \
+            --buildx-version "${BUILDX_VERSION}" \
+            --buildkit-version "${BUILDKIT_VERSION}" \
+            --buildkit-image-ref "${BUILDKIT_IMAGE_REF}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quantos-console-arm64-b
+          path: build/claim.json
+          if-no-files-found: error
+          retention-days: 1
+
+  attest:
+    name: compare and attest through GitHub OIDC
+    needs:
+      - build-ubuntu-22
+      - build-ubuntu-24
+      - container-arm64-a
+      - container-arm64-b
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quantos-source-ubuntu-22
+          path: reproductions/ubuntu-22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quantos-source-ubuntu-24
+          path: reproductions/ubuntu-24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quantos-console-arm64-a
+          path: container-reproductions/arm64-a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quantos-console-arm64-b
+          path: container-reproductions/arm64-b
+      - name: Require byte-identical independent builds
+        run: |
+          cmp --silent \
+            reproductions/ubuntu-22/quantos-source.tar.gz \
+            reproductions/ubuntu-24/quantos-source.tar.gz
+          cmp --silent \
+            reproductions/ubuntu-22/quantos-source.manifest.json \
+            reproductions/ubuntu-24/quantos-source.manifest.json
+          sha256sum reproductions/ubuntu-22/quantos-source.tar.gz
+      - name: Install pinned Sigstore verifier and signer
+        run: python -m pip install --disable-pip-version-check sigstore==4.4.0
+      - name: Aggregate independently inspected container claims
+        env:
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+          QUANTOS_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          mkdir -p external-sigstore
+          python scripts/generate_cross_host_container_evidence.py aggregate \
+            --claim container-reproductions/arm64-a/claim.json \
+            --claim container-reproductions/arm64-b/claim.json \
+            --output external-sigstore/quantos-console-cross-host.json \
+            --workflow-ref "${QUANTOS_WORKFLOW_REF}" \
+            --workflow-run \
+              "${QUANTOS_SERVER_URL}/${QUANTOS_REPOSITORY}/actions/runs/${QUANTOS_RUN_ID}/attempts/${QUANTOS_RUN_ATTEMPT}"
+      - name: Build SLSA v1 predicate and retain the active trust root
+        env:
+          QUANTOS_SOURCE_COMMIT: ${{ github.sha }}
+          QUANTOS_WORKFLOW_REF: ${{ github.workflow_ref }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p external-sigstore
+          cp reproductions/ubuntu-22/quantos-source.tar.gz \
+            external-sigstore/quantos-source.tar.gz
+          cp reproductions/ubuntu-22/quantos-source.manifest.json \
+            external-sigstore/quantos-source.manifest.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from sigstore.models import ClientTrustConfig
+
+          workflow_ref = os.environ["QUANTOS_WORKFLOW_REF"]
+          repository = os.environ["QUANTOS_REPOSITORY"]
+          commit = os.environ["QUANTOS_SOURCE_COMMIT"]
+          predicate = {
+              "buildDefinition": {
+                  "buildType": "https://quantos.dev/build-types/reproducible-source-bundle/v1",
+                  "externalParameters": {"sourceCommit": commit},
+                  "internalParameters": {
+                      "crossHostBuilders": ["ubuntu-22.04", "ubuntu-24.04"]
+                  },
+                  "resolvedDependencies": [{
+                      "uri": f"git+https://github.com/{repository}@refs/heads/codex/top-tier-wave0",
+                      "digest": {"gitCommit": commit},
+                  }],
+              },
+              "runDetails": {
+                  "builder": {"id": f"https://github.com/{workflow_ref}"},
+                  "metadata": {
+                      "invocationId": (
+                          f"{os.environ['QUANTOS_SERVER_URL']}/{repository}/actions/runs/"
+                          f"{os.environ['QUANTOS_RUN_ID']}/attempts/"
+                          f"{os.environ['QUANTOS_RUN_ATTEMPT']}"
+                      )
+                  },
+                  "byproducts": [],
+              },
+          }
+          root = ClientTrustConfig.production()._inner.trusted_root.to_json()
+          if isinstance(root, str):
+              root = root.encode("utf-8")
+          Path("external-sigstore/slsa-predicate.json").write_text(
+              json.dumps(predicate, sort_keys=True, separators=(",", ":"), indent=2)
+              + "\n",
+              encoding="utf-8",
+          )
+          Path("external-sigstore/trusted-root.json").write_bytes(root)
+          PY
+      - name: Sign DSSE provenance through GitHub ambient OIDC
+        run: >-
+          python -m sigstore attest
+          --rekor-version 1
+          --predicate external-sigstore/slsa-predicate.json
+          --predicate-type https://slsa.dev/provenance/v1
+          --bundle external-sigstore/quantos-source.sigstore.json
+          external-sigstore/quantos-source.tar.gz
+      - name: Verify Fulcio identity, SCT, Rekor entry, and artifact digest
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: >-
+          python -m sigstore verify identity
+          --offline
+          --bundle external-sigstore/quantos-source.sigstore.json
+          --cert-identity "${QUANTOS_CERTIFICATE_IDENTITY}"
+          --cert-oidc-issuer https://token.actions.githubusercontent.com
+          external-sigstore/quantos-source.tar.gz
+      - name: Sign cross-host container proof through GitHub ambient OIDC
+        run: >-
+          python -m sigstore sign
+          --rekor-version 1
+          --bundle external-sigstore/quantos-console-cross-host.sigstore.json
+          external-sigstore/quantos-console-cross-host.json
+      - name: Verify container-proof identity, SCT, and Rekor entry
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: >-
+          python -m sigstore verify identity
+          --offline
+          --bundle external-sigstore/quantos-console-cross-host.sigstore.json
+          --cert-identity "${QUANTOS_CERTIFICATE_IDENTITY}"
+          --cert-oidc-issuer https://token.actions.githubusercontent.com
+          external-sigstore/quantos-console-cross-host.json
+      - name: Record signed cross-host container receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+          QUANTOS_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("external-sigstore")
+          digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          proof = json.loads(
+              (root / "quantos-console-cross-host.json").read_text(encoding="utf-8")
+          )
+          if proof.get("mode") != "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL":
+              raise SystemExit("cross-host container proof mode is invalid")
+          receipt = {
+              "schema_version": 1,
+              "status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST_CONTAINER",
+              "source_commit": os.environ["QUANTOS_SOURCE_COMMIT"],
+              "workflow_run": (
+                  f"{os.environ['QUANTOS_SERVER_URL']}/"
+                  f"{os.environ['QUANTOS_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['QUANTOS_RUN_ID']}/attempts/"
+                  f"{os.environ['QUANTOS_RUN_ATTEMPT']}"
+              ),
+              "certificate_identity": os.environ["QUANTOS_CERTIFICATE_IDENTITY"],
+              "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+              "sigstore_version": "4.4.0",
+              "rekor_version": 1,
+              "mode": proof["mode"],
+              "builders": proof["builders"],
+              "archive_sha256": proof["archive_sha256"],
+              "container_input_sha256": proof["container_input_sha256"],
+              "manifest_digest": proof["manifest_digest"],
+              "evidence_sha256": digest(
+                  root / "quantos-console-cross-host.json"
+              ),
+              "bundle_sha256": digest(
+                  root / "quantos-console-cross-host.sigstore.json"
+              ),
+              "limitations": {
+                  "independent_admission_boundary": "NOT_PROVIDED",
+                  "external_receipt_authority": "NOT_PROVIDED",
+                  "worm_retention": "GITHUB_ARTIFACT_RETENTION_ONLY",
+              },
+              "authority": {
+                  "credential_access": False,
+                  "deployment": False,
+                  "execution": False,
+                  "live_trading": False,
+                  "order_submission": False,
+              },
+          }
+          (root / "cross-host-container-receipt.json").write_text(
+              json.dumps(receipt, sort_keys=True, separators=(",", ":"), indent=2)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Build artifact-admission chain-head receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+          QUANTOS_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+
+          source = Path("evidence/artifact_admission_seal_latest.json")
+          target = Path("external-sigstore/artifact-admission-external")
+          target.mkdir(parents=True, exist_ok=True)
+          seal_bytes = source.read_bytes()
+          seal = json.loads(seal_bytes)
+          if (
+              seal.get("schema_version") != 1
+              or seal.get("operation_verdict") != "PASS"
+              or seal.get("institutional_seal_status")
+              != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
+              or seal.get("authority_mutated") is not False
+              or type(seal.get("anchor_created")) is not bool
+              or seal.get("destination_class")
+              not in {"SEPARATE_VOLUME", "SEPARATE_FILESYSTEM", "OFF_HOST_UNC"}
+          ):
+              raise SystemExit("artifact-admission local seal is invalid")
+          receipt = {
+              "schema_version": 1,
+              "status": (
+                  "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+                  "ARTIFACT_ADMISSION_CHAIN_HEAD"
+              ),
+              "source_commit": os.environ["QUANTOS_SOURCE_COMMIT"],
+              "workflow_run": (
+                  f"{os.environ['QUANTOS_SERVER_URL']}/"
+                  f"{os.environ['QUANTOS_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['QUANTOS_RUN_ID']}/attempts/"
+                  f"{os.environ['QUANTOS_RUN_ATTEMPT']}"
+              ),
+              "certificate_identity": os.environ[
+                  "QUANTOS_CERTIFICATE_IDENTITY"
+              ],
+              "certificate_oidc_issuer": (
+                  "https://token.actions.githubusercontent.com"
+              ),
+              "sigstore_version": "4.4.0",
+              "rekor_version": 1,
+              "seal_sha256": hashlib.sha256(seal_bytes).hexdigest(),
+              "local_anchor_sha256": seal["anchor_sha256"],
+              "commitment": seal["commitment"],
+              "retention": {
+                  "github_artifact_days": 90,
+                  "rekor_transparency_log": True,
+                  "worm_object_lock": False,
+              },
+              "limitations": [
+                  "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK",
+                  "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVIDED",
+                  "SOURCE_NATIVE_CHECKPOINT_REVOCATION_NOT_PROVIDED",
+              ],
+              "authority": {
+                  "credential_access": False,
+                  "deployment": False,
+                  "execution": False,
+                  "live_trading": False,
+                  "order_submission": False,
+              },
+          }
+          (target / "artifact-admission-seal.json").write_bytes(seal_bytes)
+          (target / "artifact-admission-external-receipt.json").write_text(
+              json.dumps(
+                  receipt,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  indent=2,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          shutil.copyfile(
+              "external-sigstore/trusted-root.json",
+              target / "trusted-root.json",
+          )
+          PY
+      - name: Sign artifact-admission chain head through GitHub ambient OIDC
+        run: >-
+          python -m sigstore sign
+          --rekor-version 1
+          --bundle
+          external-sigstore/artifact-admission-external/artifact-admission-external-receipt.sigstore.json
+          external-sigstore/artifact-admission-external/artifact-admission-external-receipt.json
+      - name: Verify external artifact-admission chain-head receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: |
+          python -m sigstore verify identity \
+            --offline \
+            --bundle \
+              external-sigstore/artifact-admission-external/artifact-admission-external-receipt.sigstore.json \
+            --cert-identity "${QUANTOS_CERTIFICATE_IDENTITY}" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            external-sigstore/artifact-admission-external/artifact-admission-external-receipt.json
+          python - <<'PY'
+          from services.governance.artifact_admission_external_seal import (
+              verify_artifact_admission_external_seal,
+          )
+
+          report = verify_artifact_admission_external_seal(
+              "external-sigstore/artifact-admission-external"
+          )
+          if (
+              report["external_signature_verified"] is not True
+              or report["transparency_log_verified"] is not True
+              or report["worm_retention_verified"] is not False
+          ):
+              raise SystemExit("external chain-head verification is incomplete")
+          PY
+      - name: Record honest external evidence receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+          QUANTOS_SOURCE_COMMIT: ${{ github.sha }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("external-sigstore")
+          digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          receipt = {
+              "schema_version": 1,
+              "status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE",
+              "source_commit": os.environ["QUANTOS_SOURCE_COMMIT"],
+              "workflow_run": (
+                  f"{os.environ['QUANTOS_SERVER_URL']}/"
+                  f"{os.environ['QUANTOS_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['QUANTOS_RUN_ID']}/attempts/"
+                  f"{os.environ['QUANTOS_RUN_ATTEMPT']}"
+              ),
+              "certificate_identity": os.environ["QUANTOS_CERTIFICATE_IDENTITY"],
+              "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+              "sigstore_version": "4.4.0",
+              "rekor_version": 1,
+              "predicate_type": "https://slsa.dev/provenance/v1",
+              "cross_host_builders": ["ubuntu-22.04", "ubuntu-24.04"],
+              "artifact_sha256": digest(root / "quantos-source.tar.gz"),
+              "manifest_sha256": digest(root / "quantos-source.manifest.json"),
+              "bundle_sha256": digest(root / "quantos-source.sigstore.json"),
+              "trusted_root_sha256": digest(root / "trusted-root.json"),
+              "limitations": {
+                  "external_receipt_authority": "NOT_PROVIDED",
+                  "independent_admission_boundary": "NOT_PROVIDED",
+                  "revocation_operations": "NOT_PROVIDED",
+                  "external_chain_head_seal": "NOT_PROVIDED",
+                  "worm_retention": "GITHUB_ARTIFACT_RETENTION_ONLY",
+              },
+              "authority": {
+                  "credential_access": False,
+                  "deployment": False,
+                  "execution": False,
+                  "live_trading": False,
+                  "order_submission": False,
+              },
+          }
+          (root / "external-evidence-receipt.json").write_text(
+              json.dumps(receipt, sort_keys=True, separators=(",", ":"), indent=2)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: external-sigstore-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: external-sigstore/
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cross-host-container-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            external-sigstore/quantos-console-cross-host.json
+            external-sigstore/quantos-console-cross-host.sigstore.json
+            external-sigstore/cross-host-container-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: artifact-admission-chain-head-${{ github.run_id }}-${{ github.run_attempt }}
+          path: external-sigstore/artifact-admission-external/
+          if-no-files-found: error
+          retention-days: 90

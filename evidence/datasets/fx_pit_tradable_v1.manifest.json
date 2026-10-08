@@ -1,0 +1,32 @@
+{
+  "bundle_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+  "bundle_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+  "keys": [
+    "AUD",
+    "BRL",
+    "CAD",
+    "CHF",
+    "CZK",
+    "EUR",
+    "GBP",
+    "HUF",
+    "ILS",
+    "JPY",
+    "KRW",
+    "MXN",
+    "NOK",
+    "NZD",
+    "PLN",
+    "SEK",
+    "SGD",
+    "ZAR"
+  ],
+  "manifest_sha256": "867657a8c561e510067c5cabe8572c74413896696b8a56e0ffe119fcf87ff11d",
+  "max_event_time": 1782432000000,
+  "min_event_time": 915408000000,
+  "row_count": 126113,
+  "schema_version": 1,
+  "source_db_ref": "data/cache/fx.db",
+  "source_db_sha256": "98b9e79820c15e5c3ba090f48817403fbc6c7e5705ffc21ce392c06889b80b58",
+  "source_query": "SELECT key, event_time, knowledge_time, payload_json FROM bars WHERE key IN (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ORDER BY key, event_time, knowledge_time"
+}

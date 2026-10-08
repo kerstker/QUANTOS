@@ -1,0 +1,69 @@
+from decimal import Decimal as D
+import numpy as np
+import pytest
+from services.research.ai_factory import HOUR
+from services.research.ai_factory_store import FactoryStore, digest
+from tools.ai_quant_factory import execute
+from tools import ai_factory_process_comparison as module
+
+
+@pytest.mark.parametrize('provider', ['NOT_CONFIGURED', 'CONFIGURED_UNVERIFIED'])
+@pytest.mark.parametrize('policy_variants', [False, True])
+@pytest.mark.parametrize('mode',['baseline','ai'])
+def test_comparison_replays_equal_budgets_and_rejects_lost_terminal_receipt(tmp_path, monkeypatch, provider, policy_variants, mode):
+    monkeypatch.setenv('QUANTOS_STATE_ROOT', str(tmp_path))
+    root = tmp_path / 'data/cache'; out = root / 'ai_factory'
+    (root / 'perpetual_alpha/input').mkdir(parents=True)
+    t = np.arange(600, dtype=np.int64) * HOUR
+    x = np.random.default_rng(3).normal(size=(600, 5)); x[:, 3] = .005
+    y = x[:, 0] * .001
+    with FactoryStore(out / 'factory.db') as store:
+        config={'attempt': 1, 'mode': mode, 'objective': 'BTC', 'budget': 3}
+        if policy_variants:config['search_plan']={'version':2,'excluded_ids':[],'source_ids':['aqr']}
+        store.create(config)
+        execute(store, 1, (t, x, y), lambda spec, t, p: {'score': float(spec['id'])},
+                {'input_hash': digest({})}, out,proposal=lambda objective,remaining,history,**kwargs:{'candidate_id':remaining[0],'model':'fixture'})
+    times = np.arange(0, 611 * HOUR, 60000, dtype=np.int64)
+    market = {'times': times, 'prices': np.full(len(times), 100.), 'marks': np.full(len(times), 100.),
+              'start': 0, 'end': 610 * HOUR,
+              'funding': [{'time': i * 8 * HOUR, 'rate': D('.0001'), 'mark': D(100)} for i in range(76)],
+              'daily_volume': {i: D('10000000') for i in range(26)}}
+    monkeypatch.setattr(module, 'load_verified_minutes', lambda d: (None, None))
+    monkeypatch.setattr(module, 'hourly_panel', lambda a: (t, x, y))
+    monkeypatch.setattr(module, 'load_data', lambda **k: (market, None))
+    monkeypatch.setattr(module, 'provider_status', lambda: {'status': provider})
+    calls=[]
+    def propose(objective,remaining,history,**options):
+        assert mode=='ai' and options['research_context']['scope']=='INNER_SEARCH'
+        assert all(r['scope']=='INNER_SEARCH' for r in options['history_evidence'])
+        calls.append(options['role'])
+        return {'candidate_id':remaining[0],'model':'fixture','usage':{'total_tokens':7}}
+    monkeypatch.setattr(module,'propose',propose)
+    if policy_variants:
+        pool=[module.candidates(2)[i] for i in (0,9,1)]
+        monkeypatch.setattr(module,'candidate_pool',lambda _:pool)
+        monkeypatch.setattr(module,'fit_predict',lambda spec,tx,ty,z:np.full(len(z),.0025))
+    result = module.run_comparison({'attempt': 1})
+    active=mode=='ai' and provider=='CONFIGURED_UNVERIFIED'
+    assert len(result['rows']) == (12 if active else 6)
+    assert len(calls)==(36 if active else 0)
+    assert sum(r['model_calls'] for r in result['rows'])==len(calls)
+    assert all(r['status'] == 'COMPLETED' and len(r['trials']) == 3 for r in result['rows'])
+    if policy_variants:
+        for row in result['rows']:
+            passed=[t for t in row['trials'] if t['status']=='PASSED']
+            assert len(passed)==2
+            assert {module.candidates(2)[t['candidate_id']]['threshold_bps'] for t in passed}=={20,30}
+    assert result['ai_group_status'] == ('EXECUTED' if active else 'NOT_CONFIGURED') and result['authoritative'] is False
+    assert result['schema']=='QUANTOS_AI_FACTORY_PROCESS_COMPARISON_V3'
+    for row in result['rows']:
+        assert row['portfolio']['inner_trials_attempted']<=16
+        assert len(row['portfolio']['comparisons'])==3
+        assert row['portfolio']['scope']=='USED_HISTORY_TECHNICAL_RESEARCH'
+    assert module.run_comparison({'attempt': 1}) == result
+    (out / '1/process-v3/process-comparison.json').unlink()
+    lost = out / '1/process-v3/comparison-cases' / (result['rows'][0]['trials'][0]['trial_id'] + '.json')
+    lost.unlink()
+    with pytest.raises(ValueError, match='terminal receipt missing'):
+        module.run_comparison({'attempt': 1})
+    assert not lost.exists()

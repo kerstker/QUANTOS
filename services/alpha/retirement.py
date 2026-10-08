@@ -1,0 +1,91 @@
+"""Alpha retirement (Phase 6, step 11).
+
+Turns decay / regime / redundancy / capacity signals into a RetirementDecision
+and, when retiring, routes the alpha to RETIRED THROUGH the lifecycle manager so
+the transition is still legality-checked and audited (never a silent state poke).
+A regime break is a fast-path trigger (it does not wait for the decay debounce).
+Reasons are emitted in a deterministic priority: regime > decay > redundancy >
+capacity.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from quantos.contracts.alpha import Actor, DecayReport, RetirementDecision
+from quantos.contracts.research import AlphaState
+
+from services.lifecycle import DeploymentState
+
+from .config import AlphaFactoryConfig
+
+
+def assess_retirement(
+    alpha_id: str,
+    *,
+    config: Optional[AlphaFactoryConfig] = None,
+    decay: Optional[DecayReport] = None,
+    regime_profitable_frac: Optional[float] = None,
+    max_corr_to_approved: Optional[float] = None,
+    capacity_notional: Optional[float] = None,
+) -> RetirementDecision:
+    config = config or AlphaFactoryConfig()
+    reasons: list[str] = []
+    if regime_profitable_frac is not None and regime_profitable_frac < config.min_profitable_regime_frac:
+        reasons.append("REGIME_BREAK")                      # fast-path (no debounce)
+    if decay is not None and decay.decayed:
+        reasons.append("DECAY")
+    if max_corr_to_approved is not None and max_corr_to_approved > config.rho_cut:
+        reasons.append("REDUNDANT_WITH_APPROVED")
+    if capacity_notional is not None and capacity_notional < config.min_capacity_notional:
+        reasons.append("CAPACITY_BELOW_MIN")
+    return RetirementDecision(alpha_id=alpha_id, retire=bool(reasons), reasons=tuple(reasons))
+
+
+class AlphaRetirementSystem:
+    def __init__(self, manager, config: Optional[AlphaFactoryConfig] = None):
+        self.manager = manager
+        self.config = config or AlphaFactoryConfig()
+
+    def assess(self, alpha_id: str, **evidence) -> RetirementDecision:
+        return assess_retirement(alpha_id, config=self.config, **evidence)
+
+    def retire_if_needed(self, alpha_id: str, actor: Actor, *, timestamp: int, **evidence):
+        """Returns (decision, transition|None). Retirement goes through the manager
+        so it is audited; survivors stay queryable in the catalog (no survivorship bias)."""
+        decision = self.assess(alpha_id, **evidence)
+        if not decision.retire:
+            return decision, None
+        tr = self.manager.advance(alpha_id, AlphaState.RETIRED, actor, timestamp=timestamp)
+        return decision, tr
+
+    def sweep(
+        self,
+        evidence_by_alpha: dict[str, dict],
+        actor: Actor,
+        *,
+        timestamp: int,
+        states: tuple[DeploymentState, ...] = (
+            DeploymentState.LIVE,
+            DeploymentState.PAPER,
+        ),
+    ) -> dict[str, tuple]:
+        """The production DRIVER: scan deployed alphas and retire those that have
+        decayed. The CALLER is services/alpha/maintenance.py::run_maintenance
+        (the periodic maintenance pass — 断点4); at L2 it is invoked on-demand
+        (no wall-clock loop) and a Phase-14 scheduler will call it periodically
+        once live alphas + a forward-metrics feed exist.
+
+        727 C3: `states` holds DEPLOYMENT states (where the alpha runs), matching
+        the old default (APPROVED, PAPER_TRADING) -> (LIVE, PAPER). A legacy
+        DEGRADED row whose deployment position was lost (UNKNOWN_LEGACY) stays
+        swept — dropping it would silently un-monitor a degraded alpha.
+        Retiring still goes through the legacy audited advance(); the projection
+        maps RETIRED to research RESEARCH_RETIRED + deployment CLOSED already.
+        """
+        results: dict[str, tuple] = {}
+        for aid in self.manager.catalog.all_ids():
+            dep = self.manager.catalog.deployment_state(aid)
+            if dep in states or dep is DeploymentState.UNKNOWN_LEGACY:
+                results[aid] = self.retire_if_needed(
+                    aid, actor, timestamp=timestamp, **evidence_by_alpha.get(aid, {}))
+        return results

@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "policy_id": "binance_book_depth_confirmation_quality_exclusion_v2",
+  "status": "FROZEN_BEFORE_CONFIRMATION_OUTCOME",
+  "confirmation_study_id": "binance_usdm_book_depth_curve_confirmation_v2",
+  "window_day_count": 120,
+  "maximum_quality_excluded_days": 12,
+  "minimum_confirmation_decisions": 80,
+  "worst_case_available_decisions": 95,
+  "exclusion_unit": "ENTIRE_UTC_DAY_ALL_14_INSTRUMENTS",
+  "eligible_exclusion": {
+    "requires_official_checksum_pass": true,
+    "requires_parser_or_alignment_quality_rejection": true,
+    "network_or_timeout_is_excludable": false,
+    "checksum_mismatch_is_excludable": false,
+    "unexpected_exception_is_excludable": false
+  },
+  "continuation_policy": {
+    "quality_rejected_day_is_not_written": true,
+    "quality_rejected_day_is_recorded": true,
+    "thirteenth_quality_rejected_day_blocks": true,
+    "thresholds_may_not_change_after_outcome": true
+  },
+  "rationale": "Twelve exclusions are exactly 10% of the 120-day source window. Even if all exclusions are isolated and each removes both its entering and exiting 24h decision, at least 119-24=95 decisions remain, above the unchanged pre-registered minimum of 80."
+}

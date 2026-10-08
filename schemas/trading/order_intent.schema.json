@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "OrderSide": {
+      "enum": [
+        "BUY",
+        "SELL"
+      ],
+      "title": "OrderSide",
+      "type": "string"
+    },
+    "OrderType": {
+      "enum": [
+        "MARKET",
+        "LIMIT"
+      ],
+      "title": "OrderType",
+      "type": "string"
+    }
+  },
+  "description": "A strategy's desired action (intent only \u2014 never an instruction to a\nbroker). Risk decides permission separately (blueprint \u00a75.3).",
+  "properties": {
+    "instrument_id": {
+      "minLength": 1,
+      "title": "Instrument Id",
+      "type": "string"
+    },
+    "limit_price": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Limit Price"
+    },
+    "order_type": {
+      "$ref": "#/$defs/OrderType",
+      "default": "MARKET"
+    },
+    "quantity": {
+      "exclusiveMinimum": 0,
+      "title": "Quantity",
+      "type": "integer"
+    },
+    "side": {
+      "$ref": "#/$defs/OrderSide"
+    },
+    "strategy_id": {
+      "default": "",
+      "title": "Strategy Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "instrument_id",
+    "side",
+    "quantity"
+  ],
+  "title": "OrderIntent",
+  "type": "object"
+}

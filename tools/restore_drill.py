@@ -1,0 +1,449 @@
+"""Offline backup restore drill for QUANTOS.
+
+The drill restores one backup batch into an isolated target, verifies every
+restored byte, enforces an RTO budget, and emits machine-readable evidence.
+It never restores into active application state.
+"""
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+from typing import Any
+
+from tools.live_backup import _check_passphrase_strength, decrypt_file, decrypt_file_to_sink
+
+
+# A few multi-gigabyte authorities dominate restore time. Schedule them first
+# and keep three files in flight with eight authenticated chunks each: that
+# matches the 20-core ARM64 deployment more closely than four files / 32 crypto
+# workers, while writes and hashing remain ordered within every artifact.
+MAX_PARALLEL_RESTORE_FILES = 3
+MAX_PARALLEL_DECRYPT_CHUNKS = 8
+ZSTD_BINARY = "/usr/bin/zstd"
+ZSTD_SUFFIX = ".zst"
+TEE_BINARY = "/usr/bin/tee"
+SHA256SUM_BINARY = "/usr/bin/sha256sum"
+
+
+class RestoreDrillError(RuntimeError):
+    """The restore drill cannot prove a safe, complete recovery."""
+
+
+@contextmanager
+def measure_restore_stage(diagnostics: dict, stage: str, artifact: str | None = None):
+    """Record wall time, including failures, without paths or exception text.
+
+    Concurrent artifact durations overlap; they must not be summed as RTO.
+    These measurements never establish restore authority.
+    """
+    record = {"stage": stage, "completed": False}
+    if artifact is not None:
+        record["artifact_ref"] = hashlib.sha256(artifact.encode("utf-8")).hexdigest()
+    started = time.perf_counter()
+    try:
+        yield
+        record["completed"] = True
+    finally:
+        record["elapsed_ms"] = max(0, round((time.perf_counter() - started) * 1000))
+        diagnostics.setdefault("stages", []).append(record)
+
+
+def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        while block := source.read(block_size):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _decompress_zstd(source_path: str, output_path: str) -> str:
+    """Restore and hash one authenticated zstd payload in a native pipeline."""
+
+    required_binaries = (ZSTD_BINARY, TEE_BINARY, SHA256SUM_BINARY)
+    if any(
+        not os.path.isfile(binary) or not os.access(binary, os.X_OK)
+        for binary in required_binaries
+    ):
+        raise RestoreDrillError("zstd restore codec is unavailable")
+    processes: list[subprocess.Popen[bytes]] = []
+    try:
+        decompressor = subprocess.Popen(
+            [ZSTD_BINARY, "-d", "-f", "--quiet", "--stdout", source_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(decompressor)
+        if decompressor.stdout is None:
+            raise OSError("zstd stdout pipe is unavailable")
+
+        copier = subprocess.Popen(
+            [TEE_BINARY, output_path],
+            stdin=decompressor.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(copier)
+        decompressor.stdout.close()
+        if copier.stdout is None:
+            raise OSError("tee stdout pipe is unavailable")
+
+        hasher = subprocess.Popen(
+            [SHA256SUM_BINARY],
+            stdin=copier.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(hasher)
+        copier.stdout.close()
+        digest_output, _ = hasher.communicate()
+
+        for process in reversed(processes):
+            return_code = process.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, process.args)
+        digest_fields = digest_output.split()
+        if len(digest_fields) != 2 or digest_fields[1] != b"-":
+            raise OSError("sha256sum returned an invalid digest record")
+        try:
+            digest = digest_fields[0].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise OSError("sha256sum returned a non-ASCII digest") from exc
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise OSError("sha256sum returned an invalid digest")
+
+        with open(output_path, "r+b") as output:
+            os.fsync(output.fileno())
+        return digest
+    except (OSError, subprocess.CalledProcessError) as exc:
+        for process in reversed(processes):
+            if process.poll() is not None:
+                continue
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        try:
+            os.unlink(output_path)
+        except FileNotFoundError:
+            pass
+        raise RestoreDrillError("zstd restore codec failed") from exc
+
+
+def _decompress_zstd_encrypted(
+    source_path: str,
+    output_path: str,
+    passphrase: str,
+) -> str:
+    """Decrypt QBK2 and decompress it in one streaming pipeline."""
+    required_binaries = (ZSTD_BINARY, TEE_BINARY, SHA256SUM_BINARY)
+    if any(
+        not os.path.isfile(binary) or not os.access(binary, os.X_OK)
+        for binary in required_binaries
+    ):
+        raise RestoreDrillError("zstd restore codec is unavailable")
+    processes: list[subprocess.Popen[bytes]] = []
+    decompressor_stdin = None
+    try:
+        decompressor = subprocess.Popen(
+            [ZSTD_BINARY, "-d", "-f", "--quiet", "--stdout"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(decompressor)
+        decompressor_stdin = decompressor.stdin
+        if decompressor.stdin is None or decompressor.stdout is None:
+            raise OSError("zstd pipe is unavailable")
+
+        copier = subprocess.Popen(
+            [TEE_BINARY, output_path],
+            stdin=decompressor.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(copier)
+        decompressor.stdout.close()
+        if copier.stdout is None:
+            raise OSError("tee stdout pipe is unavailable")
+
+        hasher = subprocess.Popen(
+            [SHA256SUM_BINARY],
+            stdin=copier.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        processes.append(hasher)
+        copier.stdout.close()
+
+        decrypt_file_to_sink(
+            source_path,
+            passphrase,
+            decompressor.stdin.write,
+            parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
+        )
+        decompressor.stdin.close()
+        decompressor_stdin = None
+        digest_output, _ = hasher.communicate()
+
+        for process in reversed(processes):
+            return_code = process.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, process.args)
+        digest_fields = digest_output.split()
+        if len(digest_fields) != 2 or digest_fields[1] != b"-":
+            raise OSError("sha256sum returned an invalid digest record")
+        try:
+            digest = digest_fields[0].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise OSError("sha256sum returned a non-ASCII digest") from exc
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise OSError("sha256sum returned an invalid digest")
+        with open(output_path, "r+b") as output:
+            os.fsync(output.fileno())
+        return digest
+    except Exception as exc:
+        if decompressor_stdin is not None:
+            try:
+                decompressor_stdin.close()
+            except OSError:
+                pass
+        for process in reversed(processes):
+            if process.poll() is not None:
+                continue
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        try:
+            os.unlink(output_path)
+        except FileNotFoundError:
+            pass
+        if isinstance(exc, RestoreDrillError):
+            raise
+        raise RestoreDrillError("zstd encrypted restore codec failed") from exc
+
+
+
+def _evidence_path(path: str) -> str:
+    absolute = os.path.abspath(path)
+    try:
+        relative = os.path.relpath(absolute, os.getcwd())
+    except ValueError:
+        return absolute
+    return relative.replace(os.sep, "/") if relative != ".." and not relative.startswith("../") else absolute
+
+
+def _batch_files(batch_dir: str) -> list[str]:
+    if not os.path.isdir(batch_dir):
+        raise RestoreDrillError(f"backup batch does not exist: {batch_dir}")
+    files = [entry.path for entry in os.scandir(batch_dir) if entry.is_file(follow_symlinks=False)]
+    if not files:
+        raise RestoreDrillError("backup batch is empty")
+    return sorted(files)
+
+
+def _restore_mode(files: list[str]) -> str:
+    encrypted = [path.endswith(".enc") for path in files]
+    if any(encrypted) and not all(encrypted):
+        raise RestoreDrillError("mixed encrypted and plaintext backup batches are not allowed")
+    return "ENCRYPTED" if all(encrypted) else "PLAINTEXT"
+
+
+def _restored_name(source_name: str, mode: str) -> str:
+    restored_name = source_name[:-4] if mode == "ENCRYPTED" else source_name
+    if mode == "ENCRYPTED" and restored_name.endswith(ZSTD_SUFFIX):
+        restored_name = restored_name[: -len(ZSTD_SUFFIX)]
+    return restored_name
+
+
+def _largest_first_restore_items(
+    files: list[str],
+    restored_names: list[str],
+) -> list[tuple[str, str]]:
+    """Schedule dominant artifacts first without changing evidence ordering."""
+    return sorted(
+        zip(files, restored_names),
+        key=lambda item: (-os.path.getsize(item[0]), item[0]),
+    )
+
+
+def _prepare_target(restore_dir: str) -> tuple[str, str]:
+    target = os.path.abspath(restore_dir)
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    if os.path.exists(target):
+        if not os.path.isdir(target) or os.listdir(target):
+            raise RestoreDrillError("restore target must be an empty directory or not exist")
+    stage = tempfile.mkdtemp(prefix=".quantos-restore-drill-", dir=parent)
+    return target, stage
+
+
+def run_restore_drill(
+    *,
+    batch_dir: str,
+    restore_dir: str,
+    passphrase: str | None,
+    rto_ms: int,
+    max_rpo_ms: int,
+    allow_plaintext: bool = False,
+    now_ms: int | None = None,
+    diagnostics: dict | None = None,
+) -> dict[str, Any]:
+    diagnostics = {} if diagnostics is None else diagnostics
+    if rto_ms <= 0 or max_rpo_ms <= 0:
+        raise RestoreDrillError("rto_ms and max_rpo_ms must be positive")
+    files = _batch_files(batch_dir)
+    observed_at_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    newest_source_ms = max(int(os.path.getmtime(path) * 1000) for path in files)
+    source_age_ms = max(0, observed_at_ms - newest_source_ms)
+    if source_age_ms > max_rpo_ms:
+        raise RestoreDrillError(
+            f"backup batch exceeds RPO: {source_age_ms}ms > {max_rpo_ms}ms")
+    mode = _restore_mode(files)
+    if mode == "ENCRYPTED":
+        if not passphrase:
+            raise RestoreDrillError("encrypted restore requires a passphrase")
+        try:
+            _check_passphrase_strength(passphrase)
+        except Exception as exc:
+            raise RestoreDrillError(str(exc)) from exc
+    elif not allow_plaintext:
+        raise RestoreDrillError("plaintext restore requires allow_plaintext=True")
+
+    restored_names: list[str] = []
+    seen_restored_names: set[str] = set()
+    expected_hashes: dict[str, str] = {}
+    for source_path in files:
+        source_name = os.path.basename(source_path)
+        restored_name = _restored_name(source_name, mode)
+        if not restored_name or restored_name in seen_restored_names:
+            raise RestoreDrillError(f"duplicate or invalid restored filename: {restored_name!r}")
+        restored_names.append(restored_name)
+        seen_restored_names.add(restored_name)
+
+    target, stage = _prepare_target(restore_dir)
+    started = time.perf_counter()
+    try:
+        if mode == "ENCRYPTED":
+            def restore_encrypted(item: tuple[str, str]) -> tuple[str, str]:
+                source_path, restored_name = item
+                output_path = os.path.join(stage, restored_name)
+                with measure_restore_stage(diagnostics, "DECRYPT_DECOMPRESS_HASH", restored_name):
+                    if source_path.endswith(f"{ZSTD_SUFFIX}.enc"):
+                        restored_sha256 = _decompress_zstd_encrypted(
+                            source_path,
+                            output_path,
+                            passphrase or "",
+                        )
+                        return restored_name, restored_sha256
+                    return restored_name, decrypt_file(
+                        source_path,
+                        output_path,
+                        passphrase or "",
+                        parallelism=MAX_PARALLEL_DECRYPT_CHUNKS,
+                    )
+
+            workers = min(MAX_PARALLEL_RESTORE_FILES, len(files))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for restored_name, restored_sha256 in executor.map(
+                    restore_encrypted,
+                    _largest_first_restore_items(files, restored_names),
+                ):
+                    expected_hashes[restored_name] = restored_sha256
+        else:
+            for source_path, restored_name in zip(files, restored_names):
+                output_path = os.path.join(stage, restored_name)
+                shutil.copyfile(source_path, output_path)
+                restored_sha256 = _sha256_file(output_path)
+                # Plaintext opt-in has no AEAD, so compare source and
+                # destination. Encrypted restores use the digest produced in
+                # the authenticated decrypt stream above.
+                if _sha256_file(source_path) != restored_sha256:
+                    raise RestoreDrillError(
+                        f"integrity mismatch after restore: {restored_name}"
+                    )
+                expected_hashes[restored_name] = restored_sha256
+
+        elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+        if elapsed_ms > rto_ms:
+            raise RestoreDrillError(f"restore drill exceeded RTO: {elapsed_ms}ms > {rto_ms}ms")
+        if os.path.isdir(target):
+            os.rmdir(target)
+        os.replace(stage, target)
+        stage = ""
+        return {
+            "schema_version": 1,
+            "verdict": "PASS",
+            "batch_dir": _evidence_path(batch_dir),
+            "restore_dir": _evidence_path(target),
+            "mode": mode,
+            "file_count": len(restored_names),
+            "restored_files": restored_names,
+            "sha256": expected_hashes,
+            "elapsed_ms": elapsed_ms,
+            "rto_ms": rto_ms,
+            "rto_met": True,
+            "observed_at_ms": observed_at_ms,
+            "newest_source_ms": newest_source_ms,
+            "source_age_ms": source_age_ms,
+            "max_rpo_ms": max_rpo_ms,
+            "rpo_met": True,
+            "integrity_verified": True,
+        }
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _write_evidence(path: str, result: dict[str, Any]) -> None:
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump(result, output, indent=2, sort_keys=True)
+        output.write("\n")
+    os.replace(temporary, path)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run an isolated QUANTOS backup restore drill")
+    parser.add_argument("batch_dir")
+    parser.add_argument("--restore-dir", required=True)
+    parser.add_argument("--rto-ms", type=int, default=300_000)
+    parser.add_argument("--max-rpo-ms", type=int, default=86_400_000)
+    parser.add_argument("--allow-plaintext", action="store_true")
+    parser.add_argument(
+        "--evidence",
+        default=os.path.join("evidence", "generic_restore_drill_latest.json"),
+    )
+    args = parser.parse_args()
+    result = run_restore_drill(
+        batch_dir=args.batch_dir,
+        restore_dir=args.restore_dir,
+        passphrase=os.environ.get("QUANTOS_BACKUP_PASSPHRASE"),
+        rto_ms=args.rto_ms,
+        max_rpo_ms=args.max_rpo_ms,
+        allow_plaintext=args.allow_plaintext,
+    )
+    _write_evidence(args.evidence, result)
+    print(json.dumps(result, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

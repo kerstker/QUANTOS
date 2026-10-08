@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "provenance": "REAL_BINANCE_MAINNET_READONLY_SMOKE",
+  "ran_at_ms": 1784871768436,
+  "ran_at_utc": "2026-07-24T05:42:48Z",
+  "checks": [
+    {
+      "name": "server_time",
+      "status": "PASS",
+      "detail": "serverTime present (positive int ms)",
+      "skew_ms": -1256
+    },
+    {
+      "name": "exchange_info",
+      "status": "PASS",
+      "detail": "BTCUSDT filters parse per adapter assumptions",
+      "filters": {
+        "step_size": 0.001,
+        "min_qty": 0.001,
+        "min_notional": 50.0,
+        "tick_size": 0.1
+      }
+    },
+    {
+      "name": "premium_index",
+      "status": "PASS",
+      "detail": "premiumIndex fields parse per adapter premium_index assumptions",
+      "mark_price": 65244.2,
+      "last_funding_rate": 5.843e-05
+    },
+    {
+      "name": "account",
+      "status": "PASS",
+      "detail": "balance fields parse; USDT position rows parse per adapter assumptions (non-USDT rows skipped like the adapter)",
+      "n_positions": 846,
+      "n_open_positions": 0,
+      "n_skipped_non_usdt": 49
+    }
+  ],
+  "verdict": "PASS",
+  "order_response_shape": "UNVERIFIED_UNTIL_FIRST_FILL",
+  "notes": [
+    "read-only checks only (4 GETs); this tool never places orders and never prints credentials",
+    "key permission bits (enableWithdrawals/ipRestrict) are NOT in the /fapi response — verified separately via python -m tools.verify_key_permissions --venue binance (/sapi/v1/account/apiRestrictions); that check must report SAFE before any --arm-live use"
+  ]
+}

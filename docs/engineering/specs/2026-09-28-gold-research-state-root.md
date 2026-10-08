@@ -1,0 +1,7 @@
+# 黄金研究入口的状态目录接线
+
+工厂黄金研究入口tools/gold_replay_research.py原使用相对data/cache路径，忽略Runner配置的QUANTOS_STATE_ROOT。以独立release目录为cwd、输入仅放在配置state目录时，回归实际失败于LINKED_GOLD_RESEARCH_PATH；若release目录残留数据，原实现还可能读取错误的任务输入。
+
+现在复用quantos.runtime_paths.runtime_state_root，输入和结果均定位到配置状态根；保留attempt白名单、符号链接检查、不可覆盖历史归档和技术结果标记。未增加任意路径参数，未改变净盈亏为空的黄金信号回放范围。
+
+回归升级为真实JobQueue提交gold_replay任务、真实归档与结果登记；验证结果位于state目录、release目录为空。Runner及信号归档两组14项通过，规范Ruff E9/F821通过。此为离线合成输入的路径集成验收，不证明真实XAU资金回放或Demo执行。未部署，未包含于已冻结9e42d3e1b，须后续合并验证。

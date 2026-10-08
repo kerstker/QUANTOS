@@ -1,0 +1,71 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 每个里程碑都可验收——主动邀请投资人把里程碑写进分期付款条款。不提管理规模目标。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "14 · 未来 12 个月路线图"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "每个里程碑都可验收"}
+  - elementId: spine
+    elementType: line
+    bounds: [160, 130, 2, 320]
+    viewBox: [2, 320]
+    points: "1,0 1,320"
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: dot1
+    elementType: shape
+    bounds: [153, 138, 16, 16]
+    shapeName: ellipse
+    fill: {type: solid, color: "$accent"}
+  - elementId: ph1
+    elementType: text
+    bounds: [190, 130, 700, 100]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:14px"><strong>0–3 个月 · 小资金真实闭环</strong></span></p>
+        <p style="margin-top:5px"><span style="color:$muted;font-size:11px">实时行情/订单/成交/持仓/资金/PnL 对账 · 回测-影子盘-实盘三线对比 · 每日 NAV 与周度报告 · 固定核心策略参数与风险预算 · 异常停机与 Kill Switch 演练</span></p>
+  - elementId: dot2
+    elementType: shape
+    bounds: [153, 246, 16, 16]
+    shapeName: ellipse
+    fill: {type: solid, color: "$blue"}
+  - elementId: ph2
+    elementType: text
+    bounds: [190, 238, 700, 100]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$blue;font-size:14px"><strong>3–6 个月 · 连续实盘记录</strong></span></p>
+        <p style="margin-top:5px"><span style="color:$muted;font-size:11px">扩充 3–5 个低相关策略簇 · Alpha 归因 · 实盘收益退化分析 · 容量与压力测试 · 投资人只读看板 · 尽调数据室</span></p>
+  - elementId: dot3
+    elementType: shape
+    bounds: [153, 354, 16, 16]
+    shapeName: ellipse
+    fill: {type: solid, color: "$muted"}
+  - elementId: ph3
+    elementType: text
+    bounds: [190, 346, 700, 110]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$ink;font-size:14px"><strong>6–12 个月 · 多策略组合与首个机构合作</strong></span></p>
+        <p style="margin-top:5px"><span style="color:$muted;font-size:11px">形成多策略实盘组合 · 获得首个正式机构合作或验证资金 · 执行优化 · 核心团队搭建 · 月度投资人报告 · 探索首个技术服务收入 · 依据实盘结果决定是否进入更大规模资金管理</span></p>
+  - elementId: note
+    elementType: text
+    bounds: [90, 470, 780, 24]
+    content:
+      style: "$small"
+      wrap: false
+      text: |
+        <p>本路线图不含管理规模承诺；规模决策以实盘证据为前提。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 16"}

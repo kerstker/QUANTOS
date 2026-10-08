@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786509252875,
+  "status": "BLOCKED_BEFORE_OUTCOME",
+  "reason_code": "INSUFFICIENT_CONFIRMATION_DATA_CAPACITY",
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "confirmation_contract_commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+  "quality_policy_commit": "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30",
+  "quality_policy_implementation_commit": "81a1315db7c87a37b727b37ad7d73b8febcc15a9",
+  "mark_alignment_diagnostic_commit": "008306e",
+  "backfill_status_sha256": "22d05b9fb66cd66965cdc114052eb3c3c879d150f2ee06c90d144892d9f6a5a6",
+  "requested_days": 90,
+  "processed_days": 90,
+  "complete_stored_days": 85,
+  "complete_day_ratio": 0.9444444444444444,
+  "minimum_complete_days": 81,
+  "quality_excluded_day_count": 5,
+  "quality_excluded_days_ms": [
+    1774483200000,
+    1775606400000,
+    1776297600000,
+    1776816000000,
+    1776988800000
+  ],
+  "hourly_coverage_rejected_days": 4,
+  "mark_alignment_rejected_days": 1,
+  "mark_alignment_failure": {
+    "day_ms": 1774483200000,
+    "instrument_id": "ETHUSDT",
+    "hours_above_bound": 1,
+    "maximum_deviation_ratio": 0.01102020273923565,
+    "maximum_allowed_deviation_ratio": 0.01,
+    "hard_gate_retained": true
+  },
+  "actual_adjacent_24h_decision_count": 79,
+  "minimum_confirmation_decisions": 80,
+  "complete_day_capacity_passed": true,
+  "actual_decision_capacity_passed": false,
+  "confirmation_return_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "authority_head": {
+    "seq": 59136,
+    "row_hash": "14fdf45c6e6347edb86007d1333ab8c5cd21e848282707ab302b8941f42ee239"
+  },
+  "authority_chain_valid": true,
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

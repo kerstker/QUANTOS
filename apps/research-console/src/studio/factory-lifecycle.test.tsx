@@ -1,0 +1,80 @@
+import {it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {MemoryRouter} from '@/lib/router';
+import {FactoryLifecycle} from './FactoryLifecycle';
+import {fetchLifecycle,controlCampaign} from '@/lib/api/ai-factory-lifecycle-api';
+vi.mock('@/lib/api/ai-factory-lifecycle-api',()=>({fetchLifecycle:vi.fn(),controlCampaign:vi.fn()}));
+vi.mock('@/lib/api/research-runner-api',()=>({getOperator:()=> 'operator',getRunnerToken:()=> 'test',setOperator:vi.fn(),setRunnerToken:vi.fn()}));
+const data={workspace:{id:'current',label:'当前研究',writable:true},workspaces:[{id:'current',label:'当前研究',writable:true}],campaigns:[],rounds:[],models:[],comparisons:[],sources:[{id:'aqr',name:'AQR',category:'国际机构',url:'https://www.aqr.com/',adopt:'成本后评价',limitation:'研究方法'}],capabilities:[{id:'R4',title:'执行与实际反馈',status:'BLOCKED',detail:'等待真实证据'}],scheduler_enabled:true,errors:[],as_of_ms:1,read_only:true,authoritative:false} as const;
+it('starts a bounded campaign and does not invent an active model',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue(structuredClone(data) as never);vi.mocked(controlCampaign).mockResolvedValue({});
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);
+ await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ fireEvent.click(screen.getByRole('button',{name:'启动持续研究计划'}));
+ await waitFor(()=>expect(controlCampaign).toHaveBeenCalledWith(expect.objectContaining({action:'create',max_cycles:3,budget:3,interval_hours:24})));
+ fireEvent.change(screen.getByLabelText('最多轮次'),{target:{value:'12'}});
+ fireEvent.change(screen.getByLabelText('每轮主实验'),{target:{value:'18'}});
+ expect(screen.getByRole('button',{name:'启动持续研究计划'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('tab',{name:'模型演进'}));
+ expect(screen.getByText('尚无冻结模型')).toBeInTheDocument();
+});
+it('supports keyboard navigation and searches actual source records',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue(structuredClone(data) as never);
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.keyDown(screen.getByRole('tab',{name:'生命周期'}),{key:'End'});
+ expect(screen.getByRole('tab',{name:'来源对标'})).toHaveFocus();
+ expect(screen.getByRole('link',{name:'AQR ↗'})).toHaveAttribute('href','https://www.aqr.com/');
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'missing'}});
+ expect(screen.queryByRole('link',{name:'AQR ↗'})).not.toBeInTheDocument();
+});
+it('offers all catalogue sources while enforcing eight selections',async()=>{
+ const sources=Array.from({length:12},(_,i)=>({id:`source_${i}`,name:`研究来源 ${i}`,category:'系统',url:'https://example.com',adopt:'研究',limitation:'公开方法'}));
+ vi.mocked(fetchLifecycle).mockResolvedValue({...structuredClone(data),sources} as never);
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).toBeInTheDocument();
+ for(let i=0;i<5;i++)fireEvent.click(screen.getByRole('checkbox',{name:`研究来源 ${i}`}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('checkbox',{name:'研究来源 0'}));
+ expect(screen.getByRole('checkbox',{name:'研究来源 11'})).not.toBeDisabled();
+});
+it('creates a gold feedback campaign without BTC-only controls',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue({...structuredClone(data),gold_inputs:{status:'AVAILABLE',items:[{input_id:7,input_sha256:'a'.repeat(64),start_ms:1000,end_ms:2000,frame_count:3,decision_count:2,bytes:100,source_verified:false}],errors:[],truncated:false}} as never);
+ vi.mocked(controlCampaign).mockClear();vi.mocked(controlCampaign).mockResolvedValue({});
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ fireEvent.change(screen.getByLabelText('研究市场'),{target:{value:'XAUUSDT'}});
+ expect(screen.getByRole('button',{name:'启动持续研究计划'})).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('黄金数据快照'),{target:{value:'7:'+ 'a'.repeat(64)}});
+ fireEvent.click(screen.getByRole('checkbox',{name:'首轮后等待 Demo 整轮对账反馈'}));
+ fireEvent.click(screen.getByRole('button',{name:'启动持续研究计划'}));
+ await waitFor(()=>expect(controlCampaign).toHaveBeenCalledOnce());
+ const body=vi.mocked(controlCampaign).mock.calls[0][0];
+ expect(body).toMatchObject({market:'XAUUSDT',budget:1,mode:'ai',input_id:7,input_sha256:'a'.repeat(64),execution_feedback_mode:'after_first_round'});
+ expect(body).not.toHaveProperty('research_protocol');expect(body).not.toHaveProperty('source_ids');expect(body).not.toHaveProperty('trigger');
+});
+it('keeps gold research unavailable when no saved snapshot exists',async()=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue({...structuredClone(data),gold_inputs:{status:'NO_SNAPSHOT',items:[],errors:[],truncated:false}} as never);
+ vi.mocked(controlCampaign).mockClear();
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ fireEvent.change(screen.getByLabelText('研究市场'),{target:{value:'XAUUSDT'}});
+ expect(screen.getByText('暂无可用黄金数据快照，采集并保存数据后可启动研究。')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'启动持续研究计划'})).toBeDisabled();
+ expect(controlCampaign).not.toHaveBeenCalled();
+});
+
+it.each(['FIRST_RECEIVED_WATERMARK_V1','AI_DESIGNED_WATERMARK_V1','AI_DESIGNED_ZONE_V1'])('collects first with %s and carries the same objective and budget into the campaign request',async(policy)=>{
+ vi.mocked(fetchLifecycle).mockResolvedValue({...structuredClone(data),gold_inputs:{status:'AVAILABLE',items:[{input_id:7,input_sha256:'a'.repeat(64),start_ms:1000,end_ms:2000,frame_count:3,decision_count:2,bytes:100,source_verified:false}],errors:[],truncated:false},collection_requests:[]} as never);
+ vi.mocked(controlCampaign).mockClear();vi.mocked(controlCampaign).mockResolvedValue({run_id:'collection-one'});
+ render(<MemoryRouter><FactoryLifecycle/></MemoryRouter>);await screen.findByText('等待真实证据');
+ fireEvent.click(screen.getByRole('tab',{name:'持续研究'}));
+ fireEvent.change(screen.getByLabelText('研究市场'),{target:{value:'XAUUSDT'}});
+ fireEvent.change(screen.getByLabelText('黄金数据快照'),{target:{value:'7:'+ 'a'.repeat(64)}});
+ fireEvent.click(screen.getByRole('checkbox',{name:'先采集新数据，完成后自动启动计划'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'决策时机'}),{target:{value:policy}});
+ fireEvent.click(screen.getByRole('button',{name:'启动持续研究计划'}));
+ await waitFor(()=>expect(controlCampaign).toHaveBeenCalledWith(expect.objectContaining({action:'collect_create',input_id:7,input_sha256:'a'.repeat(64),collection_input_id:8,collection_seconds:30,collection_decision_policy:policy,max_cycles:3,budget:1})));
+ expect(await screen.findByText('采集任务已登记；成功后自动创建研究计划，可在研究任务页查看进度。')).toBeInTheDocument();
+});

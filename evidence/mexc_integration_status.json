@@ -1,0 +1,149 @@
+{
+  "acceptance": {
+    "micro_live_review": false,
+    "read_only_and_test_order_code": true,
+    "real_order_path": false
+  },
+  "artifact": "QUANTOS_727_MEXC_INTEGRATION_STATUS",
+  "blockers": [
+    "MEXC_NO_SPOT_TESTNET_EXTERNAL_PATH",
+    "REAL_CREDENTIAL_ACCOUNT_SMOKE_NOT_EXECUTED"
+  ],
+  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "external_verification": {
+    "account_smoke": false,
+    "adjacent_binance_evidence_ref": "evidence/binance_testnet_smoke.json",
+    "adjacent_binance_futures_testnet_order_verified": true,
+    "credentials_accessed": false,
+    "test_order_executed": false,
+    "user_stream_verified": false
+  },
+  "generated_at_ms": 1789176209284,
+  "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
+  "honesty_note": "M1/M2, the M3 safety kernel, and the M4 user-stream seam are implemented and tested. The adapter remains fail-closed; no real credential or order evidence is claimed, and MEXC spot has no testnet. A successful Binance Futures testnet order is recorded only as adjacent venue connectivity evidence and does not satisfy MEXC or production multi-venue acceptance.",
+  "implementation": {
+    "account_read_only": true,
+    "commission_and_rules": true,
+    "micro_live_broker": false,
+    "public_market_read": true,
+    "startup_recovery_choreography": true,
+    "test_order": true,
+    "unknown_order_persistence": true,
+    "user_stream": true
+  },
+  "input_hash": "ce4883a16151c40ae435f7b92fd4983e6d9f7f9e1aae9e1d718c08a6285b7b4a",
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "docs/engineering/specs/2026-07-27-mexc-phase8-design.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "33c8fc655a4f52e40af42c9b3e826341cdc3d7607157548b2c85f7e7bc53931b",
+      "size_bytes": 17104
+    },
+    "evidence/binance_testnet_smoke.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "7c254f07f48dd956699ecf65ba999fb04120246be22e7c327749b11eaf2f8728",
+      "size_bytes": 2611
+    },
+    "live/exchange/mexc_spot.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "b6b2fe4ba31901e2c6d893b5f449ba76c2c3a1e3a3de4a575ea6390da480ea7c",
+      "size_bytes": 35950
+    },
+    "live/execution/order_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "052b1e79dbaba3776554fc8f4ba4d261ca526e20c5b0891c46c26a0ec4ac582d",
+      "size_bytes": 34675
+    },
+    "live/execution/startup_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "c9f7bfd9e6799a6f81e35561b34f129b91b7391c6564bb19814d6352f10dbb3a",
+      "size_bytes": 11137
+    },
+    "live/pipeline.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "fb338b4677e398d22f3d6edf9c49a80b6a1318a6ef5844e98b19de02611d23d2",
+      "size_bytes": 46527
+    },
+    "tests/live/test_mexc_pipeline_integration.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "77074df54c5426f3b361e3ad275910ef72e759d22edf798cab9e21b31fa4af20",
+      "size_bytes": 16543
+    },
+    "tests/live/test_mexc_spot.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "27439485045a26ca2dcc7d1d48b7e1fc011e9da1af10e7f557db0663d74d56a5",
+      "size_bytes": 32748
+    },
+    "tests/live/test_order_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "a7012fa63f2597ea1014fd2861936ecbfdf7cc00bef24a39f956da76431ccf74",
+      "size_bytes": 7205
+    },
+    "tests/live/test_startup_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "007f3990be29b0ee4907e19ce7e1e5ce4a27ff23cd910573d3ed0e2d2a4e1628",
+      "size_bytes": 3628
+    },
+    "tests/tools/test_live_testnet_smoke.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "a02ea518ef0c7eb15c7aaa9fd38416559103e7dfef72cf2ed6e7fad2d78e0532",
+      "size_bytes": 3355
+    },
+    "tools/live_testnet_smoke.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "2729737ff19ac4ec2eb5d1cbe7a25396014f896f8f51f07e902e72c21ec32490",
+      "size_bytes": 9847
+    },
+    "tools/mexc_credentials.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "ca323bd62f304112dbf120b49228a9176a54c81c79744a52a510645e49b0e1e1",
+      "size_bytes": 12868
+    },
+    "tools/mexc_readonly_smoke.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "049405601ec7e6337418b084dcbf6cba7230496c62b6fce1e11ec6706e3b13b4",
+      "size_bytes": 13786
+    }
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "status": "NOT_READY",
+  "validation": {
+    "current": true,
+    "head_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "overall_status": "PASS",
+    "reported_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
+  },
+  "working_tree_dirty": false
+}

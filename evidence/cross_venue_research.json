@@ -1,0 +1,1321 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RESEARCH_CLUSTER_PREREGISTERED",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at": 1784995414,
+  "pre_registration": {
+    "family": "cross_venue_cluster_v1",
+    "registered_before_evaluation": true,
+    "date": "2026-07-25",
+    "trial_count_planned": 6,
+    "verdict_bar": {
+      "min_t_stat": 2.5,
+      "t_stat_horizon": "weekly_non_overlapping_h7",
+      "min_falsification_passes": 4,
+      "min_vt_sharpe": 1.0,
+      "max_drawdown_vt": 0.2
+    },
+    "phase0_data_reality": {
+      "probed_at": "2026-07-25",
+      "venues": "Binance USDT-M(既有 crypto_funding.db)× Bybit linear perp(本 slice 落库)",
+      "bybit_kline_depth": "BTC 2020-03-25 起;24 OI 大币全部有历史,最浅 APT 2022-10-19(~3.8y ≥ 2y 目标);653 个 USDT linear perp;limit≤1000,响应最新在前",
+      "bybit_funding_depth": "BTC 6939 条(2020-03-25 起,8h);SOL 5917 条(2021-06-29 起)",
+      "rate_limits": "探测全程 0.2–0.3s sleep 无 403/429(礼貌抓取,单进程串行)",
+      "excluded": "MEXC 无 perp funding 公共历史(仅现货 klines);OKX 无本地适配器——跨所簇按 Binance × Bybit 两所构造"
+    },
+    "data_scope": {
+      "in_scope": "日频跨所收盘价 basis(bybit/binance−1)与资金费价差(bybit−binance 日求和),UTC 日网格同步代理,24 OI 大币,周度调仓 q=0.30",
+      "out_of_scope": "跨所同步 intraday/盘口偏离(本地无该历史,cross_exchange_snapshot 只从 2026-07 起向前积累)——按定义不检验、不声称;spec『多交易所同步行情』的 intraday 一支留作快照积累到位后的后续 slice"
+    },
+    "adaptations": [
+      "执行现实 caveat:干跑把信号模拟在 Binance 定价的 book 上(first-pass 证据筛);真实跨所 basis 交易需两所同时下腿(转账/腿风险/限频——spec 三大风险在本筛结构性不存在)。",
+      "carry 参照流 = COMPOSITE 在同一 24 币面板上的日频 q=0.3 价格流(增量 IR 必须同宇宙才诚实)。",
+      "拥挤门(global_ls z>3.0 BLOCK)不接:OI 持仓数据是 Binance 单侧,跨所拥挤证据不存在;dry-run 仍过 fail-closed 预交易门。不接 ≠ 绕过。",
+      "econ 流仍含 Binance funding(与 verify 同法,供参照);干跑 cash_flow_fn=None(价格信号)。",
+      "quantile 稳健性扫描省略——全族 q=0.30 固定,分位非本族变体轴。",
+      "容量带收为诊断(非判定条)——任务书判定门槛只有 t-stat/证伪/VT 三条;UNCALIBRATED_PRINCIPLED。",
+      "变体不写 dry_run.db(正典库只留官方 5 条策略);变体数字只落本证据文件。",
+      "Bybit close 与 Binance close 都是 UTC 日界收盘——日频同步代理,非 intraday 同步;资金费两所同 8h 节奏(00/08/16 UTC),日求和后日网格对齐。"
+    ],
+    "variants": [
+      {
+        "id": "xv_basis_rev",
+        "kind": "basis_z_contra",
+        "expression": "(cs_rank (neg (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 20)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 20))))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "主假设:跨所 basis 20d z 截面 contrarian——某所相对溢价=该所拥挤,溢价均值回归"
+      },
+      {
+        "id": "xv_basis_tilt",
+        "kind": "basis_z_momentum",
+        "expression": "(cs_rank (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 20)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 20)))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "反方向对照:偏离短期延续——Bybit 若是价格发现领先 venue,其溢价方向应延续而非回归"
+      },
+      {
+        "id": "xv_basis_delta_rev",
+        "kind": "basis_delta_contra",
+        "expression": "(cs_rank (neg (ts_delta (sub (div (field xclose) (field close)) (const 1.0)) 7)))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "偏离的加速度:7 日 basis 变化 contrarian——快速拉开后回落,与水平/归一正交的自由度"
+      },
+      {
+        "id": "xv_basis_level_rev",
+        "kind": "basis_level_contra",
+        "expression": "(cs_rank (neg (sub (div (field xclose) (field close)) (const 1.0))))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "未 z 归一的 raw 水平 contrarian——分离「z 归一」自由度:若它同样有效,有效成分是水平"
+      },
+      {
+        "id": "xv_funding_spread_rev",
+        "kind": "funding_spread_contra",
+        "expression": "(cs_rank (neg (div (sub (sub (field xfunding) (field funding)) (ts_mean (sub (field xfunding) (field funding)) 20)) (ts_std (sub (field xfunding) (field funding)) 20))))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "资金费价差 20d z contrarian——跨所杠杆拥挤的相对定价(Phase 0 资金费深度已验证)"
+      },
+      {
+        "id": "xv_basis_rev_60",
+        "kind": "basis_z_contra_slow",
+        "expression": "(cs_rank (neg (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 60)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 60))))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "60d z 窗:主假设对归一窗口的稳健性——若边真实,慢窗不应杀死它"
+      }
+    ]
+  },
+  "dataset": {
+    "universe": "crypto_oi_majors_xvenue",
+    "n_instruments": 24,
+    "instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "ETH",
+      "FIL",
+      "ICP",
+      "INJ",
+      "LINK",
+      "LTC",
+      "NEAR",
+      "OP",
+      "SOL",
+      "TRX",
+      "UNI",
+      "XLM",
+      "XRP"
+    ],
+    "n_event_times": 2228,
+    "date_start": "2020-06-18",
+    "date_end": "2026-07-24",
+    "xvenue_coverage": {
+      "cells_both_present": 43945,
+      "cells_either_present": 50796,
+      "coverage_ratio": 0.8651,
+      "xclose_first_date_by_instrument": {
+        "BTC": "2020-06-18",
+        "LINK": "2020-10-21",
+        "LTC": "2020-10-21",
+        "BCH": "2020-12-15",
+        "ETH": "2021-03-15",
+        "ADA": "2021-03-18",
+        "DOT": "2021-03-18",
+        "AAVE": "2021-05-13",
+        "XRP": "2021-05-13",
+        "DOGE": "2021-06-02",
+        "BNB": "2021-06-29",
+        "ETC": "2021-06-29",
+        "FIL": "2021-06-29",
+        "TRX": "2021-08-31",
+        "XLM": "2021-08-31",
+        "AVAX": "2021-09-15",
+        "ICP": "2021-09-15",
+        "ATOM": "2021-10-11",
+        "NEAR": "2021-10-11",
+        "SOL": "2021-10-15",
+        "UNI": "2021-11-30",
+        "OP": "2022-06-01",
+        "INJ": "2022-08-17",
+        "APT": "2022-10-19"
+      }
+    },
+    "dataset_version": "1d8d5df777ba4bf5e1258c509bd5e87810498044e29f69cb47a7e2aef2281c4e"
+  },
+  "trial_registration": {
+    "dataset_version": "1d8d5df777ba4bf5e1258c509bd5e87810498044e29f69cb47a7e2aef2281c4e",
+    "trial_count_before": 2482,
+    "budget_declaration": {
+      "budget": {
+        "max_trials": 6,
+        "max_compute_hours": null,
+        "max_feature_count": 2,
+        "max_parameter_dimensions": 5,
+        "locked_oos_period": null,
+        "allowed_data_sources": [
+          "crypto_funding.db+bybit_perp.db"
+        ],
+        "stopping_rules": null
+      },
+      "parent_hypothesis": "跨所价格/资金费偏离(Binance × Bybit,日频同步代理)在 24 OI 大币宇宙含有独立于 carry/crowd/trend 的可交易边——拥挤 venue 的相对溢价均值回归,或领先 venue 的偏离延续(spec §6 第 6 簇假设;两方向都预注册,杜绝事后挑方向)。",
+      "search_space": "6 个预注册变体(q=0.30、7d 节奏固定,非变体轴):basis 20d z {contrarian, momentum}、basis 7d delta contrarian、basis raw 水平 contrarian、资金费价差 20d z contrarian、basis 60d z contrarian;跨所同步 intraday/盘口偏离按预注册声明出范围(本地无该数据)。",
+      "data_source": "crypto_funding.db+bybit_perp.db",
+      "uses_locked_oos": null,
+      "usage": {
+        "trials_used": 6,
+        "feature_count": 2,
+        "parameter_dimensions": 5
+      },
+      "check": {
+        "exhausted": false,
+        "dimensions": [
+          {
+            "dimension": "trials",
+            "status": "OK",
+            "usage": 6,
+            "limit": 6,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "compute_hours",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "feature_count",
+            "status": "OK",
+            "usage": 2,
+            "limit": 2,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "parameter_dimensions",
+            "status": "OK",
+            "usage": 5,
+            "limit": 5,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "locked_oos",
+            "status": "UNCONSTRAINED",
+            "usage": null,
+            "limit": null,
+            "reason_code": "",
+            "reason": ""
+          },
+          {
+            "dimension": "data_source",
+            "status": "OK",
+            "usage": "crypto_funding.db+bybit_perp.db",
+            "limit": [
+              "crypto_funding.db+bybit_perp.db"
+            ],
+            "reason_code": "",
+            "reason": ""
+          }
+        ],
+        "reasons": []
+      }
+    },
+    "candidates": {
+      "xv_basis_rev": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 1.361871335303635,
+        "net_sharpe": -0.2929,
+        "n_periods": 265
+      },
+      "xv_basis_tilt": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": -1.3618713353036347,
+        "net_sharpe": 0.1062,
+        "n_periods": 265
+      },
+      "xv_basis_delta_rev": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": -0.11770289606835983,
+        "net_sharpe": 0.4041,
+        "n_periods": 267
+      },
+      "xv_basis_level_rev": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 0.08728128452446378,
+        "net_sharpe": 0.008,
+        "n_periods": 268
+      },
+      "xv_funding_spread_rev": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 1.017608592463251,
+        "net_sharpe": 0.155,
+        "n_periods": 267
+      },
+      "xv_basis_rev_60": {
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 0.379928013347648,
+        "net_sharpe": -0.1027,
+        "n_periods": 259
+      }
+    },
+    "search_id": "search-1a3370b216faa232da33d684",
+    "n_candidates": 6,
+    "registered_candidate_count": 6,
+    "recorded_run_ids": [
+      "351eecdf7d93d6ea",
+      "12e5335e41dd2d2e",
+      "09eee93fbd1aa85a",
+      "0453851cb5ec8524",
+      "78002dd441685392",
+      "43214325a91c0c85"
+    ],
+    "trial_count_after": 2488,
+    "trial_count_delta": 6
+  },
+  "results": {
+    "xv_basis_rev": {
+      "spec": {
+        "id": "xv_basis_rev",
+        "kind": "basis_z_contra",
+        "expr": "(cs_rank (neg (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 20)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 20))))",
+        "fields": [
+          "close",
+          "xclose"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.002,
+            "ic_std": 0.2628,
+            "icir": 0.0076,
+            "hit_rate": 0.4956,
+            "t_stat": 0.3423,
+            "n_periods": 2028,
+            "per_year": {
+              "2021": 0.0465,
+              "2022": -0.0025,
+              "2023": -0.0134,
+              "2024": -0.0167,
+              "2025": 0.0109,
+              "2026": -0.0239
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0186,
+            "ic_std": 0.2615,
+            "icir": -0.071,
+            "hit_rate": 0.5087,
+            "t_stat": -1.2064,
+            "n_periods": 289,
+            "per_year": {
+              "2021": -0.0138,
+              "2022": -0.0459,
+              "2023": -0.0179,
+              "2024": -0.0143,
+              "2025": -0.0251,
+              "2026": 0.025
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.585,
+            "econ_sharpe": -0.543,
+            "avg_turnover_per_day": 0.1853,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": -0.89,
+            "2022": -1.46,
+            "2023": 0.05,
+            "2024": -0.64,
+            "2025": -0.76,
+            "2026": 1.45
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.644,
+            "5": -0.732,
+            "10": -0.879,
+            "20": -1.17
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.585,
+            "1": -0.44,
+            "2": -0.593
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": -0.694
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": -0.642
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": -0.574
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": -0.35
+            }
+          },
+          "incremental_ir_vs_carry": -0.58,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 2202470.8681,
+          "n_periods": 289,
+          "gross_sharpe": -0.782,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 290,
+          "n_intents": 6087,
+          "n_approved": 6087,
+          "n_rejected": 0,
+          "total_return": -1.476369,
+          "reconciliation_residual": 3e-09,
+          "sharpe_raw": 0.312,
+          "max_drawdown_raw": 1.3845,
+          "sharpe_vt": -0.5792,
+          "max_drawdown_vt": 0.7541,
+          "pipeline_sharpe_ppy52": 0.312,
+          "pipeline_sharpe_vt_ppy52": -0.5792,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "xv_basis_tilt": {
+      "spec": {
+        "id": "xv_basis_tilt",
+        "kind": "basis_z_momentum",
+        "expr": "(cs_rank (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 20)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 20)))",
+        "fields": [
+          "close",
+          "xclose"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.002,
+            "ic_std": 0.2628,
+            "icir": -0.0076,
+            "hit_rate": 0.502,
+            "t_stat": -0.3423,
+            "n_periods": 2028,
+            "per_year": {
+              "2021": -0.0465,
+              "2022": 0.0025,
+              "2023": 0.0134,
+              "2024": 0.0167,
+              "2025": -0.0109,
+              "2026": 0.0239
+            }
+          },
+          "h7": {
+            "mean_ic": 0.0186,
+            "ic_std": 0.2615,
+            "icir": 0.071,
+            "hit_rate": 0.5017,
+            "t_stat": 1.2064,
+            "n_periods": 289,
+            "per_year": {
+              "2021": 0.0138,
+              "2022": 0.0459,
+              "2023": 0.0179,
+              "2024": 0.0143,
+              "2025": 0.0251,
+              "2026": -0.025
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.585,
+            "econ_sharpe": 0.543,
+            "avg_turnover_per_day": 0.1853,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.89,
+            "2022": 1.46,
+            "2023": -0.05,
+            "2024": 0.64,
+            "2025": 0.76,
+            "2026": -1.45
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.526,
+            "5": 0.438,
+            "10": 0.29,
+            "20": -0.004
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.585,
+            "1": 0.44,
+            "2": 0.593
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.694
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.642
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.574
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.35
+            }
+          },
+          "incremental_ir_vs_carry": 0.58,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 2
+        },
+        "capacity": {
+          "aum_low": 2202470.8681,
+          "aum_high": 2202470.8681,
+          "impact_aum_low": 69798922.45812371,
+          "impact_aum_high": 540483971.0909647,
+          "participation_cap_aum": 2202470.8681,
+          "n_periods": 289,
+          "gross_sharpe": 0.775,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 1101235.43405,
+            "p5_h5": 5506177.1702499995,
+            "p10_h1": 2202470.8681,
+            "p10_h5": 11012354.340499999,
+            "p20_h1": 4404941.7362,
+            "p20_h5": 22024708.680999998
+          },
+          "calibrated_range": {
+            "low": 1101235.43405,
+            "high": 22024708.680999998
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 290,
+          "n_intents": 6087,
+          "n_approved": 6087,
+          "n_rejected": 0,
+          "total_return": 0.835595,
+          "reconciliation_residual": 7e-09,
+          "sharpe_raw": 0.4804,
+          "max_drawdown_raw": 0.5807,
+          "sharpe_vt": 0.0867,
+          "max_drawdown_vt": 0.2209,
+          "pipeline_sharpe_ppy52": 0.4804,
+          "pipeline_sharpe_vt_ppy52": 0.0867,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "xv_basis_delta_rev": {
+      "spec": {
+        "id": "xv_basis_delta_rev",
+        "kind": "basis_delta_contra",
+        "expr": "(cs_rank (neg (ts_delta (sub (div (field xclose) (field close)) (const 1.0)) 7)))",
+        "fields": [
+          "close",
+          "xclose"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0076,
+            "ic_std": 0.2634,
+            "icir": 0.0288,
+            "hit_rate": 0.5093,
+            "t_stat": 1.3012,
+            "n_periods": 2040,
+            "per_year": {
+              "2020": 0.3,
+              "2021": 0.0395,
+              "2022": 0.0136,
+              "2023": -0.0045,
+              "2024": -0.0032,
+              "2025": 0.0027,
+              "2026": -0.025
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0107,
+            "ic_std": 0.2865,
+            "icir": -0.0374,
+            "hit_rate": 0.488,
+            "t_stat": -0.6376,
+            "n_periods": 291,
+            "per_year": {
+              "2020": null,
+              "2021": -0.0228,
+              "2022": 0.0104,
+              "2023": -0.0304,
+              "2024": 0.0163,
+              "2025": -0.0408,
+              "2026": 0.0339
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.509,
+            "econ_sharpe": -0.483,
+            "avg_turnover_per_day": 0.2294,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": -1.08,
+            "2021": -0.33,
+            "2022": -0.58,
+            "2023": -1.03,
+            "2024": -0.38,
+            "2025": -0.72,
+            "2026": 0.3
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.577,
+            "5": -0.678,
+            "10": -0.845,
+            "20": -1.175
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.509,
+            "1": -0.145,
+            "2": -0.209
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": -0.297
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": -0.141
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": -0.731
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": -0.054
+            }
+          },
+          "incremental_ir_vs_carry": -0.505,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 2202470.8681,
+          "n_periods": 291,
+          "gross_sharpe": -0.676,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 292,
+          "n_intents": 6189,
+          "n_approved": 6189,
+          "n_rejected": 0,
+          "total_return": -2.194514,
+          "reconciliation_residual": 4e-09,
+          "sharpe_raw": 0.4661,
+          "max_drawdown_raw": 2.2537,
+          "sharpe_vt": 0.4478,
+          "max_drawdown_vt": 0.5616,
+          "pipeline_sharpe_ppy52": 0.4661,
+          "pipeline_sharpe_vt_ppy52": 0.4478,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "xv_basis_level_rev": {
+      "spec": {
+        "id": "xv_basis_level_rev",
+        "kind": "basis_level_contra",
+        "expr": "(cs_rank (neg (sub (div (field xclose) (field close)) (const 1.0))))",
+        "fields": [
+          "close",
+          "xclose"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0022,
+            "ic_std": 0.266,
+            "icir": 0.0083,
+            "hit_rate": 0.4939,
+            "t_stat": 0.374,
+            "n_periods": 2047,
+            "per_year": {
+              "2020": 0.0824,
+              "2021": 0.045,
+              "2022": 0.0098,
+              "2023": -0.0106,
+              "2024": -0.0076,
+              "2025": -0.004,
+              "2026": -0.0432
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0186,
+            "ic_std": 0.2559,
+            "icir": -0.0726,
+            "hit_rate": 0.524,
+            "t_stat": -1.2405,
+            "n_periods": 292,
+            "per_year": {
+              "2020": null,
+              "2021": 0.0114,
+              "2022": -0.0065,
+              "2023": -0.0215,
+              "2024": -0.0045,
+              "2025": -0.0725,
+              "2026": -0.0398
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.508,
+            "econ_sharpe": -0.394,
+            "avg_turnover_per_day": 0.1687,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": -0.5,
+            "2021": -0.84,
+            "2022": -0.88,
+            "2023": 0.15,
+            "2024": -0.42,
+            "2025": -0.54,
+            "2026": -0.03
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.559,
+            "5": -0.635,
+            "10": -0.761,
+            "20": -1.011
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.508,
+            "1": -0.37,
+            "2": -0.695
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": -0.383
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": -0.453
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": -0.467
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": -0.302
+            }
+          },
+          "incremental_ir_vs_carry": -0.542,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 2202470.8681,
+          "n_periods": 292,
+          "gross_sharpe": -0.626,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 293,
+          "n_intents": 6127,
+          "n_approved": 6127,
+          "n_rejected": 0,
+          "total_return": -1.437433,
+          "reconciliation_residual": 2e-09,
+          "sharpe_raw": -0.2632,
+          "max_drawdown_raw": 1.473,
+          "sharpe_vt": -0.4087,
+          "max_drawdown_vt": 0.6253,
+          "pipeline_sharpe_ppy52": -0.2632,
+          "pipeline_sharpe_vt_ppy52": -0.4087,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "xv_funding_spread_rev": {
+      "spec": {
+        "id": "xv_funding_spread_rev",
+        "kind": "funding_spread_contra",
+        "expr": "(cs_rank (neg (div (sub (sub (field xfunding) (field funding)) (ts_mean (sub (field xfunding) (field funding)) 20)) (ts_std (sub (field xfunding) (field funding)) 20))))",
+        "fields": [
+          "funding",
+          "xfunding"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.0123,
+            "ic_std": 0.2703,
+            "icir": -0.0454,
+            "hit_rate": 0.5166,
+            "t_stat": -2.0716,
+            "n_periods": 2083,
+            "per_year": {
+              "2020": 0.166,
+              "2021": -0.0088,
+              "2022": -0.0184,
+              "2023": -0.01,
+              "2024": -0.028,
+              "2025": -0.0341,
+              "2026": 0.0094
+            }
+          },
+          "h7": {
+            "mean_ic": 0.0111,
+            "ic_std": 0.2561,
+            "icir": 0.0432,
+            "hit_rate": 0.5185,
+            "t_stat": 0.7449,
+            "n_periods": 297,
+            "per_year": {
+              "2020": null,
+              "2021": 0.0018,
+              "2022": -0.02,
+              "2023": -0.0272,
+              "2024": 0.0318,
+              "2025": 0.0221,
+              "2026": 0.029
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.328,
+            "econ_sharpe": 0.295,
+            "avg_turnover_per_day": 0.1882,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 1.73,
+            "2021": 0.66,
+            "2022": -0.4,
+            "2023": -1.11,
+            "2024": 0.68,
+            "2025": 0.45,
+            "2026": 0.22
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.272,
+            "5": 0.188,
+            "10": 0.047,
+            "20": -0.234
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.328,
+            "1": 0.065,
+            "2": -0.047
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.017
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.255
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": -0.038
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.205
+            }
+          },
+          "incremental_ir_vs_carry": 0.403,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": true
+          },
+          "n_pass": 1
+        },
+        "capacity": {
+          "aum_low": 700292.0010733646,
+          "aum_high": 4404941.7362,
+          "impact_aum_low": 700292.0010733646,
+          "impact_aum_high": 9207448.923954614,
+          "participation_cap_aum": 4404941.7362,
+          "n_periods": 297,
+          "gross_sharpe": 0.329,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 700292.0010733646,
+            "p5_h5": 700292.0010733646,
+            "p10_h1": 700292.0010733646,
+            "p10_h5": 700292.0010733646,
+            "p20_h1": 700292.0010733646,
+            "p20_h5": 700292.0010733646
+          },
+          "calibrated_range": {
+            "low": 700292.0010733646,
+            "high": 700292.0010733646
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 298,
+          "n_intents": 6150,
+          "n_approved": 6150,
+          "n_rejected": 0,
+          "total_return": 0.744183,
+          "reconciliation_residual": 2e-09,
+          "sharpe_raw": 0.4672,
+          "max_drawdown_raw": 0.4974,
+          "sharpe_vt": 0.7979,
+          "max_drawdown_vt": 0.1764,
+          "pipeline_sharpe_ppy52": 0.4672,
+          "pipeline_sharpe_vt_ppy52": 0.7979,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "xv_basis_rev_60": {
+      "spec": {
+        "id": "xv_basis_rev_60",
+        "kind": "basis_z_contra_slow",
+        "expr": "(cs_rank (neg (div (sub (sub (div (field xclose) (field close)) (const 1.0)) (ts_mean (sub (div (field xclose) (field close)) (const 1.0)) 60)) (ts_std (sub (div (field xclose) (field close)) (const 1.0)) 60))))",
+        "fields": [
+          "close",
+          "xclose"
+        ],
+        "quantile": 0.3,
+        "cadence_days": 7
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0014,
+            "ic_std": 0.2604,
+            "icir": 0.0052,
+            "hit_rate": 0.5055,
+            "t_stat": 0.233,
+            "n_periods": 1988,
+            "per_year": {
+              "2021": 0.0194,
+              "2022": 0.0073,
+              "2023": -0.0075,
+              "2024": -0.0117,
+              "2025": 0.0162,
+              "2026": -0.0252
+            }
+          },
+          "h7": {
+            "mean_ic": -0.0195,
+            "ic_std": 0.2596,
+            "icir": -0.0751,
+            "hit_rate": 0.5265,
+            "t_stat": -1.2626,
+            "n_periods": 283,
+            "per_year": {
+              "2021": -0.0329,
+              "2022": -0.0342,
+              "2023": -0.0062,
+              "2024": -0.023,
+              "2025": -0.0298,
+              "2026": 0.0293
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": -0.644,
+            "econ_sharpe": -0.594,
+            "avg_turnover_per_day": 0.1789,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": -1.75,
+            "2022": -0.91,
+            "2023": 0.22,
+            "2024": -0.6,
+            "2025": -0.58,
+            "2026": 1.44
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": -0.71,
+            "5": -0.808,
+            "10": -0.971,
+            "20": -1.294
+          },
+          "price_sharpe_by_lag": {
+            "0": -0.644,
+            "1": -0.509,
+            "2": -0.496
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": -0.552
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": -0.501
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": -0.375
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": -0.11
+            }
+          },
+          "incremental_ir_vs_carry": -0.675,
+          "refutation_checks": {
+            "survives_1d_lag": false,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": false,
+            "adds_to_carry": false
+          },
+          "n_pass": 0
+        },
+        "capacity": {
+          "aum_low": 100000.0,
+          "aum_high": 100000.0,
+          "impact_aum_low": 100000.0,
+          "impact_aum_high": 100000.0,
+          "participation_cap_aum": 2202470.8681,
+          "n_periods": 283,
+          "gross_sharpe": -0.806,
+          "binding": "impact",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 100000.0,
+            "p5_h5": 100000.0,
+            "p10_h1": 100000.0,
+            "p10_h5": 100000.0,
+            "p20_h1": 100000.0,
+            "p20_h5": 100000.0
+          },
+          "calibrated_range": {
+            "low": 100000.0,
+            "high": 100000.0
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 284,
+          "n_intents": 5945,
+          "n_approved": 5945,
+          "n_rejected": 0,
+          "total_return": -0.768836,
+          "reconciliation_residual": 2e-09,
+          "sharpe_raw": 0.1357,
+          "max_drawdown_raw": 0.9613,
+          "sharpe_vt": -0.1878,
+          "max_drawdown_vt": 0.4791,
+          "pipeline_sharpe_ppy52": 0.1357,
+          "pipeline_sharpe_vt_ppy52": -0.1878,
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    }
+  },
+  "verdicts": {
+    "xv_basis_rev": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "xv_basis_tilt": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "xv_basis_delta_rev": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "xv_basis_level_rev": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "xv_funding_spread_rev": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe"
+      ],
+      "stage_reached": "complete"
+    },
+    "xv_basis_rev_60": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    }
+  },
+  "candidates": [],
+  "honesty": {
+    "trial_count": 6,
+    "registry_trial_count_before": 2482,
+    "registry_trial_count_after": 2488,
+    "variant_stream_correlation": {
+      "xv_basis_delta_rev": {
+        "xv_basis_delta_rev": 1.0,
+        "xv_basis_level_rev": 0.4859,
+        "xv_basis_rev": 0.5777,
+        "xv_basis_rev_60": 0.4539,
+        "xv_basis_tilt": -0.5777,
+        "xv_funding_spread_rev": -0.0479
+      },
+      "xv_basis_level_rev": {
+        "xv_basis_delta_rev": 0.4859,
+        "xv_basis_level_rev": 1.0,
+        "xv_basis_rev": 0.7034,
+        "xv_basis_rev_60": 0.5663,
+        "xv_basis_tilt": -0.7034,
+        "xv_funding_spread_rev": -0.0131
+      },
+      "xv_basis_rev": {
+        "xv_basis_delta_rev": 0.5777,
+        "xv_basis_level_rev": 0.7034,
+        "xv_basis_rev": 1.0,
+        "xv_basis_rev_60": 0.6849,
+        "xv_basis_tilt": -1.0,
+        "xv_funding_spread_rev": -0.0175
+      },
+      "xv_basis_rev_60": {
+        "xv_basis_delta_rev": 0.4539,
+        "xv_basis_level_rev": 0.5663,
+        "xv_basis_rev": 0.6849,
+        "xv_basis_rev_60": 1.0,
+        "xv_basis_tilt": -0.6849,
+        "xv_funding_spread_rev": -0.0272
+      },
+      "xv_basis_tilt": {
+        "xv_basis_delta_rev": -0.5777,
+        "xv_basis_level_rev": -0.7034,
+        "xv_basis_rev": -1.0,
+        "xv_basis_rev_60": -0.6849,
+        "xv_basis_tilt": 1.0,
+        "xv_funding_spread_rev": 0.0175
+      },
+      "xv_funding_spread_rev": {
+        "xv_basis_delta_rev": -0.0479,
+        "xv_basis_level_rev": -0.0131,
+        "xv_basis_rev": -0.0175,
+        "xv_basis_rev_60": -0.0272,
+        "xv_basis_tilt": 0.0175,
+        "xv_funding_spread_rev": 1.0
+      }
+    },
+    "variant_stream_correlation_offdiag_mean": 0.0279,
+    "variant_stream_correlation_offdiag_max": 0.7034,
+    "two_venue_execution_caveat": "本干跑把信号模拟在 Binance 定价的 book 上,是 FIRST-PASS 证据筛。真实跨所 basis 交易需要在两个 venue 同时下腿:转账成本(资金在两所间调拨)、腿风险(一腿成交另一腿未成交/滑点不对称)、限频(spec 明列三大风险)在本筛里结构性不存在。CANDIDATE 的含义 = 「信号含可交易信息的初步证据」,不是「跨所执行可行」的证据——后者需要同步 intraday 数据 + 双腿执行仿真,出本 slice 范围。",
+    "multiple_comparison_note": "6 次试验同属一个信号族(同一 basis 主轴 + 方向/窗/归一变体),book 高度相关——有效独立赌注数远小于 6;DSR(评估器按全 trial 总体泄气)逐候选见 trial_registration.candidates。判定门槛已预注册(pre_registration.verdict_bar),正反两方向都预注册(xv_basis_rev vs xv_basis_tilt),杜绝事后挑方向。",
+    "data_sync_note": "Bybit close 与 Binance close 都是 UTC 日界收盘——日频同步代理,非 intraday 同步;同一日界内两所收盘时刻的分钟级偏移不建模。资金费两所同 8h 节奏,日求和后日网格对齐;跨所 funding 的结算时刻差异(若有)在日频口径下不可见。",
+    "caveats": [
+      "对已知历史的执行现实回测,非前向/实盘;是否送前向 paper-track 是另一独立决策。",
+      "干跑变体不落 dry_run.db(不污染正典库);数字以本文件为准。",
+      "容量带 UNCALIBRATED_PRINCIPLED(冲击系数无法校准,区间带非单点),诊断非判定条。",
+      "无既有跨所评估制品可锚定(本平台首次 cross-venue 评估);机器与 mean_reversion/crowd_contra 族共享且被其测试钉死。",
+      "Bybit 数据为公共 klines/funding 历史(无 key 只读);两所皆 USDT 本位 perp,无币种错位。",
+      "早期年份 xclose 覆盖浅(最浅 APT 2022-10-19)——早期截面细胞更少,coverage 见 dataset.xvenue_coverage。"
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Python environments, caches, and coverage
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage/
+coverage.json
+
+# Local tool state and review scratch space
+.vite/
+.playwright-cli/
+playwright-report/
+test-results/
+.runtime/
+.codex/
+.codex_tmp/
+.claude/worktrees/
+.claude/adjudication-*/
+.worktrees/
+.tmp-*/
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Logs and local diagnostics
+logs/
+*.log
+*.cache
+evidence/validation_report_subset.json
+
+# Runtime data and generated research output
+*.parquet
+*.csv
+*.db
+*.sqlite
+backtest_results/
+research_outputs/
+data/raw/
+data/cache/
+data/backup/
+
+# Generated presentation workspaces; canonical assets live under docs/
+QUANTOS_Roadshow/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!apps/research-console/.env.localhost
+config/live.yaml
+*.secret.yaml
+*.secret.yml
+key/
+*.key
+coinkey*

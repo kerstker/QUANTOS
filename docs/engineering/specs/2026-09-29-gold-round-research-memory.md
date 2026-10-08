@@ -1,0 +1,53 @@
+# 黄金计划内连续实验记忆
+
+前一版本5abfc27只在采集组下一批提供技术记忆；独立计划或同批第二轮仅排除已消耗候选，模型没有上一轮诊断。真实原campaign调度/JobQueue双轮回归增加模型请求断言后，先因第二轮memory为None失败。
+
+本增量在原reserve_campaign事务内，从同计划已完成轮次和同采集组之前批次共同提取最多六项完成记录。沿用已有GOLD_RESEARCH_MEMORY_V1、试验/报告重验、请求冻结及V2来源归档；不新建试验账本。新函数campaign_memory不读取其他独立计划，不读未完成轮次，后到事实晚于本轮研究时点会拒绝且事务不消耗预留。
+
+实际原队列双轮验证第二轮模型收到第一轮候选/试验/结果，恢复沿用原请求且不重复模型调用；不同计划隔离、重开保留原记忆、未来记录拒绝均验证。四组32项加原反馈队列2项通过，E9/F821和diff检查通过。一次附加命令误用了不存在的roundtrip测试文件，pytest未收集并退出4；随后定位实际test_gold_feedback_queue.py，两项通过，未将错误命令计作通过。
+
+本增量在独立gold-round-memory-20260929/source开发，基于5abfc27；未改在运行的原目录或e29cbb6完整验收候选。模型及场所为测试替身，尚未在本增量运行真实Qwen，未部署。原六候选限制不变，失败诊断、丰富策略表达、独立准入及真实Demo仍未完成；这些技术终态不是收益标签。
+
+## 首次真实双轮尝试：采集失败保留
+
+固定提交e52d37396f66c2391dc3cf4c5757581e2497deb2的独立真实后台验证位于
+`gold-round-memory-20260929/real-rounds-b4yzqzw5`。一次请求计划新公开采集后两轮本地Qwen，
+原队列采集任务run_c3a6d3ea5eb9b0b875b9e01bc498746c实际error：GOLD_SIGNAL_INPUT_INCOMPLETE，
+未创建campaign、未调用模型。因此不能算本增量真实记忆验证通过。
+
+保存的23个聚合包重放复现MISSING_WINDOW_COVERAGE。首窗start=1790632135979、
+end=1790632137979，原模板decision=1790632138979；右边界包T=1790632138890，
+本机接收1790632139136，晚于决策157ms。数据在原决策时刻尚未到达，拒绝有效，
+未改决策时间、阈值或时效限额来将失败转成通过。模板max_age=1500ms不等于允许读取decision之后的数据。
+
+失败摘要已保存validation-failure.json，空转验证驱动经确认PID2816365/脚本身份后SIGINT退出130，
+不是杀掉仍在采集或研究的任务。驱动补充初次采集终态失败检测，后续遇到同类失败可立即结束并保存原因；
+没有自动重试、覆盖旧资料或修改正在验收/周期运行的源码。
+
+## 完整留存输入的真实双轮验证在运行
+
+固定a232ff35d另用原完整公开捕获启动retained-rounds-ii1p2ypo，驱动run-retained-rounds.py，进程会话64882。先通过原run_prepare重新绑定本源码身份，再一次HTTP create，由原后台调度两轮；不调用加速tick、不改系统时钟或旧输入。数据范围明确为历史公开捕获重放，不是新的连续采集。
+
+首轮真实本地Qwen完成，run_843ee1ed0380f16f83ef36bd735df5fe、trial 383e18e2663dd50ad9f092d525d8d60a6a0ae3e5807a1c26f40adeb0ee0395ce，NO_SIGNAL、权益1000、残差0。最早第二轮1790637582252ms；尚无两轮记忆通过结论。gold-round-memory-20260929/source在此进程结束前保持a232提交和Python源码不变，验收使用另一独立目录。
+
+## 真实双轮已完成并复核
+
+上述驱动PID2859017已退出；原validation-terminal.json为FINISHED，
+validation-summary.json为REAL_TWO_ROUND_MEMORY_VERIFIED，campaign为COMPLETED。
+真实一小时冷却后，第二轮run_9c42b6a3a0a2767ba07b1387ff7ac778完成，
+trial为09ac079e2a8d2e0e0ae2e33ae01726cf8277ef014615f792fbb26a84080b06cb。
+两轮候选分别0和1，均NO_SIGNAL、模拟权益1000、现金残差0。
+
+另行直接读取第二轮request.json与trial/research-origin.json，确认记忆内容相同、
+第一轮trial引用一致、模型角色收据绑定记忆摘要
+c154adc54351efe7d8980c676eed3910d7d5b29eff8d595d9cb66ab18b18ca39。
+原quotes/signals/template与准备副本逐字节一致。此结果证明真实模型在原后台循环中
+自动续轮并使用历史技术记忆；仍是留存公开捕获重放，不是两批新采集，也无独立经济准入或Demo执行。
+
+同时a232独立完整验收首个pytest阶段9551通过、1失败、19跳过：
+test_gold_campaign_crash中真实子进程持久化了当前时间，测试却在now=3600002
+请求下一轮，正确触发future gold research memory。主工作区先复现1失败/2通过，
+再将该测试下一轮时间置于原结果updated之后且满足冷却，追加原trial/候选记忆断言。
+崩溃恢复、研究记忆和原计划三组27项通过，Starlette弃用警告保留。
+一次命令误指不存在的test_gold_round_memory.py，退出4未运行测试，不计作验证。
+生产时间约束未改，冻结a232/a247验收源码未改；在途版本仍含该测试问题，不能称完整通过。

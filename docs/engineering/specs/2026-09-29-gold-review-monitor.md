@@ -1,0 +1,15 @@
+# 黄金研究完成后的独立核验更新
+
+原工厂结果只显示完成时的核验记录；后到收据、登记变更和时效失效没有接入工厂后台。新增gold_factory_review任务，固定读取原工厂trial目录，复用gold_cost_receipt.check_receipt及原review_request/TrialLedger检查。原试验不重跑，原报告不覆写；每次核验仍进入原receipt-checks，额外原子更新latest-review.json显示投影。
+
+原研究服务的campaign后台循环在没有可调度研究时调用review_tick。仅检查最近50个session中的已完成黄金试验，通过原RunRegistry的稳定调用身份去重。登记文件、收据字节或三个原验证时戳跨越未来/当前/24小时失效边界时才提交新核验；未变输入不反复写核验记录，失败或取消也不会自动重新执行相同调用。新建研究入口提供明确的已有工厂试验核验任务。
+
+生命周期API和页面分别保留完成时核验与最新核验。展示前核对原报告、trial_id、投影摘要和当前登记/收据/时效观察；变化后显示PENDING_RECHECK，不能继续显示当前签名已核对。签名核对仍仅工程证据，economic_eligible/authoritative保持false，不产生Demo许可或经济准入。
+
+## 验证
+
+新增观察接口先缺失失败。原签名夹具测试经真实队列：缺收据→后到签名工程核对→24小时过期拒绝；页面在重验前显示等待，原report/manifest/trials.db字节保持不变。观察/原验证器/投影/认证/Runner边界联合64通过；控制台嵌套合同1项通过，前端9项及类型检查通过。静态E9/F821通过。
+
+在前次真实Qwen试验目录 `quantos-dev-output/gold-one-request-20260929-0e1l_1zd` 实际执行同一review_tick，生成任务run_004cb0bf09bbfefacc344257022a22c2，完成后页面最新核验为INDEPENDENT_AUTHORITY_UNCONFIGURED；再次检查返回NO_REVIEW_CHANGES，没有创建第二个任务。记录review-watch-validation.json，原trial_id和NO_SIGNAL结果不变。
+
+此增量接通核验结果更新，不提供独立权威、不签名或登记密钥；当前仍缺真实独立核验配置及经济证据。没有部署或启动驻留服务，全天持续运行和真实Demo仍未完成。监控的变更身份聚焦可变收据和登记，原实验档案按不可变材料处理；展示继续逐次核对原报告摘要，损坏时隐藏结果。

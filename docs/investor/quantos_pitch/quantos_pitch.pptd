@@ -1,0 +1,68 @@
+version: v2
+title: QUANTOS 投资人路演
+size: [960, 540]
+theme:
+  colors:
+    bg: "#141414"
+    bg2: "#1C1C1A"
+    accent: "#C6F24E"
+    ink: "#F2F2EE"
+    muted: "#8A8F85"
+    line: "#3A3D36"
+    warn: "#D96C4A"
+  textStyles:
+    hero:
+      fontSize: 56
+      color: "$ink"
+      bold: true
+      letterSpacing: 2
+    h1:
+      fontSize: 30
+      color: "$ink"
+      bold: true
+    h2:
+      fontSize: 20
+      color: "$accent"
+      bold: true
+    body:
+      fontSize: 13
+      color: "$ink"
+      lineHeight: 1.5
+    small:
+      fontSize: 10
+      color: "$muted"
+      lineHeight: 1.4
+    bignum:
+      fontSize: 44
+      color: "$accent"
+      bold: true
+  tableStyles:
+    dark:
+      cellStyle:
+        fontSize: 11
+        color: "$ink"
+        border: [null, null, {style: solid, width: 1, color: "$line"}, null]
+        align: [center, middle]
+      firstRowStyle:
+        color: "$accent"
+        bold: true
+        fontSize: 11
+        border: [null, null, {style: solid, width: 1, color: "$accent"}, null]
+pages:
+  - pages/01_cover.page
+  - pages/02_summary.page
+  - pages/03_section_system.page
+  - pages/04_architecture.page
+  - pages/05_pipeline.page
+  - pages/06_safety.page
+  - pages/07_section_alpha.page
+  - pages/08_dryrun_crypto.page
+  - pages/09_dryrun_other.page
+  - pages/10_ic_variants.page
+  - pages/11_portfolio.page
+  - pages/12_capacity_tail.page
+  - pages/13_macro.page
+  - pages/14_honest.page
+  - pages/15_evidence.page
+  - pages/16_roadmap_risk.page
+  - pages/17_final.page

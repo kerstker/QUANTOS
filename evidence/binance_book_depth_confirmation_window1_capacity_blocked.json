@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786507463051,
+  "status": "BLOCKED_BEFORE_OUTCOME",
+  "reason_code": "INSUFFICIENT_CONFIRMATION_DATA_CAPACITY",
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "confirmation_contract_commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+  "quality_policy_commit": "80bfd5fe1373cffd0ec21c5cd7c42c81c8866d0d",
+  "capacity_gate_implementation_commit": "a508d2b9190f87671c03959547fd50e8e0404e8f",
+  "backfill_status_sha256": "b22cd33047e1b0e650eee6dfc177d8ad1d2eb664d2590ea90324cea88e170b15",
+  "requested_days": 90,
+  "processed_days": 90,
+  "complete_stored_days": 83,
+  "complete_day_ratio": 0.9222222222222223,
+  "minimum_complete_days": 81,
+  "minimum_complete_day_ratio": 0.9,
+  "quality_excluded_day_count": 7,
+  "maximum_quality_excluded_days": 9,
+  "quality_excluded_days_ms": [
+    1774483200000,
+    1775606400000,
+    1775692800000,
+    1775779200000,
+    1776297600000,
+    1776816000000,
+    1776988800000
+  ],
+  "all_14_instruments_rejected_each_excluded_day": true,
+  "all_exclusions_checksum_verified": true,
+  "actual_adjacent_24h_decision_count": 77,
+  "minimum_confirmation_decisions": 80,
+  "complete_day_capacity_passed": true,
+  "actual_decision_capacity_passed": false,
+  "confirmation_return_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "authority_head": {
+    "seq": 58464,
+    "row_hash": "72ce6f0c283f5eb93f0a94138dd7c71aa8b9b7588226a48878d62214f1daa8e4"
+  },
+  "authority_chain_valid": true,
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

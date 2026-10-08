@@ -1,0 +1,584 @@
+{
+  "provenance": "REAL_ALLOCATOR_RESEARCH",
+  "spec": "profit-maximization §9 W5: conditional portfolio allocator vs retained baselines",
+  "generated_from": {
+    "dry_run_db": "data\\cache\\dry_run.db",
+    "price_db": "data\\cache\\crypto_funding.db (fetch_bars_pit)",
+    "deribit_db": "data\\cache\\deribit_vol.db",
+    "macro_db": "data\\cache\\macro_fred.db",
+    "funding_json": "data\\cache\\crypto_funding_rates.json",
+    "w3_cluster_map": "evidence\\common_risk_decomposition.json"
+  },
+  "strategies": {
+    "carry_oi_majors": {
+      "db_strategy_id": "carry",
+      "run_id": "90eb3789e575ff54",
+      "curve": "equity_curve",
+      "n_periods": 316
+    },
+    "crowd_contra": {
+      "db_strategy_id": "crowd_contra",
+      "run_id": "af119aff537f7092",
+      "curve": "equity_curve",
+      "n_periods": 235
+    },
+    "top_contra": {
+      "db_strategy_id": "top_contra",
+      "run_id": "993d3a28a95ea411",
+      "curve": "equity_curve",
+      "n_periods": 192
+    },
+    "btc_spot_trend": {
+      "db_strategy_id": "btc_spot_trend",
+      "run_id": "b73df9ca627cdf9c",
+      "curve": "equity_curve",
+      "n_periods": 318
+    }
+  },
+  "grid": {
+    "common_weeks": 192,
+    "first": "2022-W22",
+    "last": "2026-W29",
+    "note": "4 book 策略公共周(RAW equity_curve = 策略内净成本后周收益)"
+  },
+  "locked_split": {
+    "lock_week": "2025-W01",
+    "rule": "fit/design <= 2024-12(trailing 暖机可用);locked >= 2025-W01 = 唯一评分窗;所有参数 trailing-only,周度 PIT 再平衡",
+    "walk_start_week": "2023-W46",
+    "fit_weeks": 59,
+    "locked_weeks": 81
+  },
+  "constraints": {
+    "gross": 1.0,
+    "strategy_cap": 0.4,
+    "cluster_cap": 0.4,
+    "note": "策略权重 = 非负资本配置(配置层不做空策略);calibrated: UNCALIBRATED_ENGINEERING_DEFAULT"
+  },
+  "cost_model": {
+    "turnover_cost_bps": 10.0,
+    "basis": "cost = bps/1e4 x Σ|Δw|(权重差=总调仓名义,与干跑同口径)"
+  },
+  "allocator_params": {
+    "inverse_vol": {
+      "lookback": 26,
+      "min_history": 12
+    },
+    "cluster_risk_parity": {
+      "lookback": 26,
+      "min_history": 12,
+      "cluster_map_source": "W3 clusters.residual(全单例簇)"
+    },
+    "constrained_max_sharpe": {
+      "lookback": 52,
+      "min_history": 30,
+      "mean_shrink_toward_zero": 0.5,
+      "grid_step": 0.02,
+      "solver": "确定性单形网格+argmax"
+    },
+    "turnover_penalized_max_sharpe": {
+      "lambda_deadzone": 0.02,
+      "base": "constrained_max_sharpe"
+    },
+    "regime_conditioned_crp": {
+      "base": "cluster_risk_parity",
+      "fallback": "inverse_vol",
+      "confidence_threshold": 0.6,
+      "max_tilt": 0.5
+    },
+    "params_calibrated": "UNCALIBRATED_ENGINEERING_DEFAULT"
+  },
+  "regime_model": {
+    "dims": [
+      {
+        "name": "vix",
+        "kind": "tercile"
+      },
+      {
+        "name": "dvol",
+        "kind": "tercile"
+      },
+      {
+        "name": "funding",
+        "kind": "zscore"
+      },
+      {
+        "name": "realized_vol",
+        "kind": "zscore"
+      },
+      {
+        "name": "correlation_shock",
+        "kind": "endogenous_pit_variant_of_W3"
+      }
+    ],
+    "decision_timing": "第 t 周决策只用 <= t-1 已完结周信息(shift 内置)",
+    "pit_note": "FRED 工作的全样本分位标签是描述性的;此处全部 trailing 规则(expanding 三分位/trailing z/扩展均值冲击阈值),截断不变有性质测试",
+    "locked_window_label_counts": {
+      "mixed": 14,
+      "stress": 4,
+      "calm": 63
+    }
+  },
+  "allocators": {
+    "cluster_risk_parity": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.367289,
+        "gross_sharpe": 1.402193,
+        "net_total_return": 0.104241,
+        "max_drawdown": 0.034218,
+        "mean_weekly_turnover": 0.032552,
+        "ann_turnover": 1.692701,
+        "total_cost": 0.002637,
+        "cluster_hhi_mean": 0.267549,
+        "fallback_rate": 0.024691
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.898963,
+        "gross_sharpe": 1.938994,
+        "net_total_return": 0.162708,
+        "max_drawdown": 0.06209,
+        "mean_weekly_turnover": 0.056181,
+        "ann_turnover": 2.921398,
+        "total_cost": 0.003315,
+        "cluster_hhi_mean": 0.266234,
+        "fallback_rate": 0.084746
+      }
+    },
+    "constrained_max_sharpe": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.560199,
+        "gross_sharpe": 1.630508,
+        "net_total_return": 0.128747,
+        "max_drawdown": 0.027771,
+        "mean_weekly_turnover": 0.070123,
+        "ann_turnover": 3.64642,
+        "total_cost": 0.00568,
+        "cluster_hhi_mean": 0.326667,
+        "fallback_rate": 0.0
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.790921,
+        "gross_sharpe": 1.843191,
+        "net_total_return": 0.180175,
+        "max_drawdown": 0.045026,
+        "mean_weekly_turnover": 0.082034,
+        "ann_turnover": 4.265763,
+        "total_cost": 0.00484,
+        "cluster_hhi_mean": 0.341573,
+        "fallback_rate": 0.0
+      }
+    },
+    "equal_weight": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.468194,
+        "gross_sharpe": 1.468194,
+        "net_total_return": 0.119819,
+        "max_drawdown": 0.030627,
+        "mean_weekly_turnover": 0.0,
+        "ann_turnover": 0.0,
+        "total_cost": 0.0,
+        "cluster_hhi_mean": 0.25,
+        "fallback_rate": 0.0
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.726997,
+        "gross_sharpe": 1.73904,
+        "net_total_return": 0.15294,
+        "max_drawdown": 0.075542,
+        "mean_weekly_turnover": 0.016949,
+        "ann_turnover": 0.881356,
+        "total_cost": 0.001,
+        "cluster_hhi_mean": 0.25,
+        "fallback_rate": 0.0
+      }
+    },
+    "inverse_vol": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.367289,
+        "gross_sharpe": 1.402193,
+        "net_total_return": 0.104241,
+        "max_drawdown": 0.034218,
+        "mean_weekly_turnover": 0.032552,
+        "ann_turnover": 1.692701,
+        "total_cost": 0.002637,
+        "cluster_hhi_mean": 0.267549,
+        "fallback_rate": 0.024691
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.898963,
+        "gross_sharpe": 1.938994,
+        "net_total_return": 0.162708,
+        "max_drawdown": 0.06209,
+        "mean_weekly_turnover": 0.056181,
+        "ann_turnover": 2.921398,
+        "total_cost": 0.003315,
+        "cluster_hhi_mean": 0.266234,
+        "fallback_rate": 0.084746
+      }
+    },
+    "regime_conditioned_crp": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.367289,
+        "gross_sharpe": 1.402193,
+        "net_total_return": 0.104241,
+        "max_drawdown": 0.034218,
+        "mean_weekly_turnover": 0.032552,
+        "ann_turnover": 1.692701,
+        "total_cost": 0.002637,
+        "cluster_hhi_mean": 0.267549,
+        "fallback_rate": 0.0
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.898963,
+        "gross_sharpe": 1.938994,
+        "net_total_return": 0.162708,
+        "max_drawdown": 0.06209,
+        "mean_weekly_turnover": 0.056181,
+        "ann_turnover": 2.921398,
+        "total_cost": 0.003315,
+        "cluster_hhi_mean": 0.266234,
+        "fallback_rate": 0.0
+      }
+    },
+    "turnover_penalized_max_sharpe": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.669152,
+        "gross_sharpe": 1.711887,
+        "net_total_return": 0.138791,
+        "max_drawdown": 0.026199,
+        "mean_weekly_turnover": 0.043486,
+        "ann_turnover": 2.261293,
+        "total_cost": 0.003522,
+        "cluster_hhi_mean": 0.324558,
+        "fallback_rate": 0.0
+      },
+      "fit": {
+        "n_weeks": 59,
+        "net_sharpe": 1.766841,
+        "gross_sharpe": 1.80686,
+        "net_total_return": 0.175445,
+        "max_drawdown": 0.045834,
+        "mean_weekly_turnover": 0.059204,
+        "ann_turnover": 3.078616,
+        "total_cost": 0.003493,
+        "cluster_hhi_mean": 0.338293,
+        "fallback_rate": 0.0
+      }
+    }
+  },
+  "vol_target_block": {
+    "note": "杠杆诊断口径(gross 可 >1 至 lev_cap),与 unlevered 主矩阵分开,不进判定",
+    "params": {
+      "target_ann": 0.1,
+      "lookback": 26,
+      "lev_cap": 2.0,
+      "min_history": 26,
+      "params_calibrated": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    "equal_weight_vol_target": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.350704,
+        "gross_sharpe": 1.366867,
+        "net_total_return": 0.189974,
+        "max_drawdown": 0.059749,
+        "mean_weekly_turnover": 0.026175,
+        "ann_turnover": 1.3611,
+        "total_cost": 0.00212,
+        "cluster_hhi_mean": 0.25,
+        "fallback_rate": 0.0
+      },
+      "mean_scale": 1.5815
+    },
+    "cluster_risk_parity_vol_target": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.255472,
+        "gross_sharpe": 1.298105,
+        "net_total_return": 0.163093,
+        "max_drawdown": 0.066559,
+        "mean_weekly_turnover": 0.066884,
+        "ann_turnover": 3.477977,
+        "total_cost": 0.005418,
+        "cluster_hhi_mean": 0.267549,
+        "fallback_rate": 0.024691
+      },
+      "mean_scale": 1.6065
+    }
+  },
+  "reference_single_strategies": {
+    "note": "恒定 100% 单策略,无配置层换手成本;上下文对照(先前发现:naive blend 净口径跑输 crowd_contra 单条),不参与判定",
+    "carry_oi_majors": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 0.82239,
+        "gross_sharpe": 0.82239,
+        "net_total_return": 0.134854,
+        "max_drawdown": 0.067294,
+        "mean_weekly_turnover": 0.0,
+        "ann_turnover": 0.0,
+        "total_cost": 0.0,
+        "cluster_hhi_mean": 1.0,
+        "fallback_rate": 0.0
+      }
+    },
+    "crowd_contra": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 0.127753,
+        "gross_sharpe": 0.127753,
+        "net_total_return": 0.012523,
+        "max_drawdown": 0.066954,
+        "mean_weekly_turnover": 0.0,
+        "ann_turnover": 0.0,
+        "total_cost": 0.0,
+        "cluster_hhi_mean": 1.0,
+        "fallback_rate": 0.0
+      }
+    },
+    "top_contra": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 1.781783,
+        "gross_sharpe": 1.781783,
+        "net_total_return": 0.286886,
+        "max_drawdown": 0.045572,
+        "mean_weekly_turnover": 0.0,
+        "ann_turnover": 0.0,
+        "total_cost": 0.0,
+        "cluster_hhi_mean": 1.0,
+        "fallback_rate": 0.0
+      }
+    },
+    "btc_spot_trend": {
+      "locked": {
+        "n_weeks": 81,
+        "net_sharpe": 0.508521,
+        "gross_sharpe": 0.508521,
+        "net_total_return": 0.042425,
+        "max_drawdown": 0.034598,
+        "mean_weekly_turnover": 0.0,
+        "ann_turnover": 0.0,
+        "total_cost": 0.0,
+        "cluster_hhi_mean": 1.0,
+        "fallback_rate": 0.0
+      }
+    }
+  },
+  "verdict": {
+    "verdict": "ADOPTED-AS-RESEARCH-FINDING",
+    "best_non_ew": "turnover_penalized_max_sharpe",
+    "best_net_sharpe": 1.669152,
+    "ew_net_sharpe": 1.468194,
+    "delta_sharpe": 0.200958,
+    "sharpe_margin": 0.1,
+    "best_maxdd": 0.026199,
+    "ew_maxdd": 0.030627,
+    "maxdd_constraint_ok": true,
+    "rule": "best non-EW net Sharpe > EW + 0.1 on LOCKED window AND maxDD <= 1.5x EW maxDD -> ADOPTED-AS-RESEARCH-FINDING; else EW_REMAINS"
+  },
+  "sensitivity_excluding_top_contra": {
+    "note": "描述性稳健性(非主判定):剔除 top_contra 的 3 策略 book 同码重跑——检验配置层胜利是否只是 top_contra 锁定窗尾边的载体;top_contra 治理层 PAUSED(前向证据为负),其锁定窗强势是历史口径",
+    "book": [
+      "carry_oi_majors",
+      "crowd_contra",
+      "btc_spot_trend"
+    ],
+    "allocators": {
+      "cluster_risk_parity": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.698198,
+          "gross_sharpe": 0.714207,
+          "net_total_return": 0.058476,
+          "max_drawdown": 0.049157,
+          "mean_weekly_turnover": 0.016861,
+          "ann_turnover": 0.876749,
+          "total_cost": 0.001366,
+          "cluster_hhi_mean": 0.339957,
+          "fallback_rate": 0.024691
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.739729,
+          "gross_sharpe": 0.765154,
+          "net_total_return": 0.066127,
+          "max_drawdown": 0.096954,
+          "mean_weekly_turnover": 0.040835,
+          "ann_turnover": 2.123436,
+          "total_cost": 0.002409,
+          "cluster_hhi_mean": 0.34214,
+          "fallback_rate": 0.084746
+        }
+      },
+      "constrained_max_sharpe": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.786824,
+          "gross_sharpe": 0.819997,
+          "net_total_return": 0.069789,
+          "max_drawdown": 0.045028,
+          "mean_weekly_turnover": 0.034568,
+          "ann_turnover": 1.797531,
+          "total_cost": 0.0028,
+          "cluster_hhi_mean": 0.357521,
+          "fallback_rate": 0.0
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.661228,
+          "gross_sharpe": 0.678897,
+          "net_total_return": 0.055687,
+          "max_drawdown": 0.074185,
+          "mean_weekly_turnover": 0.025085,
+          "ann_turnover": 1.304407,
+          "total_cost": 0.00148,
+          "cluster_hhi_mean": 0.358969,
+          "fallback_rate": 0.0
+        }
+      },
+      "equal_weight": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.770951,
+          "gross_sharpe": 0.770951,
+          "net_total_return": 0.066847,
+          "max_drawdown": 0.046137,
+          "mean_weekly_turnover": 0.0,
+          "ann_turnover": 0.0,
+          "total_cost": 0.0,
+          "cluster_hhi_mean": 0.333333,
+          "fallback_rate": 0.0
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.546056,
+          "gross_sharpe": 0.555632,
+          "net_total_return": 0.05118,
+          "max_drawdown": 0.119526,
+          "mean_weekly_turnover": 0.016949,
+          "ann_turnover": 0.881356,
+          "total_cost": 0.001,
+          "cluster_hhi_mean": 0.333333,
+          "fallback_rate": 0.0
+        }
+      },
+      "inverse_vol": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.698198,
+          "gross_sharpe": 0.714207,
+          "net_total_return": 0.058476,
+          "max_drawdown": 0.049157,
+          "mean_weekly_turnover": 0.016861,
+          "ann_turnover": 0.876749,
+          "total_cost": 0.001366,
+          "cluster_hhi_mean": 0.339957,
+          "fallback_rate": 0.024691
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.739729,
+          "gross_sharpe": 0.765154,
+          "net_total_return": 0.066127,
+          "max_drawdown": 0.096954,
+          "mean_weekly_turnover": 0.040835,
+          "ann_turnover": 2.123436,
+          "total_cost": 0.002409,
+          "cluster_hhi_mean": 0.34214,
+          "fallback_rate": 0.084746
+        }
+      },
+      "regime_conditioned_crp": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.698198,
+          "gross_sharpe": 0.714207,
+          "net_total_return": 0.058476,
+          "max_drawdown": 0.049157,
+          "mean_weekly_turnover": 0.016861,
+          "ann_turnover": 0.876749,
+          "total_cost": 0.001366,
+          "cluster_hhi_mean": 0.339957,
+          "fallback_rate": 0.0
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.739729,
+          "gross_sharpe": 0.765154,
+          "net_total_return": 0.066127,
+          "max_drawdown": 0.096954,
+          "mean_weekly_turnover": 0.040835,
+          "ann_turnover": 2.123436,
+          "total_cost": 0.002409,
+          "cluster_hhi_mean": 0.34214,
+          "fallback_rate": 0.0
+        }
+      },
+      "turnover_penalized_max_sharpe": {
+        "locked": {
+          "n_weeks": 81,
+          "net_sharpe": 0.786605,
+          "gross_sharpe": 0.810792,
+          "net_total_return": 0.068744,
+          "max_drawdown": 0.044931,
+          "mean_weekly_turnover": 0.024671,
+          "ann_turnover": 1.282907,
+          "total_cost": 0.001998,
+          "cluster_hhi_mean": 0.351271,
+          "fallback_rate": 0.0
+        },
+        "fit": {
+          "n_weeks": 59,
+          "net_sharpe": 0.660707,
+          "gross_sharpe": 0.675926,
+          "net_total_return": 0.056396,
+          "max_drawdown": 0.079138,
+          "mean_weekly_turnover": 0.021695,
+          "ann_turnover": 1.128136,
+          "total_cost": 0.00128,
+          "cluster_hhi_mean": 0.352529,
+          "fallback_rate": 0.0
+        }
+      }
+    },
+    "verdict_descriptive": {
+      "verdict": "EW_REMAINS",
+      "best_non_ew": "constrained_max_sharpe",
+      "best_net_sharpe": 0.786824,
+      "ew_net_sharpe": 0.770951,
+      "delta_sharpe": 0.015873,
+      "sharpe_margin": 0.1,
+      "best_maxdd": 0.045028,
+      "ew_maxdd": 0.046137,
+      "maxdd_constraint_ok": true,
+      "rule": "best non-EW net Sharpe > EW + 0.1 on LOCKED window AND maxDD <= 1.5x EW maxDD -> ADOPTED-AS-RESEARCH-FINDING; else EW_REMAINS"
+    }
+  },
+  "trial_discipline": {
+    "design": "单次预注册评估:6 个配置器 + 判定规则(margin 0.1 / 1.5x maxDD)先于结果写死;无变体扫描、无锁定窗上的配置器选择(VT 块/参考行不进判定)",
+    "caveat": "6 个配置器同属一个评估家族,判定只做「是否取代等权」的相对结论,不做绝对可部署声明;参数 UNCALIBRATED"
+  },
+  "honesty": {
+    "caveats": [
+      "RAW 曲线已含策略内执行成本/整手/门现实;配置层只加 10bps 调仓成本",
+      "W3 簇图全单例 → cluster_risk_parity ≡ inverse_vol 恒等(簇帽未绑定);regime_conditioned 的 base=CRP 与 fallback=IV 因此重合,tilt 结构性空转——锁定窗 4 个 stress 周触发了 tilt 但权重零变化;机制经测试就绪,待簇图出现多成员簇(CRP≠IV)即生效",
+      "top_contra 单条锁定窗净夏普高于全部配置器;max_sharpe 系的胜利集中在top_contra 尾边(HHI 0.33 vs EW 0.25)——见 sensitivity_excluding_top_contra;top_contra 治理层 PAUSED(前向证据为负),主判定是研究发现,非部署建议",
+      "locked 窗 ~1.3 年单段;窗口内最大回撤 = 窗口局部口径(非峰值起算)",
+      "fit→locked 全配置器夏普退化可见(1.7~1.9 → 1.4~1.7),锁定窗是更难的环境",
+      "max_sharpe 均值收缩 0.5 / 网格 0.02 等参数 UNCALIBRATED,网格精度 ±0.02 权重"
+    ],
+    "diagnostic_not_gate": true,
+    "no_live_wiring": "不接 live-track/driver/governance;live 回撤控制器独立缩放 deploy"
+  }
+}

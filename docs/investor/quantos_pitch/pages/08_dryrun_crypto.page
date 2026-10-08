@@ -1,0 +1,60 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "05 · 干跑实测 —— 加密货币主力候选"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "端到端干跑：含成本、整手、逐笔风控门"}
+  - elementId: perf-table
+    elementType: table
+    bounds: [80, 112, 800, 132]
+    columnWidths: [0.24, 0.10, 0.10, 0.15, 0.14, 0.11, 0.16]
+    rowHeights: [0.25, 0.25, 0.25, 0.25]
+    style: "$dark"
+    rows:
+      - - text: "策略"
+        - text: "周期"
+        - text: "成本"
+        - text: "门批准/拒绝"
+        - text: "总收益"
+        - text: "VT 夏普"
+        - text: "VT 最大回撤"
+      - - {text: "top_contra 顶部持仓反向", align: [left, middle]}
+        - text: "192 周"
+        - text: "10bps"
+        - text: "4,425 / 0"
+        - text: "+165.0%"
+        - {text: "1.30", bold: true, color: "$accent"}
+        - text: "20.1%"
+      - - {text: "crowd_contra 拥挤度反向", align: [left, middle]}
+        - text: "235 周"
+        - text: "10bps"
+        - text: "5,155 / 0"
+        - text: "+121.1%"
+        - {text: "1.10", bold: true, color: "$accent"}
+        - {text: "9.7%", bold: true, color: "$accent"}
+      - - {text: "carry 资金费套利", align: [left, middle]}
+        - text: "316 周"
+        - text: "8.5bps"
+        - text: "16,041 / 107"
+        - text: "+150.1%"
+        - text: "0.75"
+        - text: "22.1%"
+  - elementId: eq-img
+    elementType: image
+    bounds: [80, 258, 800, 220]
+    src: "media/equity_curves.png"
+    fit: {mode: contain}
+  - elementId: src
+    elementType: text
+    bounds: [80, 486, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>证据：data/cache/dry_run.db（对账残差 ~1e-9）· VT = vol-target 可部署口径 · 历史干跑非前向收益</p>

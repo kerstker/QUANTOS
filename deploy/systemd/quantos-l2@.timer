@@ -1,0 +1,16 @@
+[Unit]
+Description=QUANTOS L2 dry-run worker timer (%i)
+Documentation=file:///opt/quantos/releases/__QUANTOS_RELEASE_SHA__/deploy/systemd/README.md
+X-Quantos-Template-State=DO_NOT_INSTALL_UNRENDERED
+
+[Timer]
+# Safe inert placeholder. The release renderer replaces this with the
+# allowlisted cadence for each worker before any unit can be installed.
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=quantos-l2@%i.service
+
+# Input template: deliberately not installable. The renderer appends metadata
+# only after binding a reviewed module, cadence, timeout, and release commit.

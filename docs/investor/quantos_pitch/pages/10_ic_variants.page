@@ -1,0 +1,101 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "07 · 统计证据"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "IC 面板 × 预注册变体族：先注册假设，后跑检验"}
+  - elementId: ic-title
+    elementType: text
+    bounds: [80, 116, 400, 24]
+    content: {style: "$h2", wrap: false, text: "截面 rank IC（crowd_contra）"}
+  - elementId: ic-table
+    elementType: table
+    bounds: [80, 146, 380, 108]
+    columnWidths: [0.28, 0.24, 0.24, 0.24]
+    rowHeights: [0.34, 0.33, 0.33]
+    style: "$dark"
+    rows:
+      - - text: "持有期"
+        - text: "mean IC"
+        - text: "t-stat"
+        - text: "命中率"
+      - - text: "7 天"
+        - text: "+0.023"
+        - {text: "2.79", bold: true, color: "$accent"}
+        - text: "54.5%"
+      - - text: "14 天"
+        - text: "+0.030"
+        - {text: "2.73", bold: true, color: "$accent"}
+        - text: "59.9%"
+  - elementId: ic-note
+    elementType: text
+    bounds: [80, 262, 380, 90]
+    content:
+      style: "$small"
+      text: |
+        <p>对照：carry_composite 对价格 IC≈0（t=0.18）—— 诚实：carry 的边在资金费现金流，非价格方向预测</p>
+        <p style="margin-top:6px">momentum_7_wide（336 币宽宇宙）IC = -0.063，与既有负夏普结论一致</p>
+  - elementId: var-title
+    elementType: text
+    bounds: [510, 116, 400, 24]
+    content: {style: "$h2", wrap: false, text: "预注册变体族（2026-07-24）"}
+  - elementId: var-n1
+    elementType: text
+    bounds: [510, 148, 120, 54]
+    content: {style: "$bignum", fontSize: 38, wrap: false, text: "17"}
+  - elementId: var-n1-label
+    elementType: text
+    bounds: [636, 150, 250, 52]
+    content:
+      style: "$small"
+      text: |
+        <p>个 trial 先注册后评估</p>
+        <p>1 基线重跑 + 16 变体</p>
+  - elementId: var-n2
+    elementType: text
+    bounds: [510, 214, 120, 54]
+    content: {style: "$bignum", fontSize: 38, wrap: false, text: "7 / 9"}
+  - elementId: var-n2-label
+    elementType: text
+    bounds: [636, 216, 250, 52]
+    content:
+      style: "$small"
+      text: |
+        <p>CANDIDATE / REJECTED</p>
+        <p>全部过同一台 5 项证伪机器</p>
+  - elementId: var-n3
+    elementType: text
+    bounds: [510, 280, 120, 54]
+    content: {style: "$bignum", fontSize: 38, wrap: false, text: "0.84"}
+  - elementId: var-n3-label
+    elementType: text
+    bounds: [636, 282, 260, 52]
+    content:
+      style: "$small"
+      text: |
+        <p>基线 DSR（17 trial 总体泄气后）</p>
+        <p>3d 变体 DSR≈0.001 → 深度怀疑</p>
+  - elementId: bottom-claim
+    elementType: text
+    bounds: [80, 400, 800, 60]
+    content:
+      style: "$body"
+      fontSize: 14
+      lineHeight: 1.7
+      text: |
+        <p><span style="color:$accent">■</span> 我们不把 17 次相关试验当作 17 次独立赌注 —— DSR 按全 trial 总体泄气</p>
+        <p><span style="color:$accent">■</span> 7 个 CANDIDATE 已进前向 paper-track（仅证据积累，非晋级）</p>
+  - elementId: src
+    elementType: text
+    bounds: [80, 478, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>证据：data/cache/ic_panel_snapshot.json · evidence/crowd_contra_variants.json（68KB 完整存证）</p>

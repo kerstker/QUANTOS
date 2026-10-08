@@ -1,0 +1,63 @@
+# 新公开采集与AI设计记忆的真实双批验证
+
+目标是验证原后台循环中，前批采集诊断进入下一批模型设计，新采集发布后自动研究，
+前批实验结果进入下一次研究请求。区别于已完成的留存输入双轮，本次每批都发起新公开采集。
+
+固定源码a247ed85201988b8b1a2b17bf13ff9b361e13b59从验收目录独立克隆，
+位于`/home/kerstker/quantos-dev-output/gold-fresh-design-rounds-20260929/source`。
+源码与HEAD在运行中不变；不包含开发目录后来的崩溃测试时钟修正。
+驱动为同级`run.py`，会话73757，PID2983989；2026-09-29启动后实际ps确认存活。
+状态根为同级`actual-l7b5lpz5`，不写已有服务状态或读取账户凭证。
+
+驱动复用原run_prepare将既有公开模板绑定本源码，再只发一次collect_create HTTP请求。
+collection_batches=2、max_cycles=1、budget=1、interval_hours=1，
+每批60秒采集，AI_DESIGNED_WATERMARK_V1，真实本地qwen3.8-27b。
+运行的是原TestClient lifespan后台循环、JobQueue和FactoryStore；不手动调用加速tick。
+保留失败，按原预算/冷却结束，不覆盖旧采集或修改窗口让失败通过。
+
+首次实况：run_c239344ab731db0ed6672feffdc2423a正在采集，模型设计已保存，
+参数window_ms=2000、max_age_ms=1500、window_count=2；尚无完成研究结果。
+不能据此声称真实双批成功。以validation-progress.json及终态为准；观察上限85分钟，
+终态失败同样写摘要，驱动错误单独保存，不把进程存活当作闭环完成。
+
+完成时逐项重验设计收据、第二批设计记忆与原冻结文件、第二轮研究记忆中的第一轮trial引用、
+模型角色绑定、原模板不变。两批全部成功才输出FRESH_TWO_BATCH_COMPLETE；
+EXHAUSTED或停止保留FRESH_TWO_BATCH_INCOMPLETE。即使成功也不代表盈利、独立经济准入或真实Demo。
+
+本驱动新增代码通过E9/F821静态检查；没有安装、切换常驻服务或提交订单。
+
+后续实况1790638182144ms：首批原采集任务done，新输入2已发布，摘要
+c7f7d34d6224203fd48b2b73f43c469fb25ebb7dba0009215ffd4ede7ae86708；
+原采集任务自动创建campaign 1（RUNNING/SCHEDULE）。尚无成本实验结果，后台继续推进。
+
+后续实况1790638366566ms：首批研究run_d2cedee273551e6486247822e21a9310及自动核验均done，
+trial为78686e8ae72fc987cb7f8047f2bc882c5d5d349e25b5ba80118c212dff8b1ea4，
+候选0、NO_SIGNAL、模拟权益1000不变、残差0；独立权威未配置。组继续等待第二批，
+尚不能判双批成功。此冻结a247运行不包含后续开发的V3信号诊断记忆。
+
+后续实况1790642019706ms：后台在真实一小时冷却后自行预留第二批campaign 2/input 3。
+第二批设计为GOLD_AI_CAPTURE_DESIGN_V2，参数仍2000/1500/2；收到一条前批采集记忆，
+摘要a8bc16179e8dc9131472b6e87e3630a08e3bf7f18fea4ce96c08afc550ccee4c。
+新公开采集run_ab1d4e96e1efdb144e10b40c9b55dbf9已done，自动创建第二研究任务
+run_477cf4df564669d6f6bcff5a3a780589，当前running；没有手动补建计划或加速时钟。
+这证明第二次新输入和研究交接已实际发生，第二轮研究终态仍待核实。
+
+## 真实双批完成及原件复核
+
+原驱动73757实际退出0，validation-summary.json为FRESH_TWO_BATCH_COMPLETE，
+原program为COMPLETED；两次新采集、两次研究、两次自动核验任务均done。
+第二轮trial为9852c41aa66b63f0b810cc62e33815e5ae7f55563f76235ae2db5caa34b54024，
+候选从0变为1，两轮均NO_SIGNAL。
+第二次新输入摘要885daa61c23800c1a7a519b8b98aac677a06bdae0d4149e58ea9544db9da31d9，
+与第一批不同。第二轮研究记忆摘要
+b9025cf054515ab21157cb5dbf3db35c04458981b803bb5be945f42468f7e141。
+
+另行只读核对固定a247源码HEAD/干净工作树、两份设计收据、第二批冻结采集记忆、
+研究request与origin记忆相等、原模型角色记忆摘要和第一轮trial引用，
+并逐字节重算两份原输入/报告与manifest摘要。结果保存于同状态根
+independent-artifact-recheck.json；这是本地结构复核，不是独立机构的经济核验。
+没有修改原模板、运行时钟、源码、试验结果或账户状态。
+
+此证据关闭“该固定版本在隔离目录完成真实新采集双批自动研究”的验证项，
+不证明全天稳定性、参数改进、盈利、独立准入、Demo或现有服务部署。
+后续1048价格反馈版本的运行及完整验收必须保留自己的结果，不能借用本次成功。

@@ -1,0 +1,599 @@
+# XAUUSDT 策略研究选题与首批固定实验
+
+2026-09-30 **长时多结算观察→自动模型复盘后继已排队**：h4k621u8复用已真实验证的最终账户反馈驱动，绑定4f4cb382源码和jft9rji0原生产PID1785495/start328030394。原session63792、后继PID1791544/start328057536现场同一起点存活。只在原进程终结、四前缀完整成功且技术复算已归档时读取归档/TrialLedger/原头/账户诊断，再向既有本机模型提交限长来源绑定上下文；不改运行参数，不启动交易或自动解除停损。生产失败时保留INCOMPLETE且不调用模型；两个隔离流程检查确认失败零调用/成功一次调用。模型实际尚未运行，仍等待16:16后长时观察与归档；不能称真实多结算或盈利验证通过。
+
+2026-09-30 **多结算真实持续研究已启动并完成首前缀**：冻结4f4cb382384d76b5c907849080374915d86c0745（jft9rji0/source，父4d3d滚动资金费），持续账户inputs.json读取上限明确64MiB，其他文件仍16,000,000字节；整链含transition总量256MiB并在发布前核验，超量保留attempt失败材料与旧head。隔离17项通过/实际hook/导入图/Ruff通过，源文件摘要绑定；不是无限制放大预算，也未改旧运行研究源码。
+
+新独立技术研究原session71413、PID1785495/start328030394现场存活。固定原始报价/K线来源、三候选各.01、初始1000、maxnotional150、fee假设.0005及1000ms结算窗口，四次更新为立即、15:46:30、16:01:30、16:16:30；成功后原进程自动调用技术复算/归档，归档失败另留archive-exit，不改写已成功的账户终态。该研究不续写或汇总旧625账户收益；自身四前缀保留同一初始权益、来源和停止锁存。
+
+首前缀head affefe1b0d91246f32e67b87985dd5e38e41a0f2001bccd16b9fa69484a299a4，asof1790744260726，629报价、11872条K线消息、11原收盘（包含报价覆盖开始前的收盘，不全称账户决策）；最大报价间隔17803ms、无>30秒缺口，输入13091734字节。实际12:00回执已纳入1份，0订单、权益1000、现金残差0、loss ACTIVE。startup-check.json再次核对_hashchain和PID起点。16:00第二次结算尚未发生；真实多结算、跨日、策略资格和Demo均未宣布通过，625/7098验收不覆盖4d3d/4f4新增量。
+
+2026-09-30 **真实留存提案实验完成，并自动进入下一未见研究**：rs8vrpky原进程已自然终结，三收盘及同窗报价采集成功，run_957927f7633777367d11ee48bdc93359回测和run_3c68e537bd88c190d8500db20f9272b8复核完成；result 05472565cf307b961089f1ba60f639b07acbe05f679c0959d2bfe403032db092，原四trial保留，三候选NO_SIGNAL、组合0订单/期末1000/残差0。复核仍INDEPENDENT_AUTHORITY_UNCONFIGURED，不能称经济准入。
+
+9m0vrf9f原自动后继已接手，新的研究PID1727777/start327876427现场同一起点存活。核验前序完整终态/原结果SHA、最终反馈SHA、复制角色回执与提案6a0b10ec，plan已绑定known_at与最小提前时间；首收盘1790743500000（12:45），三个未见收盘，当前WAITING_CLOSED_BAR，不改原trend实验结果。handoff-verification.json保留真实接续与进度接口对前序COMPLETE/1轮的返回核验。无交易或已盈利结论。新增[十环节闭环检查点](../../reports/2026-09-30-gold-factory-closure-status.md)记录完整目标缺口；持续跨日/多结算、足量样本及独立资格、Demo仍未完成。
+
+2026-09-30 **最新研究闭环7098完整验收及交付队列已启动等待**：独立rkw3h1x9/source固定7098d1d1f8c612b3998e66a21cae0613a253a515，涵盖0e复算、9d归档、7ea留存提案接续和7098监控合同。核验625既有五验收驱动SHA、刷新公开IPv4解析，保留原双ARM64冷构建/扫描/离线smoke→canonical ALL/每阶段3600秒→证据留存，不外推旧版本结果。npm离线锁定安装已完成（ignore-scripts，未执行依赖安装脚本）。原session9582、PID1715965/start327822060绑定等待仍存活625验收1606423/start327436385；不会取消旧验收或仅因观察超时重启。
+
+同步复制并核验三打包驱动/五帮助脚本，源码前端后继session30436、父1716453/start327824227、source子1716455/start327824261已启动。服务操作后继session17978、父1717509/start327827807等待打包；b794/cd086帮助源码干净与摘要、三服务文件列表/摘要/NeedDaemonReload=no再次核对，未读取EnvironmentFiles。live-check.json确认新排队、打包、服务准备以及旧验收四原进程存活。全部仅准备，不安装/切换服务，不签发Demo或实盘权限。7098当前仍排队、无完整PASS；旧625自身验收继续。
+
+2026-09-30 **黄金实验进度进入工厂页面合同，最终账户自动反馈已完成**：冻结7098d1d1f8c612b3998e66a21cae0613a253a515（34682gne/source），新增有界只读gold_bar_program_status，复用目录/文件读取边界，展示已保存阶段、轮次、终态和错误；没有PID证据时liveness固定UNKNOWN，部分写入尾行不当完整事件，未完成轮次不得称整计划完成。lifecycle接口、TypeScript合同、工厂总览进度组件和API合同同步更新。主工作区与冻结9文件摘要一致；后端106通过/1跳过，前端10通过、类型检查和构建通过（原大chunk提示保留），导入图已更新/无环，实际hook通过。真实rs8vrpky研究根返回COLLECTING/0轮/UNKNOWN进程状态，未部署或把该记录称实时存活。
+
+账户lz_z2d3o原五次更新已完成；最终head 3eb4a2065ca136aa9503fc8a7497372c38c8b630e6f26e7b7cefe35256441981。自动复算原session93085完成5前缀，结果97ee0586；自动归档session15151登记trial 5b887e0345a141b51a83f3f64f72e32301d821d962845ae31b520677d512e596，结果b43ea31e6189f51a961799138ab1add623089e0bb4decd48f5f77bcd3cc512cd，producer_status完整成功而独立经济权威仍UNCONFIGURED。最终模型反馈session2592已结束FINAL_ACCOUNT_FEEDBACK_COMPLETE，提案均值回归reversion（6a0b10eca0b6748660f079e1dfec5b18814742ee08b5c94c22d0295094536822）；角色回执和实际feedback SHA再次核对，verification.json留存。提案不修改当前trend实验、不代表胜出；9m0vrf9f自动接续仍需等待当前真实实验成功终结及原停止条件。625完整验收不覆盖此新7098前端增量，未安装或Demo。
+
+2026-09-30 **真实零成交原因已逐收盘核对**：gozo3cp6/diagnose-signals.py从冻结625源码及lz_z2d3o已发布第四前缀8f916342重建原cursor，校验每条原decision和原输入SHA，按实际收到收盘时钟重算固定三候选。11:00–12:00共5根覆盖内收盘，三候选均5次READY/0入场，1504–1508根预热可用；原账户0订单/0风险事件。因此本段零成交符合无入场信号，不能推断完整执行链无缺陷或策略盈利。diagnostic.json保留完整15信号和来源摘要；不改参数制造成交。首次脚本名inspect.py遮蔽标准库导致导入失败，重命名并以-I运行后退出0，原冻结源码未变。当前实验、账户更新、自动接续三个原PID仍现场存活，process-check保留。
+
+2026-09-30 **625发行验收→服务操作材料自动后继已接通**：在1p9xxfrg核验旧oqtu五驱动SHA、b794/cd086两帮助源码干净提交及所列文件摘要，并重新比对三用户研究服务FragmentPath/DropInPaths/原文件SHA与NeedDaemonReload=no。未读取EnvironmentFiles。复制原已审查的仅准备驱动，绑定62534ec7和实际源码/前端后继1614503/start327469477，重算驱动绑定。原session56864、PID1695389/start327731865现场存活，正在WAITING_FOR_BOUND_PACKAGING；service-live-check.json同时确认验收1606423和上游进程仍存活。仅上游完整成功后生成combined-install、next-service-delivery与operator审查材料，不执行安装或服务切换。canonical.log已进入测试阶段，尚无完整PASS；625不覆盖0e/9d/7ea新增研究功能，不能外推验收。
+
+2026-09-30 **最终账户反馈→后续实验自动接续已排队**：9m0vrf9f/continue.py绑定当前实验1680667/start327663493及最终反馈1664266/start327614577；原session23768、PID1692026现场同一起点存活。等两者真实终态后，核对完整研究结果、原账户生产成功且loss_status ACTIVE、反馈/提案摘要，才调用既有冻结7ea单轮三收盘研究。前序失败或任一已触发停损不重启研究；四个隔离流程检查分别确认三拒绝零启动、成功路径一次启动。该后继仍在等待，没有声称下一轮完成；新轮为独立研究账户、不拼接收益，所有交易开关关闭。
+
+2026-09-30 **首轮留存假设进入实际下一窗口**：独立冻结7ea7f7299b4df8ea604c03f8cbc2dfeeb537ed4b，目录 `/home/kerstker/quantos-dev-output/gold-seeded-program-20260930-rs8vrpky`。新增tools.gold_initial_proposal校验四份原提案文件、SINGLE_V1候选目录与角色回执，并独占复制到首轮hypothesis目录；plan绑定proposal_hash、各原件SHA、known_at_ms与FIRST_UNSEEN_WINDOW_ONLY。gold_bar_program首轮使用该提案，后续轮次继续原反馈路径。候选不符/篡改回执/缺少ai_plan拒绝，注册队列回归确认三候选结果和复核仍保留且不重复调用模型；19项相关检查、导入图和实际hook通过。无新全量通过声明。
+
+真实run.py使用冻结源码与独立研究目录，PID1680667/start327663493现场存活，startup-check.json已保留。此前实际账户反馈的trend提案31989605d033ecdcb72e052a8a5b8591f6704bfe058fc1cc4af050fc313eb175已绑定，known_at1790740600143、first_close1790740800000（本地12:00），三根未见收盘窗口。events明确USING_RETAINED_HYPOTHESIS→WAITING_CLOSED_BAR→COLLECTING。固定三候选组合各0.01、模拟初始1000、最大名义150、假设费率.0005、原5%停止，尚未实验完成或资格准入。
+
+独立lz_z2d3o账户原session94742第四次更新完成，末asof1790740880639、transition 8f91634280114be7e4aafa6a690570b1b8499d50c596fc742641897e3b96d2d1。实际公开结算1790740800002、首接收1790740832996、rate0.00000535进入funding.json；_history四次发布及文件SHA通过。cross-settlement-check.json保留诊断：0订单、期末模拟1000、资金费现金0、残差0。此为结算原回执进入同一回放，不是有仓位资金费扣款或真实账户对账验证。原进程等待12:16:30第五次更新，自动技术复算/归档/模型反馈后继继续等真实终态。
+
+625完整验收arm64.log已记录双冷构建、Trivy扫描、无网络smoke和制品证据留存通过（runtime漏洞0），完整ALL尚未终态；该源码不含0e/9d/7ea。不安装、不切常驻服务、不签发交易权限。
+
+2026-09-30 **实际已登记账户诊断送回模型，形成下一研究假设**：本轮复用已有9d9829778810480ec002dbd3d8569a5c89df3982固定源码和bounded_proposal，不新增模型协议或修改正在运行的源码。任务目录 `/home/kerstker/quantos-dev-output/gold-account-feedback-20260930-hygq48b8`。先验证actual-archive manifest/原件链头/review摘要、TrialLedger事件和身份，重新从原simulation计算latest_account并核对成交数，确认复核已知时钟<=提案as_of。仅把最新同账户诊断与trial/head/review摘要作为限长objective上下文送入现有GOLD_BAR_CANDIDATES_V1入口；声明不可相加前缀收益、费用假设、非盈利/OOS标签、独立经济准入缺失，候选仍限制0/1/2。
+
+真实session39501退出0，本机qwen3.8-27b经原SINGLE_V1有界角色完成4330ms提案，candidate_id1/trend；proposal_hash31989605d033ecdcb72e052a8a5b8591f6704bfe058fc1cc4af050fc313eb175，feedback原件摘要6b5aea78d40ef5485d0503075fc3cffa3f6a550828cac64b609eff939ed459b5。verify_collaboration核验计划/角色回执/结果、实际objective包含反馈原件以及候选目录options摘要，verification.json留存。没有把未成交账户视为策略胜出，没有对现行研究/交易参数生效。此为真实技术反馈与新假设，不是已开展的新窗口实验或策略毕业。
+
+已启动最终归档后自动模型反馈 `/home/kerstker/quantos-dev-output/gold-final-feedback-20260930-b872mq6q`，session2592、PID1664266（起点见startup-check），现场仍在等待原最终归档PID1636541/start327574348。只在绑定归档进程真实终结并登记成功后，核对最终原件、生产终态来源SHA，将实际producer_status送入模型再保留新提案；脚本SHA与父进程身份已记录。尚未产生最终反馈，不改候选参数或自动下单。当前lz_z2d3o已有3份transition，最新截止1790739988647；跨结算及完整验收仍未完成，未部署/Demo。
+
+2026-09-30 **持续账户技术复算的原件归档与试验登记**：新增tools.gold_account_archive.archive_review，复制已发布的账户前缀原件与transition链至独立私有目录，核验拷贝前后源字节和链头，拒绝覆盖/路径重叠/符号链接，累计256MiB限额。使用现有TrialLedger协议记录PLANNED→RUNNING→PASSED或FAILED，保留review/原件/终态manifest，不能把复算失败删去。policy明确RETROSPECTIVE/SAME_ENGINE_REPRODUCTION_ONLY、preregistered=false、economic_eligible=false；单独GOLD_ACCOUNT_TECHNICAL_REPRODUCTION family，不作为新增策略候选或预注册OOS试验。每次归档属于一个快照复核调用，不将各前缀收益相加。producer_status默认NOT_ASSESSED_BY_PREFIX_REPRODUCTION，技术记录不覆盖行情/生产任务终态。
+
+先复现缺模块；归档并验证TrialLedger成功、复算失败留FAILED/原件、路径重叠拒绝以及原复算回归6项通过（隔离20.56秒），Ruff/导入图/实际hook通过。冻结9d9829778810480ec002dbd3d8569a5c89df3982，目录 `/home/kerstker/quantos-dev-output/gold-account-archive-20260930-zhn3m1wo`。首CLI使用../actual-archive被路径规范检查拒绝，session83078退出1且未建归档；改用明确绝对路径，未放宽路径门。
+
+真实session9974退出0，actual-archive包含lz_z2d3o两份原账户前缀，head c703bc54f7fb2638de28e946640c147c8d7c53708c1abd1fe04cb167a00afc0b；trial_id 3aee37222a3369d7078600ea4b3b44c57bd8968c06ba78133126c398028695e5，复算结果de31c60c78d24043d18c7b52f0165d242666c8697c9cd6f81864c391cdcc5bd4。原_history、review摘要、TrialLedger.verify及身份/策略摘要均实核，actual-archive-check.json保存；模拟资金1000、残差0，暂无盈利证据。这是隔离归档中的统一协议接线，尚未接常驻全局试验查询、前端或AI反馈。
+
+自动终态归档后继session15151已启动，followup-check.json绑定真实PID/start、脚本SHA、冻结源码以及原生产PID1612621/start327460033。仅生产进程实际终结、唯一完成/失败终态验证后，自动保存final-archive并另记producer_status；仍未执行终态归档。原625完整验收已通过首次ARM64冷构建、第二次在途；0e/9d新入口未获完整验收，未安装或Demo。
+
+2026-09-30 **连续账户结果逐前缀复算与终态自动复核**：新增tools.gold_account_review.review_chain，从已发布的账户链读取原输入、配置、规则、资金费和报告，先核验链摘要，再逐份原账本重放并比较完整结果；拒绝重算摘要后篡改报告。固定配置、原报价/K线前缀、warmup及历史账本事件连续性检查保持；复核前后核对所有消费原件、完整链头及复核源码身份，允许生产端追加新的未纳入此次复核的后续前缀。最多原96次更新、累计输入256MiB，临时重放目录结束即清除，不写原研究账户。
+
+输出GOLD_ACCOUNT_CHAIN_REPRODUCTION_V1包含原transition/result hash、复核源码/实际复核时钟、逐前缀费用/资金费/回撤/持仓和latest_account。明确LATEST_PREFIX_ONLY_NOT_SUM_OF_PREFIX_RETURNS，SAME_ENGINE_REPRODUCED只证明同一引擎复算，INDEPENDENT_AUTHORITY_UNCONFIGURED与economic_eligible/authoritative/submission_enabled=false保持。它不是独立算法实现或经济准入，暂未写入全局TrialLedger、模型记忆或常驻前端。
+
+先复现缺模块；带成交的两前缀复算、完整原件不变、重算报告/链摘要后篡改仍被发现、源码变化拒绝，以及原四个账户链回归共7项通过，隔离28.43秒；Ruff、导入图及实际pre-commit通过。冻结0e096ca392b7b7ff92d96810ae418e0565b5435b，目录 `/home/kerstker/quantos-dev-output/gold-account-review-20260930-wdjeeh9l`，两源码文件SHA与主工作区一致。625正在进行的完整验收不包含此新入口，不能把其未来结果作为0e完整验收。
+
+真实session56492退出0，重放lz_z2d3o当前两份已发布前缀；actual-review.json结果8536fa89277d08e112990b0ceb92964fe7911cee788e92515ec3d9ee1fb3696d摘要复核相符。最新模拟期初/期末1000、费用/资金费/净变化/最大已观察回撤/残差均0，暂无订单，不能据此称策略有效。actual-review-check.json保留核验。
+
+已启动自动终态复核后继session93085、PID1626374/start327524369，现场同一进程存活，绑定原研究生产PID1612621/start327460033。等待生产进程真实终结并核对唯一updates-exit或updates-failure后，复算所有保留前缀并分别记录producer_status和技术复核状态；失败生产不会因可复算而被改称成功。原研究继续运行，无中断/重新启动，尚待资金费穿越；未部署或Demo。
+
+2026-09-30 **恢复数据进入独立账户研究，保持旧失败证据**：现场核实625验收PID1606423、新报价PID1580027、持续K线PID1489719、资金费后继PID1528725均原/proc起点存活。由62534ec706a9e390290d6d9780b6d728821676b9提交另建干净研究副本 `/home/kerstker/quantos-dev-output/gold-recovered-account-20260930-lz_z2d3o/source`，不修改验收或采集源码。snapshot真实共同前缀包含123完整报价、5703条原K线消息、5根闭合K线（包含报价开始前的历史收盘，不能全部称本账户决策），截止1790738492355、maxgap17621ms、gap_count0，原件摘要留存。
+
+plan.json事先固定独立研究身份INDEPENDENT_POST_GAP_RESEARCH_NOT_OLD_ACCOUNT_CONTINUATION、三候选各0.01、初始模拟1000、总名义上限150、假设fee .0005、settlement_window_ms1000和5%原停损控制。不汇总两条旧中断账户收益、不导入旧余额或把新账户当旧账户恢复。首次公开规则复核和已知资金费回执经原advance/replay完成transition bdd256524d2338e1ae4439813967f8353c7e08041d905ca67ea97805f57c16b3；report a8149efc033fb38173c687510eb93947efa7502d7ff607b56590dbc5f7cdd783，0订单/0持仓，期末1000、费用/资金费0、现金残差0。没有实际结算穿越，不能称资金费验证或盈利。
+
+原session94742、PID1612621/start327460033现场相同并存活，startup-check.json通过原_history复核transition及全部绑定文件；计划总5次更新，下一收盘后90秒1790739090000。每次开始前检查原报价/K线PID及起点，源已终结则明确失败；每次重查规则、只纳入截止时已收到的原资金费回执，缺口或冲突继续拒绝。尚未在线增量跨日、独立经济准入或Demo。
+
+625验收session74144仍在原ARM64首冷构建阶段；新增源码/前端自动打包跟随session40711（父PID1614503/start327469477、等待子PID1614523/start327469503），严格绑定验收PID1606423/start327436385和625源码。已核验旧3打包驱动及5辅助脚本SHA，重算新驱动摘要；只有绑定完整验收PASS和证据通过才导出制品。delivery-live-check.json核实三进程身份。尚未制品完成、安装、切换服务或签发交易权限。
+
+2026-09-30 **发行依赖漏洞已形成修复候选，最新全量验收启动**：先查官方2.14.0发布记录 https://github.com/jpadilla/pyjwt/releases/tag/2.14.0 与对应CHANGELOG及PyPI版本元数据；固定修复版本2.14.0，不跟随最新2.15.1或更换其他依赖。PyPI wheel原件SHA256 ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc下载核对。新增公开JWK编码回归，UTF-8 BOM/UTF-16/UTF-32在原2.13.0均未拒绝（before.log三失败），新版本均拒绝；未使用真实签名凭据。
+
+requirements/pyproject、四平台/控制台锁由canonical renderer保留旧制品仅更新PyJWT及源摘要；strict身份评估版本和对应fixture同步更新，strong_identity_baseline由原生成器在新环境重新生成（23攻击基线）。独立 `/home/kerstker/quantos-dev-output/gold-pyjwt-security-20260930-1p9xxfrg/venv` 从原quality环境复制后按wheel hash离线安装，environment-check验证仅PyJWT版本变化；原环境保持2.13.0及在途研究不变。58项认证/锁/新增回归+3项评估通过，pip check、Ruff、实际hook通过；四锁在线精确解析一致。
+
+固定ARM64锁76包pip-audit实际零已知漏洞（locked-audit-report.json）；原requirements-dev入口两次失败于临时venv pip升级，保留python-audit.log/full-audit-stderr.log，未用另一个命令的报告冒充原命令。指定子进程PIP_CONFIG_FILE=/dev/null、显式PyPI索引后，原生成器重新运行成功并保留74包、零漏洞的真实canonical证据；不能据此断言前两次失败唯一根因。PyJWT单包独立审计也为零。两个审计覆盖范围分别记录，不互相替代。
+
+独立冻结62534ec706a9e390290d6d9780b6d728821676b9，11文件与主工作区SHA一致，source-binding.json绑定；包含之前0f34300a自动采集及d7账户/资金费接线。核验oqtu_yzc五个既有验收驱动SHA，刷新两个公开IPv4解析、改绑定新源码和独立venv，复用完整双ARM64冷构建/扫描/离线smoke→canonical ALL流程（未删门）。离线npm ci成功，原esbuild待批准postinstall提示保留，未另行批准脚本。session74144、PID1606423/start327436385现场同一进程，图与持久化前置退出0，ARM64driver1606618已启动；完整结果尚未产生，未发布或切服务，不是经济准入/Demo。当前策略/跨结算不足和旧账户终态保持。
+
+2026-09-30 **公开报价自动恢复分段入口完成，接手进程已排队**：新增tools.gold_quote_campaign，复用原gold_quote_session，每段同步完成或明确抛错后才能启动下一段。固定总计划30–86400秒、段时长、1–96段上限和1–300秒退避；只重试明确TimeoutError/ConnectionError/SSLEOFError/临时DNS错误，HTTP拒绝、数据异常、源码变化和人工中断终止。每段保留原始回执与终态摘要，campaign逐段绑定摘要并始终continuous=false/replay_ready=false，失败仍为PARTIAL_OBSERVATIONS；不重置账户或延长旧回测。时间预算限制新段启动，在途原有界HTTP请求可略晚结束，最后不足30秒不启动并记录尾部时长。
+
+回归先复现缺模块，再验证故障→独立后继成功、HTTP/数据拒绝、重试上限、中断、源码变化；额外捕获30秒最小时长因写计划的毫秒耗时被取整跳过，修正秒预算上取整。13项相关检查（隔离7.23秒）、Ruff、导入图及实际pre-commit通过。独立冻结0f34300ac9b1c5a4c170a664496217bfd986f059，目录 `/home/kerstker/quantos-dev-output/gold-quote-campaign-20260930-o360ti58`，主工作区两文件SHA一致；没有全量验收或部署。初次提交因克隆未配置身份失败，随后沿用既有Codex本地提交身份完成，没有跳过hook。
+
+真实probe session28353退出0，计划30秒实际含网络38–39秒，12份原件/4组报价、gap_count=0、max_gap_ms11235，区间1790737548832–1790737582229。逐份回执链、capture与终态摘要核对通过，probe-check.json保留；这是公开采集集成验证，不是实际故障恢复或盈利证据。
+
+后继session96451、PID1591135/start327364381已真实启动，当前WAITING_EXISTING_COLLECTOR，绑定旧PID1580027/start327310247（i01li1o8），两个进程现场均相同起点并存活。仅旧进程终结、原终态/源码/所有回执链验证通过后开始新的24小时campaign；不打断旧采集、不并行替换、不写服务或凭证，continuation-binding/live-check留存。此后继尚未实际开始campaign，真实重试仍待故障发生。
+
+旧d7资金费账户更新已明确终结INCOMPLETE/ACCOUNT_CHAIN_NOT_EXTENDED，3份已发布transition，最后9478281c7b91ad67dd75f066b673de97e91399a8d51829cbd1bd9dae5e33260a；旧ad0链4份transition，最后2a038eb5516829a8b45c52865488e3f769de5924619b5c83ed1e5849fe3fdf8f。两者末截止均1790736808116，未把静止报价重复计入，prior-account-terminal.json保存终态摘要；12:00跨结算计划不能再声称仍在运行或已验证。当前仍无足够样本、合格策略、独立经济准入或Demo。
+
+2026-09-30 **运行状态纠正与公开报价独立恢复**：现场核实814qbpnz原PID1480800已不存在，day-journal/failure.json为INCOMPLETE/URLError；末次depth请求TimeoutError后有界重试仍SSLEOFError。574份原件按序重算receipt_chain_sha256=84a5693336c504e36d4b6c7a465d489104d46ef625d9aa9a765396805617715f相符。原八轮g0no4sfc也已终结，第二轮JOINT_CAPTURE_FAILED，summary保留首轮结果；不能称第二轮仍在采集。连续K线与资金费后继现场原进程仍在，旧账户更新尚未终结，但其报价源已停止，不能承诺将完成12:00跨结算验证。
+
+已启动独立公开报价后继 `/home/kerstker/quantos-dev-output/gold-quotes-successor-20260930-i01li1o8`，使用只读干净d7a1ca0289b51411b9d5ed81be58608bf8d0a2cd源码；session64051、PID1580027/start327310247。startup-check.json现场same_process=true，7份回执，末次depth received1790737085834；predecessor.json保留终态和摘要核验。新计划24小时尚未完成，continuous_with_predecessor=false，不自动拼接旧报价、不改运行账户源码。diagnostic.json汇总本次故障与扫描原件摘要，未读凭证、未切服务或下单。
+
+7e194e14完整验收已终结INCOMPLETE，ARM64双冷构建通过后漏洞门拒绝；rejected-audit-b0c38279fcd97d1336906f50d9123783f1b1afcda6f81d1a86581d9e591e6ac6.json显示runtime PyJWT 2.13.0存在1 critical、5 high、4 medium，报告修复版本2.14.0。源码/前端/服务打包跟随后均正确不发布。尚未核查升级兼容性，未修改锁或豁免门；d7尚无完整验收，旧be通过不能替代。策略保留channel/trend/reversion固定候选，首轮均NO_SIGNAL；无足够样本、盈利或经济准入证据。
+
+2026-09-30 **资金费固定配置新研究链已真实启动，等待实际跨结算**：d7a1ca0289b51411b9d5ed81be58608bf8d0a2cd独立冻结，gpfk7sqs/source-binding.json绑定四文件、20项相关检查及实际hook通过；真实旧08:00结算回执读取验证为fundingTime1790726400002、首请求1790726410487/首接收1790726411043，actual-first-receipt.json保留原body，未用后继重复接收时钟替代。
+
+新链从原真实80报价前缀开始，首次即固定settlement_window_ms=1000、初始1000与原组合数量/费用；原session96046、PID1558091/start327252093现场S。已实际发布两份transition，第二29a9724dfa97f562fdad5b5ab38f3c55c826754a03fc48128da60773391ffd4b，截止1790736489468，旧历史逐项保持，账本残差0；当前未跨结算，actual_funding_receipts=0符合原覆盖检查，不是实际跨资金费验证。后续六轮计划已自动运行，下一目标1790737290000（11:01:30），等待下一收盘后90秒再取共同前缀/已有真实资金费回执/公开规则复核；缺失或冲突仍失败留档，不补0。启动检查startup-check.json重查链全部摘要与现场PID。
+
+当前公开mark nextFundingTime1790740800000（12:00）只是预测；尚未证明实际结算或非零现金变化。旧ad0809a8链未改参数，已自行完成第三transition（截止1790736324647）；新旧技术实验不拼接或相加收益。两数据生产端、资金费后继继续；未部署或Demo，仍需实际跨结算结果、跨日规则/账户及独立经济准入。
+
+2026-09-30 **固定账户配置跨结算衔接与原资金费回执读取实现**：gold_session_replay允许首次明确配置1–1000ms研究结算窗口但在结算前尚无实际回执；配置值始终校验并绑定输入，未跨结算时仍走原严格无结算路径。窗口一旦跨过名义结算而无实际回执，原adapter继续拒绝，不能把未知资金费设为0；收到实际回执后按原事件毫秒时间/实际接收时钟暂停与入账，固定配置及旧ledger事件前缀保持。
+
+先复现FUNDING_RECORDS_REQUIRED；初始合成fixture的历史结算间隔与其长覆盖窗口不一致被原门拒绝，修正fixture为一致4小时历史区间，未放宽原规则。带成交账户先发布结算前prefix，无回执的跨结算更新失败且保留旧链，加入真实结构回执后第二transition成功、非零资金费、残差0、CANCEL_AND_PAUSE_UNTIL_RECEIPT_V1。
+
+新增gold_funding_receipts.receipts_for_window，从一个或多个既有公开观察目录读取已完成原poll回执/原响应，核验摘要/时间/固定资金费端点/实际结算行；不使用尚未来到前缀截止的回执，不改写原body。多观察者重复事件取最早已验证接收时钟，任何已知冲突拒绝；没有窗口内结算时返回None，后续原覆盖检查决定可否回放。20项相关检查通过（22.22秒），Ruff通过，目录gold-chain-funding-20260930-gpfk7sqs。旧ad0809a8运行链不热改固定配置；新版本仍只支持原单个预测边界/单UTC日/技术研究限制，未经济准入或Demo。
+
+2026-09-30 **资金费原始观察故障已确认并启动独立后继**：现场发现9969f87v原24小时观察已终结，原session3837退出2、PID1199795/start326057186不再运行；observation-exit/summary为INCOMPLETE/CAPTURE_FAILED_URLError，95次poll、13个已观察结算，旧settlements.jsonl摘要ad4d8c8a3ce062c506946997c52d0ad2a8efcd5f550177d316f7f54ef4fc49c6已复核。不能继续称它仍在运行或已完成24小时。
+
+新目录gold-funding-successor-20260930-ti1mg4zm保留predecessor.json，使用已冻结ad0809a8原公开观察工具启动新的24小时留存，原session79127、PID1528725/start327181098现场S。首请求1790735773463/接收1790735773888，response摘要5510544c0a4b6fca8bd323b4cda4cfe81dfde2d9364e3b027f1449c4e3f84a56匹配原件，当前保留12个滚动两日窗口历史结算。新后继不是补写旧可用时钟；旧13与新12的滚动窗口不直接比较成现金差额。startup-check.json绑定实际身份、回执与session，全天完成/账户现金均未证明。预测观察原1216726/start326132188同时核对仍S。
+
+账户后继更新1523912/start327158689仍现场S。跨结算接线仍需在首次账户配置明确研究结算窗口，并使用原实际回执时钟；当前已启动链未配置该窗口，不能在更新中临时改固定配置或用未知费率补零。后续应以新明确配置的技术研究版本从完整原始前缀重建并验证历史延续，原链和失败记录保留。未修改生产服务、凭证或交易状态。
+
+2026-09-30 **真实账户研究链完成两次更新并自动续跑**：ad0809a85545be8f49f248924880e7436fd56ca6独立冻结，ouj_0nvt/source-binding.json核对三文件与主工作区一致、独立36项通过（18.21秒）、实际hook通过。原session14353退出0，先用既有真实80报价/1收盘前缀建立第一transition，再以实时135报价/2收盘前缀和新公开规则复核完成第二transition；全部历史ledger/equity/order/decision/risk与目标前缀一致。链首ff77ba18a5a05354697a218a9ca3cfe0ec9de1dcc8749768cd6f85e69ce655c3、第二efd2123db7367fc9a0aa4f129e8d5392b76de81f343917ddf884757119dae08d。actual-chain-check.json重新核对两份transition及全部原件摘要；当前仍0订单、初始/期末1000、残差0，不是盈利证明。
+
+同冻结源码启动后继四次新收盘更新：原session57388、PID1523912/start327158689现场S，updates-monitor.json绑定身份；首目标1790736330000（10:45:30）。每次等待下一收盘、提取共同前缀、保留新公开规则复核、append-only原账户重建/历史一致性核验，再追加新transition；失败保留原件和旧成功链，不重置初始资金。两24小时原始生产端继续，未改其源码。此为有限自动研究账户回放，不是逐tick实时执行；跨结算/跨日、经济合格策略、独立授权和Demo仍未完成，未部署。
+
+2026-09-30 **持续账户研究结果链实现，修复前缀增长导致容量窗口改名**：新增tools.gold_account_chain.advance，最多96次、单写锁、固定初始资金/数量/费用/风险与源码配置；只接受相同warmup/基础公开数据/生产来源和严格追加原样本/消息的更长前缀。每次从同一初始账户经原引擎全前缀重建，逐项比较旧ledger/equity/order/decision/risk事件及组合目标前缀、原5%触发锁；不导入保存余额、不相加窗口PnL，不是实时增量执行。
+
+首个带成交回归发现旧source=整份capture hash随前缀增长改变容量window_id，使既有ledger事件身份变化。仅新SESSION_PREFIX schema改为绑定初始bootstrap原件的稳定source，完整输入/输出仍保留各前缀独立hash；旧schema保持原身份。修复后原带成交账户历史逐项一致。结果/staging原件与transition引用追加留存，发布前文件/目录fsync及原子rename；失败保留原件和最后成功结果，发布异常不静默继续。
+
+先复现缺模块，再保留容量窗口身份变化失败；最终相关36项通过（17.86秒），canonical Ruff通过。目录gold-account-chain-20260930-ouj_0nvt。配置改变、旧输入改变、历史事件变化和重复/更短前缀拒绝。仍受原单日/资金费覆盖/16MB单件文件等限制，未启动在线策略执行、跨日或Demo，待独立冻结后真实双更新验证。
+
+2026-09-30 **持续两流真实共同前缀已完成原账户回放**：独立源码70859f3f1a9379ff070c754f7da1a58557a2eef3冻结，pnh10hvl/source-binding.json绑定三相关文件、独立43项通过（19.65秒）、实际hook通过；与主工作区SHA逐一复核。原session99964退出0：两生产端仍运行时保存80组报价/1根闭合K线的共同前缀，另独立保存真实公开规则复核capture，再通过原prepare_public_replay与同一组合账本完成回放。actual-account-replay.json结果ef629efb3a657d7c5e0deeb7e89732ea4ac432ae536fd8d09799d112be68e5b0，原result_hash和四份输入SHA均复核（actual-replay-check.json）。初始/期末1000、0订单、费用/资金费/净变动0、残差0，5%控制ACTIVE。不是有成交盈利/跨资金费或跨UTC日证明，也尚不是在线增量推进；未部署或交易。
+
+**原7e八轮首轮已真实闭环，第二轮自动继续**：g0no4sfc/program.log实际RESEARCH_SUBMITTED→REVIEW_SUBMITTED→ROUND_COMPLETE→PROPOSING_HYPOTHESIS→WAITING_CLOSED_BAR。round-1.json研究run_957927f7633777367d11ee48bdc93359结果51d32c4cdbb1969ddd2d1e2340ce92abedda4de50aa62933cdb6865b219df4c8；四个试验，三策略NO_SIGNAL/0订单、组合0订单、各自期初/期末1000、残差0。原review=INDEPENDENT_AUTHORITY_UNCONFIGURED，未经济准入。次轮目标1790735400000（10:30），是原八轮独立窗口，不与新持续前缀混算或冒称全天持续账户。
+
+2026-09-30 **共同原始前缀接入原组合账本回放**：tools.gold_session_replay校验快照四原件摘要/结构/截止时钟，重算K线消息，要求真实新闭合K线落在报价覆盖内，并要求调用方提供独立保存的最终公开exchangeInfo复核；通过prepare_public_replay原规则、费用/容量、报价缺口及资金费覆盖检查，再走原compare_portfolio/持续分批会话。输出继续原GOLD_NET_PORTFOLIO_COMPARISON_V1，不相加窗口收益，不改资金或风险参数。
+
+公开adapter增加明确GOLD_PUBLIC_SESSION_PREFIX_V1（3–86401样本），旧短/连续/扩展schema预算保持；30秒缺口、单UTC日、规则变更及资金费拒绝逻辑不放宽。此回放重建整份给定前缀的单个账户，尚不是在线增量推进或跨规则epoch/跨日账户，输入文件沿用原16MB单件读取上限。先复现缺模块；相关43项通过（19.51秒），canonical Ruff F821/E9通过。一次默认Ruff额外暴露原公共adapter已有19处E701，不改无关既有格式，不把该次默认检查称通过。目录gold-prefix-replay-20260930-pnh10hvl，尚待冻结后真实回放，未部署或Demo。
+
+2026-09-30 **真实两流共同前缀已生成并核对**：增量独立冻结86cb5afdc322f1c8bb2fd8c07af4520cc95d5d66，lq2xe06l/source-binding.json核对两文件与主工作区相同、独立9项通过（9.38秒）、实际hook通过。原session87382退出0，在两生产端继续运行时只读提取actual-prefix；截止1790734370846，42组完整报价、648条K线消息、0根新闭合K线，报价最大间隔15752ms/无超过30秒空档，无部分尾行/未配对mark。四份输出原件摘要已复核，actual-prefix-check.json保留结果。
+
+这是共同实际可用时钟的原始输入桥接，不是账户回放：replay_ready/economic_eligible/submission_enabled均false，仍缺最终规则复核、实际资金费/跨日容量覆盖及原持续账户消费。连续原始生产进程保持，未改运行源码、未部署或Demo。
+
+2026-09-30 **持续报价/K线共同前缀提取接线**：新增tools.gold_session_prefix.snapshot，读取两条运行中原始journal，按完整报价对与完整K线消息的最后接收时间较小值冻结共同前缀。仅纳入warmup已实际收到后的报价；保留warmup原件、原报价响应、消息及重算决策、两份生产源码身份、消费字节数/SHA与独立输出摘要。读取尾部不完整行/未配对mark不进入输入，中间编号缺失、原消息决策改变、时钟倒序或消费字节变化拒绝，不暂停生产端。
+
+新格式GOLD_SHARED_RAW_PREFIX_V1仍replay_ready=false，未提供最终规则复核/实际资金费覆盖、跨日容量或账户结果。先复现缺模块；既有回放夹具原字典排序/并行请求时钟不符合真实串行生产记录，已调整夹具为实际exchange/funding/candles顺序及mark接收后请求depth，保留严格检查。最终前缀/两生产端9项通过（8.93秒），Ruff通过。独立冻结与真实前缀探测待核对；不改正在运行的生产/研究/验收源码。
+
+2026-09-30 **持续K线24小时原始留存已启动**：独立冻结da42dcc9c0520dfe5c56e84437414f5d5e921c84，0mgk1o3a/source-binding.json核对两新增文件与主工作区相同、22项相关检查及实际hook通过；未完整发行/部署。原session90972、PID1489719/start326991899，已真实完成历史warmup抓取并进入OBSERVING_CONTINUOUS_BARS，首段原始消息文件持续增长，startup-check.json核对同一现场S进程与实际完整消息行/接收时钟。独立报价原1480800/start326947828同期仍S；未重启已有研究或验收。
+
+两条生产端现分别持续留存公开报价和K线，但不是已完成24小时，也尚未接为同一连续模拟账户。下一步需要从两种分段/逐回执格式生成共同已封闭前缀，保留原资金费、规则和实际可用时钟，才可接原持续会话；不能直接把当前文件存在标为会计/经济验证通过。
+
+2026-09-30 **持续K线原始留存与离线重建实现**：tools.gold_bar_session复用原固定公开WebSocket连接/有限重连及GoldBarStream，单会话最长24小时；按消息数/字节切分原始文件而不重连、不重置K线历史，消息flush、闭合K线/封段fsync，512MiB/500000消息总预算。每条保存原消息、实际接收时钟和原决策；manifest绑定warmup/receipt/plan及各段SHA，完整摘要不产生账户/经济权威。
+
+restore逐段重算原GoldBarStream决策并核对摘要/计数/缺失K线、复查原文件摘要；重新计算文件hash也不能掩盖被改写的决策。缺失闭合K线显式保留数量，不填造历史；断流/取消/源码变化不发布完整成功状态。先复现2个缺模块回归，采集/恢复/旧观察/网络边界22项通过（17.94秒），Ruff通过。目录gold-continuous-bars-20260930-0mgk1o3a。仍为原始K线数据与技术重建，未与独立报价/资金费合成持续账户，未跨日回放或Demo；现有运行源码不变。
+
+2026-09-30 **独立报价真实短探测完成，24小时原始留存开始**：源码9f3b43a23adc87407dc899dad398c3812ab27d73冻结，814qbpnz/source-binding.json核对四文件与主工作区摘要一致；42项通过（5.46秒）、Ruff/图/实际hook通过。原session47218退出0，60秒配置实际报价覆盖1790733338292–1790733407547（含请求/间隔开销），7样本/18原回执/0错误，最大间隔12495ms、gap_count0；完整原文件SHA链与capture摘要现场复核一致，replay_ready=false。
+
+同冻结源码启动独立24小时原始报价留存，原session19309、PID1480800/start326947828现场S，day-monitor.json与startup-check.json绑定真实身份；day-journal逐响应保存，未接凭证/账户/订单。不是24小时完成结论，也没有跨日回放或持续账户结果，K线与资金费/规则消费者尚待接入；7e原八轮不改。
+
+**完整验收进展**：be2184原canonical-validation.json明确ALL/PASS，32选中/32通过、0失败/错误/超时、21跳过；acceptance-exit=CANONICAL_ACCEPTANCE_AND_RETENTION_PASS，installed=false。新7e队列自动进入实际验收，oqtu_yzc/acceptance-monitor.json父1476952/start326938312现场S；图/持久边界预检退出0、ARM64 driver1477102已启动。be通过不覆盖7e/e036/9f3b，不宣称新版发行完成或部署。
+
+2026-09-30 **独立持续公开报价采集入口已实现**：capture_gold_session接受30秒至24小时的有限会话，固定XAUUSDT公开GET、原15秒请求超时/一次有限重试不变，不依赖AI/回测/独立复核队列。逐响应sink为必需，内存只保留末样本；摘要记录首末接收时钟、样本数、最大间隔和非递增/超过30秒空档，不补价。新GOLD_PUBLIC_QUOTE_SESSION_V1明确replay_ready=false，不能直接进入旧单日回放或宣称资金费/规则全覆盖。
+
+新增tools.gold_quote_session入口，私有独立目录、原回执逐文件排他写入并fsync、512MiB总预算、按序原文件SHA链、原源码绑定与失败摘要；输出路径不可重用，不读取凭证/账户或修改服务。采集失败保留已写原件，不发布成功摘要。先复现6个缺入口回归；采集/边界/文件留存42项通过（5.26秒），模拟慢sink额外停40秒真实计入空档。首次Ruff六处测试单行语句格式失败已修正，未跳过检查。目录gold-independent-quotes-20260930-814qbpnz，尚待冻结后真实短探测。该入口补持续报价生产端，尚未接持续K线、跨日规则/资金费、原连续账户或Demo；现有7e八轮研究不改源码。
+
+2026-09-30 **跨轮连续账户阻塞已定位，下一步改为采集与研究解耦**：现场审计 `/home/kerstker/quantos-dev-output/gold-continuity-audit-20260930-z7iyc82l/audit.json` 保留四个相关源码摘要、当前运行7e身份和冻结计划。真实进程1417857/start326795295仍S，已留存89份公开回执与1根闭合K线，最近回执1790732961450；这是采集进度，不是首轮完成。
+
+现程序每轮结束报价目标为末收盘+30秒，下轮在下一首收盘-100秒开始；15分钟周期下名义未采集间隔770000ms（12分50秒），远超原30000ms报价缺口上限。该数值由源码与计划推导，不是声称已观测未来两轮。研究、独立复核和下轮模型调用均在下一轮采集之前串行进行，因此把轮末权益传给下一轮或相加利润都不能建立连续持仓/风险证据。
+
+后续接线次序：
+- **采集独立持续运行**：报价、闭合K线和资金费原回执持续留存；模型/回测/复核只消费已封闭片段，不能暂停采集。保留实际接收时钟、源摘要、缺口和异常；不通过提高缺口阈值拼接旧八轮。
+- **账户独立于研究轮次**：同一原V2会话和5%初始权益阈值贯穿连续片段；统一目标、挂单、费用、资金费与持仓，不在每轮重置资金。旧研究轮次仍独立实验。
+- **跨日/规则边界显式接入**：原公开adapter目前只接受单UTC日，不能靠扩大采集时长宣称可连续回放；新日ADV、规则和资金费覆盖需在各自可用时间进入原引擎，缺数据保持未验证。
+- **验收以完整账户证据为准**：跨片段持仓与费用连续、研究耗时不产生采集空档、跨结算/跨日覆盖、原输入重放一致、累计5%停止及最终对账；之后再接冻结策略的Demo准入。当前未满足这些端到端条件。
+
+2026-09-30 组合分批回放增量已独立冻结 `e0368d1edd44e7f8f8ceb9529d68822006f7ed69`（gold-portfolio-stream-20260930-hwhnlai8/source-binding.json）；独立副本22项通过（24.43秒），实际pre-commit通过，图重生成后20域/52边/0循环，三源码/测试及图与主工作区摘要一致。7e原真实研究已进入COLLECTING且PID/启动时钟匹配；原验收与队列继续，e036新版尚未纳入完整发行验收或部署。
+
+2026-09-30 **组合按真实K线接收时钟推进原同一账户**：GoldNetTargetPortfolio新增append_bars，拒绝空批次、重复/乱序历史和已处理时钟的迟到追加；保留目标、订单所有权、止损参考与原风险控制器。compare_observed_portfolio改用原LinearPerpetualSimulationSession，在每批K线可用时间之前推进已有报价，再追加新K线，继续同一原现金/持仓/费用/资金费账本；完整数据和观测绑定仍参与原输入身份。整段回放保留供确定性对照，未修改订单、信号或风险参数。
+
+先复现两个缺append接口回归，首批12项通过；增加资金费压力在分批路径触发原初始权益5%停止后，相关22项通过（23.56秒）。真实两收盘夹具检查第二批仍保留第一批目标与订单，并与整段回放完整结果相同；资金费/标记压力分批与整段都STOPPED_FLAT、原资金费-10、现金残差0。Ruff通过；初次图检查提示源码摘要漂移，需按新源码重生成图，不隐藏原失败。独立增量目录gold-portfolio-stream-20260930-hwhnlai8。此为单份保留行情跨K线批次连续性，不是八轮采集账户串接、跨日规则支持、Demo或经济准入；原7e研究和完整验收队列不改源码。
+
+2026-09-30 **完整验收队列已更新为联合采集修复版7e194e**：新目录 `/home/kerstker/quantos-dev-output/gold-joint-delivery-20260930-oqtu_yzc`，固定源码7e194e14dda36bda0a53aa3aea9b270dc3090d40；旧617759串行进程1402537/start326723750经现场核对仍等待、无验收子进程，暂停后再次检查并保存SUPERSEDED_BEFORE_ACCEPTANCE_BY_JOINT_CAPTURE_FIX原始记录，再终止该排队进程（原session78027退出143）。旧打包与服务准备依照原非PASS结果自行结束，记录保留；没有中止be2184实际验收或真实研究。
+
+新原session13629、队列1428678/start326844271等待be2184实际父1313551/start326448937；源码/前端session91017父1429100/start326846010、子1429103/start326846023；服务/操作准备session98845父1429451/start326847820。queue-live-check.json逐一核对/proc身份与S状态，同时核对真实研究1417857/start326795295仍存活。五验收驱动与历史打包助手SHA、b794/cd086帮助源码、三用户服务配置摘要及NeedDaemonReload=no均重新核验；新独立源码干净，npm离线依赖安装退出0，原双ARM64冷构建/扫描/离线smoke及canonical ALL/3600秒范围保持。新完整验收尚未开始，不宣称PASS；通过后自动准备同一版本交付材料，installed=false/services_changed=false，未部署或启动Demo。
+
+2026-09-30 **首轮真实采集失败已确认，新联合采集版本开始后继研究**：原ab6a session61085自然退出1，failure.json PROGRAM_FAILED，capture-status明确stream OBSERVED/3收盘、quotes FAILED/URLError；program summary RESEARCH_PROGRAM_INCOMPLETE、rounds空，未完成任何实验轮次，不能继续称八轮正在运行。原数据、三个收盘和09:04失败回执全保留。
+
+修复冻结7e194e14dda36bda0a53aa3aea9b270dc3090d40（g0no4sfc/source-binding.json），61相关+独立6专项通过、实际hook通过、与主工作区五文件摘要一致。新的公开探测原session88237退出0，10原回执/3有效帧，capture_id=6aa88c0f5eb981263425b2147d5dfc964a2b499df95e18b6b2aa727f46f5eb0e；短时网络恢复，不证明长窗口稳定。
+
+确认旧PID缺失/终态后启动后继8轮，source仍独立冻结，新增portfolio=true并保留AI/每轮3收盘/1000ms显式资金费窗口。原session92200、PID1417857/start326795295现场S，startup-check.json确认同一进程；实际模型首假设完成，正在等待首收盘1790732700000（09:45）。successor-binding.json绑定旧失败来源与新源码/驱动，不覆盖旧轮次。没有部署/交易。617759完整验收队列尚不包含此联合采集修复，下一步需按实际进程状态处理新版完整验收。
+
+2026-09-30 **真实采集故障揭示并修复联合任务等待问题**：现场ab6a首轮quote-receipts最后depth接收1790730213370（09:03:33），1790730242088第二次premiumIndex请求SSLEOFError明确retry_scheduled=false；WebSocket messages仍更新，原asyncio.gather(return_exceptions=True)等待整个收盘窗口，导致进程存活不等于报价采集仍有效。旧冻结进程保持运行至原截止，原始错误与数据不改写，不把整轮称完整采集。
+
+新collect_joint在任一采集异常/流INCOMPLETE后设置共同停止信号，取消异步收盘流并保存STREAM_CANCELLED/INCOMPLETE原摘要和hash；同步urllib报价通过is_set/wait协议在请求/重试/睡眠边界合作退出，协调器等待线程结束，不仅取消asyncio包装。外部取消同样先停流并等报价工作结束再传播取消。原请求超时/预算/30秒报价缺口及后验校验不放宽，当前阻塞请求仍须等网络调用返回。
+
+初始缺模块回归；首次整合60通过/1治理失败（采集模块新增threading超出原白名单），改由程序持有Event、网络模块接收停止协议，无治理白名单改动。最终61相关测试通过（52.15秒），另6项联合协调/取消专项通过；canonical Ruff通过。目录gold-joint-capture-20260930-g0no4sfc，尚未发行验收/部署；已排队617759仍旧完整范围，不能自动涵盖本增量。
+
+2026-09-30 **最新整合617759完整验收与交付自动队列已启动**：目录gold-integrated-acceptance-20260930-zjg0elg3，固定6177599204c467aabc2810982afb5f8af8103513（涵盖公开资金费回放/采集、共享账户组合、四试验注册/前端、组合AI反馈）。五验收驱动先核对旧SHA，仅替换固定提交和新解析公开IPv4；保持原双ARM64冷构建/扫描/离线smoke与canonical ALL/每阶段3600秒。npm离线456包完成，原esbuild未批准postinstall提示保留，未approve-scripts；图20域/52边/0循环、源码干净。
+
+原session78027，串行进程1402537/start326723750正在等待仍S存活的be2184实际验收父1313551/start326448937。原source/frontend后继session84418、父1403006/start326725849、source子1403007/start326725856；service/operator后继session45350、父1403381/start326727621均现场S。queue-live-check.json记录全部身份；旧验收未结束，不重启或取消它，新版尚未进入实际构建。五历史打包助手SHA、b794/cd086帮助源码提交/干净状态及摘要、三研究服务FragmentPath/DropInPaths/文件SHA/NeedDaemonReload=no再次核验；没有读取EnvironmentFiles。通过新版本自身完整验收后自动准备源码/前端/服务操作材料，所有步骤installed=false/services_changed=false；尚无新版完整PASS或安装授权步骤。
+
+原ab6a真实研究1329835/start326512704仍S且首轮COLLECTING，未替换运行源码；公开行情观察继续。下一步按原句柄核对完整验收/实际研究自然结果，不把旧be2184通过（如后续取得）外推到617759。
+
+2026-09-30 **组合反馈真实本机模型调用完成**：源码6177599204c467aabc2810982afb5f8af8103513，r3bpa2ae/source-binding.json核对四源码/测试及图与工作区一致、71项通过、实际hook通过、未部署。原session76960退出0，model-exit.json为PORTFOLIO_FEEDBACK_MODEL_PROPOSAL_COMPLETE；使用原qwen3.8-27b本机配置，从5j5zg0t5已保留报告/原四试验/独立请求/回执核对后构造memory，模型返回candidate0（channel）。memory 8e8bcd0fcdd3501d83c36edaa55497a39fd1ec5945185fbab744c6b7a14dde1b 与模型role收据一致，proposal 12e5a770a20a8ec9c968751eaa9cedf6ebd8557e3977e231cd48f39d3ab6a0d7 与原结果一致。完整actual-portfolio-memory.json、actual-proposal/plan/roles/result均保留；旧记录reviewed_at未知仍null。只有研究假设，不是准入、策略胜出、部署或交易。下一主线优先最新整合版完整交付验收，而非把be2184旧验收外推覆盖新组合/反馈增量。
+
+2026-09-30 **组合成本反馈接入下一轮模型研究**：新增GOLD_BAR_PORTFOLIO_MEMORY_V1，最多保留前七轮共享账户原精度净权益/费用/资金费/回撤/残差、订单计数、停止状态、试验/报告摘要及原回执状态；缺组合或缺历史时钟保留null，不补0。严格检查唯一递增先前attempt、known_at<=as_of、非零残差拒绝，冻结hash、最多32KiB。通过已有research_memory通道传入GOLD_BAR_CANDIDATES_V1，原2000字符objective与64KiB总请求上限保留；原吸收候选memory使用原验证器，不能跨目录混用。
+
+研究程序每轮回执后保存reviewed_at_ms，下一轮将portfolio-memory-N.json原件和options_hash/模型request_hash保留，模型仍只能在三固定家族提出下一个技术假设；组合不是新增可自动批准的候选。首轮/无组合维持原请求路径。初始模块缺失回归，独立整合53项通过（40.27秒），旧memory兼容18项通过（2.42秒），canonical Ruff与图20域/52边/0循环通过；目录gold-portfolio-feedback-20260930-r3bpa2ae。尚无新模型真实调用结论、未部署；运行中的ab6a八轮源码不变。
+
+2026-09-30 **组合真实注册队列重分析已完成**：5j5zg0t5原session71626退出0；replay-exit.json为REGISTERED_REANALYSIS_COMPLETE，研究run_9889833e12e442cde61cffcb99f8a7ee及回执run_6c2119a22a51ffd1504a68169adf2589均完成。四个原试验、确定性复算、原独立请求与console投影已落盘，组合id等于第四试验并现场核对。共享账户期初/期末1000、净变动/费用/资金费/回撤/残差均0；使用既有无信号窗口，不是新OOS。review_status仍INDEPENDENT_AUTHORITY_UNCONFIGURED，未经济准入或交易。源码f975cc01尚未完整发行/部署；实时ab6a八轮继续原进程。
+
+2026-09-30 组合注册/前端增量冻结f975cc01ea2d970b56d3a73dd10a708d77cab2d0，5j5zg0t5/source-binding.json核对12文件与工作区相同、源码干净、30后端/5前端/typecheck/build及实际hook通过。已用已保存dvzff6ic公开三收盘原件启动真实注册队列重分析，原session71626、PID1385381，replay-monitor.json绑定/proc起点和源码，现场S。目标是原gold_bar_research→四试验留存/复算→gold_bar_receipt→console投影；不是新行情/OOS/经济准入。待核对replay-exit.json和registered-console-projection.json。未安装/切服务。
+
+2026-09-30 **组合已接原注册研究队列、复算/回执与前端契约**：portfolio_plan显式绑定三家族固定数量与总名义上限，原archive多登记net_portfolio第四试验，仍保留三个独立候选及各自试验身份；原input/report/manifest/trial-ledger复算、恢复输入绑定及独立请求涵盖第四试验。旧无组合档案仍三试验；组合结果不改变economic_eligible/authoritative/submission false。原gold_bar_research发布共享账户成本/停止状态/试验id，前端GoldBarResults独立展示共用账户而非相加三个候选；缺组合的历史记录不补零。console契约在同一改动新增真实队列路径检查。
+
+程序新增显式--portfolio（每候选固定.01、max_notional150），保存预算并将组合亏损停止纳入后续窗口停止判定；不更改正在运行的ab6a八轮。首次新档案因未知portfolio_plan失败，接线后完整程序暴露旧回执adapter固定三编号，修复为仅允许三或四唯一编号，原档案/签名/时效检查保留。整合副本30项通过/90未选择/1原Starlette弃用警告（88.57秒）；较早后端26项通过，前端5项测试、typecheck与build通过，原大chunk提示保留。目录gold-portfolio-delivery-20260930-5j5zg0t5；图20域/52边/0循环与canonical Ruff通过，尚未完整发行或部署。
+
+现场ab6a原1329835/start326512704仍S，09:00首轮已COLLECTING。be2184 ARM64退出0，canonical实际进程1370624已启动；无完整验收通过结论。本次组合仍为新固定研究假设，未加入AI自动选择或经济权威准入。
+
+2026-09-30 净目标组合增量冻结6d48bd99a4d1ffb6cfc211a2e7622967f1f5a1f7，目录gold-net-portfolio-20260930-_k7s_vx0。主工作区相关22项通过、独立副本组合7项通过（5.13秒），canonical Ruff、实际hook通过，图20域/52边/0循环；source-binding.json核对三源码/测试及图摘要。复算既有dvzff6ic三收盘公开原件，固定每候选.01/总名义上限150/初始1000/费率.0005，原session44340退出0；retained-public-portfolio.json结果b410a3f9502b233ae0999a95cb1152588528812b2951b06905f1314290d6ec9a，0订单、0净收益、残差0、非零目标帧0。这是已见公开窗口重新研究，不是新OOS或盈利/经济准入证明。8轮ab6a原进程1329835/start326512704仍S，首轮等待收盘；未改运行源码、未部署或启动Demo。组合尚未接注册队列、前端与独立验证入口。
+
+2026-09-30 **黄金固定净目标组合研究实现**：新增GoldNetTargetPortfolio，将三类事前固定数量目标先净额抵消，再通过同一个原V2订单/现金/保证金/资金费账本执行；统一原5%初始权益亏损控制与共享名义敞口上限，不求和独立账户收益。目标不是独立策略成交持仓，不生成分策略利润。目标止损明确以创建目标时实际可见报价为参考，区别于单策略成交价止损，属于新增固定组合研究假设；反向先减少原实际库存至零，再等待后续可用信号/报价开仓。原盘口、过滤器、费用、保证金及单品种上限保留。
+
+compare_observed_portfolio复用原收盘日志/行情范围校验与决策帧，不制造报价；dataset绑定完整bars与原journal来源摘要。回归包含相反目标零成交零费用、同向单净单统一费用、共享敞口/权益拒绝、真实三信号日志因果时钟、先平后反向与共享5%停止。初始缺模块失败；压力fixture先被资金费域与原SINGLE_NAME_LIMIT正确拒绝，保留限制调整fixture；随后确认资金费高结算标价会先改变估值，阈值实际在下一原标价事件越过，断言修正为真实原账本时钟而不改账本。尚未接组合队列/前端或Demo，运行中的ab6a八轮源码未改动。
+
+2026-09-30 **公开资金费研究链路已冻结并启动8轮真实研究**：源码ab6a8399c1e19f11e5d26d187b65eb4ca7e44003（父03b05ba7），目录gold-funded-research-20260930-9vosstc4，63项相关测试通过（77.63秒）、canonical Ruff与实际pre-commit通过；source-binding.json核对七文件与工作区一致、提交干净。原session61085、PID1329835/start326512704现场S，startup-check.json绑定身份。使用已有本机研究模型配置，8轮、每轮3个新15分钟收盘、显式1000ms研究结算窗口；首轮实际PROPOSING_HYPOTHESIS后WAITING_CLOSED_BAR，首收盘1790730000000（北京时间09:00），尚无首轮结果。保持每轮独立模拟账户，不拼接收益，不属于24小时连续账户/Demo/经济准入。公开24小时实际资金费及预测两原进程仍S存活，最近现场74/62轮。完整验收仍是be2184，未覆盖03b05/ab6a；本次未安装或切服务。
+
+2026-09-30 **资金费采集→三候选实验→原试验留存/复算已接线**：连续/扩展公开行情采集新增显式observe_funding，在第一已知名义结算之后按60秒间隔查询固定公共fundingRate端点，保留空响应和首次实际结算回执，继续采集报价。研究程序新增--settlement-window-ms（1–1000，仅continuous），将回执原件写入固定funding.json并在plan绑定SHA；队列校验摘要后将原件纳入原input/trial/report，公开预热和实际收盘比较入口均传递至原资金费账本。未跨结算仍走原严格路径；缺失回执、迟于行情末尾或跨UTC日不能补零/伪造报价。
+
+新增三候选连续收盘持仓经历资金费后退出、原archive/verify相同结果hash、固定队列读取/篡改拒绝、程序原字节传递，以及采集中先空响应后真实结算测试。旧入口2失败、采集1失败、传递1失败后实现；中间发现测试历史间隔过短及_write不返回摘要，分别修正fixture和按实际保存字节取SHA，保留失败说明。独立整合结果见gold-funded-research-20260930-9vosstc4/targeted-tests.log；canonical Ruff通过。该研究接线仍无经济权威、无部署/下单。
+
+旧1c57监督已终态：ARM64返回0，canonical未开始，父进程已退出，明确SUPERSEDED_BEFORE_CANONICAL_KNOWN_LOCAL_STACK_PATH_TEST而非完整PASS。be2184验收实际PID1313551/start326448937现场S，ARM64子1313753；继续原验收句柄，不重复启动。
+
+公开回执增量冻结为03b05ba756008aa4ef5acc049b0c65fb25e185f8，上述be7ssnra/source-binding.json核对源码干净与五文件摘要和工作区一致，实际pre-commit通过；当前完整验收队列仍绑定上一版be2184，不能涵盖本增量。
+
+2026-09-30 **公开资金费回执已接入原回放账本（单结算、同一UTC日）**：prepare_public_replay新增显式observed_funding_records与1–1000ms研究窗口参数；默认严格路径不变。新模式保存原响应摘要及请求/接收时钟，实际结算毫秒不取整；名义时刻撤模拟挂单并暂停策略，原FundingEvent按实际结算持仓入账，接收之后的真实报价才恢复决策。重复一致回执取最早实际接收，冲突、缺失、越窗、提前改变预测和行情未覆盖接收时间拒绝。共享解析器移至execution，research兼容导出保留，无反向导入或第二账本。
+
+回归先5项因缺少参数失败；扩展检查首次80通过/1失败是越窗测试把实际结算放在请求之后，修正测试请求时钟后独立整合81项通过（12.57秒），canonical Ruff通过；图20域/52边/0循环。证据目录gold-public-funding-replay-20260930-be7ssnra。旧结算到首预测的间隔仅历史间隔假设，不是已认证交易所周期；manifest保留FORECAST_TIMING_BOUND_UNVERIFIED及账户现金未验证。尚未连接连续采集调用器、跨日容量更新或取得真实跨结算策略回放；没有经济准入、全量发行通过、安装或Demo启动。
+
+2026-09-30 预测窗口与本地启动修复整合已冻结be2184b92809caac680ea2ac65e7a8f8f61dbf9a，fttni_rw/source-binding.json记录107项通过、canonical Ruff/实际hook通过、三源码文件与主工作区一致。完整验收原session77686已排队等待1c57实际父进程1283802/start326318848结束；新源/前端后继session98224、联合服务/操作材料后继session54727均已连接。五验收驱动旧SHA先核对，仅换固定提交/新公开IPv4；前端npm离线456包完成，esbuild原未批准脚本警告保留，图检查20域/52边/0循环。五打包助手与b794/cd086辅助源码/摘要、三服务Fragment/DropIn路径/SHA/NeedDaemonReload再次核对；未安装或切服务。
+
+queue-live-check.json现场核对新四进程及旧1c57父/ARM64子/监督进程身份。旧父仍T暂停、子构建与session41823监督仍S运行，等待子自然结束后明确标记SUPERSEDED再释放父；不把1c57记为PASS，也未修改运行中源码。be2184尚未开始实际全量验收，没有新版发行通过或Demo结论。
+
+2026-09-30 **名义资金费预测窗口模型已接入原缓冲/账本**：新增显式ForecastFundingPolicySnapshot，输入是事前名义日程与调用方选定1–1000ms研究时间窗；模型标识RESEARCH_FORECAST_WINDOW_NOT_VENUE_GUARANTEE，原input_hash绑定该假设，报告附完整假设并增加FORECAST_TIMING_BOUND_UNVERIFIED权威阻塞。它不证明交易所一定按此窗口结算。原精确FundingPolicySnapshot路径保留，实际FundingEvent.timestamp从不取整。
+
+缓冲协调器将名义时刻生成funding_pause_until帧，从该时刻撤模拟挂单并停撮合/策略，实际资金费仍在原毫秒按原持仓计入，到实际接收时钟后恢复。核心要求预测窗口每个结算均有原事件及覆盖接收时间的名义暂停帧；越窗、窗口内多个实际结算、缺暂停、窗口内开始账户拒绝。后续报价尚未覆盖实际事件时保留原帧不超前推进；多品种交叠窗口以最早未解决事件停止。单一原现金账本、原成本/亏损控制继续使用。
+
+旧实现5项回归失败；首次实现发现测试误用不存在updated_at字段和缓冲事件排序改变原输入hash，修正为原order_events时钟与确定性资金费排序，保留失败记录。最终独立整合107项通过（12.95秒），含旧精确多品种完整报告相同、实际+2ms计费与名义时刻撤单、缺口/重复/冲突/窗口范围、原5%控制、黄金观察回放及本地启动测试；canonical Ruff通过。目录gold-forecast-window-20260930-fttni_rw基于1c57，尚未完整发行验收/部署。该模型尚未接入公开行情adapter或跨日容量/规则更新，不能称真实24小时账户完成。
+
+**26b完整验收终态更新及第二处修复**：原session25985退出1，ALL32阶段30PASS/2FAIL、0错误/超时、21跳过。第二组1失败/5765通过/2跳过，失败test_local_stack_is_l2_console_only用任意命令字符串包含live判断是否实盘，将绝对目录delivery误判。开发改为精确检查-P/-m/uvicorn与console/research_runner模块，前端原精确脚本检查保留；参数化source/delivery-source路径，11项通过并纳入上述107项。原26b后继73493/16938终态INCOMPLETE，未安装。
+
+1c57原队列已启动实际验收PID1283802/start326318848，但确认同样含路径误判，canonical尚未开始。已仅暂停该父驱动（SIGSTOP），其ARM64子驱动1284033/start326319485继续自然结束；原session41823监督进程1292778/start326353060将在ARM64结束后记录明确SUPERSEDED_BEFORE_CANONICAL失败并终止/释放父驱动，不改冻结源码、不把取消当通过、不取消容器子构建。supersession-monitor.json记录身份，旧输出全部保留。后继包准备将按非PASS拒绝，后续完整验收应转最新修复版。
+
+2026-09-30 **最新版1c57完整验收及自动交付队列已启动**：目录gold-latest-delivery-20260930-qy6fyeop，固定1c57cd0d061288f00b9179ea61113dd4323b267e（5178治理修复+生成图更新）。原session88921等待26b实际验收PID1130416/start325810131终态；保留原双ARM64冷构建/扫描/离线smoke与canonical ALL/3600秒，五驱动旧SHA先核验，仅替换目标提交及新解析公开IPv4。npm离线完成，源码干净。新源码/前端自动准备session22402及联合服务/统一操作材料session61454已连接；queue-live-check.json核对四进程真实身份。五历史打包助手、b794/cd086辅助源码/摘要与三研究服务Fragment/DropIn路径和SHA/NeedDaemonReload均重新核对；未读EnvironmentFiles、未安装/切服务。新版无全量PASS结论。
+
+**首次真实跨结算时钟链已观测**：qy6fyeop/first-cross-settlement.json核对08:00前保存的预测、实际资金费原响应/回执及其后12:00预测。名义1790726400000，实际结算1790726400002，首次收到1790726411043（晚11041ms），公开费率0E-8、mark4188.64000000。真实原响应SHA6ba4126339ba75c96b751f7c9ca8de83f3a887d8f898a05667b6eaeedcd21297；用冻结代码load_funding_observations重构后原文一致，simulation_frame保留实际+2ms与接收时间。该证明是公开数据时钟链，不是资金费已入私人账户、日程完整或完整账户回放；跨UTC日规则/容量和动态日程仍未接通。两个24小时采集原session3837/35164继续，没有重启。
+
+2026-09-30 **最新完整交付准备补齐依赖图证据**：qy6fyeop基于5178d1c9准备完整验收时，generate_service_import_graph --check发现gold_funding_dataset新增对perpetual_simulation的适配器依赖未进入生成证据。原生成器重建后差异仅该导入条目及图摘要，仍20域/52边/0循环；主工作区旧证据先保存workspace-service-graph-before.json并确认与冻结父版一致，再同步相同生成结果。未改图策略。前端npm离线456包完成，原esbuild未批准安装脚本警告保留，未自动批准。尚未启动新完整验收，原26b继续后续批次且首组失败保留；两个24小时公开观测保持原进程。
+
+2026-09-30 **26b全量首组发现治理依赖登记缺口，已修复开发版**：wi4qsuk4/canonical.log首组1失败/9678通过/19跳过/9警告，2348.15秒；失败test_tools_fetcher_only_stdlib_and_services_imports：perpetual_public_capture新增长窗口契约quantos.contracts.gold_observation_window未进入采集器依赖许可。原session25985仍执行后续live/trading/tools批次，尚无全量终态，不声称26b通过、不改其在途源码或失败证据。
+
+当前开发区同用例已复现失败。修复仅为perpetual_public_capture.py允许精确from-import该叶子模块的window_closes/EXTENDED_MAX_SAMPLES/EXTENDED_CAPTURE_SCHEMA，不放开quantos根包或其他模块/名称/星号/相对导入。另检查该契约无任何导入，调用只含六个纯校验builtin，避免新增间接网络/交易能力。其余SDK/下单/转账/离线核规则保留。开发边界8项通过；独立治理+采集器32项通过（5.26秒），canonical Ruff通过。修复整合目录gold-capture-boundary-20260930-ytpona1o，基于9a900da0，尚未新版完整发行验收/部署。
+
+真实资金费时钟比较已留在ykbab3pi/funding-clock-comparison.json：12笔结算实际整小时偏移1/2ms，相邻间隔14399999/14400000/14400001ms；对应原响应SHA78f586721f58130313529df4c3c6261e7978a24cd974e230ecd010fc3685eae1，收到1790725866056。11份事前预测仍指向名义1790726400000。该实测证明不能将现有严格固定间隔政策伪装为事前精确知道实际结算毫秒；公开动态日程仍未接通，保留原时间而不取整。
+
+2026-09-30 **在线资金费等待/同账户续跑入口已开发**：新增BufferedFundingSimulationSession协调已知固定日程的原LinearPerpetualSimulationSession。行情越过尚未收到费率的结算点时保留原帧并返回WAITING_FUNDING，拒绝把旧账户结果当最新结果发布；收到事件后在实际结算毫秒合并/插入原FundingEvent，使用既有接收时钟交易暂停模型继续同一账户。两报价之间的结算不挪到报价时间；相同重复观测保留首次接收时间，不重复计费；冲突/倒序/未知结算/缓冲超限停机。状态区分已处理与已收到行情水位，收到费率但后续行情尚未到达时为WAITING_RECEIPT_FRAME。没有第二套现金/费用账本。
+
+旧实现新增5项回归失败，开发27项通过；随后补原引擎完整报告等价、资金费先于后续报价到达和缓冲倒序检查，独立整合84项通过（12.98秒），canonical Ruff通过。目录gold-funding-buffer-20260930-f7yftqoh基于09033818。仍要求事前精确已知日程，真实名义时间与实际时间变化不自动容忍；尚未接通公开采集的动态日程或提供协调器进程级恢复，不声称24小时共享账户/独立经济验证/Demo完成。原公开采集与26b验收任务保持运行。
+
+2026-09-30 事前资金费预测采集已冻结09033818853f5727cd54158f505fe3acf4fb783f并启动独立24小时公开观测，原session35164/PID1216726/start326132188，目录gold-funding-schedule-20260930-ykbab3pi。首轮真实FORECAST_OBSERVED：event1790725283307、实际请求1790725284261、收到1790725284685、下一名义结算1790726400000；原响应SHA381028efb040a8bc1a34a39a0716e0039dfc23f2143b0d0f37608b9790989e6b。startup-check现场同进程S；source-binding含21项通过/Ruff/实际hook/干净源码。与原session3837事后资金费观察并行但独立档案，不重启旧采集，不自动把二者变成事前已知的精确日程；24小时未完成，未部署/未启动Demo。
+
+2026-09-30 **资金费事前预测快照入口已接入**：capture_funding_schedule/CLI --funding-schedule只读请求固定XAUUSDT premiumIndex，保留原响应、实际请求重试和收到时间；派生next_settlement_nominal_ms独立于实际FundingEvent.timestamp。收到即过期为FORECAST_EXPIRED_ON_RECEIPT，错误品种/未来或超过30秒旧事件时钟拒绝，保留原响应；任何预测都不证明实际结算时刻或完整日程。此入口提供后续动态日程接线所缺的持续事前证据，不使用事后结算时间伪装事前政策。
+
+旧实现新增6项回归失败，开发21项通过；独立整合21项通过（1.21秒），Ruff通过，目录gold-funding-schedule-20260930-ykbab3pi基于16e31d9e。仍未修改原prepare_public_replay的跨结算拒绝：其首个nextFundingTime固定周期假设需要由新观测政策明确替换，不能直接删除检查或四舍五入真实资金费时间。旧资金费24小时session3837继续，未重启/修改其源码。未部署或声称跨资金费真实模拟已通过。
+
+2026-09-30 **原V2账户支持显式资金费接收时钟及交易等待策略**：SimulationFrame可携带funding_available_at，必须绑定同帧FundingEvent且不早于实际结算时刻。原账本仍按实际结算时持仓计算费用、处理标记价/清算；CANCEL_AND_PAUSE_UNTIL_RECEIPT_V1模型在等待期间取消原模拟挂单、禁止后续撮合与策略/风险回调，直到收齐延迟结算。等待中report/checkpoint拒绝发布含尚不可知费率的账户结果；收到后可以继续原账户。该暂停/撤单是假设性研究执行规则，不证明实际交易所撤单及时成功，也不支持等待期间主动减仓。
+
+接收时钟和模型标识加入原input_hash；未提供该字段的旧输入/报告结构保留。ObservedFundingSettlement.simulation_frame直接保留实际结算毫秒与真实available_at，不将+1ms结算四舍五入；调用者仍须绑定原raw/receipt进dataset_identity并提供独立已知日程。原固定epoch、日程完整覆盖等限制不变；真实公开nextFundingTime变化和日程未知尚未接通，不能声称24小时账户完成。
+
+旧实现新增6项先失败，开发71项通过；独立整合84项通过（14.09秒），随后增加黄金5%延迟费用触发测试，专项10项通过并在独立源码单项复验。验证包括原结算库存计费/挂单不偷成交、收到前不调用策略、费率改变不影响决策前缀、收到时钟纳入身份、检查点重放、保留迭代器事件，以及亏损实际在结算时触发但减仓仅在收到后创建、后续真实模拟报价成交。目录gold-funding-availability-20260930-vw5fnjws基于8051397b，尚未完整发行验收或部署。原24小时资金费session3837现场同PID1199795/start326057186仍活，6轮原响应/12个独立历史结算，未修改其运行源码。
+
+2026-09-30 持续资金费观测已冻结8051397bfa964c5461617d73fc010789c4a40da2并启动真实24小时公开采集：原session3837，PID1199795/start326057186，目录gold-funding-observer-20260930-9969f87v。startup-check.json现场核对同进程S，首个请求/响应/回执已保存，首次取得过去48小时12笔结算；这些是当前收到的历史记录，不是过去已知的费率或12笔新发生结算。程序每60秒重叠查询、保留首次接收时间，无凭证/订单/服务切换。24相关测试、Ruff、实际暂存hook通过，source-binding.json记录源码摘要；尚未完成24小时或验证新增结算到达。26b完整验收原session25985仍运行。
+
+2026-09-30 **持续资金费原始观测入口已开发**：gold_bar_capture --observe-funding --seconds支持最长86400秒、默认每60秒一次固定XAUUSDT公开GET。每次从启动前48小时查询至实际请求前一毫秒，保留原wire/响应/真实重试请求与接收回执。派生settlements.jsonl保留每笔资金费首次实际收到的时间/原响应摘要，重叠查询相同结算不重复记入；同一结算时间费率/标记价冲突保留原响应并以INCOMPLETE停止。空响应和观察完成不证明日程完整，不等于私人账户现金，也未接入V2资金费入账。
+
+旧实现新增7项回归失败；开发13项通过后补网络中断保留和CLI非零退出验证，独立整合24项通过（1.24秒），Ruff通过。目录gold-funding-observer-20260930-9969f87v基于1a182ead。固定epoch V2目前要求资金费timestamp等于帧时刻且全日程已知；不能直接把晚到费率按收到时持仓计算或回填成当时已知。后续仍需双时钟经济账务/风险语义，当前只补真实连续输入，未声称跨资金费账户、独立经济资格或Demo完成。
+
+2026-09-30 **公开K线采集有限断线恢复接入**：gold_bar_observe在原观察截止时间内，对WebSocket关闭、连接错误及连接超时最多重连3次；沿用原GoldBarStream、消息预算和原始接收时钟。传输错误类型/时间/尝试次数进入原summary，不记录私密信息。重连后重复收盘不重复决策；漏收K线保持缺口并触发原指标预热，不补造数据。重试耗尽或截止时仍断线为INCOMPLETE；数据解析/写入/决策异常不会进入网络重试。仍为有限研究采集，不是常驻进程恢复或24小时账户。
+
+新增回归在旧实现3失败；开发8项通过，独立整合观察/日志重构/成本回放/自动程序28项通过（58.57秒），Ruff通过。截止时间测试初用0.95秒实际延迟受到处理开销影响失败，改为显式超过原截止时间的重连等待，断言未放宽。独立目录gold-stream-reconnect-20260930-wq7ocrcj，父版ec9229ede21793b281483939804dc069bc97bc47。未部署、未做真实断网演练或启动Demo；26b原完整验收session25985本轮查询仍运行，未重新启动。
+
+2026-09-30 自动恢复增量已冻结ec9229ede21793b281483939804dc069bc97bc47：独立整合30项通过（57.74秒），Ruff/暂存后实际hook通过，源码干净且两Python文件与开发区一致。6xuz9sx8/source-binding.json留证。26b原ARM64 driver已退出0，双冷构建/扫描/离线smoke完成，原canonical PID1174936开始；当前无26b最终PASS或部署，本恢复增量也未全量发行验收。
+
+2026-09-30 **中断计算恢复已进入自动程序**：gold_bar_program原先只对manifest=PASSED的发布失败自动恢复；现在对无终态manifest但有匹配原源码running登记的error任务，自动提交一次原gold_bar_recover。完整输入/三试验身份/报告/写锁检查仍由原恢复任务执行，成功后保留recovered_from并继续回执复核与研究循环。恢复失败停止后续窗口，不循环重试；FAILED终态、损坏终态文件和用户cancelled状态不自动重启。
+
+新增原路径回归2项先失败，修正后原程序12项通过；补齐正常计算失败和真实JobQueue.cancel在发布时取消的停止检查后，新增4项通过。成功中断恢复保留原错误任务及编号；恢复失败事件仅一次且没有requests/2；取消即使计算已产生PASSED档案也不发恢复任务。Ruff通过，独立整合在gold-auto-recovery-20260930-6xuz9sx8执行。仍不等于整个控制进程被杀后的常驻自动重启，或24小时跨规则/资金费连续账户；26b在途验收源码未改。
+
+2026-09-30 中断实验恢复增量已冻结6c327d6e54691f292f9f4cfd921c4b8b2a9a7a26：45项相关整合通过、93项按gold范围未选（120.23秒），保留原Starlette/httpx弃用警告；Ruff/暂存后实际hook通过，源码干净且四Python文件与开发区一致。2fypmge7/source-binding.json留证；未完整发行验收/部署，未修改26b在途源码。
+
+2026-09-30 **中断实验恢复接入原gold_bar_recover队列**：原入口仅能补发终态报告，不能完成进程中断留下的RUNNING试验。本增量在三份PLANNED/RUNNING记录后写入原身份running.json，并为archive/resume共用单写者锁。恢复要求原输入字节/源码/定义/三试验身份完全一致；重放原输入完成原报告与原编号，已落盘报告必须逐字节匹配，已PASSED的试验不追加重复终态，正常FAILED实验仍拒绝恢复。原失败任务保留，恢复作为原队列新任务发布同一实验。它是中断计算的确定性重放，不是续发真实订单，也不把不同窗口账户拼接。
+
+独立父版新增回归4项失败已保留regression-before.log；新实现开发16项通过/Ruff通过。独立子进程分别在running.json写入、report.json写入、首个PASSED事件提交后os._exit(23)，三种均恢复同三试验且原事件前缀不变；活跃写者锁下拒绝并发恢复，FAILED保持失败。原JobQueue故障→gold_bar_recover→前端报告投影贯通，保留原error任务、原输入和三候选持仓信息。未支持登记文件本身缺失/损坏的强行修复、网络常驻重启或跨资金费规则问题；独立整合在gold-task-recovery-20260930-2fypmge7运行，26b发行验收源码未改。
+
+2026-09-30 检查点恢复独立增量已冻结1e9366679036e4fb8f42947c5a4bef32f8168a97：91项通过（14.45秒），canonical F821/E9与暂存后实际hook通过，源码干净且两Python文件与开发区一致。w4w3_son/source-binding.json留证；未进入完整发行验收或部署，未修改26b运行中源码。
+
+2026-09-30 **持续模拟账户检查点/重放恢复入口已开发**：LinearPerpetualSimulationSession.checkpoint输出JSON兼容的原input_hash/result_hash、帧数/末时钟及非权威/禁提交标记；restore要求原完整前缀与全新策略/风险回调，使用原账本重放后精确核对检查点，再返回可继续的同一状态。不会反序列化可执行对象或信任保存余额。源码身份、行情、费用、前缀长度、结果摘要变化拒绝；原会话失败状态仍不能发布检查点。
+
+新增回归先复现缺接口，开发63项通过。文件JSON检查点能恢复部分成交/剩余挂单，继续后的完整报告与未中断运行一致；黄金亏损前批97、后批95触发的原100期初权益停机通过新控制对象重放恢复，继续减仓后保持STOPPED_FLAT且不再开仓。当前是纯研究恢复API及文件往返测试，不是已完成常驻服务进程重启演练；调用端仍须留存原输入并重建冻结策略，网络采集/自动重启接线、规则epoch与延迟资金费问题尚未完成。独立增量目录gold-session-recovery-20260930-w4w3_son基于26b，未改变wi4qsuk4在途完整验收源码或任何服务。
+
+2026-09-30 **149完整发行验收与交付准备已完成，26b开始自身验收**：5k5_xust/acceptance-exit.json为CANONICAL_ACCEPTANCE_AND_RETENTION_PASS，原session41287退出0；canonical ALL commit14958facf2e9c46fb92cae10ac148acd748ae6a7，32/32阶段通过，失败/错误/超时0，21跳过。原双ARM64冷构建/扫描/离线smoke及完整后端/执行/前端检查均纳入该版证据，不把该通过结论借给新版本。
+
+原源码/前端后继session1708及联合服务/操作准备session52833均退出0；证据保留提交a488c4df56b52a47bdd484f65aa7cdd545088240，source_anchor=149。源码包SOURCE_ONLY_DELIVERY_VERIFIED、匹配前端FRONTEND_DELIVERY_VERIFIED、统一入口OPERATOR_DELIVERY_PREPARED，实际只读入口结果REVIEWED_NOT_APPLIED；installed=false/services_changed=false，尚未安装或切服务。
+
+最新26b完整验收由既有session25985自动开始，实际验收PID1130416/start325810131；wi4qsuk4服务图和持久化边界预检退出0，ARM64 driver PID1131972已开始。新源码/前端session73493及统一操作准备session16938仍等自身完整通过；没有26b全量PASS、部署或Demo结论。149包缺少后续成本反馈/停机/连续账户增量，当前继续推进26b交付，不要求用户先安装中间版。
+
+2026-09-30 **真实双轮研究完成后的链条绑定核验通过**：el92hf22/completed-chain-check.json保留两轮147/145报价帧与各三份原试验记录。使用该实验自身冻结149代码重建hypothesis_objective，逐字节等于第二轮实际模型plan.objective，核对下一窗口准备期>=原180秒。两轮原manifest/输入/报告/试验库身份、报告与自动复核result_hash一致；五原件各自核验前后SHA不变。该检查是已完成链条的只读确认，不是新样本、重跑、独立批准或经济资格；两轮复核仍INDEPENDENT_AUTHORITY_UNCONFIGURED。原149完整验收session41287现场仍运行在前端测试；最新26b原session25985继续等待，尚无最终PASS或部署。
+
+2026-09-30 **完整交付队列收敛到26b最新研究整合版**：独立目录 `/home/kerstker/quantos-dev-output/gold-continuous-delivery-20260930-wi4qsuk4`，固定26b27b2aa440860e7e5fe6b2a2708b60113fe54d，包含成本反馈、5%停机、退出恢复、分批账户和增量K线。原5a78队列PID1040933/start325468975先暂停并核实没有子进程/验收monitor/阶段产物，尚未开始实际验收后终止（原session82149退出143）；superseded-queue.json明确记录替代，不删除失败或任何实验。旧源/前端session33897及服务session23157随上游未验收退出INCOMPLETE，未安装。149原验收保持运行。
+
+新原session25985/PID1108723/start325779103等待149实际验收PID980471/start325324650；保留原双ARM64冷构建/扫描/离线smoke与canonical ALL/3600秒，五驱动原SHA核对后仅替换提交/新解析公开IPv4。npm离线456包成功，原esbuild未批准脚本警告保留；服务图20域/52边/0循环，源码干净。新源码/前端后继session73493/PID1109977/start325784769（子1109995/start325784792），服务/统一操作材料后继session16938，进程身份现场核对留在queue-live-check.json。五历史打包助手、b794/cd086干净辅助源码与文件SHA、三研究服务Fragment/DropIn路径及摘要再次验证；未读EnvironmentFiles、未改服务、未安装。新版本仍无全量验收结论，验收通过后只自动准备可审查材料。
+
+2026-09-30 增量K线整合已冻结26b27b2aa440860e7e5fe6b2a2708b60113fe54d：51项通过、完整报告与旧整段处理一致、Ruff/实际hook通过。原ec7三收盘真实档案在新固定代码下生成独立三试验，新报告ba615faab6593c74573ddabc3886f2be9cac62cd8b01c8528e01e681f8816105；三候选仍NO_SIGNAL，权益净变动0、5%控制ACTIVE。原输入/报告/manifest/试验库/交接请求五原件SHA前后相同，旧/新试验ID无重叠。原session83027退出0，retained-replay-summary.json留证；这是留存前向输入的新技术回放，不是新增前向采样、独立经济验证或Demo。未发行验收/部署。
+
+2026-09-30 **黄金观察回放接入增量K线与持续账户**：GoldBarV2Strategy.append_bars按不可覆盖的时间序追加新闭合K线，保持已消费信号、开仓归属、止损和退出重试状态；重复/倒序K线及接收时间已被策略处理的补写拒绝且不改变原序列。gold_bar_observed_replay改用增量模式，先装入当时已知预热数据，再按真实available_ms切分原报价帧，加入新K线并推进同一LinearPerpetualSimulationSession；不向策略提前交付后续K线。原比较报告字段不变，资金费/规则覆盖、5%控制及原成本账本继续适用。
+
+新增回归先复现append入口缺失，开发相关22项通过/Ruff通过；两根观察K线测试实际记录第一次追加尚未开仓、第二次追加保留原entry_id，随后原账户平仓。另加入与整段旧处理完整报告逐字段一致验证，独立整合在gold-incremental-bars-20260930-6pue84a2执行。该接线当前用于已留存观察日志的增量回放，还不是常驻网络采集器/进程恢复或真实延迟资金费支持，不声称24小时现场运行。未部署或改变任何在途发行源码。
+
+2026-09-30 分批账户独立整合完成：97项通过（70.07秒），canonical F821/E9及暂存后实际hook通过；冻结提交a926959cedd8f5ba3a8bb0957ec090c5f15da386，源码干净且与开发区两Python文件一致。source-binding.json留存结果；未完整发行验收/部署。149全量首组9652通过/19跳过，第二组仍在途，尚非完整PASS。
+
+2026-09-30 **同一模拟账户跨批次推进接口已开发**：新增LinearPerpetualSimulationSession.advance/report；原整段入口也通过同一会话执行，复用原账户逐帧撮合、风险、账本与结果生成，不另造余额或平仓账本。挂单、持仓、策略对象、权益历史及5%亏损锁跨批次保留；批次时间必须严格前进，原完整资金费日程/规则覆盖检查继续生效。任何批次失败即锁定会话，拒绝继续或发布部分成功报告。未支持进程重启恢复、跨规则epoch及延迟公开资金费入账，尚未接到真实持续采集器，不能称24小时闭环。
+
+先复现缺少入口；开发81项通过，含分批与一次性完整结果相同、跨批次待成交/平仓、已知资金费只记一次、缺失结算/时间重叠拒绝、回调异常后不可恢复成成功，以及5%累计亏损沿用原始100权益（前批97、后批95触发，退出后不再开仓）。旧现金结果hash保持；另以独立6e父版比较含入场/资金费/退出/手续费的完整JSON逐字节相同，结果83b57e26ec03aee0385edb25d1a1a9fa5fc62454f6d9f463dfb58f8a55c20f21、净变动0.674/费用0.021/资金费-0.105/残差0。证据在gold-account-session-20260930-603o6oqk/legacy-compatibility.json，均合成技术验证，不是实际资金费证据。
+
+**149真实双轮已正常结束**：原session54634退出0，RESEARCH_PROGRAM_COMPLETE。第二轮报告81df24ac5500675a70f709c1d2f3ad6ca4aa71ef563fd17dcc6a00068e18f1c9，模型提案312fbc529b2c0d6a07c2bd05b0b80caba622f337644d8298280f5cfd37a0c647；两轮三候选均NO_SIGNAL/0订单/0持仓，自动复核各3试验均INDEPENDENT_AUTHORITY_UNCONFIGURED。原调度已实际完成反馈→推进到下一可采窗口→模型提案→新采集→实验→复核，不再受旧MISSED_CAPTURE_WINDOW中断。各轮仍独立账户，未经济准入/部署/Demo。
+
+2026-09-30 减仓恢复独立整合已完成：37项通过（69.42秒），暂存后实际hook及Ruff通过；冻结提交6e02ff5e6da10f856c82dae1599c1d9e66bde84c，源码干净、两Python文件与开发区摘要一致。source-binding.json保留验证结果；未发行验收或部署。
+
+2026-09-30 **普通策略减仓终止后自动恢复开发完成**：原GoldBarV2Strategy在减仓被拒绝且仓位仍在时抛EXIT_TERMINATED_WITH_POSITION_REMAINING，阻断后续观察。新增回归实际复现后，改为保留退出意图；只有新且有效的报价到来才以唯一订单ID重试reduce-only，数量取原账本实际剩余仓位，继续走原风控。尚有减仓挂单时不重复提交，价格反弹不撤销已触发退出，重复/过期报价不重试，持续拒绝保留未退出仓位。没有改跨窗口账户或真实资金费支持，未声称完成24小时持续运行。
+
+开发相关21项通过、Ruff通过，覆盖首次拒绝后恢复、部分退出后只减剩余量，以及重复/过期报价和持续拒绝；首次测试夹具使用非RiskVerdict返回值被原门禁拒绝，纠正夹具后复现真实异常，未放松风险接口。独立增量目录 `/home/kerstker/quantos-dev-output/gold-exit-recovery-20260930-12aa2s14` 基于b7，未修改在途149/ec7/5a78源码，未部署或触及交易授权。
+
+2026-09-30 **ec7真实三收盘实验已完整结束**：原session26351退出0，RESEARCH_PROGRAM_COMPLETE。214报价帧、1235消息、3闭合K线；三候选NO_SIGNAL、0订单/持仓，各独立模拟账户期初/期末1000、费用/资金费/净变动/残差均0。模型先验选channel，提案95f175cc53f80e10f9489f18d8572ceaaa862fe229719169884f045e4f7abb23；报告fa6ab33271e0ea771de54af60ad2b8c99af3e7a4f3562ebfe3eea32d6d3620b0。自动检查三试验，仍INDEPENDENT_AUTHORITY_UNCONFIGURED；无盈利、真实平仓或经济资格结论。冻结ec7原bound_archive只读核验manifest/输入/报告/TrialLedger身份，五原件前后SHA相同；外置completion-check.json留证。这不是新代码重跑，也不是独立批准。149真实第二轮及完整验收原句柄本次仍运行，5a78验收仍等待。
+
+最新5%亏损研究增量已完成冻结，完整提交b7a1abbd89efc3326601acd0fb6819ed4a3305ad；hdoo99br/source-binding.json记录210通过/1跳过、前端4项、类型/构建/实际hook通过，git工作树干净。未全量发行验收、部署或覆盖任何在途冻结源码。
+
+2026-09-30 **研究账本5%累计亏损控制已接入原回放/队列/前端**：GoldResearchLossControl沿用Demo既有口径，权益<=原期初权益×0.95触发，含原账本实际入账的手续费/资金费/盯市，不是盈利高点回撤。原风险回调在挂单成交提交前检查已发生的亏损，策略回调锁定停机、取消余下开仓单并以原V2 reduce-only订单退出；不绕过数量、报价时效、容量或其他风险限制。状态ACTIVE/STOPPED_FLAT/STOPPING_UNRESOLVED明确区分触发与退出；反弹不重置。risk_policy_identity绑定固定0.05、原始期初权益与每个模拟账本范围。
+
+原gold_bar_program保存三候选结果与自动复核后，只要候选触发停机就返回RESEARCH_PROGRAM_STOPPED_LOSS_LIMIT并终止后续窗口，保留触发候选和未解决退出，不自动刷新期初权益继续。各窗口账户仍独立，这不是跨窗口净损益串接或24小时连续账户；退出费用/跳空可使最终亏损超过5%。真实跨资金费接收时钟回放仍未支持，资金费触发测试使用原引擎已知结算策略的合成输入。
+
+回归先复现缺少控制模块/结果字段及计划继续第二轮。合成资金费测试最初使用超出原审查范围的1费率，被原引擎正确拒绝；改为范围内0.1与既有手续费累计构造阈值，未改任何费率域限制。程序停机事件曾重复传attempt导致TypeError，已修复，原失败记录保留。最终独立整合210通过/1跳过，包含期初/高点区别、阈值等号、手续费触发、资金费后待成交开仓拒绝、部分成交撤余单/退出、未退出窗口末态、原Demo阈值一致性和完整队列终止下一窗口；前端4项/类型检查/生产构建通过。新模块图谱刷新后仍20域/52边/0循环。未部署、未改变运行中149/ec7/5a78源码，未启动Demo或修改其授权。
+
+2026-09-30 **成本反馈整合版5a78已冻结、真实模型复盘已验证、完整交付已排队**：独立目录 `/home/kerstker/quantos-dev-output/gold-cost-feedback-20260930-wt8sp66i`；最终提交5a78f5fdd04312e26f777199637f9f782d46aea8（含ec7长窗口）。原0307268为补齐图谱前的本地中间提交，尚未运行/交付；新模块使import-graph证据漂移，刷新后20域/52边/0循环，实际hook再通过后合入当前本地提交。独立整合后端130通过/1跳过；前端2项、typecheck/生产构建通过。主工作区旧图谱落后多项先前黄金新增模块，先原样备份workspace-service-graph-before.json，再用原生成器重建，字节与冻结版图谱相同；未改循环策略。
+
+verify-real-cost-feedback.py读取已完成59j档案并检查保留的原输入/报告/试验账本绑定，原件前后不变；它是新成本投影和模型反馈验证，不是换源码重跑旧实验。真实本地Qwen读取三候选成本/权益/回撤后返回下一研究假设channel，proposal_hash=00f9eddb2c0343aa02f43d1af0fd85000a2858b3cc695111131cb60470f534c8，实际prompt784字符。通道净权益变动-0.10817727/模拟手续费0.0418866；回归+0.02420417/0.0418865；二者仍OPEN_AT_END，趋势无信号。均只是原独立模拟账户盯市数据，非已实现收益、策略资格或组合表现。精确数据与原件摘要位于retained-cost-projection.json/actual-feedback-result.json。
+
+5a78完整验收原session82149/PID1040933/start325468975等待149真实验收PID980471/start325324650终态。保持原ARM64双冷构建/扫描/离线smoke及canonical ALL/3600秒；不并发第二套重型验收。源/前端交付原session33897/PID1041973/start325473114、source子进程1041991，以及服务/统一操作准备原session23157/PID1043340/start325479781均现场确认存活。5个既有打包助手与b794/cd086辅助源码/摘要、三研究服务Fragment/DropIn路径及文件摘要再次核对；不读EnvironmentFiles、不改服务、不安装。npm离线456包完成，原esbuild未批准脚本警告保留。当前无5a78全量验收或部署结论，149与ec7在途研究继续原冻结源码。
+
+2026-09-30 **成本/风险诊断已接入三候选报告、模型反馈和前端**：从原V2现金恒等式及权益历史投影期初/期末权益、含浮动净权益变动、模拟手续费、资金费与最大观测回撤；不另算一套成交账本，残差/期初期末/权益历史不一致拒绝投影。保留精确Decimal字符串，旧记录缺少account字段时前端和模型均为未知，而非0。各候选是独立账户，UI明确不可相加为组合收益。
+
+下一轮模型反馈携带全部既有窗口的结果和净变动/费用/回撤；报告保留精确值，模型摘要明确5位有效数字、盯市含浮动、手续费未校准和无经济资格。7个前序窗口/21候选的极值测试输入占1833字符，小于原2000限制，完整来源哈希继续绑定全部前序数据。另修复gold_bar_recover成功后未进入console技术结果白名单导致恢复报告不可见，保留原失败任务及原试验身份。初始4项回归实际失败后修复；开发API/诊断105通过/1跳过，独立源码整合130通过/1跳过；前端2项、类型检查及生产构建通过（原500kB chunk警告保留）。未部署或声称独立批准。
+
+149真实双轮首轮已完成，报告beef5411133fdefb27bef9ccf22416c3029f5a60b35a0b1982ca4bed2ec9b0a0，三候选均NO_SIGNAL/0单，复核INDEPENDENT_AUTHORITY_UNCONFIGURED。原程序自动将第二轮名义05:45收盘推进至06:00，在提案前留965587ms准备期；实际第二轮采集尚待发生。ec7三收盘真实研究已开始采集，仍无终态。149完整ARM64验收第一轮冷构建已通过，第二轮仍在途。
+
+2026-09-30 **长窗口源码ec7已冻结并启动真实单轮三收盘研究**：独立目录 `/home/kerstker/quantos-dev-output/gold-extended-forward-20260930-dvzff6ic`，提交ec7d98f0e5dd2789318eb41f32bacc85f5b8b918，Python源摘要9c7d8ce8aaddc23668d02559876e6fd9062b28484b204eb9a89c3b2d562b380a。独立副本71测试通过、实际pre-commit通过、canonical F821/E9通过。额外全风格Ruff扫描发现原public_replay模块既有19项E701，已逐项与149父版的代码/消息/源行比较相同，无新增；原失败日志保留，新增/其他修改文件默认Ruff通过，不宣称全风格清零。首次提交仅缺本地Git作者标识，随后使用既有Codex <codex@localhost>的单命令身份提交，未改全局配置或跳过hook。
+
+真实原session26351/PID990556/start325361269已现场确认存活；真实本地模型提案后WAITING_CLOSED_BAR，首目标1790718300000（北京时间05:45），随后06:00/06:15，单轮、独立研究状态、只读公开行情。源码冻结，研究尚未完成，未验证真实退出/盈利；该增量未完整发行验收或部署。原149双轮session54634和完整发行队列继续，不将各自证据混用。
+
+2026-09-30 **连续3–4根新K线研究窗口已接入开发版**：新增显式GOLD_PUBLIC_EXTENDED_CAPTURE_V1/扩展观察摘要，单窗口固定3–4根连续15m收盘、最多720报价帧/3600秒；按最后收盘后30秒结束报价、后40秒结束K线观察。复用原V2单账户持仓、5秒入场过期、30秒报价间隔、UTC日界/资金费时点拒绝及原风险限制。原两根窗口与原schema预算不变。gold_bar_program --continuous --window-bars 3串接采集、原实验队列、三候选账本/回执复核；各轮账户仍独立，不声称24小时连续账户或跨资金费已完成。
+
+行为回归先复现缺入口/不支持schema；开发相关71测试通过、Ruff通过。合成完整路径开仓、第二根持有、第三根信号平仓且现金恒等式残差0；初始合成0.1数量在约4000报价下超过原15%单品种上限，改用既定研究0.02数量验证，不修改风险限制。此为合成技术验证，尚待独立冻结源码验证和真实新窗口；未部署、无策略盈利或Demo准入结论。
+
+94原完整验收已终结FAIL（32项31通过/1失败，首组环境隔离测试2秒启动超时；主测试9642通过/19跳过、执行栈5747通过/2跳过），源码/服务后继均INCOMPLETE，未安装。修正测试启动预算的149版本完整验收已由原队列自动开始，PID980471/start325324650，尚无整体终态。原真实双轮session54634保持运行，不重启或修改其源码。
+
+2026-09-30 **修复版149真实双轮与完整交付队列已启动**：最终固定源码14958facf2e9c46fb92cae10ac148acd748ae6a7，包含13调度/归档恢复及环境隔离测试有限启动预算修正。5k5_xust/commit-result.json保留177通过/1跳过、validator32、前端5项/类型检查和实际hook；未完整发行验收或部署。
+
+真实研究单独克隆到 `/home/kerstker/quantos-dev-output/gold-scheduled-forward-20260930-el92hf22`，原session54634；独立代码和状态，不受后续发行证据提交影响。固定2轮、真实本地模型和新公开行情，首目标1790716500000（05:15），现WAITING_CLOSED_BAR；新窗口计划已在模型前写入，尚未验证第二轮调度成功，旧59j失败保留。
+
+149完整验收串行原session41287/PID958423/start325230629，绑定原94验收PID833098/start324793797，当前等待旧流程终态；原驱动完整门禁/3600秒及证据留存不变。源码/前端后继原session1708/PID959118/start325234181、源码子进程959119，及服务/统一入口准备后继均已自动候验收。助手固定提交/文件摘要和三服务Fragment/DropIn只读重验，不读EnvironmentFile。npm离线安装456包，原esbuild待审核脚本警告保留，未自动批准。尚无149通过、安装或切换；64旧等待与后继均已终结，不再复用其终态。
+
+2026-09-30 **调度/归档恢复版本13已冻结；完整门禁重复超时测试已修正测试启动预算**：独立源码位于gold-program-scheduling-20260930-5k5_xust/source，13d86d447fd8cd07206c63bed2e1ceb75513bf3b含结果恢复和未来窗口调度；后端177通过/1跳过、前端5项/类型检查与实际pre-commit通过。尚未真实重跑或完整验收。
+
+94原canonical首组终态1失败/9642通过/19跳过（2489.47秒）；唯一失败test_pytest_child_does_not_inherit_canonical_identity记录TIMEOUT 2017ms，第二执行栈批次仍在跑。此前d5同用例亦在约2秒超时，独立运行可通过，属于完整环境下重复出现的测试启动限时问题，不能宣称94完整通过。现仅将该合成pytest环境隔离测试的有限启动预算2秒改为15秒，保留全部三项隔离断言及explicit binding验证；独立0.1秒超时/进程清理测试和正式canonical 3600秒限时未变。开发与独立13源码上的整个validate-runner测试文件分别32项通过，仍须新版完整门禁实证。旧失败原件保留，不回写结果、不跳过测试。
+
+2026-09-30 **59j首轮真实模拟成交/自动复盘完成，第二轮真实调度失败已修复开发版**：原session55427退出1，RESEARCH_PROGRAM_INCOMPLETE/failed_attempt2，原因MISSED_CAPTURE_WINDOW。首轮原队列done，报告960c64b96f147abd34a211f5ad6dc515c9b141333a740175e8b2e5489833d277：通道BUY .02、回归SELL .02各模拟成交一单，均OPEN_AT_END；趋势NO_SIGNAL。费用分别.0418866/.0418865（显式未校准模拟费率），期末权益999.89182273/1000.02420417，对账残差均0。这是独立模拟账户的期末盯市，未平仓，不是已实现盈利或组合收益。自动gold_bar_receipt任务done、INDEPENDENT_AUTHORITY_UNCONFIGURED；第二轮真实模型已读取首轮报告与核验状态并产出提案，但未进入第二轮采集。
+
+真实故障时序：第一轮研究提交1790715505508，回执完成1790715536611，第二轮提案后1790715546082才进入等待；名义下一收盘1790715600000，其采集应从1790715500000开始，因此已迟46秒，原30秒迟到界限正确拒绝。开发版现按完成处理后的真实时间，在模型提案前选择满足原180秒准备期的未来收盘，并以window-plan-N.json记录名义/实际目标和PROCESSING_AND_MINIMUM_LEAD原因；前一窗口不补写，各轮仍独立账户。回归先实际失败，程序/恢复队列12项通过，Ruff通过。尚未真实重跑该修复。
+
+已确认该故障也存在于排队64版本：核对其验收尚未开始、进程身份887687/start325025554及94上游仍活后，取消64串行等待进程。原89920退出143；后继85042/62456均退出1/INCOMPLETE，无64验收或交付包/安装。cancelled-queue.json保留原因；不再报告64队列仍运行。94原验收保持运行，固定源码未改，不将64取消伪称为验收失败或通过。后续交付应以包含调度修复和结果恢复的新版为目标。
+
+2026-09-30 **59j首轮报价已完整保存并通过原输入适配器**：quotes.json封存148帧，capture_id=79ff5abb313bd509b9f825d9f46d1719e5ca6b3897bc833c14b8427a3cb0c6e7；原冻结源码运行prepare_public_replay通过，源码前后仍匹配该进程monitor，最大深度接收间隔20665ms，小于原30000ms上限。证据first-window-quotes-check.json明确whole_round_complete=false/economic_eligible=false。原K线观察进程仍运行，等待原1800秒边界后才会提交实验和核验，未提前回放或声称成交。94/64两套源码/前端/服务后继六个PID及起始标识均现场核对仍活，继续按绑定终态等待，无安装。
+
+2026-09-30 **已归档实验的结果发布恢复已接入原队列和程序**：新增gold_bar_recover，复用原参数/源码身份检查、原输入字节绑定、原档案确定性复核和结果投影；不重新建archive、不追加三候选试验、不改原失败任务。gold_bar_program在原研究任务错误且manifest已PASSED时最多提交一次恢复任务，保存recovered_from后继续原回执核验；采集/未完成实验/输入变更/恢复失败仍停止，无无限重试。前端编号入口同步。程序发布中断回归先实际失败，修复后原队列/程序/认证/白名单59项通过；早期新增测试误用failed而原队列实际状态是error，已修正测试断言而非运行时状态。前端5项、类型检查及修改工具Ruff通过。此增量在主开发工作区，未改在途64/94或真实59j冻结源码，未部署。
+
+真实59j第一轮两根收盘已收到：04:30无入场；04:45通道BUY、趋势无、回归SELL，实际decision_ms=1790714700380，后续深度响应延迟1680ms（首根1759ms）。原首根决策字节前缀未改，绑定证据two-close-timing.json。只表示研究信号和采样及时性，尚非整轮回放/模拟成交/收益终态，原session55427继续。
+
+2026-09-30 **64增量已串行接入完整验收及交付准备**：tbfk05i8沿用原ARM64捕获、完整canonical ALL/3600秒限时与证据留存驱动，仅更新固定源提交64c4577ee88cc205d808bafe719d014ff5b26b81和当时解析的两个公开构建下载IPv4。源码干净、456项前端依赖离线安装、Docker buildx可用。串行原session89920/PID887687/start325025554绑定94验收PID833098/start324793797，实查双方存活，仅等待原终态，不并发启动第二套重型验收。
+
+源码与前端后继原session85042/PID889138/start325032314、源码等待子进程889156已绑定64串行进程；原5个打包助手摘要重验。联合安装/服务/统一操作入口准备后继绑定该后继，并只读重核三项现有服务的FragmentPath/DropIn路径及摘要、b794/cd086助手干净提交，不读EnvironmentFile。完整通过后才准备对应包/入口；不安装、不切服务、不下单。当前仍无64验收/交付成功终态，不能把原94的进度记到64名下。
+
+2026-09-30 **最近研究闭环增量已独立冻结提交**：64c4577ee88cc205d808bafe719d014ff5b26b81（94基线，21文件）保存在 /home/kerstker/quantos-dev-output/gold-research-cycle-20260930-tbfk05i8/source。包含三候选独立回执队列/前端入口、每轮自动核验与全部历轮反馈、八轮提示长度修复、连续窗口资金费响应和历史双时间记录。独立后端230通过/1跳过、前端3项与类型检查通过；实际pre-commit已显式执行通过，服务图20域52边0环，移除仅用于检查的临时node_modules符号链接后提交干净。commit-result.json明确仅增量验证、该提交未运行完整发行验收，未安装或切服务。原94完整门禁与59j双轮真实研究继续各自固定源码，不能把其未来结果当成本提交的完整证据。
+
+2026-09-30 **真实93笔资金费已保留结算/可用双时间，历史采集已接线**：gold_funding_dataset新增不可变ObservedFundingSettlement/load_funding_observations，复用原金额/费率解析，保留原FundingEvent、成功请求时间、实际接收可用时间和原响应SHA；明确historical_publication_time_known=false/account_cash_verified=false。capture_funding自动写observed-settlements.json，并使用_fetch保存的成功请求时间而非重试前调用时间。先复现时间误记，相关15项通过，Ruff通过；不改变原账本入账规则或模拟器资金费约束。
+
+读取此前gold-bar-funding-20260929-first真实原件，验证原响应SHA后转换93笔，输出 `/home/kerstker/quantos-dev-output/gold-funding-clocks-20260930-m9b7j1ci`，RETAINED_FUNDING_CLOCKS_VERIFIED。所有记录保留实际可用时间1790696757903；原结算时间最早1789358400001、最晚1790683200002，未舍入或倒填接收时间，原响应不变。该证据证明数据层双时间留存，不证明独立经济准入、资金费实际账户入账或跨窗策略回放完成。下一步仍须将政策、结算时仓位和信息可用性在连续模拟中正确连接。
+
+真实双轮59j原日志已进入COLLECTING（1790713700676），原session55427本轮实查仍活；94 canonical仍在首测试批次进行中，未完整验收或部署。
+
+2026-09-30 **资金费窗口真实采集验证完成**：0dfs77s8原session80073退出0，PUBLIC_FUNDING_WINDOW_CAPTURE_COMPLETE；61行情帧、127原始响应、原回放接受61帧、源码前后一致。capture_id=404da844dbe8c2c1d758f4d8b1d990623262cbd3990bacc9774ec697974694c7。深度接收区间1790713403313至1790713531310；资金费请求1790713532372、响应1790713532985，确为窗口后的观察，没有倒填可用时间。响应为空数组（0笔），只证明本次新公开读取/绑定/正常无结算回放成功，不证明跨结算完整性或实际资金费入账。summary.json与timing-check.json保留证据；不再报告此进程运行。
+
+后续跨资金费适配的明确缺口：SimulationFrame要求市场事件timestamp等于frame.timestamp；原Simulation验证器要求单个事前已知funding-policy epoch覆盖整个模拟并精确匹配结算事件；原Ledger在结算时按当时仓位计费。直接把晚到fundingRate响应变成结算时已知会引入未来信息，直接按接收时仓位计费又会错配持仓。因此下一步需要显式两种时间与结算前仓位绑定、缺失发布时的未决状态、政策更新及连续风险处理，不能靠取消现有限制获得持续账户。此项尚未实现，原资金费拒绝路径保留。
+
+2026-09-30 **补充连续窗口事后资金费原始响应，未启用跨结算回放**：capture_gold_continuous 在最终规则响应后新增固定公开fundingRate GET，范围为首末深度实际接收时间（闭区间），保留funding_after原始响应/摘要/实际请求接收时间，并纳入原capture_id。短窗口采集不变；继续沿用原有有界连接重试与逐响应留存。该材料只表示事后观察，空响应不证明完整结算覆盖，不能回填成决策时已知，更不是账户实际资金费。原prepare_public_replay仍拒绝跨资金费窗口；原V2的单个事先已知政策epoch与同时间frame事件约束仍待后续适配。
+
+先复现缺少新增响应；采集与原回放43项通过，独立94+本次采集增量源码43项再通过，Ruff/卫生通过。短时真实61帧采集在 `/home/kerstker/quantos-dev-output/gold-funding-window-20260930-0dfs77s8` 启动，原session80073；只读公开数据，不修改两个在途任务。终态尚待观察，不能声称真实资金费跨窗已成功。
+
+94原验收ARM64 driver已返回0，双冷构建/证据留存/离线smoke均完成；原canonical PID866315已启动。完整发行尚未通过，后继交付继续等原终态，未部署。真实双轮研究原session55427继续等待首个窗口，不重启。
+
+2026-09-30 **八轮反馈长度修复，真实双轮原任务继续**：复核模型接口仍限制objective最多2000字符；用真实xsmr结果形状构造七个先前窗口，旧完整拼接6512字符，当前双轮仅一个先前窗口1154字符，因此当前任务不需重启。新增hypothesis_objective压缩每轮全部三候选的outcome/订单/成交/持仓数和核验状态，固定列顺序，并以SHA256绑定完整先前结果/核验记录；七窗口同形输入1224字符。仍保留所有窗口，无截断、收益评分或经济资格提升。恢复前一增量遗漏的PROPOSING_HYPOTHESIS进度事件；已运行原日志不回填。
+
+覆盖最大全八轮计划的真实provider参数验证、全部窗口留存、原报告身份变更影响摘要，及原采集/队列/自动核验故障停止共7项通过；Ruff通过。开发变更未进入当前59j冻结源码或94验收源码。原真实双轮session55427与验收77898均本轮实查仍运行；尚无成功终态，未重复启动或部署。
+
+2026-09-30 **每轮实验自动核验并反馈下一轮；真实双轮运行已启动**：gold_bar_program 每轮自动通过原队列提交 gold_bar_receipt，保存绑定同一报告的核验任务/状态/时间/材料SHA和三试验数量。下一轮 AI 获得本有限计划中所有先前窗口结果和回执状态，而非仅上一轮信号；签名核验不产生经济准入。核验执行失败保留已完成实验，写计划失败摘要并停止后续采集，不抹除失败或将未核验轮次标为完成。原缺口回归先失败；程序/两类回执22项通过，新增故障停止检查后程序6项通过。冻结94基线+11文件overlay的独立70项通过；未改变在途94正式验收源码。
+
+真实研究目录 `/home/kerstker/quantos-dev-output/gold-reviewed-program-20260930-59j_j010`，原session55427，PID859383/start324903503，现场核对同进程存活。固定Python源码摘要7ad48392bcc4c06a02599e475060e80ccc245f876cdd4d781d126b66265cd7f9；两轮、每轮两收盘/独立模拟账户，真实本地模型、公开采集、原费用和5秒订单有效期不变。首个目标收盘1790713800000（04:30），当前WAITING_CLOSED_BAR，尚无实验或核验终态。原94发行验收session77898仍存活，ARM64第二轮冷构建在途；没有部署、Demo或经济资格。完整目标继续，不能用该研究子流程替代跨资金费连续账户、独立经济验证和获准执行。
+
+2026-09-30 **三候选独立回执接收开发完成，真实档案核验未获独立授权**：新增 gold_bar_receipt 原研究队列任务及前端实验编号入口，复用现有公钥登记/签名/撤销/时效核验与不可覆盖检查留档。gold_bar_experiment 分离原档案绑定读取与当前源码重新执行；初始交接仍要求原代码复算，后到回执只能验证保留档案绑定，明确 RETAINED_BINDINGS_ONLY_NOT_FRESH_REPRODUCTION，不冒充当前源码重现。保留三份 TrialLedger 历史，不签发、不登记密钥、不改变策略经济资格或交易权限。
+
+新签名/过期/撤销/材料变更、旧单策略兼容、原队列与白名单测试65项通过；原实验及console契约100项通过/1跳过。真实 xsmr 档案原输入、报告、manifest、trial数据库、交接请求逐字节不变，三候选核验结果 INDEPENDENT_AUTHORITY_UNCONFIGURED，结果摘要位于该目录 receipt-intake-check.json。因此只补齐接收路径，独立验证本身仍未完成。前端类型检查与相关界面3项测试通过。新文件与修改工具 Ruff、仓库卫生通过；run_kinds.py 全文件 Ruff 仍报告既有两处E701和一处E402，未宣称全局lint通过。本增量仅在开发工作区，不属于正在验收的94固定源码，也未部署。
+
+
+2026-09-30 **密集采样真实整批成功结束；旧版完整验收失败，新版正式接续**：xsmr原session17837退出0，RESEARCH_PROGRAM_COMPLETE。145报价帧+两目标收盘按原队列完成，三候选READY/NO_SIGNAL/0订单/0持仓，三份TrialLedger与INDEPENDENT_REVIEW_REQUIRED交接材料自动生成，报告a45c00e3581fdf689aa6ee82394395c565dfa2aca422350df02910c2aefc2370；这证明新预热/补采/回放/归档子流程真实成功，未验证实际模拟成交、收益或经济准入。
+
+旧d5原验收79349退出1，canonical ALL最终32阶段/30通过/2失败、21跳过；两测试阶段分别4失败9639通过、1失败5738通过，失败均已有记录，前端阶段完成不抵消后端失败。完整失败报告另存failed-canonical-validation.json。旧源码/前端后继46873及服务后继43665均退出1/INCOMPLETE，无安装产物或切服务。94串行后继77898自动启动新验收父PID833098/start324793797，actual monitor已核对；服务图/持久化预检通过，ARM64 driver833362运行。新94后继86943/39231继续等待自身验收，未借旧30/32当通过。
+
+2026-09-30 **旧版第二组新增失败定位为测试路径误报**：原第二组进度至96%，失败序号映射指向tests/tools/test_local_console_stack.py::test_local_stack_is_l2_console_only，随后在原d5/p888固定目录实际复现失败：断言对全部命令参数作live子串搜索，命中目录gold-research-delivery中的delivery。相同测试在先前已建立的94/1zmbxl44目录实际1项通过/0.24秒；未为测试重命名原目录、未删除/修改失败日志或缩小正式门禁。实际specs仍是console_api/research_runner/frontend，不是交易服务启动。本次仍保留旧版完整失败，不将路径问题解释成全量通过；测试路径可移植性是已知限制。94原验收队列继续等待，未部署。
+
+2026-09-30 **密集采样两收盘真实及时性观察**：xsmr原session17837继续COLLECTING，1790710200000/1790711100000两闭合消息已收到，随后深度响应延迟分别155/3258ms，均小于原5秒入场有效期。116份深度、0错误，两收盘三候选均无入场。外置two-close-receipt-check.json绑定决策原件及对应深度响应摘要，仅为在途采样观察；未提前终结窗口、未声称已模拟成交/盈利或整批回放通过。旧d5第二组原session79349仍运行至57%，94原串行后继77898继续等待。
+
+2026-09-30 **Demo黄金公开规则现场核对**：固定demo-fapi公开time/exchangeInfo两个GET成功，未读取凭证；原件、请求/接收时间和摘要保存在 `/home/kerstker/quantos-dev-output/gold-demo-public-rules-20260930-57sj23c2`。响应包含唯一XAUUSDT，TRADIFI_PERPETUAL/TRADING，XAU基准、USDT报价/保证金；PRICE_FILTER tick0.01，LOT_SIZE min/step0.001，MARKET_LOT_SIZE min/step0.001，MIN_NOTIONAL5。这仅为当时Demo公开规则观察，非账户开通/授权/费用档位/策略准入或交易证据，不能用其替代临发送新鲜规则。既有独立授权和期初权益登记仍需完成，尚未启动Demo。
+
+2026-09-30 **94修复版后续交付全部自动候验收**：1zmbxl44内复用原已绑定源码/前端/联合服务/操作入口准备器，重新绑定94完整源提交、实际串行验收PID775756/start324649752、当前三项用户服务Fragment/DropIn摘要和原b794/cd086助手干净提交；未读EnvironmentFile。源码/前端后继原session86943（父779074/start324666704，子779111/start324666760），服务/统一入口后继原session39231，monitor及drivers摘要已落盘并核对同进程。只有94自身完整PASS才导出/准备，再只读核验统一入口；旧d5结果不充作94通过，不自动安装/切换。验收、导出、服务材料三个后继仍等待，没有94验收终态或可安装产物。
+
+2026-09-30 **首组完整测试终态与修复版串行验收排队**：d5原第一组pytest 4失败/9639通过/19跳过（2479秒），前三项94已修复；第四项test_pytest_child_does_not_inherit_canonical_identity子pytest超过其2秒预算，单项原测试复跑1通过/0.95秒，未修改其超时或删除失败，待下一完整验收复核。原canonical继续第二组，整体验收尚未终态。94目录已绑定原五验收驱动摘要并重新解析公开下载IPv4，npm离线456包安装通过；外置accept-after-prior.py原session77898绑定旧PID659886/start324237982，真实后继进程已核对，仅旧源验收终态出现后启动94自身ARM64+canonical ALL，不借旧证据。串行源/驱动摘要与进程保存在serial-acceptance-binding/monitor，不安装或切服务。
+
+真实xsmr原session17837仍采集：03:30闭合消息1790710200631后155毫秒收到下一深度报价，31份深度/0错误；三个候选无信号。证明首窗口密集采样取得及时后续报价，尚非完整批次回放或成交验证，继续等待03:45及原观察终点。
+
+2026-09-30 **采集与验收修复已独立提交，未完整验收**：目录 `/home/kerstker/quantos-dev-output/gold-research-fixes-20260930-1zmbxl44/source`，分支codex/gold-research-fixes-20260930，新提交94bef06c8db9e06645b28ae5687c84ad6f0d0cc8（d5基线，14文件，含密集采样/历史有限重试/公共Decimal契约/健康任务名单/重生成服务图）。原目录联合13组149项通过；实际pre-commit通过（显式sh执行，无跳过，pre-commit.log留存），提交后干净。服务图20域52边无循环。旧d5完整验收仍在原session79349执行至97%，3失败尚待最后汇总，不能借其结果证明94版通过；新版本尚未执行完整门禁或部署。真实xsmr原session17837已进入COLLECTING，未改其冻结源码。
+
+2026-09-30 **完整验收三个失败项已定点复现并开发修复**：p888原pytest仍执行至96%，未终态。只读collect-only与已有失败序号映射给出候选，再在原固定d5源码定点执行实际复现3失败：research_runner健康kinds契约漏列gold_bar_research；两项域边界测试均发现gold_bar_dataset/gold_bar_stream/gold_funding_dataset导入data私有_amount。开发版将原数值语义抽到quantos.contracts.decimal_strings，data保留原ExecutionTapeError包装，三个research模块依赖公共契约；更新健康契约显式任务名单，未放宽域边界断言。数据/研究/健康/边界七组103项通过，Ruff通过，import-linter 1289文件/5360依赖、4约束全保留。运行中的d5验收与xsmr实采固定源码未修改，尚未完整验收修复版或部署。
+
+2026-09-30 **预热重试+密集采样合并版真实验证在途**：独立目录 `/home/kerstker/quantos-dev-output/gold-dense-retry-20260930-xsmr5lxt`，d5基线+overlay明确6文件，隔离采集/程序/回放/实验/策略46项通过。原session17837/PID757654/start324568202已实查同进程，Python摘要5a7394379c89c0cb97d2e9968ec142b1c9ec4177c0c7458ca5467289d3e2c8b0；真实Qwen提案完成，WAITING_CLOSED_BAR。目标1790710200000/1790711100000（03:30/03:45），尚未采集终态或模拟成交结论。旧15_j2aga失败已终结，无覆盖/重启。原发行验收session79349全量测试至96%继续，已有3失败标记待完整详情；后继准备未进入安装，未部署或启动Demo。
+
+2026-09-30 **密集采样首次真实程序预热失败；预热连接重试补齐**：15_j2aga原session20783退出1，历史K线GET TLS握手SSLEOFError包装为URLError，尚未进入报价/流观察；原失败与窗口保留，不能称仍运行或密集采样验证成功。开发版gold_bar_capture新增最多一次连接错误重试，HTTP拒绝不重试；每次独立请求/错误记录，成功收据使用实际成功请求与接收时间，写入/解析错误不重试。先复现3项失败，修复后采集/程序/日志13项通过，Ruff通过。真实只读检查 `/home/kerstker/quantos-dev-output/gold-history-retry-20260930-gwpx2aww` session12523退出0，1500根/一次请求/0错误，源码前后一致；证明正常预热路径可用，未实际触发重试或证明网络稳定。原d5全量pytest至94%已见3个失败标记，仍在执行，待最终堆栈；未宣称验收通过，未打包安装。
+
+2026-09-30 **密集采样真实验证已启动**：独立目录 `/home/kerstker/quantos-dev-output/gold-dense-continuous-20260930-15_j2aga` 从d5f9887克隆并覆盖明确4文件，overlay.json保留摘要；独立采集/程序/回放/实验/策略41项通过。原session20783，PID738835/start324477783，源码Python摘要29ccc257c400e95c0c5078a1eb3efbffea912093406595d2a8bb4e3e493becaa，运行前冻结Python，已核对同进程。真实Qwen提案结束，当前WAITING_CLOSED_BAR，目标1790709300000/1790710200000（03:15/03:30），120基础采样+预声明收盘补采，原1800秒K线窗口。尚无采集/模拟成交结论。原ep1session59303已经COMPLETE，不再等待；d5发行版完整验收79349独立继续，后继打包/操作准备46873与43665仍等待，未部署。
+
+2026-09-30 **连续两收盘真实研究完成，暴露报价频率不足，开发修复已验证**：ep1don5v原session59303退出0，RESEARCH_PROGRAM_COMPLETE；120行情帧经原适配器接受，244响应/0错误，三候选输入均READY。channel/trend为NO_SIGNAL；reversion一次SELL意图、0成交/0持仓、NO_FILL，原订单TIME_IN_FORCE过期（信号1790707500546，下一行情1790707509205，间隔8659ms大于原5000ms有效期），权益1000/现金残差0，不能称盈利。报告b031565d6d84415869363d3f047b874e6d2ad5aeedc5fa723cef35913547d1cc，原TrialLedger三试验及independent-request.json自动生成，INDEPENDENT_REVIEW_REQUIRED。
+
+开发版采集器新增预先声明的目标收盘前10秒/后20秒一秒补采，保留原120次基础采样持续时间和240总样本上限；程序连续模式绑定两目标收盘，原5秒订单有效期、30秒缺口及原始接收时间不变。先复现缺失接口5项失败，修复后采集/程序29项通过，Ruff/卫生通过；格式检查同时修复两受影响文件已有多语句格式（无运行语义改变）。尚未真实验证新密集采集。旧ep1原件保持，未反向改参重算成交；在途d5完整验收固定源码不含本修复，未修改或重启。
+
+2026-09-30 **连续实采已收到两根目标收盘，尚未回放完成**：ep1don5v原session59303持续运行，目标1790706600000/1790707500000分别实际接收1790706600430/1790707500546。首根三候选无入场；第二根reversion出现SELL研究信号，channel/trend仍无入场。185份原公开响应/0错误。外置two-closed-bars-interim.json记录当前决策前缀摘要，仅为在途观察，不是模拟成交、收益或Demo。继续原1800秒窗口至终结后检查原账本；不提前截断。p888原验收第二次冷构建依赖编译已结束，尚无完整验收终态。
+
+2026-09-30 **统一操作材料后继已自动排队，尚未切换**：p8884cwg原验收冷构建A已通过、B运行中；原连续采集ep1实查125份公开响应/0请求错误，尚无终态。新外置prepare-service-operation.py绑定原打包后继PID665965/start324258590，原session43665，service-preparation-monitor/record记录真实进程与驱动摘要。重新只读采集三项用户服务Fragment/DropIn摘要，未读EnvironmentFile；原b794安装助手与cd086操作助手提交/干净源码已验证。仅新d5版完整验收及源码/前端打包成功后，复用原准备器产出联合安装、三服务切换及统一操作入口，再运行入口的只读核验。上游失败则保留INCOMPLETE；未安装、未切服务、未获经济准入或启动Demo。
+
+2026-09-30 交付后继自动化已启动：p8884cwg完整验收仍为原session79349/PID659886，ARM64已过scanner/base/native builder预检，冷构建A运行中，未通过完整门禁。新增外置prepare-delivery.py，复用摘要核验过的原source/frontend准备器：只有绑定的验收终态CANONICAL_ACCEPTANCE_AND_RETENTION_PASS才导出源码、离线依赖、对应前端。原session46873，followup-monitor.json及source-delivery-followup-process.json记录实际PID/起点；source child PID666000确认存活，日志WAITING_FOR_BOUND_ACCEPTANCE。准备器不安装/切服务，无自动批准；上游失败则INCOMPLETE，不用进程消失充当通过。连续ep1原session59303也仍待目标收盘。
+
+
+2026-09-30 **研究整合版独立提交并进入完整验收，未部署**：独立目录 `/home/kerstker/quantos-dev-output/gold-research-delivery-20260930-p8884cwg/source`，分支codex/gold-research-delivery-20260930，提交d5f98870730ba1e6853ae75afefab8e6f1bd2f1c（ffac基线+46文件研究/采集/AI/前端增量）。保留主工作树其他改动。实际pre-commit脚本通过（仓库hook不可执行所以显式sh执行，无--no-verify），前端7项+typecheck、console黄金契约1项通过，服务依赖图已重生成无循环。黄金创建页对象标签由误标BTCUSDC修正为XAUUSDT。克隆缺作者配置，提交使用命令局部Codex/codex@localhost，不改用户全局配置。
+
+复用原已审查ARM64→canonical ALL→证据保留驱动，仅绑定新完整提交和实际DNS解析的公开IPv4下载地址；acceptance-binding.json留存驱动摘要。原session79349、验收父PID659886/start_ticks324237982（acceptance-monitor.json）；服务图与持久边界预检退出0，ARM64 driver PID659967实际运行。尚无验收终态或安装包，不借旧32/32证明本版通过，未切服务/部署。连续实采ep1don5v原session59303也仍运行，两个任务独立源码，勿重复启动。
+
+
+2026-09-30 **连续两收盘单账户回放已接线，真实验证启动**：新增显式GOLD_PUBLIC_CONTINUOUS_CAPTURE_V1与capture_gold_continuous（61–240样本）；原短捕获仍3–60，公开输入原30秒缺口、因果、同日、资金费周期和规则一致性检查不变。gold_bar_observed_replay/原账本支持新捕获；合成两收盘中通道首根后成交、仓位跨第二根后按信号退出，只有同一账户/两订单，现金残差0。程序--continuous使用120次/10秒报价及1800秒K线观察，要求目标两根收盘，单份输入→三候选各自单账户；多轮仍不串接账户，不声称解决跨资金费/跨规则epoch或24小时运行。
+
+独立目录 `/home/kerstker/quantos-dev-output/gold-continuous-ai-20260930-ep1don5v`，固定源码相关50项通过；Ruff/卫生通过。原session59303、PID645664，monitor.json绑定/proc起点及Python摘要362a785de0053f91dce1dcf81e7eeadb11160c495c6680a0819d585c39b1e869（ffac基线+overlay，不是新提交发行版）。已实查同进程存活，真实Qwen选candidate0通道，2308ms，提案2d37fe24cab76a10bb2f401fbe75ba3f42184e667d22879965e38df0cb2ea20f。目标收盘1790706600000和1790707500000（02:30/02:45），当前WAITING_CLOSED_BAR，无采集/实验终态。下一轮核对同一进程，勿重复启动。旧ok9两轮程序已失败终结；本新程序包含有限GET重试、逐响应与错误留存和独立核验请求生成。未部署，未经济准入，未启动Demo。
+
+
+2026-09-30 **真实AI两轮程序终态：首轮完成，第二轮报价失败；有限重试已开发验证**：ok9cn0kt原session49501退出1，program summary=RESEARCH_PROGRAM_INCOMPLETE/failed_attempt2，仅保留第一轮done。第二轮stream=OBSERVED/DURATION_COMPLETE，738消息/1收盘、源码未变；quotes=FAILED/URLError，未提交第二轮实验。原进程已结束，不再报告运行或等待02:00，不补写该窗口。
+
+原公开GET采集器新增一次连接类错误重试（URLError/TimeoutError/ConnectionError），HTTPError包括429不重试；每次新请求保留实际时间，原缺口/时效/规则校验不变。gold_bar_program新增错误回调留存，与已实现逐响应留存结合；写入回调失败不触发网络重试。先复现缺少重试接口，采集/程序19项通过，回调范围收窄后采集15项再通过，Ruff/卫生通过。实际短采集 `/home/kerstker/quantos-dev-output/gold-public-retry-check-20260930-f7bvielp` 原session83895退出0，10响应/0错误，3帧通过原prepare_public_replay，源码前后一致。这证明新版本正常真实采集与留存，未实际触发重试，不能宣称网络问题根治；也不是对第二轮失败的补齐。两轮完整成功、跨窗口持仓/资金费连续回放、独立经济验证、Demo及完整目标仍未完成，未部署。
+
+
+2026-09-30 独立核验交接材料增量：新增tools.gold_bar_review.review_request，复用原确定性复算与TrialLedger核验，生成GOLD_BAR_INDEPENDENT_REVIEW_REQUEST_V1，绑定原输入/报告/manifest摘要、三份试验历史和源码身份，列明来源/因果/账户成本规则/锁定OOS/全局试验检查项。本地状态始终INDEPENDENT_REVIEW_REQUIRED/economic_eligible=false，不签发或消费独立批准，不接交易。开发版gold_bar_research自动生成请求并返回独立核验状态；实验/队列/程序8项、console契约1项通过，Ruff/卫生通过，未部署。
+
+原ok9cn0kt首轮真实报告使用外置只读review-helper.py（sha256 610640456f4fc3c057e0cbf6c3f0544fb41b6a6273642795896a7113dc88bbb4）及原冻结源码复算，在results/1新增independent-request.json；原始输入/报告与运行源码不变，result_hash仍4dc1bc793789b54bbc250dee3a1def2eba1b1d7ee2a7f08667d0a576544993bd、三试验、待独立核验。原session49501继续运行等待第二轮，无新终态；该外置材料准备不冒充独立验证已通过。
+
+
+2026-09-30 **真实AI研究首轮→反馈→第二轮提案已贯通，第二轮在途**：ok9cn0kt原session49501输出RESEARCH_SUBMITTED→ROUND_COMPLETE→PROPOSING_HYPOTHESIS→WAITING_CLOSED_BAR，PID578481及/proc起点再次匹配。首轮01:45收盘实际接收1790703900650；12份报价覆盖1790703812524–1790703939054，通过原prepare_public_replay。原程序自动提交run_957927f7633777367d11ee48bdc93359并done，三候选均READY/NO_SIGNAL/0订单/0持仓，三份TrialLedger留存，报告4dc1bc793789b54bbc250dee3a1def2eba1b1d7ee2a7f08667d0a576544993bd。目录programs/1/round-1.json绑定首轮真实Qwen通道提案与结果。随后hypothesis-2/plan.json实际包含三候选上一轮NO_SIGNAL诊断，Qwen选择candidate2均值回归，耗3670ms，提案72e33d28d60f1cbe695e9e29cfaf341d2aded6cb10d1ea60ee3be89e01f902d2。第二轮目标1790704800000（02:00），尚未采集/实验终结；继续原任务，不重启。此为自然时间研究子闭环实证，不是盈利、独立经济验证、连续持仓或Demo。费用仍假设，未部署，整厂目标保持未完成。
+
+
+2026-09-30 公开报价逐响应留存补齐：原capture_public只在全批成功后返回，后续HTTP失败会丢失此前已成功收到的公开响应。新增可选on_record回调（默认行为及返回捕获身份不变）；gold_bar_program使用独占quote-receipts目录保存逐响应原件，任何写入失败沿原错误路径终止。原件包含实际请求/接收时间、原响应base64及摘要；不把部分响应当完整采集或复用旧报价补窗口。先复现缺失回调，再新增；采集/程序16项通过，程序并发失败原件留存断言追加后再1项通过，Ruff/卫生通过。当前ok9cn0kt原session49501/PID578481仍实查存活且无终态，固定源码不包含本增量，未重启或改写。
+
+
+2026-09-30 **真实AI提案完成，新两轮研究程序在途**：只读探针确认本机8001模型qwen3.8-27b及7890代理后的Binance公开时间接口可用。原5ha失败已终结，不重启旧任务；从其基线独立克隆并覆盖最新明确源码清单至 `/home/kerstker/quantos-dev-output/gold-bar-ai-program-20260930-ok9cn0kt`，隔离46项通过后冻结Python，启用--ai-plan等效参数运行两轮。原session49501、PID578481，monitor.json记录/proc起点；实际核验same_process=true、S，尚未终结。目标收盘1790703900000/1790704800000（北京时间01:45/02:00）。真实Qwen首轮提案candidate_id=0（channel），耗4315ms，545tokens，提案摘要5c70dd2080a6be4109a7d2c1808558a0a1d273f646456d9409ded6ce30109cb4；不是策略盈利或准入证明。固定源码为ffac基线+overlay，Python摘要0fa2f4f2e46448cd694837f3960801eb127bd5ce73689619f755508a4f97c705。当前WAITING_CLOSED_BAR，无采集/实验终态；下一轮核对同一session/PID及programs/1事件/结果，不重复启动。未部署、未启动Demo。
+
+
+2026-09-30 **真实两轮程序已失败结束；AI三策略目录开发接线完成**：原5ha2lxmv/session44099返回exit1，/proc/553278已不存在，failure.json与program summary为INCOMPLETE，rounds=[]。首批预热成功1500根；journal收到125条/1根收盘，但STREAM_FAILED_ConnectionClosedError、INCOMPLETE；quotes.json缺失且gather捕获报价侧异常，旧版只留下JOINT_CAPTURE_FAILED，具体报价异常无法回溯。第二轮未开始，不再报告等待或进程存活，也未重启。
+
+新增GOLD_BAR_CANDIDATES_V1目录复用原本地模型provider/有界提案收据；tools.gold_bar_program可显式--ai-plan，在每轮采集前选择研究假设，同时保留三候选对照，将proposal hash/所选候选/实际诊断结果写入round，下轮目标使用上一轮三候选诊断状态（不作盈利标签）。默认不开启AI，运行中的旧冻结版本未被更改；本增量只有合成provider到原队列/报告接线证据，没有实际模型驱动的连续成功运行。另补capture-status.json分别留存stream状态及quotes异常类型，避免再次丢失并发采集故障定位。模型provider/旧gold AI/新程序/候选联合54项通过、Ruff/卫生通过；未部署、未启动Demo。下一主线需取得完整同步采集、实际AI和自然两轮结果，再推进独立筛选/执行交接。
+
+
+2026-09-30 **三候选自动采集→研究队列已接线，真实两轮验证已启动**：新增tools.gold_bar_program有限1–8轮入口，按真实15分钟收盘同步采集预热/原K线日志/同时段公开报价，核对目标收盘和固定源码，自动提交原gold_bar_research队列并保留每轮试验/结果；失败保留原件并终止后续轮次，旧编号不可覆盖。每轮是独立技术窗口，不拼接收益或声称连续账户，未接AI自动选优/经济准入/交易。独立固定源码相关20项通过，Ruff/卫生通过。真实目录 `/home/kerstker/quantos-dev-output/gold-bar-program-20260930-5ha2lxmv`，原session44099、PID553278，monitor.json绑定/proc起点及源码；已实查同一进程存活S，尚无result/failure终态。两轮目标1790703000000和1790703900000（北京时间01:30/01:45），源码为ffac基线加overlay，完整Python摘要db0d8a58cbb9763672b84b5d53ddce5ef81cf047f4e789761f0e0fd4c547615d；不是新提交发行版本。下一轮核对同一进程与state/data/cache/gold_bar_research/programs/1/events.jsonl，不重复启动。未部署/未启动Demo。
+
+
+2026-09-30 研究结果展示接线：gold_bar_research 现在从复算通过的原报告提取三候选结果、输入是否曾READY、模拟订单数、含成交订单数及期末持仓数，经原技术结果API返回类型化gold_bar_report；前端研究详情独立展示三候选，保留费用未校准、确定性复算非独立验证和未启用交易说明。数组/布尔信息移入报告，通用metrics保持标量。原队列输入仍须预先准备，不声称新增常驻采集。代码未部署，现有运行页面尚不包含本增量。队列/API契约/原实验/运行边界联合113项通过、1项原有跳过；报告摘要绑定加固后相关2项再通过。前端相关7项和TypeScript检查通过，Ruff/仓库卫生通过；未运行新的全量验收。
+
+
+状态：三候选信号及原 V2 模拟器适配已实现并完成合成验证；真实数据实验、样本外比较和交易批准未完成。用户授权“策略你来找”；策略选择由研究侧承担。累计亏损 5% 停止约束保持，不能据此修改现有更严格风险门。
+
+## 实现进度
+
+2026-09-30 原研究队列接入完成（开发态）：注册DIAGNOSTIC_ONLY的gold_bar_research，参数仅attempt整数1–1000；固定读取data/cache/gold_bar_research/requests/<id>的计划、报价和六份日志原件。扩展原实验留存为封装日志内容的自足输入，临时目录重建后复用真实收盘/报价比较，三候选原TrialLedger及离线全报告复算保持。同步更新原runner与registry白名单，复用通用ResearchRun结构；没有改动前端payload形状或开放任意路径参数。重复invocation复用原任务，失败/已有结果不覆盖。
+
+实际JobQueue合成测试、留存与runner边界合计16项通过，Ruff和卫生通过。真实00:45原件进入隔离JobQueue后状态done、error=null，run_ae57a81d8e63cbf6c6ec58429aaf59b4；目录quantos-dev-output/gold-bar-real-queue-20260930-ea_8ekns，结果35debdf9dafc044fd9402ec3434c6b3a680516f1839780697f212278316926ea，三试验ID落盘，RECOMPUTED_NOT_INDEPENDENTLY_APPROVED/economic_eligible=false。不是新采集，未修改已部署服务或启动真实Demo。尚缺新三候选的AI计划选择、周期采集任务、产品展示与持续跨结算账户接线，不能将队列任务done等同整个工厂闭环完成。
+
+2026-09-30 00:45真实联合实验完成：2acansoj原session90917退出0，REAL_CLOSED_BAR_QUOTE_REPLAY_COMPLETE，原结果57e6e680b90b000296c17dffdbf6bd34c6c75d8c1e9a335431a2f8b44c0961b3。12份报价覆盖[1790700215134,1790700359999]，最大采样间隔15271ms；新收盘实际接收1790700300310位于覆盖内。三候选READY/NO_SIGNAL，0订单，未选优、未经济准入。原任务已终结，不再报告运行。
+
+保留冻结旧源码结果后，主工作区修正版对同一行情/收盘原件另行完整复算，source python_source_sha256=de882dd6615b37716645443aa47b96c96985064e28f64cae1241c9e4556229f6，前后不变；comparison-with-entry-start-fix.json及review-with-entry-start-fix.json记录b783249ef480eb73e430268420d06476589ebd39e6a4d30701d6c953ea2b5da9，三候选仍NO_SIGNAL/0订单/现金残差0。不是新采集或真实成交验证。由此真实收盘→原件复核→同时段报价→V2账户回放已打通一轮，持续跨周期/跨结算、足够信号样本、AI候选调度/前端与独立验证仍缺，未启动Demo。
+
+2026-09-30 实时路径预热信号隔离修复：等待原联合采集时发现初始历史K线若仍新鲜，其旧信号可能在新收盘前产生意图。新增GoldBarV2Strategy.entry_not_before_ms，并由compare_observed固定为第一根新收盘的实际接收时间；预热信号仍消费为已观察，不在阈值后追补。约束进入策略身份，普通旧短样本比较默认行为保持。回归先失败后修复，适配/实时接线/比较/留存/前缀五组16项通过，Ruff和卫生通过。
+
+2acansoj原采集进程继续，session90917、PID484930/start323599698仍实际存活，已进入同步采集；冻结原源码没有修改。原进程结束后必须保留它的结果，并用本修正版另外复算同一输入，不能将其原比较自动视为已覆盖修复或重启采集。
+
+2026-09-30 收盘日志与同时段报价接线：`tools.gold_bar_observed_replay.compare_observed` 复核原日志重建Bar，要求新收盘实际接收时间落在真实报价覆盖内；插入没有报价/标记/容量更新的决策帧，复用原V2同一账户运行三候选及基准。合成原观察器→日志重建→收盘接收时刻意图→后续真实报价帧成交通过；不同时段报价拒绝。相关六组14项及Ruff通过；从已验收基线独立复制当前模块到2acansoj/source后同14项再次通过。
+
+真实联合采集目录 `quantos-dev-output/gold-bar-joint-forward-20260930-2acansoj`，run.py已启动，原session90917；monitor.json保存实际PID和/proc起点。目标收盘1790700300000；在目标前100秒刷新预热，然后并行采集300秒K线流和12次/10秒间隔原公开报价，随后自动调用新接线比较。源码固定只读、候选/数量/假设费率提前登记，不下单。当前仅已核验进程存活/WAITING_SYNCHRONIZED_CAPTURE，尚无联合采集或比较终态；后续核对同一进程，不重复启动。
+
+2026-09-30 00:30真实收盘及离线重建完成：原oo8g5vhb/run.py session53820退出0，OBSERVED/DURATION_COMPLETE，350条消息、1根收盘、源码未变。close_ms1790699400000，交易所事件1790699400648，本机接收1790699400849；三候选均READY且entry_side=null。消息摘要ad9e223a0243a94c6cfe2a533ed2b2c89e9207153d6b3691531e0c14f962d299，决策摘要e9715900e5f750d69d877fec41f3572a71fbefc9e65f17a353e88cbc8e32a53a。进程已结束，不再报告等待，不重新采集同一任务。
+
+新增 `tools.gold_bar_journal.restore` / CLI，从预热和全部原始消息重新生成收盘Bar及三候选决策，核对摘要、数量和复算内容并复读防中途更换；可返回重建cursor用于后续接线，但本增量没有自动重连或累计交易账户恢复。合成完整观察器记录、重哈希决策篡改拒绝、非完整终态拒绝，与流/观察器共10项通过，Ruff/卫生通过。上述真实350条消息单独离线复核退出0，journal-reconstruction-review.json已保存，状态RECONSTRUCTED_NOT_INDEPENDENTLY_APPROVED。实际实时收盘→策略计算→留存→确定性复算已成立；这仍不是独立经济验证、盈利证据或Demo执行，报价/累计账户连续接线待完成。
+
+2026-09-30 实际收盘观察已启动（未终结）：独立克隆已验收ffac7d91源码，覆盖本轮20份明确Python模块/测试，overlay.json逐文件绑定；隔离相关46项通过。目录 `quantos-dev-output/gold-bar-closed-forward-20260930-oo8g5vhb`，Python源码只读，保留基线commit加完整源码摘要，不宣称另有已提交发行版本。刷新预热后启动run.py，目标收盘1790699400000，观察254秒；原session53820、PID470202已实际核验存活，proc起点保存在monitor.json。当前无result/failure终态，不能报告真实收盘已完成；下一轮应核对同一进程及原件，不因等待重复采集。
+
+2026-09-30 实时收盘输入：新增 `services.research.gold_bar_stream.GoldBarStream` 与 `tools.gold_bar_observe`，使用公开xauusdt@kline_15m流；未收盘只记录原件，收盘以实际接收时刻入指标并输出三候选决策。相同收盘重复不重复决策，冲突/乱序/未来或过旧事件阻断；缺根沿用原指标重新预热，不补造K线。观察器有1–1800秒/消息数/字节上限，独占新目录保留预热、计划、原始消息、决策与终态；不自动重连或声称恢复已经完成。
+
+信号流/观察器/原候选17项通过，覆盖合成完整收盘消息到三候选决策落盘。实际60秒观察目录 `quantos-dev-output/gold-bar-stream-20260930-first`，退出0，OBSERVED/DURATION_COMPLETE，96条更新、0根收盘，源码指纹未变，原消息摘要ebac1a399894a42d10dc8df2e7fa6e3b385824ec14e02ca26d4c55a7ee7b9cc1。真实收盘到信号仍未验证，未生成成交或盈利，不能将收到未收盘更新等同于持续策略已运行。下一步需要冻结采集源码并跨过实际15分钟收盘，随后对接同时段可执行报价和累计账户回放。
+
+2026-09-30 累计前缀重建：新增 `tools.gold_bar_continuation.compare_prefixes`，复用原V2每次从同一起点重放全部累计帧，逐候选核对之前的账本/订单事件/决策/风险/权益和策略观察前缀完全一致。未将各小窗独立账户收益相加，未强制平掉窗口末仓位；变更历史或重复/倒退窗口拒绝。原模拟器仍只支持一个不可变规则epoch，本入口明确仅同一已冻结capture的离线延展，不声称完成在线跨日/跨规则/跨资金费采集与持久检查点。
+
+合成验证覆盖前段已成交持仓延续、后段不重复入场和篡改历史决策拒绝，与原实验/比较联合8项通过，Ruff通过。实际旧8帧行情按4→8帧重建通过，目录 `quantos-dev-output/gold-bar-prefix-replay-20260930-im591hcx`，结果c8d56527bc6a94900c55b0708722384950c1d04715072cf14be03684aa2a30dd；无新采集，原真实数据无成交，不能用它证明实际持仓延续。该版本比较身份新增evaluated_frames，旧实验必须用原源码复算，不覆盖旧结果或混用指纹。连续采集、规则epoch转换和跨结算接线仍待实现。
+
+2026-09-30 实验留存与离线复算：新增 `tools.gold_bar_experiment`，从原件显式保存完整输入、源码指纹和报告，三候选分别使用原 TrialLedger 记录 PLANNED→RUNNING→PASSED/FAILED。PASSED仅计算成功；三候选不自动评优，不以空仓盈利替代信号。失败终态与错误类型留存，不覆盖旧目录；离线verify核对输入/报告摘要、原账本完整性、候选定义/家族/核验政策绑定，重新计算全报告逐字节比较，前后源码指纹必须一致。
+
+相关实验/比较/适配10项、Ruff和仓库卫生通过。实际使用9月29日晚原有真实行情离线登记到 `quantos-dev-output/gold-bar-registered-experiment-20260930-first`，没有重复采集或冒充新样本；登记和单独CLI复算均退出0，结果摘要352ce7f9818b9f7c609ea00d1fcf7a2d7e0db4a680152a6d12b82454ade071ea一致。复算状态为RECOMPUTED_NOT_INDEPENDENTLY_APPROVED；这只是相同实现确定性复算，不是独立模型核验、研究经济准入或Demo批准。尚未接入周期调度/前端，也没有连续持仓跨窗口回放；不得把各窗口独立空仓运行的收益串接为持续策略收益。
+
+2026-09-29晚真实三候选比较完成：`tools/gold_bar_cost_replay.compare_public` 将真实收取的历史K线仅用于指标预热，再复用原 `prepare_public_replay` 的随后报价/规则/容量及原V2模拟器；统一比较三候选和空仓基准。成本明确标注 EXPLICIT_UNCALIBRATED_SIMULATION_RATE，不声称账户费率已核验，也不把当下规则回填历史。原样本仍禁止跨资金费结算，93条历史资金费未冒充当前样本发生的支出。
+
+实采目录 `quantos-dev-output/gold-bar-forward-comparison-20260929-z6o1a382`：实验计划在请求前保存，重新采集1500根预热K线和8份随后真实报价，源码指纹前后相同。原进程退出0，summary.json为TECHNICAL_COMPARISON_COMPLETE；费率0.0005和0.001两个明确假设情景均三候选NO_SIGNAL/0订单，winner=null、economic_eligible=false。独立检查首末实际决策的三个输入均READY、entry_side=null；不是用输入过期掩饰无信号。基础结果892a53a58b476f110c8b7a4f34e72f5a50bbe8357d561864eb11d35b2caefcf5，加倍费用结果9107862cee7d7315c199018c043fb6c38b0e9c1ae8d7d3c416cd8c0cd717ae22。没有运行历史OOS或强制制造成交，短窗口不支持收益比较或策略优胜结论。
+
+上述实际运行对应数据/信号/原适配/比较八组62项通过。随后增加逐回调输入状态留存，全部无READY明确INPUT_UNAVAILABLE而非NO_SIGNAL；比较及适配8项通过，Ruff通过。这一后续诊断增量尚未再次真实运行，不借用前一个源码指纹。
+
+资金费接入：新增 `gold_funding_dataset.load_funding`，将同一历史区间的公开记录转换为原 FundingEvent，保留正负费率和交易所原始毫秒结算时刻，不生成历史已知时间或持仓现金流。采集工具增加 `--funding-for-history`，从已留存K线原件及收据核对摘要，固定查询同一区间；满1000条拒绝当作完整单页，未知类型、错市场、重复或越界拒绝。
+
+实际响应位于 `quantos-dev-output/gold-bar-funding-20260929-first`，93条；首次因新增rateType字段拒绝，原失败保留。核对[Binance官方字段说明](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)后，仅支持明确Regular（及旧格式缺字段），Special或未知类型不猜测转换。回归先失败再修复，资金费/采集/数据/原V2适配联合21项通过。离线复核原响应成功，另存review-after-rate-type-fix.json，没有重复请求或覆盖原件：摘要3837b5d5618b1d77877b575b812280e49cfccb7560a9214e2c8883877e971bb5，首结算1789358400001、末结算1790683200002。没有把1–2毫秒偏移强制对齐到整点。
+
+93条记录不证明历史结算安排完整，实际费率数据也不等于账户手续费。仍缺可执行报价、历史规则/可用时间和费用依据；真实策略净收益继续为null，未评估最终OOS、未选策略、未启动Demo。
+
+真实历史接入：新增 `services/research/gold_bar_dataset.py` 和 `tools/gold_bar_capture.py`，固定公开 GET 获取 XAUUSDT/15m/1500 根已收盘K线，留存原始传输/JSON/摘要/请求与接收时间。全部历史根的 available_ms 保留实际本次接收时间，不伪造历史时点可用性。未收盘、缺根、乱序或重复明确拒绝，不填充；预热 400 根后剩余数据按 60/20/20 固定划分。该划分是尚未计算收益的数据范围，不代表受保护的 OOS 准入已完成。
+
+2026-09-29 真实请求：默认环境首次 URLError 原件位于 `quantos-dev-output/gold-bar-history-20260929-first`，默认代理探针 SSLEOFError，直连探针 ConnectionResetError。沿用仓库常驻服务的本机 7890 代理、仅在采集子进程设置后成功；未修改全局网络配置。成功目录 `quantos-dev-output/gold-bar-history-20260929-proxy7890`，1500 根连续K线，区间 [1789345800000,1790695800000)，接收1790696132377，原始JSON摘要0dad6d0288fd4a22c7e161ebb6e8ca9ac5ccae2c002831dad6793f8363387c80。切分计划摘要d90f111cfc7f00f2ed3cf1206422745b1c7c2fcad8c9c6a10fbcc310d4b7057b，训练660/验证220/最终OOS220根；未计算或选取盈利结果。
+
+数据/信号/原模拟适配联合32项通过；补充固定无凭据GET、原件保留、拒绝覆盖与失败不写成功摘要后，采集及数据两组9项通过。仍缺历史发布时间、可执行报价、历史规则、资金费/费用输入；net_pnl=null。仅约15.6天历史，不足以据此宣称长期策略稳定性。
+
+新增 `services/research/gold_bar_candidates.py` 实现固定通道、均线交叉和均值回归信号；显式区分 exclusive close_ms 与 available_ms，未知未来数据不进入指标，缺根重新预热，未收盘/格式损坏/重复输入拒绝，过期输入不产生入场信号。此模块不计算成交或盈利。
+
+新增 `services/research/gold_bar_v2_strategy.py` 将三候选接入原 SimulationContext/OrderIntent，按实际仓位及首笔成交价固定止损；同根不重复尝试、不反手，退出先撤未完成入场再 reduce-only 实际仓位。原模拟器决定后续帧成交、风控拒绝、手续费和资金费，未增加第二套账本。部分成交后的止损距离固定在首笔观察到的入场均价，不随继续成交放宽。
+
+信号、新适配及原黄金适配联合 25 项通过，新增四文件 Ruff 通过。包括未知未来数据不改变决策、双向交易、部分成交、拒单不重试、实际 V2 资金费结算与现金残差为零；数据、报价、费用和交易规则均为合成测试，不是实际 XAUUSDT 收益证据。尚未部署，也未接入原六候选吸收目录，以免把不同策略族混为同一历史试验身份。
+
+下一项为真实K线/报价/历史规则和资金费来源适配、固定数据切分、原试验留存与研究调度接入。原公开短样本适配器拒绝跨资金费并不代表 V2 账本不能结算资金费：本次已验证原账本可扣账，缺的是可靠真实数据组装路径。
+
+## 实查结论与来源
+
+当前 `services/research/gold_factory_candidates.py` 只有 GOLD_ABSORPTION_V1：卖出流量阈值 10/25/50 与确认窗口 2/3 的六种组合。它不是跨策略搜索。已有真实双批研究的两次 NO_SIGNAL 不能支持任何盈利或策略胜出结论，也不能证明整个策略族无效。
+
+优先研究趋势突破，均值回归作为对照。选择理由是规则可明确冻结、输入可审计，且可以先用低频信号控制换手；这不是对当前黄金涨跌的预测。
+
+来源：[Moskowitz、Ooi、Pedersen《Time Series Momentum》](https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum)。原研究讨论多市场期货较长期的时间序列动量；只支持趋势方向值得研究，不证明下面自拟的 15 分钟规则、Binance 黄金永续或当前市场有收益。
+
+数据接口依据：[Binance USDⓈ-M 官方市场数据文档](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)。历史K线、资金费数据可用于研究输入；历史下载时间不能伪装成当时已知时间，也不能替代历史盘口、成交能力与交易规则证据。
+
+## 首批三个候选：每个仅一套规则
+
+共同使用 UTC 15 分钟已收盘K线，指标在收盘数据实际可用后计算。只在此后的可执行报价评估成交，禁止在产生信号的同根K线收盘价假定成交。单仓位，不加亏损仓，不同根反手。以下均为自拟假设，未获得参数优越性证据。
+
+| 候选 | 入场规则 | 退出规则 | 研究优先级 |
+| --- | --- | --- | --- |
+| 通道突破 | 当前收盘严格突破此前 20 根最高价做多；跌破此前 20 根最低价做空；通道排除当前根 | 多头跌破此前 10 根最低价、空头突破此前 10 根最高价退出；另有初始 2 ATR 止损 | 第一 |
+| 均线趋势 | EMA20 上穿 EMA80 做多，下穿做空；只响应交叉，不追补历史信号 | 反向交叉、初始 2 ATR 止损或持有 96 根后退出 | 第二 |
+| 均值回归 | 以前 40 根收盘均值和总体标准差计算当前 z-score；z < -2 做多，z > 2 做空；标准差为零不交易 | z 回到或越过零、初始 2 ATR 止损或持有 16 根后退出 | 对照 |
+
+ATR 使用此前 14 根 true range 的算术平均，止损距离在入场时固定。通道突破同样最长持有 96 根；EMA 从最早连续已知数据开始，至少预热 400 根。缺失K线后暂停信号并重新预热，不填充价格。止损按下一可执行价格建模，跳空不按止损价保证成交。仅有 OHLC 而无法确定同根内路径时，不能输出精确成交盈利结论。
+
+候选数先固定为三，不扫描参数。既有吸收策略作为单独的已尝试策略族保留，全部历史尝试计入试验记录，不能重新包装成零次搜索。
+
+## 成本、验证和淘汰
+
+在读取新增收益结果前，登记数据清单、源码摘要、完整规则、总尝试次数与连续日期边界。按时间分为训练 60%、验证 20%、锁定最终样本外 20%；边界位置需要根据实际可用数据生成一次并留存，不能在看完结果后移动。各段从空仓开始，跨段持仓不带入；指标可以读取此前已知数据，不能读取未来。当前尚未冻结具体日期，不宣称 OOS 已锁定。
+
+只在训练/验证段选候选，最终样本外只运行入选的一套一次；失败保留并淘汰，不在同一 OOS 上重选第二名。基准为空仓和固定小名义多头，基准承担同等可适用成本。结论须分开列成交数、成本前后损益、费用、资金费、最大回撤、换手和分段稳定性。有效独立样本不足时结论为不足，不把无成交算作胜率或成功。
+
+沿用唯一 Decimal perpetual V2 账本；手续费、价差、滑点、资金费、合约数量精度、保证金和强平要求不能省略。基础成本之外另做两倍手续费/滑点压力情景；没有可核验费率或历史规则则记缺口，不使用免费成交。不能把历史现货金/COMEX 数据收益当成 XAUUSDT 可执行收益。
+
+当前 `services/execution/perpetual_public_replay.py` 明确拒绝跨资金费结算样本，现有黄金短窗口吸收回放也不等于上述K线策略回测器。必须先补齐此数据/信号/V2现金流接线及有意义的回归，再运行成本后比较，不能用旧 V1 路径绕过。
+
+## Demo 边界与交付
+
+研究交付应给出实际比较表与入选/淘汰原因；合格候选才准备对应技术 Demo 材料。24 小时先作为运行试验窗口，不能凭一天认定盈利能力。没有合格候选继续观察与研究。
+
+5% 按执行侧登记的真实期初权益计量，包含已实现和未实现盈亏以及费用、资金费；达到阈值锁定停止新增风险并进入原受控退出流程，重启不重置。滑点或接口故障可能使实际损失超过触发线，不能保证精确止于 5%。策略研究授权不替代原独立 Demo 签发和安装批准。

@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "research-console",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/research-console", "run", "dev"],
+      "port": 3100
+    },
+    {
+      "name": "research-console-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/research-console", "run", "dev"],
+      "port": 3100,
+      "env": {
+        "VITE_API_URL": "http://127.0.0.1:8400",
+        "VITE_MOCK_MODE": "false",
+        "VITE_RUNNER_URL": "http://127.0.0.1:8420"
+      }
+    }
+  ]
+}

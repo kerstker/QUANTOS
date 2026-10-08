@@ -1,0 +1,593 @@
+{
+  "schema_version": 2,
+  "generated_at_ms": 1785782636071,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
+  "instrument_scope": [
+    "ADA",
+    "ATOM",
+    "AVAX",
+    "BCH",
+    "BNB",
+    "BTC",
+    "DOGE",
+    "DOT",
+    "ETH",
+    "LINK",
+    "LTC",
+    "SOL",
+    "UNI",
+    "XRP"
+  ],
+  "expected_last_closed_day_ms": 1785628800000,
+  "price_basis": "PERP_MARK_PRICE",
+  "source_provenance": {
+    "prices": "Binance Data Vision USD-M perpetual mark-price klines",
+    "funding": "Binance USD-M perpetual funding history",
+    "oi_metrics": "Binance Data Vision USD-M futures metrics"
+  },
+  "artifacts": {
+    "prices": {
+      "path": "data/cache/crypto_perp_mark_prices.json",
+      "exists": true,
+      "size_bytes": 27388,
+      "sha256": "e2ab8580b41c8f5a88808cd8c543c9aaab9cd6961fe91580bbcab7d42e3db35b"
+    },
+    "funding": {
+      "path": "data/cache/crypto_funding_rates.json",
+      "exists": true,
+      "size_bytes": 7819914,
+      "sha256": "3012edd21e896caec15fd330dfa1bcc19f68f41061b33c561d40b3b7e8d5b98c"
+    },
+    "oi_metrics": {
+      "path": "data/cache/crypto_oi_metrics.json",
+      "exists": true,
+      "size_bytes": 6868076,
+      "sha256": "493c44c3d4da4a434b0cc642acffa75e06eadbc4903fe239e65b5ffe1f180e4f"
+    },
+    "universe_snapshot": {
+      "path": "data/cache/crypto_funding_snapshot.json",
+      "exists": true,
+      "size_bytes": 7864,
+      "sha256": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab"
+    },
+    "refresh_status": {
+      "path": "data/cache/live_refresh_status.json",
+      "exists": true,
+      "size_bytes": 10979,
+      "sha256": "6cb9ba3a2ae03e4dc6ee0d3e75c6d8e59dea650f42551d4375f28a215cd8ab57"
+    },
+    "raw_lineage_backfill": {
+      "path": "evidence/raw_data_lineage_backfill.json",
+      "exists": true,
+      "size_bytes": 3708,
+      "sha256": "1771e310116f6f1cdc17b9b731481635c00ab459d94d3e4951ea1183a3ba0655"
+    }
+  },
+  "sources": {
+    "prices": {
+      "passed": true,
+      "failed_instruments": [],
+      "instruments": {
+        "ADA": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "ATOM": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "AVAX": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "BCH": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "BNB": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "BTC": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "DOGE": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "DOT": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "ETH": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "LINK": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "LTC": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "SOL": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "UNI": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        },
+        "XRP": {
+          "passed": true,
+          "n_records": 37,
+          "last_event_time": 1785628800000,
+          "failed_checks": [],
+          "detail": "ok"
+        }
+      },
+      "rest_gap_fill_days": {}
+    },
+    "funding": {
+      "passed": true,
+      "failed_instruments": [],
+      "instruments": {
+        "ADA": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "ATOM": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "AVAX": {
+          "passed": true,
+          "n_records": 2141,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BCH": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BNB": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BTC": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "DOGE": {
+          "passed": true,
+          "n_records": 2215,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "DOT": {
+          "passed": true,
+          "n_records": 2174,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "ETH": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "LINK": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "LTC": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "SOL": {
+          "passed": true,
+          "n_records": 2150,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "UNI": {
+          "passed": true,
+          "n_records": 2146,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "XRP": {
+          "passed": true,
+          "n_records": 2237,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        }
+      }
+    },
+    "oi_metrics": {
+      "passed": true,
+      "failed_instruments": [],
+      "instruments": {
+        "ADA": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "ATOM": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "AVAX": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BCH": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BNB": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "BTC": {
+          "passed": true,
+          "n_records": 2162,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "DOGE": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "DOT": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "ETH": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "LINK": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "LTC": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "SOL": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "UNI": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        },
+        "XRP": {
+          "passed": true,
+          "n_records": 1682,
+          "last_event_time": 1785628800000,
+          "detail": "ok"
+        }
+      },
+      "rest_gap_fill_days": {}
+    }
+  },
+  "raw_lineage": {
+    "schema_version": 1,
+    "status": "PASS",
+    "coverage_scope": "INDEXED_OBSERVATIONS_ANCHORED_TO_FULL_AUDIT",
+    "observation_count": 278020,
+    "invalid_observation_count": 0,
+    "object_count": 202801,
+    "datasets": {
+      "binance_realtime_book": 17256,
+      "binance_realtime_exchange_info": 15394,
+      "binance_realtime_funding": 17256,
+      "binance_realtime_funding_info": 15100,
+      "binance_realtime_global_ls": 17256,
+      "binance_realtime_index_kline_1m": 15100,
+      "binance_realtime_kline_1m": 17256,
+      "binance_realtime_mark": 17256,
+      "binance_realtime_mark_kline_1m": 15100,
+      "binance_realtime_oi": 17256,
+      "binance_realtime_oi_current": 15828,
+      "binance_realtime_premium_kline_1m": 15100,
+      "binance_realtime_taker": 17256,
+      "binance_realtime_ticker_24h": 15394,
+      "binance_realtime_top_account_ls": 15828,
+      "binance_realtime_top_ls": 17256,
+      "binance_rpi_depth_1000": 1273,
+      "binance_systemic_adl_risk": 413,
+      "binance_systemic_basis_1h": 898,
+      "binance_systemic_index_constituents": 2402,
+      "binance_systemic_insurance_balance": 413,
+      "cross_exchange_snapshots": 24,
+      "funding": 1631,
+      "oi_metrics": 4584,
+      "oi_metrics_rest_gap_fill": 56,
+      "perp_klines_1d": 58,
+      "perp_mark_prices": 4627,
+      "perp_mark_prices_rest_gap_fill": 86,
+      "spot_klines": 653,
+      "spot_klines_1d": 10
+    },
+    "providers": [
+      "Binance + Bybit public synchronized market snapshot",
+      "Binance Data Vision USD-M futures metrics",
+      "Binance Data Vision USD-M mark-price klines",
+      "Binance USD-M futures public REST (gap-fill)",
+      "Binance USD-M perpetual funding history",
+      "Binance public USD-M market data",
+      "Binance public spot klines",
+      "Bybit public linear perp funding history",
+      "Bybit public linear perp klines",
+      "MEXC public spot klines"
+    ],
+    "representations": [
+      "CANONICAL_JSON_UTF8",
+      "HTTP_BODY_BYTES"
+    ],
+    "latest_observed_at_ms": 1785782403480,
+    "aggregate_sha256": "c4b77b5c3b6c720d503a4783f50d47857c4f26b740b0d6477feddaf562032dd8",
+    "full_audit_at_ms": 1785778062000,
+    "errors": [],
+    "path": "data/cache/raw_market_data"
+  },
+  "required_lineage_datasets": [
+    "funding",
+    "oi_metrics",
+    "perp_mark_prices"
+  ],
+  "required_lineage_days": [
+    1785024000000,
+    1785110400000,
+    1785196800000,
+    1785283200000,
+    1785369600000,
+    1785456000000,
+    1785542400000,
+    1785628800000
+  ],
+  "lineage_backfill": {
+    "path": "evidence/raw_data_lineage_backfill.json",
+    "exists": true,
+    "sha256": "1771e310116f6f1cdc17b9b731481635c00ab459d94d3e4951ea1183a3ba0655",
+    "readable": true,
+    "passed": true,
+    "reasons": [],
+    "generated_at_ms": 1785782636071,
+    "verdict": "PASS",
+    "instrument_scope": [
+      "ADA",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETH",
+      "LINK",
+      "LTC",
+      "SOL",
+      "UNI",
+      "XRP"
+    ],
+    "required_days": [
+      1785024000000,
+      1785110400000,
+      1785196800000,
+      1785283200000,
+      1785369600000,
+      1785456000000,
+      1785542400000,
+      1785628800000
+    ],
+    "raw_lineage_scope": {
+      "dataset_ids": [
+        "funding",
+        "oi_metrics",
+        "oi_metrics_rest_gap_fill",
+        "perp_mark_prices",
+        "perp_mark_prices_rest_gap_fill"
+      ],
+      "instrument_ids": [
+        "ADA",
+        "ATOM",
+        "AVAX",
+        "BCH",
+        "BNB",
+        "BTC",
+        "DOGE",
+        "DOT",
+        "ETH",
+        "LINK",
+        "LTC",
+        "SOL",
+        "UNI",
+        "XRP"
+      ]
+    }
+  },
+  "lineage_verdict": "PASS",
+  "refresh_observation": {
+    "readable": true,
+    "run_id": "refresh-1785782636071",
+    "ran_at": 1785782636071,
+    "reports": [
+      {
+        "source": "prices",
+        "failed_count": 0,
+        "failed_tickers": [],
+        "failure_details": []
+      },
+      {
+        "source": "funding",
+        "failed_count": 0,
+        "failed_tickers": [],
+        "failure_details": []
+      },
+      {
+        "source": "perp_mark_prices",
+        "failed_count": 0,
+        "failed_tickers": [],
+        "failure_details": []
+      },
+      {
+        "source": "oi_metrics",
+        "failed_count": 0,
+        "failed_tickers": [],
+        "failure_details": []
+      },
+      {
+        "source": "mexc_btc",
+        "failed_count": 0,
+        "failed_tickers": [],
+        "failure_details": []
+      }
+    ],
+    "raw_lineage": {
+      "schema_version": 1,
+      "status": "PASS",
+      "coverage_scope": "INDEXED_OBSERVATIONS_ANCHORED_TO_FULL_AUDIT",
+      "observation_count": 278020,
+      "invalid_observation_count": 0,
+      "object_count": 202801,
+      "datasets": {
+        "binance_realtime_book": 17256,
+        "binance_realtime_exchange_info": 15394,
+        "binance_realtime_funding": 17256,
+        "binance_realtime_funding_info": 15100,
+        "binance_realtime_global_ls": 17256,
+        "binance_realtime_index_kline_1m": 15100,
+        "binance_realtime_kline_1m": 17256,
+        "binance_realtime_mark": 17256,
+        "binance_realtime_mark_kline_1m": 15100,
+        "binance_realtime_oi": 17256,
+        "binance_realtime_oi_current": 15828,
+        "binance_realtime_premium_kline_1m": 15100,
+        "binance_realtime_taker": 17256,
+        "binance_realtime_ticker_24h": 15394,
+        "binance_realtime_top_account_ls": 15828,
+        "binance_realtime_top_ls": 17256,
+        "binance_rpi_depth_1000": 1273,
+        "binance_systemic_adl_risk": 413,
+        "binance_systemic_basis_1h": 898,
+        "binance_systemic_index_constituents": 2402,
+        "binance_systemic_insurance_balance": 413,
+        "cross_exchange_snapshots": 24,
+        "funding": 1631,
+        "oi_metrics": 4584,
+        "oi_metrics_rest_gap_fill": 56,
+        "perp_klines_1d": 58,
+        "perp_mark_prices": 4627,
+        "perp_mark_prices_rest_gap_fill": 86,
+        "spot_klines": 653,
+        "spot_klines_1d": 10
+      },
+      "providers": [
+        "Binance + Bybit public synchronized market snapshot",
+        "Binance Data Vision USD-M futures metrics",
+        "Binance Data Vision USD-M mark-price klines",
+        "Binance USD-M futures public REST (gap-fill)",
+        "Binance USD-M perpetual funding history",
+        "Binance public USD-M market data",
+        "Binance public spot klines",
+        "Bybit public linear perp funding history",
+        "Bybit public linear perp klines",
+        "MEXC public spot klines"
+      ],
+      "representations": [
+        "CANONICAL_JSON_UTF8",
+        "HTTP_BODY_BYTES"
+      ],
+      "latest_observed_at_ms": 1785782403480,
+      "aggregate_sha256": "c4b77b5c3b6c720d503a4783f50d47857c4f26b740b0d6477feddaf562032dd8",
+      "full_audit_at_ms": 1785778062000,
+      "errors": []
+    }
+  },
+  "quality_verdict": "PASS",
+  "verdict": "PASS",
+  "block_reasons": []
+}

@@ -1,0 +1,55 @@
+[importlinter]
+# 2026-09-20 审计 P1-9:`tools` 此前不在 root_packages 里,所以 tools/ 的调用方
+# 从来不进依赖图——"隔离"只是文件里的声明,没有任何机器在检查。现在纳入。
+root_packages =
+    quantos
+    services
+    live
+    tools
+include_external_packages = False
+
+[importlinter:contract:research-alpha-independence]
+name = Research should not import from Alpha
+type = forbidden
+source_modules =
+    services.research
+forbidden_modules =
+    services.alpha
+# Research uses shared math, contracts and explicit composition ports. No exceptions.
+
+[importlinter:contract:live-unidirectional]
+name = Live can import but cannot be imported
+type = forbidden
+source_modules =
+    quantos
+    services.research
+    services.alpha
+    services.portfolio
+    services.risk
+    services.data
+forbidden_modules =
+    live
+
+[importlinter:contract:quantos-contracts-clean]
+name = Contracts should not import from services
+type = forbidden
+# 2026-09-20 审计 P1-9:契约原先只覆盖 quantos.contracts。新下沉的中立包
+# quantos.analytics 与既有的 quantos.runtime_paths / quantos.scenario 同样必须
+# 保持中立(它们被 services 与 live 依赖,若反过来依赖 services 就成了环)。
+# 已核实整个 quantos 包当前不 import services/live,故把 source 放宽到 quantos。
+source_modules =
+    quantos
+forbidden_modules =
+    services
+    live
+
+[importlinter:contract:tools-isolation]
+name = Tools is a leaf boundary: the runtime must not import tools
+type = forbidden
+source_modules =
+    quantos
+    services
+    live
+forbidden_modules =
+    tools
+# Runtime dependencies on the CLI package have been removed; no exceptions.

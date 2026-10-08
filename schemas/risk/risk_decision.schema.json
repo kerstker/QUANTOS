@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "RejectionReason": {
+      "enum": [
+        "STRATEGY_NOT_APPROVED",
+        "LIVE_TRADING_DISABLED",
+        "AI_DIRECT_TRADING_FORBIDDEN",
+        "INSTRUMENT_NOT_ALLOWED",
+        "ACCOUNT_NOT_ALLOWED",
+        "INSUFFICIENT_CASH",
+        "POSITION_LIMIT_EXCEEDED",
+        "ORDER_SIZE_EXCEEDED",
+        "DAILY_LOSS_LIMIT_EXCEEDED",
+        "DRAWDOWN_LIMIT_EXCEEDED",
+        "CONCENTRATION_LIMIT_EXCEEDED",
+        "LIQUIDITY_LIMIT_EXCEEDED",
+        "TURNOVER_LIMIT_EXCEEDED",
+        "VOLATILITY_LIMIT_EXCEEDED",
+        "KILL_SWITCH_ACTIVE",
+        "MARKET_CLOSED",
+        "DUPLICATE_ORDER",
+        "INVALID_PRICE",
+        "INVALID_QUANTITY",
+        "UNKNOWN_RISK_ERROR"
+      ],
+      "title": "RejectionReason",
+      "type": "string"
+    },
+    "RiskDecisionType": {
+      "enum": [
+        "APPROVED",
+        "APPROVED_WITH_LIMITS",
+        "NEEDS_MANUAL_REVIEW",
+        "REJECTED"
+      ],
+      "title": "RiskDecisionType",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "decision": {
+      "$ref": "#/$defs/RiskDecisionType"
+    },
+    "reasons": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RejectionReason"
+      },
+      "title": "Reasons",
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision"
+  ],
+  "title": "RiskDecision",
+  "type": "object"
+}

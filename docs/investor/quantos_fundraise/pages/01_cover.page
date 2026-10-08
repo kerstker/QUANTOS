@@ -1,0 +1,49 @@
+pageType: cover
+background:
+  type: solid
+  color: "$bg"
+notes: 开场 30 秒：一句话说清 QuantOS 是什么——不是交易机器人，不是让大模型预测涨跌，而是一套 AI 辅助的量化投资与风险管理操作系统。
+elements:
+  - elementId: rule-top
+    elementType: line
+    bounds: [90, 150, 90, 2]
+    viewBox: [90, 2]
+    points: "0,1 90,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: title
+    elementType: text
+    bounds: [86, 170, 700, 78]
+    content:
+      fontSize: 58
+      bold: true
+      color: "$ink"
+      letterSpacing: 6
+      wrap: false
+      text: |
+        <p>QuantOS</p>
+  - elementId: subtitle
+    elementType: text
+    bounds: [90, 262, 760, 28]
+    content:
+      fontSize: 17
+      color: "$ink"
+      wrap: false
+      text: |
+        <p>AI 辅助的数字资产多策略量化投资与风险管理平台</p>
+  - elementId: tagline
+    elementType: text
+    bounds: [90, 304, 760, 24]
+    content:
+      fontSize: 12.5
+      color: "$muted"
+      wrap: false
+      text: |
+        <p>将量化交易思想，持续转化为可验证、可执行、可审计的投资策略。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 486, 780, 20]
+    content:
+      style: "$small"
+      wrap: false
+      text: |
+        <p>融资路演材料 · 2026-07 · Confidential · 历史模拟结果不代表未来表现</p>

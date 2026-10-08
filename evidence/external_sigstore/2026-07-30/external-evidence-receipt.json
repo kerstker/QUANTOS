@@ -1,0 +1,33 @@
+{
+  "artifact_sha256":"4f9562489953a7a54da40120c789365e9a3079ef3448598f327cf0c49bfc012a",
+  "authority":{
+    "credential_access":false,
+    "deployment":false,
+    "execution":false,
+    "live_trading":false,
+    "order_submission":false
+  },
+  "bundle_sha256":"87856c6e0f2aae7395047a80bdea6e8153658fc4c0ff85861fdec89d953e68dc",
+  "certificate_identity":"https://github.com/kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@refs/heads/codex/top-tier-wave0",
+  "certificate_oidc_issuer":"https://token.actions.githubusercontent.com",
+  "cross_host_builders":[
+    "ubuntu-22.04",
+    "ubuntu-24.04"
+  ],
+  "limitations":{
+    "external_chain_head_seal":"NOT_PROVIDED",
+    "external_receipt_authority":"NOT_PROVIDED",
+    "independent_admission_boundary":"NOT_PROVIDED",
+    "revocation_operations":"NOT_PROVIDED",
+    "worm_retention":"GITHUB_ARTIFACT_RETENTION_ONLY"
+  },
+  "manifest_sha256":"0da2ac44f7cf7edcfa66ab76b5fdb0dd5a3b38ed336f0b34ae34d73212934a7e",
+  "predicate_type":"https://slsa.dev/provenance/v1",
+  "rekor_version":1,
+  "schema_version":1,
+  "sigstore_version":"4.4.0",
+  "source_commit":"6042317f913569a912a34fb54d7879cbbbcf4d0c",
+  "status":"VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE",
+  "trusted_root_sha256":"a7752f49a4ae0076c5b85eace5bfbb6f58b6cb0dec31ba71803f25d20987d12e",
+  "workflow_run":"https://github.com/kerstker/QUANTOS/actions/runs/30540314233/attempts/1"
+}

@@ -1,0 +1,126 @@
+{
+  "acceptance": {
+    "accessibility_and_responsive_layout": true,
+    "browser_end_to_end": true,
+    "canonical_validation": true,
+    "external_identity_available": false,
+    "functional_implementation": true,
+    "governance_command_execution": false,
+    "live_order_authority": false,
+    "operational_testnet_soak": false,
+    "read_only_workbench": true,
+    "snapshot_delta_recovery": true
+  },
+  "artifact": "QUANTOS_PROFESSIONAL_WORKBENCH_WAVE3_ACCEPTANCE",
+  "blockers": [
+    "EXTERNAL_IDENTITY_PENDING",
+    "OPERATIONAL_TESTNET_SOAK_REQUIRES_INDEPENDENT_HUMAN_START",
+    "MICRO_LIVE_REQUIRES_EXTERNAL_IDP_MTLS_SIGNING_AND_PROCESS_ISOLATION",
+    "LIVE_ORDER_AUTHORITY_REMAINS_STRUCTURALLY_BLOCKED_AT_L2"
+  ],
+  "browser_acceptance": {
+    "accessibility_scan_passed": true,
+    "dark_and_light_themes_passed": true,
+    "explicit_read_only_fixture_suite_passed": true,
+    "five_object_workspaces_passed": true,
+    "global_drawers_passed": true,
+    "implicit_mock_fallback_used": false,
+    "keyboard_navigation_passed": true,
+    "narrow_and_wide_viewports_passed": true,
+    "professional_workbench_cases_passed": 11,
+    "total_playwright_cases_passed": 14
+  },
+  "canonical_validation": {
+    "duration_ms": 964437,
+    "errored": 0,
+    "failed": 0,
+    "overall_status": "PASS",
+    "passed": 27,
+    "run_id": "1da6170a3f25c7719c10fd0c3a14125f13c1fa37b56c57379d9bdf92e61789f1",
+    "selected": 27,
+    "timed_out": 0,
+    "validation_report_sha256": "bdab1a119f2f7eeace584404f5da9ec403bc85401a5d43c5f0b4fd6c0faa4ad8"
+  },
+  "commit": "f29f69be64073efd49c7f3bcc7966196e77fb410",
+  "failure_matrix": {
+    "cursor_gap_forced_single_resnapshot": true,
+    "empty_hourly_result_remained_no_run": true,
+    "http_429_blocked": true,
+    "missing_field_blocked": true,
+    "request_timeout_blocked": true,
+    "sse_disconnect_hid_retained_execution_values": true,
+    "stale_snapshot_blocked": true,
+    "unknown_schema_blocked": true
+  },
+  "generated_at_ms": 1786183605010,
+  "governance_commands": {
+    "actual_execution_accepted": false,
+    "browser_command_controls_enabled": false,
+    "external_identity_status": "EXTERNAL_IDENTITY_PENDING",
+    "idempotent_receipt_contract_tested": true,
+    "live_order_command_surface_present": false,
+    "multi_party_approval_contract_tested": true,
+    "preview_contract_tested": true
+  },
+  "honesty_note": "Wave 3 read-only workbench implementation, explicit-fixture browser matrix, accessibility checks, real-process console wiring and the complete canonical gate are accepted at L2. The real frontend was connected to services.console.main:app with mock mode disabled; because this development worktree has no MFT/workflow authority stores, all five workspaces displayed explicit UNAVAILABLE states and hid operational values instead of fabricating PASS data. The governance drawer verified the runtime L2 contract and kept every command disabled because external strong identity is unavailable. No promotion command, credential, broker, exchange connection, Testnet submit, live order or Task 39 operational soak was attempted.",
+  "implementation_commits": [
+    "264710ef",
+    "90920dc8",
+    "8c00d527",
+    "e11bcd03",
+    "234bdc5c",
+    "f7f08451",
+    "8d72a05c",
+    "95eec5a4",
+    "62814d6c",
+    "4a990ea6",
+    "125609e2"
+  ],
+  "input_hash": "78d2860eb4f5c4c0b6bf480454a6f74e7a3e40a233df74950a160bb410fa09a6",
+  "inputs": {
+    "apps/research-console/e2e/professional-workbench.spec.ts": "f4bafe13002f6e391e591b513dd6cddded208f04a47e5a01ddd7661f61f46848",
+    "apps/research-console/src/app/routes.tsx": "804f4bf835315fd33e49e84c5ccc1da4973662f0ff41ad2f5c3fd08441be1a35",
+    "apps/research-console/src/ui/workbench.tsx": "7e9d3b3d22b801fd77781d2c079d6fae6073d9111a907684c2adec52a2eb63cf",
+    "roadmap:2026-08-08-wave3-professional-workbench": "4a496783c7890b2d5051ac5331e938a3a1b57576cf3599421d13b0af69babc5f",
+    "evidence/service_import_graph.json": "8f9f9ae8a2a8d3efb6d8a1d6bc81bd2cf2b47a5944d2c3eabe67bb4259d54fd9",
+    "evidence/validation_report.json": "bdab1a119f2f7eeace584404f5da9ec403bc85401a5d43c5f0b4fd6c0faa4ad8",
+    "services/promotion_api/main.py": "f41374b63f69d51027c851199c29e18f066b9ad76d1732c91d385202ee0533c7"
+  },
+  "process_acceptance": {
+    "console_entrypoint": "services.console.main:app",
+    "credential_accessed": false,
+    "external_network_used": false,
+    "five_workspaces_fail_closed_on_missing_authorities": true,
+    "frontend_mock_mode": false,
+    "governance_contract_verified": true,
+    "local_ports_released_after_test": true,
+    "promotion_service_started": false,
+    "research_runner_started": false,
+    "testnet_or_live_worker_started": false
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "schema_version": 1,
+  "status": "IMPLEMENTATION_ACCEPTED_EXTERNAL_IDENTITY_PENDING",
+  "targeted_validation": {
+    "frontend_vitest_passed": 196,
+    "governance_promotion_passed": 24,
+    "governance_scanner_files": 497,
+    "governance_scanner_violations": 0,
+    "professional_workbench_playwright_passed": 11,
+    "total_playwright_passed": 14
+  },
+  "task39_testnet_soak": {
+    "credentials_accessed": false,
+    "network_used": false,
+    "operator_started": false,
+    "order_submission_attempted": false,
+    "status": "OPERATIONAL_SOAK_PENDING"
+  }
+}

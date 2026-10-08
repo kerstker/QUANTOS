@@ -1,0 +1,185 @@
+# QUANTOS 对标顶级 AI 量化 · 差距 + 修补路线图
+
+> **2026-08-04 P0 并发恢复补丁：** 实时 Alpha 家族注册表的 chain-head read 与 append
+> 已收进 `BEGIN IMMEDIATE` 单事务，关闭多 worker 同头分叉。损坏活动库采用“原样隔离保留 +
+> 从可重放 discovery/shadow 重建”而非原地修链；8 writer 并发测试钉死线性链。该修复是
+> 无人值守自治流水线的承重条件，不改变候选统计门、正式 Paper 门或任何实盘权限。
+
+> **2026-08-04 P0 自主 Execution Paper 闭环：** 22 条实时 Alpha 工程轨道已从
+> “只记信号和后验收益”升级为真正的隔离模拟执行账户。每条新决策自动经过公开双场所
+> 订单簿、交易所 lot 规格、pre-trade intent/gate、simulated SOR、fill、持仓/PnL、TCA
+> 和对账，并写入追加式哈希链；首轮 20/22 已成交，剩余两条 1h 轨道等待下一自然决策。
+> 1m 信号与 5m 订单簿之间采用每轨每轮 64 条的有界顺序追赶；超出 12m 的决策记入独立
+> `MISSED_EXECUTION_WINDOW` 哈希链而不伪造补成交，停机恢复不丢审计；账本成为备份源合同 v4
+> 的必需状态，并已接入调度、watchdog、API/SSE 和动态驾驶舱。它是实时工程验证，不替代
+> 30d/90d 正式统计毕业门，也不开放 broker、私有行情、凭证、实盘或真实订单。
+
+> **2026-08-04 P0 实时特征吞吐闭环：** 实时工程 Paper 不再被增长中的本地历史库
+> 反向拖慢。Binance 特征 worker 已实现最小完整特征游标增量投影、240 点 PIT 有界漂移
+> 读取、batch-ledger 可信行情链头、增量后缀复核和 24h 全链审计。真实 530 万行库的
+> 增量周期为 2.192s：280 个新 source snapshots → 2,240 个新 feature values；漂移计算
+> 固定消费 23,520 个观测/1,960 个校准窗，而非旧 1,018,416 窗。五分钟 schedule 增加
+> 10 分钟硬执行上限以容纳首次/每日全链审计；普通周期继续在秒级完成。完整历史、正式
+> 30d/90d 毕业门与所有 L2 安全边界不变。
+
+> **2026-08-04 实时 Alpha 双轨纠偏：** 3 天探索窗达到且候选可评估后，立即进入
+> 物理隔离、不可晋级的工程实时 Paper；30 天正式 OOS 门和 90 天成熟度只控制毕业与正式
+> Paper 准入，不再控制工程账户何时启动。实时 discovery 现保留独立
+> `evaluation_status`，避免工作流状态覆盖统计评估状态。旧的“P2 先等待 90 天再开始
+> forward shadow”表述已废止；不得把工程纸面收益冒充独立前向证据或降低正式门槛。
+
+> **2026-08-04 非时间风险输入闭环：** 正式 Paper admission 的开发阻塞已进一步解除：
+> 10/10 纸面 Alpha 均有完整七类风险输入，前端应显示 `Risk inputs 10/10`。当前 pending
+> 决策优先作为准入绑定；无 pending 的慢节奏候选仅回用最近真实 attested 已兑现决策做监控；
+> 后于旧决策的独立评估也仅作为监控证据。上述两类情况新增机器可读 admission blocker，
+> 因而不会把监控完备误报为正式准入。剩余真实阻断是独立评估非 PASS、前向期数未成熟，
+> 以及部分候选等待下一条自然产生的当前决策；工程纸面、风险计算和前端实时展示继续并行。
+
+> **2026-08-04 路线执行口径更新：** 实时工程影子纸面与前向证据钟并行推进，不再把
+> “等待 8 周”当作开发阻塞项。已完成 P0 执行接缝：14 交易对双场所公共订单簿快照 →
+> 来源/完整性/新鲜度 fail-closed → simulated SOR → route TCA → 独立 v2 哈希链纸面账本 →
+> 10 候选实时重估与 SSE 控制台。8 周前向证据、独立挑战和九引擎正式输入仍决定正式
+> Paper/真钱晋级，不影响非晋级工程影子账户持续运行。下一优先级是把九引擎中的非时间型
+> 输入接入正式 Paper admission；真实成交校准、私有账户与下单仍不在 L2 授权范围内。
+> **该下一项已完成第一刀：** 7 个动态 challenger 的非时间型九引擎输入已改为提前生产，
+> 并与 8 周/独立评审 admission blocker 分离；当前真实覆盖为 3 个全输入 READY、2 个六类
+> 输入 READY、2 个等待 attested decision。后续不再“等待后再开发”，而是继续补合法的新
+> 决策元数据与缺失决策，同时让前向证据钟独立成熟。
+
+
+> **2026-08-02 路线锁定：** 本文继续作为历史能力缺口与完成记录；从研究到生产的唯一工序排序、
+> 精益化取舍和最快部署路径，改由
+> [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
+> `FROZEN_V1` 负责。任何后续开发先按其 `WP0 → WP7` 顺序，不得用本文旧 Rank 或固定等待期
+> 绕过新的候选身份、并行盲化前向、生产级 Paper 和资本授权边界。
+
+> **2026-08-01 当前优先级增量（L2 内生自治闭环）：** 系统原生的实时 Alpha
+> discovery → evidence gate → capacity-sized forward shadow → console SSE 接缝已落地，
+> 不再需要开发 AI/IDE 代替运行时寻找 Alpha。固定首批 24 个微观结构试验已按小时调度，
+> 前向影子 worker 已按分钟调度并具备冻结准入、先决策后兑现、墙钟防前视、哈希链和重启恢复；
+> 纸面驾驶舱通过 SSE 随耐久证据变化更新，窄视口也已现场验收。
+>
+> 当前优先顺序不是继续堆候选数量，而是让证据按真实时间成熟：**P0** 保持 14 币公共行情、
+> 8 项实时特征和调度连续运行，并让所有 `EVALUATED` 候选立即进入不可晋级工程 Paper；
+> **P1** 在 30 天锁定窗上对 24 个预注册试验执行正式 DSR/PBO/holdout/压力门；**P2** 对正式
+> 通过且可定规模的候选建立独立、可审计的 forward evidence 轨道，同时继续工程 Paper；
+> **P3** 只有 90 天成熟度与正向 OOS 轨道完成后才评审接入正式纸面 book。
+> 2026-08-01 现场结果仍是 24 evaluated / 0 diagnostic lead / 0 formal pass / 2577 global
+> trials；核心历史 3.64 天、容量历史约 0.04 天，故当前机器状态诚实为
+> 历史快照中的 `WAITING_FOR_VALIDATED_CANDIDATE` 现只表示当时的旧编排状态；新版工程
+> Paper 不再等待这些门，时间/证据门只保留给正式毕业。它们不是待用 IDE 手工补跑的代码缺口；
+> live、broker、凭证、订单和自动晋级继续全部关闭。
+>
+> 同日把 Binance 系统风险公共 REST 从“每轮重抓 14 个 constituent”改为 7+7 的缺口/最旧
+> 轮转与经完整性、PIT、新鲜度复验的缓存复用；每轮计划由 20 请求/IP 权重 30 降至 13/16。
+> 冷却后真实任务已恢复 14/14、无刷新错误、退出 0，外部 418 不再诱发无意义的全量重抓。
+>
+> **同日恢复性闭环：** 全量验证发现 2.77GB experiment ledger 超出旧 QBK1 单次
+> AES-GCM 上限；现已升级为 QBK2 流式分块认证加密，并把 L2 快照、恢复、哈希和批次摘要
+> 全部改为常量内存路径。真实计划任务在独立卷对 14 个权威源完成加密备份→隔离恢复→
+> 清单/源合同/恢复历史链/SQLite 完整性复验，任务退出 0，恢复 16.794 秒 < 300 秒 RTO，
+> RPO PASS。该闭环证明“能恢复”，不把单机独立卷冒充 90 天 WORM 或跨主机灾备。
+>
+> **状态:历史输入(2026-07-10 起非权威)。** 本文的手工分数、排名和完成描述保留用于
+> 追溯研究决策，不再作为当前成熟度或开发排序真源。权威标准见
+> `docs/QUANTOS_TOP_TIER_STANDARD.md`;机器可验证要求见
+> `config/top_tier_requirements.json`;当前结果见
+> `evidence/top_tier_assessment.json` 与
+> `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`。任何新工作先运行
+> `python scripts/assess_top_tier.py --check`,并按红线、证据缺口、目标成熟度和
+> `L2_SAFE_NOW / NEEDS_EXTERNAL / POST_L2` 分类排序。
+
+> **2026-07-30 供应链增量：** GitHub Actions run `30540314233` 已在
+> `ubuntu-22.04`/`ubuntu-24.04` 对同一 commit 生成逐字节一致的 canonical 源码包，
+> 并以 GitHub ambient OIDC + Fulcio/SCT/Rekor v1 生成真实 Sigstore DSSE/SLSA v1
+> bundle；仓库内离线 verifier 已复验身份、透明日志、subject、commit、双 builder
+> 与哈希绑定。因此“外部身份签名”和“跨主机源码复现”不再是缺口，机器成熟度升为 M3。
+> deployable-container 跨主机复现已由 GitHub Actions run `30599904036` 的
+> Ubuntu 22.04/24.04 冷 OCI 字节一致性、完整输入内容根和 OIDC/Fulcio/SCT/Rekor
+> 签名证据关闭。剩余供应链缺口是独立准入、认证外部回执/WORM、
+> checkpoint/revocation 独立运营以及外部权威链头封存；在这些外部边界完成前仍为
+> `NOT_TOP_TIER`，不以一个成功工作流冒充组织级持续运营。
+>
+> **生成:** 2026-07-01,多代理并行对标(8 维;4 维由工作流深度对标 + web 检索,4 维由 2026-06-29 基线报告 + 本会话更新补齐)。
+> **对标对象:** 顶级 AI 量化(RenTech / Two Sigma / Citadel / HRT / Jane Street + 现代 ML 基金)。
+> **打分基准:** 作为「研究/干跑平台」(非「能赚钱的实盘基金」)——两套基准差数量级,下文区分。
+> **配套:** [`QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md`](QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md)(历史基线)、[`evidence/top_tier_assessment.json`](../evidence/top_tier_assessment.json)(当前机器评估)、[`PROJECT_STATE.md`](PROJECT_STATE.md)(实施记录)。
+> **本文用途:** 这是**活的开发路线**——`§3 L2-safe 修补路线`按 impact/effort 排好序,从 rank #1 起逐项开发。
+
+## 1. 一句话总判
+
+QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干跑平台**,后端引擎基本建齐(1173 测试全绿、刚过 L2 系统审计 0 P0/P1)。它把「不自欺」做到接近顶配——**最强资产不是「找到了 alpha」,而是「敢于且有能力证伪自己的 alpha」**。对标顶级的差距**本质在三件事的数量级**:①**数据**(只有免费日频 crypto+FX+FRED,缺 tick/L2/厂商授权/另类数据);②**建模**(固定词表 DSL+GP,缺学习型信号/DL/LLM/RL);③**执行保真**(bar 级撮合,缺 tick/LOB/最优执行——**这条按 L2 安全边界故意不做**)。①②是真能力缺口可补;③在 L2 内不该补。
+
+## 2. 八维评分表(对标顶级)
+
+| # | 维度 | 分 | 来源 | 一句站位 |
+|---|------|:--:|:--:|------|
+| 1 | 数据护城河 | **4.5** | 基线+本会话 | 架构正确(bitemporal PIT/survivorship-free/版本化),数据实质=免费小样本;FRED 宏观刚接。范式对,缺料。 |
+| 2 | Alpha/信号生成 | **6.5** | 基线+本会话 | 截面 DSL+GP+de Prado+IC 面板真;两条可部署边(carry/crowd);ML 层诚实=当前数据无 edge。缺学习型信号/LLM。 |
+| 3 | 回测与验证 | **7.5** | 基线 | **最强维**:CPCV/DSR/PBO/no-peek OOS/泄漏检测接近顶配,已用来证伪自己。扣分在 tick 保真、算力、多重检验预算账本。 |
+| 4 | 组合构建与风险 | **7.1** | 工作流 | 约束优化器/因子风险模型/9 引擎门/tail 引擎全真;已补风险平衡执行 book + Barra-lite read-only 诊断第一版 + Brinson-Fachler 归因 primitive;**缺**:完整板块/风格/宏观因子库、拥挤诊断接入。 |
+| 5 | 执行与微结构 | **4.3** | 工作流 | bar 级 next-open 高估可成交性;现实主义引擎(冲击+容量+尾部)已把 300× 高估抓出、给诚实区间,且已形式化文献默认校准 primitive;缺 tick/LOB/最优执行(L2 故意不做)。 |
+| 6 | 基建/MLOps/规模 | **5.5** | 基线 | 单机工程纪律意外扎实(确定性/不可变实验存储/CI 门);缺分布式/GPU、种子钉死、环境锁定、特征商店/模型注册形式化。 |
+| 7 | AI/智能体 | **5.2** | 工作流 | 护栏化非人 ResearchAgentLoop + 进化/GP/MCTS/bandit + 诚实多重检验;缺 LLM 假设生成/Transformer/RL/在线学习。信号发现瓶颈=智能+数据。 |
+| 8 | 治理/安全/资本路径 | **6.2** | 工作流 | 多方哈希链批准/kill-switch/审计链/RBAC 骨架/签名接缝全真;缺 intra-day 实时风控、事件响应自动化、监管报送脚手架(多为 post-L2)。 |
+
+## 3. L2-safe 修补路线(纳入开发路线,按 impact/effort 排序)
+
+> 分类:`L2_SAFE_NOW`=不破 L2 现在就能做;`NEEDS_EXTERNAL`=需数据/算力/团队;`POST_L2`=安全边界外不该补(见 §4/§5)。本节仅列 `L2_SAFE_NOW`。
+
+| Rank | 项 | 维 | 优先/工作量 | 依赖(全已存在) | 为什么 |
+|:--:|------|:--:|:--:|------|------|
+| **1 ✓** | **风险平衡多策略统一执行 book**(已做,`f...` risk-parity + rolling 逆波动核) | 4 | P0 / M | `book_combine.py`、`dry_run_pipeline`、carry+crowd 回测 | **已完成——诚实结论:分散不敌执行现实。** 三种方式(naive-merge VT 1.20 / risk-parity-merge VT 1.14 / portfolio-of-books 配置 VT 1.21)**均不敌 crowd_contra 单条 VT 1.38**。根因:1.95/8% 是 gross 理想化(carry gross~1.44),净-成本+整手+vol-target 下 carry 仅~0.58、拉不动 crowd;净曲线相关 +0.04(非 gross −0.04)。执行流水线抓到理想-vs-真的差。**deployable 结论:crowd_contra 单条。** 后续排序据此调整:carry 作为独立可部署边价值下调,重心转数据广度(Rank 11)+ 结构化因子库(Rank 2)。 |
+| **2 ✓** | **Barra-lite read-only 诊断第一版**(已做,`services/portfolio/barra_lite.py` + `tools/barra_lite_diagnostics.py`) | 4 | P1 / M | `fundamental_store`(已填 FRED)、carry/crowd 本地缓存、`FactorRiskModel` | **已完成第一版 read-only 结构化风险诊断层。** 5 个结构化因子(`carry/crowding/liquidity/market_beta/volatility`)把现有 carry、crowd_contra、carry_crowd_equal 三本书映射到同一 `FactorRiskModel`,输出 `data/cache/barra_lite_snapshot.json`(gitignored,可复现)。首跑:58 symbols / 5 factors;carry total_var 0.6544、crowd_contra 1.3969、carry_crowd_equal 0.5733。诚实边界:诊断-only,不等同完整机构级 Barra 因子库,不改权重/闸门/晋级/干跑/券商路径。Brinson-Fachler benchmark-relative 归因已由 Rank #5 primitive 补上。 |
+| **3 ✓** | **拥挤门 primitive**(已做,fail-closed 超阈值) | 4 | P1 / S | `services/portfolio/crowding_gate.py`、`services/alpha/crowding.py` | 已落地纯函数 gate:caller-supplied crowding evidence + candidate weights → `PASS/WARN/BLOCK`;unknown/invalid/coverage不足 fail-closed 到 `BLOCK`。诚实边界:primitive only,尚未自动改写组合构建行为;后续可单独把它接入指定 research/portfolio caller。 |
+| **4 ✓** | **协方差感知多 book 资本配置 primitive**(已做,fail-closed mean-variance AUM budget) | 4/8 | P1 / M | `services/portfolio/capital_allocator.py`、`constrained_optimizer`、风险模型 | 已落地纯函数 allocator:多策略收益流 + 可选容量/质量/前次权重 → `ALLOCATED/BLOCKED` 研究 AUM 权重建议; lower-confidence expected return + shrunk covariance + constrained mean-variance optimizer,容量/质量/历史证据异常 fail-closed。诚实边界:primitive only,不读 dry-run/run_registry,不自动调仓/干跑/晋级/下单;`quality_multiplier` 来源与容量衰减曲线留后续独立 primitive。 |
+| **5 ✓** | **Brinson-Fachler 归因 primitive**(已做,allocation/selection/interaction) | 4 | P2 / M | `services/portfolio/brinson.py`、`construction.py` 既有归因 | 已落地纯函数 benchmark-relative attribution: caller-supplied portfolio/benchmark weights + asset returns + group map → `ATTRIBUTED/BLOCKED`;输出 allocation/selection/interaction/active return 恒等式诊断。诚实边界:primitive only,不读写 DB、不接 dry-run/console/预交易/券商/生命周期;多层 sector/style/macro 适配器留后续。 |
+| **6 ✓** | **冲击模型校准 primitive**(已做,文献默认 + 敏感性参数包) | 5 | P1 / M | `services/research/realism/impact_calibration.py`、`impact.py`、`capacity_curve.py` | 已落地纯函数 calibration set: aggressive/base/conservative 三情景 + `UNCALIBRATED_PRINCIPLED` provenance + 可直接传给 `capacity_band` 的系数带。诚实边界:不是 venue/tick 实测校准,不改 dry-run 成本/成交/组合/下单;真实成交校准仍需 tick/LOB/执行数据。 |
+| **7 ✓** | **尾部感知组合构建(CVaR + 统一组合约束门)** | 4 | P2 / M | `services/portfolio/portfolio_constraints.py`、`tail_risk.py`、约束优化器 | **已完成 L2 版本：**经验 CVaR 尾部预算、firm gross/net/集中、容量瓶颈、拥挤证据统一成 fail-closed 结果，并在 optimizer、post-rebalance construction、signal adapter 可选承重；缺证据 `PENDING`、非法/超限 `BLOCK`、仅 `PASS` 放行。诚实边界：调用方提供场景与 ADV，仍不是 venue/margin 校准或盘中持久风控；机器顶级分数不因一个 primitive 自动上升。 |
+| **8 ✓** | **动态相关漂移检测**(PIT 滚动相关 + regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | **检测与真实干跑诊断已完成；自动缩放被执行控制证伪，诚实保持关闭。** `correlation_drift.py` 用不重叠 52+8 周窗口和 exclusive `end_index` 输出 PASS/WARN/BLOCK + 建议倍数；allocator/driver 保留 provenance 与状态计数。无条件和上期双亏确认两种 overlay 均降低执行级 Sharpe，故 `scaled_periods=0`，不是把 null 结果伪装成风控提升。 |
+| **9 ✓** | 全局多重检验预算账本(跨会话 trial 计数) | 4 | P2 / M | `experiment_registry`、DSR n_trials、`evidence/alpha_trial_ledger_history.json` | **已完成**：官方搜索入口、五个 factory 驱动器和历史工具均绑定持久化 search identity；跨会话单调账本、候选/试验绑定、可移植封存快照及数据库追加保护已由独立治理检查验证。后续只维护账本证据，不再把它列为缺口。 |
+| 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
+| 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
+| **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
+| **13 ✓** | **数据漂移检测**(PIT 分布漂移告警) | 6/6 | P2 / M | `macro_regime`、data quality、实时特征值缓存 | **L2 闭环已完成：**60/20 KS 内核、真实 dataset/FX 特征重放、Binance 14 币双 WebSocket、7 类 × 14 币 = 98 条追加 PIT `FeatureValue` 与批次哈希链均已落地。阈值不再是固定假设：当前 60+20 评估窗完全隔离，只用更早 PIT 块的确定性置换空分布取 95/99 分位；首次真实校准 8,232 窗，Warn=0.3167、Block=0.3833，当前 41 PASS / 8 WARN / 49 BLOCK。独立 5 分钟告警 worker 按 incident 状态去重，事件/投递结果进追加 SQLite 哈希链并送 operator JSONL；本地投递失败非零退出且持续重试，首条 BLOCK 已 DELIVERED、复跑 DEDUPLICATED，外部 Telegram 未配置诚实标 `UNCONFIGURED`。Console 与 Agent 页均可见。诊断仍不承重、不驱动 Agent 晋级、仓位或订单。 |
+
+## 4. 需外部资源(钱与组织,非代码缺陷)
+
+- 厂商授权数据(Bloomberg/Refinitiv/CRSP/Compustat/TAQ)+ 采购/合规/entitlement 团队 + 年数据预算(顶格千万至上亿美元)。
+- 真正量级的另类数据(卫星/刷卡/AIS/网页抓取/招聘)采购与清洗团队。
+- 分布式/GPU 集群(Ray/Dask/Spark/k8s)支撑亿级候选挖掘 + 大规模 ML 训练。
+- 专职研究 + 基建/SRE 团队(24×7 on-call、混沌工程)。
+- tick/L2 订单簿历史数据(解锁 LOB 重放 + 真实执行校准)。
+
+## 5. 安全边界内故意不做(post-L2,补 = 破边界,不该补)
+
+实盘交易/真券商连接/订单提交/AI 直接交易;真实资金路径(PB/抵押/清算/结算);SOR/场所选择/最优执行 RL/colocation/tick-to-trade;毫秒级 intra-day 实时风控接 OMS/PB;真实成交 TCA 闭环;监管报送(MiFID II/CAT/Reg SCI);做市/反博弈;部署/进程物理隔离(Phase 14 设计已备,实现 post-L2)。**这些是安全边界本身,绝不记为「落后于顶级」。**
+
+## 6. 立刻开发:Rank #1
+
+**风险平衡多策略统一执行 book。** 三方(工作流综合器 + 组合维代理 + 本项目既有分析)一致把它排第 1。它把本会话最强的研究结论(carry/crowd 宏观 regime 相反、corr −0.04、收益流组合 Sharpe 1.95/回撤 8%)从「收益流相加」升级成**一个真的、风险平衡的、净-成本的执行 book**——回答上次留下的开放线索(naive 权重 blend 是 carry-dominated、只到 VT 1.20)。全复用现有已测组件,零新模型/数据/外部依赖,直接闭合 §2 维度 4 的最高杠杆缺口。开发按 brainstorm→spec→plan→build,全程 L2 一寸不让。
+
+---
+*本路线图随开发推进更新;完成一项即在 Rank 行标注 ✓ 并附提交哈希。*
+> **2026-07-21 增量：** Rank #13 的下一小步已落地：复用 PIT trailing KS 内核，新增
+> `evaluate_feature_distribution_drift` 对声明 feature universe 做逐 feature 漂移诊断；缺失/多余
+> feature fail-closed，仍是 read-only diagnostic，不伪造 feature cache、实时 feed 或运营告警。
+
+> **2026-07-21 Rank #13 特征级证据：** `tools/feature_distribution_drift_research.py` 已从封存的
+> FX PIT bundle 重放三个因果 close 特征，并生成可确定性校验的
+> `evidence/feature_distribution_drift_baseline.json`。当前诊断为 `BLOCK`（三个特征均超出 KS
+> 阈值），但制品明确不承重；当时 FeatureValue 缓存、实时/纸面 feed、校准和告警仍是
+> 开放项，现已由 2026-07-29 Rank #13 实时闭环收口。
+
+> **2026-07-29 Rank #13 实时输入底座：** Binance USD-M 公开行情已建立 14 币 REST
+> 完整快照与 `/public`、`/market` 双 WebSocket 长驻流，覆盖最优盘口、20 档深度、
+> mark/index/funding、逐笔聚合成交、1 分钟 K 线、强平及 REST 的 OI/多空比/taker
+> 指标。数据以追加 SQLite 哈希链和状态水位持久化，调度、重连、新鲜度和 Console 健康
+> 可视化已完成。该增量当时只关闭“无实时原始 feed”；实时特征缓存与漂移告警随后由
+> 2026-07-29 Rank #13 收口增量完成。
+>
+> **2026-07-29 L2 多场所执行金丝雀：** Binance 真实 WebSocket 20 档深度现已与
+> Bybit V5 真实公共 order book 同步进入 deterministic paper SOR；跨场所快照和逐场所
+> route TCA 均追加持久化，5 分钟调度、watchdog、API 与 Console 已接通。连续两次真实
+> 快照运行达到 `LONGITUDINAL_READY`。该证据只证明公开行情驱动的仿真链路，费用仍为
+> 未校准研究假设，绝不关闭“生产多场所 SOR / 真实成交 TCA”外部缺口。

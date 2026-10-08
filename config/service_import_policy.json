@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "status": "KNOWN_ARCHITECTURE_DEBT_NOT_APPROVAL",
+  "reviewed_at": "2026-08-29",
+  "known_cycle_edges": [],
+  "known_unresolved_dynamic_imports": [
+    {
+      "path": "services/research_runner/run_kinds.py",
+      "line": 93,
+      "function": "importlib.import_module",
+      "boundary": "RunSpec.entrypoint is selected only from the static RUN_KINDS research whitelist."
+    },
+    {
+      "path": "services/research_runner/run_kinds.py",
+      "line": 100,
+      "function": "importlib.import_module",
+      "boundary": "The module argument is closed over from static _tool_then_json calls in RUN_KINDS."
+    },
+    {
+      "path": "services/research_runner/run_kinds.py",
+      "line": 342,
+      "function": "importlib.import_module",
+      "boundary": "The module argument is closed over from the two static _fixed_cycle A-share worker entries in RUN_KINDS; no request parameter can select an import path."
+    }
+  ],
+  "assurance_boundary": "Every current cyclic direct edge is explicit. The gate rejects graph drift, unexpected cycle edges, and stale permissions. Policy edits require code review and must only remove debt unless a separately approved architecture decision proves otherwise.",
+  "next_reduction_order": [
+    "Keep the service graph acyclic and reject every new cyclic edge.",
+    "Split the research console API into read-only routers below 800 lines.",
+    "Keep HTTP and tool adapters outside the research domain core.",
+    "Continue shrinking the oversized research domain behind explicit contracts and ports."
+  ]
+}

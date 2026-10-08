@@ -1,0 +1,15 @@
+{
+  "venue": "binance",
+  "safety": "SAFE",
+  "reasons": [
+    "enableWithdrawals=false",
+    "ipRestrict=true"
+  ],
+  "raw_fields": {
+    "enableWithdrawals": false,
+    "ipRestrict": true,
+    "enableFutures": true,
+    "enableReading": true
+  },
+  "checked_at_ms": 1784875153972
+}

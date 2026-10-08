@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "study_id": "binance_usdm_book_depth_curve_confirmation_capacity_supplement_v1",
+  "status": "PRE_REGISTERED_BEFORE_SUPPLEMENT_DATA_ACCESS",
+  "parent_confirmation_study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "parent_confirmation_contract_commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+  "source_capacity_block_evidence": "evidence/binance_book_depth_confirmation_window1_v4_capacity_blocked.json",
+  "source_capacity_block_commit": "b0a3722b64f872b368ca05c2763aac35b372d728",
+  "quality_policy": "config/binance_book_depth_confirmation_quality_policy_v4.json",
+  "quality_policy_commit": "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30",
+  "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+  "candidate_id": "depth_imbalance_1p0_continuation_4h_v1",
+  "direction": -1,
+  "horizon_hours": 24,
+  "supplement_window": {
+    "start_day_inclusive_utc": "2026-02-05",
+    "start_day_ms": 1770249600000,
+    "end_day_inclusive_utc": "2026-02-11",
+    "end_exclusive_ms": 1770854400000,
+    "day_count": 7,
+    "relation_to_parent_confirmation": "IMMEDIATELY_PRECEDING_NON_OVERLAPPING",
+    "parent_confirmation_start_ms": 1770854400000
+  },
+  "frozen_unseen_window_evidence": {
+    "observed_at_ms": 1786509678451,
+    "dataset_observation_count": 0,
+    "authority_head_seq": 59136,
+    "authority_head_row_hash": "14fdf45c6e6347edb86007d1333ab8c5cd21e848282707ab302b8941f42ee239",
+    "authority_chain_valid": true
+  },
+  "universe": [
+    "ADAUSDT",
+    "ATOMUSDT",
+    "AVAXUSDT",
+    "BCHUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "UNIUSDT",
+    "XRPUSDT"
+  ],
+  "long_count": 3,
+  "short_count": 3,
+  "one_way_cost_bps_per_unit_turnover": 6.0,
+  "cost_stress_multiplier": 2.0,
+  "annualization_periods": 365.0,
+  "minimum_combined_decisions": 80,
+  "parent_capacity_decisions": 79,
+  "required_gates": {
+    "net_sharpe_minimum": 1.0,
+    "net_mean_return_minimum": 0.0,
+    "double_cost_net_sharpe_minimum": 0.0,
+    "rank_ic_mean_minimum": 0.0,
+    "rank_ic_t_stat_minimum": 2.0,
+    "positive_chronological_thirds_minimum": 2,
+    "maximum_single_instrument_gross_pnl_fraction": 0.35
+  },
+  "multiple_testing": {
+    "global_trial_count_after_exploration": 2823,
+    "supplement_adds_new_trial": false,
+    "reason": "the exact frozen trial is extended solely to satisfy its pre-registered observation-count floor before any outcome access"
+  },
+  "terminal_policy": {
+    "all_7_days_must_be_processed": true,
+    "no_date_or_period_selection": true,
+    "combined_actual_adjacent_24h_decisions_must_meet_minimum": true,
+    "quality_excluded_days_are_never_imputed": true,
+    "parent_and_supplement_are_evaluated_as_one_chronological_sample": true,
+    "missing_or_invalid_data_policy": "FAIL_CLOSED",
+    "pass_requires_formal_validation_dag": true,
+    "pass_is_formal_admission": false,
+    "pass_is_forward_credit": false,
+    "pass_authorizes_testnet": false
+  }
+}

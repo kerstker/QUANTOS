@@ -1,0 +1,80 @@
+{
+  "schema_version": "paper_alpha_evaluations.v1",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at": 1786549618532,
+  "dataset_version": "7618c3ef2018a438de3525896c47bc33518548386e80246681587facbb263826",
+  "search_id": "search-b4aae74220549fbc3eb91d96",
+  "status": "PENDING",
+  "alphas": {
+    "carry_oi_majors": {
+      "deployed_alpha_id": "carry_oi_majors",
+      "research_alpha_id": "paper_carry_oi_majors_f10e34dda254bd00",
+      "definition_hash": "f10e34dda254bd002228b0db646d6d743e11a9526ee81eb862834103bcccc13b",
+      "quantile": 0.3,
+      "return_basis": "PRICE_PLUS_FUNDING",
+      "evaluation": {
+        "run_id": "ef345cf35e4a90a6",
+        "verified": false,
+        "verdict": "REQUIRES_HUMAN_REVIEW",
+        "deflated_sharpe": 0.0,
+        "pbo": 0.4,
+        "as_of": 1786549618532,
+        "reasons": [
+          "CATALOG_EVIDENCE_INVALID"
+        ],
+        "dataset_version": "7618c3ef2018a438de3525896c47bc33518548386e80246681587facbb263826",
+        "content_hash": "7d28a5723d3e1f5b804fdb1c16d88ec02a8bcd2f6c301db2783e874899e6c448"
+      },
+      "status": "PENDING"
+    },
+    "crowd_contra": {
+      "deployed_alpha_id": "crowd_contra",
+      "research_alpha_id": "paper_crowd_contra_61b6d3baca7ef072",
+      "definition_hash": "61b6d3baca7ef0724968d55c016f0b7ca632071114119b99deee90874323b408",
+      "quantile": 0.3,
+      "return_basis": "PRICE",
+      "evaluation": {
+        "run_id": "b099dd9a2697cf3e",
+        "verified": false,
+        "verdict": "REQUIRES_HUMAN_REVIEW",
+        "deflated_sharpe": 0.0,
+        "pbo": 0.4,
+        "as_of": 1786549618532,
+        "reasons": [
+          "CATALOG_EVIDENCE_INVALID"
+        ],
+        "dataset_version": "7618c3ef2018a438de3525896c47bc33518548386e80246681587facbb263826",
+        "content_hash": "5e0d1daf1e8a6c3d01b23f623b1ea1096319657ba2981a95139b3c332317beaa"
+      },
+      "status": "PENDING"
+    },
+    "top_contra": {
+      "deployed_alpha_id": "top_contra",
+      "research_alpha_id": "paper_top_contra_6bb9dd6cd5711515",
+      "definition_hash": "6bb9dd6cd57115156c05658190003bcf043ee161724f1ae7fff49906604b3238",
+      "quantile": 0.3,
+      "return_basis": "PRICE",
+      "evaluation": {
+        "run_id": "42d729ac64cc36f0",
+        "verified": false,
+        "verdict": "REQUIRES_HUMAN_REVIEW",
+        "deflated_sharpe": 0.0,
+        "pbo": 0.4,
+        "as_of": 1786549618532,
+        "reasons": [
+          "CATALOG_EVIDENCE_INVALID"
+        ],
+        "dataset_version": "7618c3ef2018a438de3525896c47bc33518548386e80246681587facbb263826",
+        "content_hash": "37b7b67979cf16c092d7fcd1560227b0c2de5c345fce69d744dfe7da826d1c25"
+      },
+      "status": "PENDING"
+    }
+  },
+  "safety": {
+    "paper_only": true,
+    "live_allowed": false,
+    "order_submission_allowed": false,
+    "credentials_accessed": false,
+    "broker_connectivity": false
+  }
+}

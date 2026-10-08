@@ -1,0 +1,42 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 这一页把"为什么不是拿漂亮回测来募资"说清楚。最后一句是定位锚：当前结果是小资金实盘的入场券，不是大规模募资的依据。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 400, 16]
+    content: {style: "$kicker", wrap: false, text: "09 · 结果的可信度"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "为什么这些历史结果值得继续验证"}
+  - elementId: points
+    elementType: text
+    bounds: [90, 124, 780, 250]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.85
+      text: |
+        <p><span style="color:$accent">■</span> <strong>成本是真的</strong>：taker 手续费、半价差、资金费、市场冲击逐项入账，不是零成本理想回测</p>
+        <p><span style="color:$accent">■</span> <strong>调仓是真的</strong>：连续周度调仓、合约步长与最小名义约束、追加式交易账本、重复运行幂等</p>
+        <p><span style="color:$accent">■</span> <strong>对账是真的</strong>：逐笔成交可回放，PnL 对账残差 ~1e-9 量级</p>
+        <p><span style="color:$accent">■</span> <strong>失败是被治理的</strong>：top_contra 夏普仅 0.185、回撤 30.8%，进入诊断/隔离/退役候选——系统不只保留成功策略</p>
+        <p><span style="color:$accent">■</span> <strong>样本是被主动质疑的</strong>：730 天历史仍非前向实盘；多重检验泄气（DSR）按全部试验总数计</p>
+  - elementId: anchor
+    elementType: text
+    bounds: [90, 396, 780, 70]
+    content:
+      fontSize: 16
+      bold: true
+      color: "$ink"
+      lineHeight: 1.6
+      text: |
+        <p>当前结果是进入小资金实盘的依据，</p>
+        <p><span style="color:$warn">不是</span>大规模募资的依据。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 11"}

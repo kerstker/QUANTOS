@@ -1,0 +1,179 @@
+{
+  "block_reasons": [
+    "LEDGER_ABSENT"
+  ],
+  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "family_multiple_testing": {
+    "available": true,
+    "exported": [
+      "assign_families",
+      "simes_pvalue",
+      "hierarchical_fdr",
+      "family_adjusted_trial_count",
+      "marginal_ir"
+    ],
+    "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
+    "wired_into_promotion_gate": true
+  },
+  "generated_at_ms": 1789176209284,
+  "generator_sha256": "d8d75744fd2e4e68333974bdf45a663ed8f1a3b5269ee4143b5d832c6dfed378",
+  "input_hash": "13b1f33cebf2a5afa5c38defffc064eac8f5ffd17ca797e78a496b5e3ee62c46",
+  "inputs": {
+    "data/cache/experiment_registry.db": {
+      "exists": false,
+      "kind": "file",
+      "sha256": null,
+      "size_bytes": null
+    },
+    "services/research/experiment_registry/store.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "85879f6e9af99bda372981975fc31012207f152e7cb984c79c3b24fd7cc00a7b",
+      "size_bytes": 113275
+    },
+    "services/research/trial_provenance.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "7b1d1b8d7f90e310c2dae6cf5ca3e509eb4c638eebe255017e048bca4807dcd6",
+      "size_bytes": 18243
+    }
+  },
+  "ledger": {
+    "append_only_guards": {
+      "evaluations": "UNKNOWN",
+      "search_attempt_events": "UNKNOWN",
+      "search_candidates": "UNKNOWN",
+      "search_evaluations": "UNKNOWN",
+      "trial_oos_access": "UNKNOWN",
+      "trial_provenance": "UNKNOWN",
+      "trials": "UNKNOWN"
+    },
+    "exists": false,
+    "path": "data/cache/experiment_registry.db",
+    "row_counts": {
+      "evaluations": 0,
+      "search_attempt_events": 0,
+      "search_candidates": 0,
+      "search_evaluations": 0,
+      "trial_oos_access": 0,
+      "trial_provenance": 0,
+      "trials": 0
+    },
+    "sha256": null,
+    "sqlite_integrity": null,
+    "user_version": null
+  },
+  "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
+  "oos_access": {
+    "accesses_recorded": 0,
+    "chain_head": null,
+    "chain_valid": false,
+    "reason": "LEDGER_ABSENT",
+    "table_present": false,
+    "trials_with_access": 0
+  },
+  "open_gaps": [
+    {
+      "detail": "The authority ledger is absent in this checkout. Integrity, append-only guards, provenance, and OOS access cannot be verified.",
+      "id": "TRIAL_LEDGER_ABSENT",
+      "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
+      "state": "BLOCKED"
+    }
+  ],
+  "provenance": {
+    "actor_type_counts": {},
+    "attempts_recorded": 0,
+    "bare_trials": 0,
+    "chain_head": null,
+    "chain_valid": false,
+    "configs_with_provenance": 0,
+    "coverage_ratio": 0.0,
+    "max_oos_peek_count": null,
+    "reason": "LEDGER_ABSENT",
+    "status_counts": {},
+    "table_present": false
+  },
+  "provenance_wiring": {
+    "available": true,
+    "entries": {
+      "alpha_family_discovery": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "wired": true
+      },
+      "crypto_robust_optimization": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "wired": true
+      },
+      "run_alpha_factory": {
+        "code_hash_pin": true,
+        "hypothesis_binding": true,
+        "quarantined": false,
+        "wired": true
+      },
+      "run_registered_candidate_batch": {
+        "code_hash_pin": false,
+        "hypothesis_binding": false,
+        "quarantined": true,
+        "wired": false
+      },
+      "run_research_session": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "oos_access_binding": true,
+        "wired": true
+      }
+    },
+    "registry_record_api": true,
+    "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
+    "wired_entry_count": 4
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 2,
+  "trial_record_fields_required": [
+    "trial_id",
+    "parent_trial_id",
+    "research_session_id",
+    "actor_id",
+    "actor_type",
+    "model_name",
+    "model_version",
+    "prompt_hash",
+    "hypothesis_id",
+    "factor_ids",
+    "alpha_expression",
+    "canonical_expression",
+    "expression_hash",
+    "parameter_set",
+    "parameter_hash",
+    "dataset_versions",
+    "universe_version",
+    "cost_model_version",
+    "validation_policy_version",
+    "code_hash",
+    "started_at",
+    "completed_at",
+    "status",
+    "metrics",
+    "failure_reasons",
+    "artifact_paths",
+    "artifact_hashes",
+    "viewed_oos_boundaries",
+    "prev_hash",
+    "entry_hash"
+  ],
+  "verdict": "BLOCKED"
+}

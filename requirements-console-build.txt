@@ -1,0 +1,10 @@
+# Existing Alpine builder toolchain, isolated from installed runtime packages.
+pip==26.2.1
+meson-python==0.18.0
+Cython==3.2.8
+numpy==2.3.5
+scipy==1.16.3
+meson==1.11.2
+ninja==1.13.0
+packaging==26.2
+pyproject-metadata==0.12.1

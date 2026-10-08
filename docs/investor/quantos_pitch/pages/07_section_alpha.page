@@ -1,0 +1,34 @@
+pageType: chapter
+background:
+  type: solid
+  color: "$accent"
+elements:
+  - elementId: num
+    elementType: text
+    bounds: [80, 180, 280, 70]
+    content:
+      fontSize: 60
+      bold: true
+      color: "$bg"
+      wrap: false
+      text: |
+        <p>PART 2</p>
+  - elementId: title
+    elementType: text
+    bounds: [80, 262, 760, 60]
+    content:
+      fontSize: 42
+      bold: true
+      color: "$bg"
+      wrap: false
+      text: |
+        <p>ALPHA：全实测数据与证据</p>
+  - elementId: sub
+    elementType: text
+    bounds: [80, 334, 760, 26]
+    content:
+      fontSize: 15
+      color: "#3A3D36"
+      wrap: false
+      text: |
+        <p>干跑绩效 · 统计证伪 · 容量与尾部 · 宏观画像 · 失败实验披露</p>

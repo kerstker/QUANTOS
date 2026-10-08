@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import json
+from contextlib import contextmanager
+
+import pytest
+
+from quantos.contracts.hashing import stable_hash
+from services.execution.backtest_authority import BacktestIntegrityBlocked
+from services.research.funding_settlement import HOUR_MS
+from tools import funding_settlement_evaluation as driver
+
+
+def _snapshot(periods: int = 20) -> dict:
+    series = {}
+    for column in range(10):
+        instrument = f"S{column:02d}USDT"
+        rows = []
+        for index in range(periods + 1):
+            settlement = index * 8 * HOUR_MS
+            rows.append(
+                {
+                    "instrument_id": instrument,
+                    "source_funding_time_ms": settlement,
+                    "settlement_time_ms": settlement,
+                    "decision_time_ms": settlement + HOUR_MS,
+                    "settled_rate": (column - 4.5) * 0.00001,
+                    "decision_mark_price": 100.0 + column + index,
+                    "mark_kline_close_time_ms": settlement + HOUR_MS - 1,
+                }
+            )
+        series[instrument] = rows
+    return {
+        "schema_version": "binance_funding_settlement_history.v1",
+        "provenance": "REAL_BINANCE_PUBLIC_FUNDING_SETTLEMENT_HISTORY",
+        "observed_at_ms": 1_000,
+        "universe": sorted(series),
+        "series": series,
+        "dataset_hash": stable_hash(series),
+        "safety": {
+            "public_market_data_only": True,
+            "credentials": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+            "live_trading": False,
+        },
+    }
+
+
+def test_public_evaluation_is_quarantined_before_reading_source() -> None:
+    with pytest.raises(BacktestIntegrityBlocked, match="INVALIDATED_PERP_LEDGER_V1"):
+        driver.run(source_commit="not-even-validated")
+
+
+def test_load_history_requires_real_provenance_hash_and_safety(tmp_path) -> None:
+    payload = _snapshot()
+    path = tmp_path / "settlements.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    history, metadata = driver.load_history(path, min_rows_per_instrument=10)
+
+    assert len(history) == 10
+    assert metadata["dataset_hash"] == payload["dataset_hash"]
+
+    payload["dataset_hash"] = "0" * 64
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="dataset hash"):
+        driver.load_history(path, min_rows_per_instrument=10)
+
+
+def test_candidate_family_is_exactly_control_plus_buffered_rank(tmp_path) -> None:
+    payload = _snapshot()
+    path = tmp_path / "settlements.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    history, _metadata = driver.load_history(path, min_rows_per_instrument=10)
+
+    candidates, evidence, mappings = driver.build_candidate_batch(history)
+
+    assert list(mappings) == ["rank_control", "buffered_rank"]
+    assert len(candidates) == 2
+    assert all(len(periods) == 20 for _definition, periods in candidates)
+    assert all(len(period.instruments) >= 10 for _definition, periods in candidates for period in periods)
+    assert all(item == {"leakage_ok": True} for item in evidence.values())
+
+
+def test_run_registers_fixed_cost_family_but_never_claims_testnet_eligibility(
+    tmp_path, monkeypatch
+) -> None:
+    payload = _snapshot()
+    source = tmp_path / "settlements.json"
+    output = tmp_path / "evaluation.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    captured = {}
+
+    class Registry:
+        pass
+
+    @contextmanager
+    def registry_context():
+        yield Registry()
+
+    def run_batch(candidates, **kwargs):
+        captured["count"] = len(candidates)
+        captured["cost"] = kwargs["cost"]
+        captured["quantile"] = kwargs["quantile"]
+        captured["periods_per_year"] = kwargs["periods_per_year"]
+        return {"recorded_run_ids": [], "registered_candidate_count": len(candidates)}
+
+    monkeypatch.setattr(driver, "production_experiment_registry", registry_context)
+    monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
+
+    result = driver._run_legacy_diagnostic(
+        source_snapshot=source,
+        output=output,
+        source_commit="a" * 40,
+        recorded_at=2_000,
+        min_rows_per_instrument=10,
+    )
+
+    assert captured["count"] == 2
+    assert captured["cost"].fee_bps == 4.0
+    assert captured["cost"].slippage_bps == 2.0
+    assert captured["quantile"] == 0.2
+    assert captured["periods_per_year"] == 1_095
+    assert result["decision"]["formal_evaluation_pass"] is False
+    assert result["decision"]["forward_admission_allowed"] is False
+    assert result["decision"]["testnet_eligible"] is False
+    assert result["safety"]["order_submission"] is False

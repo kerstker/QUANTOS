@@ -1,0 +1,46 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 收尾前的最后一推：把"为什么是现在投"落在风险可控上——分阶段、里程碑、停止条件。具体交易结构交给双方法律财务顾问。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "16 · 为什么现在投资"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "风险最低的进入点，是证据成型之前"}
+  - elementId: points
+    elementType: text
+    bounds: [90, 128, 780, 200]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.85
+      text: |
+        <p><span style="color:$accent">■</span> 核心系统已完成，项目<strong>已跨过纯概念阶段</strong>——本轮资金不赌"能不能做出来"</p>
+        <p><span style="color:$accent">■</span> 项目正在进入实盘与商业验证，本轮资金<strong>直接转化为实盘证据和机构合作能力</strong></p>
+        <p><span style="color:$accent">■</span> 下一阶段里程碑明确、可验收（第 15 页），价值跃迁路径清晰</p>
+        <p><span style="color:$accent">■</span> 一旦连续实盘记录与首个机构合作落地，估值基础将从"系统"切换为"业绩"</p>
+  - elementId: structure-title
+    elementType: text
+    bounds: [90, 346, 400, 24]
+    content: {style: "$h2", fontSize: 14, wrap: false, text: "可降低投资风险的交易结构（建议）"}
+  - elementId: structure
+    elementType: text
+    bounds: [90, 376, 780, 100]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>分阶段投资 · 里程碑付款 · 可转股安排 · 第一阶段验证资金 · 达到实盘/回撤/策略数量/机构合作里程碑后支付后续资金</p>
+        <p>独立账户 · 定期披露 · 资金用途限制 · 明确停止条件</p>
+        <p style="margin-top:8px"><span style="font-size:10.5px">具体交易结构由双方及专业法律、财务顾问进一步设计。</span></p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 18"}

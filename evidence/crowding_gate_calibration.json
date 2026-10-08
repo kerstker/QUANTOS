@@ -1,0 +1,303 @@
+{
+  "calibration_authoritative": false,
+  "counted_as_calibration_evidence": false,
+  "counted_as_completion_evidence": false,
+  "dataset": {
+    "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
+    "bundle_sha256": "960c6de33a3ae5f3bf6cc14c973aeacd099e429367fe93d9d13701d37b62c77d",
+    "bundle_version": "CROWDING_GATE_CALIBRATION_V1",
+    "calibration_authoritative": false,
+    "instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "ETH",
+      "FIL",
+      "ICP",
+      "INJ",
+      "LINK",
+      "LTC",
+      "NEAR",
+      "OP",
+      "SOL",
+      "TRX",
+      "UNI",
+      "XLM",
+      "XRP"
+    ],
+    "manifest_sha256": "835ad3fbd1b18d3c8b1b38cd7041ffb804bd4f08ec14c943fe1fa8605c129838",
+    "max_period": 1785974400000,
+    "min_period": 1642636800000,
+    "purpose": "DIAGNOSTIC_ONLY",
+    "retention_status": "INVALIDATED_PERP_LEDGER_V1",
+    "row_count": 238,
+    "source_sha256": {
+      "data/cache/crypto_funding.db": "024645cc4e0931f4684f6609a00318af764ede104288fd704ea92c018799afc7",
+      "data/cache/crypto_funding_rates.json": "9ffb23f93863b71db6c8f94fda8f8413273a4a4a617c01b2ab35305d499c4635",
+      "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
+      "data/cache/crypto_oi_metrics.json": "01be1a969761b1b98244d19cb717514fce4f0007f94bedab4e14a242f1835e45"
+    },
+    "source_verification_policy": "ALL_DECLARED_FILES_SHA256_MATCH_OR_ALL_ABSENT;PARTIAL_REJECTED"
+  },
+  "document_type": "CROWDING_CALIBRATION_INVALIDATION",
+  "evidence_sha256": "c08681109d32d0e66a65bf80fcfe0e824eec8bd2d1b00deb0c2fef56460f70f5",
+  "future_authority": {
+    "automatic_upgrade_from_v1": false,
+    "current_entrypoint_can_grant_authority": false,
+    "required_bundle_version": "CROWDING_GATE_CALIBRATION_V2",
+    "requires_explicit_reviewed_entrypoint": true,
+    "requires_independent_pit_bundle": true,
+    "requires_independently_controlled_signed_source_result_authority": true,
+    "self_generated_hashes_can_grant_authority": false
+  },
+  "implementation_binding_role": "DIAGNOSTIC_RECONSTRUCTION_ONLY",
+  "implementation_sha256": {
+    "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
+    "services/portfolio/crowding_calibration.py": "9911f0f1db762347020bbf231f4f293ba6b108ec916afe017be77b554bbf8145",
+    "services/portfolio/crowding_gate.py": "299dcae094e2c01aa895cea15c546de1ff92e23c6403b3aceee56c4ea57d88bb",
+    "tools/crowding_metric_research.py": "a7ca28ba2309a943c65bd9ed73aed047bd73b350a270b9d3a0c815c539720949",
+    "tools/dry_run_crowd_contra_multi.py": "7122d1f242614788d821dd9787435ee513331cefe7e061b2bfc4e41a3c6137a7",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "5ed2cb48c5c5731c12c1a92bf6293bc52bde09231c5acbb5004a63c8eaebbfd8",
+    "tools/live_track_advance.py": "ed47f4604f7f71d984027d13205c938afa6d405c956cc27c82847a0544f3a92c"
+  },
+  "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
+  "limitations": [
+    "The retained V1 bundle cannot establish causal PIT calibration: its source timing does not satisfy the current minimum knowledge-lag contract.",
+    "All retained replay counts and sensitivity statistics are diagnostic history invalidated with the legacy perpetual-ledger semantics.",
+    "The deployed numeric threshold is an uncalibrated conservative safety limit, not a validated production calibration.",
+    "Authority requires a separately reviewed V2 entrypoint backed by an independent PIT bundle and independently controlled signed source/result authority; self-generated hashes cannot grant authority and V1 can never upgrade automatically."
+  ],
+  "load_bearing": false,
+  "policy": {
+    "average_rank_path": "WARN_ONLY",
+    "calibration_authoritative": false,
+    "entrypoint_assignments": {
+      "dry_run": 3.0,
+      "live": 3.0,
+      "signal_adapter_dry_run": 3.0
+    },
+    "legacy_recorded_on": "2026-07-07",
+    "signed_max_crowding_z": 3.0,
+    "threshold_status": "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT"
+  },
+  "rank_semantics": {
+    "authority_status": "INVALIDATED_PERP_LEDGER_V1",
+    "dry_run": "TRAILING_GLOBAL_LS_CROSS_SECTIONAL_RANK",
+    "legacy_block_rule": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
+    "live": "CURRENT_ABS_GLOBAL_LS_MINUS_ONE_CROSS_SECTIONAL_RANK"
+  },
+  "readiness": "NOT_READY",
+  "schema_version": 2,
+  "status": "INVALIDATED_PERP_LEDGER_V1",
+  "summary": {
+    "absolute_statistics": {
+      "short_max_z": {
+        "max": 5.870804,
+        "mean": 1.481445,
+        "min": -0.501008,
+        "n": 237,
+        "p10": 0.176098,
+        "p50": 1.373667,
+        "p90": 2.905214
+      },
+      "short_mean_z": {
+        "max": 3.775822,
+        "mean": 0.396077,
+        "min": -1.078983,
+        "n": 237,
+        "p10": -0.435172,
+        "p50": 0.29742,
+        "p90": 1.344697
+      },
+      "short_raw_gls": {
+        "max": 6.583925,
+        "mean": 3.280425,
+        "min": 1.987949,
+        "n": 238,
+        "p10": 2.504247,
+        "p50": 3.214022,
+        "p90": 4.150884
+      }
+    },
+    "calibration_authoritative": false,
+    "gate_at_signed_threshold": {
+      "block_periods_equal": true,
+      "dry_run": {
+        "block_periods": [
+          1677715200000,
+          1681948800000,
+          1683158400000,
+          1684972800000,
+          1685577600000,
+          1686182400000,
+          1707350400000,
+          1707955200000,
+          1708560000000,
+          1709164800000,
+          1709769600000,
+          1710374400000,
+          1711584000000,
+          1712188800000,
+          1712793600000,
+          1715817600000,
+          1720051200000,
+          1733356800000,
+          1734566400000,
+          1736380800000,
+          1763596800000
+        ],
+        "block_rate": 0.088235,
+        "n_block": 21,
+        "n_pass": 0,
+        "n_warn": 217
+      },
+      "live": {
+        "block_periods": [
+          1677715200000,
+          1681948800000,
+          1683158400000,
+          1684972800000,
+          1685577600000,
+          1686182400000,
+          1707350400000,
+          1707955200000,
+          1708560000000,
+          1709164800000,
+          1709769600000,
+          1710374400000,
+          1711584000000,
+          1712188800000,
+          1712793600000,
+          1715817600000,
+          1720051200000,
+          1733356800000,
+          1734566400000,
+          1736380800000,
+          1763596800000
+        ],
+        "block_rate": 0.088235,
+        "n_block": 21,
+        "n_pass": 0,
+        "n_warn": 217
+      }
+    },
+    "invalidation_code": "INVALIDATED_PERP_LEDGER_V1",
+    "max_name_weight": {
+      "max": 0.125,
+      "mean": 0.073654,
+      "min": 0.071429,
+      "n": 238,
+      "p10": 0.071429,
+      "p50": 0.071429,
+      "p90": 0.083333
+    },
+    "max_period": 1785974400000,
+    "min_period": 1642636800000,
+    "n_periods": 238,
+    "provenance": "RETAINED_V1_DIAGNOSTIC_INVALIDATED",
+    "rank_statistics": {
+      "dry_run_average": {
+        "max": 0.5,
+        "mean": 0.5,
+        "min": 0.5,
+        "n": 238,
+        "p10": 0.5,
+        "p50": 0.5,
+        "p90": 0.5
+      },
+      "dry_run_long": {
+        "max": 0.307692,
+        "mean": 0.23126,
+        "min": 0.214286,
+        "n": 238,
+        "p10": 0.227273,
+        "p50": 0.230769,
+        "p90": 0.230769
+      },
+      "dry_run_short": {
+        "max": 0.785714,
+        "mean": 0.76874,
+        "min": 0.692308,
+        "n": 238,
+        "p10": 0.769231,
+        "p50": 0.769231,
+        "p90": 0.772727
+      },
+      "live_average": {
+        "max": 0.65528,
+        "mean": 0.502757,
+        "min": 0.5,
+        "n": 238,
+        "p10": 0.5,
+        "p50": 0.5,
+        "p90": 0.503106
+      },
+      "live_long": {
+        "max": 0.440994,
+        "mean": 0.136129,
+        "min": 0.115385,
+        "n": 238,
+        "p10": 0.130435,
+        "p50": 0.130435,
+        "p90": 0.142857
+      },
+      "live_short": {
+        "max": 0.884615,
+        "mean": 0.869385,
+        "min": 0.857143,
+        "n": 238,
+        "p10": 0.868421,
+        "p50": 0.869565,
+        "p90": 0.869565
+      }
+    },
+    "signed_max_crowding_z": 3.0,
+    "status": "INVALIDATED_PERP_LEDGER_V1",
+    "threshold_status": "UNCALIBRATED_CONSERVATIVE_SAFETY_LIMIT",
+    "z_threshold_sensitivity": {
+      "2.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.256303,
+        "dry_n_block": 61,
+        "live_n_block": 61,
+        "n_block": 61
+      },
+      "2.5": {
+        "block_periods_equal": true,
+        "block_rate": 0.159664,
+        "dry_n_block": 38,
+        "live_n_block": 38,
+        "n_block": 38
+      },
+      "3.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.088235,
+        "dry_n_block": 21,
+        "live_n_block": 21,
+        "n_block": 21
+      },
+      "3.5": {
+        "block_periods_equal": true,
+        "block_rate": 0.037815,
+        "dry_n_block": 9,
+        "live_n_block": 9,
+        "n_block": 9
+      },
+      "4.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.021008,
+        "dry_n_block": 5,
+        "live_n_block": 5,
+        "n_block": 5
+      }
+    }
+  }
+}

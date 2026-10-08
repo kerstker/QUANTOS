@@ -1,0 +1,87 @@
+{
+  "artifact": {
+    "event_time_max": 1782345600000,
+    "event_time_min": 1750982400000,
+    "instruments": 42,
+    "path": "data/cache/crypto_daily.db",
+    "rows": 15036,
+    "sha256": "5ffd275ff0e417c02db27e12eb81150b365c845d03233845d20af93d2d421b42"
+  },
+  "assurance_boundary": "Source code and the current artifact hash establish local semantics; historical CoinGecko wire responses were not archived and remain a P1-8 lineage gap.",
+  "corrected_quote_adv": {
+    "dispersion_check": {
+      "detail": "max/min volume ratio 3.638e+05 vs max 1e+06",
+      "name": "volume_dispersion",
+      "passed": true
+    },
+    "max_min_ratio": 363847.8129957459,
+    "median_by_instrument": {
+      "AAVE": 336119426.34926957,
+      "ADA": 659441627.2871201,
+      "ALGO": 51658147.91833001,
+      "APT": 185464160.72718766,
+      "ARB": 118995651.61386475,
+      "ATOM": 53996418.83028156,
+      "AVAX": 371705935.6403184,
+      "AXS": 27299030.73976376,
+      "BNB": 1265475593.9531016,
+      "BTC": 43534078726.6749,
+      "CAKE": 47934697.18015785,
+      "CHZ": 50449820.57594146,
+      "CRV": 72873155.03104286,
+      "DOGE": 1471473962.403447,
+      "DOT": 184121120.54967165,
+      "EOS": 119649.14222855007,
+      "ETH": 23132381111.02083,
+      "FIL": 121595198.63689925,
+      "FLOW": 10187565.573820831,
+      "GALA": 46296877.25426903,
+      "GRT": 22375098.178669937,
+      "HBAR": 146635469.2883415,
+      "IMX": 20081800.755410567,
+      "INJ": 79084053.56773087,
+      "KAVA": 7120061.279101103,
+      "LINK": 463740630.6171596,
+      "LTC": 420560953.02385664,
+      "MATIC": 1224882.3626886636,
+      "MKR": 310387.53290194867,
+      "NEAR": 204134219.37000072,
+      "OP": 80532120.0667507,
+      "QNT": 16627777.454414465,
+      "RNDR": 70773289.67961204,
+      "SHIB": 139645016.73674488,
+      "SOL": 4593535006.588854,
+      "SUI": 774039120.2227752,
+      "TRX": 607475598.1182721,
+      "UNI": 271475542.4627564,
+      "VET": 23163683.89211663,
+      "XLM": 166280202.51057822,
+      "XRP": 3267314748.2887883,
+      "XTZ": 17861234.772261955
+    }
+  },
+  "data_provenance": "REAL_LOCAL_ARTIFACT_WITH_CODE_CONTRACT",
+  "generated_at_ms": 1783899400963,
+  "root_cause": {
+    "correct_formula": "quote_usd_volume",
+    "legacy_formula": "close * quote_usd_volume",
+    "legacy_median_max_min_ratio": 3428673750778.8745
+  },
+  "schema_version": 1,
+  "source_contract": {
+    "raw_field": "total_volumes",
+    "source": "coingecko-market-chart",
+    "volume_semantics": "ROLLING_24H",
+    "volume_unit": "QUOTE_USD"
+  },
+  "trend_capacity_recompute": {
+    "adv_max_min_spread": 363847.8129957459,
+    "aum_high": 47859.65689142003,
+    "aum_low": 47859.65689142003,
+    "data_quality": "OK",
+    "n_periods": 46,
+    "note": "Short daily sample (~1 year); quote-volume semantics verified; interpret cautiously.",
+    "participation_cap_aum": 47859.65689142003
+  },
+  "verdict": "PASS_LOCAL_SEMANTICS"
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "PERPETUAL_COMMON_MODEL_CASES_V1",
+  "initial_collateral": "1000",
+  "fee_rate": "0.001",
+  "cases": [
+    {"name":"flat","prices":["100","100","110","110"],"intents":["0","0","0","0"],"fills":["0","0","0","0"]},
+    {"name":"long_round_trip","prices":["100","100","110","110"],"intents":["0.1","0","-0.1","0"],"fills":["0","0.1","0","-0.1"]},
+    {"name":"short_round_trip","prices":["100","100","90","90"],"intents":["-0.1","0","0.1","0"],"fills":["0","-0.1","0","0.1"]},
+    {"name":"long_loss","prices":["100","100","90","90"],"intents":["0.1","0","-0.1","0"],"fills":["0","0.1","0","-0.1"]},
+    {"name":"short_loss","prices":["100","100","110","110"],"intents":["-0.1","0","0.1","0"],"fills":["0","-0.1","0","0.1"]},
+    {"name":"reversal","prices":["100","100","100","110","110","90"],"intents":["0.1","0","-0.2","0","0.1","0"],"fills":["0","0.1","0","-0.2","0","0.1"]},
+    {"name":"partial_fill","prices":["100","100","100","110","110"],"depth":["1","0.04","0.06","1","1"],"intents":["0.1","0","0","-0.1","0"],"fills":["0","0.04","0.06","0","-0.1"]}
+  ],
+  "not_applicable_to_vectorbt":["funding settlement","liquidation and margin tiers","order-rule admission","cancel and expiry","capacity depletion","late quote availability","queue priority"]
+}

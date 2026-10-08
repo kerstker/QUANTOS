@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1785168947787,
+  "strategy_id": "crowd_contra",
+  "venue": "binance_testnet",
+  "db_path": "data\\cache\\shadow_observations.db",
+  "last_pass": {
+    "strategy_id": "crowd_contra",
+    "run_label": "crowd_contra:1785168947787",
+    "now_ms": 1785168947787,
+    "legs": 14,
+    "observations": 14,
+    "appended": 14,
+    "idempotent_replays": 0,
+    "unavailable": 0,
+    "stale": 11,
+    "executable_count": 3,
+    "mean_abs_slippage_bps": 439.03288186926966
+  },
+  "readiness": {
+    "shadow_ready": true,
+    "blockers": [],
+    "observation_count": 14,
+    "latest_recorded_at_ms": 1785168947787,
+    "latest_as_of_ms": 1785168953753,
+    "chain_valid": true,
+    "outbox_chain_valid": true,
+    "max_obs_age_ms": 86400000
+  },
+  "provenance": "SHADOW",
+  "honesty_note": "SHADOW 观测是只读盘口比较(此刻真实盘口可成交价 vs 决策价/paper 语义)——不是成交、不是 paper fill 正确性的证明;盘口来自 venue 公共无签名端点,观测时点以 recorded_at_ms 为准,venue as_of_ms 可缺(如实 None)。",
+  "safety": {
+    "public_market_data_only": true,
+    "credentials_accessed": false,
+    "order_path_touched": false
+  }
+}

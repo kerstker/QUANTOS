@@ -1,0 +1,1890 @@
+{
+  "domains": [
+    {
+      "current_maturity": "M2",
+      "domain": "ai_agents",
+      "passed": 1,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "alpha_research",
+      "passed": 2,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M2",
+      "domain": "data_moat",
+      "passed": 1,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "execution_microstructure",
+      "passed": 1,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "frontend_console",
+      "passed": 2,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "governance_security",
+      "passed": 1,
+      "red_lines_failed": 1,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "platform_engineering",
+      "passed": 1,
+      "red_lines_failed": 1,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M3",
+      "domain": "portfolio_construction",
+      "passed": 2,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M1",
+      "domain": "reliability_operations",
+      "passed": 0,
+      "red_lines_failed": 1,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M4",
+      "domain": "risk_management",
+      "passed": 2,
+      "red_lines_failed": 0,
+      "requirements": 2
+    },
+    {
+      "current_maturity": "M2",
+      "domain": "validation_model_risk",
+      "passed": 1,
+      "red_lines_failed": 0,
+      "requirements": 2
+    }
+  ],
+  "requirements": [
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M4",
+        "paths": [
+          "services/intelligence/guardrails.py",
+          "tests/intelligence"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "AI agents cannot approve or trade directly",
+      "detail": "all declared evidence paths exist",
+      "domain": "ai_agents",
+      "evidence": [
+        "services/intelligence/guardrails.py",
+        "tests/intelligence"
+      ],
+      "id": "AI.AGENT.NONHUMAN.BOUNDARY",
+      "meets_target": true,
+      "next_action": "Add model and prompt registry",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "model_risk_baseline_evidence",
+      "checker_args": {
+        "external_provider_path": "evidence/external_model_provider_baseline.json",
+        "history_path": "evidence/model_risk_history.json",
+        "maturity_profile": "EXTERNAL_PROVIDER_RUNTIME_M3",
+        "pass_maturity": "M2",
+        "path": "evidence/model_risk_baseline.json",
+        "verification_paths": [
+          "tests/governance/test_model_risk_registry.py",
+          "tests/governance/test_model_risk_evidence.py",
+          "tests/governance/test_model_risk_history.py",
+          "tests/intelligence/test_runtime_governance.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M2",
+      "description": "Model prompt tools evaluation and red-team lineage",
+      "detail": "immutable model/tool/evaluation lineage and real agent-boundary red-team evidence verified; both challengers have negative OOS Sharpe and fail the absolute floor; a registered offline prompt/tool runtime and tamper-evident invocation chain are verified; a deterministic versioned PIT evaluation subset is retained and verified; a current tamper-evident multi-revision history is verified; a switchable external-provider boundary and verifier are implemented, but no passing live HTTPS probe is retained and strong reviewer identity remains open; evidence does not meet target maturity",
+      "domain": "ai_agents",
+      "evidence": [
+        "evidence/model_risk_baseline.json",
+        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "evidence/model_risk_history.json",
+        "tests/governance/test_model_risk_registry.py",
+        "tests/governance/test_model_risk_evidence.py",
+        "tests/governance/test_model_risk_history.py",
+        "tests/intelligence/test_runtime_governance.py",
+        "services/intelligence/agent_loop.py",
+        "services/intelligence/guardrails.py",
+        "services/research/ml/stacker.py",
+        "tools/ml_stack_research.py",
+        "quantos/contracts/model_risk.py",
+        "scripts/generate_model_risk_dataset.py",
+        "scripts/generate_model_risk_evidence.py",
+        "scripts/update_model_risk_history.py",
+        "services/governance/model_risk.py",
+        "services/governance/model_risk_dataset.py",
+        "services/governance/model_risk_history.py",
+        "services/governance/model_risk_registry.py",
+        "services/intelligence/runtime.py"
+      ],
+      "id": "AI.MODEL.REGISTRY.REDTEAM",
+      "meets_target": false,
+      "next_action": "Configure a real external provider and externally verified receipts through the registered runtime; complete independent strong-identity review",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "multi_asset_research_evidence",
+      "checker_args": {
+        "bundle_path": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence_path": "evidence/multi_asset_research_baseline.json",
+        "implementation_paths": [
+          "quantos/contracts/multi_asset.py",
+          "tools/fx_pit_bundle.py",
+          "tools/ic_panel_registry.py",
+          "tools/ic_panel_research.py",
+          "services/research/ic_panel.py",
+          "services/research/signals.py",
+          "services/governance/model_risk_dataset.py",
+          "services/governance/multi_asset_research_evidence.py",
+          "scripts/generate_multi_asset_research_evidence.py"
+        ],
+        "manifest_path": "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "pass_maturity": "M3",
+        "verification_paths": [
+          "tests/research/test_fx_pit_bundle.py",
+          "tests/research/test_ic_panel.py",
+          "tests/research/test_ic_panel_registry.py",
+          "tests/governance/test_multi_asset_research_evidence.py",
+          "tests/governance/test_multi_asset_research_boundary.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "Multi-asset factor research has real artifacts",
+      "detail": "independently replayed 2 FX factors across 3 holding periods from 126113 versioned PIT rows / 18 currencies; bundle, code, tests, PIT identity, result digest, and L2 diagnostic-only boundary verified",
+      "domain": "alpha_research",
+      "evidence": [
+        "evidence/multi_asset_research_baseline.json",
+        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "quantos/contracts/multi_asset.py",
+        "tools/fx_pit_bundle.py",
+        "tools/ic_panel_registry.py",
+        "tools/ic_panel_research.py",
+        "services/research/ic_panel.py",
+        "services/research/signals.py",
+        "services/governance/model_risk_dataset.py",
+        "services/governance/multi_asset_research_evidence.py",
+        "scripts/generate_multi_asset_research_evidence.py",
+        "tests/research/test_fx_pit_bundle.py",
+        "tests/research/test_ic_panel.py",
+        "tests/research/test_ic_panel_registry.py",
+        "tests/governance/test_multi_asset_research_evidence.py",
+        "tests/governance/test_multi_asset_research_boundary.py"
+      ],
+      "id": "ALPHA.MULTI_ASSET.RESEARCH",
+      "meets_target": true,
+      "next_action": "Extend the retained PIT baseline to historically constituent-clean equities or futures without weakening the FX replay",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "data",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "alpha_trial_ledger_evidence",
+      "checker_args": {
+        "entrypoint_path": "services/intelligence/research_session.py",
+        "evidence_path": "evidence/alpha_trial_ledger_history.json",
+        "factory_path": "services/research/alpha_factory.py",
+        "factory_registry_helper_path": "tools/search_trial_registry.py",
+        "ledger_path": "data/cache/experiment_registry.db",
+        "official_factory_paths": [
+          "tools/crypto_factory_intraday.py",
+          "tools/crypto_factory_loop.py",
+          "tools/crypto_factory_orthogonal.py",
+          "tools/crypto_factory_overfit_ab.py",
+          "tools/crypto_factory_run.py"
+        ],
+        "pass_maturity": "M4",
+        "persistence_port_path": "services/research/ports/persistence.py",
+        "registry_path": "services/research/experiment_registry/registry.py",
+        "seal_path": "evidence/alpha_trial_ledger_snapshot_seal.json",
+        "session_path": "services/research/session.py",
+        "snapshot_path": "evidence/alpha_trial_ledger_snapshot.db",
+        "store_path": "services/research/experiment_registry/store.py",
+        "verification_paths": [
+          "tests/research/test_session.py",
+          "tests/research/test_experiment_registry.py",
+          "tests/research/test_experiment_store.py",
+          "tests/research/test_experiment_store_locked_primitives.py",
+          "tests/research/test_search_trial_provenance.py",
+          "tests/intelligence/test_registered_candidate_batch.py",
+          "tests/governance/test_experiment_registry_isolation.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Global trial ledger survives sessions",
+      "detail": "official guided/evolutionary/GP/MCTS and factory recorder wiring, a portable sealed snapshot, a versioned two-session monotonic history chain with exact completed-search evaluation bindings, and database-enforced append-only trial/evaluation/search guards are verified",
+      "domain": "alpha_research",
+      "evidence": [
+        "services/intelligence/research_session.py",
+        "services/research/session.py",
+        "services/research/alpha_factory.py",
+        "tools/search_trial_registry.py",
+        "services/research/experiment_registry/registry.py",
+        "services/research/ports/persistence.py",
+        "services/research/experiment_registry/store.py",
+        "tools/crypto_factory_intraday.py",
+        "tools/crypto_factory_loop.py",
+        "tools/crypto_factory_orthogonal.py",
+        "tools/crypto_factory_overfit_ab.py",
+        "tools/crypto_factory_run.py",
+        "tests/research/test_session.py",
+        "tests/research/test_experiment_registry.py",
+        "tests/research/test_experiment_store.py",
+        "tests/research/test_experiment_store_locked_primitives.py",
+        "tests/research/test_search_trial_provenance.py",
+        "tests/intelligence/test_registered_candidate_batch.py",
+        "tests/governance/test_experiment_registry_isolation.py",
+        "services/research/experiment_registry/family_schema_v2_semantics.py",
+        "evidence/alpha_trial_ledger_history.json",
+        "evidence/alpha_trial_ledger_snapshot.db",
+        "evidence/alpha_trial_ledger_snapshot_seal.json"
+      ],
+      "id": "ALPHA.TRIAL.GLOBAL_LEDGER",
+      "meets_target": true,
+      "next_action": "Evidence complete: all five factory tools wired to persistent search identity with cross-session trial count verification",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "quantos/contracts/data.py",
+          "tests/contracts/test_data_feature.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "PIT and bitemporal contracts are implemented",
+      "detail": "all declared evidence paths exist",
+      "domain": "data_moat",
+      "evidence": [
+        "quantos/contracts/data.py",
+        "tests/contracts/test_data_feature.py"
+      ],
+      "id": "DATA.PIT.CONTRACT",
+      "meets_target": true,
+      "next_action": "Add cross-source quality and historical membership evidence",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M2",
+        "paths": [
+          "quantos/contracts/vendor_data.py",
+          "services/data/vendor_admission.py",
+          "services/data/vendor_delivery_history.py",
+          "tests/data/test_vendor_admission.py",
+          "tests/data/test_vendor_delivery_history.py",
+          "tests/governance/test_vendor_data_boundary.py",
+          "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+        ]
+      },
+      "classification": "NEEDS_EXTERNAL",
+      "current_maturity": "M2",
+      "description": "Licensed tick and order-book data with SLA",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
+      "domain": "data_moat",
+      "evidence": [
+        "quantos/contracts/vendor_data.py",
+        "services/data/vendor_admission.py",
+        "services/data/vendor_delivery_history.py",
+        "tests/data/test_vendor_admission.py",
+        "tests/data/test_vendor_delivery_history.py",
+        "tests/governance/test_vendor_data_boundary.py",
+        "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+      ],
+      "id": "DATA.VENDOR.DEPTH",
+      "meets_target": false,
+      "next_action": "Acquire a genuine licensed tick/order-book source; provision an external license verifier; operate the append-only delivery authority with real deliveries, SLA incidents and remediation; retain contractual rights and legal review",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M4",
+        "paths": [
+          "services/execution/dry_run_pipeline.py",
+          "tests/integration/test_dry_run_all.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Dry-run pipeline reconciles PnL and audit chain",
+      "detail": "all declared evidence paths exist",
+      "domain": "execution_microstructure",
+      "evidence": [
+        "services/execution/dry_run_pipeline.py",
+        "tests/integration/test_dry_run_all.py"
+      ],
+      "id": "EXECUTION.DRYRUN.RECONCILIATION",
+      "meets_target": true,
+      "next_action": "Sustain long-running forward evidence",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "services/execution/simulated_sor.py",
+          "services/execution/simulated_tca.py",
+          "services/execution/paper_tca_history.py",
+          "services/execution/dry_run_pipeline.py",
+          "services/execution/dry_run_store.py",
+          "tests/execution/test_simulated_sor.py",
+          "tests/execution/test_simulated_tca.py",
+          "tests/execution/test_paper_tca_history.py",
+          "tests/execution/test_dry_run_pipeline.py",
+          "tests/execution/test_dry_run_store.py",
+          "tests/execution/test_execution_import_boundary.py",
+          "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+        ]
+      },
+      "classification": "POST_L2",
+      "current_maturity": "M3",
+      "description": "Multi-venue SOR and production microstructure",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
+      "domain": "execution_microstructure",
+      "evidence": [
+        "services/execution/simulated_sor.py",
+        "services/execution/simulated_tca.py",
+        "services/execution/paper_tca_history.py",
+        "services/execution/dry_run_pipeline.py",
+        "services/execution/dry_run_store.py",
+        "tests/execution/test_simulated_sor.py",
+        "tests/execution/test_simulated_tca.py",
+        "tests/execution/test_paper_tca_history.py",
+        "tests/execution/test_dry_run_pipeline.py",
+        "tests/execution/test_dry_run_store.py",
+        "tests/execution/test_execution_import_boundary.py",
+        "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+      ],
+      "id": "EXECUTION.MULTIVENUE.SOR",
+      "meets_target": false,
+      "next_action": "Retain longitudinal route-level dry-run TCA while awaiting post-L2 approval; then prove real multi-venue broker connectivity, fill quality, outage behavior and production TCA",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "text_contains_all",
+      "checker_args": {
+        "needles": [
+          "TOP_TIER_EVIDENCE_ASSESSMENT"
+        ],
+        "pass_maturity": "M4",
+        "path": "apps/research-console/src/pages/SystemCompleteness.tsx"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Completeness UI consumes assessor without hand scores",
+      "detail": "all required markers are present",
+      "domain": "frontend_console",
+      "evidence": [
+        "apps/research-console/src/pages/SystemCompleteness.tsx"
+      ],
+      "id": "FRONTEND.EVIDENCE.SINGLE_SOURCE",
+      "meets_target": true,
+      "next_action": "Replace legacy hand-written completion scores",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          ".github/workflows/validate.yml",
+          "apps/research-console/src/app/routes.tsx",
+          "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+          "apps/research-console/playwright.config.ts",
+          "apps/research-console/e2e/paper-cockpit.spec.ts",
+          "apps/research-console/src/studio/routes.ts",
+          "apps/research-console/src/studio/studio.test.tsx",
+          "apps/research-console/e2e/__snapshots__/research-studio-linux.png",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+          "tests/governance/test_frontend_institutional_e2e_gate.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "Research Studio navigation and bookmarks share a registry; current Linux visual and accessibility gates accompany retained historical cockpit baselines",
+      "detail": "all declared evidence paths exist",
+      "domain": "frontend_console",
+      "evidence": [
+        ".github/workflows/validate.yml",
+        "apps/research-console/src/app/routes.tsx",
+        "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+        "apps/research-console/playwright.config.ts",
+        "apps/research-console/e2e/paper-cockpit.spec.ts",
+        "apps/research-console/src/studio/routes.ts",
+        "apps/research-console/src/studio/studio.test.tsx",
+        "apps/research-console/e2e/__snapshots__/research-studio-linux.png",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+        "tests/governance/test_frontend_institutional_e2e_gate.py"
+      ],
+      "id": "FRONTEND.ROUTES.SINGLE_SOURCE",
+      "meets_target": true,
+      "next_action": "Sustain the pinned Windows/Linux accessibility, overflow, and visual-regression gate as the cockpit evolves",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "services/governance/approval.py",
+          "services/governance/approval_store.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "Multi-party approval and audit hash chain exist",
+      "detail": "all declared evidence paths exist",
+      "domain": "governance_security",
+      "evidence": [
+        "services/governance/approval.py",
+        "services/governance/approval_store.py"
+      ],
+      "id": "GOV.APPROVAL.HASHCHAIN",
+      "meets_target": true,
+      "next_action": "Bind approval to strong external identity",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "strong_identity_baseline_evidence",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "path": "evidence/strong_identity_baseline.json"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "OIDC mTLS RBAC and separation of duties are enforced",
+      "detail": "asymmetric OIDC verification, MFA, RFC 8705 mTLS binding, immutable subject identity, application-owned lifecycle authorization, durable authorization decisions, and three-party separation are load-bearing; browser Authorization Code + PKCE S256 is implemented with one-time state/nonce and memory-only access tokens; external OIDC, trusted TLS deployment, managed key custody, external identity lifecycle operations, and independent AI identity-exclusion evidence remain open; evidence does not meet target maturity",
+      "domain": "governance_security",
+      "evidence": [
+        "evidence/strong_identity_baseline.json",
+        "apps/research-console/src/lib/api/governance-pkce.ts",
+        "apps/research-console/src/lib/api/promotion-api.ts",
+        "apps/research-console/src/workbench/CommandReviewPanel.tsx",
+        "config/identity_authorization_registry.json",
+        "quantos/contracts/identity.py",
+        "scripts/generate_strong_identity_evidence.py",
+        "services/governance/identity_access_review.py",
+        "services/governance/identity_authorization.py",
+        "services/governance/identity_authorization_store.py",
+        "services/governance/l2_identity_deployment.py",
+        "services/governance/oidc_key_registry.py",
+        "services/governance/strong_identity.py",
+        "services/promotion_api/main.py",
+        "services/promotion_api/trusted_mtls_proxy.py",
+        "apps/research-console/src/lib/api/governance-pkce.test.ts",
+        "tests/governance/test_identity_access_review.py",
+        "tests/governance/test_identity_authorization.py",
+        "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_l2_identity_deployment.py",
+        "tests/governance/test_oidc_key_registry.py",
+        "tests/governance/test_promotion_api_boundary.py",
+        "tests/governance/test_promotion_api_endpoints.py",
+        "tests/governance/test_strong_identity.py",
+        "tests/governance/test_trusted_mtls_proxy.py",
+        "requirements.txt",
+        "pyproject.toml"
+      ],
+      "id": "GOV.IDENTITY.STRONG_AUTH",
+      "meets_target": false,
+      "next_action": "Deploy external OIDC and trusted mTLS; prove managed key rotation, identity lifecycle, revocation, access reviews, and AI-workload exclusion",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "l2_backup_evidence",
+      "checker_args": {
+        "expected_source_contract": {
+          "sources": [
+            {
+              "relative_path": "data/cache/ai_factory_checkpoint.zip",
+              "required": false,
+              "role": "ai_factory_verified_checkpoint",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/alpha_maintenance.db",
+              "required": false,
+              "role": "alpha_maintenance",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/alpha_production_workflow.db",
+              "required": true,
+              "role": "alpha_production_workflow",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/approvals.db",
+              "required": false,
+              "role": "approval_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/artifact_admission.db",
+              "required": false,
+              "role": "artifact_admission_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/binance_book_depth_archive.db",
+              "required": false,
+              "role": "binance_book_depth_archive_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/bybit_linear_events.db",
+              "required": false,
+              "role": "bybit_public_linear_event_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
+            },
+            {
+              "relative_path": "data/cache/bybit_market_resilience.db",
+              "required": false,
+              "role": "outcome_free_market_resilience_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
+            },
+            {
+              "relative_path": "data/cache/cross_venue_liquidation_health.json",
+              "required": false,
+              "role": "cross_venue_liquidation_health",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/data_quality_admission.db",
+              "required": true,
+              "role": "data_quality_admission",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/defillama_stablecoin_vintages.db",
+              "required": false,
+              "role": "defillama_stablecoin_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/defillama_tvl_vintages.db",
+              "required": false,
+              "role": "defillama_tvl_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/deployment_state.db",
+              "required": false,
+              "role": "deployment_state",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/domain_event_projection.db",
+              "required": true,
+              "role": "domain_event_projection",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/domain_events.db",
+              "required": true,
+              "role": "domain_event_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/dry_run.db",
+              "required": true,
+              "role": "dry_run_ledger",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/experiment_registry.db",
+              "required": true,
+              "role": "experiment_registry",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/governance_audit.db",
+              "required": true,
+              "role": "governance_audit",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/identity_authorization.db",
+              "required": false,
+              "role": "identity_authorization_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/l2_restore_history.db",
+              "required": true,
+              "role": "l2_restore_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/live_kill_switch.db",
+              "required": false,
+              "role": "kill_switch_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/live_refresh_history.db",
+              "required": true,
+              "role": "data_refresh_history",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/mft_testnet_soak.db",
+              "required": false,
+              "role": "mft_testnet_soak_evidence_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/okx_borrow_vintages.db",
+              "required": false,
+              "role": "okx_public_borrow_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/paper_candidate_registry.db",
+              "required": false,
+              "role": "factory_candidate_admission",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/paper_track.db",
+              "required": true,
+              "role": "paper_track",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/realtime_alpha_execution_paper.db",
+              "required": true,
+              "role": "realtime_engineering_execution_paper",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/research_runs.db",
+              "required": true,
+              "role": "research_run_registry",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+              "required": false,
+              "role": "ashare_tdx_panel_cache",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+              "required": true,
+              "role": "ashare_tdx_daily_price_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/research.db",
+              "required": true,
+              "role": "ashare_research_database",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/alpha_snapshot.json",
+              "required": true,
+              "role": "ashare_alpha_research_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/klines_snapshot.json",
+              "required": true,
+              "role": "ashare_klines_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/paper_track_snapshot.json",
+              "required": true,
+              "role": "ashare_paper_track_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/stocks.db",
+              "required": true,
+              "role": "ashare_market_data_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
+              "required": false,
+              "role": "borrow_pressure_preregistration",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
+              "required": false,
+              "role": "cross_venue_liquidation_preregistration",
+              "snapshot_policy": "STANDARD"
+            }
+          ],
+          "version": 16
+        },
+        "implementation_paths": [
+          "tools/l2_backup.py",
+          "tools/l2_scheduler_watchdog.py",
+          "tools/external_heartbeat.py",
+          "tools/domain_event_seal.py",
+          "tools/restore_drill.py",
+          "tests/tools/test_l2_backup.py",
+          "tests/tools/test_l2_scheduler_watchdog.py",
+          "tests/tools/test_external_heartbeat.py",
+          "tests/tools/test_domain_event_seal.py",
+          "tests/governance/test_l2_operations_boundary.py"
+        ],
+        "max_rpo_ms": 86400000,
+        "max_rto_ms": 300000,
+        "pass_maturity": "M3",
+        "path": "evidence/l2_backup_latest.json"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M1",
+      "description": "Encrypted backups and freshness watchdog exist",
+      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
+      "domain": "reliability_operations",
+      "evidence": [
+        "tools/l2_backup.py",
+        "tools/l2_scheduler_watchdog.py",
+        "tools/external_heartbeat.py",
+        "tools/domain_event_seal.py",
+        "tools/restore_drill.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_external_heartbeat.py",
+        "tests/tools/test_domain_event_seal.py",
+        "tests/governance/test_l2_operations_boundary.py",
+        "evidence/l2_backup_latest.json"
+      ],
+      "id": "OPS.BACKUP.ENCRYPTED",
+      "meets_target": false,
+      "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "operation",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "FAILED",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "l2_restore_history_evidence",
+      "checker_args": {
+        "attempt_timeout_ms": 21600000,
+        "checkpoint_path": "evidence/l2_restore_history_checkpoint.json",
+        "clean_lookback_ms": 2592000000,
+        "expected_source_contract": {
+          "sources": [
+            {
+              "relative_path": "data/cache/ai_factory_checkpoint.zip",
+              "required": false,
+              "role": "ai_factory_verified_checkpoint",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/alpha_maintenance.db",
+              "required": false,
+              "role": "alpha_maintenance",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/alpha_production_workflow.db",
+              "required": true,
+              "role": "alpha_production_workflow",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/approvals.db",
+              "required": false,
+              "role": "approval_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/artifact_admission.db",
+              "required": false,
+              "role": "artifact_admission_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/binance_book_depth_archive.db",
+              "required": false,
+              "role": "binance_book_depth_archive_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/bybit_linear_events.db",
+              "required": false,
+              "role": "bybit_public_linear_event_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
+            },
+            {
+              "relative_path": "data/cache/bybit_market_resilience.db",
+              "required": false,
+              "role": "outcome_free_market_resilience_authority",
+              "snapshot_policy": "SQLITE_WAL_PINNED"
+            },
+            {
+              "relative_path": "data/cache/cross_venue_liquidation_health.json",
+              "required": false,
+              "role": "cross_venue_liquidation_health",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/data_quality_admission.db",
+              "required": true,
+              "role": "data_quality_admission",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/defillama_stablecoin_vintages.db",
+              "required": false,
+              "role": "defillama_stablecoin_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/defillama_tvl_vintages.db",
+              "required": false,
+              "role": "defillama_tvl_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/deployment_state.db",
+              "required": false,
+              "role": "deployment_state",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/domain_event_projection.db",
+              "required": true,
+              "role": "domain_event_projection",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/domain_events.db",
+              "required": true,
+              "role": "domain_event_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/dry_run.db",
+              "required": true,
+              "role": "dry_run_ledger",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/experiment_registry.db",
+              "required": true,
+              "role": "experiment_registry",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/governance_audit.db",
+              "required": true,
+              "role": "governance_audit",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/identity_authorization.db",
+              "required": false,
+              "role": "identity_authorization_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/l2_restore_history.db",
+              "required": true,
+              "role": "l2_restore_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/live_kill_switch.db",
+              "required": false,
+              "role": "kill_switch_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/live_refresh_history.db",
+              "required": true,
+              "role": "data_refresh_history",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/mft_testnet_soak.db",
+              "required": false,
+              "role": "mft_testnet_soak_evidence_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/okx_borrow_vintages.db",
+              "required": false,
+              "role": "okx_public_borrow_forward_vintages",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/paper_candidate_registry.db",
+              "required": false,
+              "role": "factory_candidate_admission",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/paper_track.db",
+              "required": true,
+              "role": "paper_track",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/realtime_alpha_execution_paper.db",
+              "required": true,
+              "role": "realtime_engineering_execution_paper",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/research_runs.db",
+              "required": true,
+              "role": "research_run_registry",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.adv20000000.panel.npz",
+              "required": false,
+              "role": "ashare_tdx_panel_cache",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/pit/tdx-windows-20260830/ashare_tdx_pit.sqlite",
+              "required": true,
+              "role": "ashare_tdx_daily_price_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/research.db",
+              "required": true,
+              "role": "ashare_research_database",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/alpha_snapshot.json",
+              "required": true,
+              "role": "ashare_alpha_research_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/klines_snapshot.json",
+              "required": true,
+              "role": "ashare_klines_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/snapshots/paper_track_snapshot.json",
+              "required": true,
+              "role": "ashare_paper_track_snapshot",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "data/stocks/stocks.db",
+              "required": true,
+              "role": "ashare_market_data_authority",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/borrow_pressure_preregistration_5eed0f1.json",
+              "required": false,
+              "role": "borrow_pressure_preregistration",
+              "snapshot_policy": "STANDARD"
+            },
+            {
+              "relative_path": "evidence/cross_venue_liquidation_preregistration_764e5b5.json",
+              "required": false,
+              "role": "cross_venue_liquidation_preregistration",
+              "snapshot_policy": "STANDARD"
+            }
+          ],
+          "version": 16
+        },
+        "history_path": "data/cache/l2_restore_history.db",
+        "implementation_paths": [
+          "tools/l2_backup.py",
+          "services/governance/l2_restore_history.py",
+          "services/governance/l2_restore_checkpoint.py",
+          "tests/tools/test_l2_backup.py",
+          "tests/governance/test_l2_restore_history.py",
+          "tests/governance/test_l2_restore_checkpoint.py",
+          "tests/governance/test_l2_restore_top_tier.py"
+        ],
+        "max_attempt_age_ms": 172800000,
+        "max_attempt_gap_ms": 172800000,
+        "max_checkpoint_age_ms": 172800000,
+        "max_checkpoint_future_skew_ms": 300000,
+        "max_success_age_ms": 172800000,
+        "max_success_gap_ms": 172800000,
+        "minimum_checkpoint_retention_ms": 7776000000,
+        "minimum_history_span_ms": 2592000000,
+        "minimum_successes": 16,
+        "required_checkpoint_issuer": "operator-owned-restore-checkpoint-authority",
+        "required_checkpoint_key_id": "UNPROVISIONED",
+        "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "RPO RTO and restore drill evidence are current",
+      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
+      "domain": "reliability_operations",
+      "evidence": [
+        "tools/l2_backup.py",
+        "services/governance/l2_restore_history.py",
+        "services/governance/l2_restore_checkpoint.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/governance/test_l2_restore_history.py",
+        "tests/governance/test_l2_restore_checkpoint.py",
+        "tests/governance/test_l2_restore_top_tier.py",
+        "data/cache/l2_restore_history.db"
+      ],
+      "id": "OPS.RESTORE.DRILL",
+      "meets_target": false,
+      "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "operation",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "text_contains_all",
+      "checker_args": {
+        "needles": [
+          "tests/governance",
+          "tests/live",
+          "python-audit-evidence:current",
+          "npm-audit-evidence:current",
+          "actions-osv-evidence:current",
+          "container-trivy-arm64-evidence:current",
+          "container-reproducibility-arm64-evidence:current",
+          "console-smoke-arm64-evidence:current",
+          "service-import-graph:current",
+          "artifact-admission-authority:provision",
+          "model-risk-history:current",
+          "risk-recovery-drill:fresh",
+          "frontend: typecheck",
+          "frontend: tests",
+          "frontend: production build"
+        ],
+        "pass_maturity": "M4",
+        "path": "scripts/validate.py"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "One gate covers backend frontend governance and evidence",
+      "detail": "all required markers are present",
+      "domain": "platform_engineering",
+      "evidence": [
+        "scripts/validate.py"
+      ],
+      "id": "PLATFORM.CI.UNIFIED_GATE",
+      "meets_target": true,
+      "next_action": "Keep backend frontend governance and evidence checks synchronized",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "supply_chain_baseline_evidence",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "path": "evidence/supply_chain_baseline.json"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "SBOM SAST dependency scan and signed artifacts",
+      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed local decision authority whose exact empty trust-root mirrors and hash-chain heads were verified; a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 DSSE bundle and byte-identical Ubuntu 22.04/24.04 source artifact are independently verified; cross-host deployable-container reproduction is not proven; the artifact-admission authority chain head is bound to the source commit by a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 signature; an external signed receipt authority, source-native checkpoint/revocation proofs, independent admission deployment, and WORM object-lock retention remain open; evidence does not meet target maturity",
+      "domain": "platform_engineering",
+      "evidence": [
+        "evidence/supply_chain_baseline.json",
+        "config/artifact_admission_policy_registry.json",
+        "config/artifact_receipt_authority_registry.json",
+        "services/governance/artifact_admission.py",
+        "services/governance/artifact_admission_external_seal.py",
+        "services/governance/artifact_admission_store.py",
+        "services/governance/artifact_receipt_auth.py",
+        "services/governance/cross_host_container_reproducibility.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/json_integrity.py",
+        "tools/artifact_admission_seal.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/verify_artifact_admission.py",
+        "tests/governance/test_artifact_admission.py",
+        "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
+        "tests/governance/test_artifact_admission_store.py",
+        "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+        "evidence/external_sigstore/2026-07-30/github-artifact.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+        "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+        "evidence/external_sigstore/2026-07-30/trusted-root.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+        "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
+        "evidence/vulnerability/npm_audit_latest.json",
+        "evidence/vulnerability/python_audit_latest.json",
+        "evidence/vulnerability/actions_osv_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
+        "evidence/sbom.cdx.json",
+        ".gitattributes",
+        ".github/workflows/sigstore-evidence.yml",
+        ".github/workflows/validate.yml",
+        "apps/research-console/package-lock.json",
+        "apps/research-console/package.json",
+        "apps/research-console/src/lib/types/research.ts",
+        "apps/research-console/src/pages/DryRunPipeline.tsx",
+        "apps/research-console/src/pages/__tests__/dry-run-shadow.test.tsx",
+        "apps/research-console/vite.config.ts",
+        "config/artifact_admission_policy_registry.generation-0.json",
+        "config/artifact_admission_policy_registry.json",
+        "config/artifact_receipt_authority_registry.generation-0.json",
+        "config/artifact_receipt_authority_registry.json",
+        "config/identity_authorization_registry.json",
+        "config/mft_testnet_soak_policy.json",
+        "config/model_provider_registry.json",
+        "config/service_import_policy.json",
+        "config/templates/live_mandate_binance_mainnet.json.template",
+        "config/top_tier_requirements.json",
+        "deploy/arm64/deploy.sh.in",
+        "deploy/console.Dockerfile",
+        "deploy/systemd/README.md",
+        "deploy/systemd/quantos-binance-realtime-stream.service",
+        "deploy/systemd/quantos-bybit-realtime-stream.service",
+        "deploy/systemd/quantos-console-api.service",
+        "deploy/systemd/quantos-console-frontend.service",
+        "deploy/systemd/quantos-l2-watchdog.service",
+        "deploy/systemd/quantos-l2-watchdog.timer",
+        "deploy/systemd/quantos-l2@.service",
+        "deploy/systemd/quantos-l2@.timer",
+        "deploy/systemd/quantos-research-runner.service",
+        "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md",
+        "docs/engineering/specs/2026-07-31-cross-host-container-reproducibility.md",
+        "docs/engineering/specs/2026-07-31-identity-access-review-attestation.md",
+        "docs/engineering/specs/2026-07-31-oidc-key-rotation-registry.md",
+        "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
+        "docs/engineering/specs/2026-08-04-canonical-realtime-candidate-handoff.md",
+        "docs/runbooks/arm64-release-packaging.md",
+        "docs/runbooks/l2-research-operations.md",
+        "evidence/event_schema_catalog.json",
+        "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+        "evidence/external_sigstore/2026-07-30/github-artifact.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+        "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+        "evidence/external_sigstore/2026-07-30/trusted-root.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+        "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
+        "evidence/reproducibility/container_build_arm64_latest.json",
+        "evidence/runtime/console_arm64_smoke_latest.json",
+        "evidence/service_import_graph.json",
+        "evidence/vulnerability/actions_osv_latest.json",
+        "evidence/vulnerability/container_trivy_arm64_latest.json",
+        "evidence/vulnerability/npm_audit_latest.json",
+        "evidence/vulnerability/python_audit_latest.json",
+        "live/execution/risk_monitor.py",
+        "live/governance/kill_switch_store.py",
+        "live/governance/testnet_mandate_proposal.py",
+        "pyproject.toml",
+        "quantos/contracts/alpha.py",
+        "quantos/contracts/event_schemas.py",
+        "quantos/contracts/events.py",
+        "quantos/contracts/external_model_provider.py",
+        "quantos/contracts/identity.py",
+        "quantos/contracts/l2_schedule_policy.py",
+        "quantos/contracts/paper.py",
+        "requirements-dev.txt",
+        "requirements.txt",
+        "scripts/capture_arm64_console_evidence.py",
+        "scripts/generate_actions_audit_evidence.py",
+        "scripts/generate_arm64_console_smoke_evidence.py",
+        "scripts/generate_arm64_container_audit_evidence.py",
+        "scripts/generate_arm64_container_reproducibility_evidence.py",
+        "scripts/generate_container_audit_evidence.py",
+        "scripts/generate_container_reproducibility_evidence.py",
+        "scripts/generate_cross_host_container_evidence.py",
+        "scripts/generate_event_schema_catalog.py",
+        "scripts/generate_npm_audit_evidence.py",
+        "scripts/generate_python_audit_evidence.py",
+        "scripts/generate_service_import_graph.py",
+        "scripts/generate_strong_identity_evidence.py",
+        "scripts/generate_supply_chain_evidence.py",
+        "scripts/isolate_l2_mvp_systemd.py",
+        "scripts/register_schedules.ps1",
+        "scripts/validate.py",
+        "services/alpha/evaluator.py",
+        "services/alpha/events.py",
+        "services/alpha/factory.py",
+        "services/alpha/guards.py",
+        "services/alpha/lifecycle.py",
+        "services/alpha/maintenance_events.py",
+        "services/alpha/maintenance_store.py",
+        "services/alpha/promotion.py",
+        "services/console/api/artifact_paper_views.py",
+        "services/console/api/ashare_views.py",
+        "services/console/api/risk_port.py",
+        "services/console/api/system_views.py",
+        "services/console/main.py",
+        "services/console/risk_console.py",
+        "services/data/events.py",
+        "services/data/public_market_event_store.py",
+        "services/data/refresh_history.py",
+        "services/deployment/events.py",
+        "services/deployment/gate.py",
+        "services/deployment/runtime.py",
+        "services/deployment/store.py",
+        "services/execution/dry_run_pipeline.py",
+        "services/execution/dry_run_store.py",
+        "services/execution/events.py",
+        "services/execution/impact.py",
+        "services/execution/impact_calibration.py",
+        "services/execution/lot_book.py",
+        "services/execution/paper_reconciliation.py",
+        "services/execution/realtime_engineering_paper_store.py",
+        "services/governance/arm64_console_evidence.py",
+        "services/governance/artifact_admission.py",
+        "services/governance/artifact_admission_external_seal.py",
+        "services/governance/artifact_admission_store.py",
+        "services/governance/artifact_receipt_auth.py",
+        "services/governance/cross_host_container_reproducibility.py",
+        "services/governance/external_model_provider_evidence.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/identity_access_review.py",
+        "services/governance/identity_authorization.py",
+        "services/governance/identity_authorization_store.py",
+        "services/governance/json_integrity.py",
+        "services/governance/oidc_key_registry.py",
+        "services/governance/reproducibility_evidence.py",
+        "services/governance/service_import_graph.py",
+        "services/governance/strong_identity.py",
+        "services/governance/top_tier_assessment.py",
+        "services/governance/vulnerability_evidence.py",
+        "services/intelligence/external_provider_runtime.py",
+        "services/intelligence/provider_selection.py",
+        "services/monitoring/consumer_group.py",
+        "services/monitoring/domain_event_runtime.py",
+        "services/monitoring/event_bus.py",
+        "services/monitoring/event_health.py",
+        "services/monitoring/event_projection.py",
+        "services/monitoring/mft_soak.py",
+        "services/monitoring/mft_soak_store.py",
+        "services/promotion_api/main.py",
+        "services/research/alpha_family_registry.py",
+        "services/research/alpha_production_workflow.py",
+        "services/research/borrow_pressure.py",
+        "services/research/experiment_registry/registry.py",
+        "services/research/experiment_registry/store.py",
+        "services/research/liquidation_mechanism.py",
+        "services/research/paper_candidate_registry.py",
+        "services/research/ports/persistence.py",
+        "services/research/realtime_alpha_feedback.py",
+        "services/research/realtime_alpha_handoff.py",
+        "services/research/realtime_alpha_shadow_store.py",
+        "services/research/robust_optimization.py",
+        "services/research/run_registry/contract.py",
+        "services/research_runner/main.py",
+        "services/research_runner/run_kinds.py",
+        "services/research_runner/runner.py",
+        "services/risk/pre_trade/events.py",
+        "services/risk/pre_trade/kill_switch.py",
+        "services/risk/pre_trade/kill_switch_runtime.py",
+        "services/risk/pre_trade/kill_switch_store.py",
+        "services/risk/research_risk/events.py",
+        "services/validation/pbo_evidence.py",
+        "tests/alpha/test_maintenance_store.py",
+        "tests/alpha/test_pbo_evidence.py",
+        "tests/contracts/test_event_schema_registry.py",
+        "tests/contracts/test_paper_execution_contract.py",
+        "tests/data/test_public_market_event_store.py",
+        "tests/data/test_refresh_event_outbox.py",
+        "tests/deployment/test_deployment_store.py",
+        "tests/execution/test_dry_run_store.py",
+        "tests/execution/test_impact_ownership.py",
+        "tests/execution/test_lot_book.py",
+        "tests/execution/test_realtime_engineering_paper_store.py",
+        "tests/governance/test_arm64_console_evidence.py",
+        "tests/governance/test_arm64_container_boundary.py",
+        "tests/governance/test_artifact_admission.py",
+        "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
+        "tests/governance/test_artifact_admission_store.py",
+        "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_capture_arm64_console_evidence.py",
+        "tests/governance/test_console_composition_boundary.py",
+        "tests/governance/test_cross_host_container_reproducibility.py",
+        "tests/governance/test_event_bus_wiring.py",
+        "tests/governance/test_event_schema_catalog.py",
+        "tests/governance/test_evidence_checkout_portability.py",
+        "tests/governance/test_external_model_provider_boundary.py",
+        "tests/governance/test_external_model_provider_evidence.py",
+        "tests/governance/test_external_operations_boundary.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_external_sigstore_workflow.py",
+        "tests/governance/test_identity_access_review.py",
+        "tests/governance/test_identity_authorization.py",
+        "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_l2_operations_boundary.py",
+        "tests/governance/test_l2_schedule_boundary.py",
+        "tests/governance/test_oidc_key_registry.py",
+        "tests/governance/test_promotion_api_boundary.py",
+        "tests/governance/test_promotion_api_endpoints.py",
+        "tests/governance/test_research_runner_boundary.py",
+        "tests/governance/test_risk_recovery_drill_boundary.py",
+        "tests/governance/test_service_import_graph.py",
+        "tests/governance/test_strong_identity.py",
+        "tests/governance/test_strong_identity_evidence.py",
+        "tests/governance/test_supply_chain_evidence.py",
+        "tests/governance/test_systemd_l2_boundary.py",
+        "tests/governance/test_top_tier_assessment.py",
+        "tests/intelligence/test_external_provider_runtime.py",
+        "tests/live/test_kill_switch_reset_cli.py",
+        "tests/live/test_live_risk_sentinel.py",
+        "tests/live/test_risk_recovery_drill.py",
+        "tests/live/test_testnet_mandate_proposal.py",
+        "tests/monitoring/test_event_bus_health.py",
+        "tests/monitoring/test_event_consumer.py",
+        "tests/monitoring/test_event_consumer_group.py",
+        "tests/monitoring/test_event_projection.py",
+        "tests/monitoring/test_governance_decision_audit.py",
+        "tests/monitoring/test_mft_soak.py",
+        "tests/research/test_alpha_family_registry.py",
+        "tests/research/test_alpha_production_workflow.py",
+        "tests/research/test_borrow_pressure.py",
+        "tests/research/test_console_api_contract.py",
+        "tests/research/test_console_event_projection.py",
+        "tests/research/test_experiment_event_outbox.py",
+        "tests/research/test_liquidation_mechanism.py",
+        "tests/research/test_paper_candidate_registry.py",
+        "tests/research/test_realtime_alpha_feedback.py",
+        "tests/research/test_realtime_alpha_handoff.py",
+        "tests/research/test_realtime_alpha_shadow_store.py",
+        "tests/risk/test_kill_switch_state_store.py",
+        "tests/risk/test_research_risk_events.py",
+        "tests/tools/test_alpha_candidate_admission.py",
+        "tests/tools/test_alpha_maintenance_sweep.py",
+        "tests/tools/test_alpha_production_workflow.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "tests/tools/test_ashare_alpha_runtime_workers.py",
+        "tests/tools/test_borrow_pressure_preregistration.py",
+        "tests/tools/test_build_arm64_release_package.py",
+        "tests/tools/test_bybit_realtime_stream.py",
+        "tests/tools/test_cross_venue_liquidation_health.py",
+        "tests/tools/test_cross_venue_liquidation_preregistration.py",
+        "tests/tools/test_deployment_events.py",
+        "tests/tools/test_domain_event_bus.py",
+        "tests/tools/test_domain_event_health.py",
+        "tests/tools/test_domain_event_ops.py",
+        "tests/tools/test_domain_event_outbox_drain.py",
+        "tests/tools/test_domain_event_owner_migration.py",
+        "tests/tools/test_domain_event_seal.py",
+        "tests/tools/test_external_heartbeat.py",
+        "tests/tools/test_external_model_provider.py",
+        "tests/tools/test_isolate_l2_mvp_systemd.py",
+        "tests/tools/test_l2_backup.py",
+        "tests/tools/test_l2_schedule_entrypoint.py",
+        "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_mft_testnet_soak.py",
+        "tests/tools/test_paper_order_preview.py",
+        "tests/tools/test_realtime_alpha_discovery.py",
+        "tests/tools/test_realtime_alpha_execution_paper.py",
+        "tests/tools/test_realtime_alpha_forward_shadow.py",
+        "tests/tools/test_reproducible_source_bundle.py",
+        "tests/tools/test_testnet_execution_service.py",
+        "tests/tools/test_testnet_mandate_proposal.py",
+        "tools/alpha_candidate_admission.py",
+        "tools/alpha_maintenance_sweep.py",
+        "tools/alpha_production_workflow.py",
+        "tools/artifact_admission_seal.py",
+        "tools/ashare_alpha_runtime_lock.py",
+        "tools/ashare_alpha_search_technical.py",
+        "tools/ashare_alpha_search_worker.py",
+        "tools/ashare_forward_observation.py",
+        "tools/ashare_tdx_intake.py",
+        "tools/borrow_pressure_preregistration.py",
+        "tools/build_arm64_release_package.py",
+        "tools/build_reproducible_source_bundle.py",
+        "tools/bybit_realtime_stream.py",
+        "tools/cross_venue_liquidation_health.py",
+        "tools/cross_venue_liquidation_preregistration.py",
+        "tools/crypto_factory_loop.py",
+        "tools/crypto_robust_optimization.py",
+        "tools/deployment_events.py",
+        "tools/domain_event_bus.py",
+        "tools/domain_event_health.py",
+        "tools/domain_event_ops.py",
+        "tools/domain_event_outbox_drain.py",
+        "tools/domain_event_owner_migration.py",
+        "tools/domain_event_seal.py",
+        "tools/external_heartbeat.py",
+        "tools/external_model_provider.py",
+        "tools/external_model_provider_probe.py",
+        "tools/forward_track_advance.py",
+        "tools/kill_switch_events.py",
+        "tools/l2_backup.py",
+        "tools/l2_schedule_entrypoint.py",
+        "tools/l2_scheduler_watchdog.py",
+        "tools/live_backup.py",
+        "tools/live_data_refresh.py",
+        "tools/live_kill_switch_reset.py",
+        "tools/live_risk_sentinel.py",
+        "tools/live_testnet_smoke.py",
+        "tools/live_track_advance.py",
+        "tools/local_frontend_server.py",
+        "tools/mft_testnet_soak.py",
+        "tools/paper_order_preview.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/realtime_alpha_discovery.py",
+        "tools/realtime_alpha_execution_paper.py",
+        "tools/realtime_alpha_forward_shadow.py",
+        "tools/render_systemd_l2_units.py",
+        "tools/restore_drill.py",
+        "tools/risk_recovery_drill.py",
+        "tools/testnet_execution_service.py",
+        "tools/testnet_mandate_proposal.py",
+        "tools/verify_artifact_admission.py"
+      ],
+      "id": "PLATFORM.SUPPLY_CHAIN",
+      "meets_target": false,
+      "next_action": "Retain an authenticated external receipt and 90-day WORM object-lock copy; operate independently deployed admission, checkpoint, and revocation authorities",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "services/portfolio/optimizer.py",
+          "services/portfolio/factor_risk.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M3",
+      "description": "Feasibility-checked optimizer and risk model",
+      "detail": "all declared evidence paths exist",
+      "domain": "portfolio_construction",
+      "evidence": [
+        "services/portfolio/optimizer.py",
+        "services/portfolio/factor_risk.py"
+      ],
+      "id": "PORTFOLIO.CONSTRAINED.OPTIMIZATION",
+      "meets_target": true,
+      "next_action": "Add calibrated firm-wide margin/funding and cross-book limits",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M3",
+      "tier": "A"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M4",
+        "paths": [
+          "services/research/realism",
+          "services/alpha/capacity.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Cost capacity crowding constrain decisions",
+      "detail": "all declared evidence paths exist",
+      "domain": "portfolio_construction",
+      "evidence": [
+        "services/research/realism",
+        "services/alpha/capacity.py"
+      ],
+      "id": "PORTFOLIO.COST.CAPACITY.LOAD_BEARING",
+      "meets_target": true,
+      "next_action": "Unify all limits in portfolio construction",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M4",
+        "paths": [
+          "services/risk/research_risk",
+          "services/risk/pre_trade"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Research and pre-trade gates fail closed",
+      "detail": "all declared evidence paths exist",
+      "domain": "risk_management",
+      "evidence": [
+        "services/risk/research_risk",
+        "services/risk/pre_trade"
+      ],
+      "id": "RISK.FAIL_CLOSED.GATES",
+      "meets_target": true,
+      "next_action": "Add unified persisted intraday risk state",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "risk_recovery_evidence",
+      "checker_args": {
+        "continuous_markers": {
+          ".github/workflows/validate.yml": [
+            "schedule:",
+            "cron:"
+          ],
+          "scripts/validate.py": [
+            "risk-recovery-drill:fresh",
+            "run_risk_recovery_gate.py"
+          ]
+        },
+        "pass_maturity": "M4",
+        "path": "evidence/risk_recovery_drill_latest.json"
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "Risk state restart and disaster drills are proven",
+      "detail": "isolated risk-state restart, gate rejection, ledger recovery, audit integrity, fault injection, and scheduled fresh-drill markers verified",
+      "domain": "risk_management",
+      "evidence": [
+        "evidence/risk_recovery_drill_latest.json",
+        ".github/workflows/validate.yml",
+        "scripts/validate.py"
+      ],
+      "id": "RISK.RECOVERY.DRILL",
+      "meets_target": true,
+      "next_action": "Retain longitudinal drill SLO evidence and alert on missed scheduled runs",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "B"
+    },
+    {
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M4",
+        "paths": [
+          "services/research/validation",
+          "services/alpha/evaluator.py",
+          "tests/research/test_validation.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M4",
+      "description": "DSR PBO CPCV FDR and leakage are load-bearing",
+      "detail": "all declared evidence paths exist",
+      "domain": "validation_model_risk",
+      "evidence": [
+        "services/research/validation",
+        "services/alpha/evaluator.py",
+        "tests/research/test_validation.py"
+      ],
+      "id": "VALIDATION.ANTIOVERFIT.GATE",
+      "meets_target": true,
+      "next_action": "Maintain threshold sensitivity evidence",
+      "red_line": true,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PASS",
+      "target_maturity": "M4",
+      "tier": "A"
+    },
+    {
+      "checker": "model_risk_baseline_evidence",
+      "checker_args": {
+        "external_provider_path": "evidence/external_model_provider_baseline.json",
+        "history_path": "evidence/model_risk_history.json",
+        "maturity_profile": "EXTERNAL_REVIEW_M3",
+        "pass_maturity": "M2",
+        "path": "evidence/model_risk_baseline.json",
+        "verification_paths": [
+          "tests/governance/test_model_risk_registry.py",
+          "tests/governance/test_model_risk_evidence.py",
+          "tests/governance/test_model_risk_history.py",
+          "tests/intelligence/test_runtime_governance.py"
+        ]
+      },
+      "classification": "L2_SAFE_NOW",
+      "current_maturity": "M2",
+      "description": "Independent challenger and model cards exist",
+      "detail": "immutable model/tool/evaluation lineage and real agent-boundary red-team evidence verified; both challengers have negative OOS Sharpe and fail the absolute floor; a registered offline prompt/tool runtime and tamper-evident invocation chain are verified; a deterministic versioned PIT evaluation subset is retained and verified; a current tamper-evident multi-revision history is verified; a switchable external-provider boundary and verifier are implemented, but no passing live HTTPS probe is retained and strong reviewer identity remains open; evidence does not meet target maturity",
+      "domain": "validation_model_risk",
+      "evidence": [
+        "evidence/model_risk_baseline.json",
+        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "evidence/model_risk_history.json",
+        "tests/governance/test_model_risk_registry.py",
+        "tests/governance/test_model_risk_evidence.py",
+        "tests/governance/test_model_risk_history.py",
+        "tests/intelligence/test_runtime_governance.py",
+        "services/intelligence/agent_loop.py",
+        "services/intelligence/guardrails.py",
+        "services/research/ml/stacker.py",
+        "tools/ml_stack_research.py",
+        "quantos/contracts/model_risk.py",
+        "scripts/generate_model_risk_dataset.py",
+        "scripts/generate_model_risk_evidence.py",
+        "scripts/update_model_risk_history.py",
+        "services/governance/model_risk.py",
+        "services/governance/model_risk_dataset.py",
+        "services/governance/model_risk_history.py",
+        "services/governance/model_risk_registry.py",
+        "services/intelligence/runtime.py"
+      ],
+      "id": "VALIDATION.CHALLENGER.MODEL_RISK",
+      "meets_target": false,
+      "next_action": "Bind independent review to strong external identity; keep refuted models excluded until a genuine positive OOS challenger exists",
+      "red_line": false,
+      "required_evidence": [
+        "implementation",
+        "verification",
+        "governance",
+        "reproducibility"
+      ],
+      "status": "PARTIAL",
+      "target_maturity": "M3",
+      "tier": "A"
+    }
+  ],
+  "schema_version": 1,
+  "summary": {
+    "failed": 1,
+    "manual_evidence_required": 0,
+    "partial": 7,
+    "passed": 14,
+    "red_lines_failed": 3,
+    "total": 22,
+    "unverified": 0
+  },
+  "validation": {
+    "current": true,
+    "generated_at": 1789173380002,
+    "run_id": "74219c1931adcdc3ab06de360add41a1f210fe1e8181d1d66fe40a9452328ae2",
+    "source_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c"
+  },
+  "verdict": "NOT_TOP_TIER"
+}

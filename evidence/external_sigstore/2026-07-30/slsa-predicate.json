@@ -1,0 +1,31 @@
+{
+  "buildDefinition":{
+    "buildType":"https://quantos.dev/build-types/reproducible-source-bundle/v1",
+    "externalParameters":{
+      "sourceCommit":"6042317f913569a912a34fb54d7879cbbbcf4d0c"
+    },
+    "internalParameters":{
+      "crossHostBuilders":[
+        "ubuntu-22.04",
+        "ubuntu-24.04"
+      ]
+    },
+    "resolvedDependencies":[
+      {
+        "digest":{
+          "gitCommit":"6042317f913569a912a34fb54d7879cbbbcf4d0c"
+        },
+        "uri":"git+https://github.com/kerstker/QUANTOS@refs/heads/codex/top-tier-wave0"
+      }
+    ]
+  },
+  "runDetails":{
+    "builder":{
+      "id":"https://github.com/kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@refs/heads/codex/top-tier-wave0"
+    },
+    "byproducts":[],
+    "metadata":{
+      "invocationId":"https://github.com/kerstker/QUANTOS/actions/runs/30540314233/attempts/1"
+    }
+  }
+}

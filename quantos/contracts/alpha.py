@@ -1,0 +1,294 @@
+"""Alpha Factory contracts (blueprint §04 / Phase 6).
+
+Entities + the alpha LIFECYCLE state machine (mirrors order.py). The state
+machine encodes a hard safety property: only a HUMAN actor can drive an alpha to
+APPROVED; agents/automation may advance up to PAPER_TRADING and may de-risk to
+RETIRED, but can never self-approve (critique P0-3 fix — the actor carries a
+verifiable kind).
+"""
+from __future__ import annotations
+
+import math
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .hashing import stable_hash
+from .research import AlphaState, ValidationVerdict
+from .validation import (
+    BatchPboEvidence,
+    CatalogEvidence,
+    PboAlignment,
+)
+
+
+class ActorKind(str, Enum):
+    HUMAN = "HUMAN"
+    AGENT = "AGENT"
+    SYSTEM = "SYSTEM"
+
+
+class Actor(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    actor_id: str = Field(min_length=1)
+    kind: ActorKind
+
+    @property
+    def is_human(self) -> bool:
+        return self.kind == ActorKind.HUMAN
+
+    @property
+    def is_agent(self) -> bool:
+        return self.kind == ActorKind.AGENT
+
+
+class AlphaDefinition(BaseModel):
+    """An inert candidate alpha spec produced by the (proposal-only) generator."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    factor_ids: tuple[str, ...] = ()
+    universe: str = ""
+    params: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def definition_hash(self) -> str:
+        return stable_hash({
+            "factor_ids": list(self.factor_ids),
+            "universe": self.universe,
+            "params": self.params,
+        })
+
+
+class AlphaEvaluation(BaseModel):
+    """Frozen, reproducible evaluation report for one alpha. Proposes a verdict;
+    promotion is the lifecycle manager's job, never this report's."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    ic_mean: Optional[float] = None
+    icir: Optional[float] = None
+    ic_tstat: Optional[float] = None
+    ic_pvalue: Optional[float] = None
+    hit_rate: Optional[float] = None
+    ic_autocorr: Optional[float] = None
+    mean_breadth: float = 0.0
+    n_periods: int = Field(default=0, ge=0)
+    coverage_ok: bool = False
+    net_sharpe: float = 0.0
+    capacity_adj_sharpe: float = 0.0          # net_sharpe haircut by capacity
+    observed_sr: float = 0.0
+    turnover: float = Field(default=0.0, ge=0)
+    marginal_ir: Optional[float] = None      # incremental edge vs approved set (step 6/13)
+    max_corr_vs_approved: Optional[float] = None   # 2026-07-10: max |pairwise corr| vs the
+                                              # approved set — a narrower, single-pair check
+                                              # marginal_ir's multivariate Gram-Schmidt residual
+                                              # can miss (a candidate with strong-enough OWN edge
+                                              # can clear marginal_ir even at rho~0.95 to one
+                                              # approved alpha). None = not assessed (no approved
+                                              # set yet, or insufficient overlap with every member).
+    crowding_score: Optional[float] = None    # public-factor R^2 (None = unknown)
+    deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
+    catalog_evidence: Optional[CatalogEvidence] = None
+    catalog_evidence_hash: str = ""
+    pbo: float = Field(default=0.0, ge=0, le=1)
+    pbo_evidence: Optional[BatchPboEvidence] = None
+    pbo_evidence_hash: str = ""
+    catalog_trial_count: int = Field(default=1, ge=1)
+    catalog_trial_set_hash: str = ""
+    verdict: ValidationVerdict
+    reasons: tuple[str, ...] = ()
+    as_of: int = Field(default=0, ge=0)
+    dataset_version: str = ""
+    reproducibility_hash: str = ""
+
+    @model_validator(mode="after")
+    def _validate_bound_evidence_fields(self) -> "AlphaEvaluation":
+        if self.catalog_evidence is None:
+            if self.catalog_evidence_hash:
+                raise ValueError(
+                    "catalog evidence hash cannot exist without retained evidence"
+                )
+        else:
+            evidence = self.catalog_evidence
+            if self.catalog_evidence_hash != evidence.evidence_hash:
+                raise ValueError("catalog evidence hash mismatch")
+            if evidence.subject_id != self.alpha_id:
+                raise ValueError("catalog evidence subject mismatch")
+            if not math.isclose(
+                self.observed_sr,
+                evidence.observed_sr,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise ValueError("observed Sharpe does not match catalog evidence")
+            if not math.isclose(
+                self.deflated_sharpe,
+                evidence.deflated_sharpe,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise ValueError("Deflated Sharpe does not match catalog evidence")
+            if self.catalog_trial_count != evidence.trial_count:
+                raise ValueError("catalog trial count does not match evidence")
+            if (
+                self.catalog_trial_set_hash
+                != evidence.catalog_trial_set_hash
+            ):
+                raise ValueError("catalog trial-set hash does not match evidence")
+
+        if self.pbo_evidence is None:
+            if self.pbo_evidence_hash:
+                raise ValueError("PBO evidence hash cannot exist without retained evidence")
+            return self
+        if self.pbo_evidence_hash != self.pbo_evidence.evidence_hash:
+            raise ValueError("PBO evidence hash mismatch")
+        if not math.isclose(self.pbo, self.pbo_evidence.pbo, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("PBO scalar does not match retained evidence")
+        if len(self.catalog_trial_set_hash) != 64:
+            raise ValueError("bound PBO evaluation requires a catalog trial-set digest")
+        if (
+            self.catalog_evidence is not None
+            and self.catalog_evidence.subject_definition_hash
+            not in self.pbo_evidence.candidate_definition_hashes
+        ):
+            raise ValueError("PBO evidence does not contain the catalog subject")
+        return self
+
+
+class AlphaCluster(BaseModel):
+    """A group of mutually-correlated (redundant) alphas + one representative."""
+    model_config = ConfigDict(frozen=True)
+    cluster_id: str = Field(min_length=1)
+    member_ids: tuple[str, ...]
+    representative_id: str = Field(min_length=1)
+    intra_corr: Optional[float] = None   # worst (min) pairwise |corr| within the cluster
+
+
+class DecayReport(BaseModel):
+    """Whether an alpha's predictive power has eroded (debounced over windows)."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    ic_now: Optional[float] = None
+    ic_baseline: Optional[float] = None
+    ic_retention_ratio: Optional[float] = None
+    half_life_time: Optional[float] = None
+    half_life_horizon: Optional[float] = None
+    ic_trend_slope: Optional[float] = None
+    decayed: bool = False
+    reasons: tuple[str, ...] = ()
+    as_of: int = Field(default=0, ge=0)
+
+
+class RetirementDecision(BaseModel):
+    """Whether an alpha should be retired, with deterministically-ordered reasons."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    retire: bool = False
+    reasons: tuple[str, ...] = ()
+
+
+class AlphaRanking(BaseModel):
+    """One alpha's place in the robust, diversity-aware ranking. Fully
+    explainable: the per-metric z-scores and the penalties are exposed."""
+    model_config = ConfigDict(frozen=True)
+    rank: int = Field(ge=1)
+    alpha_id: str = Field(min_length=1)
+    composite_score: float               # final: stability-weighted, penalized
+    raw_score: float                     # pre-penalty weighted robust-z composite
+    rank_stability: float = 1.0
+    redundancy_penalty: float = 0.0
+    crowding_penalty: float = 0.0
+    z_components: dict[str, float] = Field(default_factory=dict)
+    cluster_id: str = ""
+    is_representative: bool = True
+    reproducibility_hash: str = ""
+
+
+# --- lifecycle state machine -------------------------------------------------
+
+ALPHA_ALLOWED_TRANSITIONS: dict[AlphaState, frozenset[AlphaState]] = {
+    AlphaState.DRAFT: frozenset({AlphaState.TESTING, AlphaState.REJECTED}),
+    AlphaState.TESTING: frozenset({AlphaState.VALIDATED, AlphaState.REJECTED}),
+    AlphaState.VALIDATED: frozenset({AlphaState.PAPER_TRADING, AlphaState.REJECTED}),
+    # paper may deepen into SHADOW (dry-run), be approved (human), de-risk, or be flagged
+    AlphaState.PAPER_TRADING: frozenset({AlphaState.SHADOW, AlphaState.APPROVED, AlphaState.REJECTED,
+                                         AlphaState.RETIRED, AlphaState.PAUSED, AlphaState.DEGRADED}),
+    AlphaState.SHADOW: frozenset({AlphaState.APPROVED, AlphaState.DEGRADED, AlphaState.PAUSED,
+                                  AlphaState.RETIRED, AlphaState.REJECTED}),
+    AlphaState.APPROVED: frozenset({AlphaState.DEGRADED, AlphaState.PAUSED, AlphaState.RETIRED}),
+    # a degraded alpha that recovers re-enters dry-run OBSERVATION (re-approval is a fresh human gate),
+    # or is paused / retired — it can never jump straight back to live
+    AlphaState.DEGRADED: frozenset({AlphaState.SHADOW, AlphaState.PAUSED, AlphaState.RETIRED}),
+    # a paused alpha resumes to observation or retires; a human may resume it to APPROVED
+    AlphaState.PAUSED: frozenset({AlphaState.SHADOW, AlphaState.APPROVED, AlphaState.RETIRED}),
+    AlphaState.RETIRED: frozenset(),
+    AlphaState.REJECTED: frozenset(),
+}
+
+ALPHA_TERMINAL_STATES: frozenset[AlphaState] = frozenset({AlphaState.RETIRED, AlphaState.REJECTED})
+
+# States a non-human actor may drive INTO. APPROVED is deliberately excluded: promotion to APPROVED is
+# human-only. SHADOW / DEGRADED / PAUSED ARE agent-reachable — they are dry-run observation / de-risking
+# states that grant NO live authority (the live gate is APPROVED), so an agent moving an alpha into them
+# can never grant it live capability.
+AGENT_REACHABLE: frozenset[AlphaState] = frozenset({
+    AlphaState.TESTING, AlphaState.VALIDATED, AlphaState.PAPER_TRADING, AlphaState.SHADOW,
+    AlphaState.DEGRADED, AlphaState.PAUSED, AlphaState.REJECTED, AlphaState.RETIRED,
+})
+
+
+class InvalidAlphaTransition(ValueError):
+    def __init__(self, src: AlphaState, dst: AlphaState):
+        super().__init__(f"illegal alpha transition: {src.value} -> {dst.value}")
+        self.src, self.dst = src, dst
+
+
+class UnauthorizedPromotion(PermissionError):
+    def __init__(self, actor: "Actor", dst: AlphaState):
+        super().__init__(f"actor kind {actor.kind.value} may not drive transition to {dst.value}")
+        self.actor, self.dst = actor, dst
+
+
+def can_alpha_transition(src: AlphaState, dst: AlphaState) -> bool:
+    return dst in ALPHA_ALLOWED_TRANSITIONS.get(src, frozenset())
+
+
+def assert_alpha_transition(src: AlphaState, dst: AlphaState, actor: Actor) -> None:
+    """Legality first, then the human-only authorization for non-AGENT_REACHABLE
+    targets (i.e. APPROVED). Evidence/approval-token verification happens in the
+    lifecycle guards; this is the structural first lock."""
+    if not can_alpha_transition(src, dst):
+        raise InvalidAlphaTransition(src, dst)
+    if not actor.is_human and dst not in AGENT_REACHABLE:
+        raise UnauthorizedPromotion(actor, dst)
+
+
+def is_alpha_terminal(state: AlphaState) -> bool:
+    return state in ALPHA_TERMINAL_STATES
+
+
+class AlphaTransition(BaseModel):
+    """Immutable, hash-chained record of one lifecycle transition (audit)."""
+    model_config = ConfigDict(frozen=True)
+    transition_id: str = Field(min_length=1)
+    alpha_id: str = Field(min_length=1)
+    src_state: AlphaState
+    dst_state: AlphaState
+    actor: Actor
+    evidence_hash: str = ""
+    approval_id: str = ""
+    dataset_version: str = ""
+    timestamp: int = Field(ge=0)
+    prev_hash: str = ""
+
+    @property
+    def entry_hash(self) -> str:
+        return stable_hash({
+            "transition_id": self.transition_id, "alpha_id": self.alpha_id,
+            "src": self.src_state.value, "dst": self.dst_state.value,
+            "actor": self.actor.actor_id, "actor_kind": self.actor.kind.value,
+            "evidence_hash": self.evidence_hash, "approval_id": self.approval_id,
+            "dataset_version": self.dataset_version, "timestamp": self.timestamp,
+            "prev_hash": self.prev_hash,
+        })

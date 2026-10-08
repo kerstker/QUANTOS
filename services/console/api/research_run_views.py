@@ -1,0 +1,311 @@
+"""Read-only research-run registry and aggregated result HTTP views."""
+
+from __future__ import annotations
+
+import os
+import json
+from typing import Dict
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+
+from quantos.runtime_paths import runtime_state_root
+from services.console.api.backtest_evidence import (
+    DIAGNOSTIC_EVIDENCE_STATUS,
+    scrub_backtest_payload,
+)
+from services.execution.backtest_authority import LEGACY_INVALIDATION_CODE
+from quantos.contracts.registered_research_job import KINDS as REGISTERED_KINDS, validate_report
+from quantos.contracts import registered_research_review_job as review_contract
+
+REVIEW_KINDS = tuple(review_contract.PARAMS)
+
+router = APIRouter()
+
+
+def _overview_active_runs() -> int:
+    """Count of currently non-terminal research runs (queued/running) from the registry; 0 fail-closed."""
+    try:
+        return sum(1 for r in _runs_registry().list(limit=200) if r.status in ("queued", "running"))
+    except Exception:
+        return 0
+
+
+_STATE_ROOT = runtime_state_root()
+_RUNS_DB = os.path.join(_STATE_ROOT, "data", "cache", "research_runs.db")
+
+
+class _EmptyRunRegistry:
+    """Missing read model: preserve the console shape without creating state."""
+
+    @staticmethod
+    def list(kind=None, limit: int = 200):
+        del kind, limit
+        return []
+
+    @staticmethod
+    def get(run_id: str):
+        del run_id
+        return None
+
+
+def _runs_registry():
+    from services.research.run_registry.store import ResearchRunStore
+    from services.research.run_registry.registry import RunRegistry
+
+    if not os.path.isfile(_RUNS_DB):
+        return _EmptyRunRegistry()
+    return RunRegistry(ResearchRunStore(_RUNS_DB, create=False))
+
+
+def _predictive_identity(run, payload: Dict) -> Dict:
+    """Do not label a verified new prediction experiment as an invalidated V1 backtest."""
+    from services.research_runner.run_kinds import RUN_KINDS, LEGACY_QUARANTINED_RUN_KINDS
+    if run.kind not in RUN_KINDS or run.kind in LEGACY_QUARANTINED_RUN_KINDS:
+        return payload
+    from services.research_runner.runner import validate_run_provenance
+    try:
+        validate_run_provenance(run, RUN_KINDS[run.kind])
+        if (run.kind in (*REGISTERED_KINDS, *REVIEW_KINDS, 'gold_bar_research', 'gold_bar_recover', 'btc_mechanism', 'btc_factory', 'btc_forward', 'perpetual_replay', 'perpetual_alpha', 'orderblock_research')
+                and run.status == 'done' and _technical_replay_detail(run) is None):
+            return payload
+    except (ValueError, TypeError, KeyError):
+        return payload
+    payload.pop('invalidation_code', None)
+    payload['params'] = run.params
+    if 'error' in payload:
+        payload.update(error=run.error, log=run.log)
+    status = ('EXPLORATORY_PREDICTION_ONLY' if run.kind == 'btc_mechanism' else
+              'TECHNICAL_VALIDATION_ONLY' if run.kind in (*REGISTERED_KINDS, *REVIEW_KINDS, 'gold_bar_research', 'gold_bar_recover', 'gold_replay', 'btc_factory', 'btc_forward', 'perpetual_replay', 'perpetual_alpha', 'orderblock_research')
+              else 'DIAGNOSTIC_ONLY')
+    payload['evidence_status'] = status
+    payload['verdict'] = (status if run.status == 'done'
+                          else 'RESEARCH_' + run.status.upper())
+    if 'caveats' in payload:
+        payload['caveats'] = list(run.caveats) or ['研究记录，仅用于技术诊断。']
+    return payload
+
+
+def _run_summary(r) -> Dict:
+    """Project operational identity without legacy economic result fields."""
+
+    return _predictive_identity(r, {
+        "run_id": r.run_id,
+        "kind": r.kind,
+        "title": r.title,
+        "status": r.status,
+        "created_ts": r.created_ts,
+        "headline": {"label": None, "value": None},
+        "verdict": LEGACY_INVALIDATION_CODE,
+        "params": {},
+        "code_version": r.code_version,
+        "authoritative": False,
+        "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+    })
+
+
+def _run_detail(r) -> Dict:
+    """Keep queue/audit identity while suppressing retained result content."""
+
+    return _predictive_identity(r, {
+        "run_id": r.run_id,
+        "kind": r.kind,
+        "title": r.title,
+        "params": {},
+        "status": r.status,
+        "created_ts": r.created_ts,
+        "finished_ts": r.finished_ts,
+        "metrics": {},
+        "series": {},
+        "verdict": LEGACY_INVALIDATION_CODE,
+        "caveats": [LEGACY_INVALIDATION_CODE],
+        "provenance": "RETAINED_RUN_REGISTRY_IDENTITY_ONLY",
+        "error": None,
+        "log": [],
+        "code_version": r.code_version,
+        "authoritative": False,
+        "evidence_status": DIAGNOSTIC_EVIDENCE_STATUS,
+        "invalidation_code": LEGACY_INVALIDATION_CODE,
+    })
+
+
+def _invalidated_envelope(payload: Dict, **identity_fields: object) -> Dict:
+    projected = scrub_backtest_payload(payload)
+    projected.update(identity_fields)
+    return projected
+
+
+@router.get("/api/v1/console/research-runs")
+def research_runs(kind: str = Query(None)) -> Dict:
+    reg = _runs_registry()
+    rows = [_run_summary(r) for r in reg.list(kind=kind)]
+    return _invalidated_envelope({
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "RESEARCH_RUN_REGISTRY",
+        "runs": [],
+    }, runs=rows, registry_available=not isinstance(reg, _EmptyRunRegistry))
+
+
+@router.get("/api/v1/console/research-run")
+def research_run_detail(run_id: str = Query(...)) -> Dict:
+    reg = _runs_registry()
+    r = reg.get(run_id)
+    return _invalidated_envelope({
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "RESEARCH_RUN_REGISTRY",
+        "run": None,
+    }, run=_run_detail(r) if r else None)
+
+
+def _technical_replay_detail(run) -> Dict | None:
+    """A separate technical projection; no retained V1 result can enter it."""
+    if run is None or run.kind not in (*REGISTERED_KINDS, *REVIEW_KINDS, "gold_bar_research", "gold_bar_recover", "gold_replay", "perpetual_replay", "perpetual_alpha", "orderblock_research", "btc_mechanism", "btc_factory", "btc_forward") or run.status != "done":
+        return None
+    from services.research_runner.run_kinds import RUN_KINDS
+    from services.research_runner.runner import validate_run_provenance
+
+    try:
+        validate_run_provenance(run, RUN_KINDS[run.kind])
+        if (run.verdict != "TECHNICAL_VALIDATION_ONLY"
+                or (run.kind == "perpetual_replay" and run.metrics.get("reconciliation_residual") != "0")):
+            return None
+    except (ValueError, TypeError, KeyError):
+        return None
+    extra = {}
+    if run.kind in REVIEW_KINDS:
+        try:
+            report = review_contract.validate_report(json.loads(run.metrics['registered_review_report_json']))
+            key = review_contract.PARAMS[run.kind]
+            if (report[key] != run.params[key] or
+                    (report['review_id'] or report['review_request_id']) != run.metrics['result_hash'] or
+                    (run.kind == 'registered_review_request') != (report['phase'] == 'REQUEST_PREPARED')):
+                return None
+            extra['registered_review_report'] = report
+        except (KeyError, TypeError, ValueError):
+            return None
+    if run.kind in REGISTERED_KINDS:
+        try:
+            report = validate_report(json.loads(run.metrics['registered_research_report_json']))
+            if (report['plan']['invocation_id'] != run.params['native_invocation_id']
+                    or report['result_hash'] != run.metrics['result_hash']
+                    or report['account']['residual'] != run.metrics['reconciliation_residual']):
+                return None
+            extra['registered_research_report'] = report
+        except (KeyError, TypeError, ValueError):
+            return None
+    if run.kind in ('gold_bar_research', 'gold_bar_recover', 'btc_factory', 'btc_forward'):
+        field = {'gold_bar_research': 'gold_bar_report', 'gold_bar_recover': 'gold_bar_report', 'btc_factory': 'factory_report',
+                 'btc_forward': 'forward_report'}[run.kind]
+        try:
+            extra[field] = json.loads(run.metrics[field + '_json'])
+            if field == 'gold_bar_report':
+                from quantos.contracts.registered_gold_collection import validate_report as validate_gold
+                validate_gold(extra[field])
+        except (KeyError, TypeError, ValueError):
+            return None
+    return {**extra, "run_id": run.run_id,
+            "metrics": {k:v for k,v in run.metrics.items() if k not in ('registered_review_report_json', 'registered_research_report_json', 'gold_bar_report_json', 'factory_report_json', 'forward_report_json')}, "series": run.series,
+            "caveats": run.caveats, "params": run.params,
+            "evidence_status": "TECHNICAL_VALIDATION_ONLY", "authoritative": False}
+
+
+@router.get("/api/v1/console/technical-replay")
+def technical_replay(run_id: str = Query(...)) -> Dict:
+    detail = _technical_replay_detail(_runs_registry().get(run_id))
+    snapshot_id = detail['metrics']['result_hash'] if detail is not None else None
+    return {"source": "BACKEND_COMPUTED_SNAPSHOT", "read_only": True,
+            "api_version": "0.1.0", "data_provenance": "VERIFIED_RUN_REGISTRY_TECHNICAL_MIRROR",
+            "authoritative": False, "evidence_status": "TECHNICAL_VALIDATION_ONLY",
+            "snapshot_id": snapshot_id,
+            "snapshot_ids": [snapshot_id] if snapshot_id else [],
+            "snapshot_status": "REAL" if detail is not None else "NO_SNAPSHOT",
+            "technical_replay": detail}
+
+
+@router.get('/api/v1/console/registered-review-request')
+def registered_review_request(review_request_id: str = Query(..., pattern='^[a-f0-9]{64}$')) -> Dict:
+    from pathlib import Path
+    from services.research.project_research_review_request import read_request
+    directory = Path(runtime_state_root())/'data/cache/registered_research/review_requests'/review_request_id
+    try:
+        packet = read_request(directory, request_id=review_request_id)
+        status = 'VALID'
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        packet = None
+        status = 'MISSING' if isinstance(exc, FileNotFoundError) or isinstance(exc.__cause__, FileNotFoundError) else 'INVALID'
+    return dict(source='BACKEND_COMPUTED_SNAPSHOT', read_only=True, api_version='0.1.0',
+        data_provenance='UNSIGNED_ORIGINAL_PROJECT_REVIEW_REQUEST', authoritative=False,
+        evidence_status='TECHNICAL_VALIDATION_ONLY', material_status=status, review_request=packet,
+        snapshot_id=review_request_id if packet is not None else None,
+        snapshot_ids=[review_request_id] if packet is not None else [],
+        snapshot_status='REAL' if packet is not None else 'NO_SNAPSHOT')
+
+
+@router.get('/api/v1/console/registered-review-archive')
+def registered_review_archive(review_request_id: str = Query(..., pattern='^[a-f0-9]{64}$')):
+    from pathlib import Path
+    from services.research.project_research_review_request import iter_request_archive, read_request
+    directory = Path(runtime_state_root())/'data/cache/registered_research/review_requests'/review_request_id
+    try:
+        read_request(directory, request_id=review_request_id)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        missing = isinstance(exc, FileNotFoundError) or isinstance(exc.__cause__, FileNotFoundError)
+        raise HTTPException(status_code=404 if missing else 409,
+            detail='Review material is missing or invalid') from exc
+    return StreamingResponse(iter_request_archive(directory, request_id=review_request_id),
+        media_type='application/x-tar', headers={
+            'Content-Disposition':f'attachment; filename="project-review-{review_request_id}.tar"',
+            'Cache-Control':'no-store', 'X-Quantos-Read-Only':'true',
+            'X-Quantos-Authoritative':'false', 'X-Quantos-Review-Request':review_request_id})
+
+
+def _latest_done_run(reg, kind: str):
+    """Latest DONE run of a kind (by created_ts), or None. run_id is a content hash (re-runs mint a new id),
+    so we select by kind+recency — robust to re-running research — instead of pinning a fragile id."""
+    try:
+        cands = [r for r in reg.list(kind=kind) if r.status == "done"]
+    except Exception:
+        return None
+    if not cands:
+        return None
+    return sorted(cands, key=lambda r: r.created_ts or 0, reverse=True)[0]
+
+
+def _backtest_results_payload() -> Dict:
+    """Expose no schema-v1 metrics while retaining honest registry presence."""
+
+    try:
+        reg = _runs_registry()
+        carry = _latest_done_run(reg, "carry_strategy")
+        combo = _latest_done_run(reg, "combo_book")
+        oi = _latest_done_run(reg, "oi_research")
+        surv = _latest_done_run(reg, "survivorship")
+    except Exception:
+        carry = combo = oi = surv = None
+    have_real = any(x is not None for x in (carry, combo, oi, surv))
+    return scrub_backtest_payload({
+        "results_mode": "READ_ONLY_BACKTEST_RESULTS",
+        "data_provenance": "RESEARCH_RUN_REGISTRY" if have_real else "SYNTHETIC_DETERMINISTIC",
+        "carry": None,
+        "combo": None,
+        "oi_research": None,
+        "survivorship": None,
+        "factory": {"loop": None, "orthogonal": None},
+    })
+
+
+@router.get("/api/v1/console/backtest-results")
+def backtest_results() -> Dict:
+    payload = _backtest_results_payload()
+    return scrub_backtest_payload({
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        **payload,
+    })

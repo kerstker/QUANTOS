@@ -1,0 +1,149 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 300, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "03 · 全流程"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 800, 38]
+    content: {style: "$h1", wrap: false, text: "研究 → 验证 → 干跑 → 实盘门禁"}
+  - elementId: s1
+    elementType: text
+    bounds: [80, 130, 190, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>数据</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">PIT 无未来函数 · 无幸存者偏差</span></p>
+  - elementId: a1
+    elementType: line
+    bounds: [272, 158, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: s2
+    elementType: text
+    bounds: [316, 130, 200, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>AI 搜索</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">带护栏非人 agent · 每步泄漏证据送评估器门</span></p>
+  - elementId: a2
+    elementType: line
+    bounds: [518, 158, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: s3
+    elementType: text
+    bounds: [562, 130, 190, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>统计证伪</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">5 项电池 + DSR 泄气 + walk-forward 门</span></p>
+  - elementId: a3
+    elementType: line
+    bounds: [754, 158, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: s4
+    elementType: text
+    bounds: [798, 130, 150, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>ALPHA 目录</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">生命周期状态机</span></p>
+  - elementId: s5
+    elementType: text
+    bounds: [80, 238, 200, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>前向 paper-track</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">held-out OOS · append-only 持久层</span></p>
+  - elementId: a5
+    elementType: line
+    bounds: [282, 266, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: s6
+    elementType: text
+    bounds: [326, 238, 230, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>干跑流水线</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">整手+成本+资金费 · 逐意图过 9 引擎门 + kill-switch · 对账恒等式</span></p>
+  - elementId: a6
+    elementType: line
+    bounds: [558, 266, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$line"}
+  - elementId: s7
+    elementType: text
+    bounds: [602, 238, 240, 70]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:16px"><strong>现实主义检验</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">Almgren-Chriss 冲击 · 容量 · 危机重演 · 宏观 regime</span></p>
+  - elementId: gate-divider
+    elementType: line
+    bounds: [80, 336, 800, 2]
+    viewBox: [800, 2]
+    points: "0,1 800,1"
+    border: {style: dash, width: 1, color: "$warn"}
+  - elementId: gate-label
+    elementType: text
+    bounds: [80, 346, 800, 20]
+    content:
+      style: "$small"
+      color: "$warn"
+      wrap: false
+      text: |
+        <p>── 以下被多重结构性人工门封锁 ──</p>
+  - elementId: g1
+    elementType: text
+    bounds: [80, 380, 420, 60]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$ink;font-size:15px"><strong>Testnet 执行栈（已联调）</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">attestation → plan → gate → mandate → ledger → place → confirm → audit</span></p>
+  - elementId: ga
+    elementType: line
+    bounds: [504, 408, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 2, color: "$warn"}
+  - elementId: g2
+    elementType: text
+    bounds: [548, 380, 360, 60]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$warn;font-size:15px"><strong>Mainnet（默认构造即拒绝）</strong></span></p>
+        <p style="margin-top:6px"><span style="color:$muted;font-size:11px">需：人工 --arm-live + 多方 mandate + attestation + 只读 smoke</span></p>
+  - elementId: principle
+    elementType: text
+    bounds: [80, 470, 800, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>设计原则：策略（意图）与风险（许可）严格分离 · 研究/纸面/实盘严格隔离 · 券商逻辑全部在适配器后 · AI 只持非人 actor</p>

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "operation_verdict": "PASS",
+  "institutional_seal_status": "PARTIAL_EXTERNAL_WORM_UNVERIFIED",
+  "observed_at_ms": 1785782401749,
+  "data_provenance": "VERIFIED_ARTIFACT_ADMISSION_AUTHORITY_SNAPSHOT",
+  "authority_mutated": false,
+  "destination_class": "SEPARATE_VOLUME",
+  "anchor_created": false,
+  "anchor_path": "I:\\QUANTOS_L2_BACKUPS\\quantos-event-seals\\artifact-admission-authority-9e2ba2d3add5642a376dbcbfd5cf4adb61a9649ae727e03925d890ed6cb229b7.json",
+  "anchor_sha256": "d0872493e72b2926a9805b5cb1d9ffd2d6b5a220a3402cde111137800f6e2cab",
+  "commitment": {
+    "schema_version": 1,
+    "store_kind": "QUANTOS_ARTIFACT_ADMISSION_AUTHORITY",
+    "store_schema_version": 4,
+    "event_count": 4,
+    "event_head_hash": "0e3f1e33f6ab6b22b2cf5adb7bb0b243fd65d1531dfe0764bf8776a4b80b75eb",
+    "decision_count": 0,
+    "registry_snapshot_count": 4,
+    "overall_hash": "9e2ba2d3add5642a376dbcbfd5cf4adb61a9649ae727e03925d890ed6cb229b7"
+  },
+  "external_signature_verified": false,
+  "worm_retention_verified": false
+}

@@ -1,0 +1,96 @@
+{
+  "retrieved_date": "2026-09-06",
+  "review_type": "TARGETED_PRIMARY_EVIDENCE_REVIEW_NOT_EXHAUSTIVE",
+  "sources": [
+    {
+      "id": "S01",
+      "authors": "Liu and Tsyvinski",
+      "title": "Risks and Returns of Cryptocurrency",
+      "url": "https://www.nber.org/papers/w24877",
+      "alternative_url": "https://cepr.org/voxeu/columns/risks-and-returns-cryptocurrencies",
+      "read_scope": "AUTHOR_SUMMARY_READ; NBER_FULLTEXT_403",
+      "boundary": "历史动量与关注度的预测关系是复验线索；没有本账户永续净收益证据。"
+    },
+    {
+      "id": "S02",
+      "authors": "Liu, Tsyvinski and Wu",
+      "title": "Common Risk Factors in Cryptocurrency (2019-04-15 working paper)",
+      "url": "https://economics.yale.edu/sites/default/files/2022-10/LiuTsyvinskiWu2019%20COMMON%20RISK%20FACTORS.pdf",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_PDF_ABSTRACT_DATA_METHOD_SECTIONS_READ",
+      "boundary": "截面市场/规模/动量解释不能直接迁移成BTC单币择时。"
+    },
+    {
+      "id": "S03",
+      "authors": "Cont, Kukanov and Stoikov",
+      "title": "The Price Impact of Order Book Events (arXiv v3, 2011)",
+      "url": "https://arxiv.org/html/1011.6402v3",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_TEXT_RELEVANT_METHOD_AND_RESULTS_READ",
+      "boundary": "盘口OFI含挂单/撤单；同期价格冲击关系不等于未来收益预测。"
+    },
+    {
+      "id": "S04",
+      "authors": "Schmeling, Schrimpf and Todorov",
+      "title": "Crypto carry",
+      "url": "https://www.bis.org/publications/working-paper-1087-crypto-carry",
+      "alternative_url": "https://cepr.org/voxeu/columns/crypto-carry-market-segmentation-and-price-distortions-digital-asset-markets",
+      "read_scope": "BIS_SUMMARY_AND_2025_12_22_AUTHOR_SUMMARY_READ; PDF_LINK_FAILED",
+      "boundary": "到期期货基差、杠杆需求与套利约束；不是永续高资金费必跌规则。"
+    },
+    {
+      "id": "S05",
+      "authors": "Bailey and Lopez de Prado",
+      "title": "The Deflated Sharpe Ratio",
+      "url": "https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_PDF_ABSTRACT_AND_SELECTION_METHOD_READ",
+      "boundary": "需要搜索总体与非正态信息，不能当作盈利保证。"
+    },
+    {
+      "id": "S06",
+      "authors": "Bailey, Borwein, Lopez de Prado and Zhu",
+      "title": "The Probability of Backtest Overfitting (2015-02)",
+      "url": "https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_PDF_METHOD_AND_LIMITATIONS_READ",
+      "boundary": "CSCV评价选择过程；不替代真实时间前向。"
+    },
+    {
+      "id": "S07",
+      "authors": "Newey and West",
+      "title": "A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix",
+      "url": "https://www.nber.org/papers/t0055",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_SEARCH_ABSTRACT; PDF_ACCESS_FAILED",
+      "boundary": "HAC方法来源；有限样本、带宽与非平稳仍需审查。"
+    },
+    {
+      "id": "S08",
+      "authors": "Clark and West",
+      "title": "Approximately Normal Tests for Equal Predictive Accuracy in Nested Models (2005-11-15 working paper)",
+      "url": "https://www.kansascityfed.org/documents/5368/pdf-RWP05-05.pdf",
+      "alternative_url": null,
+      "read_scope": "PRIMARY_PDF_ABSTRACT_AND_SECTIONS_1_2_READ",
+      "boundary": "嵌套模型未调整MSPE差的正态检验并非标准有效发现检验。本轮原始HAC/holm仅探索诊断。"
+    },
+    {
+      "id": "D01",
+      "authors": "Binance",
+      "title": "Binance Public Data",
+      "url": "https://github.com/binance/binance-public-data",
+      "alternative_url": null,
+      "read_scope": "OFFICIAL_SCHEMA_AND_CHECKSUM_SECTIONS_READ",
+      "boundary": "USD-M字段与现货微秒规则区分；归档不证明当时接收时间。"
+    },
+    {
+      "id": "D02",
+      "authors": "Binance",
+      "title": "USD-M Open Interest Statistics",
+      "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data",
+      "alternative_url": null,
+      "read_scope": "OFFICIAL_OPEN_INTEREST_SECTION_READ",
+      "boundary": "REST近期窗口与历史日归档是不同数据入口。"
+    }
+  ]
+}

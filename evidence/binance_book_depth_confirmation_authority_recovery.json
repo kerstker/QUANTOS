@@ -1,0 +1,810 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786514741350,
+  "status": "PASS",
+  "mode": "NEW_AUTHORITY_CHAIN_FROM_EXACT_PUBLIC_SOURCE_RECONSTRUCTION",
+  "recovery_id": "binance_book_depth_confirmation_authority_recovery_v1",
+  "source_commit": "a9e1ece6d5b771025fc0a2ca340da03452792987",
+  "knowledge_time_ms": 1786513073995,
+  "immutable_bindings": {
+    "recovery_contract": {
+      "commit": "969a9aa068454b8a180817adea7c1fae328183de",
+      "sha256": "79d68630869158d997d61e8ea4a506424fa58ef6ca621e8ca527a4de22079cfc",
+      "repository_path": "config/binance_book_depth_confirmation_authority_recovery_v1.json"
+    },
+    "confirmation": {
+      "commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+      "sha256": "f16e33250ae50e143076a235e95fc60f5e34cf9a9eb115033a1eb82b1e0a0a7c",
+      "repository_path": "config/binance_book_depth_alpha_confirmation.json"
+    },
+    "quality_policy": {
+      "commit": "1c85c937e4c6b91c1c631263b01cbc01c7e4ab30",
+      "sha256": "b5dcf1813ede930f3d9c749d451dc5caa3337fedba2b3cad313f51711151f8c3",
+      "repository_path": "config/binance_book_depth_confirmation_quality_policy_v4.json"
+    },
+    "supplement": {
+      "commit": "831222f363a8b54a25d3b9cb34a5ab0d5d548864",
+      "sha256": "2dbbf602468fb14dcc9100ef16c4b7128c92725df5c41491b640de4a7b0cde0e",
+      "repository_path": "config/binance_book_depth_alpha_confirmation_supplement_v1.json"
+    },
+    "capacity_block": {
+      "commit": "b0a3722b64f872b368ca05c2763aac35b372d728",
+      "sha256": "a39537964a0b0e5390117881bce0e0a11a57000e37502f716f3b9bad054b22dc",
+      "repository_path": "evidence/binance_book_depth_confirmation_window1_v4_capacity_blocked.json"
+    },
+    "capacity_pass": {
+      "commit": "143c417dd673c7bbbdb6f4f9748525a638753ecc",
+      "sha256": "26c985af053e1e2cac3f9ff38251ebf0c58706c2f39602c8fde372afc3018765",
+      "repository_path": "evidence/binance_book_depth_confirmation_capacity_supplement.json"
+    }
+  },
+  "old_authority": {
+    "capacity_pass_evidence": "evidence/binance_book_depth_confirmation_capacity_supplement.json",
+    "capacity_pass_commit": "143c417dd673c7bbbdb6f4f9748525a638753ecc",
+    "dataset_row_count": 60816,
+    "head_seq": 61152,
+    "head_row_hash": "15270ff476d19526369489f6133ff5490b59975e7622fea5ea8a7dd13216cb66",
+    "recoverable": false,
+    "claim_new_chain_equals_old_chain": false
+  },
+  "new_authority": {
+    "dataset_row_count": 30576,
+    "head_seq": 30576,
+    "head_row_hash": "d75937916966e141854639155fd6c34c48563e797b8a215bf4ed375d8537aaad",
+    "chain_valid": true,
+    "claims_old_chain_identity": false
+  },
+  "input_observation_count": 30576,
+  "input_observation_sha256": "c2885001c3f29ec9394c93e51d2d6732fcb1db460e814ee0eff6a4a6ca882e7d",
+  "processed_day_count": 97,
+  "complete_day_count": 91,
+  "quality_excluded_day_count": 6,
+  "quality_excluded_days_ms": [
+    1770336000000,
+    1774483200000,
+    1775606400000,
+    1776297600000,
+    1776816000000,
+    1776988800000
+  ],
+  "quality_exclusions": [
+    {
+      "day_ms": 1770336000000,
+      "failures": [
+        {
+          "instrument_id": "ADAUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "608b0c20ae21bb98959db87d5ebe85fc4724feb439412e2d1da89a41774f9244",
+          "mark_price_archive_sha256": "98bc0dc3ea2ef01c7585ce20358607fac68bab6123959b7928d6348537cb6782",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ATOMUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "2cf86a466fa26e630d46814d655ce5ae479bb0656c87340563ab559575af476b",
+          "mark_price_archive_sha256": "5f44949e38b9e5a258208c3d32c49916b1b347c00fd3f8432776c20012b8a970",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "AVAXUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "721d33719aacfe3f5fd46ae3d672d2358ecf34ddc629fd5beacc00a37bb1c038",
+          "mark_price_archive_sha256": "1a8252a029c271d935181287348eb3c87f080cf73c6af34df054d051125d516e",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BCHUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "3b67cd19bc415267c06b0eaf8aceda0b244a93af1bdb7ec50c667507f8715bb1",
+          "mark_price_archive_sha256": "9d3a2dddae9214215fe2b07574435d4da2e25ed3c8b87107b2175e21f7aad8b5",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BNBUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "1d66abf80047b29efea47baab8681f84615af5e809fda89017395d41cd35154e",
+          "mark_price_archive_sha256": "096b8406f3dbe072425665b25f02423ecc51bb6141f76fa23940900eef6939ce",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOGEUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "24ce69c468de3fd92de67c9e80b116336d31b27cd5e9399b85d93fb50efee3dc",
+          "mark_price_archive_sha256": "81ca135ab44f21bfc9f41fca468da38d5660d008522fe40d52f93d1cc5370827",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOTUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "5445f9791f0ad9e980b9ebaa6814e614e23f3d27aa7b6fef38eb098b507a5d03",
+          "mark_price_archive_sha256": "89309c886cb926280f6c0ef43b7298dbee8b912f04d2cf8d850128b551274466",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LINKUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "2a3b1b552f864fd1e7e07e91d395f93170502f453744177b6d74e1488423618c",
+          "mark_price_archive_sha256": "abc491dfa3ab0f39d48ca4498779eb56225b3c078a212f05186fbab1c951f7ce",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LTCUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "9508c648ff6ec8dff98606088cc57edf2573f24dcafbb1cea444a199049f5995",
+          "mark_price_archive_sha256": "d6d9ab7bbfbb0fb7b77056d974c47c9be44693118484a25b36c63a3123089d0a",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "SOLUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "a58ac546202cf958e10508c632fa05b46e80f3c5be3fe86ce736862e1daebd1c",
+          "mark_price_archive_sha256": "06adc37db321e4689fe8666cdaddca2268e845d99107e57f18f6a99cdb721d12",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "UNIUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "68c6811507da31b8e200972b33a2227cacf2780f51a2dbb1f89d15d23cf61e23",
+          "mark_price_archive_sha256": "9ff42abde7ecfe99b09df4884a07897e9346a938a078fdb9434615aab128096e",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "XRPUSDT",
+          "day_ms": 1770336000000,
+          "day": "2026-02-06",
+          "reason": "implicit bid/ask prices inversion exceeds bounded quarantine policy",
+          "book_depth_archive_sha256": "4829c68e7cff3f8d8c7f067412c348be1697b989e6d6aa166688bbe4dcbb01a7",
+          "mark_price_archive_sha256": "0987f463563635a7b957cf4391c76e5f690c0b8d9ad3c8e6001ce91e9ce8e779",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    },
+    {
+      "day_ms": 1774483200000,
+      "failures": [
+        {
+          "instrument_id": "ETHUSDT",
+          "day_ms": 1774483200000,
+          "day": "2026-03-26",
+          "reason": "implicit midpoint exceeds the mark-price alignment bound",
+          "book_depth_archive_sha256": "05b34c1b8577f300b09b640b6ac77ea367a0c6d7ed45b11c075ca4bbbb4fb5fe",
+          "mark_price_archive_sha256": "2aa89b273e8221084f1d9a8a9b7ab4e08d5b314a7c593c88571299ecb26ff2eb",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    },
+    {
+      "day_ms": 1775606400000,
+      "failures": [
+        {
+          "instrument_id": "ADAUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "0910b7207af89badceb893a733df41191733819165a63ac6255bcd958675555c",
+          "mark_price_archive_sha256": "7fab094576bccc4bd351ea9cec68911f46af86bebebe51782dc376bab82cfb5e",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ATOMUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "d54b370d25d8411dc7be0d40706bbbffda3a3359537aa754219093a4017f67f0",
+          "mark_price_archive_sha256": "e2d0abfa76b3d962278ecaa0f8f51ae5b37f124c1896171b5fd9301af17cd370",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "AVAXUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "749eae1c6d1392dfb287eeadf0c3141c2594e3fc7fe2abcd87722be12b566eaa",
+          "mark_price_archive_sha256": "c3e204e2b361f0424d9d3b9c7ce3737cc52af88ee9522364cc0a9f7be9178dd3",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BCHUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "5509774a5b07fa659d5229def6122b587acdfe2fcbab91a149378b0d92a8b312",
+          "mark_price_archive_sha256": "06c1d0b8bfdc7f0841d71ca77e63309282aa567fd3d0029665a0bb562b0f584d",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BNBUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "5d3d10d6c971b48a2138b8b4f644778ebecdf109ab17e080073320ed444e225c",
+          "mark_price_archive_sha256": "c9bd2dbfb1363c74de67c1e95a60e29d9ed9d5ed92f665ec8aae5b01140cf52a",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BTCUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "058fc7c1c781b489589f3e8a3bc527891275c543d7d3526499bfb3b6433eec84",
+          "mark_price_archive_sha256": "f99d08736e9e68cc13b0541bf51b55a6a27978e9b86b66ac84c9acbf88ffb127",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOGEUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "4e82328ed47078ca87549c7969fc3d6a4341e605cdd7800a3fb87325457a0cb8",
+          "mark_price_archive_sha256": "9ac12e43672107ec4ea401481fb688540392a05ebdc7a7820e9fc96c302c70df",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOTUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "5175e824768b677df08e36288926bdea7af8c339696c887175084d04cb5852a8",
+          "mark_price_archive_sha256": "7974898186e42227140dcba35a789cba89e65996c55d67a4ead9cd9bd6276ba7",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ETHUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "108e544df5334233e1de3a95f53025aabf2bc23a3ca209a214a357a0d8173d9b",
+          "mark_price_archive_sha256": "d283df098d39504008e5713ec9ce0457ab34ee9bbc67cd7fd2d860d229d1683f",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LINKUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "fea5eb9aa7d3efadf17207b3dd532cd8854430a29035349cc8869a5bcdad8bec",
+          "mark_price_archive_sha256": "d0e638879801658afaf6581f3851b7e160f3be4ee368e230ed46bb02b2493b68",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LTCUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "516aa897bbaac53fbfe358dcedee3a86cd76b609cb9b22f70e0999d5487e2316",
+          "mark_price_archive_sha256": "73a0bab94bc920c3d63fcc5847ee4329150d3537622c068df0e57ff660ffb106",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "SOLUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "3378fd48abbcf9828ef6965ace57bc691730f96a78a931e0ba227c7237b4b6ba",
+          "mark_price_archive_sha256": "5e86358f3def42e6c2ac310a721f2b083f15041eb93061b5c151ded84133909c",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "UNIUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "1404adb526cfaf9da775cebebdd79ecd8a311b2322ffe91f488d7fb8d9f59a36",
+          "mark_price_archive_sha256": "031fdc6945d0d28031db732a24795167b63777e4610df4be96359be7ada6fdaf",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "XRPUSDT",
+          "day_ms": 1775606400000,
+          "day": "2026-04-08",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "7b624c15907e1348ccb926cb9ada8aaf373772d4ffa38c2b454db2019eb15328",
+          "mark_price_archive_sha256": "e1d03e5475cb9d036bd873135eafb807c213ea802f4682bcbab75251999db742",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    },
+    {
+      "day_ms": 1776297600000,
+      "failures": [
+        {
+          "instrument_id": "ADAUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "27003679146aae722315f49898ee34aa43b1dd17f7fe3c7b9853517b503d44c1",
+          "mark_price_archive_sha256": "04eccb43dc4b38af0806f13c3b096abdeae2437918fb73ba30405f8a5ffe01e6",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ATOMUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "9d5bec1e6b85863dd6e09cde647bedd6b2138fce07d0606e9fa18ae56cfa0781",
+          "mark_price_archive_sha256": "cee29fc06cfef2a18a64e82820da10ee36c87e0518d0fe5140efbae3e2315a80",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "AVAXUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "1bb51a634ab419587f5e2cabd8b444a25501e81b4b1f639189da9b8ef1a5b9ef",
+          "mark_price_archive_sha256": "0e10cc70ece10f9831de694b55aef2e0f3dc09ecf3ec058af20a924fe961d1cb",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BCHUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "7e73951ab94edc80c7f20663c89b558d159a5193990d04016233f5e565a330af",
+          "mark_price_archive_sha256": "e36646c02622aac52f45c7a8787ef39f35065c48806997fa64768d92b4b60329",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BNBUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "2fba0ee3d7945a0e92a9c399432287d34834656d3d03565b8fb668f036035297",
+          "mark_price_archive_sha256": "0d9e4a0a2af5a3b7639eb647a274cf91474599bee1062e3d966bb716f312a7a8",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BTCUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "95069071227cf38356a7ff8136dd0f18bd0f7a152bab077aa2f3606b773dc596",
+          "mark_price_archive_sha256": "af27106774a2fdb2a210a9cca5e189d335aa43a07ef77901529aa8fdb77f6a9d",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOGEUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "87fe45988e77786d7f557eede426c0ff91b27812ac09932b7e6347302fbc7402",
+          "mark_price_archive_sha256": "492e93f1a42a6d29ab66bb152415b9ce2d846994a1dd6ff09fcdb4a98386822c",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOTUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "b490e5e86409397647b618ef31791e47d1a58c4a64ad01af66a5fc8b11bf8dcd",
+          "mark_price_archive_sha256": "192fab608749778bab3cdf482a970e97d13001880748162c4002aff8766c7f6e",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ETHUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "6d5120e9f99b2c5044240f227db6e589e72c2dd8e7af13aa14dc42d948db5db3",
+          "mark_price_archive_sha256": "f66ffa4f9e720e1954d26a71b7df0c15d9b6246a2896938e011d0144e17c5153",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LINKUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "fed6aa2df2a191127e24e850d2fee6642e6503c5a4e7c9d2b4afef244f4c08ed",
+          "mark_price_archive_sha256": "0bf4c33169fde7f8dc320c34cd724386fda85035050b7bae13fadc81c41aca00",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LTCUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "f97940b6763e38e119f39b8e7ae4a85f781d274fcd814f13f5e22e5a7d8e80ed",
+          "mark_price_archive_sha256": "b704d25977d3f00a226e93f78c9de06b7ac4cdcb753c9ad6c67737780ff3001e",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "SOLUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "1b04a2e579845a1099e7e1428c41989e10b9e274f0d97273bcfdb84549566480",
+          "mark_price_archive_sha256": "60914a6063433d40d51ccdddb97d6c302c8b9dec0ca62620d1f168cbdf98816f",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "UNIUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "cd1698211625c07cb1a28709e5ca8bee8c3882e803f136092d2e20dd99b33d5b",
+          "mark_price_archive_sha256": "422532e7c32341af810ac647d08fa5aa66054acc94d15a51501a9df604fd9efa",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "XRPUSDT",
+          "day_ms": 1776297600000,
+          "day": "2026-04-16",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "e7120944131f5188b7543461cdcd56baef51ad37502e9818ce7917a64106f16d",
+          "mark_price_archive_sha256": "ec69fc14744e91252732ea930e52ca6c0ea60211d5b3b5cc70884aefa69c8d50",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    },
+    {
+      "day_ms": 1776816000000,
+      "failures": [
+        {
+          "instrument_id": "ADAUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "0763a4fd9b7735380096c2f6f09605667c6a5aad93b4418a67fe7d68974ddb82",
+          "mark_price_archive_sha256": "b3c2551b92c27750935b07f60df071ab7dc4a016ac805697d464dd32bd134b5c",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ATOMUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "b7ec4d339ef5633b62e3da178a2455c4ec9e5aa61563583ab986e15c50ebf5ac",
+          "mark_price_archive_sha256": "77c4ac10c58c7eeb3b9d12ef97f04f1e2450105fa3e5d8f7d3119c739069c04a",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "AVAXUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "534e3b1311edb7fd7131e25c95f3513671c33ec5c0fcbf3accc6913c8135a3c1",
+          "mark_price_archive_sha256": "38273ac289e7c62806c0fefd1ef4ad5ec895d3fa8366b8626510cffa3fabeed2",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BCHUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "9c97b717779d1f3cb741cb15ffef90cb44693b23c34f5ca6d85aa16e423e416c",
+          "mark_price_archive_sha256": "4d44340d110aa234e7918d6f593a3dfb5a3e35dcb6378e873d50de1db801c387",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BNBUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "4662b06f1fbb58f58d969db9334fa6f1b5754b5cf1c39c7c2cf9689882798300",
+          "mark_price_archive_sha256": "c5705f5a8be8d4586c6d88f50673393bb2ac39405e65e754b565fe64df39c548",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BTCUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "dbbef0dede70ed4fcf0009f2ae82d5027ddc77ff56c374c53c0bda671b1af80c",
+          "mark_price_archive_sha256": "16af4d9390bda74dbd618f579b4280c2c5aae4b3f352a08227307da6e9cfb7fc",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOGEUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "df10b1e628817edaa4fadeaaf5f4df5d09f862d152090ea5313d41df73fad089",
+          "mark_price_archive_sha256": "51670651cc814ce80277ba9579bdc240988e2676dff01988c1d1606d21c74132",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOTUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "a4762d536be049215b27011b20972b6d8894359600698d806c0a30ec3c89dcc8",
+          "mark_price_archive_sha256": "5b8791068feff5a5c46a9caff8fae00d1e8d731adbfc27210ead932d22a378ef",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ETHUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "adf7ea6b79f21f3d81b0f99e3a1f75d94aba88a3e211859e7daef9719bcd4a85",
+          "mark_price_archive_sha256": "0b6264560eb4a489fe92f7e8c7c1234006c5c952c57ff6c1125f1d308669ab17",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LINKUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "07fefc6a0d95aaa775ce14766b097ccf7be39490bec785e291f0cd5946a8cf08",
+          "mark_price_archive_sha256": "8a1e7483fead2951946067ac47059386af7a19a744dc61d7ddfc2ffe2bac8030",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LTCUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "2463b8a18482c15bcb61523a0feee159006094b1a18cc93a394a8931d141c4e1",
+          "mark_price_archive_sha256": "af8d7b3740c58c25bb29fd09a453c33c95d3cc44b4692202ddf5bfa67de9545b",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "SOLUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "f1bbd5403d01c024f2a92192a5f3bf13b792aa2ecc4c0c48e0ceae824d89ad32",
+          "mark_price_archive_sha256": "9784e9bdb98fbb3ab4de107d0ea2f15145830441190af44b57dd422b488d66f9",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "UNIUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "cab2ee09871fcfcb2b657d8fb23eb22ab6f0169707665842a00de9edad3d6e37",
+          "mark_price_archive_sha256": "3430f3da3d431e174bbd84add5321573b827788481ce9e82b5828212cdd68a9f",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "XRPUSDT",
+          "day_ms": 1776816000000,
+          "day": "2026-04-22",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "8e1aafd8029096b05e7f4a735dbba0691b59a8765842d3985c83ead35d3a4187",
+          "mark_price_archive_sha256": "0fa4b5ab6e3b50b01167370c91ae6719f79258f4eeb918836ac05318f43e0576",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    },
+    {
+      "day_ms": 1776988800000,
+      "failures": [
+        {
+          "instrument_id": "ADAUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "13095b718ffecd8007f4f9bd7cc1fb1820b853ac308c808308cfdec3c6b8a19b",
+          "mark_price_archive_sha256": "4e1c754e5b0b1c7850524d6b2f678ba236bf49e1a36bfc70fb6bbe3d0c5be71a",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ATOMUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "2fe4067deb8241641accadffa84089c9da934aec9b58935c09e6bc7b295d33ca",
+          "mark_price_archive_sha256": "9b92a087b9a746688fdf21440cf683993fe64f0a70b3a5992dc2197dfc89f3bd",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "AVAXUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "d11ad308d00cf22c315d00723f154a2a3b6df3d31162cba959fbaf00ef01d1aa",
+          "mark_price_archive_sha256": "10586c9bda07d560c0653ce136b760ef86910f4c328793a3d6a1969dc9b8794d",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BCHUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "ee6162b4705743e99fd4b7ebc1200a7d3991801a25ba615d5dbcd8b25bb191d3",
+          "mark_price_archive_sha256": "017645411189cea0bbcd7038aab77721a6659781ff0ec9ddc701b46ef18dc305",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BNBUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "53ebf74db1478bfdab9d5b54b1c648af6cb15f97e3f31da189576dd855d795f5",
+          "mark_price_archive_sha256": "507b42336cba787f41e62ff22108f8ab50ecdb0d3b2c9657d1264b4ba2cbde5a",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "BTCUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "706e073084a26a9f6c7f9f0a993875fb93e792657d7955f194e9b0762d050a0f",
+          "mark_price_archive_sha256": "6f27223139ec5679a7efaf8fd92c90d90c4c884488eae7dafbb9a06720401227",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOGEUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "8cb4d9979c5c4bacfe8648b4f75f924a149fa9d2f8a423766b373fc6a9664732",
+          "mark_price_archive_sha256": "c16b2b1d15843a095af789b46adbd258f205b6ad9fd68bf808c2f4052b7e18e7",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "DOTUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "a6de7f9586d40afeeb0862d29ce0523b4b0a5ba9b31077c9c34b50f9d18152a7",
+          "mark_price_archive_sha256": "9705eb971975bace9ff537a04b2507e0f7f0e80cf173ae43704e0254821215df",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "ETHUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "d6e49ab3506e4813c5bad7d2850b1bebd5f2a82e31e31b3e72a6746f5975d5a6",
+          "mark_price_archive_sha256": "fc47dd207f4a7ba3d61a2ad56ae42631285d9cbf4a0b1894deac1c79af75cc0b",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LINKUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "e58ce1fd5a059b192acd420e38d9917503965b7fc400034db68f6f0849cd5206",
+          "mark_price_archive_sha256": "6431475866726fb1aff74306acb0b7255af77c0500b3d434bc025edb1cf8b184",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "LTCUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "6389e6f30e52f71d51d25523869ee017a6a7805038d89a005093f5dc87316c42",
+          "mark_price_archive_sha256": "33071e9cd81105be4c8e2478e129d1efeb848a5f1d965f6c134e6c9c9d19fed7",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "SOLUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "74013abf4a89a0c83ca8bb28ab807b6ab235f893293f3c89ae321e1c8ff93b1e",
+          "mark_price_archive_sha256": "bb14c7994d20b429ee7f6c16ca0df53e3f455c3f36921321e4b391aea006602b",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "UNIUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "e046012e82092ce3de70cfac4d8abb3ec64fa783cf2dd6d237ff57f1a4ed4f49",
+          "mark_price_archive_sha256": "668675b2746b23b014cb6c37f31ae2df1dd6e6d0f0d8edf1b1d3c0bba1fd5463",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        },
+        {
+          "instrument_id": "XRPUSDT",
+          "day_ms": 1776988800000,
+          "day": "2026-04-24",
+          "reason": "book-depth hour is below the minimum accepted snapshot count",
+          "book_depth_archive_sha256": "26c476049adbb315b15933824b6ac0169daf8e70e32de8c2d97fec4c9f640995",
+          "mark_price_archive_sha256": "15583986bbf19544c25c405e3eb5fa222c3ebee19949be5cd1711dd9eae90fdf",
+          "book_depth_checksum_verified": true,
+          "mark_price_checksum_verified": true
+        }
+      ]
+    }
+  ],
+  "parent_complete_day_count": 85,
+  "supplement_complete_day_count": 6,
+  "actual_adjacent_24h_decision_count": 84,
+  "source_facts_exactly_reproduced": true,
+  "alpha_outcome_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v2",
+  "status": "PRE_REGISTERED_BEFORE_CONFIRMATION_DATA_ACCESS",
+  "source_exploration_evidence": "evidence/binance_book_depth_alpha_exploration.json",
+  "source_exploration_commit": "aa7937252a04077dd9dd91286c8acc238b272cdc",
+  "source_blocked_confirmation_evidence": "evidence/binance_book_depth_confirmation_window1_blocked.json",
+  "source_blocked_confirmation_commit": "26c88315c60f14fca2b568b5e6a6baf75ac85385",
+  "dataset_id": "binance_usdm_book_depth_curve_hourly_v2",
+  "candidate_id": "depth_imbalance_1p0_continuation_4h_v1",
+  "direction": -1,
+  "horizon_hours": 24,
+  "confirmation_window": {
+    "start_day_inclusive_utc": "2025-10-15",
+    "start_day_ms": 1760486400000,
+    "end_day_inclusive_utc": "2026-02-11",
+    "end_exclusive_ms": 1770854400000,
+    "day_count": 120,
+    "relation_to_prior_confirmation": "STRICTLY_EARLIER_NON_OVERLAPPING",
+    "prior_confirmation_start_exclusive_ms": 1770854400000
+  },
+  "frozen_unseen_window_evidence": {
+    "observed_at_ms": 1786506467049,
+    "dataset_observation_count": 0,
+    "authority_head_seq": 50400,
+    "authority_head_row_hash": "66910ac9176bd71fa5fab8992e9a9282049ef643f17ce7598cfb363cf35c5a5e",
+    "authority_chain_valid": true
+  },
+  "universe": [
+    "ADAUSDT",
+    "ATOMUSDT",
+    "AVAXUSDT",
+    "BCHUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "UNIUSDT",
+    "XRPUSDT"
+  ],
+  "long_count": 3,
+  "short_count": 3,
+  "one_way_cost_bps_per_unit_turnover": 6.0,
+  "cost_stress_multiplier": 2.0,
+  "annualization_periods": 365.0,
+  "minimum_decisions": 80,
+  "required_gates": {
+    "net_sharpe_minimum": 1.0,
+    "net_mean_return_minimum": 0.0,
+    "double_cost_net_sharpe_minimum": 0.0,
+    "rank_ic_mean_minimum": 0.0,
+    "rank_ic_t_stat_minimum": 2.0,
+    "positive_chronological_thirds_minimum": 2,
+    "maximum_single_instrument_gross_pnl_fraction": 0.35
+  },
+  "multiple_testing": {
+    "global_trial_count_after_exploration": 2823,
+    "confirmation_adds_new_trial": false,
+    "reason": "exact frozen exploration trial is re-evaluated on a second untouched window"
+  },
+  "post_confirmation_policy": {
+    "pass_requires_formal_validation_dag": true,
+    "confirmation_pass_is_formal_admission": false,
+    "confirmation_pass_is_forward_credit": false,
+    "confirmation_pass_authorizes_testnet": false,
+    "missing_or_invalid_data_policy": "FAIL_CLOSED"
+  }
+}

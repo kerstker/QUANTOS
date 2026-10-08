@@ -1,0 +1,46 @@
+pageType: final
+background:
+  type: solid
+  color: "$bg"
+notes: 结束语控制在 20 秒：三句话收束——证据、风控、进化。联系方式全部留占位符，现场手填或后续补充。
+elements:
+  - elementId: rule
+    elementType: line
+    bounds: [90, 160, 90, 2]
+    viewBox: [90, 2]
+    points: "0,1 90,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: hero-en
+    elementType: text
+    bounds: [90, 184, 800, 46]
+    content:
+      fontSize: 30
+      bold: true
+      color: "$ink"
+      wrap: false
+      text: |
+        <p>Build Evidence. Control Risk. Compound Intelligence.</p>
+  - elementId: hero-cn
+    elementType: text
+    bounds: [90, 244, 800, 30]
+    content:
+      fontSize: 16
+      color: "$muted"
+      wrap: false
+      text: |
+        <p>用证据建立信任，用风控保护资本，用系统实现长期进化。</p>
+  - elementId: contact
+    elementType: text
+    bounds: [90, 360, 500, 120]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.9
+      text: |
+        <p>创始人：【待补充】</p>
+        <p>电话：【待补充】　邮箱：【待补充】</p>
+        <p>公司：【待补充】</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · 2026-07 · Confidential · 历史模拟结果不代表未来表现 · 19"}

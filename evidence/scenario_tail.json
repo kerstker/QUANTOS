@@ -1,0 +1,78 @@
+{
+  "artifact": "data/cache/scenario_tail_snapshot.json",
+  "code_version": "28fd7f5d2922",
+  "extractor": "scenario_tail",
+  "kind": "json_numbers",
+  "numbers": {
+    "carry.cvar_95": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.051866
+    },
+    "carry.ftx_total_return": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": -0.033651
+    },
+    "carry.hill_tail_index": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 2.430979
+    },
+    "carry.lower_tail_dep_vs_btc": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.129032
+    },
+    "carry.luna_total_return": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": -0.001631
+    },
+    "carry.n_periods": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 313.0
+    },
+    "carry.worst_drawdown": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.193454
+    },
+    "crowd_contra.cvar_95": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.041421
+    },
+    "crowd_contra.ftx_total_return": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.052855
+    },
+    "crowd_contra.hill_tail_index": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 2.674834
+    },
+    "crowd_contra.lower_tail_dep_vs_btc": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.043478
+    },
+    "crowd_contra.luna_total_return": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.084957
+    },
+    "crowd_contra.n_periods": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 233.0
+    },
+    "crowd_contra.worst_drawdown": {
+      "abs_tol": 0.001,
+      "rel_tol": 0.005,
+      "value": 0.138161
+    }
+  }
+}

@@ -1,0 +1,253 @@
+{
+  "commit": "771b3d7e64faed448bd10574f18d2b37c37457be",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "current_evidence": {
+    "data_admission": {
+      "block_reasons": [],
+      "lineage_verdict": "PASS",
+      "quality_verdict": "PASS",
+      "verdict": "PASS"
+    },
+    "paper_health_10k": {
+      "blockers": [
+        "crowd_contra_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_q20:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_q20_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_q25_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_q35_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_taker_combo:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+        "crowd_contra_14d:BACKTEST_PROVENANCE_INVALID",
+        "crowd_contra_3d:BACKTEST_PROVENANCE_INVALID",
+        "crowd_contra_q20:BACKTEST_PROVENANCE_INVALID",
+        "crowd_contra_q20_14d:BACKTEST_PROVENANCE_INVALID",
+        "crowd_contra_q25_3d:BACKTEST_PROVENANCE_INVALID",
+        "crowd_contra_q35_3d:BACKTEST_PROVENANCE_INVALID",
+        "crowd_taker_combo:BACKTEST_PROVENANCE_INVALID",
+        "PAPER_ORDER_PREVIEW_NOT_READY",
+        "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+        "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
+        "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+        "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
+        "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
+        "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+        "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
+        "top_contra:PAPER_EXECUTION_NOT_FILLED",
+        "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+        "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
+      ],
+      "paper_mark_ready": true,
+      "paper_preview_ready": false,
+      "paper_ready": false,
+      "readiness": "L2_DRY_RUN_ONLY",
+      "research_risk_bundle_complete": true,
+      "verdict": "PAPER_FORWARD_EVIDENCE_MATURING"
+    },
+    "raw_lineage_backfill": {
+      "block_reasons": [],
+      "verdict": "PASS"
+    },
+    "top_tier": {
+      "summary": {
+        "failed": 2,
+        "manual_evidence_required": 0,
+        "partial": 6,
+        "passed": 14,
+        "red_lines_failed": 3,
+        "total": 22,
+        "unverified": 0
+      },
+      "verdict": "NOT_TOP_TIER"
+    },
+    "validation_report": {
+      "overall_status": "PASS",
+      "selection_scope": "ALL",
+      "summary": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 27,
+        "selected": 27,
+        "timed_out": 0
+      }
+    }
+  },
+  "evidence_conflicts": [
+    {
+      "authoritative_paths": [
+        "evidence/data_quality_admission.json",
+        "evidence/raw_data_lineage_backfill.json"
+      ],
+      "authoritative_verdict": {
+        "admission": "PASS",
+        "lineage": "PASS",
+        "quality": "PASS"
+      },
+      "fail_closed": true,
+      "historical_marker": "quality=BLOCK or lineage=BLOCK",
+      "historical_path": "docs/PROJECT_STATE.md",
+      "id": "EVIDENCE_CONFLICT.PROJECT_STATE_VS_CURRENT_ADMISSION",
+      "resolution": "Use current executable evidence as authority; retain the old BLOCK as historical context and update the live-document annotation.",
+      "status": "RECORDED"
+    }
+  ],
+  "evidence_priority": [
+    "current_executable_source",
+    "current_tests_and_governance",
+    "current_hashed_json_sqlite_event_artifacts",
+    "current_live_documents",
+    "historical_reports"
+  ],
+  "generated_at_ms": 1785693745864,
+  "generator_sha256": "c1d17284a83b8db0c88e5e727550c81f8cdb181a9e11db2b1fa536a5b8877fe6",
+  "input_hash": "10e6cce467ac0d98fd401f7c914224bccfea9a22ee62ab1bc1339c5575b1a607",
+  "inputs": {
+    "AGENTS.md": {
+      "exists": true,
+      "path": "AGENTS.md",
+      "sha256": "2e5659d195d62c6ec8d3d98cc5022b3b26cfcfb0059e4d6139a9c4f83d33c8ab",
+      "size_bytes": 95349
+    },
+    "QUANTOS_MASTER_BLUEPRINT.md": {
+      "exists": true,
+      "path": "QUANTOS_MASTER_BLUEPRINT.md",
+      "sha256": "ba34b79c2d5c2a7aaa8d777d62f80e4ca9cfd26b415f794adf7c783390de5d92",
+      "size_bytes": 24768
+    },
+    "data/cache/binance_usdt_continuous_paper.json": {
+      "exists": true,
+      "live_allowed": false,
+      "order_submission_allowed": false,
+      "path": "data/cache/binance_usdt_continuous_paper.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "sha256": "9619facb597d5b404c5564946c817eb5f94b353085ed397f002c4e743e3bdd3d",
+      "size_bytes": 12975314
+    },
+    "data/cache/paper_health_10k.json": {
+      "exists": true,
+      "path": "data/cache/paper_health_10k.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "research_risk_bundle_complete": true,
+      "sha256": "19cfc5b03d2677fcf2b07fc7a2627839b3e06cc1ce2f84f6fba8a0f335bb9154",
+      "size_bytes": 8808,
+      "verdict": {
+        "backtest_reference_present_for_all_three": true,
+        "funding_data_complete_for_all_three": false,
+        "human_review_required": true,
+        "live_allowed": false,
+        "order_submission_allowed": false,
+        "paper_mark_ready": true,
+        "paper_preview_ready": false,
+        "paper_ready": false,
+        "paper_research_risk_bundle_complete": true,
+        "paper_research_risk_complete": false
+      }
+    },
+    "docs/ARCHITECTURE.md": {
+      "exists": true,
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "a6c140a23c255c4d152dcae185e6352d0ba459e570a7219d6dbb80815010fde4",
+      "size_bytes": 24296
+    },
+    "docs/PROJECT_STATE.md": {
+      "exists": true,
+      "path": "docs/PROJECT_STATE.md",
+      "sha256": "720255f3884d426f65c71cd21cc894c2c294700546e279dc58756d1bbe79e33d",
+      "size_bytes": 200127
+    },
+    "docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md": {
+      "exists": true,
+      "path": "docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md",
+      "sha256": "77505b4e87bfa7170da1dee0c9c52323ec73058992006e234bc77c963beb41ae",
+      "size_bytes": 23342
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "exists": true,
+      "path": "evidence/alpha_paper_cycle.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "sha256": "21bd92cee61929ebb6001b67929da89e01fd017c5775065b211d29cbf50050cf",
+      "size_bytes": 8098
+    },
+    "evidence/data_quality_admission.json": {
+      "exists": true,
+      "path": "evidence/data_quality_admission.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "sha256": "a46e5ac8745d354ee044a1d8d9a7332859d92977d3a68d55c714899a5cecc200",
+      "size_bytes": 16116,
+      "verdict": "PASS"
+    },
+    "evidence/raw_data_lineage_backfill.json": {
+      "exists": true,
+      "path": "evidence/raw_data_lineage_backfill.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "sha256": "3845bc7cbb67a6d251241a1a18e22a2902071fb6d68c25d7f02dc7f2fdcf6d16",
+      "size_bytes": 4475,
+      "verdict": "PASS"
+    },
+    "evidence/three_alpha_paper_flow.json": {
+      "exists": true,
+      "path": "evidence/three_alpha_paper_flow.json",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "sha256": "d8571eb579796ccabe4abf41bd35001936dc195d98daad1c6a2371730c972c7a",
+      "size_bytes": 23392,
+      "verdict": {
+        "flow_completed": true,
+        "human_review_required": true,
+        "live_allowed": false,
+        "order_submission_allowed": false,
+        "paper_packet_ready_for_all_three": false
+      }
+    },
+    "evidence/top_tier_assessment.json": {
+      "exists": true,
+      "path": "evidence/top_tier_assessment.json",
+      "sha256": "ed76251e7afc37c0a6748e4240197b6393fddeca646ee6da6560144eba2e58f4",
+      "size_bytes": 63837,
+      "summary": {
+        "failed": 2,
+        "manual_evidence_required": 0,
+        "partial": 6,
+        "passed": 14,
+        "red_lines_failed": 3,
+        "total": 22,
+        "unverified": 0
+      },
+      "verdict": "NOT_TOP_TIER"
+    }
+  },
+  "order_path": {
+    "credentials_loaded": false,
+    "live_allowed": false,
+    "live_trading_armed": false,
+    "order_submission_allowed": false,
+    "real_broker": "STRUCTURAL_REJECTING_SEAM_ONLY"
+  },
+  "phase_status": {
+    "phase_0": {
+      "acceptance": "safety freeze, evidence inventory, and full gate report",
+      "reasons": [],
+      "status": "PASS"
+    },
+    "phase_1": {
+      "acceptance": "rebuildable quality and raw-lineage admission",
+      "reasons": [],
+      "status": "PASS"
+    }
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "remaining_blockers": [
+    "PAPER_RESEARCH_RISK_BUNDLE_PENDING",
+    "FORWARD_PAPER_EVIDENCE_0_OF_8_OR_CURRENT_ARTIFACT_REQUIRED",
+    "TOP_TIER_RED_LINES_OPEN",
+    "EXTERNAL_IDENTITY_DATA_EXECUTION_AND_ARCHIVAL_EVIDENCE"
+  ],
+  "report_kind": "AUTONOMY_BASELINE",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1
+}

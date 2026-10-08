@@ -1,0 +1,14 @@
+# 周期采集数据库连接回归原存储边界
+
+e29cbb6完整验收的首个pytest阶段实际9538通过、3失败、19跳过。
+三项失败为research_persistence_boundary、service_import_graph及supply_chain_current，
+并非仅凭进度字符推测；原canonical.log已输出完整回溯，后续执行工具与前端阶段继续运行。
+
+在独立后续源码复现persistence失败，额外SQLite连接拥有者为gold_collection_program.py。
+只读read_collection_programs方法现迁回原ai_factory_store.FactoryStore，周期mixin沿用其已有连接，
+数据库、SQL、事务及只读接口行为不变；不增加存储拥有者白名单，也不新增账本。
+该变动再次通过原生成器刷新同一源码的依赖图，避免行号引用漂移。
+
+存储边界、周期组、采集原队列和记忆四组21项通过；依赖图单独再核对。
+原e29验收源码/结果不修改；下一冻结候选还包含此前记忆与采集失败展示，必须重新做其自身完整验收，
+不能使用e29或aaf的旧证明作为新版通过结论。未部署、未改变原两次采集失败。

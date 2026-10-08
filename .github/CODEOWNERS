@@ -1,0 +1,25 @@
+# 代码负责人(CODEOWNERS)
+# 被列为 owner 的人会在相关文件改动时被自动请求评审。
+
+# 默认:全仓库归所有者
+*                                   @kerstker
+
+# 安全关键区域 —— 任何改动都必须经所有者评审
+/quantos/contracts/                 @kerstker
+/services/risk/                     @kerstker
+/services/intelligence/             @kerstker
+/services/alpha/                    @kerstker
+/services/governance/               @kerstker
+/services/deployment/               @kerstker
+/live/                              @kerstker
+/config/                            @kerstker
+/deploy/                            @kerstker
+/tests/governance/                  @kerstker
+/scripts/validate.py                @kerstker
+/scripts/register_schedules.ps1     @kerstker
+/tools/l2_schedule_entrypoint.py    @kerstker
+/tools/l2_backup.py                 @kerstker
+/.github/                           @kerstker
+/AGENTS.md                          @kerstker
+/CLAUDE.md                          @kerstker
+/SECURITY.md                        @kerstker

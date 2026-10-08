@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "MFT_TESTNET_SOAK_POLICY",
+  "policy_id": "mft-testnet-soak.v1",
+  "policy_version": "1.0.0",
+  "venue": "BINANCE_FUTURES_TESTNET",
+  "mode": "TESTNET_ONLY",
+  "cadence_ms": 3600000,
+  "minimum_duration_ms": 604800000,
+  "minimum_completed_cycles": 168,
+  "maximum_cycle_gap_ms": 5400000,
+  "thresholds": {
+    "max_market_gap_ms": 120000,
+    "max_scheduler_lag_ms": 60000,
+    "max_reconciliation_abs_error": 1e-8,
+    "max_abs_tca_slippage_bps": 200.0,
+    "max_parity_position_drift": 1e-8,
+    "max_oms_unknown_count": 0,
+    "max_risk_breach_count": 0,
+    "max_failed_cycle_count": 0
+  },
+  "required_evidence_kinds": [
+    "market_continuity",
+    "scheduler_lease",
+    "intent",
+    "oms",
+    "fill",
+    "reconciliation",
+    "risk",
+    "tca",
+    "parity",
+    "recovery_drill"
+  ],
+  "safety_flags": {
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "calibration": "PREREGISTERED_UNCALIBRATED_ENGINEERING_LIMITS",
+  "completion_effect": "TESTNET_ENGINEERING_ONLY_NO_MICRO_LIVE_AUTHORITY"
+}

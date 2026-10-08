@@ -1,0 +1,13 @@
+# QUANTOS dev/test dependencies (pinned). Install: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
+coverage==7.13.5
+pip-audit==2.10.1
+sigstore==4.4.0
+import-linter==2.2.0
+
+# Canonical incremental Python quality gates.
+ruff==0.15.7
+mypy==1.19.1

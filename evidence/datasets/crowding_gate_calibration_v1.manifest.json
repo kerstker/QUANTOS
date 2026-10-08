@@ -1,0 +1,42 @@
+{
+  "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
+  "bundle_sha256": "960c6de33a3ae5f3bf6cc14c973aeacd099e429367fe93d9d13701d37b62c77d",
+  "instruments": [
+    "AAVE",
+    "ADA",
+    "APT",
+    "ATOM",
+    "AVAX",
+    "BCH",
+    "BNB",
+    "BTC",
+    "DOGE",
+    "DOT",
+    "ETC",
+    "ETH",
+    "FIL",
+    "ICP",
+    "INJ",
+    "LINK",
+    "LTC",
+    "NEAR",
+    "OP",
+    "SOL",
+    "TRX",
+    "UNI",
+    "XLM",
+    "XRP"
+  ],
+  "manifest_sha256": "835ad3fbd1b18d3c8b1b38cd7041ffb804bd4f08ec14c943fe1fa8605c129838",
+  "max_period": 1785974400000,
+  "min_period": 1642636800000,
+  "record_schema": "period,weights,dry_crowding,live_crowding,z_by_symbol,short_raw_gls,short_mean_z,short_max_z",
+  "row_count": 238,
+  "schema_version": 1,
+  "source_sha256": {
+    "data/cache/crypto_funding.db": "024645cc4e0931f4684f6609a00318af764ede104288fd704ea92c018799afc7",
+    "data/cache/crypto_funding_rates.json": "9ffb23f93863b71db6c8f94fda8f8413273a4a4a617c01b2ab35305d499c4635",
+    "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
+    "data/cache/crypto_oi_metrics.json": "01be1a969761b1b98244d19cb717514fce4f0007f94bedab4e14a242f1835e45"
+  }
+}

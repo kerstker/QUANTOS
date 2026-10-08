@@ -1,0 +1,101 @@
+# QUANTOS Python toolchain and dependency manifest.
+#
+# Pytest selection intentionally remains owned by scripts/validate.py. The
+# canonical gate combines generated-evidence checks, governance scanning,
+# grouped backend/live suites, frontend checks, and readiness refreshes; a bare
+# pytest invocation is therefore not equivalent release evidence.
+
+[project]
+name = "quantos"
+version = "0.0.0"
+description = "QUANTOS - AI quantitative trading research platform (L2_DRY_RUN_ONLY)"
+requires-python = ">=3.11"   # minimum; the pinned dev/CI interpreter is 3.12 (.python-version) — Rank #28
+
+# Runtime dependencies actually imported by the currently-runnable code
+# (services/console/api). Pinned to the versions validated locally.
+dependencies = [
+    "fastapi==0.139.0",
+    "starlette==1.3.1",
+    "uvicorn==0.40.0",
+    "pydantic==2.13.4",
+    "PyJWT==2.15.0",
+    "websockets==16.0",
+]
+
+[project.optional-dependencies]
+# Imported only by the QUARANTINED pre_trade_risk service; required when it is
+# rebuilt in Phase 8 (Risk Layer). Not needed for the current test gate.
+pre_trade_risk = [
+    "aiokafka==0.13.0",
+    "prometheus_client==0.21.1",
+]
+# research ML layer (services/research/ml): deterministic stacking over existing factor signals.
+# Non-network, used deterministically (fixed random_state, single-thread). Not needed by console_api.
+research-ml = [
+    "numpy==2.4.4",
+    "scikit-learn==1.8.0",
+]
+# Optional offline research accelerator. This does not enter execution, risk,
+# audit, or live-trading paths. Pair with a compatible NVIDIA driver.
+research-ml-gpu = [
+    "xgboost==3.2.0",
+]
+# live backup encryption (tools/live_backup.py). 2026-07-08 code review fix: previously
+# undeclared (only "happened to be installed" via unrelated tools) even though the
+# fail-closed passphrase gate makes every scheduled backup depend on it being real.
+live-backup = [
+    "cryptography==50.0.0",
+]
+supply-chain = [
+    "pip-audit==2.10.1",
+    "sigstore==4.4.0",
+]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "httpx==0.28.1",
+    "coverage==7.13.5",
+]
+
+[tool.pytest.ini_options]
+# 2026-09-20 审计 P0-3:`pytest.mark.slow` 此前从未注册,pytest 每次都发
+# PytestUnknownMarkWarning(tests/integration/test_hourly_alpha_to_paper.py:402)
+# 却继续执行。未注册的标记一旦将来被 `-m "not slow"` 之类过滤使用,会静默丢掉
+# 安全关键用例,而阶段仍然报 PASS——与本次审计要消灭的假绿色同源。显式注册使
+# 选择成为有意行为;若将来真的引入 `-m` 过滤,必须同时断言期望收集数,而不是
+# 只依赖退出码。
+markers = [
+    "slow: long-running acceptance smoke",
+]
+
+# ---------------------------------------------------------------------------
+# Incremental Python quality gates execute through scripts/validate.py.
+# Ruff checks undefined names and syntax errors across the repository (F821/E9).
+# Mypy checks safety/time/kill-switch contracts, research data ports and the
+# shared analytics package listed in CHECKS; this is not a claim of whole-repository type coverage.
+# Tool versions and artifacts are pinned in both CI dependency locks.
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
+# Shared statistical primitives: all functions and container parameters typed.
+[[tool.mypy.overrides]]
+module = ["quantos.analytics", "quantos.analytics.*",
+    "quantos.contracts.cost", "quantos.contracts.order", "quantos.contracts.risk",
+    "quantos.contracts.identity", "quantos.contracts.hashing"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_unused_ignores = true
+warn_return_any = true
+implicit_reexport = false
+strict_equality = true
+extra_checks = true

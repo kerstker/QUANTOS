@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "report": "../../reports/2026-09-07-ai-quant-system-and-roadmap.md",
+  "scope": "定向公开研究与源码对照；无新收益实验，无完整X综述",
+  "sources": [
+    {
+      "id": "buildalpha-x",
+      "title": "Build Alpha X profile",
+      "url": "https://x.com/buildalpha",
+      "evidence_type": "X",
+      "read_scope": "403；未核验时间线或帖子全文",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "buildalpha-llm",
+      "title": "LLM Orchestrator",
+      "url": "https://www.buildalpha.com/llm-orchestrator/",
+      "evidence_type": "vendor_primary",
+      "read_scope": "正文相关段落；2026-04-24；功能自述，未运行产品",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "buildalpha-robust",
+      "title": "Robustness Testing Guide",
+      "url": "https://www.buildalpha.com/robustness-testing-guide/",
+      "evidence_type": "vendor_primary",
+      "read_scope": "正文相关段落；不采信营销式盈利保证",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "buildalpha-portfolio",
+      "title": "Portfolio Backtest and Trading Software",
+      "url": "https://www.buildalpha.com/portfolio-backtest-trading/",
+      "evidence_type": "vendor_primary",
+      "read_scope": "公开正文；共享资金联合回放说明",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "buildalpha-features",
+      "title": "Features",
+      "url": "https://www.buildalpha.com/features/",
+      "evidence_type": "vendor_primary",
+      "read_scope": "公开功能文档；未测试产品",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "buildalpha-mcpt",
+      "title": "Monte Carlo Permutation",
+      "url": "https://www.buildalpha.com/monte-carlo-permutation/",
+      "evidence_type": "vendor_primary",
+      "read_scope": "公开方法说明；更新2026-07-07；未复现其实现",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "carver-rules",
+      "title": "Python code for two trading rules",
+      "url": "https://qoppac.blogspot.com/2015/09/python-code-for-two-trading-rules-in.html",
+      "evidence_type": "author_primary",
+      "read_scope": "公开短文及代码链接；2015-09-30",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "carver-system",
+      "title": "pysystemtrade",
+      "url": "https://github.com/pst-group/pysystemtrade",
+      "evidence_type": "project_primary",
+      "read_scope": "仓库页面；未克隆、安装或审计其执行适配器",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "carver-x",
+      "title": "Rob Carver X",
+      "url": "https://x.com/investingidiocy",
+      "evidence_type": "X",
+      "read_scope": "直接访问失败；不作推文证据",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "hanguk-latency",
+      "title": "hft benchmarking; done wrong. part II",
+      "url": "https://www.research.hangukquant.com/p/hft-benchmarking-done-wrong-part-fe0",
+      "evidence_type": "author_primary",
+      "read_scope": "2026-02-01；只读公开可见部分；未读取付费后文",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "robot-turnover",
+      "title": "A simple effective way to manage turnover",
+      "url": "https://robotwealth.com/a-simple-effective-way-to-manage-turnover-and-not-get-killed-by-costs/",
+      "evidence_type": "author_primary",
+      "read_scope": "公开正文；成本/不交易区间相关段落；未复现回测",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "twosigma",
+      "title": "Two Sigma public introduction",
+      "url": "https://www.twosigma.com/",
+      "evidence_type": "institution_primary",
+      "read_scope": "公开自述；未采用资产规模或内部收益为比较依据",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "janestreet",
+      "title": "Machine Learning",
+      "url": "https://www.janestreet.com/join-jane-street/machine-learning/",
+      "evidence_type": "institution_primary",
+      "read_scope": "公开ML团队及工作流程说明；不是内部交易策略",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "man-ml",
+      "title": "An Introduction to Machine Learning",
+      "url": "https://www.man.com/insights/intro-machine-learning",
+      "evidence_type": "institution_primary",
+      "read_scope": "公开研究说明；不外推BTC净收益",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "aqr-cost",
+      "title": "Machine Learning and the Implementable Efficient Frontier",
+      "url": "https://www.aqr.com/insights/research/working-paper/machine-learning-and-the-implementable-efficient-frontier",
+      "evidence_type": "institution_research",
+      "read_scope": "2022-08-18；文章摘要；未复现完整模型",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "gkx",
+      "title": "Empirical Asset Pricing via Machine Learning",
+      "url": "https://www.nber.org/papers/w25398",
+      "evidence_type": "academic_primary",
+      "read_scope": "2018/2019工作论文；摘要；2020发表版本信息；未全文方法审计",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "qlib",
+      "title": "Qlib: An AI-oriented Quantitative Investment Platform",
+      "url": "https://arxiv.org/abs/2009.11189",
+      "evidence_type": "academic_primary",
+      "read_scope": "摘要与项目定位；未重跑论文实验",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "rdagent",
+      "title": "R&D-Agent-Quant",
+      "url": "https://arxiv.org/abs/2505.15155",
+      "evidence_type": "academic_primary",
+      "read_scope": "v2 2025-09-25；摘要与方法概述；未复现论文收益",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "rdagent-code",
+      "title": "RD-Agent project",
+      "url": "https://github.com/microsoft/RD-Agent",
+      "evidence_type": "project_primary",
+      "read_scope": "README工作流及论文链接；未安装或执行",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "pbo",
+      "title": "The Probability of Backtest Overfitting",
+      "url": "https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf",
+      "evidence_type": "academic_primary",
+      "read_scope": "摘要与方法定位；未全篇审计",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "dsr",
+      "title": "The Deflated Sharpe Ratio",
+      "url": "https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf",
+      "evidence_type": "academic_primary",
+      "read_scope": "2014-07-31版本；摘要、选择偏差/试验数量段落",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "boyd",
+      "title": "Multi-Period Trading via Convex Optimization",
+      "url": "https://web.stanford.edu/~boyd/papers/cvx_portfolio.html",
+      "evidence_type": "academic_primary",
+      "read_scope": "论文介绍页；目标函数为本报告拟议简化设计",
+      "retrieved_date": "2026-09-07"
+    },
+    {
+      "id": "nautilus",
+      "title": "Execution Reconciliation",
+      "url": "https://nautilustrader.io/docs/latest/concepts/reconciliation/",
+      "evidence_type": "project_primary",
+      "read_scope": "官方对账概念文档；未审计项目全部源码",
+      "retrieved_date": "2026-09-07"
+    }
+  ],
+  "search_limitations": [
+    "X直接访问受限，site:x.com限定检索多次返回无关结果；无关帖子未纳入",
+    "第三方镜像仅用于发现线索，未作为技术结论证据",
+    "付费文章未绕过访问限制",
+    "没有核验任何作者/机构账户的实盘收益"
+  ],
+  "local_baseline": {
+    "release_commit": "2d56da1b6904a1a4f4ab07c60bfd43f900c15782",
+    "source_anchor": "7436acd8f3017b5af4f6801a7fefa3a60ff92534",
+    "forward_observations": 0,
+    "schedule_status": "NOT_CONFIGURED",
+    "new_tests_run": false
+  }
+}

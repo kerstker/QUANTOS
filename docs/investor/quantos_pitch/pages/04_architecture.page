@@ -1,0 +1,75 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 300, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "02 · 架构全景"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 800, 38]
+    content: {style: "$h1", wrap: false, text: "11 层架构：全部建成，全部测试"}
+  - elementId: layers-table
+    elementType: table
+    bounds: [80, 116, 800, 340]
+    columnWidths: [0.20, 0.52, 0.13, 0.15]
+    rowHeights: [0.085, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915, 0.0915]
+    style: "$dark"
+    rows:
+      - - text: "层"
+        - text: "子系统"
+        - text: "状态"
+        - text: "实测规模"
+      - - text: "数据层"
+        - {text: "PIT 存储 · 无幸存者偏差宇宙 · 版本化 · 数据质量", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "89 测试"
+      - - text: "因子/特征层"
+        - {text: "因子引擎（真 IC/ICIR/Sharpe）· 硬化 AST 表达式编译器 · 泄漏检测", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "—"
+      - - text: "回测层"
+        - {text: "单策略 + 事件驱动回测 · 精确 PnL 对账恒等式", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "—"
+      - - text: "统计验证层"
+        - {text: "Deflated Sharpe · 净化交叉验证 · 净化+禁言 walk-forward 门", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "—"
+      - - text: "ALPHA 生命周期"
+        - {text: "目录 · 状态机 · 评估器 · BH-FDR · 衰减/拥挤/容量 · 血统", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "26 模块/185 测试"
+      - - text: "AI 搜索层"
+        - {text: "带护栏非人 AgentLoop · 引导/进化/GP/MCTS 搜索", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "59 测试"
+      - - text: "组合层"
+        - {text: "约束优化器 · PSD 因子风险模型 · 构建 · 归因", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "57 测试"
+      - - text: "风险层"
+        - {text: "9 引擎 fail-closed 研究门 · pre-trade 门 · 锁存 KillSwitch", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "—"
+      - - text: "执行层"
+        - {text: "端到端干跑流水线 · 券商适配器接缝（live 结构性拒绝）", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "18 条策略落库"
+      - - text: "事件/审计层"
+        - {text: "版本化事件 schema · 消费者组协调器 · 哈希链审计", align: [left, middle]}
+        - text: "✅ 已测试"
+        - text: "11 事件类型"
+      - - text: "实盘栈"
+        - {text: "Binance/Bybit testnet 适配器 · OMS 状态机 · 人工 mandate 门", align: [left, middle]}
+        - text: "✅ Testnet 联通"
+        - text: "Mainnet 封锁"
+  - elementId: src
+    elementType: text
+    bounds: [80, 468, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>来源：全系统审计 docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md · 测试基线 433 文件 / 3,897 用例（2026-07-25 实测）</p>

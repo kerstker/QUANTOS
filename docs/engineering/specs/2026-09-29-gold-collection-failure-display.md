@@ -1,0 +1,22 @@
+# 黄金采集失败直接显示在工厂页面
+
+真实采集run_c3a6d3ea5eb9b0b875b9e01bc498746c因GOLD_SIGNAL_INPUT_INCOMPLETE结束，尚未创建campaign。
+原页面只显示“采集请求已登记，尚未创建计划”，六阶段进度在没有campaign时不显示，必须跳转任务页才能知道失败。
+
+生命周期接口现为每个collection_requests条目附加observation，按原请求摘要推导原invocation/run_id，
+通过既有read_snapshot和provenance校验只读取得终态。排队、采集中、失败、取消、计划交接完成分别投影；
+缺记录或身份破坏为UNKNOWN，不创建/迁移研究任务库。错误仅展示固定允许的采集原因，其余自由文本统一COLLECTION_FAILED。
+
+生命周期首页新增采集进度卡，持续研究页沿用同一组件。失败且尚无计划时明确尚未进入AI研究、回测或执行；
+旧接口无observation显示未确认。没有添加自动重试、补发研究或更改周期预算。
+
+先复现两个失败回归缺observation；实现后相关采集及API合同98通过、1skip，身份破坏追加两项通过。
+前端新/原流程组件4项、typecheck、ESLint、Python E9/F821通过。
+实际失败目录real-rounds-b4yzqzw5只读投影得到FAILED、原run_id、GOLD_SIGNAL_INPUT_INCOMPLETE、research_created=false。
+这证明实际旧失败能被新接口展示；尚未部署或进行新版本浏览器验收，不宣称用户当前15911已出现新卡片。
+
+开发目录gold-round-memory-20260929/source基于e52d37396，原双批研究目录及e29cbb6验收候选源码保持不变。
+
+## 固定源码浏览器验证
+
+a232ff35d开发前端生产构建成功。通过回环临时预览和捕获的真实失败接口快照，验证生命周期首页与持续研究页都显示采集失败，手机390px无横向溢出，页面错误为空；桌面/手机截图及validation.json位于gold-round-memory-20260929/failure-ui-rrekv_xx。此为READ_ONLY_CAPTURED_REAL_FAILURE_BROWSER_CHECK，接口由浏览器路由装入冻结快照，不是现场端口15911验收。临时15933预览已主动结束，未切换驻留服务。

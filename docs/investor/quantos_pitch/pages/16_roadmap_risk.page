@@ -1,0 +1,68 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "13 · 路线图与风险"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "资金去向与坦率的风险"}
+  - elementId: road-title
+    elementType: text
+    bounds: [80, 116, 300, 24]
+    content: {style: "$h2", wrap: false, text: "路线图"}
+  - elementId: road
+    elementType: text
+    bounds: [80, 148, 420, 240]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.65
+      text: |
+        <p><span style="color:$accent"><strong>已完成（近 30 天）</strong></span></p>
+        <p><span style="color:$muted;font-size:11px">四大 console 断点接通 · 预注册变体机器 · OMS 状态机 · 资金费实时交叉校验 · Binance mainnet 代码面 human-ready</span></p>
+        <p style="margin-top:10px"><span style="color:$accent"><strong>进行中</strong></span></p>
+        <p><span style="color:$muted;font-size:11px">前向 paper-track（7 个 CANDIDATE）· MEXC 现货适配器 · 统一 book risk-balance 权重</span></p>
+        <p style="margin-top:10px"><span style="color:$accent"><strong>融资后（Post-L2）</strong></span></p>
+        <p><span style="color:$muted;font-size:11px">出进程签名器 + 进程隔离部署 · 真券商适配器 · 跨主机事件共识/HA · 外部封存归档</span></p>
+  - elementId: risk-title
+    elementType: text
+    bounds: [540, 116, 300, 24]
+    content: {style: "$h2", color: "$warn", wrap: false, text: "风险因素（主动披露）"}
+  - elementId: risk
+    elementType: text
+    bounds: [540, 148, 380, 264]
+    content:
+      style: "$body"
+      fontSize: 11
+      lineHeight: 1.6
+      color: "$muted"
+      text: |
+        <p>① 全部绩效为历史干跑，非前向实盘收益；前向样本仍短</p>
+        <p style="margin-top:6px">② 容量约束真实：保守口径千万美元级策略族（carry ~$2M / crowd ~$7M，铺开 5 天 $5–72M）</p>
+        <p style="margin-top:6px">③ 主力证据集中 14–58 币永续宇宙；A 股宇宙扩展会改变绩效</p>
+        <p style="margin-top:6px">④ 冲击系数 5–20bps 未校准；宏观 regime 为回顾性描述</p>
+        <p style="margin-top:6px">⑤ DSR 按全 trial 总体泄气，部分候选统计不显著</p>
+        <p style="margin-top:6px">⑥ Mainnet 上线时间由多方人工治理流程决定，不由工程决定</p>
+  - elementId: divider
+    elementType: line
+    bounds: [510, 120, 2, 320]
+    viewBox: [2, 320]
+    points: "1,0 1,320"
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: grad-title
+    elementType: text
+    bounds: [80, 428, 800, 24]
+    content: {style: "$h2", fontSize: 16, wrap: false, text: "实盘毕业路径（人工门控）"}
+  - elementId: grad
+    elementType: text
+    bounds: [80, 456, 820, 24]
+    content:
+      style: "$small"
+      wrap: false
+      text: |
+        <p>干跑 → 前向 paper-track → testnet → 只读 smoke → 多方 mandate + attestation → ≤$100 首单 → 对账 → 规模化</p>

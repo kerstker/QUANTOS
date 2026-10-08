@@ -1,0 +1,77 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 不引用未经证实的市场规模数字。只讲结构性趋势：市场复杂度、数据增长、AI 工程效率、机构合规需求。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "03 · 为什么是现在"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "四个结构性变化，同时到达拐点"}
+  - elementId: c1-icon
+    elementType: icon
+    bounds: [90, 132, 24, 24]
+    iconName: "fas:clock"
+    fill: {type: solid, color: "$accent"}
+  - elementId: c1
+    elementType: text
+    bounds: [132, 126, 720, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>数字资产市场 24 小时运行、结构复杂</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:11px">人工盯盘与手工风控在制度上不可持续，自动风控与持续监控成为刚需</span></p>
+  - elementId: c2-icon
+    elementType: icon
+    bounds: [90, 208, 24, 24]
+    iconName: "fas:database"
+    fill: {type: solid, color: "$accent"}
+  - elementId: c2
+    elementType: text
+    bounds: [132, 202, 720, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>数据快速增长</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:11px">资金费、持仓量、订单簿等另类数据持续积累，数据治理与血缘成为竞争门槛</span></p>
+  - elementId: c3-icon
+    elementType: icon
+    bounds: [90, 284, 24, 24]
+    iconName: "fas:microchip"
+    fill: {type: solid, color: "$accent"}
+  - elementId: c3
+    elementType: text
+    bounds: [132, 278, 720, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>AI 提升研究和工程效率</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:11px">小团队第一次有能力建成过去只有大型机构才负担得起的研究与验证基础设施</span></p>
+  - elementId: c4-icon
+    elementType: icon
+    bounds: [90, 360, 24, 24]
+    iconName: "fas:building-columns"
+    fill: {type: solid, color: "$accent"}
+  - elementId: c4
+    elementType: text
+    bounds: [132, 354, 720, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>机构对自动研究、风控和审计的需求增强</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:11px">可复现、可审计、可问责的量化体系，正在从加分项变成准入条件</span></p>
+  - elementId: note
+    elementType: text
+    bounds: [90, 450, 780, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>本页不引用市场规模数据：在获得可靠来源前，我们选择不填具体数字。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 04"}

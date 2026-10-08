@@ -1,0 +1,21 @@
+# 工厂F1：研究材料交叉绑定
+
+目标：把同一次研究的配置、试验、选中模型和结果可靠交给独立核验，复用现有FactoryStore与TrialLedger，不另建审批或现金账本。
+
+原run_verification只逐文件校验result_hash，随后独立计算文件摘要；没有核对plan/model/result相互引用及完整试验数。四项失败回归实际复现：修改计划配置、模型identity_hash、结果model_hash后重算各文件哈希，或删除首个试验，原实现仍生成核验请求。
+
+修改tools/ai_factory_verification.py：从同一次读取的字节同时校验内部哈希与计算打包摘要；核对计划配置与数据库会话、模型与计划身份、结果与模型、结果与会话、完整预算/连续ordinal/每个trial_id。选中spec和inner指标必须属于原选择规则的成功试验；流程投影状态还须与正式TrialLedger一致。全部检查先于写入独立历史和请求；保留原包schema及签名范围，不扩大经济准入。
+
+测试使用真实execute生成的合成面板、FactoryStore和TrialLedger材料；评分器为受控合成评分，只证明材料交接，不证明经济回测正确。四反例先失败，修复后连同正常幂等和正式账本冲突检查通过。verification/pipeline/workflow/workflow_status/lifecycle/campaign六组46项通过，规范Ruff E9/F821通过。
+
+限制：本次没有独立真实签发、实盘准入、Demo成交或收益证明；未部署，未跑新完整canonical。原外层OOS结果没有提供给提案模型。文件与数据库跨进程全局原子快照不是本增量的完成声明；材料摘要及原不可变核验请求仍用于发现后续变化。独立验证到候选准入的消费者接线仍需继续审查，F1整体未完成。
+
+## 完成状态消费者复核
+
+继续核查发现：run_pipeline在pipeline.json为COMPLETED时直接返回，绕过新材料交叉绑定。四项新增回归先实际失败：完成后模型替换、请求删除、历史删除、阶段核验摘要变化均被原入口接受。
+
+现已抽取共同的材料核对，正式TrialLedger以create=False/read_only=True打开；已完成入口必须比较现存历史/请求字节、核验报告中的包/attempt/摘要及原INDEPENDENT_PACKAGE阶段结果摘要，匹配后才返回。检查不重建缺失文件、不重新训练、不重新激活观察；拒绝向Runner抛出异常，旧完成记录保留供诊断。
+
+六组51项通过，Ruff E9/F821通过。正常路径测试确认文件字节不变，异常四路径同样不覆写证据。该检查只证明留存材料一致，不更新签名时效，不证明独立经济接受，也不宣称核验其他所有流水线阶段的当前输入。源码未部署，独立完整验收待后续冻结。
+
+候选消费者调查：当前verify_research_receipt明确只返回工程签名状态；selection_authority_admitted仍拒绝，alpha_candidate_admission公开入口仍隔离旧路径。本次不解除这些门，也不把核验包成功生成当作经济准入。后续须明确真实独立来源/结果验证合同与候选身份交接，不能直接复用旧候选入口。

@@ -1,0 +1,2452 @@
+{
+  "cyclic_edges": [],
+  "cyclic_sccs": [],
+  "edge_count": 52,
+  "edges": [
+    {
+      "references": [
+        {
+          "line": 15,
+          "module": "services.governance.approval",
+          "path": "services/alpha/guards.py"
+        },
+        {
+          "line": 41,
+          "module": "services.governance.approval",
+          "path": "services/alpha/promotion.py"
+        }
+      ],
+      "source": "alpha",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.lifecycle",
+          "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 57,
+          "module": "services.lifecycle.catalog_snapshot",
+          "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 25,
+          "module": "services.lifecycle",
+          "path": "services/alpha/degradation_monitor.py"
+        },
+        {
+          "line": 17,
+          "module": "services.lifecycle",
+          "path": "services/alpha/hourly_maintenance.py"
+        },
+        {
+          "line": 36,
+          "module": "services.lifecycle",
+          "path": "services/alpha/lifecycle.py"
+        },
+        {
+          "line": 33,
+          "module": "services.lifecycle",
+          "path": "services/alpha/maintenance.py"
+        },
+        {
+          "line": 17,
+          "module": "services.lifecycle",
+          "path": "services/alpha/retirement.py"
+        }
+      ],
+      "source": "alpha",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
+          "line": 235,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 24,
+          "module": "services.validation.factor_statistics",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 25,
+          "module": "services.validation.gate",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 26,
+          "module": "services.validation.performance",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 27,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 28,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 31,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 97,
+          "module": "services.validation.regime",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 25,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/alpha/factory.py"
+        },
+        {
+          "line": 26,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/factory.py"
+        },
+        {
+          "line": 16,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/guards.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/alpha/guards.py"
+        },
+        {
+          "line": 32,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/lifecycle.py"
+        },
+        {
+          "line": 15,
+          "module": "services.validation.deflated_sharpe",
+          "path": "services/alpha/multiple_testing.py"
+        },
+        {
+          "line": 16,
+          "module": "services.validation.effective_trials",
+          "path": "services/alpha/multiple_testing.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/panel_backtest.py"
+        },
+        {
+          "line": 42,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/alpha/promotion.py"
+        },
+        {
+          "line": 43,
+          "module": "services.validation.selection_authority",
+          "path": "services/alpha/promotion.py"
+        }
+      ],
+      "source": "alpha",
+      "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 23,
+          "module": "services.alpha.similarity",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_compiler.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        },
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/constrained_search_space.py"
+        },
+        {
+          "line": 30,
+          "module": "services.research.research_budget",
+          "path": "services/alpha_factory/search_controller.py"
+        },
+        {
+          "line": 36,
+          "module": "services.research.trial_provenance",
+          "path": "services/alpha_factory/search_controller.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 16,
+          "module": "services.alpha.factor_set",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 587,
+          "module": "services.alpha.alpha_graph",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 157,
+          "module": "services.alpha.degradation_monitor",
+          "path": "services/console/api/monitoring_views.py"
+        },
+        {
+          "line": 278,
+          "module": "services.alpha.degradation_monitor",
+          "path": "services/console/api/registry_snapshots.py"
+        },
+        {
+          "line": 359,
+          "module": "services.alpha.degradation_monitor",
+          "path": "services/console/api/registry_snapshots.py"
+        }
+      ],
+      "source": "console",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 17,
+          "module": "services.data.binance_api_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
+          "line": 21,
+          "module": "services.data.binance_stream_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
+          "line": 17,
+          "module": "services.data.gold_capture_snapshot",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 19,
+          "module": "services.data.gold_execution_tape",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 10,
+          "module": "services.data.binance_realtime_store",
+          "path": "services/console/api/market_dashboard.py"
+        },
+        {
+          "line": 21,
+          "module": "services.data.distribution_drift",
+          "path": "services/console/api/monitoring_views.py"
+        },
+        {
+          "line": 10,
+          "module": "services.data.catalog",
+          "path": "services/console/data_console.py"
+        },
+        {
+          "line": 15,
+          "module": "services.data.persistent_store",
+          "path": "services/console/data_console.py"
+        },
+        {
+          "line": 16,
+          "module": "services.data.versioning",
+          "path": "services/console/data_console.py"
+        }
+      ],
+      "source": "console",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 35,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/alpha_lifecycle_views.py"
+        },
+        {
+          "line": 17,
+          "module": "services.execution.paper_tca_history",
+          "path": "services/console/api/artifact_paper_views.py"
+        },
+        {
+          "line": 18,
+          "module": "services.execution.dry_run_store",
+          "path": "services/console/api/artifact_paper_views.py"
+        },
+        {
+          "line": 12,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/backtest_evidence.py"
+        },
+        {
+          "line": 10,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/gold_factory_results.py"
+        },
+        {
+          "line": 46,
+          "module": "services.execution.dry_run_store",
+          "path": "services/console/api/mexc_views.py"
+        },
+        {
+          "line": 17,
+          "module": "services.execution.backtest_authority",
+          "path": "services/console/api/research_run_views.py"
+        }
+      ],
+      "source": "console",
+      "target": "execution"
+    },
+    {
+      "references": [
+        {
+          "line": 335,
+          "module": "services.features.leakage",
+          "path": "services/console/api/main.py"
+        }
+      ],
+      "source": "console",
+      "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 16,
+          "module": "services.governance.top_tier_assessment",
+          "path": "services/console/api/architecture_views.py"
+        },
+        {
+          "line": 9,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/forward_dashboard.py"
+        },
+        {
+          "line": 5,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/gold_bar_program_status.py"
+        },
+        {
+          "line": 47,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/mexc_views.py"
+        },
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/research_workspaces.py"
+        },
+        {
+          "line": 11,
+          "module": "services.governance.json_integrity",
+          "path": "services/console/api/state_artifact.py"
+        }
+      ],
+      "source": "console",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 34,
+          "module": "services.lifecycle",
+          "path": "services/console/api/registry_snapshots.py"
+        }
+      ],
+      "source": "console",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
+          "line": 11,
+          "module": "services.monitoring.mft_read_model",
+          "path": "services/console/api/mft_execution_views.py"
+        },
+        {
+          "line": 27,
+          "module": "services.monitoring.domain_event_runtime",
+          "path": "services/console/api/system_views.py"
+        },
+        {
+          "line": 28,
+          "module": "services.monitoring.event_projection",
+          "path": "services/console/api/system_views.py"
+        },
+        {
+          "line": 11,
+          "module": "services.monitoring.audit_store",
+          "path": "services/console/risk_console.py"
+        },
+        {
+          "line": 12,
+          "module": "services.monitoring.health",
+          "path": "services/console/risk_console.py"
+        }
+      ],
+      "source": "console",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
+          "line": 468,
+          "module": "services.portfolio.optimizer",
+          "path": "services/console/api/main.py"
+        }
+      ],
+      "source": "console",
+      "target": "portfolio"
+    },
+    {
+      "references": [
+        {
+          "line": 7,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
+          "line": 8,
+          "module": "services.research.ai_factory_provider_contract",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.profitability_forward",
+          "path": "services/console/api/ai_factory.py"
+        },
+        {
+          "line": 5,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 6,
+          "module": "services.research.ai_factory_sources",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research.ai_factory_lifecycle",
+          "path": "services/console/api/ai_factory_lifecycle.py"
+        },
+        {
+          "line": 3,
+          "module": "services.research.run_registry.store",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.run_registry.contract",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 17,
+          "module": "services.research.alpha_family_catalog",
+          "path": "services/console/api/alpha_family_views.py"
+        },
+        {
+          "line": 18,
+          "module": "services.research.alpha_family_registry",
+          "path": "services/console/api/alpha_family_views.py"
+        },
+        {
+          "line": 23,
+          "module": "services.research.factor_engine.domain.model",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 248,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 249,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 250,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 251,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 298,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 299,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 300,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 301,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 14,
+          "module": "services.research.factor_engine.domain.model",
+          "path": "services/console/api/backtest_views.py"
+        },
+        {
+          "line": 11,
+          "module": "services.research.demo_execution_journal",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 12,
+          "module": "services.research.demo_order_recovery",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.demo_private_checks",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 14,
+          "module": "services.research.demo_account_baseline",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 15,
+          "module": "services.research.demo_statement",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 16,
+          "module": "services.research.demo_user_stream",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 17,
+          "module": "services.research.demo_cash_window",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 18,
+          "module": "services.research.demo_execution_origin",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 19,
+          "module": "services.research.demo_cash_projection",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.demo_oms_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 21,
+          "module": "services.research.demo_cancel_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 22,
+          "module": "services.research.demo_resident_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 23,
+          "module": "services.research.demo_cash_chain_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.demo_executor_observation",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 25,
+          "module": "services.research.demo_issuer_status",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 26,
+          "module": "services.research",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.ai_factory_episodes",
+          "path": "services/console/api/factory_research_notes.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.run_registry.contract",
+          "path": "services/console/api/gold_collection_status.py"
+        },
+        {
+          "line": 5,
+          "module": "services.research.run_registry.store",
+          "path": "services/console/api/gold_collection_status.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research.gold_execution_feedback",
+          "path": "services/console/api/gold_factory_feedback.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research",
+          "path": "services/console/api/gold_factory_results.py"
+        },
+        {
+          "line": 11,
+          "module": "services.research.gold_factory_candidates",
+          "path": "services/console/api/gold_factory_results.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research.gold_cost_inputs",
+          "path": "services/console/api/gold_input_catalog.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.gold_trade_observation",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 14,
+          "module": "services.research.gold_monitor_view",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 15,
+          "module": "services.research.gold_history_view",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 16,
+          "module": "services.research.binance_wallet_view",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.gold_replay",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 23,
+          "module": "services.research.gold_trade_links",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.gold_cash_observation",
+          "path": "services/console/api/gold_observation.py"
+        },
+        {
+          "line": 11,
+          "module": "services.research.alpha_workflow_store",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 12,
+          "module": "services.research.paper_trading.forward_store",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.ports.persistence",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 14,
+          "module": "services.research.trial_ledger",
+          "path": "services/console/api/hourly_alpha_views.py"
+        },
+        {
+          "line": 19,
+          "module": "services.research.factor_engine.domain.model",
+          "path": "services/console/api/main.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.paper_trading.domain.pnl",
+          "path": "services/console/api/main.py"
+        },
+        {
+          "line": 12,
+          "module": "services.research.factor_engine.domain.model",
+          "path": "services/console/api/primary_views.py"
+        },
+        {
+          "line": 16,
+          "module": "services.research.paper_trading.domain.pnl",
+          "path": "services/console/api/primary_views.py"
+        },
+        {
+          "line": 3,
+          "module": "services.research.ai_factory_store",
+          "path": "services/console/api/profitability_views.py"
+        },
+        {
+          "line": 153,
+          "module": "services.research.experiment_registry.store",
+          "path": "services/console/api/registry_snapshots.py"
+        },
+        {
+          "line": 168,
+          "module": "services.research.paper_trading.store",
+          "path": "services/console/api/registry_snapshots.py"
+        },
+        {
+          "line": 53,
+          "module": "services.research.run_registry.store",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 54,
+          "module": "services.research.run_registry.registry",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 233,
+          "module": "services.research.project_research_review_request",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 252,
+          "module": "services.research.project_research_review_request",
+          "path": "services/console/api/research_run_views.py"
+        }
+      ],
+      "source": "console",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 5,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 6,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/ai_factory_workflow.py"
+        },
+        {
+          "line": 6,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/gold_collection_status.py"
+        },
+        {
+          "line": 7,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/gold_collection_status.py"
+        },
+        {
+          "line": 63,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 66,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 169,
+          "module": "services.research_runner.run_kinds",
+          "path": "services/console/api/research_run_views.py"
+        },
+        {
+          "line": 170,
+          "module": "services.research_runner.runner",
+          "path": "services/console/api/research_run_views.py"
+        }
+      ],
+      "source": "console",
+      "target": "research_runner"
+    },
+    {
+      "references": [
+        {
+          "line": 662,
+          "module": "services.risk.pre_trade.kill_switch_store",
+          "path": "services/console/api/main.py"
+        },
+        {
+          "line": 646,
+          "module": "services.risk.pre_trade.kill_switch_store",
+          "path": "services/console/api/mexc_views.py"
+        },
+        {
+          "line": 13,
+          "module": "services.risk.pre_trade.checks",
+          "path": "services/console/risk_console.py"
+        },
+        {
+          "line": 14,
+          "module": "services.risk.pre_trade.kill_switch",
+          "path": "services/console/risk_console.py"
+        },
+        {
+          "line": 15,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/console/risk_console.py"
+        }
+      ],
+      "source": "console",
+      "target": "risk"
+    },
+    {
+      "references": [
+        {
+          "line": 10,
+          "module": "services.validation.live_submission_authority",
+          "path": "services/console/api/binance_demo_views.py"
+        },
+        {
+          "line": 94,
+          "module": "services.validation.factor_statistics",
+          "path": "services/console/api/main.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.factor_statistics",
+          "path": "services/console/api/primary_views.py"
+        }
+      ],
+      "source": "console",
+      "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 25,
+          "module": "services.governance.approval",
+          "path": "services/deployment/gate.py"
+        },
+        {
+          "line": 11,
+          "module": "services.governance.approval",
+          "path": "services/deployment/runtime.py"
+        }
+      ],
+      "source": "deployment",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 7,
+          "module": "services.data.binance_execution_tape",
+          "path": "services/execution/passive_execution_input.py"
+        }
+      ],
+      "source": "execution",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/execution/frozen_account_terms.py"
+        },
+        {
+          "line": 10,
+          "module": "services.governance.json_integrity",
+          "path": "services/execution/passive_account_environment.py"
+        },
+        {
+          "line": 10,
+          "module": "services.governance.json_integrity",
+          "path": "services/execution/passive_execution_input.py"
+        },
+        {
+          "line": 9,
+          "module": "services.governance.json_integrity",
+          "path": "services/execution/public_funding_observations.py"
+        }
+      ],
+      "source": "execution",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 38,
+          "module": "services.monitoring.audit_log",
+          "path": "services/execution/dry_run_pipeline.py"
+        }
+      ],
+      "source": "execution",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
+          "line": 68,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/authoritative_perpetual_backtest.py"
+        },
+        {
+          "line": 69,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/authoritative_perpetual_backtest.py"
+        },
+        {
+          "line": 42,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 47,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 48,
+          "module": "services.risk.research_risk.events",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 18,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/research_risk_replay.py"
+        },
+        {
+          "line": 19,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/research_risk_replay.py"
+        }
+      ],
+      "source": "execution",
+      "target": "risk"
+    },
+    {
+      "references": [
+        {
+          "line": 40,
+          "module": "services.trading.broker_adapter",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 41,
+          "module": "services.trading.dry_run_adapters.domain.models",
+          "path": "services/execution/dry_run_pipeline.py"
+        }
+      ],
+      "source": "execution",
+      "target": "trading"
+    },
+    {
+      "references": [
+        {
+          "line": 32,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/execution/backtest_authority.py"
+        }
+      ],
+      "source": "execution",
+      "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 37,
+          "module": "services.features.value_store",
+          "path": "services/factor_garden/materializer.py"
+        },
+        {
+          "line": 21,
+          "module": "services.features.registry_store",
+          "path": "services/factor_garden/registry.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/factor_garden/definitions.py"
+        },
+        {
+          "line": 38,
+          "module": "services.research.alpha_expression",
+          "path": "services/factor_garden/materializer.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 28,
+          "module": "services.data.persistent_store",
+          "path": "services/features/registry_store.py"
+        },
+        {
+          "line": 25,
+          "module": "services.data.persistent_store",
+          "path": "services/features/value_store.py"
+        }
+      ],
+      "source": "features",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 19,
+          "module": "services.alpha.config",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 20,
+          "module": "services.alpha.catalog",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 21,
+          "module": "services.alpha.evaluator",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 22,
+          "module": "services.alpha.factory",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 23,
+          "module": "services.alpha.lifecycle",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 6,
+          "module": "services.alpha.catalog",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 7,
+          "module": "services.alpha.evaluator",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 8,
+          "module": "services.alpha.lineage",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 9,
+          "module": "services.alpha.population_optimizer",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 10,
+          "module": "services.alpha.registry",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 17,
+          "module": "services.alpha.factor_set",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 12,
+          "module": "services.alpha.catalog",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 13,
+          "module": "services.alpha.config",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 14,
+          "module": "services.alpha.evaluator",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 4,
+          "module": "services.alpha.catalog",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 5,
+          "module": "services.alpha.config",
+          "path": "services/intelligence/research_session.py"
+        }
+      ],
+      "source": "intelligence",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 14,
+          "module": "services.data.research_adapter",
+          "path": "services/intelligence/research_session.py"
+        }
+      ],
+      "source": "intelligence",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 31,
+          "module": "services.governance.model_risk_registry",
+          "path": "services/intelligence/runtime.py"
+        }
+      ],
+      "source": "intelligence",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 29,
+          "module": "services.research.backtest_engine.costs",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 30,
+          "module": "services.research.ports.persistence",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 11,
+          "module": "services.research.ports.alpha_runtime",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 12,
+          "module": "services.research.alpha_factory",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.alpha_pipeline",
+          "path": "services/intelligence/alpha_research.py"
+        },
+        {
+          "line": 23,
+          "module": "services.research.interaction_factors",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.panel_builder",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 25,
+          "module": "services.research.fundamental_factors",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 26,
+          "module": "services.research.ports.persistence",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 31,
+          "module": "services.research",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 32,
+          "module": "services.research.subtree_stats",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 10,
+          "module": "services.research.ports.persistence",
+          "path": "services/intelligence/guided_search.py"
+        },
+        {
+          "line": 23,
+          "module": "services.research.ports.persistence",
+          "path": "services/intelligence/mcts_search.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 21,
+          "module": "services.research.experiment_registry.registry",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 22,
+          "module": "services.research.research_budget",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 27,
+          "module": "services.research.trial_provenance",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 15,
+          "module": "services.research.session",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.ports.persistence",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 21,
+          "module": "services.research.trial_provenance",
+          "path": "services/intelligence/research_session.py"
+        }
+      ],
+      "source": "intelligence",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/agent_loop.py"
+        },
+        {
+          "line": 27,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/evolutionary_search.py"
+        },
+        {
+          "line": 11,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/guided_search.py"
+        },
+        {
+          "line": 24,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/mcts_search.py"
+        },
+        {
+          "line": 15,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 22,
+          "module": "services.validation.selection_authority",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 20,
+          "module": "services.validation.performance",
+          "path": "services/intelligence/reward.py"
+        }
+      ],
+      "source": "intelligence",
+      "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 18,
+          "module": "services.data.persistent_store",
+          "path": "services/monitoring/incident_ledger.py"
+        }
+      ],
+      "source": "monitoring",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 19,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/autonomy_kernel.py"
+        },
+        {
+          "line": 41,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/command_bus.py"
+        },
+        {
+          "line": 31,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/event_router.py"
+        }
+      ],
+      "source": "orchestration",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
+          "line": 5,
+          "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_allocation.py"
+        },
+        {
+          "line": 6,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_allocation.py"
+        },
+        {
+          "line": 11,
+          "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_funding.py"
+        },
+        {
+          "line": 12,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_funding.py"
+        },
+        {
+          "line": 5,
+          "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_sizing.py"
+        },
+        {
+          "line": 6,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_sizing.py"
+        },
+        {
+          "line": 5,
+          "module": "services.data.kraken_account",
+          "path": "services/portfolio/kraken_valuation.py"
+        },
+        {
+          "line": 6,
+          "module": "services.data.kraken_public",
+          "path": "services/portfolio/kraken_valuation.py"
+        }
+      ],
+      "source": "portfolio",
+      "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 53,
+          "module": "services.alpha.catalog",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 54,
+          "module": "services.alpha.guards",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 55,
+          "module": "services.alpha.promotion",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 61,
+          "module": "services.governance.approval",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 68,
+          "module": "services.governance.approval_store",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 69,
+          "module": "services.governance.identity_authorization",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 73,
+          "module": "services.governance.identity_authorization_store",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 79,
+          "module": "services.governance.strong_identity",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 86,
+          "module": "services.monitoring.audit_store",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 87,
+          "module": "services.monitoring.domain_event_runtime",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
+          "line": 94,
+          "module": "services.orchestration.command_bus",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 99,
+          "module": "services.orchestration.command_envelope",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 100,
+          "module": "services.orchestration.idempotency",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "orchestration"
+    },
+    {
+      "references": [
+        {
+          "line": 107,
+          "module": "services.research.experiment_registry.registry",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 108,
+          "module": "services.research.experiment_registry.store",
+          "path": "services/promotion_api/main.py"
+        },
+        {
+          "line": 109,
+          "module": "services.research.paper_trading.store",
+          "path": "services/promotion_api/main.py"
+        }
+      ],
+      "source": "promotion_api",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 8,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/ai_factory_sleeves.py"
+        },
+        {
+          "line": 17,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/binance_order_receipts.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_account_recovery.py"
+        },
+        {
+          "line": 12,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_cash_chain.py"
+        },
+        {
+          "line": 10,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_cash_projection.py"
+        },
+        {
+          "line": 16,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_cash_window.py"
+        },
+        {
+          "line": 18,
+          "module": "services.execution.passive_queue",
+          "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 19,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 6,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_issuer_status.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_market_inputs.py"
+        },
+        {
+          "line": 14,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_opening_projection.py"
+        },
+        {
+          "line": 11,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_order_recovery.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.frozen_account_terms",
+          "path": "services/research/demo_origin_contract.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_origin_contract.py"
+        },
+        {
+          "line": 13,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_statement.py"
+        },
+        {
+          "line": 11,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/demo_trade_crosscheck.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/gold_bar_candidates.py"
+        },
+        {
+          "line": 4,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/gold_bar_diagnostics.py"
+        },
+        {
+          "line": 4,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_bar_v2_strategy.py"
+        },
+        {
+          "line": 13,
+          "module": "services.execution.authoritative_perpetual_backtest",
+          "path": "services/research/gold_cost_inputs.py"
+        },
+        {
+          "line": 16,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/gold_cost_inputs.py"
+        },
+        {
+          "line": 19,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_cost_inputs.py"
+        },
+        {
+          "line": 23,
+          "module": "services.execution.venue_order_filters",
+          "path": "services/research/gold_cost_inputs.py"
+        },
+        {
+          "line": 2,
+          "module": "services.execution.public_funding_observations",
+          "path": "services/research/gold_funding_dataset.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/gold_loss_control.py"
+        },
+        {
+          "line": 10,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_loss_control.py"
+        },
+        {
+          "line": 13,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research/gold_net_portfolio.py"
+        },
+        {
+          "line": 14,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/gold_net_portfolio.py"
+        },
+        {
+          "line": 15,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_net_portfolio.py"
+        },
+        {
+          "line": 5,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research/gold_portfolio_memory.py"
+        },
+        {
+          "line": 22,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_price_design.py"
+        },
+        {
+          "line": 5,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_tape_execution.py"
+        },
+        {
+          "line": 11,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/gold_v2_strategy.py"
+        },
+        {
+          "line": 14,
+          "module": "services.execution.paper_reconciliation",
+          "path": "services/research/paper_trading/domain/reconciliation.py"
+        },
+        {
+          "line": 4,
+          "module": "services.execution.passive_queue",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 5,
+          "module": "services.execution.passive_execution_input",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 6,
+          "module": "services.execution.passive_account_environment",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.frozen_account_terms",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.passive_perpetual_simulation",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/passive_execution_study.py"
+        },
+        {
+          "line": 12,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/passive_receipt_calibration.py"
+        },
+        {
+          "line": 13,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/perpetual_alpha.py"
+        },
+        {
+          "line": 4,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_attribution.py"
+        },
+        {
+          "line": 3,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_calibration.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 8,
+          "module": "services.execution.perpetual_simulation",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 9,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_fixed_replay.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.perpetual_public_replay",
+          "path": "services/research/profitability_inputs.py"
+        },
+        {
+          "line": 5,
+          "module": "services.execution.perpetual_ledger_v2",
+          "path": "services/research/profitability_trajectory.py"
+        },
+        {
+          "line": 105,
+          "module": "services.execution",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 106,
+          "module": "services.execution",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 3,
+          "module": "services.execution.impact",
+          "path": "services/research/realism/impact.py"
+        },
+        {
+          "line": 7,
+          "module": "services.execution.impact_calibration",
+          "path": "services/research/realism/impact_calibration.py"
+        }
+      ],
+      "source": "research",
+      "target": "execution"
+    },
+    {
+      "references": [
+        {
+          "line": 19,
+          "module": "services.features.leakage",
+          "path": "services/research/leakage_evidence.py"
+        },
+        {
+          "line": 29,
+          "module": "services.features.binance_realtime_projection",
+          "path": "services/research/realtime_alpha_discovery.py"
+        },
+        {
+          "line": 178,
+          "module": "services.features.leakage",
+          "path": "services/research/validation_dag.py"
+        }
+      ],
+      "source": "research",
+      "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 16,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/binance_order_receipts.py"
+        },
+        {
+          "line": 17,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_cash_window.py"
+        },
+        {
+          "line": 8,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_display_store.py"
+        },
+        {
+          "line": 24,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_execution_journal.py"
+        },
+        {
+          "line": 20,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_execution_origin.py"
+        },
+        {
+          "line": 8,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_market_inputs.py"
+        },
+        {
+          "line": 19,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_observation_store.py"
+        },
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_order_recovery.py"
+        },
+        {
+          "line": 14,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_statement.py"
+        },
+        {
+          "line": 16,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/demo_user_stream.py"
+        },
+        {
+          "line": 6,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/gold_bar_dataset.py"
+        },
+        {
+          "line": 5,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/gold_bar_stream.py"
+        },
+        {
+          "line": 12,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/gold_cost_inputs.py"
+        },
+        {
+          "line": 7,
+          "module": "services.governance.json_integrity",
+          "path": "services/research/gold_review_watch.py"
+        }
+      ],
+      "source": "research",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 20,
+          "module": "services.lifecycle.catalog_snapshot",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 30,
+          "module": "services.lifecycle",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 2417,
+          "module": "services.lifecycle",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 6,
+          "module": "services.lifecycle.catalog_snapshot",
+          "path": "services/research/ports/catalog.py"
+        }
+      ],
+      "source": "research",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
+          "line": 29,
+          "module": "services.portfolio.signal_adapter",
+          "path": "services/research/alpha_pipeline.py"
+        }
+      ],
+      "source": "research",
+      "target": "portfolio"
+    },
+    {
+      "references": [
+        {
+          "line": 33,
+          "module": "services.validation.performance",
+          "path": "services/research/alpha_factory.py"
+        },
+        {
+          "line": 34,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/alpha_factory.py"
+        },
+        {
+          "line": 31,
+          "module": "services.validation.performance",
+          "path": "services/research/alpha_pipeline.py"
+        },
+        {
+          "line": 32,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/alpha_pipeline.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.performance",
+          "path": "services/research/backtest_engine/metrics.py"
+        },
+        {
+          "line": 4,
+          "module": "services.validation.demo_cancellation",
+          "path": "services/research/demo_cancel_status.py"
+        },
+        {
+          "line": 33,
+          "module": "services.validation.reality_check",
+          "path": "services/research/experiment_registry/family_schema_named_verifiers_c8.py"
+        },
+        {
+          "line": 48,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 49,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 50,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 103,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 104,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 155,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 156,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 206,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 207,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 235,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 236,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 277,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 278,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 2357,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2371,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2396,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2397,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2461,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2492,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2511,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2520,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2551,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2585,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2606,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2623,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2644,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 2659,
+          "module": "services.validation",
+          "path": "services/research/experiment_registry/store.py"
+        },
+        {
+          "line": 14,
+          "module": "services.validation.factor_statistics",
+          "path": "services/research/factor_engine/domain/model.py"
+        },
+        {
+          "line": 20,
+          "module": "services.validation.performance",
+          "path": "services/research/oos_validation.py"
+        },
+        {
+          "line": 21,
+          "module": "services.validation.walk_forward",
+          "path": "services/research/oos_validation.py"
+        },
+        {
+          "line": 12,
+          "module": "services.validation.performance",
+          "path": "services/research/paper_trading/store.py"
+        },
+        {
+          "line": 27,
+          "module": "services.validation.research_evidence_artifact",
+          "path": "services/research/project_research_evidence_reader.py"
+        },
+        {
+          "line": 348,
+          "module": "services.validation.project_research_population",
+          "path": "services/research/project_research_evidence_reader.py"
+        },
+        {
+          "line": 15,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 85,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 118,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 119,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 120,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 121,
+          "module": "services.validation",
+          "path": "services/research/project_research_evidence_snapshot.py"
+        },
+        {
+          "line": 61,
+          "module": "services.validation.project_research_population",
+          "path": "services/research/project_research_review_request.py"
+        },
+        {
+          "line": 70,
+          "module": "services.validation.project_research_population",
+          "path": "services/research/project_research_review_request.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.project_research_population",
+          "path": "services/research/project_result_material_reader.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.regime",
+          "path": "services/research/regime.py"
+        },
+        {
+          "line": 20,
+          "module": "services.validation.selection_authority",
+          "path": "services/research/session.py"
+        },
+        {
+          "line": 132,
+          "module": "services.validation.cpcv",
+          "path": "services/research/session.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.cpcv",
+          "path": "services/research/validation/cpcv.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.deflated_sharpe",
+          "path": "services/research/validation/deflated_sharpe.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.gate",
+          "path": "services/research/validation/gate.py"
+        },
+        {
+          "line": 22,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 25,
+          "module": "services.validation.gate",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 26,
+          "module": "services.validation.performance",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 27,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 28,
+          "module": "services.validation.walk_forward",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.reality_check",
+          "path": "services/research/validation/reality_check.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.walk_forward",
+          "path": "services/research/validation/walk_forward.py"
+        },
+        {
+          "line": 249,
+          "module": "services.validation.walk_forward",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 250,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 251,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/research/validation_dag.py"
+        },
+        {
+          "line": 391,
+          "module": "services.validation.regime",
+          "path": "services/research/validation_dag.py"
+        }
+      ],
+      "source": "research",
+      "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 32,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 19,
+          "module": "services.execution.backtest_authority",
+          "path": "services/research_runner/run_kinds.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "execution"
+    },
+    {
+      "references": [
+        {
+          "line": 11,
+          "module": "services.governance.json_integrity",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 343,
+          "module": "services.governance.json_integrity",
+          "path": "services/research_runner/main.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 31,
+          "module": "services.monitoring.audit_store",
+          "path": "services/research_runner/main.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
+          "line": 3,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 4,
+          "module": "services.research.ai_factory_lifecycle",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 34,
+          "module": "services.research.gold_execution_feedback",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 150,
+          "module": "services.research.gold_execution_feedback",
+          "path": "services/research_runner/factory_campaign.py"
+        },
+        {
+          "line": 2,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/gold_collection_program.py"
+        },
+        {
+          "line": 2,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/gold_review.py"
+        },
+        {
+          "line": 3,
+          "module": "services.research",
+          "path": "services/research_runner/gold_review.py"
+        },
+        {
+          "line": 33,
+          "module": "services.research.run_registry.contract",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 37,
+          "module": "services.research.run_registry.registry",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 38,
+          "module": "services.research.run_registry.store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 342,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 349,
+          "module": "services.research.profitability_inputs",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 360,
+          "module": "services.research.ai_factory",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 361,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 432,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/main.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.run_registry.indexer",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 730,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 757,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 769,
+          "module": "services.research.ai_factory_store",
+          "path": "services/research_runner/run_kinds.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.run_registry.contract",
+          "path": "services/research_runner/runner.py"
+        }
+      ],
+      "source": "research_runner",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 15,
+          "module": "services.governance.approval",
+          "path": "services/risk/pre_trade/kill_switch.py"
+        },
+        {
+          "line": 9,
+          "module": "services.governance.approval",
+          "path": "services/risk/pre_trade/kill_switch_runtime.py"
+        }
+      ],
+      "source": "risk",
+      "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 27,
+          "module": "services.validation.research_risk_authority",
+          "path": "services/risk/research_risk/dry_run_guard.py"
+        }
+      ],
+      "source": "risk",
+      "target": "validation"
+    }
+  ],
+  "excluded_test_file_count": 4,
+  "graph_sha256": "449de1d2c236c4c739ab2f2386393dedb750429246fa275feb81b006edd11b59",
+  "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
+  "node_count": 20,
+  "nodes": [
+    "alpha",
+    "alpha_factory",
+    "console",
+    "data",
+    "deployment",
+    "execution",
+    "factor_garden",
+    "features",
+    "governance",
+    "intelligence",
+    "lifecycle",
+    "monitoring",
+    "orchestration",
+    "portfolio",
+    "promotion_api",
+    "research",
+    "research_runner",
+    "risk",
+    "trading",
+    "validation"
+  ],
+  "policy": {
+    "known_cycle_edge_count": 0,
+    "known_unresolved_dynamic_import_count": 3,
+    "stale_cycle_permissions": [],
+    "stale_dynamic_import_permissions": [],
+    "status": "EXACT_BASELINE",
+    "unexpected_cycle_edges": [],
+    "unexpected_dynamic_imports": []
+  },
+  "policy_path": "config/service_import_policy.json",
+  "policy_sha256": "422f70e5419b1680d3af2476a1d11ed3aae30dbae96cb92d9ffa30a55a69c662",
+  "schema_version": 1,
+  "scope": "services production Python; directories named tests excluded",
+  "source_file_count": 695,
+  "unresolved_dynamic_imports": [
+    {
+      "function": "importlib.import_module",
+      "line": 93,
+      "path": "services/research_runner/run_kinds.py"
+    },
+    {
+      "function": "importlib.import_module",
+      "line": 100,
+      "path": "services/research_runner/run_kinds.py"
+    },
+    {
+      "function": "importlib.import_module",
+      "line": 342,
+      "path": "services/research_runner/run_kinds.py"
+    }
+  ],
+  "verdict": "PASS_KNOWN_CYCLES_EXACTLY_BASELINED"
+}

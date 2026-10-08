@@ -1,0 +1,50 @@
+{
+  "name": "quantos-research-console",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:localhost": "tsc -b && vite build --mode localhost",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "eslint": "eslint .",
+    "e2e": "playwright test",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-sc": "5.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.1",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "4.1.10",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
+    "jsdom": "^25.0.0",
+    "postcss": "8.5.24",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "8.66.0",
+    "vite": "^6.0.0",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "minimatch": "10.2.6",
+    "brace-expansion": "5.0.9",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.18"
+  }
+}

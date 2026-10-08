@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1786506509928,
+  "status": "BLOCKED_BEFORE_OUTCOME",
+  "reason_code": "QUALITY_EXCLUSION_LIMIT_EXCEEDED",
+  "study_id": "binance_usdm_book_depth_curve_confirmation_v1",
+  "confirmation_contract_commit": "7b208c08e4161099b20ebbea8d6a6c76b9521a1b",
+  "quality_policy_commit": "b0f2be401adcb50545efd88d8b403124af21dbbc",
+  "backfill_status_sha256": "bfd5ff3aa55690c8b3be31ed40dd3f8746a016a19c9b317b1e4da24dc71cb26e",
+  "requested_days": 90,
+  "complete_stored_days": 59,
+  "stored_observation_count": 19824,
+  "quality_excluded_day_count": 5,
+  "maximum_quality_excluded_days": 4,
+  "quality_excluded_days_ms": [
+    1774483200000,
+    1775606400000,
+    1775692800000,
+    1775779200000,
+    1776297600000
+  ],
+  "all_exclusions_checksum_verified": true,
+  "confirmation_return_accessed": false,
+  "confirmation_metrics_computed": false,
+  "formal_validation_started": false,
+  "formal_admission": false,
+  "forward_credit": false,
+  "testnet_authorized": false,
+  "order_submission_authorized": false,
+  "authority_head": {
+    "seq": 50400,
+    "row_hash": "66910ac9176bd71fa5fab8992e9a9282049ef643f17ce7598cfb363cf35c5a5e"
+  },
+  "authority_chain_valid": true,
+  "safety": {
+    "paper_only": true,
+    "credentials_accessed": false,
+    "broker_connectivity": false,
+    "order_submission": false,
+    "live_trading": false
+  }
+}

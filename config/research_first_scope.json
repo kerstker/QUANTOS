@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "profile_name": "research_first_scope",
+  "spec": "docs/engineering/specs/2026-09-20-dgx-research-first.md",
+  "distribution_definitions": {
+    "REQUIRED_RESEARCH_CORE": "Behavior required in the research-first phase; spec deferral is 无.",
+    "ADAPTED_SCOPED_CHECK": "Original TOP22 bar narrowed to a bounded local research check; broader scope deferred.",
+    "DEFERRED_INSTITUTIONAL_REQUIREMENT": "Original requirement's institutional/off-host scope deferred; no research PASS is implied."
+  },
+  "notes": [
+    "Mapping is a reviewable design projection of the spec table; it does not modify legacy scores.",
+    "Deferred items do not block experimentation but are never auto-converted to PASS.",
+    "Source top-tier statuses are inventory only and cannot promote a research verdict."
+  ],
+  "requirements": [
+    {
+      "id": "DATA.PIT.CONTRACT",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "决策时可知性、迟到修订、样本对齐回归",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. Must independently re-verify decision-time knowability, late revisions and sample alignment."
+    },
+    {
+      "id": "DATA.VENDOR.DEPTH",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "当前实验输入来源、可用时间、质量可核查",
+      "deferred_scope": "商业 tick/盘口合同与 SLA；依赖盘口的策略仍需相应数据",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Scoped to provenance/quality of the current experiment input; commercial tick/order-book contracts and SLA are deferred."
+    },
+    {
+      "id": "ALPHA.TRIAL.GLOBAL_LEDGER",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "全部试验含失败、预算、候选与数据版本留存",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. Every trial including failures, budgets, candidates and data versions must persist."
+    },
+    {
+      "id": "ALPHA.MULTI_ASSET.RESEARCH",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "先在明确限定的市场完成闭环",
+      "deferred_scope": "全资产覆盖",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Close the loop on a clearly bounded market first; full asset coverage is deferred."
+    },
+    {
+      "id": "VALIDATION.ANTIOVERFIT.GATE",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "训练内选择、锁定 OOS、多重尝试控制",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. In-training selection, locked OOS and multiple-trial control are required behavior."
+    },
+    {
+      "id": "VALIDATION.CHALLENGER.MODEL_RISK",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "独立复算、简单基准与证伪测试",
+      "deferred_scope": "机构评审身份设施；模型无效可得出合格否定结论",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Independent recompute, simple benchmark and falsification tests are local; institutional review-identity infrastructure is deferred."
+    },
+    {
+      "id": "PORTFOLIO.CONSTRAINED.OPTIMIZATION",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "有限仓位、现金、杠杆、换手及集中度",
+      "deferred_scope": "全机构跨 book 配置",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Bounded position, cash, leverage, turnover and concentration checks apply; full institutional cross-book allocation is deferred."
+    },
+    {
+      "id": "PORTFOLIO.COST.CAPACITY.LOAD_BEARING",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "成本与容量实际影响可执行持仓",
+      "deferred_scope": "超出当前市场的校准",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Costs and capacity must actually affect executable positions; calibration beyond the current market is deferred."
+    },
+    {
+      "id": "RISK.FAIL_CLOSED.GATES",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "非有限值拒绝、损失上限、未知即停",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. Non-finite rejection, loss limits and unknown-means-stop are required behavior."
+    },
+    {
+      "id": "RISK.RECOVERY.DRILL",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "同机中断重启、不重发、不重复计账",
+      "deferred_scope": "机构长期 SLO",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Same-machine interruption restart with no duplicate send or accounting is the research check; institutional long-term SLO is deferred."
+    },
+    {
+      "id": "EXECUTION.DRYRUN.RECONCILIATION",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "唯一 V2 账本，订单/成交/费用/现金守恒",
+      "deferred_scope": "旧 V1 继续隔离",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. One canonical V2 ledger with order/fill/fee/cash conservation; legacy V1 stays isolated and deferred."
+    },
+    {
+      "id": "EXECUTION.MULTIVENUE.SOR",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "单场所仿真/测试网口径一致",
+      "deferred_scope": "多场所智能路由和生产 TCA",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. Single-venue simulation/testnet semantics must agree; multi-venue smart routing and production TCA are deferred."
+    },
+    {
+      "id": "AI.AGENT.NONHUMAN.BOUNDARY",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "AI 无自批和真实交易权限",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. AI must have no self-approval or real-trading authority."
+    },
+    {
+      "id": "AI.MODEL.REGISTRY.REDTEAM",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "提示/模型/工具/调用身份、越权回归",
+      "deferred_scope": "外部服务商与机构级评审设施",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. Deferred scope is external service providers and institutional review facilities; it does not block single-machine research but is not a PASS."
+    },
+    {
+      "id": "GOV.APPROVAL.HASHCHAIN",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "实验与测试网授权可追踪",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. Experiment and testnet authorization must be traceable."
+    },
+    {
+      "id": "GOV.IDENTITY.STRONG_AUTH",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "本机操作员与研究进程权限隔离",
+      "deferred_scope": "外部 OIDC、mTLS、机构多方身份部署",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. Deferred scope is external OIDC, mTLS and institutional multi-party identity deployment; it does not block local research but is not a PASS."
+    },
+    {
+      "id": "PLATFORM.CI.UNIFIED_GATE",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "每批专项测试；里程碑完整验收",
+      "deferred_scope": "不要求每个实验重建全部发布制品",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. Full release-artifact rebuild per experiment is deferred institutional release scope; it is not a research PASS."
+    },
+    {
+      "id": "PLATFORM.SUPPLY_CHAIN",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "固定依赖、适用漏洞检查、源码身份",
+      "deferred_scope": "异机可复现构建、外部 WORM 与独立签发基础设施",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. Deferred scope is cross-host reproducible builds, external WORM and independent signing infrastructure; not a research PASS."
+    },
+    {
+      "id": "OPS.BACKUP.ENCRYPTED",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "保留原始输入和实验记录，输出可重跑",
+      "deferred_scope": "外置加密备份不阻塞单机研究",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. External encrypted backup destinations are deferred and do not block single-machine research; not a PASS."
+    },
+    {
+      "id": "OPS.RESTORE.DRILL",
+      "distribution": "DEFERRED_INSTITUTIONAL_REQUIREMENT",
+      "research_stage_requirement": "同机任务恢复和断点验证",
+      "deferred_scope": "异机恢复、30/90 天历史与整机灾备",
+      "deferred": true,
+      "reason": "Deferred scope is off-host/external institutional infrastructure; it does not block single-machine research but is not a PASS. Cross-host recovery, 30/90-day history and full disaster recovery are deferred; not a research PASS."
+    },
+    {
+      "id": "FRONTEND.ROUTES.SINGLE_SOURCE",
+      "distribution": "ADAPTED_SCOPED_CHECK",
+      "research_stage_requirement": "一个可靠研究入口，合同测试",
+      "deferred_scope": "非关键页面与视觉完善",
+      "deferred": true,
+      "reason": "Research stage applies a narrowed local check; the broader scope is deferred and is not required for experimentation. One reliable research entry point with contract tests; non-critical pages and visual polish are deferred."
+    },
+    {
+      "id": "FRONTEND.EVIDENCE.SINGLE_SOURCE",
+      "distribution": "REQUIRED_RESEARCH_CORE",
+      "research_stage_requirement": "来源、失败、成本、状态和未知值真实展示",
+      "deferred_scope": "无",
+      "deferred": false,
+      "reason": "Spec lists no deferred scope; the research-first phase requires this behavior itself. Sources, failures, costs, status and unknown values must be shown truthfully."
+    }
+  ]
+}

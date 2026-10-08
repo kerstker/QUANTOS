@@ -1,0 +1,95 @@
+import ast
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+RESEARCH = ROOT / "services/research"
+
+CORE_MODULES = (
+    RESEARCH / "experiment_registry/registry.py",
+    RESEARCH / "run_registry/registry.py",
+    RESEARCH / "paper_trading/advance.py",
+    RESEARCH / "paper_trading/health.py",
+    RESEARCH / "paper_trading/forward.py",
+)
+
+SQLITE_PERSISTENCE_OWNERS = {
+    # Private disposable result index only; original evidence stays read-only.
+    "services/research/perpetual_chunked_result_store.py",
+    # Append-only captured mainnet observations; no order dispatch or cash ledger.
+    "services/research/gold_account_journal.py",
+    "services/research/ai_factory_store.py",
+    # Dedicated append-only research episode database; scope/citation checks live in its API.
+    "services/research/ai_factory_episodes.py",
+    # Imported Demo facts/rejections only; cash projections use the existing V2 ledger.
+    "services/research/demo_execution_journal.py",
+    # Operator-captured input events only; no cash ledger or order dispatch.
+    "services/research/demo_user_stream.py",
+    # Lossless public observation segments; no position, cash or order state.
+    "services/research/demo_observation_store.py",
+    "services/research/alpha_workflow_store.py",
+    "services/research/experiment_registry/store.py",
+    "services/research/experiment_registry/family_schema_runtime.py",
+    "services/research/experiment_registry/family_schema_structural_verifiers.py",
+    "services/research/experiment_registry/family_schema_v2_activation.py",
+    "services/research/experiment_registry/family_schema_v2_semantics.py",
+    "services/research/experiment_registry/family_schema_v3_activation.py",
+    "services/research/experiment_registry/family_schema_v3_verifier.py",
+    "services/research/run_registry/store.py",
+    "services/research/paper_trading/store.py",
+    "services/research/paper_trading/forward_store.py",
+    "services/research/paper_trading/attested_store.py",
+    "services/research/paper_candidate_registry.py",
+    "services/research/alpha_production_workflow.py",
+    "services/research/alpha_family_registry.py",
+    "services/research/realtime_alpha_shadow_store.py",
+    "services/research/trial_ledger.py",
+}
+
+
+def _imports(path: Path):
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
+
+
+def test_registry_and_paper_core_do_not_import_concrete_stores():
+    offenders = []
+    for path in CORE_MODULES:
+        for node in _imports(path):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            else:
+                modules = [node.module or ""]
+            if any(
+                module == "sqlite3"
+                or module.endswith(".store")
+                or module == "store"
+                or module.endswith(".forward_store")
+                or module == "forward_store"
+                for module in modules
+            ):
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{modules}")
+    assert not offenders, offenders
+
+
+def test_sqlite_is_confined_to_declared_persistence_owners():
+    actual = set()
+    for path in sorted(RESEARCH.rglob("*.py")):
+        if "tests" in path.parts:
+            continue
+        for node in _imports(path):
+            modules = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+            if "sqlite3" in modules:
+                actual.add(path.relative_to(ROOT).as_posix())
+    assert actual == SQLITE_PERSISTENCE_OWNERS
+
+
+def test_persistence_ports_are_leaf_interfaces():
+    path = RESEARCH / "ports/persistence.py"
+    modules = []
+    for node in _imports(path):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        else:
+            modules.append(node.module or "")
+    assert not any(module == "sqlite3" or ".store" in module or module.endswith("forward_store") for module in modules)

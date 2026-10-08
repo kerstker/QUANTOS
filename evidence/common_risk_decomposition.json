@@ -1,0 +1,2186 @@
+{
+  "provenance": "REAL_COMMON_RISK_DECOMPOSITION",
+  "spec": "profit-maximization §7 W3: strategy cluster & common-risk decomposition",
+  "generated_from": {
+    "dry_run_db": "data\\cache\\dry_run.db",
+    "price_db": "data\\cache\\crypto_funding.db (fetch_bars_pit)",
+    "funding_json": "data\\cache\\crypto_funding_rates.json",
+    "oi_json": "data\\cache\\crypto_oi_metrics.json"
+  },
+  "strategies": {
+    "carry_oi_majors": {
+      "db_strategy_id": "carry",
+      "run_id": "90eb3789e575ff54",
+      "curve": "equity_curve",
+      "n_periods": 316
+    },
+    "crowd_contra": {
+      "db_strategy_id": "crowd_contra",
+      "run_id": "af119aff537f7092",
+      "curve": "equity_curve",
+      "n_periods": 235
+    },
+    "top_contra": {
+      "db_strategy_id": "top_contra",
+      "run_id": "993d3a28a95ea411",
+      "curve": "equity_curve",
+      "n_periods": 192
+    },
+    "btc_spot_trend": {
+      "db_strategy_id": "btc_spot_trend",
+      "run_id": "b73df9ca627cdf9c",
+      "curve": "equity_curve",
+      "n_periods": 318
+    }
+  },
+  "factor_universe": [
+    "BTC",
+    "ETH",
+    "BNB",
+    "SOL",
+    "XRP",
+    "ADA",
+    "DOGE",
+    "AVAX",
+    "LINK",
+    "DOT",
+    "LTC",
+    "BCH",
+    "TRX",
+    "ATOM"
+  ],
+  "grid": {
+    "common_weeks": 192,
+    "first": "2022-W22",
+    "last": "2026-W29",
+    "note": "4 book 策略共同周 ∩ 全部因子有效周;top_contra(2022-06 起)为短边"
+  },
+  "factor_library": {
+    "built": [
+      "basis_change",
+      "btc_market",
+      "eth_market",
+      "funding_weekly",
+      "liquidity_volume_change",
+      "market_trend_4w",
+      "oi_crowding_change",
+      "realized_vol_change",
+      "short_term_reversal_1w",
+      "size_oi_change"
+    ],
+    "definitions": "见 services/research/factor_decomp.py 模块 docstring(逐因子口径)",
+    "missing": [
+      {
+        "factor": "liquidation_cascade",
+        "status": "MISSING_NO_LOCAL_DATA",
+        "note": "本地无清算/强平数据;§7.1 流动性螺旋维度的关键缺口"
+      },
+      {
+        "factor": "amihud_illiquidity",
+        "status": "PROXIED",
+        "note": "以 liquidity_volume_change(美元成交量周环比)代理;经典 Amihud |r|/volume 未建"
+      },
+      {
+        "factor": "options_skew",
+        "status": "MISSING_HISTORY_TOO_SHORT",
+        "note": "Deribit 25Δ skew 快照自 2026-07-24 向前积累,免费历史不存在"
+      },
+      {
+        "factor": "onchain",
+        "status": "MISSING_NO_LOCAL_DATA",
+        "note": "无链上数据"
+      },
+      {
+        "factor": "cross_asset",
+        "status": "MISSING_SOURCE_BLOCKED",
+        "note": "股票/黄金免费源本环境被墙(Stooq bot-wall/Yahoo 429,不绕过);FRED 宏观为 regime 级而非资产收益"
+      }
+    ],
+    "model": "OLS(截距+k 因子,numpy lstsq 闭式,确定性);全样本 in-sample = 回顾性敞口描述,非 PIT 可交易择时;k=10,n≈192(顶帽)自由度充足但小样本"
+  },
+  "decomposition": {
+    "carry_oi_majors": {
+      "n": 192,
+      "r2": 0.089558,
+      "alpha_weekly": 0.00339,
+      "alpha_annualized": 0.17627,
+      "alpha_tstat": 1.843405,
+      "betas": {
+        "basis_change": 3.599161,
+        "btc_market": 0.029689,
+        "eth_market": -0.033525,
+        "funding_weekly": -4.741499,
+        "liquidity_volume_change": -0.007033,
+        "market_trend_4w": 0.032495,
+        "oi_crowding_change": 0.01148,
+        "realized_vol_change": 0.005031,
+        "short_term_reversal_1w": 0.019522,
+        "size_oi_change": 0.031507
+      },
+      "beta_tstats": {
+        "basis_change": 0.847636,
+        "btc_market": 0.617905,
+        "eth_market": -1.059268,
+        "funding_weekly": -3.781922,
+        "liquidity_volume_change": -1.033879,
+        "market_trend_4w": 1.623377,
+        "oi_crowding_change": 1.589882,
+        "realized_vol_change": 0.543122,
+        "short_term_reversal_1w": 0.543921,
+        "size_oi_change": 1.100649
+      },
+      "standardized_betas": {
+        "basis_change": 0.065423,
+        "btc_market": 0.082377,
+        "eth_market": -0.124458,
+        "funding_weekly": -0.362299,
+        "liquidity_volume_change": -0.106532,
+        "market_trend_4w": 0.196649,
+        "oi_crowding_change": 0.139695,
+        "realized_vol_change": 0.055635,
+        "short_term_reversal_1w": 0.054198,
+        "size_oi_change": 0.116581
+      },
+      "mean_attribution": {
+        "alpha": 0.00339,
+        "factors": {
+          "basis_change": 4e-06,
+          "btc_market": 0.000218,
+          "eth_market": -0.000124,
+          "funding_weekly": -0.003181,
+          "liquidity_volume_change": -0.000378,
+          "market_trend_4w": 0.00105,
+          "oi_crowding_change": -4.6e-05,
+          "realized_vol_change": 8e-06,
+          "short_term_reversal_1w": -0.000136,
+          "size_oi_change": 0.000283
+        },
+        "raw_mean": 0.001086
+      },
+      "raw": {
+        "n": 192,
+        "mean_weekly": 0.001086,
+        "annualized": 0.056484,
+        "tstat": 0.632827
+      },
+      "raw_ann_sharpe": 0.329334,
+      "residual_ann_vol": 0.163649,
+      "residual_vol_ratio": 0.954171
+    },
+    "crowd_contra": {
+      "n": 192,
+      "r2": 0.045167,
+      "alpha_weekly": 0.00154,
+      "alpha_annualized": 0.080074,
+      "alpha_tstat": 0.999462,
+      "betas": {
+        "basis_change": 2.671077,
+        "btc_market": -0.009372,
+        "eth_market": -0.004791,
+        "funding_weekly": 0.511586,
+        "liquidity_volume_change": 0.010795,
+        "market_trend_4w": 0.014219,
+        "oi_crowding_change": -0.002204,
+        "realized_vol_change": -0.009508,
+        "short_term_reversal_1w": 0.029271,
+        "size_oi_change": 0.004059
+      },
+      "beta_tstats": {
+        "basis_change": 0.750802,
+        "btc_market": -0.232811,
+        "eth_market": -0.18066,
+        "funding_weekly": 0.48702,
+        "liquidity_volume_change": 1.894095,
+        "market_trend_4w": 0.847795,
+        "oi_crowding_change": -0.364368,
+        "realized_vol_change": -1.224938,
+        "short_term_reversal_1w": 0.973366,
+        "size_oi_change": 0.169257
+      },
+      "standardized_betas": {
+        "basis_change": 0.059345,
+        "btc_market": -0.031785,
+        "eth_market": -0.021738,
+        "funding_weekly": 0.047779,
+        "liquidity_volume_change": 0.199871,
+        "market_trend_4w": 0.105172,
+        "oi_crowding_change": -0.032786,
+        "realized_vol_change": -0.128499,
+        "short_term_reversal_1w": 0.099326,
+        "size_oi_change": 0.01836
+      },
+      "mean_attribution": {
+        "alpha": 0.00154,
+        "factors": {
+          "basis_change": 3e-06,
+          "btc_market": -6.9e-05,
+          "eth_market": -1.8e-05,
+          "funding_weekly": 0.000343,
+          "liquidity_volume_change": 0.00058,
+          "market_trend_4w": 0.000459,
+          "oi_crowding_change": 9e-06,
+          "realized_vol_change": -1.5e-05,
+          "short_term_reversal_1w": -0.000205,
+          "size_oi_change": 3.6e-05
+        },
+        "raw_mean": 0.002665
+      },
+      "raw": {
+        "n": 192,
+        "mean_weekly": 0.002665,
+        "annualized": 0.138594,
+        "tstat": 1.897906
+      },
+      "raw_ann_sharpe": 0.987702,
+      "residual_ann_vol": 0.137114,
+      "residual_vol_ratio": 0.977156
+    },
+    "top_contra": {
+      "n": 192,
+      "r2": 0.048781,
+      "alpha_weekly": 0.003907,
+      "alpha_annualized": 0.203189,
+      "alpha_tstat": 1.928522,
+      "betas": {
+        "basis_change": -0.855536,
+        "btc_market": 0.038883,
+        "eth_market": -0.012819,
+        "funding_weekly": 1.567576,
+        "liquidity_volume_change": 0.008638,
+        "market_trend_4w": 0.005885,
+        "oi_crowding_change": -0.001834,
+        "realized_vol_change": -0.021069,
+        "short_term_reversal_1w": -0.003228,
+        "size_oi_change": -0.047642
+      },
+      "beta_tstats": {
+        "basis_change": -0.182864,
+        "btc_market": 0.734447,
+        "eth_market": -0.367588,
+        "funding_weekly": 1.13477,
+        "liquidity_volume_change": 1.152442,
+        "market_trend_4w": 0.266832,
+        "oi_crowding_change": -0.2305,
+        "realized_vol_change": -2.064123,
+        "short_term_reversal_1w": -0.08163,
+        "size_oi_change": -1.510483
+      },
+      "standardized_betas": {
+        "basis_change": -0.014427,
+        "btc_market": 0.100083,
+        "eth_market": -0.044146,
+        "funding_weekly": 0.111116,
+        "liquidity_volume_change": 0.121379,
+        "market_trend_4w": 0.033039,
+        "oi_crowding_change": -0.020702,
+        "realized_vol_change": -0.216121,
+        "short_term_reversal_1w": -0.008314,
+        "size_oi_change": -0.163534
+      },
+      "mean_attribution": {
+        "alpha": 0.003907,
+        "factors": {
+          "basis_change": -1e-06,
+          "btc_market": 0.000285,
+          "eth_market": -4.7e-05,
+          "funding_weekly": 0.001052,
+          "liquidity_volume_change": 0.000464,
+          "market_trend_4w": 0.00019,
+          "oi_crowding_change": 7e-06,
+          "realized_vol_change": -3.3e-05,
+          "short_term_reversal_1w": 2.3e-05,
+          "size_oi_change": -0.000427
+        },
+        "raw_mean": 0.005421
+      },
+      "raw": {
+        "n": 192,
+        "mean_weekly": 0.005421,
+        "annualized": 0.281868,
+        "tstat": 2.929575
+      },
+      "raw_ann_sharpe": 1.524599,
+      "residual_ann_vol": 0.180315,
+      "residual_vol_ratio": 0.975304
+    },
+    "btc_spot_trend": {
+      "n": 192,
+      "r2": 0.198105,
+      "alpha_weekly": 0.00089,
+      "alpha_annualized": 0.046277,
+      "alpha_tstat": 0.861893,
+      "betas": {
+        "basis_change": 1.000481,
+        "btc_market": 0.064845,
+        "eth_market": -0.013018,
+        "funding_weekly": -0.783146,
+        "liquidity_volume_change": 0.004306,
+        "market_trend_4w": -0.005127,
+        "oi_crowding_change": -0.005735,
+        "realized_vol_change": -0.002466,
+        "short_term_reversal_1w": -0.091657,
+        "size_oi_change": -0.012223
+      },
+      "beta_tstats": {
+        "basis_change": 0.419624,
+        "btc_market": 2.403488,
+        "eth_market": -0.732517,
+        "funding_weekly": -1.112455,
+        "liquidity_volume_change": 1.12733,
+        "market_trend_4w": -0.456113,
+        "oi_crowding_change": -1.414536,
+        "realized_vol_change": -0.474076,
+        "short_term_reversal_1w": -4.547938,
+        "size_oi_change": -0.76041
+      },
+      "standardized_betas": {
+        "basis_change": 0.030396,
+        "btc_market": 0.300719,
+        "eth_market": -0.080773,
+        "funding_weekly": -0.100016,
+        "liquidity_volume_change": 0.109017,
+        "market_trend_4w": -0.051853,
+        "oi_crowding_change": -0.116644,
+        "realized_vol_change": -0.045575,
+        "short_term_reversal_1w": -0.425302,
+        "size_oi_change": -0.075589
+      },
+      "mean_attribution": {
+        "alpha": 0.00089,
+        "factors": {
+          "basis_change": 1e-06,
+          "btc_market": 0.000476,
+          "eth_market": -4.8e-05,
+          "funding_weekly": -0.000525,
+          "liquidity_volume_change": 0.000232,
+          "market_trend_4w": -0.000166,
+          "oi_crowding_change": 2.3e-05,
+          "realized_vol_change": -4e-06,
+          "short_term_reversal_1w": 0.000641,
+          "size_oi_change": -0.00011
+        },
+        "raw_mean": 0.001409
+      },
+      "raw": {
+        "n": 192,
+        "mean_weekly": 0.001409,
+        "annualized": 0.073275,
+        "tstat": 1.372122
+      },
+      "raw_ann_sharpe": 0.714075,
+      "residual_ann_vol": 0.09189,
+      "residual_vol_ratio": 0.895486
+    }
+  },
+  "edge_verdicts": [
+    {
+      "strategy": "carry_oi_majors",
+      "r2": 0.089558,
+      "raw_tstat": 0.632827,
+      "alpha_tstat": 1.843405,
+      "alpha_annualized": 0.17627,
+      "mean_attribution_weekly": {
+        "alpha": 0.00339,
+        "factors": {
+          "basis_change": 4e-06,
+          "btc_market": 0.000218,
+          "eth_market": -0.000124,
+          "funding_weekly": -0.003181,
+          "liquidity_volume_change": -0.000378,
+          "market_trend_4w": 0.00105,
+          "oi_crowding_change": -4.6e-05,
+          "realized_vol_change": 8e-06,
+          "short_term_reversal_1w": -0.000136,
+          "size_oi_change": 0.000283
+        },
+        "raw_mean": 0.001086
+      },
+      "verdict": "MIXED",
+      "rule": "alpha(截距)|t|>=2 → 边不被因子库解释;R2>=0.5 且 alpha |t|<1 → 大多为因子复制"
+    },
+    {
+      "strategy": "crowd_contra",
+      "r2": 0.045167,
+      "raw_tstat": 1.897906,
+      "alpha_tstat": 0.999462,
+      "alpha_annualized": 0.080074,
+      "mean_attribution_weekly": {
+        "alpha": 0.00154,
+        "factors": {
+          "basis_change": 3e-06,
+          "btc_market": -6.9e-05,
+          "eth_market": -1.8e-05,
+          "funding_weekly": 0.000343,
+          "liquidity_volume_change": 0.00058,
+          "market_trend_4w": 0.000459,
+          "oi_crowding_change": 9e-06,
+          "realized_vol_change": -1.5e-05,
+          "short_term_reversal_1w": -0.000205,
+          "size_oi_change": 3.6e-05
+        },
+        "raw_mean": 0.002665
+      },
+      "verdict": "MIXED",
+      "rule": "alpha(截距)|t|>=2 → 边不被因子库解释;R2>=0.5 且 alpha |t|<1 → 大多为因子复制"
+    },
+    {
+      "strategy": "top_contra",
+      "r2": 0.048781,
+      "raw_tstat": 2.929575,
+      "alpha_tstat": 1.928522,
+      "alpha_annualized": 0.203189,
+      "mean_attribution_weekly": {
+        "alpha": 0.003907,
+        "factors": {
+          "basis_change": -1e-06,
+          "btc_market": 0.000285,
+          "eth_market": -4.7e-05,
+          "funding_weekly": 0.001052,
+          "liquidity_volume_change": 0.000464,
+          "market_trend_4w": 0.00019,
+          "oi_crowding_change": 7e-06,
+          "realized_vol_change": -3.3e-05,
+          "short_term_reversal_1w": 2.3e-05,
+          "size_oi_change": -0.000427
+        },
+        "raw_mean": 0.005421
+      },
+      "verdict": "MIXED",
+      "rule": "alpha(截距)|t|>=2 → 边不被因子库解释;R2>=0.5 且 alpha |t|<1 → 大多为因子复制"
+    }
+  ],
+  "raw_corr": {
+    "ids": [
+      "btc_spot_trend",
+      "carry_oi_majors",
+      "crowd_contra",
+      "top_contra"
+    ],
+    "matrix": [
+      [
+        1.0,
+        -0.0069,
+        0.1272,
+        -0.1144
+      ],
+      [
+        -0.0069,
+        1.0,
+        -0.0868,
+        -0.0311
+      ],
+      [
+        0.1272,
+        -0.0868,
+        1.0,
+        0.0563
+      ],
+      [
+        -0.1144,
+        -0.0311,
+        0.0563,
+        1.0
+      ]
+    ]
+  },
+  "residual_corr": {
+    "ids": [
+      "btc_spot_trend",
+      "carry_oi_majors",
+      "crowd_contra",
+      "top_contra"
+    ],
+    "matrix": [
+      [
+        1.0,
+        -0.0182,
+        0.1216,
+        -0.1457
+      ],
+      [
+        -0.0182,
+        1.0,
+        -0.072,
+        0.0008
+      ],
+      [
+        0.1216,
+        -0.072,
+        1.0,
+        0.0363
+      ],
+      [
+        -0.1457,
+        0.0008,
+        0.0363,
+        1.0
+      ]
+    ]
+  },
+  "clusters": {
+    "method": "complete-linkage agglomerative on |Pearson ρ|(复用 services/alpha/cluster.py);cluster_id=stable_hash(sorted members)",
+    "rho_cut": 0.5,
+    "rho_cut_calibrated": "UNCALIBRATED_ENGINEERING_DEFAULT",
+    "raw": [
+      {
+        "cluster_id": "3a97f0d4bea5cdc0cc5861d09876de3b32efa9f8af11bb728e4d44c4234cef8b",
+        "members": [
+          "btc_spot_trend"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "f9128d5be7a3a5a57b96ba944eda7daa83a4e62547a140bd77a862f6f0f8e7f5",
+        "members": [
+          "carry_oi_majors"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "3fa379dafb0c11b19214578b492462b7d28174c9e8c060bd3638a9379a3f877a",
+        "members": [
+          "crowd_contra"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "a82da918768389e389a2929daa2d222ccf3d1edd09d3d303945f1f95886c9818",
+        "members": [
+          "top_contra"
+        ],
+        "intra_corr": null
+      }
+    ],
+    "residual": [
+      {
+        "cluster_id": "3a97f0d4bea5cdc0cc5861d09876de3b32efa9f8af11bb728e4d44c4234cef8b",
+        "members": [
+          "btc_spot_trend"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "f9128d5be7a3a5a57b96ba944eda7daa83a4e62547a140bd77a862f6f0f8e7f5",
+        "members": [
+          "carry_oi_majors"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "3fa379dafb0c11b19214578b492462b7d28174c9e8c060bd3638a9379a3f877a",
+        "members": [
+          "crowd_contra"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "a82da918768389e389a2929daa2d222ccf3d1edd09d3d303945f1f95886c9818",
+        "members": [
+          "top_contra"
+        ],
+        "intra_corr": null
+      }
+    ],
+    "residual_sensitivity": {
+      "0.3": [
+        [
+          "btc_spot_trend"
+        ],
+        [
+          "carry_oi_majors"
+        ],
+        [
+          "crowd_contra"
+        ],
+        [
+          "top_contra"
+        ]
+      ],
+      "0.7": [
+        [
+          "btc_spot_trend"
+        ],
+        [
+          "carry_oi_majors"
+        ],
+        [
+          "crowd_contra"
+        ],
+        [
+          "top_contra"
+        ]
+      ]
+    }
+  },
+  "breadth": {
+    "weights_inverse_vol_raw": {
+      "btc_spot_trend": 0.346664,
+      "carry_oi_majors": 0.207411,
+      "crowd_contra": 0.253514,
+      "top_contra": 0.192411
+    },
+    "weight_convention": "策略逆波动权重(Σ=1)→ 簇权重 W_c=簇内权重和;breadth=1/ΣW_c²(簇内=同一 bet、簇间≈不相关的 ENB 近似)",
+    "n_strategies": 4,
+    "effective_breadth_raw_clusters": 3.78091,
+    "effective_breadth_residual_clusters": 3.78091,
+    "cluster_weights_residual": [
+      0.346664,
+      0.207411,
+      0.253514,
+      0.192411
+    ]
+  },
+  "cluster_portfolio": {
+    "clusters": [
+      {
+        "cluster": "cluster_0",
+        "cluster_id": "3a97f0d4bea5cdc0cc5861d09876de3b32efa9f8af11bb728e4d44c4234cef8b",
+        "members": [
+          "btc_spot_trend"
+        ],
+        "weight": 0.346664,
+        "ann_sharpe": 0.714075,
+        "ann_vol": 0.102615
+      },
+      {
+        "cluster": "cluster_1",
+        "cluster_id": "f9128d5be7a3a5a57b96ba944eda7daa83a4e62547a140bd77a862f6f0f8e7f5",
+        "members": [
+          "carry_oi_majors"
+        ],
+        "weight": 0.207411,
+        "ann_sharpe": 0.329334,
+        "ann_vol": 0.171509
+      },
+      {
+        "cluster": "cluster_2",
+        "cluster_id": "3fa379dafb0c11b19214578b492462b7d28174c9e8c060bd3638a9379a3f877a",
+        "members": [
+          "crowd_contra"
+        ],
+        "weight": 0.253514,
+        "ann_sharpe": 0.987702,
+        "ann_vol": 0.14032
+      },
+      {
+        "cluster": "cluster_3",
+        "cluster_id": "a82da918768389e389a2929daa2d222ccf3d1edd09d3d303945f1f95886c9818",
+        "members": [
+          "top_contra"
+        ],
+        "weight": 0.192411,
+        "ann_sharpe": 1.524599,
+        "ann_vol": 0.18488
+      }
+    ],
+    "cluster_corr": {
+      "ids": [
+        "cluster_0",
+        "cluster_1",
+        "cluster_2",
+        "cluster_3"
+      ],
+      "matrix": [
+        [
+          1.0,
+          -0.006881,
+          0.127221,
+          -0.114441
+        ],
+        [
+          -0.006881,
+          1.0,
+          -0.086782,
+          -0.031139
+        ],
+        [
+          0.127221,
+          -0.086782,
+          1.0,
+          0.05632
+        ],
+        [
+          -0.114441,
+          -0.031139,
+          0.05632,
+          1.0
+        ]
+      ]
+    }
+  },
+  "correlation_shock": {
+    "window": 26,
+    "margin": 0.25,
+    "threshold_calibrated": "UNCALIBRATED_ENGINEERING_DEFAULT",
+    "n_pairs": 6,
+    "full_sample_mean_abs_corr": 0.0705,
+    "threshold": 0.3205,
+    "rolling": [
+      {
+        "week": "2023-W19",
+        "mean_abs_corr": 0.13
+      },
+      {
+        "week": "2023-W20",
+        "mean_abs_corr": 0.1317
+      },
+      {
+        "week": "2023-W21",
+        "mean_abs_corr": 0.1359
+      },
+      {
+        "week": "2023-W22",
+        "mean_abs_corr": 0.1425
+      },
+      {
+        "week": "2023-W23",
+        "mean_abs_corr": 0.1406
+      },
+      {
+        "week": "2023-W24",
+        "mean_abs_corr": 0.2029
+      },
+      {
+        "week": "2023-W25",
+        "mean_abs_corr": 0.2085
+      },
+      {
+        "week": "2023-W26",
+        "mean_abs_corr": 0.2036
+      },
+      {
+        "week": "2023-W27",
+        "mean_abs_corr": 0.2383
+      },
+      {
+        "week": "2023-W28",
+        "mean_abs_corr": 0.2273
+      },
+      {
+        "week": "2023-W29",
+        "mean_abs_corr": 0.153
+      },
+      {
+        "week": "2023-W30",
+        "mean_abs_corr": 0.1576
+      },
+      {
+        "week": "2023-W31",
+        "mean_abs_corr": 0.1004
+      },
+      {
+        "week": "2023-W32",
+        "mean_abs_corr": 0.1211
+      },
+      {
+        "week": "2023-W33",
+        "mean_abs_corr": 0.168
+      },
+      {
+        "week": "2023-W34",
+        "mean_abs_corr": 0.1583
+      },
+      {
+        "week": "2023-W35",
+        "mean_abs_corr": 0.1616
+      },
+      {
+        "week": "2023-W36",
+        "mean_abs_corr": 0.1788
+      },
+      {
+        "week": "2023-W37",
+        "mean_abs_corr": 0.1703
+      },
+      {
+        "week": "2023-W38",
+        "mean_abs_corr": 0.2124
+      },
+      {
+        "week": "2023-W39",
+        "mean_abs_corr": 0.2141
+      },
+      {
+        "week": "2023-W40",
+        "mean_abs_corr": 0.2119
+      },
+      {
+        "week": "2023-W41",
+        "mean_abs_corr": 0.2121
+      },
+      {
+        "week": "2023-W42",
+        "mean_abs_corr": 0.2028
+      },
+      {
+        "week": "2023-W43",
+        "mean_abs_corr": 0.1798
+      },
+      {
+        "week": "2023-W44",
+        "mean_abs_corr": 0.1772
+      },
+      {
+        "week": "2023-W45",
+        "mean_abs_corr": 0.2136
+      },
+      {
+        "week": "2023-W46",
+        "mean_abs_corr": 0.1554
+      },
+      {
+        "week": "2023-W47",
+        "mean_abs_corr": 0.1651
+      },
+      {
+        "week": "2023-W48",
+        "mean_abs_corr": 0.1636
+      },
+      {
+        "week": "2023-W49",
+        "mean_abs_corr": 0.1504
+      },
+      {
+        "week": "2023-W50",
+        "mean_abs_corr": 0.1563
+      },
+      {
+        "week": "2023-W51",
+        "mean_abs_corr": 0.1922
+      },
+      {
+        "week": "2023-W52",
+        "mean_abs_corr": 0.2028
+      },
+      {
+        "week": "2024-W01",
+        "mean_abs_corr": 0.2102
+      },
+      {
+        "week": "2024-W02",
+        "mean_abs_corr": 0.1984
+      },
+      {
+        "week": "2024-W03",
+        "mean_abs_corr": 0.2001
+      },
+      {
+        "week": "2024-W04",
+        "mean_abs_corr": 0.2017
+      },
+      {
+        "week": "2024-W05",
+        "mean_abs_corr": 0.2008
+      },
+      {
+        "week": "2024-W06",
+        "mean_abs_corr": 0.1999
+      },
+      {
+        "week": "2024-W07",
+        "mean_abs_corr": 0.2044
+      },
+      {
+        "week": "2024-W08",
+        "mean_abs_corr": 0.2015
+      },
+      {
+        "week": "2024-W09",
+        "mean_abs_corr": 0.1937
+      },
+      {
+        "week": "2024-W10",
+        "mean_abs_corr": 0.1931
+      },
+      {
+        "week": "2024-W11",
+        "mean_abs_corr": 0.1996
+      },
+      {
+        "week": "2024-W12",
+        "mean_abs_corr": 0.2053
+      },
+      {
+        "week": "2024-W13",
+        "mean_abs_corr": 0.2287
+      },
+      {
+        "week": "2024-W14",
+        "mean_abs_corr": 0.2225
+      },
+      {
+        "week": "2024-W15",
+        "mean_abs_corr": 0.2129
+      },
+      {
+        "week": "2024-W16",
+        "mean_abs_corr": 0.2152
+      },
+      {
+        "week": "2024-W17",
+        "mean_abs_corr": 0.3511
+      },
+      {
+        "week": "2024-W18",
+        "mean_abs_corr": 0.3503
+      },
+      {
+        "week": "2024-W19",
+        "mean_abs_corr": 0.3693
+      },
+      {
+        "week": "2024-W20",
+        "mean_abs_corr": 0.2354
+      },
+      {
+        "week": "2024-W21",
+        "mean_abs_corr": 0.2363
+      },
+      {
+        "week": "2024-W22",
+        "mean_abs_corr": 0.2406
+      },
+      {
+        "week": "2024-W23",
+        "mean_abs_corr": 0.2391
+      },
+      {
+        "week": "2024-W24",
+        "mean_abs_corr": 0.2299
+      },
+      {
+        "week": "2024-W25",
+        "mean_abs_corr": 0.1818
+      },
+      {
+        "week": "2024-W26",
+        "mean_abs_corr": 0.1879
+      },
+      {
+        "week": "2024-W27",
+        "mean_abs_corr": 0.1792
+      },
+      {
+        "week": "2024-W28",
+        "mean_abs_corr": 0.1922
+      },
+      {
+        "week": "2024-W29",
+        "mean_abs_corr": 0.1843
+      },
+      {
+        "week": "2024-W30",
+        "mean_abs_corr": 0.1714
+      },
+      {
+        "week": "2024-W31",
+        "mean_abs_corr": 0.1728
+      },
+      {
+        "week": "2024-W32",
+        "mean_abs_corr": 0.1679
+      },
+      {
+        "week": "2024-W33",
+        "mean_abs_corr": 0.1549
+      },
+      {
+        "week": "2024-W34",
+        "mean_abs_corr": 0.127
+      },
+      {
+        "week": "2024-W35",
+        "mean_abs_corr": 0.1948
+      },
+      {
+        "week": "2024-W36",
+        "mean_abs_corr": 0.1525
+      },
+      {
+        "week": "2024-W37",
+        "mean_abs_corr": 0.184
+      },
+      {
+        "week": "2024-W38",
+        "mean_abs_corr": 0.1631
+      },
+      {
+        "week": "2024-W39",
+        "mean_abs_corr": 0.2359
+      },
+      {
+        "week": "2024-W40",
+        "mean_abs_corr": 0.2284
+      },
+      {
+        "week": "2024-W41",
+        "mean_abs_corr": 0.207
+      },
+      {
+        "week": "2024-W42",
+        "mean_abs_corr": 0.2166
+      },
+      {
+        "week": "2024-W43",
+        "mean_abs_corr": 0.2178
+      },
+      {
+        "week": "2024-W44",
+        "mean_abs_corr": 0.2172
+      },
+      {
+        "week": "2024-W45",
+        "mean_abs_corr": 0.2375
+      },
+      {
+        "week": "2024-W46",
+        "mean_abs_corr": 0.2376
+      },
+      {
+        "week": "2024-W47",
+        "mean_abs_corr": 0.2635
+      },
+      {
+        "week": "2024-W48",
+        "mean_abs_corr": 0.2986
+      },
+      {
+        "week": "2024-W49",
+        "mean_abs_corr": 0.2453
+      },
+      {
+        "week": "2024-W50",
+        "mean_abs_corr": 0.2269
+      },
+      {
+        "week": "2024-W51",
+        "mean_abs_corr": 0.217
+      },
+      {
+        "week": "2024-W52",
+        "mean_abs_corr": 0.2101
+      },
+      {
+        "week": "2025-W01",
+        "mean_abs_corr": 0.2083
+      },
+      {
+        "week": "2025-W02",
+        "mean_abs_corr": 0.2001
+      },
+      {
+        "week": "2025-W03",
+        "mean_abs_corr": 0.1958
+      },
+      {
+        "week": "2025-W04",
+        "mean_abs_corr": 0.1994
+      },
+      {
+        "week": "2025-W05",
+        "mean_abs_corr": 0.1993
+      },
+      {
+        "week": "2025-W06",
+        "mean_abs_corr": 0.1915
+      },
+      {
+        "week": "2025-W07",
+        "mean_abs_corr": 0.1967
+      },
+      {
+        "week": "2025-W08",
+        "mean_abs_corr": 0.1994
+      },
+      {
+        "week": "2025-W09",
+        "mean_abs_corr": 0.2003
+      },
+      {
+        "week": "2025-W10",
+        "mean_abs_corr": 0.1959
+      },
+      {
+        "week": "2025-W11",
+        "mean_abs_corr": 0.1983
+      },
+      {
+        "week": "2025-W12",
+        "mean_abs_corr": 0.1974
+      },
+      {
+        "week": "2025-W13",
+        "mean_abs_corr": 0.2115
+      },
+      {
+        "week": "2025-W14",
+        "mean_abs_corr": 0.2365
+      },
+      {
+        "week": "2025-W15",
+        "mean_abs_corr": 0.2226
+      },
+      {
+        "week": "2025-W16",
+        "mean_abs_corr": 0.2216
+      },
+      {
+        "week": "2025-W17",
+        "mean_abs_corr": 0.2272
+      },
+      {
+        "week": "2025-W18",
+        "mean_abs_corr": 0.227
+      },
+      {
+        "week": "2025-W19",
+        "mean_abs_corr": 0.2437
+      },
+      {
+        "week": "2025-W20",
+        "mean_abs_corr": 0.1342
+      },
+      {
+        "week": "2025-W21",
+        "mean_abs_corr": 0.1252
+      },
+      {
+        "week": "2025-W22",
+        "mean_abs_corr": 0.0685
+      },
+      {
+        "week": "2025-W23",
+        "mean_abs_corr": 0.0542
+      },
+      {
+        "week": "2025-W24",
+        "mean_abs_corr": 0.0951
+      },
+      {
+        "week": "2025-W25",
+        "mean_abs_corr": 0.0984
+      },
+      {
+        "week": "2025-W26",
+        "mean_abs_corr": 0.1495
+      },
+      {
+        "week": "2025-W27",
+        "mean_abs_corr": 0.1325
+      },
+      {
+        "week": "2025-W28",
+        "mean_abs_corr": 0.1367
+      },
+      {
+        "week": "2025-W29",
+        "mean_abs_corr": 0.1204
+      },
+      {
+        "week": "2025-W30",
+        "mean_abs_corr": 0.1291
+      },
+      {
+        "week": "2025-W31",
+        "mean_abs_corr": 0.1155
+      },
+      {
+        "week": "2025-W32",
+        "mean_abs_corr": 0.1162
+      },
+      {
+        "week": "2025-W33",
+        "mean_abs_corr": 0.1199
+      },
+      {
+        "week": "2025-W34",
+        "mean_abs_corr": 0.1291
+      },
+      {
+        "week": "2025-W35",
+        "mean_abs_corr": 0.1229
+      },
+      {
+        "week": "2025-W36",
+        "mean_abs_corr": 0.1035
+      },
+      {
+        "week": "2025-W37",
+        "mean_abs_corr": 0.1146
+      },
+      {
+        "week": "2025-W38",
+        "mean_abs_corr": 0.1146
+      },
+      {
+        "week": "2025-W39",
+        "mean_abs_corr": 0.1159
+      },
+      {
+        "week": "2025-W40",
+        "mean_abs_corr": 0.117
+      },
+      {
+        "week": "2025-W41",
+        "mean_abs_corr": 0.0992
+      },
+      {
+        "week": "2025-W42",
+        "mean_abs_corr": 0.0895
+      },
+      {
+        "week": "2025-W43",
+        "mean_abs_corr": 0.0847
+      },
+      {
+        "week": "2025-W44",
+        "mean_abs_corr": 0.0796
+      },
+      {
+        "week": "2025-W45",
+        "mean_abs_corr": 0.1278
+      },
+      {
+        "week": "2025-W46",
+        "mean_abs_corr": 0.1404
+      },
+      {
+        "week": "2025-W47",
+        "mean_abs_corr": 0.1365
+      },
+      {
+        "week": "2025-W48",
+        "mean_abs_corr": 0.1061
+      },
+      {
+        "week": "2025-W49",
+        "mean_abs_corr": 0.1143
+      },
+      {
+        "week": "2025-W50",
+        "mean_abs_corr": 0.1198
+      },
+      {
+        "week": "2025-W51",
+        "mean_abs_corr": 0.1163
+      },
+      {
+        "week": "2025-W52",
+        "mean_abs_corr": 0.1149
+      },
+      {
+        "week": "2026-W01",
+        "mean_abs_corr": 0.1094
+      },
+      {
+        "week": "2026-W02",
+        "mean_abs_corr": 0.1056
+      },
+      {
+        "week": "2026-W03",
+        "mean_abs_corr": 0.1092
+      },
+      {
+        "week": "2026-W04",
+        "mean_abs_corr": 0.1058
+      },
+      {
+        "week": "2026-W05",
+        "mean_abs_corr": 0.1475
+      },
+      {
+        "week": "2026-W06",
+        "mean_abs_corr": 0.1031
+      },
+      {
+        "week": "2026-W07",
+        "mean_abs_corr": 0.1326
+      },
+      {
+        "week": "2026-W08",
+        "mean_abs_corr": 0.1546
+      },
+      {
+        "week": "2026-W09",
+        "mean_abs_corr": 0.1486
+      },
+      {
+        "week": "2026-W10",
+        "mean_abs_corr": 0.1506
+      },
+      {
+        "week": "2026-W11",
+        "mean_abs_corr": 0.1505
+      },
+      {
+        "week": "2026-W12",
+        "mean_abs_corr": 0.1535
+      },
+      {
+        "week": "2026-W13",
+        "mean_abs_corr": 0.2141
+      },
+      {
+        "week": "2026-W14",
+        "mean_abs_corr": 0.219
+      },
+      {
+        "week": "2026-W15",
+        "mean_abs_corr": 0.3051
+      },
+      {
+        "week": "2026-W16",
+        "mean_abs_corr": 0.2969
+      },
+      {
+        "week": "2026-W17",
+        "mean_abs_corr": 0.2165
+      },
+      {
+        "week": "2026-W18",
+        "mean_abs_corr": 0.2007
+      },
+      {
+        "week": "2026-W19",
+        "mean_abs_corr": 0.1187
+      },
+      {
+        "week": "2026-W20",
+        "mean_abs_corr": 0.1208
+      },
+      {
+        "week": "2026-W21",
+        "mean_abs_corr": 0.1221
+      },
+      {
+        "week": "2026-W22",
+        "mean_abs_corr": 0.1327
+      },
+      {
+        "week": "2026-W23",
+        "mean_abs_corr": 0.1335
+      },
+      {
+        "week": "2026-W24",
+        "mean_abs_corr": 0.1376
+      },
+      {
+        "week": "2026-W25",
+        "mean_abs_corr": 0.1384
+      },
+      {
+        "week": "2026-W26",
+        "mean_abs_corr": 0.1474
+      },
+      {
+        "week": "2026-W27",
+        "mean_abs_corr": 0.1403
+      },
+      {
+        "week": "2026-W28",
+        "mean_abs_corr": 0.1436
+      },
+      {
+        "week": "2026-W29",
+        "mean_abs_corr": 0.144
+      }
+    ],
+    "max_rolling": 0.3693,
+    "current": {
+      "week": "2026-W29",
+      "mean_abs_corr": 0.144
+    },
+    "in_shock_now": false,
+    "n_shock_weeks": 3,
+    "shock_weeks": [
+      "2024-W17",
+      "2024-W18",
+      "2024-W19"
+    ],
+    "status": "OK"
+  },
+  "correlation_shock_residual": {
+    "window": 26,
+    "margin": 0.25,
+    "threshold_calibrated": "UNCALIBRATED_ENGINEERING_DEFAULT",
+    "n_pairs": 6,
+    "full_sample_mean_abs_corr": 0.0658,
+    "threshold": 0.3158,
+    "rolling": [
+      {
+        "week": "2023-W19",
+        "mean_abs_corr": 0.1574
+      },
+      {
+        "week": "2023-W20",
+        "mean_abs_corr": 0.1613
+      },
+      {
+        "week": "2023-W21",
+        "mean_abs_corr": 0.1667
+      },
+      {
+        "week": "2023-W22",
+        "mean_abs_corr": 0.1728
+      },
+      {
+        "week": "2023-W23",
+        "mean_abs_corr": 0.149
+      },
+      {
+        "week": "2023-W24",
+        "mean_abs_corr": 0.2218
+      },
+      {
+        "week": "2023-W25",
+        "mean_abs_corr": 0.2235
+      },
+      {
+        "week": "2023-W26",
+        "mean_abs_corr": 0.2101
+      },
+      {
+        "week": "2023-W27",
+        "mean_abs_corr": 0.24
+      },
+      {
+        "week": "2023-W28",
+        "mean_abs_corr": 0.2036
+      },
+      {
+        "week": "2023-W29",
+        "mean_abs_corr": 0.1509
+      },
+      {
+        "week": "2023-W30",
+        "mean_abs_corr": 0.1595
+      },
+      {
+        "week": "2023-W31",
+        "mean_abs_corr": 0.1194
+      },
+      {
+        "week": "2023-W32",
+        "mean_abs_corr": 0.1394
+      },
+      {
+        "week": "2023-W33",
+        "mean_abs_corr": 0.1423
+      },
+      {
+        "week": "2023-W34",
+        "mean_abs_corr": 0.1152
+      },
+      {
+        "week": "2023-W35",
+        "mean_abs_corr": 0.1154
+      },
+      {
+        "week": "2023-W36",
+        "mean_abs_corr": 0.1411
+      },
+      {
+        "week": "2023-W37",
+        "mean_abs_corr": 0.1271
+      },
+      {
+        "week": "2023-W38",
+        "mean_abs_corr": 0.1858
+      },
+      {
+        "week": "2023-W39",
+        "mean_abs_corr": 0.1794
+      },
+      {
+        "week": "2023-W40",
+        "mean_abs_corr": 0.1707
+      },
+      {
+        "week": "2023-W41",
+        "mean_abs_corr": 0.1716
+      },
+      {
+        "week": "2023-W42",
+        "mean_abs_corr": 0.1375
+      },
+      {
+        "week": "2023-W43",
+        "mean_abs_corr": 0.1241
+      },
+      {
+        "week": "2023-W44",
+        "mean_abs_corr": 0.1375
+      },
+      {
+        "week": "2023-W45",
+        "mean_abs_corr": 0.2118
+      },
+      {
+        "week": "2023-W46",
+        "mean_abs_corr": 0.1463
+      },
+      {
+        "week": "2023-W47",
+        "mean_abs_corr": 0.1581
+      },
+      {
+        "week": "2023-W48",
+        "mean_abs_corr": 0.1645
+      },
+      {
+        "week": "2023-W49",
+        "mean_abs_corr": 0.1565
+      },
+      {
+        "week": "2023-W50",
+        "mean_abs_corr": 0.1623
+      },
+      {
+        "week": "2023-W51",
+        "mean_abs_corr": 0.1847
+      },
+      {
+        "week": "2023-W52",
+        "mean_abs_corr": 0.1935
+      },
+      {
+        "week": "2024-W01",
+        "mean_abs_corr": 0.203
+      },
+      {
+        "week": "2024-W02",
+        "mean_abs_corr": 0.2127
+      },
+      {
+        "week": "2024-W03",
+        "mean_abs_corr": 0.2138
+      },
+      {
+        "week": "2024-W04",
+        "mean_abs_corr": 0.2157
+      },
+      {
+        "week": "2024-W05",
+        "mean_abs_corr": 0.2171
+      },
+      {
+        "week": "2024-W06",
+        "mean_abs_corr": 0.2167
+      },
+      {
+        "week": "2024-W07",
+        "mean_abs_corr": 0.2253
+      },
+      {
+        "week": "2024-W08",
+        "mean_abs_corr": 0.2206
+      },
+      {
+        "week": "2024-W09",
+        "mean_abs_corr": 0.22
+      },
+      {
+        "week": "2024-W10",
+        "mean_abs_corr": 0.2253
+      },
+      {
+        "week": "2024-W11",
+        "mean_abs_corr": 0.2273
+      },
+      {
+        "week": "2024-W12",
+        "mean_abs_corr": 0.2271
+      },
+      {
+        "week": "2024-W13",
+        "mean_abs_corr": 0.2289
+      },
+      {
+        "week": "2024-W14",
+        "mean_abs_corr": 0.2181
+      },
+      {
+        "week": "2024-W15",
+        "mean_abs_corr": 0.2161
+      },
+      {
+        "week": "2024-W16",
+        "mean_abs_corr": 0.2034
+      },
+      {
+        "week": "2024-W17",
+        "mean_abs_corr": 0.2247
+      },
+      {
+        "week": "2024-W18",
+        "mean_abs_corr": 0.2278
+      },
+      {
+        "week": "2024-W19",
+        "mean_abs_corr": 0.2533
+      },
+      {
+        "week": "2024-W20",
+        "mean_abs_corr": 0.2337
+      },
+      {
+        "week": "2024-W21",
+        "mean_abs_corr": 0.245
+      },
+      {
+        "week": "2024-W22",
+        "mean_abs_corr": 0.2499
+      },
+      {
+        "week": "2024-W23",
+        "mean_abs_corr": 0.2485
+      },
+      {
+        "week": "2024-W24",
+        "mean_abs_corr": 0.2558
+      },
+      {
+        "week": "2024-W25",
+        "mean_abs_corr": 0.2025
+      },
+      {
+        "week": "2024-W26",
+        "mean_abs_corr": 0.2131
+      },
+      {
+        "week": "2024-W27",
+        "mean_abs_corr": 0.215
+      },
+      {
+        "week": "2024-W28",
+        "mean_abs_corr": 0.201
+      },
+      {
+        "week": "2024-W29",
+        "mean_abs_corr": 0.2179
+      },
+      {
+        "week": "2024-W30",
+        "mean_abs_corr": 0.174
+      },
+      {
+        "week": "2024-W31",
+        "mean_abs_corr": 0.169
+      },
+      {
+        "week": "2024-W32",
+        "mean_abs_corr": 0.171
+      },
+      {
+        "week": "2024-W33",
+        "mean_abs_corr": 0.1521
+      },
+      {
+        "week": "2024-W34",
+        "mean_abs_corr": 0.1395
+      },
+      {
+        "week": "2024-W35",
+        "mean_abs_corr": 0.1138
+      },
+      {
+        "week": "2024-W36",
+        "mean_abs_corr": 0.1404
+      },
+      {
+        "week": "2024-W37",
+        "mean_abs_corr": 0.1686
+      },
+      {
+        "week": "2024-W38",
+        "mean_abs_corr": 0.1527
+      },
+      {
+        "week": "2024-W39",
+        "mean_abs_corr": 0.1252
+      },
+      {
+        "week": "2024-W40",
+        "mean_abs_corr": 0.1694
+      },
+      {
+        "week": "2024-W41",
+        "mean_abs_corr": 0.15
+      },
+      {
+        "week": "2024-W42",
+        "mean_abs_corr": 0.1708
+      },
+      {
+        "week": "2024-W43",
+        "mean_abs_corr": 0.1656
+      },
+      {
+        "week": "2024-W44",
+        "mean_abs_corr": 0.1687
+      },
+      {
+        "week": "2024-W45",
+        "mean_abs_corr": 0.1939
+      },
+      {
+        "week": "2024-W46",
+        "mean_abs_corr": 0.2068
+      },
+      {
+        "week": "2024-W47",
+        "mean_abs_corr": 0.2183
+      },
+      {
+        "week": "2024-W48",
+        "mean_abs_corr": 0.2673
+      },
+      {
+        "week": "2024-W49",
+        "mean_abs_corr": 0.2356
+      },
+      {
+        "week": "2024-W50",
+        "mean_abs_corr": 0.2333
+      },
+      {
+        "week": "2024-W51",
+        "mean_abs_corr": 0.219
+      },
+      {
+        "week": "2024-W52",
+        "mean_abs_corr": 0.1997
+      },
+      {
+        "week": "2025-W01",
+        "mean_abs_corr": 0.1959
+      },
+      {
+        "week": "2025-W02",
+        "mean_abs_corr": 0.1879
+      },
+      {
+        "week": "2025-W03",
+        "mean_abs_corr": 0.2031
+      },
+      {
+        "week": "2025-W04",
+        "mean_abs_corr": 0.1992
+      },
+      {
+        "week": "2025-W05",
+        "mean_abs_corr": 0.21
+      },
+      {
+        "week": "2025-W06",
+        "mean_abs_corr": 0.1972
+      },
+      {
+        "week": "2025-W07",
+        "mean_abs_corr": 0.1999
+      },
+      {
+        "week": "2025-W08",
+        "mean_abs_corr": 0.2068
+      },
+      {
+        "week": "2025-W09",
+        "mean_abs_corr": 0.2082
+      },
+      {
+        "week": "2025-W10",
+        "mean_abs_corr": 0.2055
+      },
+      {
+        "week": "2025-W11",
+        "mean_abs_corr": 0.2009
+      },
+      {
+        "week": "2025-W12",
+        "mean_abs_corr": 0.2065
+      },
+      {
+        "week": "2025-W13",
+        "mean_abs_corr": 0.2212
+      },
+      {
+        "week": "2025-W14",
+        "mean_abs_corr": 0.2586
+      },
+      {
+        "week": "2025-W15",
+        "mean_abs_corr": 0.2388
+      },
+      {
+        "week": "2025-W16",
+        "mean_abs_corr": 0.2415
+      },
+      {
+        "week": "2025-W17",
+        "mean_abs_corr": 0.2497
+      },
+      {
+        "week": "2025-W18",
+        "mean_abs_corr": 0.2525
+      },
+      {
+        "week": "2025-W19",
+        "mean_abs_corr": 0.2589
+      },
+      {
+        "week": "2025-W20",
+        "mean_abs_corr": 0.1361
+      },
+      {
+        "week": "2025-W21",
+        "mean_abs_corr": 0.0971
+      },
+      {
+        "week": "2025-W22",
+        "mean_abs_corr": 0.131
+      },
+      {
+        "week": "2025-W23",
+        "mean_abs_corr": 0.0827
+      },
+      {
+        "week": "2025-W24",
+        "mean_abs_corr": 0.1341
+      },
+      {
+        "week": "2025-W25",
+        "mean_abs_corr": 0.1218
+      },
+      {
+        "week": "2025-W26",
+        "mean_abs_corr": 0.1389
+      },
+      {
+        "week": "2025-W27",
+        "mean_abs_corr": 0.1305
+      },
+      {
+        "week": "2025-W28",
+        "mean_abs_corr": 0.1728
+      },
+      {
+        "week": "2025-W29",
+        "mean_abs_corr": 0.175
+      },
+      {
+        "week": "2025-W30",
+        "mean_abs_corr": 0.1876
+      },
+      {
+        "week": "2025-W31",
+        "mean_abs_corr": 0.1558
+      },
+      {
+        "week": "2025-W32",
+        "mean_abs_corr": 0.1454
+      },
+      {
+        "week": "2025-W33",
+        "mean_abs_corr": 0.1446
+      },
+      {
+        "week": "2025-W34",
+        "mean_abs_corr": 0.1586
+      },
+      {
+        "week": "2025-W35",
+        "mean_abs_corr": 0.1635
+      },
+      {
+        "week": "2025-W36",
+        "mean_abs_corr": 0.1481
+      },
+      {
+        "week": "2025-W37",
+        "mean_abs_corr": 0.1594
+      },
+      {
+        "week": "2025-W38",
+        "mean_abs_corr": 0.1562
+      },
+      {
+        "week": "2025-W39",
+        "mean_abs_corr": 0.1501
+      },
+      {
+        "week": "2025-W40",
+        "mean_abs_corr": 0.149
+      },
+      {
+        "week": "2025-W41",
+        "mean_abs_corr": 0.1379
+      },
+      {
+        "week": "2025-W42",
+        "mean_abs_corr": 0.1438
+      },
+      {
+        "week": "2025-W43",
+        "mean_abs_corr": 0.1497
+      },
+      {
+        "week": "2025-W44",
+        "mean_abs_corr": 0.1497
+      },
+      {
+        "week": "2025-W45",
+        "mean_abs_corr": 0.1105
+      },
+      {
+        "week": "2025-W46",
+        "mean_abs_corr": 0.1126
+      },
+      {
+        "week": "2025-W47",
+        "mean_abs_corr": 0.1055
+      },
+      {
+        "week": "2025-W48",
+        "mean_abs_corr": 0.1089
+      },
+      {
+        "week": "2025-W49",
+        "mean_abs_corr": 0.1236
+      },
+      {
+        "week": "2025-W50",
+        "mean_abs_corr": 0.1272
+      },
+      {
+        "week": "2025-W51",
+        "mean_abs_corr": 0.1203
+      },
+      {
+        "week": "2025-W52",
+        "mean_abs_corr": 0.1162
+      },
+      {
+        "week": "2026-W01",
+        "mean_abs_corr": 0.1049
+      },
+      {
+        "week": "2026-W02",
+        "mean_abs_corr": 0.1005
+      },
+      {
+        "week": "2026-W03",
+        "mean_abs_corr": 0.1063
+      },
+      {
+        "week": "2026-W04",
+        "mean_abs_corr": 0.0875
+      },
+      {
+        "week": "2026-W05",
+        "mean_abs_corr": 0.1426
+      },
+      {
+        "week": "2026-W06",
+        "mean_abs_corr": 0.1189
+      },
+      {
+        "week": "2026-W07",
+        "mean_abs_corr": 0.1182
+      },
+      {
+        "week": "2026-W08",
+        "mean_abs_corr": 0.1405
+      },
+      {
+        "week": "2026-W09",
+        "mean_abs_corr": 0.1386
+      },
+      {
+        "week": "2026-W10",
+        "mean_abs_corr": 0.1205
+      },
+      {
+        "week": "2026-W11",
+        "mean_abs_corr": 0.1186
+      },
+      {
+        "week": "2026-W12",
+        "mean_abs_corr": 0.1213
+      },
+      {
+        "week": "2026-W13",
+        "mean_abs_corr": 0.1653
+      },
+      {
+        "week": "2026-W14",
+        "mean_abs_corr": 0.1927
+      },
+      {
+        "week": "2026-W15",
+        "mean_abs_corr": 0.2136
+      },
+      {
+        "week": "2026-W16",
+        "mean_abs_corr": 0.2133
+      },
+      {
+        "week": "2026-W17",
+        "mean_abs_corr": 0.2312
+      },
+      {
+        "week": "2026-W18",
+        "mean_abs_corr": 0.2194
+      },
+      {
+        "week": "2026-W19",
+        "mean_abs_corr": 0.1916
+      },
+      {
+        "week": "2026-W20",
+        "mean_abs_corr": 0.1862
+      },
+      {
+        "week": "2026-W21",
+        "mean_abs_corr": 0.184
+      },
+      {
+        "week": "2026-W22",
+        "mean_abs_corr": 0.2001
+      },
+      {
+        "week": "2026-W23",
+        "mean_abs_corr": 0.1988
+      },
+      {
+        "week": "2026-W24",
+        "mean_abs_corr": 0.2204
+      },
+      {
+        "week": "2026-W25",
+        "mean_abs_corr": 0.2285
+      },
+      {
+        "week": "2026-W26",
+        "mean_abs_corr": 0.235
+      },
+      {
+        "week": "2026-W27",
+        "mean_abs_corr": 0.2236
+      },
+      {
+        "week": "2026-W28",
+        "mean_abs_corr": 0.195
+      },
+      {
+        "week": "2026-W29",
+        "mean_abs_corr": 0.1797
+      }
+    ],
+    "max_rolling": 0.2673,
+    "current": {
+      "week": "2026-W29",
+      "mean_abs_corr": 0.1797
+    },
+    "in_shock_now": false,
+    "n_shock_weeks": 0,
+    "shock_weeks": [],
+    "status": "OK"
+  },
+  "vt_robustness": {
+    "note": "equity_curve_vt(vol-target 可部署口径)同分解的头条数字,对照 raw 主口径",
+    "per_strategy": {
+      "carry_oi_majors": {
+        "r2": 0.050354,
+        "alpha_tstat": 1.721506
+      },
+      "crowd_contra": {
+        "r2": 0.044219,
+        "alpha_tstat": 1.215111
+      },
+      "top_contra": {
+        "r2": 0.039795,
+        "alpha_tstat": 1.60628
+      },
+      "btc_spot_trend": {
+        "r2": 0.20094,
+        "alpha_tstat": 1.085533
+      }
+    },
+    "clusters_residual": [
+      {
+        "cluster_id": "3a97f0d4bea5cdc0cc5861d09876de3b32efa9f8af11bb728e4d44c4234cef8b",
+        "members": [
+          "btc_spot_trend"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "f9128d5be7a3a5a57b96ba944eda7daa83a4e62547a140bd77a862f6f0f8e7f5",
+        "members": [
+          "carry_oi_majors"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "3fa379dafb0c11b19214578b492462b7d28174c9e8c060bd3638a9379a3f877a",
+        "members": [
+          "crowd_contra"
+        ],
+        "intra_corr": null
+      },
+      {
+        "cluster_id": "a82da918768389e389a2929daa2d222ccf3d1edd09d3d303945f1f95886c9818",
+        "members": [
+          "top_contra"
+        ],
+        "intra_corr": null
+      }
+    ],
+    "effective_breadth_residual_clusters": 3.78091
+  },
+  "validation_benchmark": {
+    "series": "alt_basket_equal_weight(合成:14 主流币周收益等权均值)",
+    "role": "因子模型 sanity:市场篮子应被市场因子解释(R2 高)·beta_BTC 显著·alpha≈0",
+    "why_not_dry_run_hold": "btc_spot_trend_hold 曲线非干净买入持有(信号门控,窗口内 119/216 周零收益),不能当基准",
+    "r2": 0.808794,
+    "betas": {
+      "basis_change": 6.792792,
+      "btc_market": 0.352868,
+      "eth_market": 0.435483,
+      "funding_weekly": 2.625686,
+      "liquidity_volume_change": 0.027012,
+      "market_trend_4w": 0.080457,
+      "oi_crowding_change": -0.025508,
+      "realized_vol_change": -0.026616,
+      "short_term_reversal_1w": 0.157143,
+      "size_oi_change": 0.076034
+    },
+    "beta_tstats": {
+      "basis_change": 0.987594,
+      "btc_market": 4.533725,
+      "eth_market": 8.494343,
+      "funding_weekly": 1.29289,
+      "liquidity_volume_change": 2.451431,
+      "market_trend_4w": 2.481345,
+      "oi_crowding_change": -2.180783,
+      "realized_vol_change": -1.773677,
+      "short_term_reversal_1w": 2.702844,
+      "size_oi_change": 1.639741
+    },
+    "alpha_weekly": -0.00438,
+    "alpha_tstat": -1.470281,
+    "excluded_from": "book 聚类/breadth(基准非策略)"
+  },
+  "honesty": {
+    "weekly_n": 192,
+    "caveats": [
+      "全样本 in-sample OLS = 回顾性敞口描述;因子敞口随时间漂移,非 PIT 可交易择时",
+      "iid t-stat,无 Newey-West;周收益自相关低但小样本(n≈192)±0.5 t 不确定",
+      "因子库缺口见 factor_library.missing —— 残差相关可能吸收未建模公共因子",
+      "rho_cut=0.5 / 冲击窗 26w+边际 0.25 均 UNCALIBRATED 工程默认",
+      "4 条 book 曲线同一条干跑流水线(同成本/门/整手),执行现实共性已含在收益里",
+      "ashare_* 策略为 A 股宇宙(不同因子库),本轮不纳入,记 coverage"
+    ],
+    "diagnostic_not_gate": true
+  }
+}
