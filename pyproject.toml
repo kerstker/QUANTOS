@@ -33,7 +33,7 @@ pre_trade_risk = [
 # Non-network, used deterministically (fixed random_state, single-thread). Not needed by console_api.
 research-ml = [
     "numpy==2.4.4",
-    "scikit-learn==1.8.0",
+    "scikit-learn==1.9.0",
 ]
 # Optional offline research accelerator. This does not enter execution, risk,
 # audit, or live-trading paths. Pair with a compatible NVIDIA driver.
