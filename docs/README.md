@@ -14,6 +14,15 @@ When documents disagree, use this order:
 
 `CLAUDE.md` is a compatibility pointer, not a second system inventory.
 
+## Software V1 release
+
+The 2026-10-09 software release is complete for Linux ARM64 / Python 3.12.
+Its install package includes the built console, pinned offline dependencies and a synthetic example;
+Windows uses the browser. Real research evidence and trading authorization remain separate.
+
+[Release notes](releases/v1.0.0.md) · [Installation](releases/v1.0.0-installation.md) ·
+[Release manifest](releases/v1.0.0-manifest.json)
+
 ## Start here
 
 | Need | Document |

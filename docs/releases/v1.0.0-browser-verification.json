@@ -1,0 +1,34 @@
+{
+  "artifact_commit": "1b1b661ad49789827e81432a23ba60074d32c2a5",
+  "synthetic_input": true,
+  "mocked_http": false,
+  "real_orders": false,
+  "checks": [
+    {
+      "check": "browser_created_real_offline_replay",
+      "run_id": "run_0221508326cdbefce022bd5f6f5c3349"
+    },
+    {
+      "check": "browser_reads_original_cost_configuration_and_reconciled_ledger",
+      "result_hash": "1893c0d0dc3810084675d15a3dda00ee67a2faecac9759164d5de090fcdea80d"
+    },
+    {
+      "check": "browser_retains_missing_input_failure",
+      "run_id": "run_12f6db75d44ad3b871c54e4300325cab"
+    },
+    {
+      "check": "browser_rejects_invalid_research_token"
+    },
+    {
+      "check": "browser_preserves_unconfigured_real_evidence"
+    },
+    {
+      "check": "real_runner_keeps_live_disabled"
+    }
+  ],
+  "api_probe_status": {
+    "detail": 200,
+    "replay": 200
+  },
+  "status": "PASS"
+}

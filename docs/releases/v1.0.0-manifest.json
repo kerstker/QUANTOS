@@ -1,0 +1,42 @@
+{
+  "release_name": "QUANTOS Software V1",
+  "platform": "Linux ARM64",
+  "python": "3.12",
+  "source_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
+  "artifact_commit": "1b1b661ad49789827e81432a23ba60074d32c2a5",
+  "software_acceptance": "PASS",
+  "canonical_stages": 32,
+  "isolated_root_install": "PASS",
+  "relocated_install": "PASS",
+  "installed_browser_checks": 6,
+  "synthetic_example": true,
+  "real_materials_required_for_install": false,
+  "host_resident_installed": false,
+  "services_changed": false,
+  "trust_installed": false,
+  "submission_enabled": false,
+  "archive_sha256": "b85c10f24f373e38b97a6b0ef4e215608c95017c463fee7c2733fe44f76eadbf",
+  "archive_bytes": 139536151,
+  "payload_files": 204,
+  "version": "v1.0.0",
+  "release_url": "https://github.com/kerstker/QUANTOS/releases/tag/v1.0.0",
+  "archive_filename": "QUANTOS-Software-V1-Linux-ARM64-9589c47a.zip",
+  "download_url": "https://github.com/kerstker/QUANTOS/releases/download/v1.0.0/QUANTOS-Software-V1-Linux-ARM64-9589c47a.zip",
+  "release_tag_commit": "1b1b661ad49789827e81432a23ba60074d32c2a5",
+  "validation_summary": {
+    "selected": 32,
+    "passed": 32,
+    "failed": 0,
+    "timed_out": 0,
+    "errored": 0,
+    "skipped_tests": 71
+  },
+  "backend_tests": {
+    "passed": 11539,
+    "skipped": 19
+  },
+  "execution_and_tool_tests": {
+    "passed": 9447,
+    "skipped": 52
+  }
+}

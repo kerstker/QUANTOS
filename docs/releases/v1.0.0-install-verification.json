@@ -1,0 +1,20 @@
+{
+  "status": "INSTALLED_UNPRIVILEGED_REAL_BROWSER_AND_REPLAY_PASS",
+  "artifact_commit": "1b1b661ad49789827e81432a23ba60074d32c2a5",
+  "code_and_frontend_read_only_for_service_user": true,
+  "python_source_unchanged": true,
+  "result_in_mutable_state": true,
+  "browser_checks": 6,
+  "synthetic_input": true,
+  "mocked_http": false,
+  "startup_activation_verified": true,
+  "startup_activation_sha256": "7e8bd0977369966b5fb68bc97705cbaa0f0769e811eea1bc2e7b2cef2986175f",
+  "host_production_paths_mounted": false,
+  "container_network": "none",
+  "submission_enabled": false,
+  "actual_root_install_in_private_filesystem": true,
+  "package_relocation_verified": true,
+  "process_scoped_git_configuration_verified": true,
+  "host_resident_installed": false,
+  "public_payload_files": 192
+}
