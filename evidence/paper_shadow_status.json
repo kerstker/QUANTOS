@@ -4,12 +4,12 @@
     "PAPER_EVIDENCE_MALFORMED",
     "INVALIDATED_PERP_LEDGER_V1"
   ],
-  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1789176209284,
+  "generated_at_ms": 1791516366587,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Shadow readiness is not fill or paper proof. Legacy paper-cycle, three-alpha, continuous-paper, and health artifacts remain hash-audited diagnostic history and cannot become paper evidence through retention.",
-  "input_hash": "771b60877ac187b1556f182c17d79b52a4113fa7c29f7c6c3858ab7f8588439e",
+  "input_hash": "1cc47659e0d2c97dbcdc4eb536b7eb9784c5a69b5dffa79eb5247f99e7c62cde",
   "inputs": {
     "data/cache/binance_usdt_continuous_paper.json": {
       "exists": false,
@@ -55,14 +55,14 @@
     },
     "tests/live": {
       "exists": true,
-      "file_count": 69,
-      "files_sha256": "71bd1bff853a9c132315107c0d089ebe3b7bdbc50bc0aead2568abeea780fe4a",
+      "file_count": 166,
+      "files_sha256": "90ae89e57efb11f32c6eca71c95716a83017a3159f440f5ee06f2d9b2f08c597",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
-      "file_count": 274,
-      "files_sha256": "c87e7e49bfd86b697c925f6a01eadbc947e1e7de6c913c80936fed04af257cf2",
+      "file_count": 394,
+      "files_sha256": "ba7e0cc96586b7c92afebdf477ae79fa22c388178cb5fc35184de9b285f58b86",
       "kind": "python_directory"
     }
   },
@@ -111,12 +111,12 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "head_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
     "overall_status": "PASS",
-    "reported_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
-    "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
+    "reported_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
+    "reported_validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971",
     "selection_scope": "ALL",
-    "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
+    "validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971"
   },
   "working_tree_dirty": false
 }

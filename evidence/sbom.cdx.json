@@ -12182,7 +12182,7 @@
       "version": "0.7.0"
     },
     {
-      "bom-ref": "pypi:anyio@4.14.1",
+      "bom-ref": "pypi:anyio@4.14.2",
       "name": "anyio",
       "properties": [
         {
@@ -12194,10 +12194,10 @@
           "value": "requirements.txt"
         }
       ],
-      "purl": "pkg:pypi/anyio@4.14.1",
+      "purl": "pkg:pypi/anyio@4.14.2",
       "scope": "required",
       "type": "library",
-      "version": "4.14.1"
+      "version": "4.14.2"
     },
     {
       "bom-ref": "pypi:cffi@2.1.0",
@@ -12380,6 +12380,24 @@
       "version": "1.5.3"
     },
     {
+      "bom-ref": "pypi:mypy@1.19.1",
+      "name": "mypy",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "pypi"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "requirements-dev.txt"
+        }
+      ],
+      "purl": "pkg:pypi/mypy@1.19.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "1.19.1"
+    },
+    {
       "bom-ref": "pypi:numpy@2.4.4",
       "name": "numpy",
       "properties": [
@@ -12470,7 +12488,7 @@
       "version": "2.13.4"
     },
     {
-      "bom-ref": "pypi:pyjwt@2.13.0",
+      "bom-ref": "pypi:pyjwt@2.15.0",
       "name": "pyjwt",
       "properties": [
         {
@@ -12482,10 +12500,10 @@
           "value": "requirements.txt"
         }
       ],
-      "purl": "pkg:pypi/pyjwt@2.13.0",
+      "purl": "pkg:pypi/pyjwt@2.15.0",
       "scope": "required",
       "type": "library",
-      "version": "2.13.0"
+      "version": "2.15.0"
     },
     {
       "bom-ref": "pypi:pytest-asyncio@1.4.0",
@@ -12522,6 +12540,24 @@
       "scope": "optional",
       "type": "library",
       "version": "9.1.1"
+    },
+    {
+      "bom-ref": "pypi:ruff@0.15.7",
+      "name": "ruff",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "pypi"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "requirements-dev.txt"
+        }
+      ],
+      "purl": "pkg:pypi/ruff@0.15.7",
+      "scope": "optional",
+      "type": "library",
+      "version": "0.15.7"
     },
     {
       "bom-ref": "pypi:scikit-learn@1.8.0",
@@ -12648,6 +12684,24 @@
       "scope": "required",
       "type": "library",
       "version": "0.4.2"
+    },
+    {
+      "bom-ref": "pypi:urllib3@2.8.0",
+      "name": "urllib3",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "pypi"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "requirements.txt"
+        }
+      ],
+      "purl": "pkg:pypi/urllib3@2.8.0",
+      "scope": "required",
+      "type": "library",
+      "version": "2.8.0"
     },
     {
       "bom-ref": "pypi:uvicorn@0.40.0",

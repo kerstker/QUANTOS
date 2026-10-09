@@ -24,9 +24,9 @@
     "retention_status": "INVALIDATED_PERP_LEDGER_V1",
     "sha256": "267bf3f063ea11fb62100656e21e32aaf0520308f7215e82f807c8540fdc7d63"
   },
-  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1789176209284,
+  "generated_at_ms": 1791516366587,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "The cockpit and paper-cycle files are retained and hash-audited diagnostic history. Their existence, non-empty rows, stages, or hashes do not satisfy lifecycle acceptance without an independently admitted authoritative_backtest_record.",
   "implementation": {
@@ -36,7 +36,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "e68103c1b3f1ac22010b74c315d2fb0042024aa46df6acf27cfc6dbe6e0071af",
+  "input_hash": "95a00784232f3e5926cf64df0a0332d8fe9dcf2e75c4cf199f0f5294a837e67c",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -65,7 +65,7 @@
     "services/alpha": {
       "exists": true,
       "file_count": 40,
-      "files_sha256": "3c82238521b6d8b04e6a160765c34fd2e316011b4779ea2c87a8ed1472f87956",
+      "files_sha256": "f09afa925c9da023da33f14b93d48715b1f4a9ff048d08b4abb58edb6c57a97f",
       "kind": "python_directory"
     },
     "services/alpha_factory": {
@@ -77,13 +77,13 @@
     "tests/alpha": {
       "exists": true,
       "file_count": 42,
-      "files_sha256": "2bd4a9fb0aad09c56f660819beb729ef935db9dd970713674067a9365f3fae2f",
+      "files_sha256": "2d3de5c27bc616164bf2ac4983a82fb12d8c84fb7ee1b6bff21ef6c2418f6cd5",
       "kind": "python_directory"
     },
     "tests/alpha_factory": {
       "exists": true,
       "file_count": 11,
-      "files_sha256": "1e6583e3e7a2a71a29e7c46cec269ae78ac6847ac77f76cda78e8f4c90184dc5",
+      "files_sha256": "c362e4e19c41f59fb4bf8489e2704dac3d3ef05ed9ddc58b388ee9f5492caea4",
       "kind": "python_directory"
     },
     "tests/lifecycle": {
@@ -120,12 +120,12 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "head_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
     "overall_status": "PASS",
-    "reported_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
-    "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
+    "reported_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
+    "reported_validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971",
     "selection_scope": "ALL",
-    "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
+    "validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971"
   },
   "working_tree_dirty": false
 }

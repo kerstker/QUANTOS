@@ -12,12 +12,12 @@
     "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
     "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
   ],
-  "commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+  "commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1789176209284,
+  "generated_at_ms": 1791516366587,
   "generator_sha256": "6f30460a69854644e86be50ae5515d64ca16624bc5ec49258b7b082fbe26ea31",
   "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
-  "input_hash": "34b43b7ad9ab20655ae6b71cb7ed292d80b8a8eb2ca0d5a8b0f25d8e18195f06",
+  "input_hash": "d019aa2000a8268f8a27d9a5f924f9aeab02ec092014543986cbed3b1bf8268c",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -34,8 +34,8 @@
     "tests/live/test_order_recovery.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "a7012fa63f2597ea1014fd2861936ecbfdf7cc00bef24a39f956da76431ccf74",
-      "size_bytes": 7205
+      "sha256": "2a058fdcc1c6058990184450be67b334f707687d6199f6e4167c15a89dd5eb98",
+      "size_bytes": 8070
     },
     "tests/live/test_restore_drill.py": {
       "exists": true,
@@ -99,12 +99,12 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
+    "head_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
     "overall_status": "PASS",
-    "reported_commit": "3dda8625b66dc3b4f993da67dcba5d8ba950e64c",
-    "reported_validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2",
+    "reported_commit": "9589c47ac341e1d6c27fdc5d2fdeabb8973b91a8",
+    "reported_validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971",
     "selection_scope": "ALL",
-    "validate_script_sha256": "7f26a7ee2edd90dc680c0a3c64a3a586c75e5d8c7285fef40f6487b4332405c2"
+    "validate_script_sha256": "ff0c75d9b2918da2690a990998b3fc0ee3ce7b6bd858806872bbdbe1c906f971"
   },
   "working_tree_dirty": false
 }
