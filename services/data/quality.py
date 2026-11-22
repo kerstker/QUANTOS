@@ -84,17 +84,31 @@ def build_ingestion_report(
     explicit boundary if provided, otherwise over each instrument's observed
     span. This is the strict ingestion path; no store mutation happens here.
     """
+    if isinstance(rejected_count, bool) or not isinstance(rejected_count, int) or rejected_count < 0:
+        raise ValueError("rejected_count must be a non-negative integer")
+    if as_of is not None and (isinstance(as_of, bool) or not isinstance(as_of, int)):
+        raise ValueError("as_of must be an integer")
     if expected_interval is not None:
         if isinstance(expected_interval, bool) or not isinstance(expected_interval, int) \
                 or expected_interval <= 0:
             raise ValueError("expected_interval must be a positive integer")
     elif expected_start is not None or expected_end is not None:
         raise ValueError("expected_start/expected_end require expected_interval")
+    if expected_start is not None and (isinstance(expected_start, bool) or not isinstance(expected_start, int)):
+        raise ValueError("expected_start must be an integer")
+    if expected_end is not None and (isinstance(expected_end, bool) or not isinstance(expected_end, int)):
+        raise ValueError("expected_end must be an integer")
     if expected_start is not None and expected_end is not None and expected_start > expected_end:
         raise ValueError("expected_start must not exceed expected_end")
 
-    series = {str(key): tuple(int(t) for t in times)
-              for key, times in event_times_by_instrument.items()}
+    series: dict[str, tuple[int, ...]] = {}
+    for key, times in event_times_by_instrument.items():
+        validated: list[int] = []
+        for t in times:
+            if isinstance(t, bool) or not isinstance(t, int):
+                raise ValueError(f"event_time must be an integer, got {t!r}")
+            validated.append(t)
+        series[str(key)] = tuple(validated)
     row_count = sum(len(times) for times in series.values())
     duplicate_count = sum(count_duplicate_event_times(times) for times in series.values())
     out_of_order_count = sum(count_out_of_order(times) for times in series.values())
@@ -118,8 +132,13 @@ def build_ingestion_report(
             start = expected_start if expected_start is not None else min(present)
             end = expected_end if expected_end is not None else max(present)
             if start <= end:
-                expected = set(range(start, end + 1, expected_interval))
-                missing_count += len(expected - present)
+                expected_count = ((end - start) // expected_interval) + 1
+                on_grid_in_window = sum(
+                    1
+                    for value in present
+                    if start <= value <= end and (value - start) % expected_interval == 0
+                )
+                missing_count += expected_count - on_grid_in_window
                 off_grid_count += sum(
                     1 for value in present if (value - start) % expected_interval != 0
                 )

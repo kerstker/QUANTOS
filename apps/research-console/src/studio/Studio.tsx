@@ -15,6 +15,7 @@ import {BinanceDemo} from './BinanceDemo';
 import {GoldObservation} from './GoldObservation';
 import {BinanceWallets} from './BinanceWallets';
 import {ResearchAssessment} from './ResearchAssessment';
+import {TradingAutomation} from './TradingAutomation';
 import { NAV, LEGACY } from './routes';
 export default function Studio() {
   const location = useLocation(), nav = useNavigate();
@@ -64,12 +65,18 @@ export default function Studio() {
     page = <Overview runs={runs} health={runner.data} />;
   else if (path === '/research/runs')
     page = <Runs runs={runs} key={location.search} initialQuery={new URLSearchParams(location.search).get('query') ?? ''} />;
-  else if (path.startsWith('/research/runs/'))
-    page = <Detail id={path.slice('/research/runs/'.length)} />;
+  else if (path.startsWith('/research/runs/')) {
+    const rawId = path.slice('/research/runs/'.length);
+    let decodedId = rawId;
+    try { decodedId = decodeURIComponent(rawId); } catch { /* keep raw segment if malformed */ }
+    page = <Detail id={decodedId} />;
+  }
   else if (path === '/studio/new')
     page = <Launch key={location.search} health={runner.data} initialKind={new URLSearchParams(location.search).get('kind') ?? ''} initialAttempt={new URLSearchParams(location.search).get('attempt')??'1'} initialAction={new URLSearchParams(location.search).get('action')??'0'} initialInvocation={new URLSearchParams(location.search).get('native_invocation_id')??''} initialReviewRequest={new URLSearchParams(location.search).get('review_request_id')??''} />;
   else if (path === '/studio/assessment')
     page = <ResearchAssessment />;
+  else if (path === '/studio/automation')
+    page = <TradingAutomation runs={runs} health={runner.data} />;
   else if (path === '/studio/factory')
     page = <Factory/>;
   else if (path === '/studio/market')

@@ -3,6 +3,7 @@ import {RESEARCH_RUNNER_BASE,getRunnerToken,getOperatorHeaders} from './research
 import type {FactoryLifecyclePayload} from '../types/ai-factory-lifecycle';
 import {assertWorkspace,assertWritableWorkspace} from './research-workspace';
 export async function fetchLifecycle(signal:AbortSignal,workspace='current'):Promise<FactoryLifecyclePayload>{
+ if(!RESEARCH_CONSOLE_API_BASE)throw new Error('研究只读接口尚未配置');
  const url=new URL('/api/v1/console/ai-factory-lifecycle',RESEARCH_CONSOLE_API_BASE);url.searchParams.set('workspace',workspace);
  const response=await fetch(url,{signal});
  if(!response.ok)throw new Error(`读取生命周期失败 (${response.status})`);

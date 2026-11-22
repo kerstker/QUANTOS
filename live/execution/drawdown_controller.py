@@ -93,12 +93,17 @@ class DrawdownThresholds:
     unknown_component_default: float = 0.5
 
     def __post_init__(self) -> None:
+        for name in ("caution_drawdown", "defensive_drawdown", "halt_drawdown"):
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+                raise ValueError(f"{name} must be a finite number, got {v!r}")
         if not (0.0 < self.caution_drawdown <= self.defensive_drawdown <= self.halt_drawdown):
             raise ValueError("drawdown thresholds must satisfy 0 < caution <= defensive <= halt")
         for name in ("caution_ceiling", "defensive_ceiling", "recovery_max_ceiling",
                      "recovery_ramp_step", "unknown_component_default"):
             v = getattr(self, name)
-            if not (0.0 <= v <= 1.0):
+            if (isinstance(v, bool) or not isinstance(v, (int, float))
+                    or not math.isfinite(float(v)) or not (0.0 <= float(v) <= 1.0)):
                 raise ValueError(f"{name} must be in [0,1], got {v}")
         for name in ("recovery_consecutive_observations", "recovery_stabilization_observations",
                      "recovery_exit_observations"):
@@ -155,10 +160,19 @@ def consecutive_below_caution_count(series: Sequence[float], *, peak_equity: flo
                                     caution_drawdown: float) -> int:
     """从最新观测往回数,连续多少次观测的回撤 < caution。回撤对**当前峰值**计算——历史观测
     当时的峰值只会 ≤ 当前峰值,所以这是历史回撤的保守上界(宁可慢放,不可快放)。"""
+    if (not _positive_finite(peak_equity)
+            or isinstance(caution_drawdown, bool)
+            or not isinstance(caution_drawdown, (int, float))
+            or not math.isfinite(float(caution_drawdown))):
+        return 0
+    peak = float(peak_equity)
+    caution = float(caution_drawdown)
     count = 0
     for eq in reversed(series):
-        dd_i = max(0.0, (peak_equity - eq) / peak_equity)
-        if dd_i < caution_drawdown:
+        if not _positive_finite(eq):
+            break
+        dd_i = max(0.0, (peak - float(eq)) / peak)
+        if dd_i < caution:
             count += 1
         else:
             break
@@ -171,9 +185,14 @@ def observations_since_new_low(series: Sequence[float]) -> int:
     running_min: Optional[float] = None
     last_new_low = -1
     for i, eq in enumerate(series):
-        if running_min is not None and eq < running_min:
+        if not _positive_finite(eq):
+            # Corrupted/non-positive observation breaks stabilization fail-closed.
             last_new_low = i
-        running_min = eq if running_min is None else min(running_min, eq)
+            continue
+        val = float(eq)
+        if running_min is not None and val < running_min:
+            last_new_low = i
+        running_min = val if running_min is None else min(running_min, val)
     return len(series) - 1 - last_new_low
 
 
@@ -421,6 +440,10 @@ class ComponentReading:
     def __post_init__(self) -> None:
         if self.status not in ("OK", "UNKNOWN"):
             raise ValueError(f"status must be OK|UNKNOWN, got {self.status!r}")
+        if (isinstance(self.value, bool)
+                or not isinstance(self.value, (int, float))
+                or not math.isfinite(float(self.value))):
+            raise ValueError(f"component value must be a finite number, got {self.value!r}")
         object.__setattr__(self, "value", min(1.0, max(0.0, float(self.value))))
 
     def as_dict(self) -> Dict[str, object]:
@@ -431,6 +454,15 @@ def drawdown_component(drawdown_pct: float,
                        thresholds: Optional[DrawdownThresholds] = None) -> ComponentReading:
     """回撤分量:回撤越深值越低(与状态天花板同一档梯,双处钉死同一保守语义)。"""
     th = thresholds or DrawdownThresholds()
+    if (isinstance(drawdown_pct, bool)
+            or not isinstance(drawdown_pct, (int, float))
+            or not math.isfinite(float(drawdown_pct))):
+        return ComponentReading(
+            "drawdown",
+            0.0,
+            "UNKNOWN",
+            f"invalid drawdown_pct {drawdown_pct!r} — fail-closed halt",
+        )
     dd = max(0.0, float(drawdown_pct))
     if dd >= th.halt_drawdown:
         return ComponentReading("drawdown", 0.0, "OK", f"drawdown {dd:.4f} >= halt")
@@ -467,10 +499,14 @@ def venue_health_component(available: Optional[int], total: Optional[int],
     incident=True(整源失联 = 场地事故,状态机 HALT);部分成功 -> 按可得比例给值(失联
     标的同时被跨源核价冻结,乘数再按数据可得性同比收缩)。"""
     th = thresholds or DrawdownThresholds()
-    if not total:
+    if (total is None or isinstance(total, bool)
+            or not isinstance(total, int) or total <= 0):
         return ComponentReading("venue_health", th.unknown_component_default, "UNKNOWN",
                                 "no target instruments — venue health not judgable"), False
-    avail = max(0, int(available or 0))
+    if available is None or isinstance(available, bool) or not isinstance(available, int):
+        avail = 0
+    else:
+        avail = max(0, min(available, total))
     if avail <= 0:
         return ComponentReading("venue_health", 0.0, "OK",
                                 f"all {total} venue book reads failed — venue incident"), True
@@ -567,6 +603,9 @@ def degradation_component_from_artifact(payload: object, strategy_id: str, venue
         return _unknown("degradation artifact has no usable generated_at_ms — freshness "
                         "unverifiable, fail-closed conservative")
     age_ms = int(now_ms) - int(generated)
+    if age_ms < 0:
+        return _unknown(f"degradation artifact timestamp is in the future ({age_ms} ms) "
+                        "— fail-closed conservative")
     if age_ms > DEGRADATION_ARTIFACT_MAX_AGE_MS:
         return _unknown(f"degradation artifact stale: age {age_ms} ms > "
                         f"{DEGRADATION_ARTIFACT_MAX_AGE_MS} ms (7d, UNCALIBRATED) "

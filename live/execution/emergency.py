@@ -75,6 +75,19 @@ def validate_flatten_order(side: OrderSide, qty: float, *, position: float) -> O
     return None
 
 
+def _finite_nonneg(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) >= 0.0)
+
+
+def _finite_real(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value)))
+
+
 def flatten_target_for_breach(breach: RiskBreach, *, max_gross_exposure: float,
                               max_net_exposure: float) -> Optional[float]:
     """越限类型 -> 自动减仓的目标 gross 敞口(纯函数策略)。None = 本次不自动减仓。
@@ -82,8 +95,8 @@ def flatten_target_for_breach(breach: RiskBreach, *, max_gross_exposure: float,
     - 回撤越限:全部平掉(target 0)——权益保护是最高优先级,留着仓位只会继续放大回撤。
     - gross/净敞口越限:等比缩减到限额的 90%(等比缩减下 net 与 gross 同因子缩,取两个
       约束里更紧的那个因子)。
-    - 只有数据质量问题(缺价/峰值未知):**不**自动减仓——在不可信的数据上自动交易可能是
-      错误方向的动作;保守停机 + 告警,交给人。
+    - 只有数据质量问题(缺价/峰值未知/限额非有限):**不**自动减仓——在不可信的数据上自动交易
+      可能是错误方向的动作;保守停机 + 告警,交给人。
     """
     if not breach.breached:
         return None
@@ -94,12 +107,26 @@ def flatten_target_for_breach(breach: RiskBreach, *, max_gross_exposure: float,
         return 0.0
     if not (has_gross or has_net):
         return None                                    # 纯数据质量问题,不自动交易
+    if not _finite_nonneg(breach.gross_exposure) or not _finite_real(breach.net_exposure):
+        return None
+    if has_gross and not _finite_nonneg(max_gross_exposure):
+        return None
+    if has_net and not _finite_nonneg(max_net_exposure):
+        return None
     factor = 1.0
-    if has_gross and breach.gross_exposure > 0:
-        factor = min(factor, _EXPOSURE_BREACH_MARGIN * max_gross_exposure / breach.gross_exposure)
-    if has_net and abs(breach.net_exposure) > 0:
-        factor = min(factor, _EXPOSURE_BREACH_MARGIN * max_net_exposure / abs(breach.net_exposure))
-    return breach.gross_exposure * factor
+    if has_gross and float(breach.gross_exposure) > 0:
+        factor = min(
+            factor,
+            _EXPOSURE_BREACH_MARGIN * float(max_gross_exposure) / float(breach.gross_exposure),
+        )
+    if has_net and abs(float(breach.net_exposure)) > 0:
+        factor = min(
+            factor,
+            _EXPOSURE_BREACH_MARGIN * float(max_net_exposure) / abs(float(breach.net_exposure)),
+        )
+    factor = max(0.0, min(1.0, factor))
+    target = float(breach.gross_exposure) * factor
+    return target if math.isfinite(target) else None
 
 
 @dataclass(frozen=True)

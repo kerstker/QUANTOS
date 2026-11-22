@@ -3,7 +3,11 @@ const DAY = 86400000;
 const mean = (a: number[]) => a.reduce((s, n) => s + n, 0) / a.length;
 const deviation = (a: number[]) => a.length < 2 ? null : Math.sqrt(a.reduce((s, n) => s + (n - mean(a)) ** 2, 0) / (a.length - 1));
 
-export function analyzeEquity(input: Point[]) {
+export interface AnalyzeEquityOptions {
+  periodsPerYear?: number;
+}
+
+export function analyzeEquity(input: Point[], options: AnalyzeEquityOptions = {}) {
   const valid = input.every(p => Number.isFinite(p.time) && Math.abs(p.time) <= 8640000000000000 && Number.isFinite(p.value));
   const points = valid ? input : [];
   const ordered = points.every((p, i) => i === 0 || p.time > points[i - 1].time);
@@ -11,18 +15,30 @@ export function analyzeEquity(input: Point[]) {
   let peak = points[0]?.value ?? 0;
   const drawdown = points.map(p => { peak = Math.max(peak, p.value); return { time: p.time, value: peak > 0 ? Number(((p.value / peak - 1) * 100).toFixed(12)) : 0 }; });
   const returns = (positive ? points.slice(1) : []).flatMap((p, i) => points[i].value > 0 && p.time > points[i].time ? [{ time: p.time, value: (p.value / points[i].value - 1) * 100 }] : []);
-  const regular = positive && points.slice(1).every((p, i) => p.time - points[i].time === DAY);
+  const deltas = positive ? points.slice(1).map((p, i) => p.time - points[i].time) : [];
+  const sortedDeltas = [...deltas].sort((a, b) => a - b);
+  const step = sortedDeltas.length > 0 ? sortedDeltas[Math.floor(sortedDeltas.length / 2)] : 0;
+  const tolerance = step >= 60_000 ? 1500 : 0;
+  const regularCadence = positive && step > 0 && deltas.every(d => Math.abs(d - step) <= tolerance);
+  const regularDaily = regularCadence && Math.abs(step - DAY) <= 1500;
+  const inferredPeriodsPerYear = regularCadence ? (365 * DAY) / step : null;
+  const periodsPerYear = options.periodsPerYear !== undefined && Number.isFinite(options.periodsPerYear) && options.periodsPerYear > 0
+    ? options.periodsPerYear
+    : inferredPeriodsPerYear;
+  const annualizer = regularCadence && periodsPerYear !== null ? Math.sqrt(periodsPerYear) : null;
   const std = deviation(returns.map(p => p.value));
-  const rollingVol = regular ? returns.flatMap((p, i) => i < 19 ? [] : [{ time: p.time, value: (deviation(returns.slice(i - 19, i + 1).map(x => x.value)) ?? 0) * Math.sqrt(365) }]) : [];
+  const rollingVol = annualizer !== null ? returns.flatMap((p, i) => i < 19 ? [] : [{ time: p.time, value: (deviation(returns.slice(i - 19, i + 1).map(x => x.value)) ?? 0) * annualizer }]) : [];
   const monthly: Record<string, number> = {};
   for (const p of returns) { const month = new Date(p.time).toISOString().slice(0, 7); monthly[month] = (monthly[month] ?? 1) * (1 + p.value / 100); }
   return { points, drawdown: positive ? drawdown : [], returns, rollingVol,
     monthly: Object.entries(monthly).map(([label, v]) => ({ label, value: (v - 1) * 100 })),
     totalReturn: positive ? (points[points.length - 1].value / points[0].value - 1) * 100 : null,
     maxDrawdown: positive ? -Math.min(...drawdown.map(p => p.value)) : null,
-    annualVol: regular && std !== null ? std * Math.sqrt(365) : null,
-    sharpe: regular && std !== null && std > 0 ? mean(returns.map(p => p.value)) / std * Math.sqrt(365) : null,
-    regularDaily: regular };
+    annualVol: annualizer !== null && std !== null ? std * annualizer : null,
+    sharpe: annualizer !== null && std !== null && std > 0 ? mean(returns.map(p => p.value)) / std * annualizer : null,
+    regularDaily,
+    regularCadence,
+    periodsPerYear: regularCadence ? periodsPerYear : null };
 }
 
 export function histogram(values: number[], buckets = 12) {

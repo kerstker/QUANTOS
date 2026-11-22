@@ -94,6 +94,16 @@ class DurableAuditLog:
             self._c.commit()
         return ev
 
+    def has_event(self, event_id: str) -> bool:
+        with self._lock:
+            return (
+                self._c.execute(
+                    "SELECT 1 FROM audit_events WHERE event_id=? LIMIT 1",
+                    (event_id,),
+                ).fetchone()
+                is not None
+            )
+
     @property
     def events(self) -> tuple:
         # property to match GlobalAuditLog's read interface, so either store is an interchangeable sink

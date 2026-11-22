@@ -14,8 +14,12 @@ from .kill_switch import KillSwitch
 from quantos.contracts.killswitch import KillSwitchScope
 
 
+def _finite_num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
 def _finite_pos(x) -> bool:
-    return isinstance(x, (int, float)) and math.isfinite(x) and x > 0
+    return _finite_num(x) and x > 0
 
 
 def _is_exposure_reducing(intent, ctx) -> bool:
@@ -78,7 +82,7 @@ def check_account_allowed(intent, ctx, limits):
 
 def check_quantity(intent, ctx, limits):
     q = intent.quantity
-    return () if (isinstance(q, int) and q > 0) else (R.INVALID_QUANTITY,)
+    return () if (isinstance(q, int) and not isinstance(q, bool) and q > 0) else (R.INVALID_QUANTITY,)
 
 
 def check_price_sanity(intent, ctx, limits):
@@ -125,7 +129,7 @@ def check_cash(intent, ctx, limits):
     if intent.side != OrderSide.BUY:
         return ()
     notional = ctx.order_notional(intent)
-    if notional is None or not math.isfinite(notional):
+    if not _finite_num(notional) or not _finite_num(ctx.account.cash):
         return (R.INSUFFICIENT_CASH,)
     if ctx.account.cash < notional * (1.0 + limits.cash_buffer_pct):
         return (R.INSUFFICIENT_CASH,)
@@ -140,7 +144,12 @@ def check_position_limit(intent, ctx, limits):
 
 def check_order_size(intent, ctx, limits):
     notional = ctx.order_notional(intent)
-    if (notional is not None and notional > limits.max_order_notional) or intent.quantity > limits.fat_finger_qty:
+    if (
+        not _finite_num(notional)
+        or not _finite_num(intent.quantity)
+        or notional > limits.max_order_notional
+        or intent.quantity > limits.fat_finger_qty
+    ):
         return (R.ORDER_SIZE_EXCEEDED,)
     return ()
 
@@ -148,7 +157,7 @@ def check_order_size(intent, ctx, limits):
 def check_concentration(intent, ctx, limits):
     eq = ctx.account.equity
     price = ctx.effective_price(intent)
-    if eq <= 0 or not _finite_pos(price):
+    if not _finite_pos(eq) or not _finite_pos(price):
         return (R.CONCENTRATION_LIMIT_EXCEEDED,)
     proj_mv = abs(ctx.projected_position(intent) * price)
     return (R.CONCENTRATION_LIMIT_EXCEEDED,) if proj_mv / eq > limits.max_single_name_pct else ()
@@ -156,45 +165,49 @@ def check_concentration(intent, ctx, limits):
 
 def check_gross_exposure(intent, ctx, limits):
     g = _new_gross(intent, ctx)
-    if g is None or g > limits.max_gross_exposure:
+    if not _finite_num(g) or g > limits.max_gross_exposure:
         return (R.POSITION_LIMIT_EXCEEDED,)
     return ()
 
 
 def check_net_exposure(intent, ctx, limits):
     price = ctx.effective_price(intent)
-    if not _finite_pos(price):
+    if not _finite_pos(price) or not _finite_num(ctx.account.net_exposure):
         return (R.POSITION_LIMIT_EXCEEDED,)
     cur_mv = ctx.account.position_value(intent.instrument_id)
     proj_mv = ctx.projected_position(intent) * price
     new_net = ctx.account.net_exposure - cur_mv + proj_mv
-    return (R.POSITION_LIMIT_EXCEEDED,) if abs(new_net) > limits.max_net_exposure else ()
+    return (R.POSITION_LIMIT_EXCEEDED,) if (not _finite_num(new_net) or abs(new_net) > limits.max_net_exposure) else ()
 
 
 def check_leverage(intent, ctx, limits):
     eq = ctx.account.equity
     g = _new_gross(intent, ctx)
-    if eq <= 0 or g is None or g / eq > limits.max_leverage:
+    if not _finite_pos(eq) or not _finite_num(g) or g / eq > limits.max_leverage:
         return (R.POSITION_LIMIT_EXCEEDED,)
     return ()
 
 
 def check_daily_loss(intent, ctx, limits):
-    return (R.DAILY_LOSS_LIMIT_EXCEEDED,) if ctx.account.day_pnl <= -limits.daily_loss_limit else ()
+    pnl = ctx.account.day_pnl
+    if not _finite_num(pnl):
+        return (R.DAILY_LOSS_LIMIT_EXCEEDED,)
+    return (R.DAILY_LOSS_LIMIT_EXCEEDED,) if pnl <= -limits.daily_loss_limit else ()
 
 
 def check_drawdown(intent, ctx, limits):
     peak = ctx.account.peak_equity
-    if peak <= 0:
+    eq = ctx.account.equity
+    if not _finite_pos(peak) or not _finite_num(eq):
         return (R.DRAWDOWN_LIMIT_EXCEEDED,)
-    return (R.DRAWDOWN_LIMIT_EXCEEDED,) if (peak - ctx.account.equity) / peak > limits.max_drawdown else ()
+    return (R.DRAWDOWN_LIMIT_EXCEEDED,) if (peak - eq) / peak > limits.max_drawdown else ()
 
 
 def check_turnover(intent, ctx, limits):
     eq = ctx.account.equity
-    if eq <= 0:
+    notional = ctx.order_notional(intent)
+    if not _finite_pos(eq) or not _finite_num(notional) or not _finite_num(ctx.plan_turnover):
         return (R.TURNOVER_LIMIT_EXCEEDED,)
-    notional = ctx.order_notional(intent) or 0.0
     if (notional / eq) + ctx.plan_turnover > limits.max_turnover:
         return (R.TURNOVER_LIMIT_EXCEEDED,)
     return ()

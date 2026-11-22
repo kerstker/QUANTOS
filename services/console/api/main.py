@@ -105,7 +105,13 @@ _extra_cors_origins = tuple(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100", *_extra_cors_origins],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3100",
+        "http://localhost:3100",
+        *_extra_cors_origins,
+    ],
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],
@@ -216,6 +222,7 @@ def _computed_alpha(idx: int) -> Dict:
             "correlation_penalty": round(real.get("pbo") or 0.0, 3),           # PBO ~ overfit/redundancy proxy
             "composite_score": round(composite, 3),
             "lifecycle_state": real.get("state") or "ACTIVE",
+            "data_origin": "REAL_SNAPSHOT",
         }
     factors = _factor_values(idx, n=160)
     returns = _forward_returns(factors, idx)
@@ -242,6 +249,7 @@ def _computed_alpha(idx: int) -> Dict:
         "correlation_penalty": round(0.04 + (idx % 4) * 0.055, 3),
         "composite_score": round(composite, 3),
         "lifecycle_state": ALPHA_STATES[idx % len(ALPHA_STATES)],
+        "data_origin": "SYNTHETIC_FALLBACK",
     }
 
 
@@ -301,14 +309,39 @@ def _alpha_screening_payload(candidates: List[Dict]) -> Dict:
     }
 
 
+def _pearson_corr(xs: List[float], ys: List[float]) -> Optional[float]:
+    n = min(len(xs), len(ys))
+    if n < 2:
+        return None
+    ax = xs[-n:]
+    ay = ys[-n:]
+    mx = statistics.fmean(ax)
+    my = statistics.fmean(ay)
+    num = sum((x - mx) * (y - my) for x, y in zip(ax, ay))
+    dx = math.sqrt(sum((x - mx) ** 2 for x in ax))
+    dy = math.sqrt(sum((y - my) ** 2 for y in ay))
+    if dx <= 0.0 or dy <= 0.0:
+        return 0.0
+    return max(-1.0, min(1.0, num / (dx * dy)))
+
+
 def _alpha_correlation_matrix(candidates: List[Dict], limit: int = 8) -> Dict:
     matrix_candidates = candidates[:limit]
+    real_series: Dict[str, List[float]] = {}
+    for idx, cand in enumerate(matrix_candidates):
+        real = _real_factor(idx)
+        if real is not None and real.get("returns"):
+            real_series[cand["candidate_id"]] = list(real["returns"])
+    has_all_real = len(matrix_candidates) > 0 and len(real_series) == len(matrix_candidates)
     rows = []
     for row_idx, row in enumerate(matrix_candidates):
         values = []
         for col_idx, col in enumerate(matrix_candidates):
             if row["candidate_id"] == col["candidate_id"]:
                 value = 1.0
+            elif row["candidate_id"] in real_series and col["candidate_id"] in real_series:
+                corr = _pearson_corr(real_series[row["candidate_id"]], real_series[col["candidate_id"]])
+                value = corr if corr is not None else 0.0
             else:
                 same_operator_bonus = 0.28 if _operator_name(row["expression"]) == _operator_name(col["expression"]) else 0.0
                 penalty = (row["correlation_penalty"] + col["correlation_penalty"]) / 2
@@ -318,6 +351,7 @@ def _alpha_correlation_matrix(candidates: List[Dict], limit: int = 8) -> Dict:
             values.append(round(value, 3))
         rows.append(values)
     return {
+        "correlation_source": "REAL_RETURNS" if has_all_real else "SYNTHETIC_FALLBACK",
         "method": "BACKEND_RESEARCH_PROXY_EXPRESSION_SCORE_PENALTY",
         "ids": [alpha["candidate_id"] for alpha in matrix_candidates],
         "matrix": rows,

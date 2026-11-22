@@ -71,8 +71,14 @@ def _load_or_create_token(path: str = _TOKEN_FILE) -> str:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(tok)
+    if os.name == "posix":
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(tok)
+        os.chmod(path, 0o600)
+    else:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(tok)
     return tok
 
 
@@ -194,11 +200,24 @@ async def _owned_lifespan(_app: FastAPI):
 app = FastAPI(title="QUANTOS Research Runner", version="0.1.0", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100", *_extra_cors_origins],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3100",
+        "http://localhost:3100",
+        *_extra_cors_origins,
+    ],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+def _audit_has_event(event_id: str) -> bool:
+    has_event = getattr(_audit, "has_event", None)
+    if callable(has_event):
+        return bool(has_event(event_id))
+    return any(ev.event_id == event_id for ev in _audit.events)
 
 # A run temporarily redirects process-global stdout into its durable registry
 # log.  Keep the resident queue serial so two threads can never cross-wire that
@@ -270,7 +289,7 @@ async def run(
     # 命中 event_id 唯一约束是"已记账"而非故障,故先查后写,不让异常充当控制流。
     event_id = f"run.{run_id}"
     try:
-        if not any(ev.event_id == event_id for ev in _audit.events):
+        if not _audit_has_event(event_id):
             _audit.append(
                 event_id=event_id,
                 actor=operator,
@@ -307,7 +326,7 @@ async def cancel(req: CancelRequest, operator: str = Depends(require_operator)) 
     # 而跳过;跨秒的再次撤销各记一条(撤销本身不是幂等动作,不能只记第一次)。
     event_id = f"cancel.{req.run_id}.{int(time.time())}"
     try:
-        if not any(ev.event_id == event_id for ev in _audit.events):
+        if not _audit_has_event(event_id):
             _audit.append(event_id=event_id, actor=operator,
                          action="research.run.cancelled", timestamp=int(time.time()),
                          target=req.run_id, metadata={"cancelled": str(cancelled)})

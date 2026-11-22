@@ -34,6 +34,7 @@ venue——缩放只存在于 gate 出入这一段,`live/execution/*` 全程浮�
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
@@ -85,14 +86,34 @@ def _det_id(*parts) -> str:
 def plan_scaled_targets(weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
                         *, unit_scale: int = UNIT_SCALE) -> Dict[str, int]:
     """真实权重 -> 缩放整数目标(1 unit = 1/unit_scale 个币),供 gate/build_intents 使用。
-    价缺失/≤0 跳过(fail-soft);0 units 不下意图。镜像
-    services.execution.dry_run_pipeline.plan_target_quantities,只多一层缩放。"""
+    价缺失/≤0/非有限跳过(fail-soft);aum≤0 或非有限返回空(绝不翻转买卖方向);0 units 不下意图。
+    镜像 services.execution.dry_run_pipeline.plan_target_quantities,只多一层缩放。"""
+    if (
+        isinstance(aum, bool)
+        or not isinstance(aum, (int, float))
+        or not math.isfinite(aum)
+        or aum <= 0
+    ):
+        return {}
+    if isinstance(unit_scale, bool) or not isinstance(unit_scale, int) or unit_scale <= 0:
+        raise ValueError("unit_scale must be a positive integer")
     out: Dict[str, int] = {}
     for inst, w in weights.items():
         px = prices.get(inst)
-        if px is None or px <= 0:
+        if (
+            px is None
+            or isinstance(px, bool)
+            or not isinstance(px, (int, float))
+            or not math.isfinite(px)
+            or px <= 0
+        ):
             continue
-        units = int(round(w * aum / px * unit_scale))
+        if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w):
+            continue
+        raw_units = w * aum / px * unit_scale
+        if not math.isfinite(raw_units):
+            continue
+        units = int(round(raw_units))
         if units != 0:
             out[inst] = units
     return out
@@ -211,7 +232,11 @@ def _record_tca_failsoft(ledger: LiveLedger, audit: GlobalAuditLog, order: LiveO
     """成交质量记录(TCA,2026-07-05)。fail-soft:TCA 是诊断数据,写失败绝不能影响成交记账
     (仓位真相优先于诊断)——单独 try + 单独审计事件。决策价缺失/成交均价非正 -> 跳过
     (无法计算滑点,诚实缺失)。"""
-    if (decision_price is None and arrival_snapshot is None) or confirmed.avg_price <= 0:
+    if (
+        (decision_price is None and arrival_snapshot is None)
+        or not math.isfinite(confirmed.avg_price)
+        or confirmed.avg_price <= 0
+    ):
         return
     decision_baseline = (decision_price if decision_price is not None
                          else arrival_snapshot.price)

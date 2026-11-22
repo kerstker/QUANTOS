@@ -9,7 +9,7 @@ from typing import Sequence
 def returns_from_equity(equity: Sequence[float]) -> list[float]:
     out = []
     for a, b in zip(equity, equity[1:]):
-        if a != 0:
+        if math.isfinite(a) and math.isfinite(b) and a > 0:
             out.append(b / a - 1.0)
     return out
 
@@ -17,16 +17,20 @@ def returns_from_equity(equity: Sequence[float]) -> list[float]:
 def sharpe(returns: Sequence[float], periods_per_year: int = 252) -> float:
     if len(returns) < 2:
         return 0.0
-    sd = statistics.pstdev(returns)
+    if any(not math.isfinite(r) for r in returns):
+        return math.nan
+    sd = statistics.stdev(returns)
     mean = statistics.fmean(returns)
     if sd > 0:
         return (mean / sd) * math.sqrt(periods_per_year)
-    return math.inf if mean > 0 else 0.0   # zero-volatility positive return = infinite reward/risk
+    return math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
 
 
 def sortino(returns: Sequence[float], periods_per_year: int = 252) -> float:
     if len(returns) < 2:
         return 0.0
+    if any(not math.isfinite(r) for r in returns):
+        return math.nan
     downside = [min(0.0, r) for r in returns]
     # 标准 Sortino 分母: RMS of downside returns around MAR=0 (二阶下偏矩),
     # 而非 pstdev(downside) (围绕下行均值中心化, 会系统性低估下行偏差)
@@ -34,11 +38,12 @@ def sortino(returns: Sequence[float], periods_per_year: int = 252) -> float:
     mean = statistics.fmean(returns)
     if dd > 0:
         return (mean / dd) * math.sqrt(periods_per_year)
-    return math.inf if mean > 0 else 0.0   # no downside + positive return = infinite Sortino
+    return math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
 
 
 def generalization_gap(returns: Sequence[float], *, embargo: int = 1,
-                       min_len: int = 40, gap_scale: float = 2.0):
+                       min_len: int = 40, gap_scale: float = 2.0,
+                       periods_per_year: int = 252):
     """Normalised in-sample-minus-out-of-sample Sharpe gap of a return stream, in [0,1] (or None).
 
     Split `returns` into a train half (first) and a test half (second, after an `embargo` gap to avoid
@@ -58,7 +63,8 @@ def generalization_gap(returns: Sequence[float], *, embargo: int = 1,
     test = list(returns[mid + embargo:])
     if len(train) < min_len // 2 or len(test) < min_len // 2:
         return None
-    is_sr, oos_sr = sharpe(train), sharpe(test)
+    is_sr = sharpe(train, periods_per_year=periods_per_year)
+    oos_sr = sharpe(test, periods_per_year=periods_per_year)
     if not (math.isfinite(is_sr) and math.isfinite(oos_sr)):
         return None
     gap = max(0.0, is_sr - oos_sr) / gap_scale
@@ -70,6 +76,8 @@ def max_drawdown(equity: Sequence[float]) -> float:
     peak = -math.inf
     mdd = 0.0
     for v in equity:
+        if not math.isfinite(v):
+            continue
         peak = max(peak, v)
         if peak > 0:
             dd = (peak - v) / peak
@@ -79,8 +87,8 @@ def max_drawdown(equity: Sequence[float]) -> float:
 
 def metrics(equity: Sequence[float], periods_per_year: int = 252) -> dict:
     rets = returns_from_equity(equity)
-    total_return = (equity[-1] / equity[0] - 1.0) if equity and equity[0] else 0.0
-    vol = statistics.pstdev(rets) * math.sqrt(periods_per_year) if len(rets) > 1 else 0.0
+    total_return = (equity[-1] / equity[0] - 1.0) if equity and equity[0] > 0 else 0.0
+    vol = statistics.stdev(rets) * math.sqrt(periods_per_year) if len(rets) > 1 else 0.0
     mdd = max_drawdown(equity)
     gross = 1.0 + total_return
     # annualize by the number of periods observed (proxy when no date span given)

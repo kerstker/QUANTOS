@@ -59,6 +59,21 @@ describe('registered project review product handoff', () => {
       `/studio/new?kind=registered_review_recover&review_request_id=${requestId}`);
   });
 
+  it('distinguishes INSUFFICIENT and null contract states while preserving fail-closed promotion gating', () => {
+    render(<MemoryRouter><RegisteredReviewResults report={{
+      ...report,
+      statistical_decision: 'FAIL',
+      oos_status: 'INSUFFICIENT',
+      risk_status: null,
+      qualification: 'INSUFFICIENT',
+      promotion_approved: false,
+    }}/></MemoryRouter>);
+    expect(screen.getByText('统计未通过')).toBeInTheDocument();
+    expect(screen.getAllByText('证据不足').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('状态未知')).toBeInTheDocument();
+    expect(screen.getByText('候选未准入')).toBeInTheDocument();
+  });
+
   it('does not download missing material or claim unsigned verification', async () => {
     vi.mocked(download).mockClear();
     vi.mocked(fetchRegisteredReviewRequest).mockResolvedValue({source:'BACKEND_COMPUTED_SNAPSHOT',

@@ -275,7 +275,7 @@ export default function ResearchRuns() {
                     {rows.map(row => (
                       <tr key={row.run_id} className="border-t border-line/70 align-top">
                         <td className="px-3 py-3">
-                          <Link className="font-mono font-semibold text-accent hover:underline" to={`/research/runs/${row.run_id}`}>
+                          <Link className="font-mono font-semibold text-accent hover:underline" to={`/research/runs/${encodeURIComponent(row.run_id)}`}>
                             {row.title}
                           </Link>
                           <p className="mt-1 font-mono text-[9px] text-faint">{row.run_id}</p>

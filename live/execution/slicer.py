@@ -23,6 +23,13 @@ from live.contracts import LiveOrderRequest
 from live.execution.filters import round_to_step
 
 
+def _finite_pos(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) > 0.0)
+
+
 def plan_slices(request: LiveOrderRequest, *, n_slices: Optional[int] = None,
                 max_child_notional: Optional[float] = None, price: Optional[float] = None,
                 step_size: Optional[float] = None) -> List[LiveOrderRequest]:
@@ -30,30 +37,41 @@ def plan_slices(request: LiveOrderRequest, *, n_slices: Optional[int] = None,
     - n_slices:等分成 N 片;
     - max_child_notional(需给 price):每片名义额不超过上限,片数 = ceil(总名义额/上限)。
     """
+    if not _finite_pos(request.quantity):
+        raise ValueError(f"request.quantity must be finite and positive, got {request.quantity!r}")
     if n_slices is None and max_child_notional is None:
         raise ValueError("plan_slices needs n_slices and/or max_child_notional")
-    if n_slices is not None and n_slices < 1:
-        raise ValueError(f"n_slices must be >= 1, got {n_slices}")
+    if n_slices is not None:
+        if isinstance(n_slices, bool) or not isinstance(n_slices, int) or n_slices < 1:
+            raise ValueError(f"n_slices must be an integer >= 1, got {n_slices!r}")
+    if step_size is not None:
+        if (isinstance(step_size, bool) or not isinstance(step_size, (int, float))
+                or not math.isfinite(float(step_size)) or float(step_size) < 0.0):
+            raise ValueError(f"step_size must be finite and >= 0, got {step_size!r}")
     n = n_slices or 1
     if max_child_notional is not None:
-        if price is None or price <= 0:
-            raise ValueError("max_child_notional mode requires a positive price")
-        if max_child_notional <= 0:
-            raise ValueError(f"max_child_notional must be positive, got {max_child_notional}")
-        needed = max(1, math.ceil(request.quantity * price / max_child_notional - 1e-9))
+        if not _finite_pos(price):
+            raise ValueError("max_child_notional mode requires a positive finite price")
+        if not _finite_pos(max_child_notional):
+            raise ValueError(f"max_child_notional must be finite and positive, got {max_child_notional!r}")
+        ratio = float(request.quantity) * float(price) / float(max_child_notional)
+        if not math.isfinite(ratio):
+            raise ValueError("slice count overflowed to non-finite value")
+        needed = max(1, math.ceil(ratio - 1e-9))
         n = max(n, needed)
     if n == 1:
         return [request]                       # 不切就不改 ID,幂等语义与不启用完全一致
 
-    share = request.quantity / n
+    step_f = float(step_size) if step_size is not None and float(step_size) > 0.0 else None
+    share = float(request.quantity) / n
     children: List[LiveOrderRequest] = []
     allocated = 0.0
     for i in range(n):
         if i < n - 1:
-            qty = round_to_step(share, step_size) if step_size else share
+            qty = round_to_step(share, step_f) if step_f is not None else share
         else:
-            remainder = request.quantity - allocated          # 余量并入最后一片
-            qty = round_to_step(remainder, step_size) if step_size else remainder
+            remainder = max(0.0, float(request.quantity) - allocated)   # 余量并入最后一片
+            qty = round_to_step(remainder, step_f) if step_f is not None else remainder
         if qty <= 0:
             continue                                          # 取整到 0 的尘埃片,诚实丢弃
         allocated += qty

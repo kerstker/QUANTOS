@@ -20,15 +20,26 @@ def covariance_matrix(
 ) -> tuple[list[str], Matrix]:
     """(sorted ids, sample covariance matrix) over the common trailing window.
 
-    Fail-closed: raises if there are no series or the shared overlap is below
-    min_overlap (a covariance on mismatched/short samples is not trustworthy)."""
+    Fail-closed: raises if there are no series, the shared overlap is below
+    min_overlap, or any return is non-finite (a covariance on mismatched, short,
+    or corrupted samples is not trustworthy)."""
+    if isinstance(min_overlap, bool) or not isinstance(min_overlap, int) or min_overlap < 2:
+        raise ValueError("min_overlap must be an integer >= 2")
     ids = sorted(returns_by_alpha)
     if not ids:
         raise ValueError("no return series provided")
     overlap = min(len(returns_by_alpha[a]) for a in ids)
     if overlap < min_overlap:
         raise ValueError(f"overlap {overlap} < min_overlap {min_overlap}")
-    aligned = {a: list(returns_by_alpha[a][-overlap:]) for a in ids}
+    aligned: dict[str, list[float]] = {}
+    for a in ids:
+        tail = list(returns_by_alpha[a][-overlap:])
+        clean: list[float] = []
+        for x in tail:
+            if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
+                raise ValueError(f"non-finite return in series {a!r}")
+            clean.append(float(x))
+        aligned[a] = clean
     n = len(ids)
     cov: Matrix = [[0.0] * n for _ in range(n)]
     for i in range(n):
@@ -79,6 +90,6 @@ def risk_contributions(weights: Sequence[float], cov: Matrix) -> list[float]:
 def percent_risk_contributions(weights: Sequence[float], cov: Matrix) -> list[float]:
     contrib = risk_contributions(weights, cov)
     total = sum(contrib)
-    if total == 0:
+    if not math.isfinite(total) or total <= 0:
         return [0.0] * len(weights)
     return [c / total for c in contrib]

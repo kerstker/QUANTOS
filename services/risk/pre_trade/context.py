@@ -77,7 +77,7 @@ class StrategyApproval(BaseModel):
 
 
 class RiskContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = _FROZEN_FINITE
     account: AccountRiskState
     market: MarketContext
     strategy: StrategyApproval

@@ -77,13 +77,25 @@ def return_attribution(returns_by_alpha: dict[str, Sequence[float]],
     Simple (not compound) is chosen so contributions are exactly additive: Σ w_i·R_i
     equals the portfolio's cumulative simple return. Fail-closed: total==0 → pct all 0;
     a weighted alpha with no return series contributes 0 (no crash)."""
+    if horizon is not None:
+        if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon < 0:
+            raise ValueError("horizon must be a non-negative integer")
     contribution: dict[str, float] = {}
     for aid, w in weights.items():
         series = returns_by_alpha.get(aid, [])
-        r = sum(series[-horizon:] if horizon is not None else series)
+        if horizon is None:
+            window = series
+        elif horizon == 0:
+            window = ()
+        else:
+            window = series[-horizon:]
+        r = sum(window)
         contribution[aid] = w * r
     total = sum(contribution.values())
-    pct = {aid: (c / total if total != 0 else 0.0) for aid, c in contribution.items()}
+    pct = {
+        aid: (c / total if total != 0 and (total == total) else 0.0)
+        for aid, c in contribution.items()
+    }
     return {"contribution": contribution, "total": total, "pct": pct}
 
 

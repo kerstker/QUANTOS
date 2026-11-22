@@ -254,18 +254,27 @@ def compute_flatten_orders(positions: Mapping[str, float], prices: Mapping[str, 
     只朝 0 方向移动一部分,绝不改变方向、绝不新增仓位)。当前 gross 已在目标以下 -> 空列表
     (无需减仓)。返回形状与 `live/execution/filters.py::apply_exchange_filters` 的 `desired`
     参数一致,便于复用同一套交易所过滤器(尚未接自动提交,见模块 docstring)。"""
-    gross = sum(abs(qty * prices.get(inst, 0.0)) for inst, qty in positions.items()
-               if prices.get(inst) is not None and prices[inst] > 0)
-    if gross <= target_gross_exposure or gross <= 0:
+    if not _finite(target_gross_exposure) or float(target_gross_exposure) < 0.0:
+        raise ValueError(
+            f"target_gross_exposure must be finite and >= 0, got {target_gross_exposure!r}"
+        )
+    target = float(target_gross_exposure)
+    gross = sum(
+        abs(float(qty) * float(prices[inst]))
+        for inst, qty in positions.items()
+        if _finite(qty) and _finite(prices.get(inst)) and float(prices[inst]) > 0.0
+    )
+    if not math.isfinite(gross) or gross <= target or gross <= 0.0:
         return []
-    scale = target_gross_exposure / gross
+    scale = target / gross
     orders: List[Tuple[str, OrderSide, float]] = []
     for inst, qty in positions.items():
         px = prices.get(inst)
-        if px is None or px <= 0 or qty == 0:
+        if not _finite(qty) or not _finite(px) or float(px) <= 0.0 or float(qty) == 0.0:
             continue
-        delta = qty * scale - qty              # 朝 0 缩放:|new_qty| < |qty|,同号但绝对值更小
-        if delta == 0:
+        qty_f = float(qty)
+        delta = qty_f * scale - qty_f          # 朝 0 缩放:|new_qty| < |qty|,同号但绝对值更小
+        if delta == 0.0 or not math.isfinite(delta):
             continue
         side = OrderSide.SELL if delta < 0 else OrderSide.BUY
         orders.append((inst, side, abs(delta)))

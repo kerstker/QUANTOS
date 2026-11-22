@@ -58,10 +58,14 @@ def min_track_record_length(observed_sr: float, target_sr: float,
     """Minimum number of observations needed to assert observed_sr > target_sr
     at `confidence`. Infinite if there is no edge."""
     _check_moments(skew, kurt)
+    if not (0.0 < confidence < 1.0):
+        raise ValueError(f"confidence={confidence} must be strictly between 0 and 1")
     if observed_sr <= target_sr:
         return math.inf
     z = _N.inv_cdf(confidence)
     var_term = 1.0 - skew * observed_sr + ((kurt - 1.0) / 4.0) * observed_sr ** 2
+    if var_term <= 0:
+        raise ValueError(f"non-positive variance term (var_term={var_term:.4g}); skew/kurt too extreme for this SR")
     return 1.0 + var_term * (z / (observed_sr - target_sr)) ** 2
 
 
@@ -69,8 +73,9 @@ def pbo_cscv(perf_matrix: Sequence[Sequence[float]]) -> float:
     """Probability of Backtest Overfitting via Combinatorially Symmetric CV.
 
     perf_matrix: rows = time blocks, cols = strategy configs. Returns the
-    fraction of IS/OOS splits where the in-sample-best config lands below the
-    OOS median (logit < 0). High PBO => the selection is overfit.
+    fraction of IS/OOS splits where the in-sample-best config lands at or below
+    the OOS median (logit <= 0, Bailey et al. 2015) using mid-ranks for ties.
+    High PBO => the selection is overfit.
     """
     n_blocks = len(perf_matrix)
     if n_blocks < 2:
@@ -94,8 +99,10 @@ def pbo_cscv(perf_matrix: Sequence[Sequence[float]]) -> float:
         is_perf = [sum(perf_matrix[b][s] for b in is_blocks) for s in range(n_strats)]
         oos_perf = [sum(perf_matrix[b][s] for b in oos_blocks) for s in range(n_strats)]
         best = max(range(n_strats), key=lambda s: is_perf[s])
-        beaten = sum(1 for s in range(n_strats) if oos_perf[best] > oos_perf[s])
-        rank = beaten / (n_strats - 1)
-        rank = min(max(rank, 1e-9), 1.0 - 1e-9)
-        lambdas.append(math.log(rank / (1.0 - rank)))
-    return sum(1 for logit in lambdas if logit < 0) / len(lambdas)
+        best_oos = oos_perf[best]
+        less = sum(1 for s in range(n_strats) if oos_perf[s] < best_oos)
+        equal = sum(1 for s in range(n_strats) if oos_perf[s] == best_oos)
+        mid_rank = less + 0.5 * (equal + 1)
+        omega = mid_rank / (n_strats + 1)
+        lambdas.append(math.log(omega / (1.0 - omega)))
+    return sum(1 for logit in lambdas if logit <= 0.0) / len(lambdas)

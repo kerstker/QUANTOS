@@ -19,19 +19,34 @@ from __future__ import annotations
 import math
 
 
+def _is_finite_num(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
 def round_to_step(qty: float, step_size: float) -> float:
-    """向下取整到交易所步长网格(绝不超发——宁可少买/少卖,不可超过策略意图)。step_size<=0 直通。
+    """向零取整到交易所步长网格(绝不超发——宁可少买/少卖,不可超过策略意图)。step_size<=0 直通。
     +1e-9 epsilon 只为吸收浮点表示噪声(如 0.3/0.1 因二进制浮点略小于 3),不改变真实取整方向。"""
+    if not (_is_finite_num(qty) and _is_finite_num(step_size)):
+        raise ValueError("qty and step_size must be finite numbers")
     if step_size <= 0:
-        return qty
-    steps = math.floor(qty / step_size + 1e-9)
-    return round(steps * step_size, 10)
+        return float(qty)
+    mag = math.floor(abs(qty) / step_size + 1e-9) * step_size
+    rounded = round(mag, 10)
+    if rounded == 0.0:
+        return 0.0
+    return -rounded if qty < 0 else rounded
 
 
 def meets_min_notional(qty: float, price: float, min_notional: float) -> bool:
-    """数量*价格是否达到交易所最小名义额门槛。`min_notional<=0` 视为无门槛,恒真。纯数值判断,
-    镜像 `live/execution/filters.py::apply_exchange_filters` 里 `rounded * price < filt.min_notional`
-    的丢弃条件(此处返回其否定式:True=达标可交易,False=该被诚实丢弃)。"""
+    """数量*价格是否达到交易所最小名义额门槛。`min_notional<=0` 视为无门槛(要求 qty/price 有限非负)。
+    纯数值判断,镜像 `live/execution/filters.py::apply_exchange_filters` 里
+    `rounded * price < filt.min_notional` 的丢弃条件(此处返回其否定式:True=达标可交易,
+    False=该被诚实丢弃)。"""
+    if not (_is_finite_num(qty) and _is_finite_num(price) and _is_finite_num(min_notional)):
+        return False
+    if qty < 0 or price < 0:
+        return False
     if min_notional <= 0:
         return True
-    return qty * price >= min_notional
+    notional = qty * price
+    return math.isfinite(notional) and notional >= min_notional

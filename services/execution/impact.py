@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 
 @dataclass(frozen=True)
@@ -10,9 +11,22 @@ class AlmgrenChrissImpact:
     perm_coef: float = 5.0
     temp_exponent: float = 0.5
 
+    def __post_init__(self) -> None:
+        for name in ("temp_coef", "perm_coef", "temp_exponent"):
+            val = getattr(self, name)
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val) or val < 0:
+                raise ValueError(f"{name} must be a finite non-negative number")
+
     def _participation(
         self, trade_notional: float, adv_notional: float
     ) -> float:
+        if (
+            isinstance(trade_notional, bool)
+            or isinstance(adv_notional, bool)
+            or not math.isfinite(trade_notional)
+            or not math.isfinite(adv_notional)
+        ):
+            raise ValueError("trade_notional and adv_notional must be finite numbers")
         if adv_notional <= 0 or trade_notional == 0:
             return 0.0
         return abs(trade_notional) / adv_notional

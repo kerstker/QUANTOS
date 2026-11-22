@@ -36,7 +36,7 @@ def _sharpe(xs: Sequence[float]) -> Optional[float]:
     vals = [x for x in xs if x is not None and math.isfinite(x)]
     if len(vals) < 2:
         return None
-    sd = statistics.pstdev(vals)
+    sd = statistics.stdev(vals)
     if sd <= 0:
         m = statistics.fmean(vals)
         return math.inf if m > 0 else (-math.inf if m < 0 else 0.0)

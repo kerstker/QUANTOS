@@ -20,9 +20,12 @@ def inverse_vol_weights(cov: Matrix) -> list[float]:
     n = len(cov)
     if n == 0:
         return []
-    inv = [(1.0 / math.sqrt(cov[i][i]) if cov[i][i] > 0 else 0.0) for i in range(n)]
+    inv = [
+        (1.0 / math.sqrt(cov[i][i]) if math.isfinite(cov[i][i]) and cov[i][i] > 0 else 0.0)
+        for i in range(n)
+    ]
     s = sum(inv)
-    return [x / s for x in inv] if s > 0 else [1.0 / n] * n
+    return [x / s for x in inv] if math.isfinite(s) and s > 0 else [1.0 / n] * n
 
 
 def risk_parity_weights(cov: Matrix, iterations: int = 1000) -> list[float]:
@@ -38,14 +41,21 @@ def risk_parity_weights(cov: Matrix, iterations: int = 1000) -> list[float]:
         mrc = [sum(cov[i][j] * w[j] for j in range(n)) for i in range(n)]
         rc = [w[i] * mrc[i] for i in range(n)]
         total = sum(rc)
-        if total <= 0:
+        if not math.isfinite(total) or total <= 0:
             break
         target = total / n
-        nxt = [(w[i] * math.sqrt(target / rc[i]) if rc[i] > 0 else w[i]) for i in range(n)]
+        nxt = [
+            (w[i] * math.sqrt(target / rc[i]) if math.isfinite(rc[i]) and rc[i] > 0 else w[i])
+            for i in range(n)
+        ]
         s = sum(nxt)
-        if s <= 0:
+        if not math.isfinite(s) or s <= 0:
             break
-        w = [x / s for x in nxt]
+        new_w = [x / s for x in nxt]
+        if max(abs(new_w[i] - w[i]) for i in range(n)) < 1e-12:
+            w = new_w
+            break
+        w = new_w
     return w
 
 
@@ -55,9 +65,13 @@ def cap_weights(weights: Sequence[float], max_weight: float) -> list[float]:
     n = len(weights)
     if n == 0:
         return []
+    if isinstance(max_weight, bool) or not math.isfinite(max_weight) or max_weight <= 0:
+        raise ValueError("max_weight must be a finite positive number")
     if max_weight * n < 1.0 - 1e-9:
         raise ValueError("max_weight too small to sum to 1 across all names")
-    w = list(weights)
+    w = [float(x) for x in weights]
+    if any(not math.isfinite(x) for x in w):
+        raise ValueError("weights must all be finite")
     for _ in range(100):
         excess = 0.0
         capped = [False] * n
@@ -70,11 +84,16 @@ def cap_weights(weights: Sequence[float], max_weight: float) -> list[float]:
                 capped[i] = True
         if excess <= 1e-12:
             break
-        room = sum(w[i] for i in range(n) if not capped[i])
-        if room <= 0:
+        uncapped = [i for i in range(n) if not capped[i]]
+        if not uncapped:
             break
-        for i in range(n):
-            if not capped[i]:
+        room = sum(w[i] for i in uncapped)
+        if room <= 0:
+            share = excess / len(uncapped)
+            for i in uncapped:
+                w[i] += share
+        else:
+            for i in uncapped:
                 w[i] += excess * (w[i] / room)
     return w
 
@@ -85,13 +104,27 @@ def cost_aware_rebalance(
     no_trade_band: float = 0.0,
 ) -> tuple[dict[str, float], float]:
     """Only move a name when |target - prev| exceeds the no-trade band, then
-    renormalize. Returns (new_weights, turnover). Suppresses cost-churn on noise."""
+    renormalize long-only books to sum 1. Long-short books are NOT divided by
+    their near-zero net sum (which would explode gross leverage). Returns
+    (new_weights, turnover). Suppresses cost-churn on noise."""
+    if isinstance(no_trade_band, bool) or not math.isfinite(no_trade_band) or no_trade_band < 0:
+        raise ValueError("no_trade_band must be a finite non-negative number")
     names = sorted(set(prev_weights) | set(target_weights))
-    moved = {}
+    moved: dict[str, float] = {}
     for nm in names:
         p, t = prev_weights.get(nm, 0.0), target_weights.get(nm, 0.0)
+        if not (math.isfinite(p) and math.isfinite(t)):
+            raise ValueError(f"non-finite weight for {nm!r}")
         moved[nm] = t if abs(t - p) > no_trade_band else p
-    s = sum(moved.values())
-    new = {k: v / s for k, v in moved.items()} if s > 0 else moved
+    is_long_only = (
+        all(v >= 0.0 for v in moved.values())
+        and all(v >= 0.0 for v in prev_weights.values())
+        and all(v >= 0.0 for v in target_weights.values())
+    )
+    if is_long_only:
+        s = sum(moved.values())
+        new = {k: v / s for k, v in moved.items()} if s > 0 else moved
+    else:
+        new = moved
     turnover = sum(abs(new.get(nm, 0.0) - prev_weights.get(nm, 0.0)) for nm in names)
     return new, turnover

@@ -14,7 +14,13 @@ import { stamp } from '@/ui/format';
 const INVALIDATION = 'INVALIDATED_PERP_LEDGER_V1';
 
 export default function RunDetail() {
-  const { id = '' } = useParams();
+  const { id: rawId = '' } = useParams();
+  let id = rawId;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    id = rawId;
+  }
   const [predictionWindow, setPredictionWindow] = useState('all');
   const [reloadKey, setReloadKey] = useState(0);
   const [cancelMsg, setCancelMsg] = useState<string | null>(null);

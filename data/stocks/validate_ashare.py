@@ -1,10 +1,11 @@
 """Post-run sanity validation for the A-share kline PIT store (read-only)."""
 import csv
 import json
+from pathlib import Path
 import random
 import sys
 
-sys.path.insert(0, r"H:\code\QUANTOS")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from services.data.persistent_store import SqlitePITStore  # noqa: E402
 from tools import ashare_kline_fetch as f  # noqa: E402
 

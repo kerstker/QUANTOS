@@ -37,7 +37,33 @@ from .models import (
 
 
 def _clean(values: Iterable[float]) -> List[float]:
-    return [float(value) for value in values if value is not None and math.isfinite(float(value))]
+    cleaned: List[float] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+            continue
+        try:
+            converted = float(value)
+        except (ValueError, OverflowError):
+            continue
+        if math.isfinite(converted):
+            cleaned.append(converted)
+    return cleaned
+
+
+def _has_corrupt_numeric(values: Iterable[object]) -> bool:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+            return True
+        try:
+            if not math.isfinite(float(value)):
+                return True
+        except (ValueError, OverflowError):
+            return True
+    return False
 
 
 def _percentile(values: List[float], pct: float) -> float:
@@ -52,20 +78,35 @@ def _corr(left: List[float], right: List[float]) -> float:
     n = min(len(left), len(right))
     if n < 2:
         return 0.0
-    x = left[:n]
-    y = right[:n]
+    x: List[float] = []
+    y: List[float] = []
+    for a, b in zip(left[:n], right[:n]):
+        if (isinstance(a, bool) or isinstance(b, bool)
+                or not isinstance(a, (int, float, Decimal))
+                or not isinstance(b, (int, float, Decimal))):
+            return 0.0
+        fa, fb = float(a), float(b)
+        if not (math.isfinite(fa) and math.isfinite(fb)):
+            return 0.0
+        x.append(fa)
+        y.append(fb)
     mx = statistics.fmean(x)
     my = statistics.fmean(y)
     vx = sum((v - mx) ** 2 for v in x)
     vy = sum((v - my) ** 2 for v in y)
-    if vx <= 0 or vy <= 0:
+    if vx <= 0 or vy <= 0 or not (math.isfinite(vx) and math.isfinite(vy)):
         return 0.0
     cov = sum((a - mx) * (b - my) for a, b in zip(x, y))
-    return cov / math.sqrt(vx * vy)
+    denom = math.sqrt(vx * vy)
+    if denom <= 0 or not math.isfinite(denom):
+        return 0.0
+    return max(-1.0, min(1.0, cov / denom))
 
 
 class MarketRiskEngine:
     def evaluate(self, returns: List[float], config: RiskConfig) -> MarketRiskReport:
+        if _has_corrupt_numeric(returns):
+            return MarketRiskReport(passed=False)
         series = _clean(returns)
         if not series:
             return MarketRiskReport(passed=False)
@@ -77,9 +118,10 @@ class MarketRiskEngine:
             if len(series) > 1
             else 0.0
         )
-        var_95 = abs(min(0.0, _percentile(series, 0.05)))
-        tail = [value for value in series if value <= _percentile(series, 0.05)]
-        cvar_95 = abs(statistics.fmean(tail)) if tail else 0.0
+        p05 = _percentile(series, 0.05)
+        var_95 = abs(min(0.0, p05))
+        tail = [value for value in series if value <= p05]
+        cvar_95 = abs(min(0.0, statistics.fmean(tail))) if tail else 0.0
         downside = [min(0.0, value) for value in series]
         downside_volatility = (
             statistics.pstdev(downside) * math.sqrt(periods_per_year)
@@ -89,7 +131,8 @@ class MarketRiskEngine:
         tail_loss_99 = abs(min(0.0, _percentile(series, 0.01)))
         max_daily_loss = abs(min(0.0, min(series)))
         passed = (
-            volatility <= config.max_portfolio_volatility
+            math.isfinite(volatility)
+            and volatility <= config.max_portfolio_volatility
             and var_95 <= config.max_var_95
             and cvar_95 <= config.max_cvar_95
         )
@@ -170,15 +213,19 @@ class LiquidityRiskEngine:
 class ConcentrationRiskEngine:
     def evaluate(self, weights: Dict[str, float], clusters: Optional[List[AlphaCluster]],
                 config: RiskConfig) -> ConcentrationRiskReport:
-        if not weights:
+        if not isinstance(weights, Mapping) or not weights:
             return ConcentrationRiskReport(passed=False)   # no book -> fail closed
-        abs_weights = [abs(value) for value in weights.values()]
+        if any(not _money_number(value) for value in weights.values()):
+            return ConcentrationRiskReport(passed=False)
+        abs_weights = [abs(float(value)) for value in weights.values()]
         # An explicit zero target is a closed book, not missing evidence.
         # Diversification constraints apply to exposure, and must not prevent
         # flattening the last position. Empty/unknown books still fail above.
         if all(value == 0.0 for value in abs_weights):
             return ConcentrationRiskReport(passed=True)
         hhi = sum(value * value for value in abs_weights)
+        if not math.isfinite(hhi):
+            return ConcentrationRiskReport(passed=False)
         effective_n = 1 / hhi if hhi > 0 else 0.0
         max_single = max(abs_weights) if abs_weights else 0.0
         # 2026-07-09 (gap audit rank #3): several correlated variants of "the same trade"
@@ -190,7 +237,7 @@ class ConcentrationRiskEngine:
         # contributes 0 (fail-soft, never KeyErrors). Falls back to max_single when clusters is
         # None/empty (no clustering evidence supplied — unchanged from pre-fix behavior).
         if clusters:
-            cluster_sums = [sum(abs(weights.get(m, 0.0)) for m in c.member_ids) for c in clusters]
+            cluster_sums = [sum(abs(float(weights.get(m, 0.0))) for m in c.member_ids) for c in clusters]
             max_cluster = max(max_single, max(cluster_sums, default=0.0))
         else:
             max_cluster = max_single
@@ -210,8 +257,13 @@ class ConcentrationRiskEngine:
 
 class CorrelationRiskEngine:
     def evaluate(self, alpha_returns: Dict[str, List[float]], config: RiskConfig) -> CorrelationRiskReport:
-        if len(alpha_returns) < 2:
+        if not isinstance(alpha_returns, Mapping) or len(alpha_returns) < 2:
             return CorrelationRiskReport(passed=False)   # <2 alphas -> not evaluable, fail closed
+        for series in alpha_returns.values():
+            if (not isinstance(series, Sequence) or isinstance(series, (str, bytes))
+                    or len(series) < 2
+                    or any(not _money_number(v) for v in series)):
+                return CorrelationRiskReport(passed=False)
         pairs = [_corr(left, right) for left, right in combinations(alpha_returns.values(), 2)]
         abs_pairs = [abs(value) for value in pairs]
         avg_correlation = statistics.fmean(abs_pairs) if abs_pairs else 0.0
@@ -231,6 +283,8 @@ class CorrelationRiskEngine:
 
 class DrawdownRiskEngine:
     def evaluate(self, equity_curve: List[float], config: RiskConfig) -> DrawdownRiskReport:
+        if _has_corrupt_numeric(equity_curve):
+            return DrawdownRiskReport(passed=False)
         return self.evaluate_stream(iter(_clean(equity_curve)), config)
 
     def evaluate_stream(self, equity_curve: Iterable[float], config: RiskConfig) -> DrawdownRiskReport:
@@ -239,20 +293,29 @@ class DrawdownRiskEngine:
         first = next(iterator, None)
         if first is None:
             return DrawdownRiskReport(passed=False)
-        peak = first
+        if (isinstance(first, bool) or not isinstance(first, (int, float, Decimal))
+                or not math.isfinite(float(first))):
+            raise ValueError('drawdown equity must be finite numeric')
+        first_f = float(first)
+        if first_f <= 0.0:
+            return DrawdownRiskReport(passed=False)
+        peak = first_f
         max_drawdown = total = 0.0
         current_duration = max_duration = count = 0
         def drawdowns():
             nonlocal peak, max_drawdown, total, current_duration, max_duration, count
-            for value in chain((first,), iterator):
-                if isinstance(value, bool) or not math.isfinite(value):
+            for raw_value in chain((first_f,), iterator):
+                if (isinstance(raw_value, bool)
+                        or not isinstance(raw_value, (int, float, Decimal))
+                        or not math.isfinite(float(raw_value))):
                     raise ValueError('drawdown equity must be finite numeric')
+                value = float(raw_value)
                 if value >= peak:
                     peak = value
                     current_duration = 0
                 else:
                     current_duration += 1
-                drawdown = (peak - value) / peak if peak else 0.0
+                drawdown = (peak - value) / peak if peak > 0 else 1.0
                 max_drawdown = max(max_drawdown, drawdown)
                 max_duration = max(max_duration, current_duration)
                 total += drawdown
@@ -317,6 +380,8 @@ class StressTestEngine:
                  timestamps: Optional[Sequence[int]] = None) -> PortfolioStressReport:
         if timestamps is not None:
             return self._evaluate_replay(returns, config, timestamps)
+        if _has_corrupt_numeric(returns):
+            return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
         series = _clean(returns)
         if not series:
             return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
@@ -336,9 +401,14 @@ class StressTestEngine:
                          timestamps: Sequence[int]) -> PortfolioStressReport:
         if len(returns) != len(timestamps):
             return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
-        pairs = [(float(r), int(t)) for r, t in zip(returns, timestamps)
-                 if r is not None and t is not None
-                 and math.isfinite(float(r)) and math.isfinite(float(t))]
+        pairs: List[tuple[float, int]] = []
+        for r, t in zip(returns, timestamps):
+            if r is None or t is None:
+                continue
+            if (not _money_number(r) or isinstance(t, bool)
+                    or not isinstance(t, (int, float)) or not math.isfinite(float(t))):
+                return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
+            pairs.append((float(r), int(t)))
         if not pairs:
             return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
         rs = [r for r, _t in pairs]

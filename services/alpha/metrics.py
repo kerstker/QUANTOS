@@ -68,7 +68,11 @@ def _betai(a: float, b: float, x: float) -> float:
 
 
 def clean(ic_series: Sequence[Optional[float]]) -> list[float]:
-    return [float(v) for v in ic_series if v is not None and math.isfinite(v)]
+    return [
+        float(v)
+        for v in ic_series
+        if v is not None and not isinstance(v, bool) and math.isfinite(v)
+    ]
 
 
 def icir(ic_series: Sequence[Optional[float]]) -> Optional[float]:
@@ -112,6 +116,8 @@ def hit_rate(ic_series: Sequence[Optional[float]]) -> Optional[float]:
 
 
 def ic_autocorr(ic_series: Sequence[Optional[float]], lag: int = 1) -> Optional[float]:
+    if isinstance(lag, bool) or not isinstance(lag, int) or lag < 1:
+        raise ValueError("lag must be an integer >= 1")
     s = clean(ic_series)
     if len(s) < lag + 2:
         return None

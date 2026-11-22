@@ -328,11 +328,16 @@ export async function fetchResearchRunsCompare(
   runIds: string[], signal?: AbortSignal): Promise<ResearchRunsComparePayload> {
   const payloads = await Promise.all(runIds.map(id => fetchResearchRun(id, signal)));
   const runs = payloads.map(p => p.run).filter((r): r is ResearchRunDetail => r != null);
+  const invalidationCode = payloads.find(p => p.invalidation_code)?.invalidation_code ?? null;
+  const allReal = payloads.length > 0 && payloads.every(p => p.snapshot_status === 'REAL') && invalidationCode === null;
+  const allTechnical = payloads.length > 0 && payloads.every(p => p.evidence_status === 'TECHNICAL_VALIDATION_ONLY');
   return {
     source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, api_version: '0.1.0',
     data_provenance: 'RESEARCH_RUN_REGISTRY', runs,
-    authoritative: false, evidence_status: 'DIAGNOSTIC_ONLY',
-    invalidation_code: 'INVALIDATED_PERP_LEDGER_V1', snapshot_status: 'DATA_BLOCKED',
+    authoritative: false,
+    evidence_status: allTechnical ? 'TECHNICAL_VALIDATION_ONLY' : 'DIAGNOSTIC_ONLY',
+    invalidation_code: invalidationCode ?? undefined,
+    snapshot_status: allReal ? 'REAL' : 'DATA_BLOCKED',
   };
 }
 

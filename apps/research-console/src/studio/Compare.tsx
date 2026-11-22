@@ -28,7 +28,9 @@ export function Compare({ runs }: {
   const b = choices.find(r => r.run_id === second) ?? choices.find(r => r.run_id !== a?.run_id);
   const result = useResource(`compare:${a?.run_id}:${b?.run_id}`, signal => a && b && a.run_id !== b.run_id ? Promise.all([fetchTechnicalReplay(a.run_id, signal), fetchTechnicalReplay(b.run_id, signal)]) : Promise.resolve(null));
   const left = result.data?.[0].technical_replay, right = result.data?.[1].technical_replay;
-  const va = left ? values(left, policy, slip, stop) : {}, vb = right ? values(right, policy, slip, stop) : {};
+  const policies = [...new Set([...(left?.factory_report?.cases.map(c => c.policy) ?? []), ...(right?.factory_report?.cases.map(c => c.policy) ?? [])])];
+  const activePolicy = policies.includes(policy) ? policy : (policies[0] ?? policy);
+  const va = left ? values(left, activePolicy, slip, stop) : {}, vb = right ? values(right, activePolicy, slip, stop) : {};
   const keys = [...new Set([...Object.keys(va), ...Object.keys(vb)])];
   return <>
     <Header eyebrow="RESEARCH / COMPARE" title="运行对比" action={<Link className="s-button" to="/research/runs">返回实验运行</Link>}>并列查看同类研究，检查差异和输入来源。</Header>
@@ -46,7 +48,7 @@ export function Compare({ runs }: {
       </div>
     </Panel>
     {result.loading ? <Loading /> : !a || !b ? <Empty title="至少需要两次同类的完成运行">失败记录保留在运行列表中，不填充为成功结果。</Empty> : !left || !right ? <Empty title="缺少可比较的技术结果">不会复用已失效的历史指标。</Empty> : <Panel title="指标差异" note="差值为 B − A；数值变化不代表研究质量提升。" action={kind === 'btc_factory' ? <div className="s-controls">
-      <select aria-label="对比政策" value={policy} onChange={e => setPolicy(e.target.value)}>{[...new Set(left.factory_report?.cases.map(c => c.policy) ?? [])].map(p => <option key={p}>{p}</option>)}</select>
+      <select aria-label="对比政策" value={activePolicy} onChange={e => setPolicy(e.target.value)}>{policies.map(p => <option key={p}>{p}</option>)}</select>
       <select aria-label="对比滑点" value={slip} onChange={e => setSlip(Number(e.target.value))}>{[2, 5, 10].map(n => <option key={n} value={n}>{n} bp</option>)}</select>
       <label className="s-checkbox">
         <input type="checkbox" checked={stop} onChange={e => setStop(e.target.checked)} />启用亏损停机</label>
@@ -57,10 +59,10 @@ export function Compare({ runs }: {
             <tr>
               <th>指标</th>
               <th>
-                <Link to={`/research/runs/${a.run_id}`}>运行 A ↗</Link>
+                <Link to={`/research/runs/${encodeURIComponent(a.run_id)}`}>运行 A ↗</Link>
               </th>
               <th>
-                <Link to={`/research/runs/${b.run_id}`}>运行 B ↗</Link>
+                <Link to={`/research/runs/${encodeURIComponent(b.run_id)}`}>运行 B ↗</Link>
               </th>
               <th>差值</th>
             </tr>

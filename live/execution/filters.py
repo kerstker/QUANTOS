@@ -12,6 +12,7 @@ docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.4。
 from __future__ import annotations
 
 import hashlib
+import math
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from live.contracts import ExchangeFilters, LiveOrderRequest
@@ -19,6 +20,12 @@ from quantos.contracts.trading import OrderSide
 from services.execution.quantization import round_to_step
 
 _MAX_CLIENT_ORDER_ID_LEN = 36     # Binance newClientOrderId 硬限制
+
+
+def _finite_num(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value)))
 
 
 def decision_prefix(strategy_id: str, decided_ts: int, instrument_id: str) -> str:
@@ -82,18 +89,33 @@ def apply_exchange_filters(desired: Sequence[Tuple[str, OrderSide, float]],
         if filt is None:
             dropped.append((instrument_id, "no_filter"))
             continue
-        rounded = round_to_step(qty, filt.step_size)
-        if rounded <= 0 or rounded < filt.min_qty:
+        if not _finite_num(qty) or not _finite_num(filt.step_size) or not _finite_num(filt.min_qty):
+            dropped.append((instrument_id, "below_min_qty"))
+            continue
+        rounded = round_to_step(float(qty), float(filt.step_size))
+        if not math.isfinite(rounded) or rounded <= 0 or rounded < float(filt.min_qty):
             dropped.append((instrument_id, "below_min_qty"))
             continue
         price = prices.get(instrument_id)
-        if price is None or price <= 0:
+        if not _finite_num(price) or float(price) <= 0:
             dropped.append((instrument_id, "no_price"))
             continue
-        if rounded * price < filt.min_notional:
+        price_f = float(price)
+        if not _finite_num(filt.min_notional):
             dropped.append((instrument_id, "below_min_notional"))
             continue
-        prior = None if current_positions is None else float(current_positions.get(instrument_id, 0.0))
+        notional = rounded * price_f
+        if not math.isfinite(notional) or notional < float(filt.min_notional):
+            dropped.append((instrument_id, "below_min_notional"))
+            continue
+        if current_positions is None:
+            prior = None
+        else:
+            raw_prior = current_positions.get(instrument_id, 0.0)
+            if not _finite_num(raw_prior):
+                dropped.append((instrument_id, "invalid_prior_position"))
+                continue
+            prior = float(raw_prior)
         cid = client_order_id(strategy_id, decided_ts, instrument_id, side, rounded, prior_qty=prior)
         adjusted.append(LiveOrderRequest(instrument_id=instrument_id, side=side,
                                          quantity=rounded, client_order_id=cid))

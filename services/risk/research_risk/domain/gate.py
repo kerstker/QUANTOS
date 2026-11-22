@@ -44,6 +44,8 @@ class RiskApprovalGate:
         decision = ResearchRiskDecision(run_id=run.run_id, portfolio_id=run.portfolio_id)
         config = run.config or self.config
         gate_results = {}
+        run.gates_passed = 0
+        run.gate_reports = {}
 
         # 2026-07-09 (gap audit rank #3): real complete-linkage clustering over the SAME
         # alpha_returns this gate already receives, reusing max_pairwise_correlation as the

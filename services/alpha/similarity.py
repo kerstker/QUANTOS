@@ -54,12 +54,23 @@ def _pearson(a: Sequence[float], b: Sequence[float]):
     if n < 2:
         return None
     xa, xb = list(a[:n]), list(b[:n])
+    if any(
+        isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
+        for x in xa
+    ) or any(
+        isinstance(y, bool) or not isinstance(y, (int, float)) or not math.isfinite(y)
+        for y in xb
+    ):
+        return None
     sda, sdb = statistics.pstdev(xa), statistics.pstdev(xb)
-    if sda <= _EPS or sdb <= _EPS:
+    if not (math.isfinite(sda) and math.isfinite(sdb)) or sda <= _EPS or sdb <= _EPS:
         return None
     ma, mb = statistics.fmean(xa), statistics.fmean(xb)
     cov = sum((x - ma) * (y - mb) for x, y in zip(xa, xb)) / n
-    return cov / (sda * sdb)
+    r = cov / (sda * sdb)
+    if not math.isfinite(r):
+        return None
+    return max(-1.0, min(1.0, r))
 
 
 def return_similarity(a: Sequence[float], b: Sequence[float]) -> float:
@@ -74,12 +85,23 @@ def _cosine(a: Mapping[str, float], b: Mapping[str, float]) -> float:
     keys = set(a) | set(b)
     if not keys:
         return 0.0
+    if any(
+        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+        for v in a.values()
+    ) or any(
+        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+        for v in b.values()
+    ):
+        return 0.0
     dot = sum(a.get(k, 0.0) * b.get(k, 0.0) for k in keys)
     na = math.sqrt(sum(v * v for v in a.values()))
     nb = math.sqrt(sum(v * v for v in b.values()))
-    if na <= _EPS or nb <= _EPS:
+    if not (math.isfinite(na) and math.isfinite(nb)) or na <= _EPS or nb <= _EPS:
         return 0.0
-    return dot / (na * nb)
+    c = dot / (na * nb)
+    if not math.isfinite(c):
+        return 0.0
+    return max(-1.0, min(1.0, c))
 
 
 def holdings_overlap(weights_a: Mapping[str, float], weights_b: Mapping[str, float]) -> float:

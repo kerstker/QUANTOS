@@ -62,7 +62,7 @@ export default function CompareRuns() {
               {runs.map(run => (
                 <Link
                   key={run.run_id}
-                  to={'/research/runs/' + run.run_id}
+                  to={'/research/runs/' + encodeURIComponent(run.run_id)}
                   className="rounded-lg border border-line bg-inset/30 p-3 hover:border-accent/50"
                 >
                   <div className="flex flex-wrap items-center gap-2">

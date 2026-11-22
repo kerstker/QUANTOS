@@ -62,7 +62,12 @@ def max_drawdown(returns: Sequence[float]) -> float:
     """Worst peak-to-trough decline of the cumulative-return equity curve, as a positive fraction."""
     eq, peak, mdd = 1.0, 1.0, 0.0
     for r in returns:
-        eq *= (1.0 + r)
+        if r is None or isinstance(r, bool) or not math.isfinite(r):
+            continue
+        if eq <= 0.0:
+            mdd = 1.0
+            continue
+        eq = max(0.0, eq * (1.0 + r))
         peak = max(peak, eq)
         if peak > 0:
             mdd = max(mdd, (peak - eq) / peak)
@@ -81,15 +86,16 @@ def weights_for(returns_by_id: Mapping[str, Sequence[float]], scheme: str = "inv
     elif scheme == "inverse_vol":
         raw = {}
         for k in ids:
-            sd = statistics.pstdev(aligned[k]) if length > 1 else 0.0
-            raw[k] = (1.0 / sd) if sd > _EPS else 0.0
+            clean_k = [x for x in aligned[k] if x is not None and not isinstance(x, bool) and math.isfinite(x)]
+            sd = statistics.pstdev(clean_k) if len(clean_k) > 1 else 0.0
+            raw[k] = (1.0 / sd) if math.isfinite(sd) and sd > _EPS else 0.0
     elif scheme == "ir":
         raw = {k: max(0.0, information_ratio(aligned[k])) for k in ids}
         raw = {k: (v if math.isfinite(v) else 0.0) for k, v in raw.items()}
     else:
         raise ValueError(f"unknown weighting scheme: {scheme!r}")
     total = sum(raw.values())
-    if total <= _EPS:
+    if not math.isfinite(total) or total <= _EPS:
         return {k: 1.0 / len(ids) for k in ids}
     return {k: raw[k] / total for k in ids}
 
@@ -150,7 +156,10 @@ def _objective(returns_by_id, ids, *, scheme, cost_bps, w_diversity, w_complexit
     div = diversity(sub)
     mean_cplx = statistics.fmean(complexity_by_id.get(k, 0.0) for k in ids) if complexity_by_id else 0.0
     mean_crowd = statistics.fmean(crowding_by_id.get(k, 0.0) for k in ids) if crowding_by_id else 0.0
-    base = min(10.0, max(-10.0, post))    # clamp (inf -> 10) so a degenerate set can't dominate via 1e6
+    if math.isnan(post):
+        base = -10.0
+    else:
+        base = min(10.0, max(-10.0, post))    # clamp (inf -> 10) so a degenerate set can't dominate via 1e6
     obj = base + w_diversity * div - w_complexity * mean_cplx - w_crowding * mean_crowd
     return {"objective": obj, "weights": weights, "portfolio_ir": p_ir, "post_cost_ir": post,
             "max_drawdown": max_drawdown(port), "diversity": div}

@@ -12,27 +12,62 @@ export function useResource<T>(key: string, load: (signal: AbortSignal) => Promi
   }>({ key, data: null, error: null, loading: true, updated: null });
   useEffect(() => {
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    let controller: AbortController;
-    let deadline: ReturnType<typeof setTimeout>;
-    const run = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    const schedule = (delay: number) => {
+      if (!stopped && poll > 0)
+        timer = setTimeout(() => void run(true), delay);
+    };
+    const run = async (background = false) => {
+      if (background && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        schedule(poll);
+        return;
+      }
       controller = new AbortController();
-      setState(old => ({ ...old, key, data: old.key === key ? old.data : null, loading: true, error: null }));
+      if (!background) {
+        setState(old => ({ ...old, key, data: old.key === key ? old.data : null, loading: true, error: null }));
+      }
       try {
-        const data = await Promise.race([loader.current(controller.signal), new Promise<never>((_, reject) => { deadline = setTimeout(() => { controller.abort(); reject(new Error('读取超时，请重试。')); }, 15000); })]);
+        const data = await Promise.race([
+          loader.current(controller.signal),
+          new Promise<never>((_, reject) => {
+            deadline = setTimeout(() => {
+              controller?.abort();
+              reject(new Error('读取超时，请重试。'));
+            }, 15000);
+          }),
+        ]);
+        failures = 0;
         if (!stopped)
           setState({ key, data, error: null, loading: false, updated: Date.now() });
-      }
-      catch (error) {
+      } catch (error) {
+        failures = Math.min(failures + 1, 4);
         if (!stopped)
-          setState(old => ({ ...old, loading: false, error: error instanceof Error ? error.message : '读取失败' }));
+          setState(old => ({ ...old, key, loading: false, error: error instanceof Error ? error.message : '读取失败' }));
       }
-      clearTimeout(deadline);
-      if (!stopped && poll)
-        timer = setTimeout(run, poll);
+      if (deadline) clearTimeout(deadline);
+      const nextDelay = failures > 0 ? Math.min(poll * 2 ** failures, 120000) : poll;
+      schedule(nextDelay);
     };
-    void run();
-    return () => { stopped = true; controller?.abort(); clearTimeout(timer); clearTimeout(deadline); };
+    const onVisibility = () => {
+      if (!stopped && poll > 0 && document.visibilityState === 'visible') {
+        if (timer) clearTimeout(timer);
+        void run(true);
+      }
+    };
+    if (poll > 0 && typeof document !== 'undefined')
+      document.addEventListener('visibilitychange', onVisibility);
+    void run(false);
+    return () => {
+      stopped = true;
+      if (poll > 0 && typeof document !== 'undefined')
+        document.removeEventListener('visibilitychange', onVisibility);
+      controller?.abort();
+      if (timer) clearTimeout(timer);
+      if (deadline) clearTimeout(deadline);
+    };
   }, [key, revision, poll]);
   return { ...state, data: state.key === key ? state.data : null, refresh: useCallback(() => setRevision(n => n + 1), []) };
 }

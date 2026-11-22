@@ -32,8 +32,12 @@ _DEFAULT_STALE_LIMITS = {
 }
 
 
+def _finite_real(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value))
+
+
 def _priced(p) -> bool:
-    return isinstance(p, (int, float)) and not isinstance(p, bool) and isfinite(p) and p > 0.0
+    return _finite_real(p) and float(p) > 0.0
 
 
 def gate_decision_inputs(*, weights: Mapping[str, float], prices: Mapping[str, float],
@@ -46,16 +50,31 @@ def gate_decision_inputs(*, weights: Mapping[str, float], prices: Mapping[str, f
     """见模块 docstring。返回 `DataQualityReport`;`.passed=False` 时调用方应暂停本轮决策。"""
     checks = []
 
-    age = now - decided_ts
+    if _finite_real(decided_ts) and _finite_real(now) and _finite_real(max_decision_age_ms):
+        age = float(now) - float(decided_ts)
+        max_age = float(max_decision_age_ms)
+        freshness_ok = max_age >= 0.0 and 0.0 <= age <= max_age
+        freshness_detail = f"decision age {age:g}ms vs allowed [0, {max_age:g}]"
+    else:
+        freshness_ok = False
+        freshness_detail = "non-finite decision freshness timestamp/age limit"
     checks.append(DataQualityCheck(
-        name="decision_freshness", passed=(0 <= age <= max_decision_age_ms),
-        detail=f"decision age {age}ms vs allowed [0, {max_decision_age_ms}]"))
+        name="decision_freshness", passed=freshness_ok,
+        detail=freshness_detail))
 
-    weighted = [inst for inst, w in weights.items() if w]
+    invalid_weights = sorted(inst for inst, w in weights.items() if not _finite_real(w))
+    weighted = [inst for inst, w in weights.items() if _finite_real(w) and float(w) != 0.0]
     unpriced = sorted(inst for inst in weighted if not _priced(prices.get(inst)))
+    prices_ok = (not invalid_weights) and (not unpriced)
+    if invalid_weights:
+        prices_detail = f"non-finite weights: {invalid_weights}"
+    elif unpriced:
+        prices_detail = f"unpriced weighted names: {unpriced}"
+    else:
+        prices_detail = "all weighted names priced"
     checks.append(DataQualityCheck(
-        name="decision_prices_present", passed=(not unpriced),
-        detail=(f"unpriced weighted names: {unpriced}" if unpriced else "all weighted names priced")))
+        name="decision_prices_present", passed=prices_ok,
+        detail=prices_detail))
 
     failed = sorted(set(ingestion_quality_failed) & set(weighted))
     checks.append(DataQualityCheck(
@@ -76,8 +95,10 @@ def gate_decision_inputs(*, weights: Mapping[str, float], prices: Mapping[str, f
         stale = []
         for src, lim in limits.items():
             info = staleness.get(src)
-            fd = (info or {}).get("freshest_days")
-            if fd is None or (lim is not None and fd > lim):     # 停更(None)或超限
+            fd = info.get("freshest_days") if isinstance(info, Mapping) else None
+            if not _finite_real(fd) or float(fd) < 0.0:          # 停更(None)/NaN/负值 -> fail-closed
+                stale.append(src)
+            elif lim is not None and (not _finite_real(lim) or float(lim) < 0.0 or float(fd) > float(lim)):
                 stale.append(src)
         stale = sorted(stale)
         checks.append(DataQualityCheck(

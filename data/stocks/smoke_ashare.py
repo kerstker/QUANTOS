@@ -1,5 +1,7 @@
 import json, sys, os
-sys.path.insert(0, r"H:\code\QUANTOS")
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from services.data.persistent_store import SqlitePITStore
 from tools import ashare_kline_fetch as f
 

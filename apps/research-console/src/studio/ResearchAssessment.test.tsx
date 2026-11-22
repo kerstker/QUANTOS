@@ -22,4 +22,40 @@ describe('research assessment',()=>{
   render(<ResearchAssessment/>);
   expect(await screen.findByText('研究资料校验失败')).toBeInTheDocument();
  });
+ it('faithfully displays PASS, PARTIAL, and FAIL dimension verdicts without hardcoding failure',async()=>{
+  vi.mocked(fetchConsoleModuleSnapshot).mockResolvedValue({
+   snapshot_status:'REAL',
+   assessment:{
+    dimensions:[
+     {id:'profitability_evidence',verdict:'PASS'},
+     {id:'cost_modeling',verdict:'PARTIAL'},
+     {id:'oos_integrity',verdict:'FAIL'},
+    ],
+    counts:{required_research_core:7,adapted_scoped_check:9,deferred_institutional_requirement:6},
+    run_evidence:{completed_cases:12,planned_trials:12,failed_cases:0},
+   },
+  });
+  render(<ResearchAssessment/>);
+  expect(await screen.findByText('已通过')).toBeInTheDocument();
+  expect(screen.getByText('部分证据')).toBeInTheDocument();
+  expect(screen.getByText('未通过')).toBeInTheDocument();
+  expect(screen.getByText(/研究证据尚不完整/)).toBeInTheDocument();
+ });
+ it('updates conclusion text when every recorded dimension verdict is PASS while keeping human approval caveat',async()=>{
+  vi.mocked(fetchConsoleModuleSnapshot).mockResolvedValue({
+   snapshot_status:'REAL',
+   assessment:{
+    dimensions:[
+     {id:'data_trust',verdict:'PASS'},
+     {id:'backtest_correctness',verdict:'PASS'},
+    ],
+    counts:{required_research_core:7,adapted_scoped_check:9,deferred_institutional_requirement:6},
+    run_evidence:{completed_cases:12,planned_trials:12,failed_cases:0},
+   },
+  });
+  render(<ResearchAssessment/>);
+  expect(await screen.findByText(/当前核验维度均已记录通过/)).toBeInTheDocument();
+  expect(screen.getAllByText('已通过')).toHaveLength(2);
+ });
 });
+

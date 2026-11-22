@@ -10,16 +10,22 @@ def walk_forward_splits(
     train_size: int,
     test_size: int,
     step: Optional[int] = None,
+    embargo: int = 0,
 ) -> list[tuple[list[int], list[int]]]:
-    """Return sequential windows whose test range strictly follows training."""
+    """Return sequential windows whose test range strictly follows training (with optional embargo)."""
     if train_size < 1 or test_size < 1:
         raise ValueError("train_size and test_size must be >= 1")
-    step = step or test_size
+    if embargo < 0:
+        raise ValueError("embargo must be >= 0")
+    step = test_size if step is None else step
+    if step < 1:
+        raise ValueError("step must be >= 1")
     splits = []
     start = 0
-    while start + train_size + test_size <= n:
+    while start + train_size + embargo + test_size <= n:
         train = list(range(start, start + train_size))
-        test = list(range(start + train_size, start + train_size + test_size))
+        test_start = start + train_size + embargo
+        test = list(range(test_start, test_start + test_size))
         splits.append((train, test))
         start += step
     return splits
@@ -33,6 +39,8 @@ def purged_kfold(
     """Return contiguous test folds with a purged embargo band around each fold."""
     if k < 2 or k > n:
         raise ValueError("require 2 <= k <= n")
+    if embargo < 0:
+        raise ValueError("embargo must be >= 0")
     fold = n // k
     out = []
     for i in range(k):

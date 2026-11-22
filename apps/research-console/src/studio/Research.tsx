@@ -74,7 +74,7 @@ export function Overview({ runs, health }: {
       <Metric label="可用研究模块" value={health?.kinds.length ?? '—'} note={health ? '研究引擎已连接' : '等待研究引擎连接'} />
     </div>
     <div className="s-overview-grid">
-      <Panel title="BTC 工厂 · 技术权益" note="最近完成的工厂回放 / 5 bp 滑点 / 启用亏损停机" action={latest ? <Link className="s-text-link" to={`/research/runs/${latest.run_id}`}>查看完整结果 <Icon name="arrow" />
+      <Panel title="BTC 工厂 · 技术权益" note="最近完成的工厂回放 / 5 bp 滑点 / 启用亏损停机" action={latest ? <Link className="s-text-link" to={`/research/runs/${encodeURIComponent(latest.run_id)}`}>查看完整结果 <Icon name="arrow" />
       </Link> : undefined}>
         {result.loading && latest ? <Loading /> : center?.equity ? <SparkChart points={center.equity.map(p => ({ time: p.time, value: Number(p.equity) }))} /> : <Empty title="等待首份工厂结果">完成一次工厂规则回放，即可查看连续权益和成本对比。</Empty>}
         {center?.metrics && <div className="s-chart-footer">
@@ -277,7 +277,8 @@ export function FactoryReport({ report }: {
   const [stop, setStop] = useState(true);
   const [policy, setPolicy] = useState('FACTORY');
   const rows = report.cases.filter(r => r.slip_bps === slip && r.stop === stop);
-  const selected = rows.find(r => r.policy === policy);
+  const activePolicy = rows.some(r => r.policy === policy) ? policy : (rows[0]?.policy ?? policy);
+  const selected = rows.find(r => r.policy === activePolicy);
   const baseline = rows.find(r => r.policy === 'FROZEN_PRICE')?.metrics?.net_pnl;
   return <>
     <Panel title="政策比较" note="同一账本规则下的成本与风险情景" action={<div className="s-controls">
@@ -299,9 +300,9 @@ export function FactoryReport({ report }: {
               <th>成交</th>
             </tr>
           </thead>
-          <tbody>{rows.map(r => <tr key={r.trial_id} className={policy === r.policy ? 'selected' : ''}>
+          <tbody>{rows.map(r => <tr key={r.trial_id} className={activePolicy === r.policy ? 'selected' : ''}>
             <td>
-              <button className="s-policy" onClick={() => setPolicy(r.policy)} aria-pressed={policy === r.policy}>{r.policy}<Icon name="arrow" />
+              <button className="s-policy" onClick={() => setPolicy(r.policy)} aria-pressed={activePolicy === r.policy}>{r.policy}<Icon name="arrow" />
               </button>
             </td>{r.metrics ? <>
               <td className={r.metrics.net_pnl < 0 ? 's-negative' : 's-positive'}>{fmt(r.metrics.net_pnl)}</td>
@@ -574,7 +575,7 @@ export function RegisteredReviewResults({report}: {report: RegisteredReviewRepor
         <div><dt>锁定样本外验证</dt><dd>{report.oos_status==='UNKNOWN'?'状态未知':'证据不足'}</dd></div>
         <div><dt>风险复算</dt><dd>{report.risk_status==='REJECTED'?'未通过':report.risk_status==='INSUFFICIENT'?'证据不足':'状态未知'}</dd></div>
         <div><dt>评审结论</dt><dd>{report.qualification==='REJECTED'?'评审拒绝':report.qualification==='INSUFFICIENT'?'证据不足':'尚未评审'}</dd></div>
-        <div><dt>候选准入</dt><dd>候选未准入</dd></div>
+        <div><dt>候选准入</dt><dd>{report.promotion_approved?'候选已准入':'候选未准入'}</dd></div>
         <div><dt>试验集合</dt><dd>{report.attempt_count} 次原尝试</dd></div>
       </dl>
       <button className="s-button" disabled={busy} onClick={exportMaterial}>{busy?'正在导出…':'下载完整评审材料'}</button>
@@ -606,6 +607,6 @@ export function Forward({ runs }: { runs: RunsState }) {
       {schedule?.attempts.filter(r=>r.error).map(r=><p className="s-error" key={r.attempt}>实验 {r.attempt}：{r.error}</p>)}
       {current.data?.errors.map((e,i)=><p className="s-error" key={i}>观察材料无法验证：{e.attempt??'调度'} · {e.reason}</p>)}
     </Panel>
-    {current.loading&&!current.data&&retained.loading?<Loading/>:report?<><p className="s-inline-note">{selected?'当前观察材料':'最近手动运行快照'} · {stamp(report.observed_at_ms,true)}</p><ForwardReport report={report}/>{latest&&<Link className="s-text-link" to={`/research/runs/${latest.run_id}`}>查看最近手动观察记录 <Icon name="arrow"/></Link>}</>:<Empty title="还没有前向观察记录" action={<Link className="s-button" to="/studio/new?kind=btc_forward">开始冻结模型</Link>}>先完成工厂回放，再使用相同实验编号冻结对照模型。</Empty>}
+    {current.loading&&!current.data&&retained.loading?<Loading/>:report?<><p className="s-inline-note">{selected?'当前观察材料':'最近手动运行快照'} · {stamp(report.observed_at_ms,true)}</p><ForwardReport report={report}/>{latest&&<Link className="s-text-link" to={`/research/runs/${encodeURIComponent(latest.run_id)}`}>查看最近手动观察记录 <Icon name="arrow"/></Link>}</>:<Empty title="还没有前向观察记录" action={<Link className="s-button" to="/studio/new?kind=btc_forward">开始冻结模型</Link>}>先完成工厂回放，再使用相同实验编号冻结对照模型。</Empty>}
   </>;
 }

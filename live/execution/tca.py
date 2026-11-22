@@ -137,12 +137,24 @@ def validate_arrival_snapshot(snapshot: Optional[ArrivalSnapshot], *, now_ms: in
     return None
 
 
+def _is_finite_num(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value)))
+
+
 def slippage_bps(side: OrderSide, *, decision_price: float, fill_price: float) -> Optional[float]:
     """带方向滑点(bps)。买单成交价高于决策价 / 卖单低于决策价 = 正 = 成本;反向 = 负 = 改善。
-    价格非正 -> None(无法计算,诚实缺失;不硬凑 0——0 是"零滑点"的真实断言)。"""
-    if decision_price <= 0 or fill_price <= 0:
+    价格非正或非有限 -> None(无法计算,诚实缺失;不硬凑 0——0 是"零滑点"的真实断言)。"""
+    if not (_is_finite_num(decision_price) and _is_finite_num(fill_price)):
         return None
-    raw = (fill_price - decision_price) / decision_price * 1e4
+    dec = float(decision_price)
+    fill = float(fill_price)
+    if dec <= 0 or fill <= 0:
+        return None
+    raw = (fill - dec) / dec * 1e4
+    if not math.isfinite(raw):
+        return None
     return raw if side == OrderSide.BUY else -raw
 
 
@@ -160,20 +172,33 @@ def _median(xs: Sequence[float]) -> Optional[float]:
 
 def tca_summary(records: Sequence[Mapping], *, assumed_cost_bps: float = 10.0) -> dict:
     """累计 TCA 记录 -> 汇总。records 形状 = `LiveLedger.tca_records()` 的行
-    (须含 instrument_id/slippage_bps/fill_price/quantity;slippage_bps 为 None 的行
+    (须含 instrument_id/slippage_bps/fill_price/quantity;slippage_bps 为 None 或非有限的行
     只计入 n_fills,不进任何均值——诚实缺失不污染统计)。"""
-    valid = [r for r in records if r.get("slippage_bps") is not None]
+    if not _is_finite_num(assumed_cost_bps):
+        raise ValueError(f"assumed_cost_bps must be a finite number, got {assumed_cost_bps!r}")
+    assumed = float(assumed_cost_bps)
+    valid = [r for r in records if _is_finite_num(r.get("slippage_bps"))]
     slips = [float(r["slippage_bps"]) for r in valid]
-    snapshot_records = [r for r in records if r.get("arrival_price") is not None]
+    snapshot_records = [r for r in records if _is_finite_num(r.get("arrival_price"))]
     arrival_sources: Dict[str, int] = {}
     for record in snapshot_records:
         source = record.get("arrival_source")
         if source:
             arrival_sources[str(source)] = arrival_sources.get(str(source), 0) + 1
-    notionals = [abs(float(r["fill_price"]) * float(r["quantity"])) for r in valid]
-    total_notional = sum(notionals)
-    weighted = (sum(s * n for s, n in zip(slips, notionals)) / total_notional
-                if total_notional > 0 else None)
+    weighted_num = 0.0
+    total_notional = 0.0
+    for r, s in zip(valid, slips):
+        fp = r.get("fill_price")
+        qty = r.get("quantity")
+        if not (_is_finite_num(fp) and _is_finite_num(qty)):
+            continue
+        notional = abs(float(fp) * float(qty))
+        if not math.isfinite(notional) or notional <= 0.0:
+            continue
+        total_notional += notional
+        weighted_num += s * notional
+    weighted = (weighted_num / total_notional
+                if total_notional > 0 and math.isfinite(weighted_num) else None)
 
     by_instrument: Dict[str, dict] = {}
     for r in valid:
@@ -196,8 +221,8 @@ def tca_summary(records: Sequence[Mapping], *, assumed_cost_bps: float = 10.0) -
         "worst_slippage_bps": max(slips) if slips else None,
         "notional_weighted_slippage_bps": weighted,
         "total_notional": total_notional,
-        "assumed_cost_bps": assumed_cost_bps,
-        "weighted_minus_assumed_bps": (weighted - assumed_cost_bps
+        "assumed_cost_bps": assumed,
+        "weighted_minus_assumed_bps": (weighted - assumed
                                        if weighted is not None else None),
         "by_instrument": by_instrument,
     }

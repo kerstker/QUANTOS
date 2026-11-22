@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertConsoleSnapshot,
@@ -86,3 +86,61 @@ describe('MFT execution API guards', () => {
     })).toThrow(/UNKNOWN_SCHEMA/);
   });
 });
+
+describe('fetchResearchRunsCompare', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it('propagates REAL and TECHNICAL_VALIDATION_ONLY when all compared runs are valid', async () => {
+    vi.stubEnv('VITE_API_URL', 'http://127.0.0.1:8400');
+    vi.resetModules();
+    const { fetchResearchRunsCompare: compare } = await import('./research-console-api');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = String(input);
+      const id = url.includes('r1') ? 'r1' : 'r2';
+      return new Response(JSON.stringify({
+        source: 'BACKEND_COMPUTED_SNAPSHOT',
+        read_only: true,
+        api_version: '0.1.0',
+        snapshot_status: 'REAL',
+        evidence_status: 'TECHNICAL_VALIDATION_ONLY',
+        run: { run_id: id, kind: 'btc_factory', status: 'done', created_ts: 1, params: {} },
+      }), { status: 200 });
+    });
+
+    const result = await compare(['r1', 'r2']);
+    expect(result.runs.map(r => r.run_id)).toEqual(['r1', 'r2']);
+    expect(result.snapshot_status).toBe('REAL');
+    expect(result.evidence_status).toBe('TECHNICAL_VALIDATION_ONLY');
+    expect(result.invalidation_code).toBeUndefined();
+    expect(result.authoritative).toBe(false);
+  });
+
+  it('marks compare payload DATA_BLOCKED when any run carries an invalidation_code', async () => {
+    vi.stubEnv('VITE_API_URL', 'http://127.0.0.1:8400');
+    vi.resetModules();
+    const { fetchResearchRunsCompare: compare } = await import('./research-console-api');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = String(input);
+      const invalidated = url.includes('legacy');
+      return new Response(JSON.stringify({
+        source: 'BACKEND_COMPUTED_SNAPSHOT',
+        read_only: true,
+        api_version: '0.1.0',
+        snapshot_status: invalidated ? 'DATA_BLOCKED' : 'REAL',
+        evidence_status: invalidated ? 'DIAGNOSTIC_ONLY' : 'TECHNICAL_VALIDATION_ONLY',
+        invalidation_code: invalidated ? 'INVALIDATED_PERP_LEDGER_V1' : undefined,
+        run: { run_id: invalidated ? 'legacy' : 'fresh', kind: 'btc_factory', status: 'done', created_ts: 1, params: {} },
+      }), { status: 200 });
+    });
+
+    const result = await compare(['fresh', 'legacy']);
+    expect(result.snapshot_status).toBe('DATA_BLOCKED');
+    expect(result.invalidation_code).toBe('INVALIDATED_PERP_LEDGER_V1');
+    expect(result.evidence_status).toBe('DIAGNOSTIC_ONLY');
+  });
+});
+

@@ -30,24 +30,45 @@ DEFAULT_BAND_PCT = 0.002              # 工程默认 20bps,非业务风险数字
 DEFAULT_ANCHOR_MAX_DEVIATION_PCT = 0.05
 
 
+def _finite_num(value: object) -> bool:
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value)))
+
+
 @dataclass(frozen=True)
 class LimitPricing:
     band_pct: float = DEFAULT_BAND_PCT
     post_only: bool = False
     anchor_max_deviation_pct: float = DEFAULT_ANCHOR_MAX_DEVIATION_PCT
 
+    def __post_init__(self) -> None:
+        if not _finite_num(self.band_pct):
+            raise ValueError(f"band_pct must be a finite number, got {self.band_pct!r}")
+        if (not _finite_num(self.anchor_max_deviation_pct)
+                or float(self.anchor_max_deviation_pct) < 0.0):
+            raise ValueError(
+                f"anchor_max_deviation_pct must be finite and >= 0, got {self.anchor_max_deviation_pct!r}"
+            )
+
 
 def round_price_to_tick(price: float, tick_size: Optional[float], side: OrderSide) -> float:
     """BUY 向下取整到 tick(绝不出比意图更高的买价)、SELL 向上取整(绝不出更低的卖价);
     tick_size None/<=0 直通。+-1e-9 epsilon 吸收浮点表示噪声(镜像 filters.round_to_step),
     不改变真实取整方向。"""
-    if tick_size is None or tick_size <= 0:
-        return price
+    if not _finite_num(price):
+        raise ValueError(f"price must be a finite number, got {price!r}")
+    if tick_size is not None and not _finite_num(tick_size):
+        raise ValueError(f"tick_size must be a finite number or None, got {tick_size!r}")
+    price_f = float(price)
+    if tick_size is None or float(tick_size) <= 0:
+        return price_f
+    tick_f = float(tick_size)
     if side == OrderSide.BUY:
-        steps = math.floor(price / tick_size + 1e-9)
+        steps = math.floor(price_f / tick_f + 1e-9)
     else:
-        steps = math.ceil(price / tick_size - 1e-9)
-    return round(steps * tick_size, 10)
+        steps = math.ceil(price_f / tick_f - 1e-9)
+    return round(steps * tick_f, 10)
 
 
 def _validate_book_ticker(book: Optional[Mapping], *, decision_price: Optional[float],
@@ -56,10 +77,19 @@ def _validate_book_ticker(book: Optional[Mapping], *, decision_price: Optional[f
     mid,或 None(退化/不可用)。"""
     if book is None:
         return None
+    if not _finite_num(max_deviation_pct) or float(max_deviation_pct) < 0.0:
+        return None
     try:
-        bid = float(book.get("bid"))
-        ask = float(book.get("ask"))
-    except (TypeError, ValueError, AttributeError):
+        raw_bid = book.get("bid")
+        raw_ask = book.get("ask")
+    except AttributeError:
+        return None
+    if isinstance(raw_bid, bool) or isinstance(raw_ask, bool):
+        return None
+    try:
+        bid = float(raw_bid)
+        ask = float(raw_ask)
+    except (TypeError, ValueError):
         return None
     if not (math.isfinite(bid) and math.isfinite(ask)):
         return None
@@ -68,8 +98,8 @@ def _validate_book_ticker(book: Optional[Mapping], *, decision_price: Optional[f
     mid = (bid + ask) / 2.0
     if not math.isfinite(mid) or mid <= 0:
         return None
-    if decision_price is not None and math.isfinite(decision_price) and decision_price > 0:
-        if abs(mid / decision_price - 1.0) > max_deviation_pct:
+    if _finite_num(decision_price) and float(decision_price) > 0:
+        if abs(mid / float(decision_price) - 1.0) > float(max_deviation_pct):
             return None                              # 与决策价偏离过大(天价 mid)-> 视同退化
     return mid
 
@@ -84,21 +114,30 @@ def resolve_anchor(book: Optional[Mapping], *, decision_price: Optional[float],
                                 max_deviation_pct=max_deviation_pct)
     if mid is not None:
         return mid, "book_ticker"
-    if decision_price is not None and math.isfinite(decision_price) and decision_price > 0:
-        return decision_price, "decision_price_fallback"
+    if _finite_num(decision_price) and float(decision_price) > 0:
+        return float(decision_price), "decision_price_fallback"
     return None, "no_anchor"
 
 
 def limit_price_for(side: OrderSide, *, anchor: Optional[float], band_pct: float,
                     tick_size: Optional[float]) -> Optional[float]:
     """anchor×(1+band) for BUY / ×(1-band) for SELL,再按方向取整到 tick。anchor 非有限/<=0
-    -> None(诚实缺失,调用方丢弃该腿)。"""
-    if anchor is None or not math.isfinite(anchor) or anchor <= 0:
+    或取整后 <=0 -> None(诚实缺失,调用方丢弃该腿)。"""
+    if not _finite_num(anchor) or float(anchor) <= 0:
         return None
-    raw = anchor * (1 + band_pct) if side == OrderSide.BUY else anchor * (1 - band_pct)
+    if not _finite_num(band_pct):
+        return None
+    if tick_size is not None and not _finite_num(tick_size):
+        return None
+    anchor_f = float(anchor)
+    band_f = float(band_pct)
+    raw = anchor_f * (1 + band_f) if side == OrderSide.BUY else anchor_f * (1 - band_f)
     if not math.isfinite(raw) or raw <= 0:
         return None
-    return round_price_to_tick(raw, tick_size, side)
+    rounded = round_price_to_tick(raw, tick_size, side)
+    if not math.isfinite(rounded) or rounded <= 0:
+        return None
+    return rounded
 
 
 def to_limit_orders(adjusted: Sequence[LiveOrderRequest], *, anchors: Mapping[str, float],

@@ -17,7 +17,7 @@ from typing import Optional, Sequence
 def _block_sharpe(block: Sequence[float]) -> float:
     if len(block) < 2:
         return 0.0
-    sd = statistics.pstdev(block)
+    sd = statistics.stdev(block)
     if sd > 0:
         return statistics.fmean(block) / sd
     # zero-variance block: a constant POSITIVE block is a perfect (infinite-Sharpe)
@@ -35,7 +35,17 @@ def walk_forward_oos(returns: Sequence[Optional[float]], *, n_folds: int = 4,
     remove that contamination so the per-fold Sharpe reflects genuinely held-out periods.
     embargo=0 is the original behavior. Deterministic, fail-closed (a fold thinned below 2
     points by the embargo cannot be assessed and does not count as positive)."""
-    s = [float(r) for r in returns if r is not None and math.isfinite(r)]
+    if (
+        isinstance(min_positive_frac, bool)
+        or not math.isfinite(min_positive_frac)
+        or not (0.0 < min_positive_frac <= 1.0)
+    ):
+        return False
+    s = [
+        float(r)
+        for r in returns
+        if r is not None and not isinstance(r, bool) and math.isfinite(r)
+    ]
     if n_folds < 2 or len(s) < n_folds * 2 or embargo < 0:
         return False                                  # too thin / degenerate -> fail closed
     fold = len(s) // n_folds
