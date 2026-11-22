@@ -1,0 +1,15 @@
+{
+  "name": "quantos-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/research-console",
+    "build": "npm run build --workspace=apps/research-console",
+    "preview": "npm run preview --workspace=apps/research-console",
+    "lint": "npm run lint --workspace=apps/research-console",
+    "typecheck": "npm run typecheck --workspace=apps/research-console",
+    "test": "npm run test --workspace=apps/research-console"
+  }
+}

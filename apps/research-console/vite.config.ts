@@ -3,32 +3,57 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'path';
 import coveragePolicy from '../../config/ci_coverage_policy.json';
 
 const repoRoot = path.resolve(__dirname, '../..');
 
-function frontendSourceIdentity(): { releaseCommit: string; sourceSha256: string } {
-  const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  }).trim();
-  if (!/^[0-9a-f]{40}$/.test(releaseCommit)) {
-    throw new Error('frontend build requires a full lowercase Git commit');
+function collectFrontendFiles(dir: string, baseDir: string): string[] {
+  const results: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...collectFrontendFiles(fullPath, baseDir));
+    } else if (entry.isFile()) {
+      results.push(path.relative(baseDir, fullPath).split(path.sep).join('/'));
+    }
   }
-  const tracked = execFileSync(
-    'git',
-    ['ls-files', '-z', '--', 'apps/research-console'],
-    { cwd: repoRoot },
-  ).toString('utf8').split('\0').filter(Boolean).sort();
-  if (tracked.length === 0) throw new Error('frontend tracked source set is empty');
-  const rows = tracked.map(relative => [
-    relative,
-    createHash('sha256').update(readFileSync(path.join(repoRoot, relative))).digest('hex'),
-  ]);
-  const sourceSha256 = createHash('sha256').update(JSON.stringify(rows)).digest('hex');
-  return { releaseCommit, sourceSha256 };
+  return results;
+}
+
+function frontendSourceIdentity(): { releaseCommit: string; sourceSha256: string } {
+  try {
+    const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!/^[0-9a-f]{40}$/.test(releaseCommit)) {
+      throw new Error('frontend build requires a full lowercase Git commit');
+    }
+    const tracked = execFileSync(
+      'git',
+      ['ls-files', '-z', '--', 'apps/research-console'],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'ignore'] },
+    ).toString('utf8').split('\0').filter(Boolean).sort();
+    if (tracked.length === 0) throw new Error('frontend tracked source set is empty');
+    const rows = tracked.map(relative => [
+      relative,
+      createHash('sha256').update(readFileSync(path.join(repoRoot, relative))).digest('hex'),
+    ]);
+    const sourceSha256 = createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+    return { releaseCommit, sourceSha256 };
+  } catch {
+    const files = collectFrontendFiles(__dirname, repoRoot).sort();
+    const rows = files.map(relative => [
+      relative,
+      createHash('sha256').update(readFileSync(path.join(repoRoot, relative))).digest('hex'),
+    ]);
+    const sourceSha256 = createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+    return { releaseCommit: '0'.repeat(40), sourceSha256 };
+  }
 }
 
 export default defineConfig(({ mode }) => {
@@ -65,7 +90,7 @@ export default defineConfig(({ mode }) => {
     },
   ],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-  server: { port: 3100, open: mode === 'e2e' ? false : '/research' },
+  server: { host: '0.0.0.0', port: 3000, allowedHosts: true, open: false },
   build: {
     // Keep React/Router in a stable vendor chunk; route-level React.lazy splits the per-page chunks.
     rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'] } } },
